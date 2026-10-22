@@ -175,7 +175,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(value.classList).not.toContain('text-red-600');
   });
 
-  it('swaps the hero and the side row in meetings mode, and drops the attendance column', async () => {
+  it('swaps the hero and the side row in meetings mode', async () => {
     await render();
 
     fixture.componentInstance['onModeChange']('meetings');
@@ -186,7 +186,62 @@ describe('EngagementMeetingParticipationComponent', () => {
     // The design shows no delta for meetings held.
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-delta"]')).toBeNull();
     expect(text('engagement-meeting-participation-secondary')).toBe('70%');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
+  });
+
+  // The design's meetings mode keeps three columns: a blank middle one, and the count drawn as a bar.
+  it('keeps three columns in meetings mode, with a count bar scaled to the busiest type row', async () => {
+    const base = participationRow();
+    const withYtdMeetings = (meetingsHeld: number) => base.periods.map((period) => (period.range === 'YTD' ? { ...period, meetingsHeld } : period));
+    await render(
+      response({
+        // The roll-up's own count is larger than any type row, and must not set the scale.
+        total: participationRow({ periods: withYtdMeetings(40) }),
+        rows: [
+          participationRow({ level: 'group', group: 'Board', label: 'Board', governance: true, periods: withYtdMeetings(6) }),
+          participationRow({ level: 'group', group: 'Marketing', label: 'Marketing', periods: withYtdMeetings(24) }),
+        ],
+      })
+    );
+
+    fixture.componentInstance['onModeChange']('meetings');
+    fixture.detectChanges();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', '', 'Meetings held']);
+
+    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
+    const cells = Array.from(board.querySelectorAll('td')) as HTMLElement[];
+    expect(cells).toHaveLength(3);
+    expect(cells[1].textContent?.trim()).toBe('');
+    expect(cells[2].querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('6');
+    const boardFill = cells[2].querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement;
+    expect(boardFill.style.width).toBe('25%');
+    expect(boardFill.className).toContain('bg-blue-500');
+
+    const marketing = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]') as HTMLElement;
+    expect((marketing.querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement).style.width).toBe('100%');
+  });
+
+  it('keeps the meetings count and attendance bar columns in attendance mode', async () => {
+    await render();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', 'Meetings', 'Attendance']);
+    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
+    expect(board.querySelectorAll('td')[1].textContent?.trim()).toBe('12');
+    expect(board.querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('70%');
+  });
+
+  // A board must sit near full attendance, so 70% is red there while it is fine for any other type.
+  it('holds the Board row to the board rule and every other type to the general one', async () => {
+    await render();
+
+    const fill = (label: string): HTMLElement =>
+      fixture.nativeElement.querySelector(
+        `[data-testid="engagement-meeting-participation-row-${label}"] [data-testid="engagement-attendance-bar-track"] > div`
+      ) as HTMLElement;
+    expect(fill('Board').classList).toContain('bg-red-500');
+    expect(fill('Marketing').classList).toContain('bg-blue-500');
   });
 
   // The server can emit a present roll-up row whose cells are all unmeasured; none may read as zero.

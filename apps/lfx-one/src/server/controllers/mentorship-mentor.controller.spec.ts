@@ -178,7 +178,7 @@ describe('MentorshipMentorController', () => {
     });
 
     it('answers with the requests', async () => {
-      const response = { data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
+      const response = { data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' as const }], invitations: [] };
       vi.spyOn(MentorshipMentorService.prototype, 'getMentorRequests').mockResolvedValue(response);
 
       await controller.getMentorRequests(buildReq(), res, next);
@@ -238,21 +238,24 @@ describe('MentorshipMentorController', () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    it.each(['getOpenPrograms', 'getMentorRequests', 'requestToMentor', 'withdrawMentorRequest', 'acceptMentorInvite', 'declineMentorInvite'] as const)(
-      '%s requires an authenticated user',
-      async (method) => {
-        vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
-        const call = vi.spyOn(
-          MentorshipMentorService.prototype,
-          method === 'acceptMentorInvite' || method === 'declineMentorInvite' ? 'respondToMentorInvite' : method
-        );
+    it.each([
+      ['getOpenPrograms', 'getOpenPrograms'],
+      ['getMentorRequests', 'getMentorRequests'],
+      ['requestToMentor', 'requestToMentor'],
+      ['withdrawMentorRequest', 'withdrawMentorRequest'],
+      ['acceptMentorInvite', 'respondToMentorInvite'],
+      ['declineMentorInvite', 'respondToMentorInvite'],
+      ['acceptMentorInvitation', 'respondToMentorInvitation'],
+      ['declineMentorInvitation', 'respondToMentorInvitation'],
+    ] as const)('%s requires an authenticated user', async (method, serviceMethod) => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const call = vi.spyOn(MentorshipMentorService.prototype, serviceMethod);
 
-        await controller[method](buildWriteReq({ programId: PROGRAM_ID, token: INVITE_TOKEN }, { requestId: REQUEST_ID }), res, next);
+      await controller[method](buildWriteReq({ programId: PROGRAM_ID, token: INVITE_TOKEN }, { requestId: REQUEST_ID, invitationId: REQUEST_ID }), res, next);
 
-        expect(call).not.toHaveBeenCalled();
-        expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
-      }
-    );
+      expect(call).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
 
     it.each([
       ['acceptMentorInvite', 'accept'],
@@ -265,6 +268,28 @@ describe('MentorshipMentorController', () => {
       expect(respond).toHaveBeenCalledWith(expect.anything(), INVITE_TOKEN, decision);
       expect(res.status).toHaveBeenCalledWith(204);
       expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['acceptMentorInvitation', 'accept'],
+      ['declineMentorInvitation', 'decline'],
+    ] as const)('%s answers the invitation by its id and answers 204', async (method, decision) => {
+      const respond = vi.spyOn(MentorshipMentorService.prototype, 'respondToMentorInvitation').mockResolvedValue(undefined);
+
+      await controller[method](buildWriteReq(undefined, { invitationId: REQUEST_ID }), res, next);
+
+      expect(respond).toHaveBeenCalledWith(expect.anything(), REQUEST_ID, decision);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invitation id that is not a UUID before calling the service', async () => {
+      const respond = vi.spyOn(MentorshipMentorService.prototype, 'respondToMentorInvitation');
+
+      await controller.acceptMentorInvitation(buildWriteReq(undefined, { invitationId: 'invitation-1' }), res, next);
+
+      expect(respond).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     });
 
     it.each([undefined, {}, { token: '' }, { token: 'no-signature' }, { token: 'a.b/c' }, { token: `${'a'.repeat(512)}.b` }, { token: 42 }])(

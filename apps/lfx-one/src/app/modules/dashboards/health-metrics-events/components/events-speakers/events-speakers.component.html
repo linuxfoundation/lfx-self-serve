@@ -62,9 +62,13 @@
       </dl>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <!-- Stacked, as the design draws them. -->
+    <div class="flex flex-col gap-[24px]" data-testid="events-speakers-breakdown">
       <div class="flex flex-col gap-3" data-testid="events-speakers-status">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">By status</h4>
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Proposals by status</h4>
+          <span class="text-[12px] text-gray-400">count</span>
+        </div>
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().statusRows; track row.key) {
             <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-speakers-status-' + row.key">
@@ -101,7 +105,10 @@
     </div>
 
     <div class="flex flex-col gap-3" data-testid="events-speakers-organizations">
-      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Top organizations by proposals</h4>
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Most active organizations</h4>
+        <span class="text-[12px] text-gray-400">proposals submitted</span>
+      </div>
       @if (view().organizations.length === 0) {
         <p class="text-sm text-gray-500" data-testid="events-speakers-organizations-empty">No organization submitted a proposal in the selected period.</p>
       } @else {

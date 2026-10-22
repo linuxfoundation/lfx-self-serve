@@ -295,7 +295,7 @@ describe('MentorshipMentorService mentor requests', () => {
 
     await expect(service.getMentorRequests(buildReq())).resolves.toEqual({
       data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' }],
-      invitedProgramIds: [invitedProgramId],
+      invitations: [{ id: 'member-invited', programId: invitedProgramId, programName: 'Test Program' }],
     });
     expect(proxyRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -333,6 +333,30 @@ describe('MentorshipMentorService mentor requests', () => {
     const conflict = upstreamError(409, { error: 'invalid status transition' });
     proxyRequest.mockRejectedValueOnce(conflict);
     await expect(service.withdrawMentorRequest(buildReq(), REQUEST_ID)).rejects.toBe(conflict);
+  });
+
+  it.each(['accept', 'decline'] as const)('answers the invitation by its membership id with %s', async (decision) => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.respondToMentorInvitation(buildReq(), REQUEST_ID, decision)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `${MEMBERSHIPS_PATH}/${REQUEST_ID}/${decision}`,
+      'POST',
+      undefined,
+      undefined
+    );
+  });
+
+  it.each([
+    [404, 'program member not found'],
+    [409, 'invalid status transition'],
+  ])("passes upstream's %s through on an in-app invitation answer", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.respondToMentorInvitation(buildReq(), REQUEST_ID, 'decline')).rejects.toBe(failure);
   });
 
   it.each(['accept', 'decline'] as const)('answers the invitation with %s, the token escaped into the path', async (decision) => {

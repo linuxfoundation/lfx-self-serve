@@ -20,6 +20,7 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
 } from '../constants/foundation-message.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
+import type { MktgAssetReport } from './mktg-asset.interface';
 import type {
   MktgRunAnswer,
   MktgRunAnswersBody,
@@ -159,13 +160,7 @@ export interface FoundationMessageContent {
 }
 
 /** What the run read, what it could not read, and what the sources do not state. */
-export interface FoundationMessageReport {
-  sources_read: string[];
-  sources_failed: { name: string; reason: string }[];
-  gaps: string[];
-  /** Anything a person should check; on a check, one issue per line. */
-  notes: string;
-}
+export type FoundationMessageReport = MktgAssetReport;
 
 /** The finalize tool's mechanical findings: empty on a draft and a redraft, the list on a check. */
 export interface FoundationMessageChecks {
@@ -407,7 +402,7 @@ export type FoundationMessageResultRequest = MktgRunResultBody;
 /** Receipt of a successful persistence write (the revision the framework was stored as). */
 export type FoundationMessagePersistReceipt = MktgArtifactPersistReceipt;
 
-/** Response of `GET /api/mktg-agents/foundation-message/stored?project=<uid>` — the latest stored revision. */
+/** Stored framework response: approved current in plain and sidecar reads; true pre-revision plain fallback only. */
 export type FoundationMessageStoredResponse = MktgArtifactStoredResponse;
 
 /**

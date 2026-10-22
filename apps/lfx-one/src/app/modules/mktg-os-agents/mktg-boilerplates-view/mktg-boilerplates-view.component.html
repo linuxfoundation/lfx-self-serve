@@ -5,19 +5,16 @@
 <section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-boilerplates-view">
   <!-- Asset header: what this is, which version, how it was made -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-boilerplates-view-header">
-    <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
-    <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-boilerplates-view-title">{{ title() }}</h2>
-    @if (version() !== null) {
-      <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" data-testid="mktg-boilerplates-view-version">v{{ version() }}</span>
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-boilerplates-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-boilerplates-view" />
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-boilerplates-view-mode">{{ modeLabel() }}</span>
+      }
     }
-    @if (note()) {
-      <span class="text-xs text-gray-400">{{ note() }}</span>
-    }
-    @if (modeLabel()) {
-      <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-boilerplates-view-mode">{{
-        modeLabel()
-      }}</span>
-    }
+    <div class="flex grow flex-wrap justify-end gap-2" data-testid="mktg-boilerplates-view-actions"><ng-content select="[asset-actions]" /></div>
   </div>
 
   <!-- Tabs: the four lengths, then the run's report -->

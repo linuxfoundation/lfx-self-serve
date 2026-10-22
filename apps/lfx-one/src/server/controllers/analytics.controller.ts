@@ -3481,6 +3481,41 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months of attendance.
+   * No `range` param: the trend always covers the last twelve months.
+   */
+  public async getEngagementAttendanceTrend(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_attendance_trend');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_attendance_trend',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_attendance_trend',
+        });
+      }
+
+      const projectSlug = this.getOptionalProjectSlug(req, 'get_engagement_attendance_trend');
+      const response = await this.healthMetricsEngagementService.getAttendanceTrend(req, { foundationSlug, projectSlug });
+
+      logger.success(req, 'get_engagement_attendance_trend', startTime, {
+        foundation_slug: foundationSlug,
+        project_slug: projectSlug,
+        month_count: response.months.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/engagement-org-participation` — every organization, every period, one read.
    * No `range` param: the period pill projects the loaded rows client-side.
    */
@@ -4112,7 +4147,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-churn-departures` — one page of the memberships that lapsed in a year. */
+  /** `GET /api/analytics/members-churn-departures` — one page of the memberships lost in a year (non-renewals and downgrades). */
   public async getMembersChurnDepartures(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_churn_departures');
 
@@ -4348,7 +4383,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/training-courses` — one page of the foundation's courses with enrollments in a period. */
+  /** `GET /api/analytics/training-courses` — one page of every course the foundation has ever had an enrollment in. */
   public async getTrainingCourses(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_training_courses');
 

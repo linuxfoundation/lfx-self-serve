@@ -5,8 +5,8 @@
  * Account Settings — email management, content spec (#1852).
  *
  * Drives the Email Settings section of /profile/settings through the meeting-invitation
- * preference workflow: choosing an alternate address, switching back to the primary via the
- * sentinel, the delete guard, the cross-row in-flight lock, and the 400-only validation
+ * preference workflow: choosing an alternate address, switching back to the primary by its
+ * literal address (#3983), the delete guard, the cross-row in-flight lock, and the 400-only validation
  * banner. The email API surface is mocked (see helpers/account-settings-email.helper.ts)
  * so the spec doesn't depend on a seeded backend test user.
  *
@@ -25,7 +25,6 @@ import {
   ELEMENT_TIMEOUT,
   emailRow,
   INVITE_VALIDATION_MESSAGE,
-  MEETING_INVITE_PRIMARY_SENTINEL,
   MENU_DELETE,
   MENU_MAKE_PRIMARY,
   MENU_USE_FOR_INVITES,
@@ -70,7 +69,7 @@ test.describe('Account Settings — Email Management', () => {
       expect(mocks.inviteGetCount()).toBeGreaterThan(initialInviteGets);
     });
 
-    test('switches back to the primary address via the sentinel', async ({ page }) => {
+    test('switches back to the primary by pinning its literal address', async ({ page }) => {
       const mocks = await openEmailSettings(page, { initialInvite: { email_id: 'email-id-alt', email: ALTERNATE_EMAIL } });
 
       await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -85,7 +84,7 @@ test.describe('Account Settings — Email Management', () => {
       await expect(page.getByTestId('email-settings-loading')).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
       await expect(emailRow(page, PRIMARY_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId(INVITE_BADGE)).toHaveCount(0);
-      expect(mocks.putBodies()).toEqual([{ email: MEETING_INVITE_PRIMARY_SENTINEL }]);
+      expect(mocks.putBodies()).toEqual([{ email: PRIMARY_EMAIL }]);
     });
 
     test('offers no no-op invite action on the row that already holds the override', async ({ page }) => {

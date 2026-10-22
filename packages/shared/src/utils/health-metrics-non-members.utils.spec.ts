@@ -8,6 +8,7 @@ import { HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '../constants/h
 import {
   buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
+  buildHealthMetricsNonMembersOrgsLowConfidence,
   buildHealthMetricsNonMembersOrgsSummary,
   buildHealthMetricsNonMembersPeopleCountLabel,
   buildHealthMetricsNonMembersPersonRows,
@@ -73,16 +74,12 @@ describe('buildHealthMetricsNonMembersSubNavItems', () => {
 });
 
 describe('buildHealthMetricsNonMembersOrgRows', () => {
-  it('formats the counts and the last engaged date, with a chip per active channel', () => {
+  it('formats the counts and the last engaged date', () => {
     const [row] = buildHealthMetricsNonMembersOrgRows([ORG]);
 
     expect(row).toEqual({
       accountId: ORG.accountId,
       accountName: 'Acme Motors',
-      channels: [
-        { key: 'meetings', label: 'Attends meetings' },
-        { key: 'code', label: 'Contributes code' },
-      ],
       meetingsLabel: '12',
       peopleLabel: '3',
       contributionsLabel: '1,840',
@@ -93,14 +90,13 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
     });
   });
 
-  it('renders a dash for a zero or NULL count and leaves that channel without a chip', () => {
+  it('renders a dash for a zero or NULL count or a missing date', () => {
     const [row] = buildHealthMetricsNonMembersOrgRows([{ ...ORG, meetingsAttended: null, distinctPeople: null, contributions: 0, lastEngagedDate: null }]);
 
     expect(row.meetingsLabel).toBe('—');
     expect(row.peopleLabel).toBe('—');
     expect(row.contributionsLabel).toBe('—');
     expect(row.lastEngagedLabel).toBe('—');
-    expect(row.channels).toEqual([]);
   });
 
   it("shows the model's membership status and colours each fit band as the design does", () => {
@@ -124,6 +120,19 @@ describe('buildHealthMetricsNonMembersOrgsSummary', () => {
   it('counts the organizations and the new ones', () => {
     expect(buildHealthMetricsNonMembersOrgsSummary(1412, 37)).toBe('1,412 organizations · 37 new this period');
     expect(buildHealthMetricsNonMembersOrgsSummary(1, 0)).toBe('1 organization · 0 new this period');
+  });
+});
+
+describe('buildHealthMetricsNonMembersOrgsLowConfidence', () => {
+  it('flags fewer than five active organizations, singular for one', () => {
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(4)).toBe('Only 4 active organizations — too early to rank by fit.');
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(1)).toBe('Only 1 active organization — too early to rank by fit.');
+  });
+
+  it('stays quiet at the threshold and above, and with no active organization', () => {
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(5)).toBeNull();
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(412)).toBeNull();
+    expect(buildHealthMetricsNonMembersOrgsLowConfidence(0)).toBeNull();
   });
 });
 
@@ -221,10 +230,11 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
   });
 
-  it('marks the unmeasured value as not measured', () => {
+  it('marks the unmeasured value as not measured, with a dashed, qualified estimate', () => {
     const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
     expect(view.measured).toBe(false);
     expect(view.warmest).toEqual([]);
+    expect(view).toMatchObject({ pipelineValue: '—', pipelineLabel: 'Estimated pipeline · not enough data', hasEstimate: false });
   });
 });

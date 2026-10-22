@@ -67,7 +67,7 @@ async function stubProfile(page: Page, patchStatus: number): Promise<ProfileStub
 
   // The drawer reads the mentor's requests and the open programs on open; answer both with nothing.
   await page.route('**/api/mentorship/mentor/requests', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], invitedProgramIds: [] }) })
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], invitations: [] }) })
   );
   await page.route('**/api/mentorship/mentor/open-programs**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) })

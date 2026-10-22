@@ -193,6 +193,18 @@ The primary layout that wraps every authenticated route (header + sidebar + cont
 
 Wraps the `/profile` sub-tree to render tabbed profile pages (overview, edit, affiliations, developer, email, password). Used only by profile-feature routes.
 
+### Page header (`lfx-page-header`)
+
+Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header>` (`apps/lfx-one/src/app/shared/components/page-header/`), so title, description and spacing look the same everywhere:
+
+- **Title.** It is always an `h1` in Roboto Slab light at `text-2xl`, `text-gray-900`. Pages never restyle it or bump its size per breakpoint.
+- **Description.** The optional `description` input renders Inter `text-sm` in `text-gray-500`, `gap-1` under the title. When the copy needs markup, project a `<span pageHeaderDescription>` instead; it renders under the input in the same style, so it can also carry a second line.
+- **Spacing.** The component has no outer margin. The header sits at the top of the page content, so `MainLayoutComponent`'s `py-6` is the only top spacing. Pages leave `mb-6` below it (or a parent `gap-6`; 21px at the 14px root).
+- **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
+- **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
+
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header.
+
 ### Tab shells: signal state vs. child routes
 
 Most tabbed pages hold the active tab in a signal and swap content with `@if` — `marketing-impact`, `campaigns`, `org-contributions` and `org-project-detail-tab-bar` all work this way. Prefer that: it is simpler, and a tab that is just a panel does not need a URL.
@@ -254,7 +266,7 @@ Known limitation: once latched, a scope cleared after a read renders the _measur
 rather than a neutral one. Distinguishing the third state ("no foundation selected") belongs to the
 page-wide neutral state, not to four per-section copies of the same computed.
 
-A Level 2 page scrolls the page itself, never an inner pane (`health-metrics-l2-shell.component.ts`). At the wide layout the sub-nav host is sticky at `HealthMetricsChromeService.stickyTopPx`, and each section carries the same offset as its `scroll-margin-top`, so `scrollIntoView({ block: 'start' })` lands a pick or a deep link below the sticky header. The spy observes the viewport with a band that is the top 30% of the viewport left below the header, set in pixels (`-<offset>px 0px -<bottom>px 0px`) and rebuilt when the viewport height changes — a percentage bottom margin is of the whole viewport and closes the band on a short window. Both sentinels are observed only while the end sentinel starts below the first screen (measured against the page, not the scroll), since a footer can make the page scroll while both sit in view; a start sentinel at the top of the column lights the first item when the reader jumps back to the top, since that jump never sweeps the first heading through the band.
+A Level 2 page scrolls the page itself, never an inner pane (`health-metrics-l2-shell.component.ts`). At the wide layout the sub-nav host is sticky at `HealthMetricsChromeService.stickyTopPx`, and each section carries the same offset as its `scroll-margin-top`, so `scrollIntoView({ block: 'start' })` lands a pick or a deep link below the sticky header. The spy observes the viewport with a band that is the top 30% of the viewport left below the header, set in pixels (`-<offset>px 0px -<bottom>px 0px`) and rebuilt when the viewport height changes — a percentage bottom margin is of the whole viewport and closes the band on a short window. Both sentinels are observed only while the end sentinel starts below the first screen (measured against the page, not the scroll), since a footer can make the page scroll while both sit in view; a start sentinel at the top of the column lights the first item when the reader jumps back to the top, since that jump never sweeps the first heading through the band. Because the page scrolls, the router's app-wide `scrollPositionRestoration: 'top'` would jump it up on every pill, search or page change, all of which write the query string. The shell puts the scroll position back after any navigation that changes only the query string, or restates the current URL (skipped, yet still scrolled), so a tab switch still lands at the top; a section jump made while that router scroll is still due is replayed after it. A section that starts a read keeps its height until every read rendering in it has painted (a read in a section keyed differently passes that section's key, as Members' bridge does inside `tiers`), so the loading state never shortens the page under the reader.
 
 ## 🎨 Component Development Pattern
 

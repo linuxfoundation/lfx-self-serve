@@ -120,11 +120,6 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
-  /** Whether a save is running — deliberately NOT derivable from `state()`; see the tests below. */
-  function inFlight(): boolean {
-    return (fixture.componentInstance as unknown as { briefSaveInFlight(): boolean }).briefSaveInFlight();
-  }
-
   /**
    * `selectorForm` is protected; a program switch is the real path that discards a brief. The
    * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
@@ -2067,21 +2062,21 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
-        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+        expect(c.briefCampaignsCapabilityRead()).toBe('ready');
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string };
         // Nothing has been asked yet: unknown, not "checking".
-        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+        expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
 
         const inFlight = new Subject<CampaignListResult>();
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(inFlight);
         await withSavedBrief();
 
-        expect(c.briefCampaignsBiddingRead()).toBe('pending');
+        expect(c.briefCampaignsCapabilityRead()).toBe('pending');
       });
 
       it('leaves the bidding capability unknown when the capability read fails', async () => {
@@ -2090,11 +2085,11 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
-        expect(c.briefCampaignsBiddingRead()).toBe('failed');
+        expect(c.briefCampaignsCapabilityRead()).toBe('failed');
       });
 
       /**
@@ -2526,14 +2521,14 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         load();
         await fixture.whenStable();
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
-        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        expect(c.briefCampaignsCapabilityRead()).toBe('ready');
 
         selectFoundation('cncf');
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
-        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+        expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
       it('drops a campaign list that resolves after the foundation changed', async () => {
@@ -2736,6 +2731,62 @@ describe('CampaignsComponent brief persistence', () => {
       });
     });
   });
+});
+
+describe('CampaignsComponent brief persistence — queue state', () => {
+  const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+  const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+  let persistBrief: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<CampaignsComponent>;
+
+  beforeEach(async () => {
+    // These cases assert only the page's save queue/signals. Keep the real component, forms,
+    // effects and HTTP-backed CampaignService, without mounting the unrelated child tabs.
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false), providerReady: signal(true) } },
+      ],
+    })
+      .overrideComponent(CampaignsComponent, { set: { template: '', imports: [] } })
+      .compileComponents();
+    persistBrief = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
+    fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
+    await fixture.whenStable();
+  });
+
+  function proceed(b: CampaignBriefOutput = brief): void {
+    (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
+  }
+
+  function switchProgram(): void {
+    (
+      fixture.componentInstance as unknown as { selectorForm: { controls: { programType: { setValue(v: string): void } } } }
+    ).selectorForm.controls.programType.setValue('education');
+  }
+
+  function state(): CampaignBriefPersistenceState {
+    return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
+  }
+
+  /** Whether a save is running — deliberately NOT derivable from `state()`. */
+  function inFlight(): boolean {
+    return (fixture.componentInstance as unknown as { briefSaveInFlight(): boolean }).briefSaveInFlight();
+  }
+
+  async function settleQueue(): Promise<void> {
+    // Without child-template renders, Angular can already be stable while persistChain still
+    // has promise handlers to run. Yield a task so the queue drains independently of rendering.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fixture.whenStable();
+  }
 
   /**
    * Two saves of the same event must never be in flight together. Each one's find would come back
@@ -2755,12 +2806,12 @@ describe('CampaignsComponent brief persistence', () => {
     // ownership write blow up on a null result field), which is the shape a mapping bug takes.
     persistBrief.mockReturnValue(of(null as unknown as CampaignBriefPersistResult));
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
 
     // The queue must still be alive.
     persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-2', etag: '"1"', created: true, approved: true }));
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
 
     // TWO calls is the property: the second request was actually sent. Without the terminal
     // catch the chain stays rejected and this is 1, with no error surfaced anywhere.
@@ -2778,14 +2829,14 @@ describe('CampaignsComponent brief persistence', () => {
     const first = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(first);
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
     expect(persistBrief).toHaveBeenCalledTimes(1);
 
     // Back to Planning and Proceed again while the first request is still open. This needs no
     // second user: `selectTab` only sets a signal, so the tab bar is live during a save.
     persistBrief.mockReturnValue(NEVER);
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
 
     expect(persistBrief).toHaveBeenCalledTimes(1);
 
@@ -2804,10 +2855,10 @@ describe('CampaignsComponent brief persistence', () => {
 
     proceed();
     switchProgram();
-    await fixture.whenStable();
+    await settleQueue();
 
     late.error(new Error('500'));
-    await fixture.whenStable();
+    await settleQueue();
 
     // Not 'error': there is no brief on screen to warn about, and the amber banner would be
     // about work the user already abandoned.
@@ -2827,7 +2878,7 @@ describe('CampaignsComponent brief persistence', () => {
     persistBrief.mockReturnValue(pending);
 
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
 
     expect(inFlight()).toBe(true);
     // The banner is deliberately silent for this first save; that is exactly why the separate
@@ -2852,19 +2903,19 @@ describe('CampaignsComponent brief persistence', () => {
     // save is dropped rather than queued and its clear never runs — which is a different case.
     proceed();
     proceed(otherBrief);
-    await fixture.whenStable();
+    await settleQueue();
 
     // A resolves; B is still outstanding.
     first.next({ enabled: true, briefId: 'brief-a', etag: 'W/"1"', created: true, approved: true });
     first.complete();
     // Drain generously: A's chain link has several `.then` steps before B's request is issued.
-    for (let i = 0; i < 6; i++) await fixture.whenStable();
+    for (let i = 0; i < 6; i++) await settleQueue();
 
     expect(inFlight()).toBe(true);
 
     second.next({ enabled: true, briefId: 'brief-b', etag: 'W/"1"', created: true, approved: true });
     second.complete();
-    for (let i = 0; i < 6; i++) await fixture.whenStable();
+    for (let i = 0; i < 6; i++) await settleQueue();
 
     expect(inFlight()).toBe(false);
   });
@@ -2876,14 +2927,14 @@ describe('CampaignsComponent brief persistence', () => {
     persistBrief.mockReturnValue(failing);
 
     proceed();
-    await fixture.whenStable();
+    await settleQueue();
     expect(inFlight()).toBe(true);
 
     failing.error(new Error('500'));
-    await fixture.whenStable();
+    await settleQueue();
     // A second drain: the clear is chained AFTER the terminal catch, so it settles one
     // microtask-turn later than the banner write does.
-    await fixture.whenStable();
+    await settleQueue();
 
     expect(inFlight()).toBe(false);
   });
@@ -11042,7 +11093,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     onProceedToImplementation(b: CampaignBriefOutput): void;
     briefPersistence(): CampaignBriefPersistenceState;
     briefCampaignsBiddingEnabled(): boolean | null;
-    briefCampaignsBiddingRead(): string;
+    briefCampaignsCapabilityRead(): string;
   }
   const page = (): PageInternals => fixture.componentInstance as unknown as PageInternals;
   const tab = (): Record<string, any> => fixture.debugElement.query(By.directive(ImplementationTabComponent)).componentInstance as Record<string, any>;
@@ -11114,7 +11165,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(page().briefPersistence().briefId).toBeNull();
-    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(page().briefCampaignsCapabilityRead()).toBe('unknown');
     expect(tab()['canSubmit']()).toBe(false);
     expect(q('implementation-bidding-capability-unsaved')?.textContent).toContain("Bidding support can't be checked until this brief is saved.");
     expect(q('implementation-bidding-capability-retry')).toBeNull();
@@ -11141,7 +11192,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(page().briefPersistence().briefId).toBe('brief-1');
-    expect(page().briefCampaignsBiddingRead()).toBe('failed');
+    expect(page().briefCampaignsCapabilityRead()).toBe('failed');
     expect(tab()['canSubmit']()).toBe(false);
     const retry = q('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
@@ -11152,18 +11203,18 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
-    expect(page().briefCampaignsBiddingRead()).toBe('ready');
+    expect(page().briefCampaignsCapabilityRead()).toBe('ready');
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
     expect(tab()['canSubmit']()).toBe(true);
   });
 
   it('a retry reached without a brief id reads nothing and leaves the state unknown', async () => {
-    (fixture.componentInstance as unknown as { briefCampaignsBiddingRead: { set(v: string): void } }).briefCampaignsBiddingRead.set('failed');
+    (fixture.componentInstance as unknown as { briefCampaignsCapabilityRead: { set(v: string): void } }).briefCampaignsCapabilityRead.set('failed');
     listBriefCampaigns.mockClear();
 
-    (fixture.componentInstance as unknown as { retryBiddingCapability(): void }).retryBiddingCapability();
+    (fixture.componentInstance as unknown as { retryCreateCapabilities(): void }).retryCreateCapabilities();
 
     expect(listBriefCampaigns).not.toHaveBeenCalled();
-    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(page().briefCampaignsCapabilityRead()).toBe('unknown');
   });
 });

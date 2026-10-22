@@ -1,0 +1,71 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* Compose existing renderings without changing their asset-page print rules. */
+.lfx-family-print-only {
+  display: none;
+}
+
+@media print {
+  body.lfx-print-family {
+    /* Named pages require in-flow boxes. Keep only the document's ancestor chain
+       and its contents; hidden siblings must not reserve blank printed space. */
+    *:not(:has(.lfx-family-print-only)):not(.lfx-family-print-only):not(.lfx-family-print-only *) {
+      display: none !important;
+    }
+
+    &,
+    *:has(.lfx-family-print-only),
+    .lfx-family-print-only {
+      display: block !important;
+      position: static !important;
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      container-type: normal !important;
+      contain: none !important;
+      transform: none !important;
+    }
+
+    lfx-mktg-framework-print {
+      page: mktg-framework;
+      width: 7.3in;
+    }
+
+    lfx-brand-kit-view {
+      page: brand-kit;
+      width: 11in;
+      break-before: page;
+    }
+
+    .lfx-brand-kit-book {
+      display: block;
+      width: 11in;
+      margin: 0;
+      gap: 0;
+    }
+
+    .lfx-brand-kit-page {
+      width: 11in;
+      height: 8.5in;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      break-after: page;
+      break-inside: avoid;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    .lfx-brand-kit-page:last-child {
+      break-after: auto;
+    }
+  }
+}

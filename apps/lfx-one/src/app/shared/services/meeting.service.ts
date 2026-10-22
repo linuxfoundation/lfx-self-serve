@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
+  AttachmentScopeOverrides,
   BatchRegistrantOperationResponse,
   CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
@@ -29,7 +30,6 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
-  MeetingCalendarScope,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -48,7 +48,7 @@ import {
   PresignAttachmentRequest,
   PresignAttachmentResponse,
   PublicMeetingOccurrencesResponse,
-  PublicMeetingProject,
+  PublicMeetingResponse,
   PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
@@ -79,6 +79,18 @@ export class MeetingService {
    * still report `invited: true`.
    */
   public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
+
+  private readonly attachmentScopeOverridesState: WritableSignal<AttachmentScopeOverrides> = signal(new Map<string, string>());
+  /**
+   * Attachment scope changes saved in this session that a read may not show yet, keyed by attachment uid.
+   * @description Lives here so every card, page and drawer showing the meeting's materials sees a change the moment it
+   * is saved, rather than after the next refetch: reads come from the query service, which indexes asynchronously and
+   * can still return the old scope. An entry holds the last scope saved for that attachment and stays for the session: each
+   * card keeps its own fetched list and only the one that saved refetches, so dropping an entry when one read agreed with it
+   * would send the other cards back to their stale snapshot. A later change to the same attachment replaces the entry. The
+   * cost is that a change made by someone else mid-session stays hidden on that attachment until the page reloads.
+   */
+  public readonly attachmentScopeOverrides: Signal<AttachmentScopeOverrides> = this.attachmentScopeOverridesState.asReadonly();
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
@@ -287,10 +299,10 @@ export class MeetingService {
    * The password gates private/restricted meetings server-side; it travels in a request header so
    * it never appears in the request URL (which Datadog RUM records with trackResources).
    */
-  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
+  public getPublicMeeting(id: string, password: string | null): Observable<PublicMeetingResponse> {
     const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { headers }).pipe(
+    return this.http.get<PublicMeetingResponse>(`/public/api/meetings/${id}`, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);
@@ -340,20 +352,6 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
-  }
-
-  /**
-   * Builds the "Download .ics" URL for a meeting (GH-3505). Returns a plain URL (no HTTP call
-   * here) — the browser downloads the file natively via an anchor/`window.open` target, and the
-   * server resolves authorization and the join link itself.
-   */
-  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: MeetingCalendarScope; occurrenceId?: string }): string {
-    let params = new HttpParams().set('scope', options.scope);
-    if (options.occurrenceId) {
-      params = params.set('occurrenceId', options.occurrenceId);
-    }
-
-    return `/api/meetings/${encodeURIComponent(meetingId)}/calendar.ics?${params.toString()}`;
   }
 
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
@@ -413,6 +411,16 @@ export class MeetingService {
 
   // ─── Meeting Attachment Methods ───────────────────────────────────────────
 
+  /** Records scope changes that saved, so they show everywhere at once. `occurrence_id` absent means all occurrences. */
+  public recordAttachmentScopeChanges(changes: { uid: string; occurrence_id?: string }[]): void {
+    if (changes.length === 0) return;
+    this.attachmentScopeOverridesState.update((current) => {
+      const next = new Map(current);
+      changes.forEach((change) => next.set(change.uid, change.occurrence_id ?? ''));
+      return next;
+    });
+  }
+
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
       take(1),
@@ -454,6 +462,10 @@ export class MeetingService {
 
     if (presignData.description) {
       params = params.set('description', presignData.description);
+    }
+
+    if (presignData.occurrence_id) {
+      params = params.set('occurrence_id', presignData.occurrence_id);
     }
 
     return this.http
@@ -815,6 +827,23 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error('Failed to resend meeting invitation:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Resends the invitation to the signed-in user's own registration; the server resolves which registrant that is.
+   * Pass the occurrence being viewed so the server picks the registration that fits it: a person's registrations can
+   * be scoped to one occurrence or cover the whole series.
+   */
+  public resendMyMeetingInvitation(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
+    const body = occurrenceId ? { occurrence_id: occurrenceId } : {};
+
+    return this.http.post<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self/resend`, body).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to resend meeting invitation to current user for meeting ${meetingUid}:`, error);
         return throwError(() => error);
       })
     );

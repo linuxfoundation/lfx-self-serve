@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ViewportScroller } from '@angular/common';
 import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, NavigationSkipped, provideRouter, Router, Scroll } from '@angular/router';
 import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
@@ -142,6 +143,7 @@ describe('HealthMetricsL2ShellComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let chrome: HealthMetricsChromeService;
   let fragment: BehaviorSubject<string | null>;
+  let scroller: { getScrollPosition: ReturnType<typeof vi.fn>; scrollToPosition: ReturnType<typeof vi.fn> };
 
   function headingOf(key: string): Element {
     return fixture.nativeElement.querySelector(`#sec-test-${key}-heading`);
@@ -201,6 +203,8 @@ describe('HealthMetricsL2ShellComponent', () => {
       imports: [TestHostComponent],
       providers: [
         HealthMetricsChromeService,
+        provideRouter([{ path: '**', component: TestSectionComponent }]),
+        { provide: ViewportScroller, useValue: scroller },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
         ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
@@ -242,6 +246,7 @@ describe('HealthMetricsL2ShellComponent', () => {
   }
 
   beforeEach(async () => {
+    scroller = { getScrollPosition: vi.fn(() => [0, 640] as [number, number]), scrollToPosition: vi.fn() };
     FakeIntersectionObserver.instances = [];
     FakeResizeObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
@@ -836,6 +841,94 @@ describe('HealthMetricsL2ShellComponent', () => {
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a reloading section at its height until the result has painted', async () => {
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    child('alpha').reading.emit();
+    expect(section.style.minHeight).toBe('480px');
+
+    child('alpha').settled.emit();
+    await flush();
+    expect(section.style.minHeight).toBe('');
+  });
+
+  it('keeps the height a newer read re-held before the settled result painted', async () => {
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    child('alpha').reading.emit();
+    child('alpha').settled.emit();
+    child('alpha').reading.emit();
+    await flush();
+
+    expect(section.style.minHeight).toBe('480px');
+  });
+
+  it('keeps a section at its height until every read rendering in it has painted', async () => {
+    const shell = fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    shell.sectionReading('alpha');
+    shell.sectionReading('alpha-bridge', 'alpha');
+    shell.sectionSettled('alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('480px');
+
+    shell.sectionSettled('alpha-bridge', 'alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('');
+  });
+
+  describe('scroll position across query-only navigations', () => {
+    // TestBed never starts the router's scroller, so this emits the `Scroll` it sends once a navigation ends.
+    async function navigateThenRouterScroll(url: string, beforeScroll?: () => void): Promise<void> {
+      const router = TestBed.inject(Router);
+      const done = firstValueFrom(router.events.pipe(filter((event) => event instanceof NavigationEnd || event instanceof NavigationSkipped)));
+      await router.navigateByUrl(url);
+      beforeScroll?.();
+      (router.events as unknown as Subject<Scroll>).next(new Scroll(await done, null, null));
+      await Promise.resolve();
+    }
+
+    beforeEach(async () => {
+      await TestBed.inject(Router).navigateByUrl('/health?tab=1');
+      scroller.scrollToPosition.mockClear();
+    });
+
+    it('puts the page back where it was when only the query string changes', async () => {
+      await navigateThenRouterScroll('/health?tab=1&filter=lapsed');
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+    });
+
+    it('puts the page back when a write restates the current URL', async () => {
+      await navigateThenRouterScroll('/health?tab=1');
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+    });
+
+    it('leaves the router to scroll a path change to the top', async () => {
+      await navigateThenRouterScroll('/other');
+
+      expect(scroller.scrollToPosition).not.toHaveBeenCalled();
+    });
+
+    it('replays a section jump the router scroll cut short, after putting the page back', async () => {
+      // As the "Never attended" drill-down does once its filter write resolves.
+      await navigateThenRouterScroll('/health?tab=1&filter=never', () => {
+        child('alpha').sectionPicked.emit('beta');
+        scrollIntoView().mockClear();
+      });
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+      expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView().mock.contexts[0]).toBe(fixture.nativeElement.querySelector('#sec-test-beta'));
+      expect(scroller.scrollToPosition.mock.invocationCallOrder[0]).toBeLessThan(scrollIntoView().mock.invocationCallOrder[0]);
+    });
   });
 
   it('disconnects every observer on destroy', () => {

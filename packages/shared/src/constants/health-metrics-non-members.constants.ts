@@ -99,9 +99,19 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Under the table until the organization match is validated. */
+/** Under the table until the organization match is validated; the design's caution wording. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  "Organization matching is under validation. Treat this list as provisional and don't send it to sales unchecked.";
+  'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+
+/** Under the People table: each person's organization comes from the same unvalidated match. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
+  "People are matched to organizations by the same process, so treat each person's organization as provisional too.";
+
+/** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
+export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+
+/** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;
 
 /** Fit band dot fills, as the design colours them; an unknown band falls back to the Low gray. */
 export const HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS: Readonly<Record<string, string>> = {
@@ -128,7 +138,7 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS = 200;
 
-/** Read-failed / no-foundation value: nothing measured, so the section renders its empty state. */
+/** Read-failed / no-foundation value: nothing measured, so the hero shows a muted dash and no warmest list. */
 export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED: HealthMetricsNonMembersConversion = {
   measured: false,
   entryTierName: null,

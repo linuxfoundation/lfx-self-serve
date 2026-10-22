@@ -46,6 +46,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: getEffectiveEmailMock,
   getEffectiveUsername: vi.fn(),
+  getRealEmail: vi.fn(),
+  getRealUsername: vi.fn(),
+  isImpersonating: vi.fn(() => false),
   getUsernameFromAuth: getUsernameFromAuthMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));

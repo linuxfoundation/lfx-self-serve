@@ -18,13 +18,13 @@
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-orgs-controls">
       <div class="w-full sm:w-64">
-        <label class="sr-only" for="non-members-orgs-search">Search organizations</label>
+        <label class="sr-only" for="non-members-orgs-search">Search organization</label>
         <lfx-input-text
           [form]="searchForm"
           control="search"
           inputId="non-members-orgs-search"
           [maxlength]="maxSearchLength"
-          placeholder="Search organizations…"
+          placeholder="Search organization…"
           icon="fa-light fa-search"
           size="small"
           styleClass="w-full"
@@ -49,6 +49,16 @@
       }
     </p>
 
+    @if (lowConfidence(); as message) {
+      <!-- The design's .lowconf chip at its exact 12px type, 6px radius and 6px 10px padding. -->
+      <p
+        class="inline-flex items-center gap-[6px] self-start rounded-[6px] bg-amber-50 px-[10px] py-[6px] text-[12px] text-amber-700"
+        data-testid="non-members-orgs-low-confidence">
+        <span aria-hidden="true">&#9680;</span>
+        <span>{{ message }}</span>
+      </p>
+    }
+
     <lfx-table
       [rowHover]="false"
       [value]="rowViews()"
@@ -64,18 +74,17 @@
       [showFirstLastIcon]="false"
       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
       [scrollable]="true"
-      [tableStyle]="{ 'min-width': '900px' }"
+      [tableStyle]="{ 'min-width': '680px' }"
       (onPage)="onTablePage($event)"
       data-testid="non-members-orgs-table">
       <ng-template #header>
         <tr>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Active channels</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">People</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Contributions</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged (all time)</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Fit</span></th>
         </tr>
       </ng-template>
@@ -91,13 +100,6 @@
             <span class="whitespace-nowrap text-[11.5px] text-gray-400" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-membership'"
               >&#9675; {{ view.membershipLabel }}</span
             >
-          </td>
-          <td>
-            <div class="flex flex-wrap gap-1" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-channels'">
-              @for (channel of view.channels; track channel.key) {
-                <span class="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10.5px] text-blue-600">{{ channel.label }}</span>
-              }
-            </div>
           </td>
           <td class="text-right">
             <span
@@ -150,7 +152,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="8" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-orgs-no-match">
+          <td colspan="7" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-orgs-no-match">
             @if (!loading()) {
               {{ noMatchLabel() }}
             }
@@ -159,9 +161,8 @@
       </ng-template>
     </lfx-table>
 
-    <p class="flex items-center gap-2 border-t border-slate-100 pt-3 text-[12px] text-gray-400" data-testid="non-members-orgs-provisional">
-      <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
-      {{ provisionalNote }}
-    </p>
+    <lfx-health-metrics-footnote [parts]="footnote" [caution]="true" data-testid="non-members-orgs-provisional">
+      <span class="block" data-testid="non-members-orgs-all-time">{{ allTimeNote }}</span>
+    </lfx-health-metrics-footnote>
   }
 </div>

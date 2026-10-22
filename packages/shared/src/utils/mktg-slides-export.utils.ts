@@ -37,6 +37,7 @@ import type {
   MktgSlidesExportBranded,
   MktgSlidesExportBrandSummary,
   MktgSlidesExportContent,
+  MktgSlidesExportDeckRecord,
   MktgSlidesExportFailure,
   MktgSlidesExportForm,
   MktgSlidesExportLogoNote,
@@ -287,7 +288,10 @@ export function classifyMktgSlidesExportFailure(text: string): { failure: MktgSl
 }
 
 /** The failed result a poll answers: the plain message, and the deck when one was left behind. */
-export function mktgSlidesExportFailed(failure: MktgSlidesExportFailure, deckLink: string | null = null): MktgSlidesExportResultResponse {
+export function mktgSlidesExportFailed(
+  failure: MktgSlidesExportFailure,
+  deckLink: string | null = null
+): Extract<MktgSlidesExportResultResponse, { status: 'failed' }> {
   return { status: 'failed', failure, message: MKTG_SLIDES_EXPORT_FAILURE_MESSAGES[failure], deckLink };
 }
 
@@ -308,8 +312,13 @@ export function buildMktgSlidesExportRecordKey(
   exportedAtMs: number,
   sha: string
 ): string {
+  return buildMktgSlidesExportTimedRecordKey(buildMktgSlidesExportPrefix(project, agentKey, documentId), exportedAtMs, sha);
+}
+
+/** Both export scopes share the same sortable time and content-addressed suffix. */
+export function buildMktgSlidesExportTimedRecordKey(prefix: string, exportedAtMs: number, sha: string): string {
   const time = String(Math.max(0, Math.trunc(exportedAtMs))).padStart(MKTG_SLIDES_EXPORT_KEY_TIME_DIGITS, '0');
-  return `${buildMktgSlidesExportPrefix(project, agentKey, documentId)}${time}-${sha}.json`;
+  return `${prefix}${time}-${sha}.json`;
 }
 
 /** The hash a record key names, or null when the key is not a record key under the prefix. */
@@ -321,19 +330,11 @@ export function parseMktgSlidesExportRecordKey(key: string, prefix: string): { t
   return match ? { time: match[1], sha: match[2] } : null;
 }
 
-/** Whether a stored value has every field of an export record, each in its shape. */
-export function isMktgSlidesExportRecord(value: unknown): value is MktgSlidesExportRecord {
-  if (!isRecord(value) || value['schema'] !== MKTG_SLIDES_EXPORT_RECORD_SCHEMA) {
-    return false;
-  }
+/** Deck metadata validation shared by both record scopes; each reader checks its own schema and identity. */
+export function isMktgSlidesExportDeckRecord(value: unknown): value is MktgSlidesExportDeckRecord {
+  if (!isRecord(value)) return false;
   return (
     isText(value['project']) &&
-    isMktgSlidesExportAgentKey(value['agentKey']) &&
-    isText(value['documentId']) &&
-    isText(value['revisionId']) &&
-    isCount(value['revisionNumber'], 1) &&
-    typeof value['contentSha256'] === 'string' &&
-    MKTG_SLIDES_EXPORT_SHA256_REGEX.test(value['contentSha256']) &&
     (MKTG_SLIDES_EXPORT_MODES as readonly unknown[]).includes(value['mode']) &&
     isMktgSlidesExportDriveId(value['deckId']) &&
     value['link'] === mktgSlidesExportDeckLink(value['deckId']) &&
@@ -344,6 +345,20 @@ export function isMktgSlidesExportRecord(value: unknown): value is MktgSlidesExp
     typeof value['exportedAt'] === 'string' &&
     ISO_DATE_TIME.test(value['exportedAt']) &&
     typeof value['agentVersion'] === 'string'
+  );
+}
+
+/** Whether a stored value has every field of a document export record. */
+export function isMktgSlidesExportRecord(value: unknown): value is MktgSlidesExportRecord {
+  if (!isMktgSlidesExportDeckRecord(value) || !isRecord(value)) return false;
+  return (
+    value['schema'] === MKTG_SLIDES_EXPORT_RECORD_SCHEMA &&
+    isMktgSlidesExportAgentKey(value['agentKey']) &&
+    isText(value['documentId']) &&
+    isText(value['revisionId']) &&
+    isCount(value['revisionNumber'], 1) &&
+    typeof value['contentSha256'] === 'string' &&
+    MKTG_SLIDES_EXPORT_SHA256_REGEX.test(value['contentSha256'])
   );
 }
 

@@ -3,24 +3,21 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   <div class="mb-8">
-    <div class="mb-6">
-      <div class="flex justify-between items-center w-full gap-4">
-        <h1 class="font-display font-light text-2xl">Newsletters</h1>
-        <lfx-button
-          icon="fa-light fa-paper-plane"
-          severity="info"
-          label="Create Newsletter"
-          size="small"
-          (onClick)="goToCreate()"
-          data-testid="newsletter-create-button">
-        </lfx-button>
-      </div>
-      <p class="mt-1 text-sm text-gray-500">Send important updates to your groups and see how past newsletters performed.</p>
-    </div>
+    <lfx-page-header class="mb-6" title="Newsletters" description="Send important updates to your groups and see how past newsletters performed.">
+      <lfx-button
+        pageHeaderActions
+        icon="fa-light fa-paper-plane"
+        severity="info"
+        label="Create Newsletter"
+        size="small"
+        (onClick)="goToCreate()"
+        data-testid="newsletter-create-button">
+      </lfx-button>
+    </lfx-page-header>
 
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="newsletter-list-card">
       <lfx-card-tabs-bar
-        [options]="statusTabOptions"
+        [options]="statusTabOptions()"
         [selectedFilter]="statusTab()"
         (filterChange)="onStatusTabChange($event)"
         data-testid="newsletter-status-tabs">

@@ -181,17 +181,34 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
   });
 
   it('keys the shared page cache on every query dimension, after clamping', async () => {
-    await service.getPage(req, 's', { ...baseQuery, search: 'syn', tier: 'Gold', pageSize: 10_000, offset: -5 });
+    await service.getPage(req, 's', { ...baseQuery, search: 'syn', tier: 'Gold', contribution: 'not_contributing', pageSize: 10_000, offset: -5 });
     expect(withCache).toHaveBeenLastCalledWith(
       's',
       'page',
-      ['12mo', 'all', 'syn', 'Gold', 'commits', 'desc', PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, 0],
+      ['12mo', 'all', 'syn', 'Gold', 'not_contributing', 'commits', 'desc', PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, 0],
       expect.any(Function),
       expect.any(Function)
     );
 
     await service.getPage(req, 's', baseQuery);
-    expect(withCache).toHaveBeenLastCalledWith('s', 'page', ['12mo', 'all', '', '', 'commits', 'desc', 25, 0], expect.any(Function), expect.any(Function));
+    expect(withCache).toHaveBeenLastCalledWith(
+      's',
+      'page',
+      ['12mo', 'all', '', '', 'all', 'commits', 'desc', 25, 0],
+      expect.any(Function),
+      expect.any(Function)
+    );
+  });
+
+  it.each([
+    ['contributing', '(commits > 0 OR contributors > 0)'],
+    ['not_contributing', 'commits = 0 AND contributors = 0'],
+  ] as const)('filters %s companies on the modeled activity counts, without extra binds', async (contribution, predicate) => {
+    await service.getPage(req, 's', { ...baseQuery, contribution });
+    const [sql, binds] = lastCall();
+    expect(sql).toContain(predicate);
+    expect(binds).toEqual(['s', '12mo']);
+    expect(placeholders(sql)).toBe(binds.length);
   });
 });
 
@@ -268,6 +285,7 @@ describe('ProjectParticipatingOrgsService.getSummary', () => {
           AS_OF_DATE: new Date(Date.UTC(2026, 9, 1)),
           ORGS_COUNT: 10,
           MEMBERS_COUNT: 4,
+          CONTRIBUTING_MEMBERS_COUNT: 4,
           NON_MEMBERS_COUNT: 6,
           UNIDENTIFIED_COUNT: 2,
           MEMBER_COMMITS: 0,
@@ -286,6 +304,7 @@ describe('ProjectParticipatingOrgsService.getSummary', () => {
       asOfDate: '2026-10-01',
       orgsCount: 10,
       membersCount: 4,
+      contributingMembersCount: 4,
       nonMembersCount: 6,
       unidentifiedCount: 2,
       memberCommits: 0,

@@ -236,9 +236,18 @@ describe('EventsPastEventsComponent', () => {
     expect(lifecycle).toEqual(['reading']);
   });
 
-  it('cross-links back to the forecast', async () => {
+  it('captions the table order as most recent first', async () => {
     await render();
 
+    expect(query('events-past-events-order')?.textContent?.trim()).toBe('most recent first');
+  });
+
+  it('cross-links back to the forecast mid-sentence in the footnote', async () => {
+    await render();
+
+    expect(query('events-past-events-footnote')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'a past event is a result. See the registration forecast → for what is still open.'
+    );
     query('events-past-events-forecast-link')?.click();
 
     expect(picked).toEqual(['forecast']);

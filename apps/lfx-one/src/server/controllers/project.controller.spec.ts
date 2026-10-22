@@ -961,6 +961,49 @@ function buildPermissionsReqRes(uid: string, username: string, body: unknown = {
   return { req, res, next };
 }
 
+describe('ProjectController permissions role validation', () => {
+  const EMAIL = 'blair.chen@vendor-corp.example';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("addUserToProjectPermissions accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+
+    await controller.addUserToProjectPermissions(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'add', EMAIL, role, undefined);
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("updateUserPermissionRole accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', role, undefined, undefined);
+  });
+
+  it.each([['owner'], ['none'], [1]])('rejects role %j on add and update without calling the service', async (role) => {
+    const controller = new ProjectController();
+    const add = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+    const update = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.addUserToProjectPermissions(add.req, add.res, add.next);
+    await controller.updateUserPermissionRole(update.req, update.res, update.next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(add.next).toHaveBeenCalledTimes(1);
+    expect(update.next).toHaveBeenCalledTimes(1);
+  });
+});
+
 // GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
 // unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
 // write as the primary identifier, instead of a second non-atomic client call (Copilot

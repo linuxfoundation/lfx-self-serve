@@ -35,6 +35,7 @@ import { AkritesAssignStewardModalComponent } from '../components/akrites-assign
 import { AkritesOverviewTabComponent } from '../components/akrites-overview-tab/akrites-overview-tab.component';
 import { AkritesTriageTabComponent } from '../components/akrites-triage-tab/akrites-triage-tab.component';
 import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix-tab/akrites-risk-matrix-tab.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-akrites-dashboard',
@@ -46,6 +47,7 @@ import { AkritesRiskMatrixTabComponent } from '../components/akrites-risk-matrix
     AkritesOverviewTabComponent,
     AkritesTriageTabComponent,
     AkritesRiskMatrixTabComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './akrites-dashboard.component.html',
 })

@@ -7,7 +7,29 @@ import { authGuard } from '@shared/guards/auth.guard';
 export const MKTG_OS_AGENTS_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./mktg-os-agents/mktg-os-agents.component').then((m) => m.MktgOsAgentsComponent),
+    pathMatch: 'full',
+    title: 'Marketing kit',
+    loadComponent: () => import('./mktg-kit/mktg-kit.component').then((m) => m.MktgKitComponent),
+    canActivate: [authGuard],
+  },
+  {
+    // The Agents tab is gone: agents are reached from their Kit family. Old links land on the Kit.
+    path: 'agents',
+    redirectTo: '',
+    pathMatch: 'full',
+  },
+  {
+    path: 'requests',
+    title: 'Marketing requests',
+    data: { title: 'Requests' },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'access',
+    title: 'Marketing access',
+    data: { title: 'Access' },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
     canActivate: [authGuard],
   },
   {
@@ -23,6 +45,18 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     path: 'documents/:agentKey/:documentId',
     title: 'Document',
     loadComponent: () => import('./mktg-document-view/mktg-document-view.component').then((m) => m.MktgDocumentViewComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'families/:familyId',
+    title: 'Marketing family',
+    loadComponent: () => import('./mktg-family/mktg-family.component').then((m) => m.MktgFamilyComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'member-360',
+    title: 'Member 360',
+    loadComponent: () => import('./member-360-run/member-360-run.component').then((m) => m.Member360RunComponent),
     canActivate: [authGuard],
   },
   {

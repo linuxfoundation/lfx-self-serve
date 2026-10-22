@@ -48,6 +48,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
     },
     {
+      name: 'getEngagementAttendanceTrend',
+      url: '/api/analytics/engagement-attendance-trend',
+      // No months renders "no meeting attendance in the last twelve months", which a swallowed failure would fake.
+      call: () => service.getEngagementAttendanceTrend({ foundationSlug: 'aaif', projectSlug: null }),
+    },
+    {
       name: 'getEngagementOrgParticipation',
       url: '/api/analytics/engagement-org-participation',
       // An empty table renders "no organizations", which would state a failed read as measured fact.

@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, PLATFORM_ID, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
+import { CommitteeMemberVotingStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -37,6 +38,7 @@ describe('VoteManageComponent', () => {
   let fetchVote: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
+  let getCommittee: ReturnType<typeof vi.fn>;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
@@ -50,6 +52,7 @@ describe('VoteManageComponent', () => {
     confirmSpeculativeVote: ReturnType<typeof vi.fn>;
     discardSpeculativeVote: ReturnType<typeof vi.fn>;
     markVoteOpened: ReturnType<typeof vi.fn>;
+    markVoteCreated: ReturnType<typeof vi.fn>;
   };
 
   // Mutable route double — edit mode by default; create-mode tests call setRouteMode(null) before
@@ -111,6 +114,7 @@ describe('VoteManageComponent', () => {
     messageAdd = vi.fn();
     // Committee leg grants write access by default so the eviction predicate stays quiet.
     fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
+    getCommittee = vi.fn().mockReturnValue(of(null));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
     setRouteMode(VOTE_UID);
     activeContext.set(null);
@@ -126,6 +130,7 @@ describe('VoteManageComponent', () => {
       confirmSpeculativeVote: vi.fn().mockReturnValue(of({ vote: unenrichedVote(), opened: true })),
       discardSpeculativeVote: vi.fn(),
       markVoteOpened: vi.fn(),
+      markVoteCreated: vi.fn(),
     };
 
     TestBed.configureTestingModule({
@@ -165,7 +170,7 @@ describe('VoteManageComponent', () => {
         {
           provide: CommitteeService,
           useValue: {
-            getCommittee: vi.fn().mockReturnValue(of(null)),
+            getCommittee,
             fetchCommittee,
           },
         },
@@ -310,7 +315,7 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
     });
 
-    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened', async () => {
+    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened/created', async () => {
       const router = TestBed.inject(Router);
       const fixture = await submitFromValidForm();
 
@@ -321,8 +326,10 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
       expect(fixture.componentInstance.submitting()).toBe(false);
-      // markVoteOpened moved into the service's confirm chain (it must survive navigation).
+      // markVoteOpened and markVoteCreated both moved into the service's confirm chain (GH-4007
+      // round 2: marking from the component's own subscriber drops the carrier on fast navigation).
       expect(voteServiceMock.markVoteOpened).not.toHaveBeenCalled();
+      expect(voteServiceMock.markVoteCreated).not.toHaveBeenCalled();
       expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
     });
 
@@ -420,5 +427,625 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
     });
+  });
+
+  // GH-3660: cloning opens the create form prefilled from a source vote, via ?clone=<uid>.
+  describe('clone flow (?clone=<uid>)', () => {
+    const CLONE_SOURCE_UID = 'vote-uid-source';
+
+    const sourceVote = (overrides: Partial<Vote> = {}): Vote => ({
+      uid: CLONE_SOURCE_UID,
+      name: 'Original board election',
+      status: PollStatus.ACTIVE,
+      project_uid: PROJECT_UID,
+      end_time: '2099-01-01T00:00:00Z',
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode — clone only applies without an :id route param
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      // cloneSourceVote feeds syncEntityProjectContextFallback, which calls getProject(...).pipe(...)
+      // once the clone fetch resolves — give it an Observable default so fixtures that don't care
+      // about project-access resolution don't throw on the outer beforeEach's bare vi.fn(). The
+      // project-access test below overrides this with its own resolved value.
+      getProject.mockReturnValue(of(null));
+    });
+
+    it('prefills the create form with the source vote, prefixing the title, and stays in create mode, without creating a vote', async () => {
+      fetchVote.mockReturnValue(
+        of(
+          sourceVote({
+            committee_uid: COMMITTEE_UID,
+            committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+            poll_questions: [
+              {
+                question_id: 'q1',
+                prompt: 'Who should join?',
+                type: 'single_choice',
+                choices: [
+                  { choice_id: 'c1', choice_text: 'Alice' },
+                  { choice_id: 'c2', choice_text: 'Bob' },
+                ],
+              },
+            ],
+            poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Any concerns?' }],
+          })
+        )
+      );
+      const fixture = await createComponent();
+
+      // Uses the tap-free fetch — getVote's signal write would leak the source vote into shared vote-detail state.
+      expect(voteServiceMock.fetchVote).toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      expect(voteServiceMock.getVote).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.mode()).toBe('create');
+
+      const form = fixture.componentInstance.form();
+      expect(form.get('title')?.value).toBe('Copy of Original board election');
+      expect(form.get('committee')?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(form.get('eligible_participants')?.value).toBe('voting_rep,alternate_voting_rep');
+      expect((form.get('questions') as FormArray).length).toBe(1);
+      expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
+      expect((form.get('commentPrompts') as FormArray).length).toBe(1);
+      expect((form.get('commentPrompts') as FormArray).at(0).get('prompt')?.value).toBe('Any concerns?');
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+    });
+
+    it('does not fetch a clone source when an :id route param is present (edit mode)', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(enrichedVote()));
+      await createComponent();
+
+      expect(voteServiceMock.fetchVote).not.toHaveBeenCalledWith(CLONE_SOURCE_UID);
+    });
+
+    it('surfaces an error and leaves the form blank when the clone source fails to load', async () => {
+      fetchVote.mockReturnValue(throwError(() => new Error('not found')));
+      const fixture = await createComponent();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+    });
+
+    it('leaves the clone prefill in control when both ?clone and ?committee_uid are present (committee_uid is ignored)', async () => {
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'other-committee-uid' }));
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      // initCommitteeContext (the ?committee_uid lock) reads via getCommittee — assert it's never
+      // called and that committeeContext (the signal that actually gates the locked committee card)
+      // stays null, not just that the form control carries the clone's own value.
+      getCommittee.mockReturnValue(of({ uid: 'other-committee-uid', name: 'Other Committee' }));
+      const fixture = await createComponent();
+
+      expect(getCommittee).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.committeeContext()).toBeNull();
+      const committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(committeeControl?.disabled).toBe(false);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): a clone's own project_uid is untrusted until the entity-
+    // context sync has actually retargeted activeContext to match it — writeAccess in create mode follows
+    // activeContext, so submitting straight off cloneSourceVote().project_uid could land in a project
+    // writeAccess never admitted. Once sync has converged (activeContext === the clone's project), both
+    // signals agree and submission proceeds normally.
+    it("submits using the cloned source vote's own project_uid once the active context has synced to it", async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      // Simulates syncEntityProjectContextFallback already having retargeted activeContext to the
+      // clone's project (the converged, authorized state) before the organizer finishes the form.
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
+    });
+
+    // GH-4007: a cloned vote previously went missing from the votes list until a manual page
+    // reload, because the search index hadn't caught up yet. Clone shares submitVote()'s create
+    // path exactly, so confirming creation marks the new vote the same way a plain create does —
+    // now inside the service's own confirm chain (see vote.service.spec.ts), so this component test
+    // only needs to verify the clone flow reaches confirmSpeculativeVote, not the marking itself.
+    it('reaches confirmSpeculativeVote for the cloned vote so it gets marked created the same way a plain create does (GH-4007)', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      const createdVote = { uid: 'new-cloned-vote-uid', project_uid: SOURCE_PROJECT_UID } as unknown as Vote;
+      voteServiceMock.confirmSpeculativeVote.mockReturnValue(of({ vote: createdVote, opened: true }));
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      let capturedConfirmation: Confirmation | null = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+      (capturedConfirmation as Confirmation | null)?.accept?.();
+
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledTimes(1);
+      expect(fixture.componentInstance.submitting()).toBe(false);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own
+    // project over the one writeAccess actually authorized — e.g. the clone's project_slug is missing so
+    // entity-context sync never retargeted activeContext. Submitting with cloneSourceVote's project here
+    // would bypass the write-access check entirely, since the voting service doesn't re-authorize project_uid.
+    it('blocks submission instead of trusting an unsynced clone project that diverges from the active context', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Viewer Active Project' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      let capturedConfirmation: Confirmation | null = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      // projectUid resolves to null at dialog-open too (same divergence), so no speculative create fires.
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+
+      // Accepting the dialog still routes through submitVote()'s own resolution — surface the error there.
+      (capturedConfirmation as Confirmation | null)?.accept?.();
+
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No project selected' }));
+    });
+
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uNsR8, dealako): resolveAuthorizedProjectUid() fails
+    // closed on a pending (not just a denied) write-access leg — pin it directly rather than only
+    // through the eviction tests, which exercise the optimistic leg, not the strict one this gate
+    // actually reads.
+    it('blocks submission while project write access is still pending on a clone', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(new Subject<{ uid: string; writer: boolean } | null>().asObservable());
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      // getProject never resolves — projectAccess stays pending (undefined), so the strict
+      // resolvedWriteAccess() must stay false even though the clone's project matches activeContext.
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uNuyT, cursor "Clone submit trusts unrelated committee
+    // grant"; PRRT_kwDOPMiRQ86uOJtD / PRRT_kwDOPMiRQ86uOLVe, greptile/copilot "Committee writers
+    // cannot clone"): the committee leg of write access previously still resolved off
+    // ?committee_uid= even while cloning, so a caller who happened to be a writer on some unrelated
+    // committee (e.g. a stale or unrelated ?committee_uid= left over from navigation) could satisfy
+    // resolvedWriteAccess() and have resolveAuthorizedProjectUid() hand back the clone's own
+    // (unsynced, unauthorized) project_uid. Pins the fix: committeeCandidate$ swaps the URL uid for
+    // the loaded SOURCE's own committee_uid while cloning — never an unrelated ?committee_uid= — so
+    // the committee leg can vouch only for the committee the clone actually belongs to.
+    it('does not authorize an unsynced clone project off write access to an unrelated committee', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      // Sync never converged (e.g. the clone source lacks project_slug) — activeContext stays null,
+      // so the project leg resolves false.
+      activeContext.set(null);
+      getProject.mockReturnValue(of(null));
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'unrelated-committee-uid' }));
+      // The caller IS a writer on the URL's unrelated committee but NOT on the source vote's own
+      // committee (COMMITTEE_UID) — if the committee leg still consulted the URL's uid while cloning,
+      // resolvedWriteAccess() would wrongly resolve true.
+      fetchCommittee.mockImplementation((uid: string) => of({ uid, writer: uid === 'unrelated-committee-uid' }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(fetchCommittee).not.toHaveBeenCalledWith('unrelated-committee-uid');
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uOJtD / PRRT_kwDOPMiRQ86uOLVe, greptile/copilot
+    // "Committee writers cannot clone"): an organizer with writer:true on the source vote's OWN
+    // committee but writer:false on its project can still enter the clone flow through writerGuard's
+    // committee leg. Folding committeeCandidate$ to null entirely while cloning (the round-4 fix's
+    // first pass) would have denied both legs and blocked submission for this organizer. Pins the fix:
+    // committeeCandidate$ swaps in the loaded source's own committee_uid, so this organizer's existing
+    // committee grant still authorizes the clone.
+    it('allows submission for a committee-only writer cloning a vote owned by their own committee', async () => {
+      // Not a writer on the project — only the committee grant can authorize this clone.
+      activeContext.set({ uid: PROJECT_UID, slug: 'project-a', name: 'Project A' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: false }));
+      fetchCommittee.mockImplementation((uid: string) => of({ uid, writer: uid === COMMITTEE_UID }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(fetchCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalled();
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
+    // (initCloneFromQuery's `this.form().disable()` / `.enable()` pair) so a slow fetch can't let
+    // the organizer type into a form about to be overwritten by the prefill. This is the only test
+    // in this file that drives `fetchVote` through a deferred `Subject` to actually observe that
+    // disable/enable pair mid-flight; deleting the pair would turn it red.
+    it('disables the form while the clone source is in flight and re-enables it once prefilled', async () => {
+      const clone$ = new Subject<Vote>();
+      fetchVote.mockReturnValue(clone$.asObservable());
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().disabled).toBe(true);
+
+      clone$.next(sourceVote({ committee_uid: COMMITTEE_UID }));
+      clone$.complete();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tqj1g): the rail's Create Vote dialog navigates within this
+    // same `create` route (e.g. ?project=A&clone=X -> ?project=B) without a full reload, and
+    // Angular's default RouteReuseStrategy reuses this component instance rather than reconstructing
+    // it. A one-shot (`take(1)`) clone read would leave cloneSourceVote — and every submission path's
+    // project-uid resolution — pinned to project A's clone forever. Pins the reactive fix: removing
+    // ?clone on a reused instance clears the stale source and form, so submission uses the current
+    // project instead of the old clone's.
+    it('clears the stale clone source and form state when the component is reused for a project with no ?clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+
+      // Reused for project B's create flow — the dialog dropped ?clone entirely.
+      const PROJECT_B_UID = 'project-uid-b';
+      activeContext.set({ uid: PROJECT_B_UID, slug: 'project-b', name: 'Project B' });
+      getProject.mockReturnValue(of({ uid: PROJECT_B_UID, writer: true }));
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A brand new vote for project B');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: PROJECT_B_UID });
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tqxLp / tqxLw / tqx6M / tqyZn, 4 bots): clearing ?clone replaced
+    // the FormGroup via form.set(...), but `formValue` was a one-time toSignal pinned to the discarded
+    // group's valueChanges, so canGoNext/isDraftSavable never saw edits to the replacement form, and
+    // `internalStep` was never reset — an organizer who had advanced past Basics on the clone stayed
+    // stranded on that step with a blank form. Drives Step 1 through nextStep() (not onSubmit()
+    // directly) so a regression that only breaks Next, not submit, would still fail this test.
+    it('keeps Next reactive and resets the step when the component is reused for a project with no ?clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID, committee_filters: [CommitteeMemberVotingStatus.VOTING_REP] })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      // Finish Step 1 on the clone (the prefill alone doesn't guarantee every validator passes) and advance.
+      const cloneForm = fixture.componentInstance.form();
+      cloneForm.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      cloneForm.get('close_time')?.setValue('11:59 PM');
+      cloneForm.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+
+      // Reused for project B's create flow — the dialog dropped ?clone entirely.
+      const PROJECT_B_UID = 'project-uid-b';
+      activeContext.set({ uid: PROJECT_B_UID, slug: 'project-b', name: 'Project B' });
+      getProject.mockReturnValue(of({ uid: PROJECT_B_UID, writer: true }));
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+      expect(fixture.componentInstance.canGoNext()).toBe(false);
+
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A brand new vote for project B');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      form.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tt0g5, copilot): switching ?clone=X -> ?clone=Y on a reused
+    // component didn't clear X's form/cloneSourceVote before fetching Y. If Y fails to load (this test)
+    // or is rejected as unsupported, the callback just re-enabled X's form, leaving the stale clone's
+    // data in place under a URL that now names Y. Pins the fix: the switch clears state up front, so a
+    // failed replacement leaves a blank form instead of X's.
+    it('clears the previous clone source instead of re-enabling it when switching to a replacement clone that fails to load', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+
+      const REPLACEMENT_CLONE_UID = 'vote-uid-replacement';
+      fetchVote.mockReturnValue(throwError(() => new Error('not found')));
+      queryParams$.next(convertToParamMap({ clone: REPLACEMENT_CLONE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86t1wKG, copilot): clone X, use the rail to start a regular vote
+    // (cloneSourceVote goes null, but the form/step keep advancing normally), then browser-Back into
+    // ?clone=X. The removal branch only resets on exit when cloneSourceVote() was truthy, and the old
+    // entry branch mirrored that same guard — so entering a clone while cloneSourceVote() is already
+    // null left the regular vote's valid, step-2 form sitting enabled while X's slow/failing fetch was
+    // in flight, letting onSubmit() fire with the stale payload. Pins the fix: entering a clone resets
+    // unconditionally, regardless of whether a clone was previously active.
+    it('clears a regular-create form in progress when navigating back into a clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      const fixture = await createComponent();
+
+      // Regular create flow (no ?clone=): advance past Step 1 with a valid, in-progress form.
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A regular vote in progress');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      form.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+
+      // Browser Back into ?clone=X — fetch is slow/pending.
+      const clone$ = new Subject<ReturnType<typeof sourceVote>>();
+      fetchVote.mockReturnValue(clone$.asObservable());
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(true);
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86uAPFS, dealako): the poll-type/pseudo-anonymity guard is the
+    // only thing standing between a ranked-choice/anonymous election and a silent plurality
+    // re-creation — pin it so a refactor of this subscribe can't silently drop it.
+    it.each([
+      ['a non-generic poll type', sourceVote({ poll_type: PollType.CONDORCET_IRV })],
+      ['a pseudo-anonymous source', sourceVote({ pseudo_anonymity: true })],
+    ])('refuses to clone %s: warns and leaves the form blank and enabled', async (_label, unsupportedSource) => {
+      fetchVote.mockReturnValue(of(unsupportedSource));
+      const fixture = await createComponent();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
+    // #4075: majority is not in isRankedPollType's allowlist, so it's exactly as representable by
+    // this plain (non-ranked, non-anonymous) form as a generic poll — it must remain clonable.
+    it('clones a majority-poll-type source successfully: no warning, form patched', async () => {
+      fetchVote.mockReturnValue(of(sourceVote({ poll_type: PollType.MAJORITY, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako; pins the uAPFY/vote.utils.ts SSR fix):
+    // cloning an ended vote resets its deadline through getUserTimezone() unless running on the
+    // server, matching every other getUserTimezone() call site's isPlatformBrowser guard. Pins that
+    // an SSR render (PLATFORM_ID: 'server') resolves the reset timezone to 'UTC' instead of calling
+    // getUserTimezone(), which would otherwise diverge from the client's hydrated render.
+    it('resets an ended clone source deadline to UTC during SSR instead of calling getUserTimezone()', async () => {
+      TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: 'server' }] });
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID, end_time: '2000-01-01T00:00:00Z' })));
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().get('timezone')?.value).toBe('UTC');
+    });
+  });
+
+  describe('committee context (?committee_uid=<uid>) reuse', () => {
+    beforeEach(() => {
+      setRouteMode(null); // create mode — committee_uid lock only applies on the create route
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako): initCommitteeContext reacts to the
+    // live committee_uid query param (not a one-shot take(1) read) so the rail's Create Vote dialog
+    // can retarget a reused instance from one group to another without a full reload. Pins that a
+    // plain committee_uid A -> B transition re-locks the form to B, rather than leaving it stuck on
+    // A's lock or unlocked.
+    it('re-locks the committee field to the newly selected group on a committee_uid A -> B transition', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      const COMMITTEE_A_UID = 'committee-uid-a';
+      const COMMITTEE_B_UID = 'committee-uid-b';
+      getCommittee.mockImplementation((uid: string) =>
+        of(uid === COMMITTEE_A_UID ? { uid: COMMITTEE_A_UID, name: 'Committee A' } : { uid: COMMITTEE_B_UID, name: 'Committee B' })
+      );
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_A_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.committeeContext()?.uid).toBe(COMMITTEE_A_UID);
+      let committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_A_UID, name: 'Committee A' });
+      expect(committeeControl?.disabled).toBe(true);
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_B_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.committeeContext()?.uid).toBe(COMMITTEE_B_UID);
+      committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_B_UID, name: 'Committee B' });
+      expect(committeeControl?.disabled).toBe(true);
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywA, copilot; PRRT_kwDOPMiRQ86uDywE, dealako):
+    // resetOpenConfirmationIfPending now runs from both initCommitteeContext and initCloneFromQuery,
+    // so a committee_uid change (not just a ?clone change) tears down a stale open confirmation and
+    // its pending speculative vote instead of leaving them dangling against a form that's about to
+    // be relocked to a different group.
+    it('dismisses an open confirmation and discards its speculative vote when the committee_uid changes underneath it', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, name: 'Committee A' }));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const confirmationService = TestBed.inject(ConfirmationService);
+      const closeSpy = vi.spyOn(confirmationService, 'close');
+      fixture.componentInstance.confirmingOpenVote.set(true);
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.confirmingOpenVote()).toBe(false);
+      expect(closeSpy).toHaveBeenCalled();
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+    });
+  });
+
+  // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN, PRRT_kwDOPMiRQ86uAPFN dealako): pins the project leg's
+  // `startWith(undefined)` fix against the specific race it guards — not just "no eviction while
+  // switching" (true either way, since a stale *true* can never itself cause a wrongful eviction),
+  // but the case the inline comment calls out: project A resolves to a definite `false` while the
+  // committee leg is still pending (so overall access correctly stays provisional-true); a context
+  // switch to project B then leaves B's own fetch pending too. Without the `startWith(undefined)`,
+  // the project leg would keep exposing A's stale resolved `false` through the switch, and once the
+  // committee leg's pending fetch resolves to `false` in that window, the stale `false` + the now-
+  // resolved `false` would combine into an outright `false` — evicting an organizer who IS a writer
+  // on B, before B's own fetch has had any chance to resolve `true`.
+  it('does not evict on a stale denied leg while a project-context switch leaves the new key pending', async () => {
+    const PROJECT_B_UID = 'project-uid-b';
+    const PROJECT_B_SLUG = 'project-b';
+    setRouteMode(null); // create mode — projectKey$ is driven directly off activeContext
+    routeMock.queryParamMap = of(convertToParamMap({ committee_uid: COMMITTEE_UID })); // project leg alone resolving false must route through the committee leg
+    activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Project A' });
+    const projectBFetch$ = new Subject<{ uid: string; writer: boolean }>();
+    const committeeFetch$ = new Subject<{ uid: string; writer: boolean }>();
+    getProject.mockImplementation((key: string) => (key === PROJECT_SLUG ? of({ uid: PROJECT_UID, writer: false }) : projectBFetch$.asObservable()));
+    fetchCommittee.mockReturnValue(committeeFetch$.asObservable());
+    const router = TestBed.inject(Router);
+    await createComponent();
+
+    // Project A denied (resolved); committee leg still pending — combined access stays
+    // provisional-true while the committee check is in flight.
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    // The clone context sync re-targets activeContext to B mid-flight, before B's own write-access
+    // fetch has resolved.
+    activeContext.set({ uid: PROJECT_B_UID, slug: PROJECT_B_SLUG, name: 'Project B' });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    // The committee leg's pending fetch (still keyed to the original committee, untouched by the
+    // project switch) now resolves false. Without the project leg's `startWith(undefined)`, its
+    // stale `false` from A would combine with this to evict before B's own fetch ever runs.
+    committeeFetch$.next({ uid: COMMITTEE_UID, writer: false });
+    committeeFetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    // B's own fetch finally resolves — access is correctly granted directly via B's project leg.
+    projectBFetch$.next({ uid: PROJECT_B_UID, writer: true });
+    projectBFetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
   });
 });

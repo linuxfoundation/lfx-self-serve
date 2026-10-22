@@ -168,18 +168,23 @@ export class MentorshipMenteeService {
    * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
    * re-read their applications instead.
    *
-   * Upstream enforces no deadline, so a `submitted` request reads the task first and is refused with a 400
-   * (`TASK_PAST_DUE`) once the end of its due date's UTC day has passed. The due date resolves as it does on
-   * the page: the task's own `due_date`, else, for a prerequisite, its term's application close, read from the
-   * caller's applications because a task carries no term dates. A failed read propagates rather than skip the
-   * check.
+   * Upstream enforces no deadline, so the task is read first and the change is refused with a 400
+   * (`TASK_PAST_DUE`) once the end of its due date's UTC day has passed, when it is a submit or it reopens a
+   * submitted task, which could then never be submitted again. Starting a past-due pending task stays allowed.
+   * The due date resolves as it does on the page: the task's own `due_date`, else, for a prerequisite, its
+   * term's application close, read from the caller's applications because a task carries no term dates. A
+   * failed read propagates rather than skip the check.
    */
   public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
     const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
-    if (status === 'submitted') {
-      await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, 'mentorship_update_mentee_task_status');
-    }
+    await this.assertTaskNotPastDue(
+      req,
+      taskPath,
+      MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
+      'mentorship_update_mentee_task_status',
+      (task) => status === 'submitted' || task.status === 'submitted'
+    );
 
     const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
     await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/submission`, 'PATCH', undefined, body);
@@ -382,9 +387,17 @@ export class MentorshipMenteeService {
   /**
    * Reads the task and refuses the change with a 400 (`TASK_PAST_DUE`) once the end of its due date's UTC day has
    * passed. The due date resolves as it does on the page; a failed read propagates rather than skip the check.
+   * `applies` limits the check to the tasks it holds for; any other task passes once read.
    */
-  private async assertTaskNotPastDue(req: Request, taskPath: string, message: string, operation: string): Promise<void> {
+  private async assertTaskNotPastDue(
+    req: Request,
+    taskPath: string,
+    message: string,
+    operation: string,
+    applies: (task: MentorshipUpstreamTask) => boolean = () => true
+  ): Promise<void> {
     const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+    if (!applies(task)) return;
     const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
     if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
       throw new InvalidRequestError(message, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, { operation });

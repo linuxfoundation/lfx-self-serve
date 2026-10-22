@@ -49,15 +49,43 @@ test.describe('Org Lens EasyCLA — CLA manager question', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
   test.beforeEach(() => skipWithoutCredentials());
 
-  test('Yes assigns the viewer with only the signing project, then opens attestation', async ({ page }) => {
-    await openQuestion(page, (p) => fulfillJson(p, ASSIGN_ROUTE, { assigned: true }));
+  test('Yes configures the viewer as designee, then rests on Proceed with signing, which opens attestation', async ({ page }) => {
+    let answerAssign!: () => void;
+    const assignAnswered = new Promise<void>((resolve) => {
+      answerAssign = resolve;
+    });
+    // Held until the configuring state has been checked, so the test sees it rather than racing it.
+    await openQuestion(page, (p) =>
+      p.route(ASSIGN_ROUTE, async (route) => {
+        await assignAnswered;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ assigned: true }) });
+      })
+    );
     const assign = page.waitForRequest((request) => request.url().endsWith('/lens/cla-groups/designee') && request.method() === 'POST');
 
     await page.getByTestId('org-easycla-manager-question-yes').locator('button').click();
 
     // The address is the session's, so the body must not carry one a caller could swap.
     expect((await assign).postDataJSON()).toEqual({ projectSfid: NOT_STARTED.projects[0].projectSfid });
+    await expect(page.getByTestId('org-easycla-manager-question-configuring')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Configuring CLA Manager Settings…' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('org-easycla-manager-question-configuring')).toBeVisible();
+
+    answerAssign();
+
+    await expect(page.getByTestId('org-easycla-manager-question-dialog')).toHaveCount(0, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-attestation-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-designee-identified')).toContainText(
+      "You've been identified as the initial CLA Manager from your company for this project."
+    );
+    const proceed = page.getByTestId('org-easycla-detail-start-cla').locator('button');
+    await expect(proceed).toHaveText(/Proceed with signing/);
+
+    await proceed.click();
+
     await expect(page.getByTestId('org-easycla-attestation-dialog')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-manager-question-dialog')).toHaveCount(0);
   });
 
   test('a refused Yes keeps the viewer on the overview with Start still offered', async ({ page }) => {

@@ -41,6 +41,12 @@
       "require": "./dist/utils/index.js",
       "default": "./dist/utils/index.js"
     },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "require": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -72,6 +78,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "sanitize-html": "^2.17.4",
-    "tldts": "^7.0.5"
+    "tldts": "^7.0.5",
+    "zod": "4.1.13"
   }
 }

@@ -10,8 +10,10 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
@@ -100,8 +102,17 @@ export class EngagementMeetingParticipationComponent {
   // once per row per response instead of on every change-detection pass.
   protected readonly rowViews = computed<HealthMetricsEngagementParticipationRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return this.response().rows.map((row) => ({ row, period: selectHealthMetricsEngagementParticipationPeriod(row, range) }));
+    const rules = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES;
+    return this.response().rows.map((row) => ({
+      row,
+      period: selectHealthMetricsEngagementParticipationPeriod(row, range),
+      // Own keys only: a group named like an Object.prototype member must not pick up a non-rule.
+      attendanceRule: row.group !== null && Object.hasOwn(rules, row.group) ? rules[row.group] : HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+    }));
   });
+
+  /** Meetings mode's bar scale: the busiest type row, not the roll-up, so one row always fills the track. */
+  protected readonly maxTypeMeetings = computed(() => Math.max(0, ...this.rowViews().map((view) => view.period?.meetingsHeld ?? 0)));
 
   protected readonly attendanceMode = computed(() => this.mode() === 'attendance');
   protected readonly heroValue = computed(() => {

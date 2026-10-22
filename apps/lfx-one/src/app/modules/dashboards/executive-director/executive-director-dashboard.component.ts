@@ -10,6 +10,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -31,6 +32,7 @@ import { MarketingOverviewComponent } from './components/marketing-overview/mark
     SkeletonModule,
     DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './executive-director-dashboard.component.html',
 })

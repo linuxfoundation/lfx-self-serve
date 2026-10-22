@@ -10,14 +10,13 @@ import type { MktgAgent } from '../interfaces';
 export const MKTG_OS_AGENTS_LABEL = {
   /** Sidebar nav entry, placed directly under Documents. */
   nav: 'Marketing OS',
-  /** Marketplace landing page title. */
-  marketplaceTitle: 'LFX Marketing OS Marketplace',
-  /** Short description shown under the landing page title. */
-  marketplaceDescription: 'Run LFX marketing agents for your project.',
 } as const;
 
 /** Route segment (lens-prefixed at the route layer, e.g. /project/mktg-os-agents). */
 export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
+
+/** Shared family copy; the kit-family layer owns generalising the family model. */
+export const MKTG_FAMILY_SOCIAL_COMMUNITY = 'Social & community';
 
 // Marketing OS agent catalog — the single source of truth for the marketplace
 // grid and the form-first agent run pages. Only agents with BOTH a live Guild
@@ -31,7 +30,8 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 // `@handle` mention on text messages, and composes the Guild-resolvable
 // agent identifier as `<GUILD_WORKSPACE_OWNER>~<handle>` for the explicit
 // `agent_id` (the bare name is not a Guild identifier — it 404s).
-// `brand-kit` is live (Guild agent linux-foundation~brand-kit).
+// `brand-kit` is live (Guild agent linux-foundation~brand-kit), and so is `faq`
+// (linux-foundation~faq).
 export const MKTG_AGENTS: MktgAgent[] = [
   // Live Guild agent (linux-foundation~foundation-message), the Messaging
   // Framework Agent since 4.0.0 (messaging-framework-output/v1: one JSON
@@ -84,6 +84,23 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'amber',
     guildAgentHandle: 'boilerplates',
   },
+  // Live Guild agent (linux-foundation~faq 1.0.0, faq-output/v1): one JSON
+  // FAQ, grouped questions each answered from the sources or flagged for the
+  // team. It runs after the messaging framework: the project's latest stored
+  // framework is a REQUIRED attachment on its intake (never `dependsOn`, so
+  // the card stays open and the page itself says to run the framework first).
+  {
+    id: 'faq',
+    number: 4,
+    name: 'FAQ Agent',
+    tags: ['FAQ', 'Messaging'],
+    status: 'active',
+    description:
+      'Eight to ten questions people ask about the project, in three or four groups, each answered in one to three sentences from your sources and worded from your messaging framework, every answer naming its source. A question the sources do not answer is flagged for your team.',
+    icon: 'fa-light fa-circle-question',
+    accent: 'amber',
+    guildAgentHandle: 'faq',
+  },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
   // Brand Kit and the Messaging Framework, but only when the project has them:
@@ -94,7 +111,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   // the agent does not require would lock out projects it can serve today.
   {
     id: 'icp',
-    number: 4,
+    number: 5,
     name: 'ICP & Target Markets Agent',
     tags: ['Personas', 'Research'],
     status: 'active',
@@ -106,7 +123,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'pitch-deck',
-    number: 5,
+    number: 6,
     name: 'Pitch Deck Agent',
     tags: ['Slides', 'Narrative'],
     status: 'coming-soon',
@@ -116,7 +133,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'qtrly-plan',
-    number: 6,
+    number: 7,
     name: 'Quarterly Plan Agent',
     tags: ['Planning'],
     status: 'coming-soon',
@@ -126,17 +143,18 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'linkedin-post',
-    number: 7,
+    number: 8,
     name: 'LinkedIn Post Agent',
     tags: ['Social', 'Copy'],
-    status: 'coming-soon',
-    description: 'Writes LinkedIn post drafts in your project voice from releases, events, and news.',
+    status: 'active',
+    guildAgentHandle: 'linkedin-post',
+    description: 'Writes three LinkedIn post options in your personal voice from pasted text, a link or a file.',
     icon: 'fa-light fa-bullhorn',
     accent: 'blue',
   },
   {
     id: 'website-builder',
-    number: 8,
+    number: 9,
     name: 'Website Builder Agent',
     tags: ['Web'],
     status: 'coming-soon',
@@ -146,12 +164,24 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'aeo-geo',
-    number: 9,
+    number: 10,
     name: 'AEO / GEO Agent',
     tags: ['Search', 'AI visibility'],
     status: 'coming-soon',
     description: 'Audits and improves how AI assistants and search engines describe your project.',
     icon: 'fa-light fa-chart-line',
     accent: 'emerald',
+  },
+  {
+    id: 'member-360',
+    number: 9,
+    name: 'Member 360 Agent',
+    tags: ['Members', 'Engagement'],
+    status: 'active',
+    description: 'Scores member engagement, finds the gaps and recommends one next action per member.',
+    icon: 'fa-light fa-users',
+    accent: 'blue',
+    guildAgentHandle: 'member-360',
+    formOnly: true,
   },
 ];

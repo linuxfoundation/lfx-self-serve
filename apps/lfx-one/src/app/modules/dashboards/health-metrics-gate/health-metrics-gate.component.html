@@ -2,27 +2,27 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (overviewEnabled()) {
-  <div class="flex flex-col p-6" data-testid="health-metrics-page">
+  <!-- The same wrapper and header type as the other foundation pages (Meetings, Events). -->
+  <div class="container mx-auto flex flex-col px-4 pb-6 sm:px-6 lg:px-8" data-testid="health-metrics-page">
     <!-- Stays pinned above the scrolling content at the wide layout, matching the design's `.stickyhead`
          (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
          tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
-         -mt-12/pt-12 cancel out the two ancestor top paddings above this element (main-layout's
-         router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
-         distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
-         first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
-         match the page surface; opaque so content scrolls under. Pinned below the fixed impersonation
-         banner while impersonating, so the banner doesn't cover it. -->
-    <header
+         -mt-6 cancels main-layout's `py-6` so the header has zero distance to travel before it locks, and
+         pt-6 restores that 1.5rem, so the title sits where every other page's header does.
+         Page-colored and opaque so content scrolls under; pinned below the impersonation banner. -->
+    <div
       #pageHeader
-      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12"
-      [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-col gap-1">
-          <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
-          <p class="text-sm text-gray-500">A snapshot of foundation health across engagement, events, members, non-members, training, and code.</p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
+      data-testid="health-metrics-sticky-header"
+      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-6 lg:bg-gray-50 lg:pt-6"
+      [ngClass]="{ 'lg:top-[36px]': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
+      <!-- The design's `.phead`: title and controls share a row, the controls top-aligned to the title. The
+           16px control gap is the design's; the 14px root makes `gap-4` undershoot it. -->
+      <lfx-page-header
+        title="Health Metrics"
+        description="Operational health across your foundation."
+        titleTestId="health-metrics-title"
+        descriptionTestId="health-metrics-subtitle">
+        <div pageHeaderActions class="flex flex-wrap items-center gap-[16px]">
           <!-- Project drill-down pill (`.projsel`/`.pstrig`): live on tabs flagged `projectScoped`, inert
                elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty
                (unless a selection is kept); the menu checks the URL slug, not the list. After a failed load it keeps the selection and a click retries the list.
@@ -56,7 +56,8 @@
               <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
             </button>
           }
-          <p-popover #projectMenu (onShow)="projectMenuOpen.set(true)" (onHide)="projectMenuOpen.set(false)">
+          <!-- The panel renders into the body, so `contents` keeps the empty host out of the row's gaps. -->
+          <p-popover #projectMenu class="contents" (onShow)="projectMenuOpen.set(true)" (onHide)="projectMenuOpen.set(false)">
             <ul role="listbox" aria-label="Project" class="flex max-h-80 w-72 flex-col overflow-y-auto py-1" data-testid="health-metrics-project-menu">
               <li role="none">
                 <button
@@ -69,7 +70,7 @@
                   <i class="fa-light fa-diagram-project w-5 text-center text-gray-500" aria-hidden="true"></i>
                   <span class="flex-1 truncate font-medium">All projects</span>
                   @if (!chrome.selectedProjectSlug()) {
-                    <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                    <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
                   }
                 </button>
               </li>
@@ -90,7 +91,7 @@
                     >
                     <span class="min-w-0 flex-1 truncate" [title]="project.name">{{ project.name }}</span>
                     @if (project.slug === chrome.selectedProjectSlug()) {
-                      <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                      <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
                     }
                   </button>
                 </li>
@@ -121,26 +122,27 @@
             Export
           </button>
         </div>
-      </div>
+      </lfx-page-header>
 
       <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
            measured offset a tab's sub-nav pins below already accounts for the bar. -->
-      <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
+      <!-- The design's `.tab`: 16px either side of each label, the selected underline spanning the padded tab. -->
+      <nav class="-mb-px flex overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
         @for (tab of tabs; track tab.key) {
           <a
             [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
             queryParamsHandling="preserve"
-            routerLinkActive="!border-blue-600 !text-blue-700"
+            routerLinkActive="!border-blue-500 !text-blue-500"
             [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
             #rla="routerLinkActive"
             [attr.aria-current]="rla.isActive ? 'page' : null"
-            class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
+            class="border-b-2 border-transparent px-[16px] pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
             [attr.data-testid]="'health-metrics-tab-' + tab.key">
             {{ tab.label }}
           </a>
         }
       </nav>
-    </header>
+    </div>
 
     <router-outlet />
   </div>

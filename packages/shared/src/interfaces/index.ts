@@ -15,6 +15,7 @@ export * from './org-cache-compact.interface';
 
 // Member interfaces
 export * from './member.interface';
+export * from './member-import.interface';
 
 // Organization interfaces
 export * from './organization.interface';
@@ -261,6 +262,7 @@ export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-document-store.interface';
+export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
@@ -380,6 +382,7 @@ export * from './activity-event.internal.interface';
 // Committee member engagement/attendance rollup (LFXV2-1705)
 export * from './committee-engagement.interface';
 export * from './committee-engagement.internal.interface';
+export * from './health-metrics-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
@@ -395,6 +398,7 @@ export * from './boilerplates.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
+export * from './faq.interface';
 export * from './foundation-message.interface';
 export * from './icp.interface';
 
@@ -430,3 +434,10 @@ export * from './log-scrub.interface';
 
 // App navbar (sidebar v2)
 export * from './navbar.interface';
+export * from './mktg-asset.interface';
+export * from './mktg-kit.interface';
+export * from './mktg-rebuild.interface';
+export * from './mktg-breadcrumb.interface';
+export * from './linkedin-post.interface';
+export * from './member-360.interface';
+export * from './mktg-family-export.interface';

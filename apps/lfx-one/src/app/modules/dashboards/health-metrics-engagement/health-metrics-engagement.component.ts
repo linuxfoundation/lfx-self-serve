@@ -12,6 +12,7 @@ import { buildHealthMetricsEngagementSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { EngagementAttendanceTrendComponent } from './components/engagement-attendance-trend/engagement-attendance-trend.component';
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
 import { EngagementNonMemberParticipationComponent } from './components/engagement-non-member-participation/engagement-non-member-participation.component';
@@ -20,7 +21,7 @@ import { EngagementRepresentativesComponent } from './components/engagement-repr
 
 import type {
   HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSubNavItem,
@@ -34,6 +35,7 @@ import type {
 @Component({
   selector: 'lfx-health-metrics-engagement',
   imports: [
+    EngagementAttendanceTrendComponent,
     EngagementGroupAttendanceComponent,
     EngagementMeetingParticipationComponent,
     EngagementNonMemberParticipationComponent,
@@ -54,12 +56,13 @@ export class HealthMetricsEngagementComponent {
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
   protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
   protected readonly repCounts = signal<HealthMetricsEngagementRepPeriodCounts | null>(null);
-  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberCounts | null>(null);
+  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberPeriodCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({
       groups: this.groupCounts()?.groups ?? null,
       dormantGroups: this.groupCounts()?.dormantGroups ?? 0,
+      lowAttendanceGroups: this.groupCounts()?.lowAttendanceGroups ?? 0,
       orgs: this.orgCounts()?.orgs ?? null,
       lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
       reps: this.repCounts()?.reps ?? null,

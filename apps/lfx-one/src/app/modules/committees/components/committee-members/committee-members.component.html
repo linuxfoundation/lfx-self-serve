@@ -109,6 +109,16 @@
 
           @if (canManageMembers()) {
             <lfx-button
+              icon="fa-light fa-file-csv"
+              label="Import Members"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="membersLoading() || invitesLoading() || importSnapshotsLoading()"
+              (onClick)="openImportMembersDialog()"
+              data-testid="import-members-csv-btn">
+            </lfx-button>
+            <lfx-button
               icon="fa-light fa-user-plus"
               label="Add Member"
               size="small"

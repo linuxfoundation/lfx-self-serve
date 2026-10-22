@@ -124,6 +124,30 @@ describe('EventsSponsorshipComponent', () => {
     expect(text('events-sponsorship-tier-1-value')).toBe('10');
   });
 
+  it('draws the progress as a short bar with the bold percent beside it, under a vtitle', async () => {
+    await render();
+    const progress = query('events-sponsorship-progress');
+    const bar = progress?.querySelector('[role="progressbar"]');
+
+    expect(progress?.querySelector('h4')?.textContent?.trim()).toBe('Progress to goal');
+    expect(bar?.classList).toContain('w-[62px]');
+    expect(bar?.classList).toContain('h-[6px]');
+    expect(bar?.getAttribute('aria-valuenow')).toBe('75');
+    expect((bar?.firstElementChild as HTMLElement | null)?.style.width).toBe('75%');
+    expect(bar?.firstElementChild?.classList).toContain('bg-blue-500');
+    expect(query('events-sponsorship-progress-value')?.tagName).toBe('B');
+  });
+
+  it('shows the missing goal as an amber low-confidence banner with a decorative glyph', async () => {
+    await render(sponsorship([period({ goalUsd: null, progressToGoal: null })]));
+    const banner = query('events-sponsorship-no-goal');
+
+    expect(banner?.classList).toContain('bg-amber-50');
+    expect(banner?.classList).toContain('text-amber-700');
+    expect(banner?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
+    expect(text('events-sponsorship-no-goal')).toBe('◐ No sponsorship goal is set for this period, so no progress bar is shown.');
+  });
+
   it('re-projects a period change without re-reading, and shows the callout when no goal is set', async () => {
     await render();
     lifecycle = [];

@@ -4,6 +4,7 @@
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
 import type { MEETING_COMPOSER_SECTIONS, MEETING_REMOVAL_SOURCES, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS } from '../constants/public-live-meeting.constants';
 import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
@@ -1886,13 +1887,39 @@ export interface PublicPastMeetingResponse {
 }
 
 /**
+ * Anonymous/guest-access live meeting detail, projected through `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousLiveMeeting = Partial<Pick<Meeting, (typeof PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS)[number]>>;
+
+/**
+ * Response from the public live/upcoming meeting endpoint.
+ * @description Returns meeting details with tiered access — `full_access` indicates whether the
+ * caller has an authenticated session with real access to the meeting (organizer, invitee, or
+ * member), as opposed to an anonymous visitor or a guest who only has the shared password. A
+ * private meeting reached without `full_access` returns only the fields in
+ * `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS` (title + enough context to join as a guest) — no agenda,
+ * materials, or date/time. `can_join` is a server-computed substitute for the join-window check the
+ * client can no longer run itself once `start_time`/`early_join_time_minutes` are stripped from a
+ * non-full-access response — it reuses the same window the controller already enforces before
+ * issuing a join URL, so the client's Join button state matches what the server will actually allow.
+ */
+export interface PublicMeetingResponse {
+  meeting: Meeting | PublicAnonymousLiveMeeting;
+  project: PublicMeetingProject;
+  full_access: boolean;
+  can_join: boolean;
+}
+
+/**
  * SSR-serialized state for the meeting join page (GH-2041), following the same TransferState
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's
  * resolved branch so hydration keeps the SSR-rendered meeting on screen while the client
  * confirms it with its own fetch, instead of tearing it down for a blank/skeleton state until
- * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
- * because `MeetingJoinComponent.initializeMeeting()` sets them as side effects of the same
- * fetch — seeding the meeting alone would lose the past-meeting branch on hydration.
+ * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` / `liveMeetingFullAccess`
+ * are carried alongside `meeting` because `MeetingJoinComponent.initializeMeeting()` sets them as
+ * side effects of the same fetch — seeding the meeting alone would lose the past-meeting/full-access
+ * branch on hydration.
  * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
  * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
  * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
@@ -1901,6 +1928,8 @@ export interface MeetingJoinPageState {
   meeting: (Meeting & { project: PublicMeetingProject }) | null;
   loadedViaPastMeetingId: boolean;
   pastMeetingFullAccess: boolean;
+  liveMeetingFullAccess: boolean;
+  liveMeetingCanJoin: boolean;
   meetingLoadFailed: boolean;
 }
 
@@ -2276,24 +2305,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
-export interface CalendarLinkEvent {
-  title: string;
-  /** ISO start time. */
-  startIso: string;
-  durationMinutes: number;
-  description?: string;
-  joinUrl?: string;
-}
-
-/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
-export type MeetingCalendarScope = 'occurrence' | 'series';
-
-/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
-export interface VEventExtras {
-  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
-  description?: string;
-  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
-  joinUrl?: string;
-}

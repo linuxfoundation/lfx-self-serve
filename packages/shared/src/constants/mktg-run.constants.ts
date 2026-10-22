@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat } from '../interfaces';
 import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
+  BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
   BRAND_KIT_FIELD_KEYS,
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_LOGO_FILE_EXTENSIONS,
@@ -13,6 +14,17 @@ import {
   BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from './brand-kit.constants';
+import {
+  FAQ_ANSWERS_ENDPOINT,
+  FAQ_DEFAULT_DOCUMENT_KIND,
+  FAQ_DESCRIPTION_KEY,
+  FAQ_DOCUMENT_KIND_OPTIONS,
+  FAQ_FRAMEWORK_ANSWER_KEY,
+  FAQ_GITHUB_KEY,
+  FAQ_MAX_DOCUMENTS,
+  FAQ_NOTES_KEY,
+  FAQ_WEBSITE_KEY,
+} from './faq.constants';
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
@@ -50,27 +62,20 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  * typeface — each with a suggested answer, on the same run
  * (`endpoints.answers`).
  *
- * The kit runs AFTER the messaging framework (the plugin's run order:
- * messaging framework, then brand kit): the project's LATEST stored
- * messaging framework revision is attached automatically — the chip names
- * it with its version and date and links to the Messaging Framework page —
- * and its JSON always goes to the agent, whose Voice chapter comes from it.
- * The latest revision regardless of its review status (product decision,
- * 17 Oct 2026: LFX One has no Approve action yet, so an approved-only gate
- * could never open; Approve is a later item). A project with no framework
- * revision at all cannot run the agent: the Run button is disabled with
- * "Run the messaging framework first" and that link. Nor can one whose
- * latest revision carries no voice the agent can read (positioning and
- * tagline both still "tbd", or a restored revision without its sidecar):
- * the same rule the BFF validator applies, so Run is disabled with the
- * attachment's `incompleteNote` and that link instead of a 400 the user
- * could never retry out of. The attachment is required and server-only, so
- * no site-derived voice ever stands in. The agent itself (2.1.0) refuses a
- * run without a framework up front; that reply, should it ever come, is
- * shown as the run's outcome.
+ * The kit runs AFTER the messaging framework is approved: the project's
+ * approved current is attached automatically, with its version/date and a
+ * link to the Messaging Framework page. With none approved (including a
+ * stored but unapproved draft), Run is blocked with
+ * BRAND_KIT_APPROVAL_REQUIRED_MESSAGE and the link. An approved revision
+ * whose sidecar has no usable voice instead shows `incompleteNote`.
+ * The attachment comes from the server sidecar read, never a browser-stored
+ * run; its JSON supplies the Voice chapter. The generation endpoint still
+ * validates the JSON the browser sends, without re-checking approval.
+ * The agent itself refuses a run without a framework up front; that reply,
+ * should it ever come, is shown as the run's outcome.
  *
- * The result is a JSON kit, not a Markdown document: the run page renders it
- * with the kit's web view (an app page, one tab per chapter), which prints
+ * The result is a JSON kit, not a Markdown document: the document route renders
+ * it with the kit's web view (an app page, one tab per chapter), which prints
  * the reference kit's 16-page book with Download PDF. Every submission is a fresh generate
  * (`freshRunPerSubmission`); each result is stored as a new revision of the
  * project's Brand Kit document, whose Markdown rendering is what sibling
@@ -81,7 +86,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Brand Kit',
   intro:
-    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s latest Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
+    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s approved Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
@@ -131,9 +136,8 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
     fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
   },
-  // The messaging framework, required: the LATEST stored revision of the
-  // project's messaging framework document (approved or not — Approve is a
-  // later item), submitted as its JSON under the agent's own form key. Not
+  // The messaging framework, required: the project's approved current,
+  // submitted as its JSON under the agent's own form key. Not
   // in the catalog's `dependsOn` on purpose — the marketplace card stays
   // open and the intake page itself says what is needed, with the link to
   // the Messaging Framework page.
@@ -143,12 +147,12 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
       answerKey: BRAND_KIT_FRAMEWORK_ANSWER_KEY,
       documentName: 'Messaging Framework',
       format: 'json',
+      missingNote: BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
       incompleteNote: 'The messaging framework has no positioning or tagline yet — finish it first.',
     },
   ],
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   sections: BRAND_KIT_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
@@ -338,7 +342,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   assetView: 'messaging-framework',
   // The asset view shows the framework itself; there is no section checklist to tick.
   sections: [],
@@ -360,24 +363,17 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
  * project name from LFX, the website from LFX (its host is the domain the
  * 100-word version ends on: "Learn more at <domain>."; left empty, the agent
  * takes the LFX record's website or asks) and notes. The LFX project uid
- * rides the form (`submitsProject`) for the agent's own LFX lookups. The
+ * is the writer-resolved run scope, also used for the agent's LFX lookups. The
  * agent reads the website, the launch press release and the LFX record
  * itself, then asks only the gaps it could not settle — the domain, the main
  * programs, the member names it may use — each with a suggested answer
  * (`endpoints.answers`), on the same run.
  *
  * The boilerplates carry the messaging framework's positioning and proof,
- * so they run AFTER it: the project's LATEST stored messaging framework
- * revision is attached automatically, the way the Brand Kit attaches it —
- * the chip names it with its version and date and links to the Messaging
- * Framework page — as its JSON, which the BFF unwraps to the framework's
- * content. The latest revision regardless of its review status (LFX One has
- * no Approve action yet; Approve is a later item). A project with no
- * framework revision cannot run the agent: the Run button is disabled with
- * "Run the messaging framework first" and the link; nor can one whose latest
- * revision does not carry the framework's content (a legacy Messaging
- * Document, a restore without its sidecar), which gets `incompleteNote`
- * instead. The agent itself refuses a run without a framework up front; that
+ * so they run AFTER it: approved current is attached automatically as JSON,
+ * with its version/date on the chip. No approval means the Run button stays
+ * gated with approval guidance. An unreadable framework (including a legacy
+ * Markdown revision without structured content) gets `incompleteNote`. The agent itself refuses a run without a framework up front; that
  * reply, should it ever come, is shown as the run's outcome.
  *
  * The output is not a document but the boilerplates' JSON, so the run lands
@@ -434,9 +430,8 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
       fieldKeys: [BOILERPLATES_FIELD_KEYS.projectName, BOILERPLATES_FIELD_KEYS.websiteUrl, BOILERPLATES_FIELD_KEYS.notes],
     },
   ],
-  // The messaging framework, required: the LATEST stored revision of the
-  // project's framework (approved or not — Approve is a later item),
-  // submitted as its JSON under the agent's own form key and read whole.
+  // The required approved-current messaging framework, submitted as JSON
+  // under the agent's own form key. Draft/browser copies never stand in.
   attachments: [
     {
       sourceAgentId: 'foundation-setup',
@@ -444,13 +439,12 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
       documentName: 'Messaging Framework',
       format: 'json',
       frameworkContent: true,
-      incompleteNote: 'The latest messaging framework could not be read as a framework — generate it again first.',
+      incompleteNote: 'The approved messaging framework could not be read — generate and approve a new revision in Documents first.',
     },
   ],
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   assetView: 'boilerplates',
   // The asset view shows the boilerplates themselves; there is no section checklist to tick.
@@ -464,6 +458,142 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
   // project's Boilerplates document and reports the receipt, so a
   // receipt-less ready result is a failed write the run shell must retry.
   // No `stored` read endpoint yet: nothing attaches the boilerplates.
+  persistsDocument: true,
+};
+
+/**
+ * FAQ intake (marketing-os-agents agents/faq 1.0.0, faq-output/v1;
+ * wi-faq-intake-and-run), built like the Messaging Framework's:
+ *
+ * - Project: the name and the one-line description, both from LFX.
+ * - Sources: the website (the one required field) and the GitHub
+ *   repository or README, both prefilled from LFX when the project has them.
+ *   The repository reaches the agent as the first of its `links`.
+ * - Other links and documents: links and uploads in one section (an
+ *   existing FAQ page, the members page, the docs, a press release, a deck,
+ *   the plan), each tagged press, deck, document or plan. An upload is read
+ *   to text by the BFF; a link goes as its URL and the agent reads it.
+ * - Notes, last: who asks what, words to avoid — data, not instructions.
+ *
+ * The approved messaging framework is attached automatically: the project's
+ * LATEST stored framework revision, as on the Brand Kit page (LFX One has no
+ * Approve action yet, so the latest stands in for the approved one; Approve
+ * is a later item). The agent refuses a run without one, so a project with no
+ * framework revision cannot run: the page says to run the messaging framework
+ * first and links to it, and the chip names the revision it uses.
+ *
+ * After reading and researching, the agent asks only the questions the
+ * sources leave open (at most six, each with a suggested answer), one at a
+ * time on their own page, and the answers go back to the same session. The
+ * output is the FAQ's JSON, not a document, so the run lands on the FAQ view
+ * (`assetView`), where the questions the sources did not answer are flagged
+ * for the team. Every submission is a fresh draft (`freshRunPerSubmission`:
+ * a redraft from comments and a check of a hand-edited version are later
+ * work), stored as a new revision of the project's FAQ document.
+ */
+export const FAQ_INTAKE: MktgAgentIntake = {
+  agentId: 'faq',
+  formTitleAction: 'Build',
+  documentName: 'FAQ',
+  intro:
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Your latest messaging framework is attached automatically: the questions and their wording come from it. Only the website is required. You get an FAQ of eight to ten questions in groups, each answer naming its source, saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
+    {
+      key: FAQ_DESCRIPTION_KEY,
+      question: 'One-line description',
+      kind: 'text',
+      optional: true,
+      oneLine: true,
+      prefill: 'project-description',
+      placeholder: 'What the project does, in one line',
+      missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',
+    },
+    {
+      key: FAQ_WEBSITE_KEY,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_GITHUB_KEY,
+      question: 'GitHub repository or README',
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README: how to contribute, the licence, who maintains it. Leave it empty and the agent looks for it itself.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_NOTES_KEY,
+      question: 'Anything the agent should know',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'Who asks what, the questions people already ask, words to avoid',
+      hint: 'Read as information about the project, never as instructions.',
+    },
+  ],
+  fieldGroups: [
+    { id: 'project', title: 'Project', fieldKeys: ['project_name', FAQ_DESCRIPTION_KEY] },
+    {
+      id: 'sources',
+      title: 'Sources',
+      hint: 'the website is required; the rest is optional',
+      footnote:
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. An existing FAQ page, the members page and the docs are worth adding below.',
+      fieldKeys: [FAQ_WEBSITE_KEY, FAQ_GITHUB_KEY],
+    },
+    { id: 'notes', title: 'Notes', hint: 'optional', fieldKeys: [FAQ_NOTES_KEY], afterDocuments: true },
+  ],
+  documents: {
+    title: 'Other links and documents',
+    hint: 'An existing FAQ, the members page, the docs, a press release, a deck, the marketing plan. Add a link or upload a file, then tag it.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link is sent as is; the agent reads it. Up to ${FAQ_MAX_DOCUMENTS} links and documents.`,
+    maxDocuments: FAQ_MAX_DOCUMENTS,
+    maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
+    fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
+    // The same reader as the Messaging Framework's: turning an upload into text is the same for every agent.
+    endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+    tags: FAQ_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+    defaultTag: FAQ_DEFAULT_DOCUMENT_KIND,
+  },
+  // The approved messaging framework, required: the LATEST stored revision
+  // of the project's messaging framework, submitted under the agent's own
+  // form key and unwrapped to its content by the BFF. Usable only when it
+  // carries the framework itself (`mf` or `mh`), the agent's own rule.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: FAQ_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      frameworkContent: true,
+      incompleteNote: 'The latest messaging framework revision carries no framework the FAQ can read — run the messaging framework again.',
+    },
+  ],
+  requiredNote: '* required — everything else is optional',
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  fullWidth: true,
+  assetView: 'faq',
+  // The FAQ view shows the questions themselves; there is no section checklist to tick.
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/faq/generate',
+    result: '/api/mktg-agents/faq/result',
+    answers: FAQ_ANSWERS_ENDPOINT,
+  },
+  // The result endpoint stores every validated FAQ as a revision of the
+  // project's FAQ document and reports the receipt, so a receipt-less ready
+  // result is a failed write the run shell must retry.
   persistsDocument: true,
 };
 
@@ -550,16 +680,44 @@ export const ICP_INTAKE: MktgAgentIntake = {
   persistsDocument: true,
 };
 
-/**
- * Batch intake registry, keyed by catalog agent id. The run-page shell renders
- * whatever is registered here — a second agent's form (e.g. the Message
- * Foundation intake, wi-mf-lfx-selfserve) slots in as a new entry.
- */
+/** Dedicated per-user profile and source intake; no project dependencies or feedback round. */
+export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
+  agentId: 'linkedin-post',
+  oneOffDocument: true,
+  formTitleAction: 'Draft',
+  documentName: 'LinkedIn post',
+  intro: 'Three post options in your voice, from pasted text, a link or a file.',
+  batchPreamble: [],
+  fields: [],
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/linkedin-post/generate',
+    result: '/api/mktg-agents/linkedin-post/result',
+    answers: '/api/mktg-agents/linkedin-post/answers',
+  },
+  persistsDocument: true,
+};
+
+/** Batch intake registry keyed by catalog agent id; dedicated surfaces declare oneOffDocument. */
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
   [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
+  [FAQ_INTAKE.agentId]: FAQ_INTAKE,
+  [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
+  'member-360': {
+    agentId: 'member-360',
+    formTitleAction: 'Run',
+    documentName: 'Member 360',
+    intro: 'Scores member engagement for the active, entitlement-checked project.',
+    batchPreamble: [],
+    fields: [],
+    sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
+    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    persistsDocument: true,
+    regenerateViaGenerate: true,
+  },
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
@@ -572,6 +730,14 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
  * them whole, so nothing a third-party page carries can pass for either.
  */
 export const MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES = ['runtime_start', 'runtime_done'] as const;
+
+/**
+ * Raw Guild session events that carry the runtime's output — the agent's
+ * final text and its progress notices. They are what the model wrote, never
+ * a transcript, so the tool-result reader never enters them: a call and its
+ * result written into an output prove nothing.
+ */
+export const MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES = ['agent_notification_message', 'agent_notification_progress'] as const;
 
 /**
  * Blocking field-error copy for an intake value that fails its `format` rule.
@@ -611,24 +777,6 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
  * with a cause the user cannot see.
  */
 export const MKTG_INTAKE_ONE_LINE_ERROR = 'Keep this to one line — the line breaks in it would make the run fail.';
-
-/**
- * What the result says when the document was generated WITHOUT a README. The
- * agent tolerates a missing README by design — it marks the gaps TBD — but a
- * thinner document with no explanation reads as the agent underperforming.
- * Each reason states what actually happened so the user knows whether a
- * corrected URL and a regeneration would help.
- */
-export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
-  'not-a-repo-url': 'Generated without a README — the repo URL didn’t resolve to a readable repository, so the agent had no README to work from.',
-  'no-readme': 'Generated without a README — that repository has no README the agent could read.',
-  'not-public':
-    'Generated without a README — that repository isn’t publicly readable, so the agent couldn’t open its README. Use a public repository, or add the details by hand.',
-  'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
-};
-
-/** Running-phase stage checklist labels, in order. */
-export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
 
 /**
  * Validation of the questions step: an answer that is not one. There is no
@@ -674,11 +822,12 @@ export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed
  */
 export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
 
-/** Prefix of the reviewed label — the one status that is no longer a draft. */
-export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
-
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
+/** Pending LinkedIn capabilities; namespace/shape converged with the in-flight AEO/GEO intake. */
+export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
+/** Separately scoped intake/attempt recovery, including submissions that never received an ACK. */
+export const MKTG_PENDING_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-pending-run';
 
 /**
  * TTL for browser-persisted runs. A stored run carries the session's
@@ -736,3 +885,12 @@ export const MKTG_RUN_POLL = {
  * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
+export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
+/** Content-free BFF marker: a user/trigger turn queued before runtime_start appears. */
+export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
+/** Model reasoning is never a reply, a questions turn, or feed activity. */
+export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
+/** Stable questions-block hash carried by accepted-answers continuation. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;

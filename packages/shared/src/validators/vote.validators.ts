@@ -122,3 +122,37 @@ export function voteDeadlineValidator(): ValidatorFn {
     return null;
   };
 }
+
+/**
+ * Group validator for the extend-deadline dialog: the new close date/time must be strictly later than
+ * the vote's current end_time (not merely "in the future", per `voteDeadlineValidator` — an active
+ * vote already has a future deadline, so "extend" must compare against it, not against now).
+ */
+export function voteExtendDeadlineValidator(currentEndTime: string): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const formGroup = control as any; // FormGroup
+    const closeDate = formGroup.get?.('close_date')?.value;
+    const closeTime = formGroup.get?.('close_time')?.value;
+    const timezone = formGroup.get?.('timezone')?.value;
+
+    if (!closeDate || !closeTime || !timezone) {
+      return null; // Don't validate if values are not set
+    }
+
+    const combinedDateTime = combineDateTime(closeDate, closeTime, timezone);
+    if (!combinedDateTime) {
+      return null; // Invalid time format
+    }
+
+    if (!wallTimeExistsInTimezone(closeDate, closeTime, timezone)) {
+      return { nonexistentWallTime: true };
+    }
+
+    const currentEndTimeMs = new Date(currentEndTime).getTime();
+    if (new Date(combinedDateTime).getTime() <= currentEndTimeMs) {
+      return { notAfterCurrentDeadline: true };
+    }
+
+    return null;
+  };
+}

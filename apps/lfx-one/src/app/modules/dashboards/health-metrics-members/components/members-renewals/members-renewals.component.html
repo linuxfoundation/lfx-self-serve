@@ -81,7 +81,6 @@
             <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
             <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
             <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Renewal date</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Due in</span></th>
             <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Dues</span></th>
           </tr>
         </ng-template>
@@ -124,11 +123,6 @@
             <td class="text-right">
               <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-date'">{{
                 view.renewalDateLabel
-              }}</span>
-            </td>
-            <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-500" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-days'">{{
-                view.daysUntilLabel
               }}</span>
             </td>
             <td class="text-right">

@@ -13,6 +13,7 @@ import { BehaviorSubject, catchError, map, of, startWith, switchMap } from 'rxjs
 
 import { NewsletterFoundationCardComponent } from '../components/newsletter-foundation-card/newsletter-foundation-card.component';
 import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Me-lens "My Newsletters" (#3483): one card per foundation the user receives newsletters from —
@@ -22,7 +23,7 @@ import { NewsletterInviteDialogComponent } from '../components/newsletter-invite
  */
 @Component({
   selector: 'lfx-my-newsletter-foundations',
-  imports: [EmptyStateComponent, NewsletterFoundationCardComponent, SkeletonModule],
+  imports: [EmptyStateComponent, NewsletterFoundationCardComponent, SkeletonModule, PageHeaderComponent],
   providers: [DialogService],
   templateUrl: './my-newsletter-foundations.component.html',
 })

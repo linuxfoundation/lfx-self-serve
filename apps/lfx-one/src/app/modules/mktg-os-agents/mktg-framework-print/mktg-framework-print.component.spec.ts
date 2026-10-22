@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView } from '@lfx-one/shared/interfaces';
 import { buildFoundationMessagePrintView } from '@lfx-one/shared/utils';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { MktgFrameworkPrintComponent } from './mktg-framework-print.component';

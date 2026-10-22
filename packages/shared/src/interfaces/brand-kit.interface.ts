@@ -20,6 +20,7 @@ import {
   BRAND_KIT_WEB_VIEW_TABS,
 } from '../constants/brand-kit.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
+import type { MktgAssetReport } from './mktg-asset.interface';
 import type {
   MktgIntakeLogoFile,
   MktgRunAnswer,
@@ -221,12 +222,7 @@ export interface BrandKitChapters {
 }
 
 /** The skill's report: shown to the reviewer, never stored as content. */
-export interface BrandKitReport {
-  sources_read: string[];
-  sources_failed: { name: string; reason: string }[];
-  gaps: string[];
-  notes: string;
-}
+export type BrandKitReport = MktgAssetReport;
 
 /** One logo file of the inputs record. */
 export interface BrandKitInputLogoFile {
@@ -632,7 +628,7 @@ export type BrandKitResultRequest = MktgRunResultBody;
 /** Receipt of a successful persistence write (`brand-kit/{project}/{content_sha256}.md`). */
 export type BrandKitPersistReceipt = MktgArtifactPersistReceipt;
 
-/** Response of `GET /api/mktg-agents/brand-kit/stored?project=<uid>` — the latest stored revision. */
+/** Stored approved-current kit bytes; only true pre-revision plain fallback remains. */
 export type BrandKitStoredResponse = MktgArtifactStoredResponse;
 
 /**

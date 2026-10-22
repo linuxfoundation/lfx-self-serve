@@ -184,6 +184,20 @@ export class OptimizationTabComponent implements OnInit {
   public readonly campaignsPossiblyStale = input(false);
 
   /**
+   * Negative keywords the brief generated from the event page, passed straight through to every
+   * negative-keyword editor this tab opens.
+   *
+   * A suggestion the editor opens pre-filled with, never a value this tab sends: nothing leaves
+   * until the operator presses that editor's own button. Unlike callouts and sitelinks, negative
+   * keywords have no create-time path upstream at all, so the brief's list can only ever arrive
+   * here, after the campaign exists.
+   *
+   * `null` is a brief that carries none — generated before this shipped, or a generation that
+   * produced nothing — and the editors open blank, as they did before this input.
+   */
+  public readonly suggestedNegativeKeywords = input<string[] | null>(null);
+
+  /**
    * True when the campaign list READ FAILED, as opposed to never having been asked for.
    *
    * `briefCampaigns` is `null` for both, and rendering nothing for both makes an outage
@@ -278,7 +292,7 @@ export class OptimizationTabComponent implements OnInit {
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
   protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
 
-  /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
+  /** Which Google Ads, Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
   /** Which Reddit and X rows have their keyword-targeting panel open. */
   protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
@@ -1243,7 +1257,7 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Opens or closes one row's negative-keyword editor (Microsoft Advertising, Reddit or X). A request in flight keeps it open,
+   * Opens or closes one row's negative-keyword editor (Google Ads, Microsoft Advertising, Reddit or X). A request in flight keeps it open,
    * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
    */
   protected toggleNegativesEditor(row: CampaignRow): void {

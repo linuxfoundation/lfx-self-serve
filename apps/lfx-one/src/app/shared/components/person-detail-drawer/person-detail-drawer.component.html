@@ -50,6 +50,8 @@
                 }}</span>
               }
             </span>
+          } @else if (companyEmailFeatureEnabled() && drawer.emailsLoading()) {
+            <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
           } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
             <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
           } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {
@@ -110,7 +112,7 @@
 
     <div class="mt-5" role="tabpanel" id="person-detail-drawer-tabpanel" tabindex="0" [attr.aria-labelledby]="'person-detail-drawer-tab-' + drawer.activeTab()">
       @if (drawer.activeTab() === 'governance') {
-        <!-- Governance renders from the opener's supplied seats (Board/Committee tabs) with no personKey
+        <!-- Seats supplied by the opener (People Board/Committee, Groups) render without waiting on the detail
              fetch; only show the fetch's loading/error when nothing has been supplied yet. -->
         @if (drawer.loading() && governanceSeats().length === 0) {
           <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-loading">
@@ -231,8 +233,8 @@
           }
         }
       } @else {
-        <!-- Events/Training/Code need the personKey-keyed detail fetch; Board/Committee openers carry no
-             personKey, so only their Governance tab (rendered above from supplied seats) has data. -->
+        <!-- No detail: the opener carried neither a personKey nor a username that resolves to one roster
+             person (e.g. key contacts without an LF username). -->
         <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-detail-unavailable">
           Detailed activity isn't available for this person.
         </p>

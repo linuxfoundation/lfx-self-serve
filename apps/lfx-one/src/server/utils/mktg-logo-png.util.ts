@@ -57,9 +57,11 @@ export function isRasterizableLogoSvg(svg: string): boolean {
  * as nothing while the export reported the logo placed. A logo that sets
  * text is refused instead (`live-text`) and the deck keeps the template's
  * logo; one with its text converted to outlines draws as it is. Without the
- * system font scan, the size probe below is a plain parse on the event loop
- * (about 2 ms for a typical logo, about 25 ms at the 2,000,000-character
- * cap); the drawing itself runs on libuv's thread pool.
+ * system font scan, two steps still run on the event loop: the size probe
+ * below, a plain parse (about 2 ms for a typical logo, about 25 ms at the
+ * 2,000,000-character cap), and the PNG encode (`asPng`, which
+ * un-premultiplies and deflates the drawn pixmap). Only the drawing itself
+ * runs on libuv's thread pool.
  */
 export async function rasterizeLogoSvg(svg: string): Promise<MktgLogoPngResult> {
   if (!isRasterizableLogoSvg(svg)) {

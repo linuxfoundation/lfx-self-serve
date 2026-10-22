@@ -16,44 +16,65 @@ describe('EngagementSparklineComponent', () => {
     return fixture;
   }
 
-  it('scales to the series own range, so a tight run still shows its movement', async () => {
+  function slots(fixture: ComponentFixture<EngagementSparklineComponent>): HTMLElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-sparkline"] > span'));
+  }
+
+  it('draws one bar per period, scaled to the series own range, bottom- and right-aligned', async () => {
     const fixture = await render([0.54, 0.58, 0.59, 0.62]);
 
-    const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
-    // Lowest point sits on the baseline and the highest at the top — not four near-identical heights.
-    expect(path).toContain('M0.0 18.0');
-    expect(path).toContain('L60.0 0.0');
+    const chart = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"]') as HTMLElement;
+    expect(chart.className).toContain('items-end');
+    expect(chart.className).toContain('justify-end');
+    expect(chart.className).toContain('h-[22px]');
+    expect(chart.className).toContain('gap-[2px]');
+    // Lowest on the 3px floor and highest at the 22px top — not four near-identical heights.
+    expect(slots(fixture).map((slot) => slot.style.height)).toEqual(['3px', '12.5px', '14.9px', '22px']);
+    expect(slots(fixture).every((slot) => slot.className.includes('w-[6px]'))).toBe(true);
   });
 
-  it('breaks the line over a period with no invited population rather than plotting it as zero', async () => {
+  it('draws the current period in the strong blue and the rest in the light one', async () => {
+    const fixture = await render([0.4, 0.6, 0.8]);
+
+    const [first, second, last] = slots(fixture);
+    expect(first.className).toContain('bg-blue-200');
+    expect(second.className).toContain('bg-blue-200');
+    expect(last.className).toContain('bg-blue-500');
+    expect(last.className).not.toContain('bg-blue-200');
+  });
+
+  it('keeps an unrated period as an empty slot of the same width, so later periods do not slide left', async () => {
     const fixture = await render([0.6, null, 0.5, 0.7]);
 
-    const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
-    // The gap stays visible instead of being bridged: the pen lifts, then draws the later pair.
-    expect(path).toBe('M0.0 9.0 M40.0 18.0 L60.0 0.0');
+    const all = slots(fixture);
+    expect(all).toHaveLength(4);
+    expect(all[1].getAttribute('data-testid')).toBe('engagement-sparkline-gap');
+    expect(all[1].className).toContain('w-[6px]');
+    expect(all[1].style.height).toBe('');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-sparkline-bar"]')).toHaveLength(3);
   });
 
-  // Two rated periods with an unrated one between them draw no segment at all, so the chart would
-  // be an empty SVG rather than the placeholder the cell reads as "no trend".
-  it('falls back to the placeholder when no two rated periods are adjacent', async () => {
-    const fixture = await render([0.5, null, 0.5]);
+  it('highlights nothing when the current period is unrated', async () => {
+    const fixture = await render([0.4, 0.8, null]);
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline-empty"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] .bg-blue-500')).toBeNull();
+    expect(slots(fixture)[2].getAttribute('data-testid')).toBe('engagement-sparkline-gap');
   });
 
-  it('keeps each period in its own slot, so a gap does not slide later periods left', async () => {
-    const fixture = await render([null, 0.4, 0.8]);
-
-    const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
-    // The first plotted point sits at the second of three slots, not at x=0.
-    expect(path).toBe('M30.0 18.0 L60.0 0.0');
-  });
-
-  it('renders nothing but a placeholder below two points, which cannot express a direction', async () => {
+  it('renders the em-dash placeholder below two rated periods, which cannot express a direction', async () => {
     const fixture = await render([0.5, null, null]);
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline-empty"]')).not.toBeNull();
+    const placeholder = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline-empty"]') as HTMLElement;
+    expect(placeholder.textContent?.trim()).toBe('—');
+    expect(placeholder.className).toContain('text-gray-400');
+  });
+
+  it('labels the chart for assistive technology', async () => {
+    const fixture = await render([0.4, 0.8]);
+
+    const chart = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"]') as HTMLElement;
+    expect(chart.getAttribute('role')).toBe('img');
+    expect(chart.getAttribute('aria-label')).toBe('Attendance history');
   });
 });

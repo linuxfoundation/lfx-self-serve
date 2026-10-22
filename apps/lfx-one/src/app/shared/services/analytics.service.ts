@@ -81,6 +81,8 @@ import {
   RevenueImpactResponse,
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
+  HealthMetricsEngagementAttendanceTrend,
+  HealthMetricsEngagementAttendanceTrendQuery,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementMeetingParticipation,
@@ -1049,6 +1051,27 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementMeetingParticipation>('/api/analytics/engagement-meeting-participation', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-meeting-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Attendance trend" months
+   * @param query - Foundation and project scope; the trend always covers the last twelve months
+   * @returns Observable of the trailing twelve months, oldest first
+   */
+  public getEngagementAttendanceTrend(query: HealthMetricsEngagementAttendanceTrendQuery): Observable<HealthMetricsEngagementAttendanceTrend> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
+
+    // Errors propagate: no months renders "no meeting attendance in the last twelve months", so a
+    // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementAttendanceTrend>('/api/analytics/engagement-attendance-trend', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-attendance-trend failed', { query, error });
         return throwError(() => error);
       })
     );

@@ -57,7 +57,7 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(link.getAttribute('title')).toBe('Open Engagement');
     expect(link.textContent).toContain('8 of 31');
     expect(link.textContent).not.toContain('View');
-    expect(fixture.nativeElement.textContent).not.toContain('Awaiting data');
+    expect(fixture.nativeElement.textContent).not.toContain('No data');
   });
 
   it('keeps the status chip inside the linked tile', async () => {
@@ -73,33 +73,35 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-link"]')).toBeNull();
   });
 
-  it('renders no status chip for a statusless tile, leaving the "as of" label', async () => {
+  it('renders no status chip for a statusless tile', async () => {
     await render({ area: 'evt', classification: 'none', showStatus: false, statValue: '—' });
 
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-status"]')).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('as of');
   });
 
-  it('renders the stat detail line in its tone colour when the tile carries one', async () => {
-    await render({ area: 'mem', statDetail: { text: '3 of 12 unsecured · $40K', tone: 'watch' } });
-
-    const detail: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-mem-detail"]');
-    expect(detail.textContent?.trim()).toBe('3 of 12 unsecured · $40K');
-    expect(detail.classList).toContain('text-amber-600');
-  });
-
-  it('renders the stat detail line neutral when it has no tone, and omits it when absent', async () => {
-    await render({ area: 'evt', statDetail: { text: '1,204 registrations · goal 1,500' } });
-
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt-detail"]').classList).toContain('text-gray-500');
-    TestBed.resetTestingModule();
-    await render({ area: 'evt' });
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt-detail"]')).toBeNull();
-  });
-
-  it('renders no "as of" label for a never-evaluated (empty evaluatedAt) tile', async () => {
-    await render({ evaluatedAt: '' });
+  it('never renders an "as of" label, even for an evaluated tile', async () => {
+    await render({ evaluatedAt: '2026-09-01' });
 
     expect(fixture.nativeElement.textContent).not.toContain('as of');
+  });
+
+  it.each([
+    ['ok', 'Healthy', 'text-emerald-600'],
+    ['none', 'No data', 'text-gray-500'],
+    ['opp', 'Opportunity', 'text-blue-500'],
+  ] as const)('words a %s status chip "%s", per the design rather than the findings group', async (classification, label, textClass) => {
+    await render({ area: 'non', classification });
+
+    const status: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-status"]');
+    expect(status.textContent?.trim()).toBe(label);
+    expect(status.classList).toContain(textClass);
+  });
+
+  it('capitalizes only the first letter of the caption, leaving the copy sentence-case', async () => {
+    await render({ statLabel: 'groups inactive' });
+
+    const caption: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-caption"]');
+    expect(caption.textContent?.trim()).toBe('groups inactive');
+    expect(caption.classList).toContain('first-letter:uppercase');
   });
 });

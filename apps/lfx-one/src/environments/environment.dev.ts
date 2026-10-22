@@ -16,7 +16,8 @@ export const environment = {
     corporateConsole: 'https://lfx.dev.platform.linuxfoundation.org/',
   },
   segment: {
-    cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',
+    cdnUrl:
+      'https://lfx-segment.dev.platform.linuxfoundation.org/artifacts/sha384-7ab1a7b6cc607bd8184c4fd9046fdd77c7f7ca2c54e36816a67dd395197c6d60d057b6abbd506d59491cf96686b542b6/lfx-segment-analytics.min.js',
     enabled: true,
   },
   plausible: {

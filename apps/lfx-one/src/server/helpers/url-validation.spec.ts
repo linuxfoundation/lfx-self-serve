@@ -60,6 +60,21 @@ describe('fetchSafeUrl final URL after redirects', () => {
 
   beforeAll(async () => {
     redirectServer = http.createServer((req, res) => {
+      if (req.url === '/bounded-old') {
+        res.writeHead(302, { location: '/bounded-text', 'content-type': 'application/octet-stream' });
+        res.end();
+        return;
+      }
+      if (req.url === '/bounded-text') {
+        res.writeHead(200, { 'content-type': 'Text/Plain; charset=utf-8' });
+        res.end('List<T>');
+        return;
+      }
+      if (req.url === '/missing') {
+        res.writeHead(404, { 'content-type': 'application/octet-stream' });
+        res.end();
+        return;
+      }
       if (req.url === '/old') {
         // Same host, DIFFERENT directory -- the case that silently breaks a relative og:image.
         res.writeHead(302, { location: '/events/new/' });
@@ -77,6 +92,31 @@ describe('fetchSafeUrl final URL after redirects', () => {
     await new Promise<void>((resolve) => redirectServer.close(() => resolve()));
   });
 
+  it.each([false, true])('aborts pending DNS without a late request (redirect %s)', async (redirect) => {
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    const controller = new AbortController();
+    const failure = new Error('Synthetic DNS deadline');
+    let release: ((addresses: string[]) => void) | undefined;
+    const delayed = new Promise<string[]>((resolve) => {
+      release = resolve;
+    });
+    if (redirect) vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve4).mockImplementationOnce(() => {
+      controller.abort(failure);
+      return delayed;
+    });
+    const requests = vi.spyOn(http, 'request');
+    try {
+      await expect(fetchSafeUrl('https://events.example.com/old', controller.signal)).rejects.toBe(failure);
+      release?.(['93.184.216.34']);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(requests).toHaveBeenCalledTimes(redirect ? 1 : 0);
+    } finally {
+      release?.(['93.184.216.34']);
+      requests.mockRestore();
+    }
+  });
   it('reports the URL that actually served the response, not the one requested', async () => {
     // Imported INSIDE the test, like the ceiling tests below: the module must load after the
     // `node:https` mock is installed, or it captures the real transport.
@@ -89,6 +129,31 @@ describe('fetchSafeUrl final URL after redirects', () => {
     // disappears. Against the final url it is .../events/new/hero.jpg, which is the real one.
     expect(result.finalUrl).toBe('https://events.example.com/events/new/');
     expect(new URL('hero.jpg', result.finalUrl).href).toBe('https://events.example.com/events/new/hero.jpg');
+  });
+  it('skips the content-type allowlist on redirects and errors, reporting the final normalized type', async () => {
+    const { fetchSafeUrl } = await import('./url-validation');
+    const options = { allowedContentTypes: ['text/plain'] };
+    const result = await fetchSafeUrl('https://events.example.com/bounded-old', new AbortController().signal, options);
+    expect(result).toMatchObject({ ok: true, html: 'List<T>', contentType: 'text/plain', finalUrl: 'https://events.example.com/bounded-text' });
+    expect(await fetchSafeUrl('https://events.example.com/missing', new AbortController().signal, options)).toMatchObject({
+      ok: false,
+      status: 404,
+      contentType: 'application/octet-stream',
+    });
+  });
+
+  it('classifies bounded source content-type and size refusals as validation errors', async () => {
+    const { fetchSafeUrl } = await import('./url-validation');
+    await expect(fetchSafeUrl('https://events.example.com/page', new AbortController().signal, { allowedContentTypes: ['text/plain'] })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      validationErrors: [expect.objectContaining({ field: 'url', message: 'Unsupported response content type' })],
+    });
+    await expect(fetchSafeUrl('https://events.example.com/page', new AbortController().signal, { maxResponseBytes: 4 })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      validationErrors: [expect.objectContaining({ field: 'url', message: 'Response exceeded 4 bytes' })],
+    });
   });
 });
 

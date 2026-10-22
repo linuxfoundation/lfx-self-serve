@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   getMyNewsletters,
   listNewsletters,
+  getNewsletterStatusCounts,
   createNewsletter,
   updateNewsletter,
   scheduleNewsletter,
@@ -17,6 +18,7 @@ const {
   getReadableNewsletter: vi.fn(),
   getMyNewsletters: vi.fn(),
   listNewsletters: vi.fn(),
+  getNewsletterStatusCounts: vi.fn(),
   createNewsletter: vi.fn(),
   updateNewsletter: vi.fn(),
   scheduleNewsletter: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
     public getMyNewsletters = getMyNewsletters;
     public listNewsletters = listNewsletters;
+    public getNewsletterStatusCounts = getNewsletterStatusCounts;
     public createNewsletter = createNewsletter;
     public updateNewsletter = updateNewsletter;
     public scheduleNewsletter = scheduleNewsletter;
@@ -163,6 +166,32 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(listNewsletters).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController.getStatusCounts', () => {
+  it('returns the counts after the publisher gate passes', async () => {
+    const counts = { draft: 2, scheduled: 1, sent: 5, optout: 3, truncated: false };
+    getNewsletterStatusCounts.mockResolvedValue(counts);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().getStatusCounts({ params: { projectUid: 'p1' }, path: '/x' } as any, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNewsletterStatusCounts).toHaveBeenCalledWith(expect.anything(), 'p1');
+    expect(res.json).toHaveBeenCalledWith(counts);
+  });
+
+  it('refuses non-publishers before counting', async () => {
+    getNewsletterStatusCounts.mockClear();
+    assertPublisherRead.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { statusCode: 403, code: 'NEWSLETTER_LIST_FORBIDDEN' }));
+    const next = vi.fn();
+
+    await new NewsletterController().getStatusCounts({ params: { projectUid: 'p1' }, path: '/x' } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(getNewsletterStatusCounts).not.toHaveBeenCalled();
   });
 });
 

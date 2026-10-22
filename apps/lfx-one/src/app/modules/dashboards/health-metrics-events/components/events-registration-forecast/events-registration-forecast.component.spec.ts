@@ -199,18 +199,60 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
     expect(notes.at(-1)).toBe('');
     expect(lifecycle.at(-1)).toBe('settled');
-
-    const picked: string[] = [];
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
-    fixture.componentInstance['onViewPastEvents']();
-    fixture.componentInstance['onViewPastEvents']();
-    expect(picked).toEqual(['past', 'past']);
   });
 
-  it('names each event pill with its date, so same-named editions stay distinct', async () => {
+  it('points a closed period at Past events with a hint, not a button, and shows no footnote', async () => {
+    await render({ events: [event()] });
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    await settle();
+
+    const closed = query('events-registration-forecast-closed');
+    expect(query('events-registration-forecast-closed-hint')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'See how events actually finished in the Past events section below.'
+    );
+    expect(closed?.querySelector('button')).toBeNull();
+    expect(query('events-registration-forecast-footnote')).toBeNull();
+  });
+
+  it('shows the event name on each pill and the selected event date at the row end, keeping the date in the full label', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', eventName: 'An Event Name Well Past The Pill Limit', eventStartDate: '2026-12-01' })] });
+
+    const [first, second] = fixture.componentInstance['eventOptions']();
+    expect(first.label).toBe('Open Source Summit');
+    expect(first.fullLabel).toMatch(/^Open Source Summit · \S/);
+    expect(second.label).toBe('An Event Name Well Past The Pill…');
+    expect(second.fullLabel).toMatch(/^An Event Name Well Past The Pill Limit · \S/);
+    expect(query('events-registration-forecast-event-date')?.textContent?.trim()).toBe(first.fullLabel?.split(' · ')[1]);
+  });
+
+  it('marks only the events with a forecast as forecast available', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', forecastAvg: null })] });
+
+    expect(query('events-registration-forecast-available-evt-1')?.textContent?.trim()).toBe('forecast available');
+    expect(query('events-registration-forecast-available-evt-2')).toBeNull();
+  });
+
+  it('closes the populated section with the forecast footnote', async () => {
     await render({ events: [event()] });
 
-    expect(fixture.componentInstance['eventOptions']()[0].fullLabel).toMatch(/^Open Source Summit · \S/);
+    expect(query('events-registration-forecast-footnote')?.textContent).toContain('The forecast is a projection from historical pacing curves');
+  });
+
+  it.each([
+    [{ goal: 450 }, 'ok', 'Healthy', 'fa-circle-check', 'border-l-emerald-500'],
+    [{ goal: 150 }, 'watch', 'Needs attention', 'fa-triangle-exclamation', 'border-l-amber-500'],
+    [{ goal: 620 }, 'act', 'Needs action', 'fa-circle-exclamation', 'border-l-red-500'],
+    [{ goal: null }, 'none', 'Summary', 'fa-circle-info', 'border-l-gray-400'],
+  ])('tags the %o verdict banner with the %s tone', async (overrides, tone, label, icon, accent) => {
+    await render({ events: [event(overrides)] });
+    const banner = query('events-registration-forecast-verdict');
+    const tag = query('events-registration-forecast-verdict-tag');
+
+    expect(banner?.getAttribute('data-tone')).toBe(tone);
+    expect(banner?.classList).toContain('border-l-2');
+    expect(banner?.classList).toContain(accent);
+    expect(tag?.textContent?.trim()).toBe(label);
+    expect(tag?.querySelector('i')?.classList).toContain(icon);
   });
 
   it('opens the event a deep link names, and writes a picked event back to the URL', async () => {

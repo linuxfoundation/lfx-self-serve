@@ -8,9 +8,9 @@ import { FoundationMessageContent, MktgDependencyDocument, MktgRunAsset, MktgSto
 import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
-import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { firstValueFrom, of, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDependencyService } from './mktg-dependency.service';
 
@@ -111,7 +111,7 @@ describe('MktgDependencyService', () => {
   let loadRun: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    getStored = vi.fn(() => throwError(() => new Error('nothing stored')));
+    getStored = vi.fn(() => throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound })));
     loadRun = vi.fn(() => null);
     TestBed.configureTestingModule({
       providers: [
@@ -120,6 +120,11 @@ describe('MktgDependencyService', () => {
       ],
     });
     service = TestBed.inject(MktgDependencyService);
+  });
+
+  afterEach(() => {
+    expect(loadRun).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 
   describe('documentsChanged$ — the marketplace’s staleness signal', () => {
@@ -153,6 +158,23 @@ describe('MktgDependencyService', () => {
   });
 
   describe('resolveDependencies', () => {
+    it('keeps successful siblings when one of three gating reads fails and recovers on refresh', async () => {
+      const ids = ['synthetic-source-a', 'synthetic-source-b', 'synthetic-source-c'];
+      let failed = true;
+      vi.spyOn(service, 'resolveDependency').mockImplementation((_project, agentId) =>
+        failed && agentId === ids[1]
+          ? throwError(() => new HttpErrorResponse({ status: 500 }))
+          : of({ agentId, source: 'server', version: 1, document: '# Approved source' })
+      );
+      const first = await firstValueFrom(service.resolveDependencies('proj-1', ids, [], true));
+      expect(first[ids[0]]?.document).toBe('# Approved source');
+      expect(first[ids[1]]).toBeNull();
+      expect(first[ids[2]]?.document).toBe('# Approved source');
+      await expect(firstValueFrom(service.resolveDependencies('proj-1', ids))).rejects.toMatchObject({ status: 500 });
+      failed = false;
+      const refreshed = await firstValueFrom(service.resolveDependencies('proj-1', ids, [], true));
+      expect(ids.every((id) => refreshed[id]?.document === '# Approved source')).toBe(true);
+    });
     it('prefers the server-persisted Brand Kit over this browser’s stored run', async () => {
       // BOTH sources have a document and they disagree. The server copy is
       // the project's; the browser copy is one session's TTL-bounded run —
@@ -194,11 +216,11 @@ describe('MktgDependencyService', () => {
       expect(getStored).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.stored, 'proj-1');
     });
 
-    it('a mixed batch degrades PER AGENT — one server miss does not fail or blank the others', async () => {
+    it('a mixed batch handles missing approval per agent without blanking approved siblings', async () => {
       getStored.mockImplementation((endpoint: string) =>
         endpoint === BRAND_KIT_INTAKE.endpoints.stored
           ? of({ documentMarkdown: '# Server kit', receipt: { version: 4 } })
-          : throwError(() => new Error('nothing stored'))
+          : throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound }))
       );
 
       const resolved = await new Promise((resolve) =>
@@ -211,14 +233,11 @@ describe('MktgDependencyService', () => {
       });
     });
 
-    it('a mixed batch falls back PER AGENT — the server-missing agent takes its browser run while the other keeps the server copy', async () => {
-      // The production path in one shot: `catchError → browserFallback$` is
-      // applied per forkJoin branch, so one agent's server miss lands on ITS
-      // browser run without disturbing the sibling that resolved from the server.
+    it('never substitutes a browser Draft for a server-missing agent in a mixed batch', async () => {
       getStored.mockImplementation((endpoint: string) =>
         endpoint === BRAND_KIT_INTAKE.endpoints.stored
           ? of({ documentMarkdown: '# Server kit', receipt: { version: 4 } })
-          : throwError(() => new Error('nothing stored'))
+          : throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound }))
       );
       loadRun.mockImplementation((_projectUid: string, agentId: string) =>
         agentId === FOUNDATION_MESSAGE_INTAKE.agentId ? storedRun('# Browser message foundation', agentId) : null
@@ -230,12 +249,7 @@ describe('MktgDependencyService', () => {
 
       expect(resolved).toEqual({
         'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' },
-        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
-          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
-          source: 'browser',
-          version: 3,
-          document: '# Browser message foundation',
-        },
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: null,
       });
     });
 
@@ -258,13 +272,13 @@ describe('MktgDependencyService', () => {
       });
     });
 
-    describe('with sidecar — the Brand Kit’s messaging framework, the latest revision whatever its review status', () => {
+    describe('with sidecar — the Brand Kit’s approved current messaging framework', () => {
       const sidecarIds = [FOUNDATION_MESSAGE_INTAKE.agentId];
 
-      it('reads the server’s latest revision, with its date and its sidecar JSON', async () => {
+      it('reads the server’s approved current revision, with its date and sidecar JSON', async () => {
         getStored.mockReturnValue(
           of({
-            documentMarkdown: '# Latest messaging framework',
+            documentMarkdown: '# Approved messaging framework',
             receipt: { version: 2 },
             storedAt: '2026-10-16T09:00:00.000Z',
             sidecar: { fields: { 'md.tagline': { value: 'Open standards', source: 'Site', status: 'draft' } } },
@@ -281,7 +295,7 @@ describe('MktgDependencyService', () => {
             agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
             source: 'server',
             version: 2,
-            document: '# Latest messaging framework',
+            document: '# Approved messaging framework',
             storedAt: '2026-10-16T09:00:00.000Z',
             sidecar: { fields: { 'md.tagline': { value: 'Open standards', source: 'Site', status: 'draft' } } },
           },
@@ -302,7 +316,7 @@ describe('MktgDependencyService', () => {
       });
 
       it('names the revision by its number in Documents, not the agent’s draft version — a third fresh run is v3, though its draft is 1', async () => {
-        getStored.mockReturnValue(of({ documentMarkdown: '# Latest messaging framework', receipt: { version: 1 }, revisionNumber: 3, sidecar: {} }));
+        getStored.mockReturnValue(of({ documentMarkdown: '# Approved messaging framework', receipt: { version: 1 }, revisionNumber: 3, sidecar: {} }));
 
         const resolved = await new Promise<Record<string, MktgDependencyDocument | null>>((resolve) =>
           service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
@@ -311,8 +325,17 @@ describe('MktgDependencyService', () => {
         expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.version).toBe(3);
       });
 
-      it('resolves to null on a 404 — no revision at all — and never falls back to this browser’s stored run, which carries no sidecar', async () => {
-        getStored.mockReturnValue(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound, statusText: 'Not Found' })));
+      it('maps any sidecar 404 to an unmet attachment without a browser fallback', async () => {
+        getStored.mockReturnValue(
+          throwError(
+            () =>
+              new HttpErrorResponse({
+                status: HttpStatusCode.NotFound,
+                statusText: 'Not Found',
+                error: { code: 'MKTG_FRAMEWORK_NOT_APPROVED', error: 'Approve a messaging framework first — the Brand Kit builds on the approved one.' },
+              })
+          )
+        );
         loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
 
         const resolved = await new Promise((resolve) =>
@@ -340,14 +363,14 @@ describe('MktgDependencyService', () => {
 
         expect(outcome).toEqual({ error: failure });
         expect(consoleError).toHaveBeenCalledWith(
-          '[mktg-dependency] latest revision read failed',
+          '[mktg-dependency] approved current read failed',
           expect.objectContaining({ agentId: FOUNDATION_MESSAGE_INTAKE.agentId, projectUid: 'proj-1', error: failure })
         );
         expect(loadRun).not.toHaveBeenCalled();
         consoleError.mockRestore();
       });
 
-      it('leaves the other ids of the same batch on the plain latest read', async () => {
+      it('uses plain approved-current bytes for ids that do not request a sidecar', async () => {
         getStored.mockImplementation((endpoint: string, _projectUid: string, withSidecar?: boolean) =>
           of({ documentMarkdown: `# ${endpoint} ${withSidecar ? 'with sidecar' : 'markdown only'}`, receipt: { version: 1 } })
         );
@@ -362,19 +385,10 @@ describe('MktgDependencyService', () => {
       });
     });
 
-    it('falls back to this browser’s stored Message Foundation when the server has none', async () => {
+    it('does not attach a browser-stored Message Foundation when approval is missing', async () => {
       loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
-
-      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
-
-      expect(resolved).toEqual({
-        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
-          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
-          source: 'browser',
-          version: 3,
-          document: '# Browser message foundation',
-        },
-      });
+      const resolved = await firstValueFrom(service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]));
+      expect(resolved).toEqual({ [FOUNDATION_MESSAGE_INTAKE.agentId]: null });
     });
 
     it('hands over the server’s stored Messaging Framework (a JSON revision) as Markdown, never as JSON text', async () => {
@@ -398,23 +412,16 @@ describe('MktgDependencyService', () => {
       expect(JSON.stringify(resolved)).toContain('# Messaging framework');
     });
 
-    it('falls back to this browser’s run when the server’s stored JSON is not a framework, rather than attaching JSON text', async () => {
+    it('rejects unsupported server JSON rather than attaching browser Drafts or raw JSON', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
       getStored.mockReturnValue(of({ documentMarkdown: JSON.stringify({ mf: {} }), format: 'json', receipt: { version: 2 } }));
       loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
-
-      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
-
-      expect(resolved).toEqual({
-        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
-          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
-          source: 'browser',
-          version: 3,
-          document: '# Browser message foundation',
-        },
-      });
+      await expect(firstValueFrom(service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]))).rejects.toThrow(
+        'The approved document has no supported attachment reading.'
+      );
     });
 
-    it('falls back to this browser’s stored Messaging Framework asset rendered to Markdown, the same reading the server copy gets', async () => {
+    it('does not substitute even a valid browser-cached framework asset for missing approval', async () => {
       const content = buildFramework();
       const asset = { kind: 'messaging-framework', mode: 'draft', content, report: {}, checks: { findings: [] } } as unknown as MktgRunAsset;
       const run = storedRun('', FOUNDATION_MESSAGE_INTAKE.agentId);
@@ -422,14 +429,7 @@ describe('MktgDependencyService', () => {
 
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
 
-      expect(resolved).toEqual({
-        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
-          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
-          source: 'browser',
-          version: 3,
-          document: renderFoundationMessageMarkdown(content),
-        },
-      });
+      expect(resolved).toEqual({ [FOUNDATION_MESSAGE_INTAKE.agentId]: null });
     });
 
     it('resolves nothing from a browser-stored asset that is not a framework (stale or hand-edited storage)', async () => {
@@ -449,21 +449,29 @@ describe('MktgDependencyService', () => {
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['pitch-deck']).subscribe(resolve));
 
       expect(getStored).not.toHaveBeenCalled();
-      expect(resolved).toEqual({ 'pitch-deck': { agentId: 'pitch-deck', source: 'browser', version: 3, document: '# Browser only' } });
+      expect(resolved).toEqual({ 'pitch-deck': null });
     });
 
-    it('falls back to this browser’s stored run when the server has none', async () => {
+    it('does not attach this browser’s Brand Kit when server approval is missing', async () => {
       loadRun.mockReturnValue(storedRun('# Browser kit'));
 
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['brand-kit']).subscribe(resolve));
 
-      expect(resolved).toEqual({ 'brand-kit': { agentId: 'brand-kit', source: 'browser', version: 3, document: '# Browser kit' } });
+      expect(resolved).toEqual({ 'brand-kit': null });
     });
 
     it('resolves an unresolvable dependency to null rather than failing the whole record', async () => {
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['brand-kit']).subscribe(resolve));
 
       expect(resolved).toEqual({ 'brand-kit': null });
+    });
+
+    it.each([403, 500, 0])('propagates plain read failure %s without a browser fallback', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const failure = new HttpErrorResponse({ status });
+      getStored.mockReturnValue(throwError(() => failure));
+      loadRun.mockReturnValue(storedRun('# Browser Draft'));
+      await expect(firstValueFrom(service.resolveDependency('proj-1', FOUNDATION_MESSAGE_INTAKE.agentId))).rejects.toBe(failure);
     });
 
     it('resolves an empty dependency list immediately', async () => {
@@ -489,7 +497,7 @@ describe('MktgDependencyService', () => {
       agent: { agent_version: kit.agentVersion },
     };
 
-    it('reads the project’s latest Brand Kit revision from its sidecar', async () => {
+    it('reads the project’s approved current Brand Kit from its sidecar', async () => {
       getStored.mockReturnValue(of({ documentMarkdown: '# Kit', receipt: { version: 1 }, revisionNumber: 2, sidecar }));
 
       const resolved = await new Promise((resolve) => service.resolveBrandKit('proj-1').subscribe(resolve));

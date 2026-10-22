@@ -12,8 +12,8 @@
   } @else if (!loading() && !scopeTotal()) {
     <lfx-empty-state
       icon="fa-light fa-graduation-cap"
-      title="No course enrollments this period"
-      subtitle="No course or certification at this foundation had an enrollment in the selected period."
+      title="No course enrollments yet"
+      subtitle="No course or certification at this foundation has had an enrollment."
       data-testid="training-courses-empty" />
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="training-courses-controls">
@@ -24,7 +24,7 @@
             [form]="searchForm"
             control="search"
             inputId="training-courses-search"
-            placeholder="Search course..."
+            placeholder="Search course…"
             icon="fa-light fa-search"
             size="small"
             styleClass="w-full"
@@ -46,69 +46,69 @@
       </span>
     </div>
 
-    @if (!loading() && totalRecords() === 0) {
-      <lfx-empty-state
-        icon="fa-light fa-magnifying-glass"
-        title="No matching courses"
-        subtitle="No course matches the selected filter or search. Clear the search or pick another filter."
-        data-testid="training-courses-no-match" />
-    } @else {
-      <lfx-table
-        [rowHover]="false"
-        [value]="rowViews()"
-        [loading]="loading()"
-        [lazy]="true"
-        [lazyLoadOnInit]="false"
-        [paginator]="totalRecords() > size()"
-        [rows]="size()"
-        [first]="first()"
-        [totalRecords]="totalRecords()"
-        [showCurrentPageReport]="true"
-        [showFirstLastIcon]="false"
-        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-        (onPage)="onTablePage($event)"
-        data-testid="training-courses-table">
-        <ng-template #header>
-          <tr>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Course</span></th>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Type</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Enrollments</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Revenue</span></th>
-          </tr>
-        </ng-template>
+    <lfx-table
+      [rowHover]="false"
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > size()"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      (onPage)="onTablePage($event)"
+      data-testid="training-courses-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Course</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Type</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Enrollments</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Revenue</span></th>
+        </tr>
+      </ng-template>
 
-        <ng-template #body let-view>
-          <tr [attr.data-testid]="'training-courses-row-' + view.courseKey">
-            <td>
-              <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-name'">{{
-                view.courseName
-              }}</span>
-            </td>
-            <td>
-              <span
-                class="inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium"
-                [class]="view.typeClass"
-                [attr.data-testid]="'training-courses-row-' + view.courseKey + '-type'"
-                >{{ view.typeLabel }}</span
-              >
-            </td>
-            <td class="text-right">
-              <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-enrollments'">{{
-                view.enrollmentsLabel
-              }}</span>
-            </td>
-            <td class="text-right">
-              <span
-                class="text-sm tabular-nums"
-                [class.text-gray-800]="view.revenueMeasured"
-                [class.text-gray-500]="!view.revenueMeasured"
-                [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'"
-                >{{ view.revenueLabel }}</span
-              >
-            </td>
-          </tr>
-        </ng-template>
-      </lfx-table>
-    }
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'training-courses-row-' + view.courseKey">
+          <td>
+            <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-name'">{{ view.courseName }}</span>
+          </td>
+          <td>
+            <span
+              class="inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium"
+              [class]="view.typeClass"
+              [attr.data-testid]="'training-courses-row-' + view.courseKey + '-type'"
+              >{{ view.typeLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-enrollments'">{{
+              view.enrollmentsLabel
+            }}</span>
+          </td>
+          <td class="text-right">
+            <span
+              class="text-sm tabular-nums"
+              [class.text-gray-800]="view.revenueMeasured"
+              [class.text-gray-500]="!view.revenueMeasured"
+              [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'"
+              >{{ view.revenueLabel }}</span
+            >
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="4" class="py-6 text-center text-sm text-gray-500" data-testid="training-courses-no-match">
+            @if (!loading()) {
+              {{ noMatchLabel() }}
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
   }
 </div>

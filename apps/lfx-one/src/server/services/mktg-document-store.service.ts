@@ -6,6 +6,7 @@ import {
   MKTG_ARTIFACT_INTAKE_MODES,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SPECS,
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_DOCUMENT_CURRENT_KEY,
   MKTG_DOCUMENT_READ_CONCURRENCY,
   MKTG_DOCUMENT_TYPES,
@@ -14,9 +15,15 @@ import {
   MKTG_REVISION_CONTENT_TYPE,
   MKTG_REVISION_SCHEMA,
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
-  MKTG_RUN_DOCUMENT_ID_PREFIX,
+  MKTG_KIT_FRAMEWORK_KEY,
+  MKTG_GENERATION_PROVENANCE_KEY_PREFIX,
+  MKTG_REBUILD_DOWNSTREAM_KEYS,
+  MKTG_REBUILD_UPSTREAM_METADATA_KEY,
+  MKTG_REBUILD_UPSTREAM_SIDECAR_KEY,
 } from '@lfx-one/shared/constants';
+import { LINKEDIN_AGENT_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
 import {
+  LinkedinShareLinkResponse,
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
   MktgArtifactJsonEnvelope,
@@ -24,6 +31,7 @@ import {
   MktgArtifactSpec,
   MktgArtifactStoredResponse,
   MktgDocumentAgentKey,
+  MktgDocumentApprovalAnnotation,
   MktgDocumentCurrentRecord,
   MktgDocumentCurrentSelection,
   MktgDocumentCurrentSnapshot,
@@ -31,9 +39,12 @@ import {
   MktgDocumentGroup,
   MktgDocumentsResponse,
   MktgDocumentType,
+  MktgGenerationProvenance,
+  MktgGenerationAttribution,
   MktgLegacyDocument,
   MktgListedRevision,
   MktgRevisionAuthor,
+  MktgRevisionRef,
   MktgRevisionContentSource,
   MktgRevisionFormat,
   MktgRevisionRecord,
@@ -56,12 +67,19 @@ import {
   findMktgDocumentType,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
+  readLinkedinDocumentContent,
+  readMktgFrameworkRef,
+  projectMktgRebuildStaleness,
 } from '@lfx-one/shared/utils';
+import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
-import { AuthenticationError, MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
+import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
@@ -78,8 +96,12 @@ import type { UserService } from './user.service';
 export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly artifactService = new MktgArtifactService();
+  private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
   private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
   private userService?: Promise<UserService>;
+
+  /** A per-generation context only; never change the visiting Request or share an override across runs. */
+  public constructor(private readonly generationAttribution?: MktgGenerationAttribution) {}
 
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
@@ -112,6 +134,7 @@ export class MktgDocumentStoreService {
         project: partition,
         version: envelope.version,
         intake_mode: envelope.intake.mode,
+        document_location: { agent_key: type.agentKey, document_id: revision.record.documentId, revision_id: revision.id },
       };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the asset without a receipt; retried on next poll', {
@@ -134,8 +157,12 @@ export class MktgDocumentStoreService {
     const type = findMktgDocumentType(agentKey);
     if (!type) return receipt;
     try {
-      await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
-      return receipt;
+      const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
+      return {
+        ...receipt,
+        s3_key: revision.key,
+        document_location: { agent_key: agentKey, document_id: revision.record.documentId, revision_id: revision.id },
+      };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,
@@ -146,6 +173,68 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** Capture the exact approved input BEFORE starting a session; content mismatch means unknown provenance. */
+  public async captureFramework(req: Request, project: string | undefined, supplied: unknown, expected?: MktgRevisionRef): Promise<MktgRevisionRef | null> {
+    if (!project || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) {
+      if (expected) throw ServiceValidationError.forField('project', 'A valid project is required for the rebuild input.');
+      return null;
+    }
+    try {
+      const partition = await this.artifactService.resolveWritablePartition(req, MKTG_ARTIFACT_SPECS[MKTG_KIT_FRAMEWORK_KEY], project);
+      if (!partition) {
+        if (expected) throw new MicroserviceError('The approved framework input could not be verified for this project.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+        return null;
+      }
+      const type = findMktgDocumentType(MKTG_KIT_FRAMEWORK_KEY);
+      if (!type) return null;
+      const detail = await this.getDocument(req, partition, type, MKTG_LIVING_DOCUMENT_ID);
+      const summary = this.approvedCurrentOf(detail);
+      if (!detail || !summary) {
+        if (expected) throw new ConflictError('The framework is no longer approved. Reload before rebuilding.', 'MKTG_APPROVED_CURRENT_CHANGED');
+        return null;
+      }
+      if (expected && (expected.revisionId !== summary.id || expected.contentSha256 !== summary.contentSha256))
+        throw new ConflictError('The approved framework changed. Reload before rebuilding.', 'MKTG_APPROVED_CURRENT_CHANGED');
+      const stored = await this.loadApprovedRevision(req, detail, summary);
+      if (stored.record.bundle.format !== 'json' || !isDeepStrictEqual(JSON.parse(stored.record.bundle.markdown), supplied)) {
+        if (expected) throw new ConflictError('The rebuild input does not match the approved framework.', 'MKTG_FRAMEWORK_INPUT_MISMATCH');
+        return null;
+      }
+      return { agentKey: type.agentKey, revisionId: summary.id, revisionNumber: summary.number, contentSha256: summary.contentSha256 };
+    } catch (err) {
+      if (expected) throw err;
+      // A run-page generation still starts as on main; unverified input must never become false provenance.
+      logger.warning(req, 'mktg_generation_provenance', 'Framework input could not be verified; provenance remains unknown', { project, err });
+      return null;
+    }
+  }
+
+  /** Publish capture before returning the session capability. Storage failure must not return an untracked new session. */
+  public async rememberGenerationFramework(
+    req: Request,
+    agentKey: MktgDocumentAgentKey,
+    project: string | undefined,
+    sessionId: string,
+    framework: MktgRevisionRef | null
+  ): Promise<void> {
+    if (!framework) return;
+    if (!project || !MKTG_ARTIFACT_PARTITION_REGEX.test(project))
+      throw new MicroserviceError('No writable provenance partition.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+    const partition = await this.artifactService.resolveWritablePartition(req, MKTG_ARTIFACT_SPECS[MKTG_KIT_FRAMEWORK_KEY], project);
+    if (!partition) throw new MicroserviceError('No writable provenance partition.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+    const key = this.generationProvenanceKey(partition, agentKey, sessionId);
+    const capture: MktgGenerationProvenance = { project: partition, agentKey, framework };
+    const body = JSON.stringify(capture);
+    const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', key, {
+      body: Buffer.from(body),
+      contentType: MKTG_REVISION_CONTENT_TYPE,
+      cacheControl: 'private',
+      ifNoneMatch: '*',
+    });
+    if (!written && (await this.objectStore.getObject(req, 'marketing-os-artifacts', key))?.body !== body)
+      throw new PreconditionFailedError('The generation input was already recorded differently. Start a new run.');
+  }
+
   /** One shared append path for runs now and the future comment-and-revise writer. */
   public async recordGeneration(
     req: Request,
@@ -154,8 +243,18 @@ export class MktgDocumentStoreService {
     envelope: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<MktgStoredRevision> {
-    const documentId = type.kind === 'run' ? `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}` : MKTG_LIVING_DOCUMENT_ID;
+    const documentId = type.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
+    let sidecar = source.sidecar;
+    if (type.kind === 'living' && MKTG_REBUILD_DOWNSTREAM_KEYS.includes(type.agentKey)) {
+      const framework = await this.generationFramework(req, project, type.agentKey, sessionId);
+      // An agent envelope cannot manufacture host provenance. Only our captured identity is authoritative.
+      if (sidecar) {
+        sidecar = { ...sidecar };
+        delete sidecar[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY];
+      }
+      if (framework) sidecar = { ...sidecar, [MKTG_REBUILD_UPSTREAM_SIDECAR_KEY]: framework };
+    }
     return this.recordRevision(
       req,
       project,
@@ -166,7 +265,7 @@ export class MktgDocumentStoreService {
         origin: 'generated',
         restoredFromId: null,
         source: { sessionId, draftVersion: source.version, intakeMode: source.intakeMode },
-        bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar: source.sidecar, brandFile: null },
+        bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar, brandFile: null },
       },
       this.sha256(type.kind === 'run' ? sessionId : `${sessionId}:${source.contentSha256}`),
       source.contentSha256
@@ -177,6 +276,7 @@ export class MktgDocumentStoreService {
    * A CAS publishes a revision and moves current together. Losing writers retry
    * against the committed listing; overlapping polls find the winner's token.
    * Each attempt re-derives its automatic base from the fresh committed snapshot.
+   * New drafts extend the manifest without replacing an approved current selection.
    * An explicitly supplied basedOnId (including null) survives retries: it is the writer's actual base.
    * Pre-revision documents become revision 1; same-generation polls are no-ops
    * under If-None-Match, including historical records without generation metadata.
@@ -229,7 +329,13 @@ export class MktgDocumentStoreService {
       }
       const next = entries.reduce((maximum, entry) => Math.max(maximum, entry.sequence), 0) + 1;
       const revision = await this.writeRevision(req, project, type, documentId, next, { ...fields, basedOnId }, generation);
-      if (await this.writeCurrent(req, project, type, documentId, snapshot, revision.id, [...entries.map((entry) => entry.id), revision.id])) {
+      // A generated Draft commits to the manifest without displacing approved current.
+      const keepSelection = Boolean(
+        type.kind === 'living' && snapshot.record && Object.hasOwn(this.approvalsOf(snapshot.record.approvals), snapshot.record.revisionId)
+      );
+      if (
+        await this.writeCurrent(req, project, type, documentId, snapshot, revision.id, [...entries.map((entry) => entry.id), revision.id], false, keepSelection)
+      ) {
         logger.info(req, 'mktg_document_store_record', 'Committed a new document revision', { project, agent: type.agentKey, revision: revision.id });
         return revision;
       }
@@ -238,18 +344,20 @@ export class MktgDocumentStoreService {
   }
 
   /** Navigation uses metadata, with bounded body fallback for historical writers. */
-  public async listDocuments(req: Request, project: string): Promise<MktgDocumentsResponse> {
+  public async listDocuments(req: Request, project: string, strictAgentKey?: string | readonly string[]): Promise<MktgDocumentsResponse> {
     const prefix = buildMktgDocumentProjectPrefix(project);
     const listed = await this.objectStore.listObjects(req, 'marketing-os-artifacts', prefix);
     const groups: MktgDocumentGroup[] = [];
     for (const type of MKTG_DOCUMENT_TYPES) {
-      const ids = new Set(
+      const strict = typeof strictAgentKey === 'string' ? type.agentKey === strictAgentKey : strictAgentKey?.includes(type.agentKey);
+      const listedIds = new Set(
         listed.flatMap((object) => {
           const entry = parseMktgRevisionKey(object.key, prefix);
           if (!entry || entry.agentKey !== type.agentKey) return [];
           return [entry.documentId];
         })
       );
+      const ids = new Set(listedIds);
       if (type.kind === 'living') ids.add(MKTG_LIVING_DOCUMENT_ID);
       const documents: MktgDocumentGroup['documents'] = [];
       const documentIds = [...ids];
@@ -260,16 +368,21 @@ export class MktgDocumentStoreService {
           documentIds.slice(offset, offset + MKTG_DOCUMENT_READ_CONCURRENCY).map((id) =>
             this.getDocument(req, project, type, id, 1).catch((err: unknown) => {
               // Access failures must still fail the request, not masquerade as missing documents.
-              if (!(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
+              if (strict || !(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
               logger.warning(req, 'mktg_document_store_list', 'Document unreadable — omitting', { project, documentId: id, err });
               return null;
             })
           )
         );
-        for (const detail of details) {
-          if (!detail) continue;
+        for (const [index, detail] of details.entries()) {
+          if (!detail) {
+            if (strict && (typeof strictAgentKey === 'string' || listedIds.has(documentIds[offset + index])))
+              throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
+            continue;
+          }
           const current = detail.revisions.find((revision) => revision.latest);
           if (!current) {
+            if (strict) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
             logger.warning(req, 'mktg_document_store_list', 'Current revision is missing — omitting document', {
               project,
               agent: type.agentKey,
@@ -282,7 +395,10 @@ export class MktgDocumentStoreService {
             documentId: detail.documentId,
             revisionCount: detail.revisions.length,
             latestRevisionId: current.id,
+            approvedCurrent: detail.approvedCurrent,
             currentRevisionNumber: current.number,
+            contentSha256: current.contentSha256,
+            upstreamFramework: current.upstreamFramework ?? null,
             updatedAt: current.createdAt,
             createdAt: detail.revisions.at(-1)?.createdAt ?? null,
           });
@@ -291,7 +407,7 @@ export class MktgDocumentStoreService {
       documents.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
       groups.push({ type, documents });
     }
-    return { project, groups };
+    return projectMktgRebuildStaleness({ project, groups });
   }
 
   /** Read summaries and the current selection with bounded I/O, without downloading new revision bodies. */
@@ -303,7 +419,25 @@ export class MktgDocumentStoreService {
     readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse | null> {
     const snapshot = await this.readCurrent(req, project, type, documentId);
-    return this.readDocument(req, project, type, documentId, snapshot, readConcurrency);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot, readConcurrency);
+    const current = snapshot.record;
+    if (
+      type.kind === 'living' &&
+      current &&
+      Object.hasOwn(current.approvals ?? {}, current.revisionId) &&
+      !detail?.revisions.some((revision) => revision.id === current.revisionId)
+    ) {
+      throw new MicroserviceError('The approved current revision could not be read.', 502, 'MKTG_APPROVED_REVISION_UNREADABLE');
+    }
+    return detail;
+  }
+
+  /**
+   * Approved-current identity through the normal listing path: content-sha metadata
+   * avoids body reads; historical revisions without it are hydrated as in any listing.
+   */
+  public async readApprovedCurrentSummary(req: Request, project: string, type: MktgDocumentType, documentId: string): Promise<MktgRevisionSummary | null> {
+    return this.approvedCurrentOf(await this.getDocument(req, project, type, documentId));
   }
 
   /** Read one integrity-checked revision body with its document's navigation summaries. */
@@ -315,7 +449,17 @@ export class MktgDocumentStoreService {
     revisionId: string
   ): Promise<MktgRevisionResponse | null> {
     const detail = await this.getDocument(req, project, type, documentId);
-    return detail ? this.readRevision(req, detail, revisionId) : null;
+    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+    if (!view || type.agentKey !== 'member-360') return view;
+    const candidate = view.sidecar?.['member360'];
+    const parsed = member360Schema.safeParse(candidate);
+    const member360 =
+      parsed.success && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
+        ? (candidate as typeof parsed.data)
+        : undefined;
+    const sidecar = { ...view.sidecar };
+    if (!member360) delete sidecar['member360'];
+    return { ...view, sidecar, member360 };
   }
 
   /** Compatibility endpoint name; the action moves current and never adds a revision. */
@@ -331,7 +475,8 @@ export class MktgDocumentStoreService {
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
-    let current = await this.currentSelection(req, snapshot.record);
+    let record = snapshot.record;
+    let current = await this.currentSelection(req, record);
     if (!view.revision.latest) {
       const committed = await this.writeCurrent(
         req,
@@ -343,13 +488,60 @@ export class MktgDocumentStoreService {
         view.revisions.map((entry) => entry.id)
       );
       if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+      record = committed;
       current = await this.currentSelection(req, committed);
     }
     const revisions = view.revisions.map((entry) => ({ ...entry, latest: entry.id === view.revision.id }));
-    return { detail: { project, type, documentId, revisions, current }, revision: { ...view.revision, latest: true } };
+    const updated = await this.withApprovals(req, { project, type, documentId, revisions, current, approvedCurrent: null }, record);
+    return { detail: updated, revision: { ...view.revision, latest: true } };
   }
 
-  /** Dependent agents consume current, never a newer but noncurrent revision. */
+  /** Approve and select an immutable stored revision in a single fail-fast CAS. */
+  public async approveRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    revisionId: string
+  ): Promise<MktgRevisionResponse | null> {
+    if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Approve is not available for one-off run documents.');
+    const snapshot = await this.readCurrent(req, project, type, documentId);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot);
+    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+    if (!view) return null;
+    if (parseMktgLegacyRevisionId(view.revision.id)) {
+      throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
+    }
+    if (view.revision.latest && view.approval) return view;
+    const committed = await this.writeCurrent(
+      req,
+      project,
+      type,
+      documentId,
+      snapshot,
+      view.revision.id,
+      view.revisions.map((entry) => entry.id),
+      true
+    );
+    if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+    const updated = await this.withApprovals(
+      req,
+      {
+        ...detail,
+        project,
+        type,
+        documentId,
+        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === view.revision.id })),
+        current: await this.currentSelection(req, committed),
+        approvedCurrent: null,
+      },
+      committed
+    );
+    const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
+    return revision ? { ...updated, revision, approval: revision.approval, markdown: view.markdown, sidecar: view.sidecar } : null;
+  }
+
+  /** Plain and sidecar attachments consume approved current; only true pre-revision plain fallback remains. */
   public async readLatest(
     req: Request,
     spec: MktgArtifactSpec,
@@ -360,56 +552,64 @@ export class MktgDocumentStoreService {
     const type = findMktgDocumentType(spec.agentKey);
     if (!type || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) return withSidecar ? null : this.artifactService.readLatest(req, spec, project);
     try {
-      const detail = withSidecar
-        ? await this.readDocument(
-            req,
-            project,
-            type,
-            MKTG_LIVING_DOCUMENT_ID,
-            await this.readCurrent(req, project, type, MKTG_LIVING_DOCUMENT_ID),
-            MKTG_DOCUMENT_READ_CONCURRENCY,
-            false
-          )
-        : await this.getDocument(req, project, type, MKTG_LIVING_DOCUMENT_ID);
-      const summary = detail?.revisions.find((revision) => revision.latest);
-      if (!detail || !summary) return null;
-      const view = await this.readRevision(req, detail, summary.id);
-      if (!view) return null;
+      const detail = await this.getDocument(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+      const summary = this.approvedCurrentOf(detail);
+      if (!detail || !summary) {
+        const legacy = detail?.revisions.length === 1 && parseMktgLegacyRevisionId(detail.revisions[0].id);
+        return !withSidecar && legacy ? this.artifactService.readLatest(req, spec, project, { legacyOnly: true }) : null;
+      }
+      const revision = await this.loadApprovedRevision(req, detail, summary);
+      const { bundle, source } = revision.record;
+      const format = this.format(bundle.format);
       return {
-        documentMarkdown: view.markdown,
-        ...(withSidecar && { revisionNumber: view.revision.number, sidecar: this.envelopeSidecar(view.markdown, view.revision.format, view.sidecar) }),
-        format: view.revision.format,
-        storedAt: view.revision.createdAt ?? undefined,
+        documentMarkdown: bundle.markdown,
+        revisionNumber: summary.number,
+        ...(withSidecar && { sidecar: this.envelopeSidecar(bundle.markdown, format, bundle.sidecar) }),
+        format,
+        storedAt: revision.record.createdAt,
         receipt: {
-          s3_key:
-            view.revision.format === 'json'
-              ? `${buildMktgDocumentPrefix(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID)}${view.revision.id}.json`
-              : buildMktgArtifactObjectKey(spec, project, view.revision.contentSha256),
-          content_sha256: view.revision.contentSha256,
+          s3_key: format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
+          content_sha256: bundle.contentSha256,
           project,
-          version: view.revision.draftVersion ?? MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
-          intake_mode: view.revision.intakeMode ?? 'form',
+          version: source.draftVersion ?? MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
+          intake_mode: this.intakeMode(source.intakeMode),
         },
       };
     } catch (error) {
-      if (withSidecar) {
-        logger.warning(req, 'mktg_document_store_read_latest', 'Current revision read failed — rethrowing for the caller to handle', {
-          project,
-          agent: type.agentKey,
-          err: error,
-        });
-        throw error;
-      }
-      logger.warning(req, 'mktg_document_store_read_latest', 'Current document could not be read — serving no stored document', {
+      logger.warning(req, 'mktg_document_store_read_latest', 'Approved current read failed — rethrowing for the caller', {
         project,
         agent: type.agentKey,
         err: error,
       });
-      return null;
+      throw error;
     }
   }
 
-  /** Export selectors retain their public shape, loading a matching stored body; default is current. */
+  /** Update only the run's mutable presentation object, never its immutable revision. */
+  public async saveLinkedinShareLink(
+    req: Request,
+    project: string,
+    documentId: string,
+    value: unknown,
+    initialize = false
+  ): Promise<LinkedinShareLinkResponse> {
+    const type = findMktgDocumentType(LINKEDIN_AGENT_KEY);
+    const detail = type ? await this.getDocument(req, project, type, documentId) : null;
+    const summary = detail?.revisions[0];
+    const stored = detail && summary ? await this.loadSummaryRevision(req, detail, summary) : null;
+    const cards = stored ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
+    if (!stored || !cards) throw new ResourceNotFoundError('LinkedIn document', documentId);
+    // A late first supplied answer may seed an absent overlay, never replace supplied or edited answers.
+    if (initialize && stored.record.bundle.sidecar && 'answers' in stored.record.bundle.sidecar) return { share_link: cards.answers['share_link'] };
+    return this.linkedinPresentation.save(req, project, documentId, value, initialize);
+  }
+
+  /** A run's document id: stable per Guild session, so repeated result polls address one document. */
+  public runDocumentId(sessionId: string): string {
+    return buildMktgRunDocumentId(sessionId);
+  }
+
+  /** Export approved current only; stale explicit selectors fail instead of silently selecting different bytes. */
   public async readExportRevision(
     req: Request,
     project: string,
@@ -417,29 +617,25 @@ export class MktgDocumentStoreService {
     documentId: string,
     selector: { revisionId?: string; contentSha256?: string }
   ): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary } | null> {
-    const detail = await this.readDocument(
-      req,
-      project,
-      type,
-      documentId,
-      await this.readCurrent(req, project, type, documentId),
-      MKTG_DOCUMENT_READ_CONCURRENCY,
-      false
-    );
-    if (!detail) return null;
-    const legacySha = selector.revisionId ? parseMktgLegacyRevisionId(selector.revisionId) : null;
-    let candidates = detail.revisions;
-    if (selector.revisionId)
-      candidates = candidates.filter(
-        (entry) => entry.id === selector.revisionId || (legacySha && entry.origin === 'legacy' && entry.contentSha256 === legacySha)
-      );
-    else if (selector.contentSha256) candidates = candidates.filter((entry) => entry.contentSha256 === selector.contentSha256);
-    else candidates = candidates.filter((entry) => entry.latest);
-    for (const summary of candidates) {
-      const revision = await this.loadSummaryRevision(req, detail, summary);
-      if (revision) return { revision, summary: { ...summary, status: this.recordStatus(revision.record) } };
+    const detail = await this.getDocument(req, project, type, documentId);
+    const summary = this.approvedCurrentOf(detail);
+    if (!detail || !summary) throw new ConflictError(MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE, 'MKTG_ASSET_NOT_APPROVED');
+    if ((selector.revisionId && selector.revisionId !== summary.id) || (selector.contentSha256 && selector.contentSha256 !== summary.contentSha256)) {
+      throw new ConflictError('The approved current changed. Reload and try again.', 'MKTG_APPROVED_CURRENT_CHANGED');
     }
-    return null;
+    const revision = await this.loadApprovedRevision(req, detail, summary);
+    return { revision, summary: { ...summary, status: this.recordStatus(revision.record) } };
+  }
+
+  /** Finish an already-started export against its exact integrity-checked revision, not today's approval. */
+  public async readExportedRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    revisionId: string
+  ): Promise<MktgRevisionSummary | null> {
+    return (await this.getRevision(req, project, type, documentId, revisionId))?.revision ?? null;
   }
 
   /** Explicit newest-identity lookup for export comparison; never returns a pre-revision artifact. */
@@ -456,6 +652,7 @@ export class MktgDocumentStoreService {
       documentId,
       await this.readCurrent(req, project, type, documentId),
       MKTG_DOCUMENT_READ_CONCURRENCY,
+      false,
       false
     );
     if (!detail) return null;
@@ -464,6 +661,47 @@ export class MktgDocumentStoreService {
       if (revision) return { id: revision.id, number: summary.number, contentSha256: revision.record.bundle.contentSha256 };
     }
     return null;
+  }
+
+  private generationProvenanceKey(project: string, agentKey: MktgDocumentAgentKey, sessionId: string): string {
+    return `${MKTG_GENERATION_PROVENANCE_KEY_PREFIX}/${project}/${agentKey}/${this.sha256(sessionId)}.json`;
+  }
+
+  private async generationFramework(req: Request, project: string, agentKey: MktgDocumentAgentKey, sessionId: string): Promise<MktgRevisionRef | null> {
+    const saved = await this.objectStore.getObject(req, 'marketing-os-artifacts', this.generationProvenanceKey(project, agentKey, sessionId));
+    if (!saved) return null; // Sessions from before provenance support remain unknown.
+    try {
+      const value: unknown = JSON.parse(saved.body);
+      if (
+        value &&
+        typeof value === 'object' &&
+        'framework' in value &&
+        'project' in value &&
+        value.project === project &&
+        'agentKey' in value &&
+        value.agentKey === agentKey
+      ) {
+        if (value.framework === null) return null;
+        const framework = readMktgFrameworkRef(value.framework);
+        if (framework) return framework;
+      }
+    } catch {
+      /* Corrupt server capture must fail closed, not be guessed from today's approval. */
+    }
+    throw new MicroserviceError('The generation input record could not be read.', 502, 'MKTG_PROVENANCE_UNREADABLE');
+  }
+
+  /** The sole selection policy; public DTOs keep dependency/export consumers independent of storage. */
+  private approvedCurrentOf(detail: MktgDocumentDetailResponse | null): MktgRevisionSummary | null {
+    if (detail?.type.kind !== 'living' || !detail.approvedCurrent) return null;
+    return detail.revisions.find((revision) => revision.id === detail.approvedCurrent?.revisionId && Boolean(revision.approval)) ?? null;
+  }
+
+  /** Adapt to versioning's integrity-checked body loader without another current-record read. */
+  private async loadApprovedRevision(req: Request, detail: MktgDocumentDetailResponse, summary: MktgRevisionSummary): Promise<MktgStoredRevision> {
+    const revision = await this.loadSummaryRevision(req, detail, summary);
+    if (!revision) throw new MicroserviceError('The approved current revision could not be read.', 502, 'MKTG_APPROVED_REVISION_UNREADABLE');
+    return revision;
   }
 
   private async loadSummaryRevision(req: Request, detail: MktgDocumentDetailResponse, summary: MktgRevisionSummary): Promise<MktgStoredRevision | null> {
@@ -491,7 +729,8 @@ export class MktgDocumentStoreService {
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
     readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
-    allowLegacy = true
+    allowLegacy = true,
+    hydrateNames = true
   ): Promise<MktgDocumentDetailResponse | null> {
     let eligibleCount = 0;
     const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency, true, () => {
@@ -505,7 +744,7 @@ export class MktgDocumentStoreService {
           ...(await Promise.all(
             entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
               ...this.summary(entry, offset + index + 1),
-              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
+              author: hydrateNames ? await this.resolveAuthor(req, entry.metadata?.['author-id']) : null,
             }))
           ))
         );
@@ -517,7 +756,16 @@ export class MktgDocumentStoreService {
         summary.basedOnNumber = numberById.get(entries[index].record?.basedOnId ?? metadata['based-on'] ?? '') ?? null;
         summary.restoredFromNumber = numberById.get(entries[index].record?.restoredFromId ?? metadata['restored-from'] ?? '') ?? null;
       });
-      return { project, type, documentId, revisions: summaries.reverse(), current: await this.currentSelection(req, snapshot.record) };
+      const detail: MktgDocumentDetailResponse = {
+        project,
+        type,
+        documentId,
+        revisions: summaries.reverse(),
+        current: await this.currentSelection(req, snapshot.record, hydrateNames),
+        approvedCurrent: null,
+      };
+      // Identity-only freshness reads never hydrate names; public reads keep all attribution.
+      return hydrateNames ? this.withApprovals(req, detail, snapshot.record, readConcurrency) : detail;
     }
     // Unreadable revision history must never serve an older pre-revision copy.
     if (snapshot.record) return null;
@@ -531,7 +779,7 @@ export class MktgDocumentStoreService {
     }
     if (!allowLegacy) return null;
     const legacy = documentId === MKTG_LIVING_DOCUMENT_ID ? await this.findLegacyDocument(req, type, project) : null;
-    return legacy ? { project, type, documentId, revisions: [this.legacySummary(legacy)], current: null } : null;
+    return legacy ? { project, type, documentId, revisions: [this.legacySummary(legacy)], current: null, approvedCurrent: null } : null;
   }
 
   /** Reuse the same current snapshot instead of resolving the document again. */
@@ -545,7 +793,7 @@ export class MktgDocumentStoreService {
     if (parseMktgLegacyRevisionId(revision.id)) {
       const legacy = await this.readLegacyDocument(req, type, project);
       return legacy?.sha === parseMktgLegacyRevisionId(revision.id)
-        ? { ...detail, revision: { ...revision, status: findMktgDocumentStatus(legacy.markdown) }, markdown: legacy.markdown, sidecar: null }
+        ? { ...detail, revision: { ...revision, status: findMktgDocumentStatus(legacy.markdown) }, approval: null, markdown: legacy.markdown, sidecar: null }
         : null;
     }
     const key = `${buildMktgDocumentPrefix(project, type.agentKey, documentId)}${revision.id}.json`;
@@ -560,7 +808,19 @@ export class MktgDocumentStoreService {
       restoredFromNumber: detail.revisions.find((entry) => entry.id === stored.record.restoredFromId)?.number ?? null,
       status: this.recordStatus(stored.record),
     };
-    return { ...detail, revision: selected, markdown: stored.record.bundle.markdown, sidecar: stored.record.bundle.sidecar };
+    const cards = type.agentKey === LINKEDIN_AGENT_KEY ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
+    const presentation = cards ? await this.linkedinPresentation.read(req, project, documentId, cards) : null;
+    const linkedinPost = presentation
+      ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }
+      : null;
+    return {
+      ...detail,
+      revision: selected,
+      approval: selected.approval,
+      markdown: stored.record.bundle.markdown,
+      sidecar: stored.record.bundle.sidecar,
+      ...(linkedinPost ? { linkedinPost } : {}),
+    };
   }
 
   /** Capture the manifest and CAS token together; corrupt pointers must never select another revision. */
@@ -573,14 +833,53 @@ export class MktgDocumentStoreService {
       if (!record || !Array.isArray(record.revisionIds) || !record.revisionIds.includes(record.revisionId)) {
         throw this.corruptDocument('Invalid current record');
       }
-      return { record, etag: object.etag };
+      return { record: { ...record, approvals: this.approvalsOf(record.approvals) }, etag: object.etag };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
       throw this.corruptDocument('Current record is not valid JSON');
     }
   }
 
-  /** Preserve committed IDs despite unreadable objects; publish incoming IDs/selection or return null on a lost CAS. */
+  /** Optional annotations must never make an otherwise valid current pointer unreadable. */
+  private approvalsOf(value: unknown): Record<string, MktgDocumentApprovalAnnotation> {
+    const approvals: Record<string, MktgDocumentApprovalAnnotation> = Object.create(null);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return approvals;
+    for (const [id, entry] of Object.entries(value)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const annotation = entry as Record<string, unknown>;
+      const { approvedAt, approvedBy } = annotation;
+      if (typeof approvedAt !== 'string' || !Number.isFinite(Date.parse(approvedAt))) continue;
+      if (approvedBy !== null && (typeof approvedBy !== 'string' || !approvedBy.trim())) continue;
+      approvals[id] = { approvedAt, approvedBy };
+    }
+    return approvals;
+  }
+
+  /** Resolve public approval metadata from the caller's one current snapshot, never another GET. */
+  private async withApprovals(
+    req: Request,
+    detail: MktgDocumentDetailResponse,
+    record: MktgDocumentCurrentRecord | null,
+    concurrency = MKTG_DOCUMENT_READ_CONCURRENCY
+  ): Promise<MktgDocumentDetailResponse> {
+    const approvals = detail.type.kind === 'living' ? this.approvalsOf(record?.approvals) : {};
+    const revisions: MktgRevisionSummary[] = [];
+    for (let offset = 0; offset < detail.revisions.length; offset += concurrency) {
+      revisions.push(
+        ...(await Promise.all(
+          detail.revisions.slice(offset, offset + concurrency).map(async (revision) => {
+            const annotation = Object.hasOwn(approvals, revision.id) ? approvals[revision.id] : null;
+            const approval = annotation ? { approvedAt: annotation.approvedAt, approvedBy: await this.resolveAuthor(req, annotation.approvedBy) } : null;
+            return { ...revision, approval };
+          })
+        ))
+      );
+    }
+    const current = revisions.find((revision) => revision.latest && revision.approval);
+    return { ...detail, revisions, approvedCurrent: current ? { revisionId: current.id, number: current.number } : null };
+  }
+
+  /** Publish the full manifest via CAS, optionally preserving the caller's observed selection and attribution. */
   private async writeCurrent(
     req: Request,
     project: string,
@@ -588,13 +887,26 @@ export class MktgDocumentStoreService {
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
     revisionId: string,
-    revisionIds: string[]
+    revisionIds: string[],
+    approve = false,
+    keepSelection = false
   ): Promise<MktgDocumentCurrentRecord | null> {
     const existingIds = snapshot.record
       ? snapshot.record.revisionIds
       : (await this.listRevisions(req, project, type, documentId, snapshot, MKTG_DOCUMENT_READ_CONCURRENCY, false)).map((entry) => entry.id);
     const committedIds = [...new Set([...existingIds, ...revisionIds])];
-    const record = { revisionId, revisionIds: committedIds, changedAt: new Date().toISOString(), changedBy: this.author(req) };
+    const approvals = this.approvalsOf(snapshot.record?.approvals);
+    const kept = keepSelection ? snapshot.record : null;
+    const changedAt = kept ? kept.changedAt : new Date().toISOString();
+    const changedBy = kept ? kept.changedBy : this.author(req);
+    if (approve && !approvals[revisionId]) approvals[revisionId] = { approvedAt: changedAt, approvedBy: changedBy };
+    const record: MktgDocumentCurrentRecord = {
+      revisionId: kept ? kept.revisionId : revisionId,
+      revisionIds: committedIds,
+      changedAt,
+      changedBy,
+      ...(Object.keys(approvals).length ? { approvals } : {}),
+    };
     const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', this.currentKey(project, type, documentId), {
       body: Buffer.from(JSON.stringify(record)),
       contentType: MKTG_REVISION_CONTENT_TYPE,
@@ -605,9 +917,9 @@ export class MktgDocumentStoreService {
   }
 
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
-  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
+  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null, hydrateNames = true): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: hydrateNames ? await this.resolveAuthor(req, record.changedBy) : null };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
@@ -675,7 +987,7 @@ export class MktgDocumentStoreService {
         });
         return null;
       }
-      return { id: entry.id, key: entry.key, record };
+      return { id: entry.id, key: entry.key, record, ...(object.metadata['author-id'] ? { authorId: object.metadata['author-id'] } : {}) };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_read', 'Stored revision bytes do not match the content-addressed key or schema — skipping', {
         key: entry.key,
@@ -708,7 +1020,10 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    const authorId = record.origin === 'legacy' ? null : this.author(req);
+    let authorId = record.origin === 'legacy' ? null : this.author(req);
+    if (record.origin === 'generated' && this.generationAttribution) {
+      authorId = this.generationAttribution.creatorSubject;
+    }
     const status = this.recordStatus(record);
     const boundedStatus = status.length > MKTG_REVISION_STATUS_METADATA_MAX_CHARS ? `${status.slice(0, MKTG_REVISION_STATUS_METADATA_MAX_CHARS - 1)}…` : status;
     const metadata: Record<string, string> = {
@@ -723,6 +1038,7 @@ export class MktgDocumentStoreService {
       'comment-count': String(record.comments.length),
       'based-on': record.basedOnId ?? '',
       'restored-from': record.restoredFromId ?? '',
+      [MKTG_REBUILD_UPSTREAM_METADATA_KEY]: JSON.stringify(readMktgFrameworkRef(record.bundle.sidecar?.[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY])),
       ...(authorId && { 'author-id': authorId }),
       ...(generation && { generation }),
     };
@@ -753,10 +1069,22 @@ export class MktgDocumentStoreService {
       contentSha256: entry.record?.bundle.contentSha256 ?? metadata['content-sha'] ?? '',
       format: this.format(entry.record?.bundle.format ?? metadata['format']),
       commentCount: entry.record?.comments?.length ?? Number(metadata['comment-count'] ?? 0),
+      upstreamFramework: this.summaryFramework(entry),
       draftVersion: entry.record?.source.draftVersion ?? (Number(metadata['draft-version']) || undefined),
       latest: false,
+      approval: null,
       basedOnNumber: null,
     };
+  }
+
+  /** New summaries use one bounded HEAD field. Old records remain unknown without extra body reads. */
+  private summaryFramework(entry: MktgListedRevision): MktgRevisionRef | null {
+    if (entry.record) return readMktgFrameworkRef(entry.record.bundle.sidecar?.[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY]);
+    try {
+      return readMktgFrameworkRef(JSON.parse(entry.metadata?.[MKTG_REBUILD_UPSTREAM_METADATA_KEY] ?? 'null'));
+    } catch {
+      return null;
+    }
   }
 
   private legacySummary(legacy: MktgLegacyDocument): MktgRevisionSummary {
@@ -772,6 +1100,7 @@ export class MktgDocumentStoreService {
       format: 'markdown',
       commentCount: 0,
       latest: true,
+      approval: null,
       draftVersion: legacy.draftVersion,
     };
   }

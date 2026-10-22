@@ -51,17 +51,10 @@ export interface HealthMetricsNonMembersOrgs {
   newCount: number;
 }
 
-/** An active channel chip on a row; a channel with no activity, or no feed, has no chip. */
-export interface HealthMetricsNonMembersOrgChannelView {
-  key: string;
-  label: string;
-}
-
 /** One organization row as the Company participation table renders it. */
 export interface HealthMetricsNonMembersOrgRowView {
   accountId: string;
   accountName: string;
-  channels: HealthMetricsNonMembersOrgChannelView[];
   meetingsLabel: string;
   peopleLabel: string;
   contributionsLabel: string;

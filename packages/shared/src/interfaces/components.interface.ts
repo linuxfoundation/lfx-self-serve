@@ -67,6 +67,28 @@ export interface ReasonPromptDialogResult {
 }
 
 /**
+ * Extend-vote-deadline dialog config
+ * @description `DynamicDialogConfig.data` shape for `ExtendVoteDeadlineDialogComponent` — prompts for a
+ * new close date/time/timezone later than the vote's current deadline.
+ */
+export interface ExtendVoteDeadlineDialogData {
+  voteName: string;
+  /** The vote's current end_time (RFC3339) — the new deadline must be later than this. */
+  currentEndTime: string;
+  /** The vote's current end_time_timezone — seeds the form so the organizer edits in the zone they already picked. */
+  currentEndTimeTimezone?: string;
+}
+
+/**
+ * Extend-vote-deadline dialog result
+ * @description `DynamicDialogRef.onClose` payload for `ExtendVoteDeadlineDialogComponent`
+ */
+export interface ExtendVoteDeadlineDialogResult {
+  end_time: string;
+  end_time_timezone: string;
+}
+
+/**
  * Card selector option info
  * @description Information displayed for each card option in card selector
  */

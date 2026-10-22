@@ -25,6 +25,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -42,6 +43,7 @@ type OrgLensGroupRow = OrgLensGroupVm & { membershipLink: string[] | null };
 @Component({
   selector: 'lfx-org-groups',
   imports: [
+    PageHeaderComponent,
     ButtonComponent,
     EmptyStateComponent,
     GroupSeatHoldersDrawerComponent,

@@ -49,10 +49,20 @@ import { TableComponent } from '@components/table/table.component';
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-multi-persona-dashboard',
-  imports: [SkeletonModule, TooltipModule, MyMeetingsComponent, PendingActionsComponent, CardComponent, TableComponent, DashboardCastDrawerHostComponent],
+  imports: [
+    SkeletonModule,
+    TooltipModule,
+    MyMeetingsComponent,
+    PendingActionsComponent,
+    CardComponent,
+    TableComponent,
+    DashboardCastDrawerHostComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './multi-persona-dashboard.component.html',
   styleUrl: './multi-persona-dashboard.component.scss',
 })

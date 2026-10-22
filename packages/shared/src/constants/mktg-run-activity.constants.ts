@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LINKEDIN_QUESTIONS_CONTRACT, LINKEDIN_FINALIZE_TOOL } from './linkedin-post.constants';
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
 import { BOILERPLATES_FINALIZE_TOOL, BOILERPLATES_QUESTIONS_CONTRACT_ID } from './boilerplates.constants';
 import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
+import { FAQ_FINALIZE_TOOL, FAQ_QUESTIONS_CONTRACT_ID } from './faq.constants';
 import { FOUNDATION_MESSAGE_ASK_TOOL, FOUNDATION_MESSAGE_FINALIZE_TOOL, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID } from './foundation-message.constants';
 
 // The live activity feed of an agent run: what the agent is doing while it
@@ -38,17 +40,21 @@ export const MKTG_RUN_ACTIVITY_TOOLS = {
   finalize: FOUNDATION_MESSAGE_FINALIZE_TOOL,
   finalizeBrandKit: BRAND_KIT_FINALIZE_TOOL,
   finalizeBoilerplates: BOILERPLATES_FINALIZE_TOOL,
+  finalizeFaq: FAQ_FINALIZE_TOOL,
+  finalizeLinkedinPost: LINKEDIN_FINALIZE_TOOL,
   inspectLogos: BRAND_KIT_INSPECT_LOGOS_TOOL,
 } as const;
 
 /** Every LFX MCP tool starts with this. */
 export const MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX = 'lfx_mcp_';
 
-/** The agents' finalize tools: the check of the document (the kit, the boilerplates) against its gates. */
+/** The agents' finalize tools: the check of the document (the kit, the boilerplates, the FAQ) against its gates. */
 export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [
   MKTG_RUN_ACTIVITY_TOOLS.finalize,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates,
+  MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq,
+  MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost,
 ];
 
 /**
@@ -81,6 +87,10 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   writingBrandKit: 'Writing the document',
   checkingBoilerplates: 'Checking the boilerplates against their word limits',
   writingBoilerplates: 'Writing the boilerplates',
+  checkingFaq: 'Checking the FAQ',
+  writingFaq: 'Writing the FAQ',
+  checkingLinkedinPost: 'Checking the post options',
+  writingLinkedinPost: 'Writing three post options',
 } as const;
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
@@ -115,6 +125,8 @@ export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [
   FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
+  FAQ_QUESTIONS_CONTRACT_ID,
+  LINKEDIN_QUESTIONS_CONTRACT,
 ];
 
 /**
@@ -142,3 +154,27 @@ export const MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS: readonly string[] = [
   'to',
   'with',
 ];
+
+/** What the starting row says while the agent spins up, one line every few seconds, before its first real step arrives. */
+export const MKTG_RUN_ACTIVITY_STARTING_LINES = [
+  'Waking the agent up',
+  'Handing it your project brief',
+  'Pouring it a coffee',
+  'Sharpening its pencils',
+  'Reading the room',
+  'Lining up the sources',
+  'Warming up the writing muscles',
+  'Almost there: the first step is on its way',
+];
+/** Rotating tips shown under the feed while a run works: what happens next, so a few minutes' wait teaches something. */
+export const MKTG_RUN_ACTIVITY_TIPS = [
+  'The messaging framework comes first: boilerplates, FAQ and the brand kit all read the approved one.',
+  'Approve a revision to put it in the Kit. Exports to PDF and Google Slides use the approved current.',
+  'Change the framework later and the Kit marks what reads it as stale. One click rebuilds it.',
+  'Every run is stored as a revision, so you can compare, restore or approve any of them.',
+  'The agent may stop to ask you a question when the sources disagree or leave a gap.',
+  'A whole family exports as one Google Slides deck on the LF template.',
+];
+/** How long each starting line and tip stays up. */
+export const MKTG_RUN_ACTIVITY_LINE_MS = 3500;
+export const MKTG_RUN_ACTIVITY_TIP_MS = 9000;

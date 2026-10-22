@@ -42,6 +42,7 @@ function personDrawerStub() {
     loading: signal(false),
     error: signal(false),
     emailError: signal(false),
+    emailsLoading: signal(false),
     identityUnavailable: signal(false),
     companyEmailsResolved: signal(false),
     detail: signal(null),

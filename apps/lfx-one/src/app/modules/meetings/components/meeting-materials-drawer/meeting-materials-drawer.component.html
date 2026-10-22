@@ -31,6 +31,48 @@
     </div>
   } @else {
     <div class="flex flex-col gap-6 pb-2">
+      <!-- Scope: which occurrences new materials apply to (recurring meetings only) -->
+      @if (canScope()) {
+        <div class="flex flex-col gap-2" data-testid="materials-scope-picker">
+          <h4 class="text-neutral-950 font-medium">Applies to</h4>
+          <!-- Native radios (visually hidden) give the group its keyboard behavior: one Tab stop, arrow keys move and select. -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Which occurrences new materials apply to">
+            <label
+              class="flex cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-300"
+              [class]="newItemScope() === 'occurrence' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+              data-testid="scope-option-occurrence">
+              <input
+                type="radio"
+                [name]="scopeRadioName()"
+                class="sr-only"
+                [checked]="newItemScope() === 'occurrence'"
+                [disabled]="saving()"
+                (change)="setNewItemScope('occurrence')" />
+              <span class="text-sm font-medium text-gray-900">This occurrence</span>
+              <span class="text-xs text-gray-500">{{ occurrence()?.start_time | date: 'EEE, MMM d, h:mm a' }}</span>
+            </label>
+            <label
+              class="flex cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-300"
+              [class]="newItemScope() === 'series' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+              data-testid="scope-option-series">
+              <input
+                type="radio"
+                [name]="scopeRadioName()"
+                class="sr-only"
+                [checked]="newItemScope() === 'series'"
+                [disabled]="saving()"
+                (change)="setNewItemScope('series')" />
+              <span class="text-sm font-medium text-gray-900">All occurrences</span>
+              <span class="text-xs text-gray-500">Every date in the series</span>
+            </label>
+          </div>
+          <p class="text-xs text-gray-500">
+            Choose before adding. Files and links you add now apply to {{ newItemScope() === 'occurrence' ? 'this occurrence only' : 'every occurrence' }}. You
+            can change an existing item below.
+          </p>
+        </div>
+      }
+
       <!-- Upload Files Section -->
       <div class="flex flex-col gap-4">
         <h4 class="text-neutral-950 font-medium">Upload Files</h4>
@@ -80,9 +122,29 @@
                 [attr.data-testid]="'existing-file-' + attachment.uid">
                 <div class="flex items-center gap-2 min-w-0">
                   <i class="fa-light fa-file-lines flex-shrink-0" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-400' : 'text-gray-500'"></i>
-                  <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
-                    {{ attachment.name }}
-                  </span>
+                  <div class="flex flex-col gap-0 min-w-0">
+                    <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
+                      {{ attachment.name }}
+                    </span>
+                    @if (showScopes() && !pendingDeletions().has(attachment.uid)) {
+                      <div class="flex items-center gap-2 mt-0.5" [attr.data-testid]="'scope-row-' + attachment.uid">
+                        <lfx-attachment-scope-badge [scope]="effectiveScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                        @if (pendingScopes().has(attachment.uid)) {
+                          <span class="text-xs text-amber-600" data-testid="scope-unsaved">Unsaved</span>
+                        }
+                        @if (canScope() && attachment.source !== 'description') {
+                          <button
+                            type="button"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50"
+                            [disabled]="saving()"
+                            (click)="toggleScope(attachment)"
+                            [attr.data-testid]="'toggle-scope-' + attachment.uid">
+                            {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
                 </div>
                 @if (pendingDeletions().has(attachment.uid)) {
                   <button
@@ -153,6 +215,24 @@
                     @if (attachment.link) {
                       <span class="text-xs text-gray-400 truncate">{{ attachment.link }}</span>
                     }
+                    @if (showScopes() && !pendingDeletions().has(attachment.uid)) {
+                      <div class="flex items-center gap-2 mt-0.5" [attr.data-testid]="'scope-row-' + attachment.uid">
+                        <lfx-attachment-scope-badge [scope]="effectiveScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                        @if (pendingScopes().has(attachment.uid)) {
+                          <span class="text-xs text-amber-600" data-testid="scope-unsaved">Unsaved</span>
+                        }
+                        @if (canScope() && attachment.source !== 'description') {
+                          <button
+                            type="button"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50"
+                            [disabled]="saving()"
+                            (click)="toggleScope(attachment)"
+                            [attr.data-testid]="'toggle-scope-' + attachment.uid">
+                            {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
+                          </button>
+                        }
+                      </div>
+                    }
                   </div>
                 </div>
                 @if (pendingDeletions().has(attachment.uid)) {
@@ -179,7 +259,7 @@
       </div>
 
       <!-- Save / Cancel Footer -->
-      @if (pendingAttachments().length > 0 || pendingDeletions().size > 0) {
+      @if (hasPendingChanges()) {
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200" data-testid="materials-drawer-footer">
           <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="onClose()" data-testid="materials-cancel-btn"> </lfx-button>
           <lfx-button

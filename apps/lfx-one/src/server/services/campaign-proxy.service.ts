@@ -15,8 +15,11 @@ import {
   googleAdsTrimSpace,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
+import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -49,6 +52,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { AiProxyError, aiErrorDetail, aiErrorSummary } from '../helpers/ai-error.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -440,6 +444,10 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 
 // ---------------------------------------------------------------------------
 // AI service helpers (LiteLLM proxy — same pattern as ai.service.ts)
+//
+// `AiProxyError`, `aiErrorSummary` and `aiErrorDetail` live in
+// `../helpers/ai-error.helper`, shared with `ai.service.ts`'s `makeAiRequest`, which posts to the
+// same proxy and needs the same body capture, length bound and key redaction.
 // ---------------------------------------------------------------------------
 
 /**
@@ -471,8 +479,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`AI request failed (${response.status}): ${text}`);
+    throw new AiProxyError(`AI request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
   }
 
   const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
@@ -507,8 +514,14 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`AI streaming request failed (${response.status})`);
+  // Split from the null-body case below rather than left as one condition. Collapsed, a 200 with
+  // no body threw `AI streaming request failed (200)` — a sentence that contradicts itself and
+  // sends the next reader hunting for a 200-level error that does not exist.
+  if (!response.ok) {
+    throw new AiProxyError(`AI streaming request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
+  }
+  if (!response.body) {
+    throw new AiProxyError(`AI streaming request returned no response body (${response.status})`, '');
   }
 
   const reader = response.body.getReader();
@@ -664,6 +677,15 @@ const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Goog
  * does not reach this one, so naming both platforms here would describe a caller that cannot exist.
  */
 const CALLOUT_SYSTEM_PROMPT = `You are a Google Ads extensions strategist. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
+
+/**
+ * Names both search platforms, as {@link KEYWORD_SYSTEM_PROMPT} does and unlike
+ * {@link CALLOUT_SYSTEM_PROMPT}, because the gate below is the keyword gate: a negative keyword is
+ * an exclusion on the same search query a keyword matches, and campaign-service adds it at campaign
+ * level on Google Ads and on Microsoft Advertising alike (`add-negative-keywords`). Nothing in the
+ * list is platform-specific, so a Microsoft-only brief gets the same one.
+ */
+const NEGATIVE_KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
@@ -1695,7 +1717,11 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // This stage logged nothing before #3996, so a proxy 401 reached the operator only as
+        // whatever the browser chose to show. `{ err: error }` is what puts the proxy's own body —
+        // the thing that took days to attribute — into the log. The browser gets `summary` only.
+        logger.warning(req, 'campaign_brief_copy', 'Ad copy generation failed', { err: error });
+        yield { type: 'error', data: `Ad copy generation failed: ${aiErrorSummary(error)}` };
         return;
       }
     }
@@ -1731,6 +1757,35 @@ export class CampaignProxyService {
       } catch (error) {
         logger.warning(req, 'campaign_brief_keywords', 'Keyword generation failed', { err: error });
         yield { type: 'status', data: 'Keyword generation failed, skipping...' };
+      }
+
+      // The SAME gate as the keywords above, deliberately: a negative keyword is the exclusion side
+      // of the keyword list, derived from the same event details, and campaign-service adds it at
+      // campaign level on Google Ads and Microsoft Advertising both. It is NOT gated on
+      // `!isRefinement` the way callouts and sitelinks are, and the difference is not an oversight:
+      // this list is a SUGGESTION the Optimize tab's editor opens pre-filled with, never a stored
+      // decision, and nothing the operator typed lives in the field a regeneration would overwrite
+      // — what they type lives in the editor's own text until they send it. Sitelinks' silent-wipe
+      // problem has no analogue here either: nothing in this block reads `pageLinks`.
+      //
+      // Nested in the keyword gate rather than repeated beside it so the two conditions cannot
+      // drift apart; a brief that gets keywords gets negatives, and the pairing is the point.
+      yield { type: 'status', data: 'Generating negative keywords...' };
+      try {
+        const negativePrompt = buildNegativeKeywordsPrompt(body, eventDetails);
+        const negativeText = stripJsonFences(await aiChat(NEGATIVE_KEYWORD_SYSTEM_PROMPT, negativePrompt, signal));
+        const negativeKeywords = shapeNegativeKeywords(JSON.parse(negativeText));
+        // Guarded for the reason the callout yield is: an empty array is a value the client
+        // assigns, so a response that shaped away to nothing would clear a list already held.
+        if (negativeKeywords.length > 0) {
+          yield { type: 'negativeKeywords', data: negativeKeywords };
+        }
+      } catch (error) {
+        // An operator closing the tab aborts this signal, which arrives here as an AbortError —
+        // a cancellation, not a degradation. Checked first, as the callout catch does.
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_brief_negative_keywords', 'Negative keyword generation failed', { err: error });
+        yield { type: 'status', data: 'Negative keyword generation failed, skipping...' };
       }
     }
 
@@ -1863,7 +1918,10 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // Same as the copy stage above — the other `aiChatStream` caller, and the other stage that
+        // logged nothing at all before #3996.
+        logger.warning(req, 'campaign_refine_copy', 'Brief refinement failed', { err: error });
+        yield { type: 'error', data: `Brief refinement failed: ${aiErrorSummary(error)}` };
         return;
       }
     }
@@ -2834,6 +2892,74 @@ CRITICAL RULES:
 - No calls to action ("Register Now", "Sign Up Today") — those belong in the ad copy, not a callout.
 - No phone numbers, URLs, or special characters beyond & and -.
 - Each callout must say something DIFFERENT from the others.`;
+}
+
+/**
+ * Shape a model's negative-keyword response into the bounded list the Optimize tab's editor opens
+ * pre-filled with.
+ *
+ * Accepts the wrapped object form (`{ "negativeKeywords": [...] }`, and the snake_case spelling
+ * the prompt's own key could be echoed as) alongside the bare array the prompt asks for, as
+ * {@link shapeCallouts} accepts `{ "callouts": [...] }` — the same model answers both and wraps
+ * intermittently.
+ *
+ * The filtering is NOT hand-written here: the entries are joined into the editor's own input format
+ * and run through {@link parseNegativeKeywordInput}, which is what normalises and refuses a line the
+ * operator types. That is the whole point — every keyword seeded this way is one the editor would
+ * have accepted, so the list can never open already failing its own validator. It drops rather than
+ * rewrites, for the reason `shapeCallouts` drops an over-long callout, and it collapses whitespace
+ * and refuses a repeat case-insensitively, exactly as a typed line is treated.
+ *
+ * The cap passed is Google Ads' 80, the NARROWEST of the four platforms that take negatives, not
+ * the shared 100 the BFF enforces: the brief does not know which campaign the operator will send
+ * these to, so one generated list has to be sendable on all of them. The count is capped at
+ * `MAX_NEGATIVE_KEYWORDS_PER_REQUEST`, the most one request may carry.
+ */
+function shapeNegativeKeywords(parsed: unknown): string[] {
+  const wrapper = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  const raw = wrapper ? (wrapper['negativeKeywords'] ?? wrapper['negative_keywords']) : parsed;
+  if (!Array.isArray(raw)) return [];
+  const lines = raw.filter((entry): entry is string => typeof entry === 'string');
+  const { keywords } = parseNegativeKeywordInput(lines.join('\n'), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+  return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+}
+
+function buildNegativeKeywordsPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 20-${MAX_NEGATIVE_KEYWORDS_PER_REQUEST} negative keywords for a paid search campaign promoting this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A negative keyword stops the ad showing for searches that contain it. Pick the terms that would waste budget on people who will never ${isEducation ? 'enrol' : 'attend'}.
+
+Negative keyword categories to cover:
+1. Free/cheap intent: searches looking for something at no cost.
+2. Jobs and careers: people searching for employment, not ${isEducation ? 'training' : 'a ticket'}.
+3. Research and study: definitions, tutorials, "what is", academic papers.
+4. Wrong format: ${isEducation ? 'conferences, meetups and events, when this is a course' : 'courses, certifications and exams, when this is an event'}.
+5. Past editions and wrong years, where the details above name a year.
+6. Adjacent but irrelevant topics the themes above make likely.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each negative keyword must be ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters or fewer.
+- Use only letters, digits, spaces and the characters & ' - . Never two of those punctuation characters next to each other.
+- Lower case. No quotation marks, no brackets, no match-type syntax.
+- Never exclude a term the campaign needs: nothing from the event or course name, its themes, or its audience above.
+- Each negative keyword must be DIFFERENT from the others, not a case variant or a repeat.`;
 }
 
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
