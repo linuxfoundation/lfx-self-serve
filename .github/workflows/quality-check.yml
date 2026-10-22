@@ -119,6 +119,9 @@ jobs:
           restore-keys: ${{ steps.angular-cache-key.outputs.prefix }}
 
       - name: Build project
+        # The Angular compiler worker inherits this heap; the default (~4 GB) is no longer enough.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: yarn build
 
       # Forks can restore public base caches, but only trusted, successful runs populate caches.
