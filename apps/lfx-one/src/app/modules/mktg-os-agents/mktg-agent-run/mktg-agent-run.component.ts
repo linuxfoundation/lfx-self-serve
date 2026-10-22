@@ -1046,14 +1046,19 @@ export class MktgAgentRunComponent {
 
     const draft = this.runAttempts.load(context.uid, this.agent.id);
     if (draft) {
-      if (draft.requiresReattachment) this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
       this.restoreInputs(draft.request, 'restored');
+      if (draft.pendingQuestions) {
+        this.activeRequest = draft.request;
+        this.showQuestions(draft.pendingQuestions);
+      } else if (draft.requiresReattachment) {
+        this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
+      }
     }
 
     // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
     const token = this.route.snapshot.queryParamMap?.get('questions');
     const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
-    if (returned?.pending.requiresReattachment) {
+    if (returned?.pending.requiresReattachment && !returned.pending.pendingQuestions) {
       this.restoreInputs(returned.pending.request, 'returned');
       this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
     } else if (returned?.pending.pendingQuestions) {

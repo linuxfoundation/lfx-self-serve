@@ -24,6 +24,7 @@ import {
   MktgDocumentExtractResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgPendingGeneration,
   MktgRunAnswer,
   MktgRunAsset,
   MktgRunQuestionsPending,
@@ -190,7 +191,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions, resume: vi.fn(() => NEVER) } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
@@ -252,6 +253,41 @@ describe('MktgAgentRunComponent', () => {
     expect(component['intakeForm'].get('project_name')?.value).toBe('Recovered synthetic project');
     expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach uploaded files');
     expect(query('mktg-agent-run-error')?.textContent).toContain('press Generate explicitly');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('restores accepted questions from serialized file intake with a live return token=%s', async (withToken) => {
+    await configure();
+    const questions: MktgRunQuestionsPending = {
+      attempt: { session: { agentId: SHELL_AGENT.id, sessionId: 'synthetic-file-session', ownerToken: 'synthetic-owner' }, priorVersion: 0 },
+      questionsId: 'abc12345',
+      questions: [{ key: 'source', label: 'Source', question: 'Which original source should be used?', why: '', suggestedAnswer: '', basis: [] }],
+    };
+    const pending: MktgPendingGeneration = {
+      request: { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: { project_name: 'Recovered file intake' } },
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+      requiresReattachment: true,
+      pendingQuestions: questions,
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save(pending);
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load(PROJECT_1.uid, SHELL_AGENT.id);
+    if (!restored) throw new Error('Missing serialized synthetic questions');
+    vi.spyOn(attempts, 'load').mockReturnValue(restored);
+    const token = withToken ? attempts.prepare(restored.request, true) : 'synthetic-token-lost-after-reload';
+    Object.defineProperty(TestBed.inject(ActivatedRoute).snapshot, 'queryParamMap', { value: convertToParamMap({ questions: token }), configurable: true });
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('questions');
+    expect(component['questionsPending']()).toEqual(questions);
+    expect(host().textContent).toContain('Which original source should be used?');
+    expect(query('mktg-agent-run-error')?.textContent ?? '').not.toContain('Reattach');
+    expect(generate).not.toHaveBeenCalled();
+    const answers: MktgRunAnswer[] = [{ key: 'source', text: 'Use the original uploaded source.', origin: 'requester' }];
+    component['onAnswerQuestions'](answers);
+    expect(answerQuestions).toHaveBeenCalledExactlyOnceWith(restored.request, questions, answers);
     expect(generate).not.toHaveBeenCalled();
   });
 
