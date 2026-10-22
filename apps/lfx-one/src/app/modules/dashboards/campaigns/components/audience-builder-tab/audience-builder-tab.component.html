@@ -89,7 +89,14 @@
                   <i class="fa-light fa-circle-check text-emerald-600" aria-hidden="true"></i>
                   Added to Include:
                   @if (list.hubspotUrl) {
-                    <a [href]="list.hubspotUrl" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline">{{ list.name }}</a>
+                    <a
+                      [attr.data-testid]="'campaigns-audience-opt-in-link-' + list.listId"
+                      [href]="list.hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="font-medium text-blue-600 hover:underline"
+                      >{{ list.name }}</a
+                    >
                   } @else {
                     <span class="font-medium">{{ list.name }}</span>
                   }
@@ -197,7 +204,7 @@
   </section>
 
   <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse'" data-testid="campaigns-audience-reuse-view">
-    <!-- === 1. Discover === -->
+    <!-- === Discover === -->
     <lfx-audience-step-card
       [step]="stepNumbers().discover"
       heading="Discover qualifying lists"
@@ -414,10 +421,10 @@
       }
     </section>
 
-    <!-- Steps 2-5 each ADD to the selection, so compose (6) comes after all of them: composing
+    <!-- Include, Exclude, Reuse and Fill gaps each ADD to the selection, so compose comes after all of them: composing
          before Reuse and Fill gaps built a master list that the next two steps then changed. -->
     <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse' || !hasDiscovered()" data-testid="campaigns-audience-discovered-steps">
-      <!-- === 2. Include === -->
+      <!-- === Include === -->
       <lfx-audience-step-card
         [step]="stepNumbers().include"
         heading="Include lists"
@@ -443,7 +450,7 @@
       </lfx-audience-step-card>
     </div>
 
-    <!-- === 3. Exclude === -->
+    <!-- === Exclude === -->
     <lfx-audience-step-card
       [step]="stepNumbers().exclude"
       heading="Standard suppressions"
@@ -502,7 +509,7 @@
     </lfx-audience-step-card>
 
     <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse' || !hasDiscovered()">
-      <!-- === 4. Reuse === -->
+      <!-- === Reuse === -->
       <lfx-audience-step-card
         [step]="stepNumbers().reuse"
         heading="Reuse a previous audience"
@@ -536,7 +543,7 @@
           (useMasterList)="onUseMasterList($event)" />
       </lfx-audience-step-card>
 
-      <!-- === 5. Fill gaps === -->
+      <!-- === Fill gaps === -->
       <lfx-audience-step-card
         [step]="stepNumbers().gaps"
         heading="Fill the gaps"
@@ -562,7 +569,7 @@
       </lfx-audience-step-card>
     </div>
 
-    <!-- === 6. Review & compose === -->
+    <!-- === Review & compose === -->
     <lfx-audience-step-card
       [step]="stepNumbers().compose"
       heading="Review and attach"
@@ -611,8 +618,9 @@
         @if (suppressionEntries().length === 0) {
           <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-exclude-none">
             Tick at least one list under
-            <button type="button" (click)="onGoToStep('exclude')" class="underline hover:text-red-900">Standard suppressions</button>. Nothing can be composed
-            or attached without one.
+            <button type="button" (click)="onGoToStep('exclude')" data-testid="campaigns-audience-goto-exclude" class="underline hover:text-red-900">
+              Standard suppressions</button
+            >. Nothing can be composed or attached without one.
           </p>
         } @else {
           <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">{{ excludeIds().length }} list(s) will be excluded in total.</p>
@@ -753,7 +761,13 @@
                      compose created nothing, and another send's master is not this email's fix. -->
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-loose">
                   The master list composed here was not attached. To send to it instead, choose "Use for this email" on it under
-                  <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>.
+                  <button
+                    type="button"
+                    (click)="onGoToStep('reuse')"
+                    data-testid="campaigns-audience-goto-reuse-loose"
+                    class="text-blue-600 underline hover:text-blue-800">
+                    Master lists already built</button
+                  >.
                 </p>
               } @else if (composeAttempted()) {
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-after-compose">
@@ -922,7 +936,13 @@
                   Not attached to this email — it had no saved plan when this list was composed. Once the plan is saved, choose "Use for this email" on this
                   list under
                   @if (hasDiscovered()) {
-                    <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>;
+                    <button
+                      type="button"
+                      (click)="onGoToStep('reuse')"
+                      data-testid="campaigns-audience-goto-reuse-not-attached"
+                      class="text-blue-600 underline hover:text-blue-800">
+                      Master lists already built</button
+                    >;
                   } @else {
                     Master lists already built (run Discover under Use existing lists first);
                   }
@@ -932,7 +952,13 @@
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-confirmed">
                   Attachment to this email was not confirmed. Choose "Use for this email" on this list under
                   @if (hasDiscovered()) {
-                    <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>
+                    <button
+                      type="button"
+                      (click)="onGoToStep('reuse')"
+                      data-testid="campaigns-audience-goto-reuse-not-confirmed"
+                      class="text-blue-600 underline hover:text-blue-800">
+                      Master lists already built
+                    </button>
                   } @else {
                     Master lists already built (run Discover under Use existing lists first)
                   }

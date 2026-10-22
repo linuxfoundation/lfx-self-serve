@@ -3,12 +3,26 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, PLATFORM_ID, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  of,
+  pairwise,
+  startWith,
+  Subscription,
+  switchMap,
+  tap,
+} from 'rxjs';
 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
@@ -17,6 +31,7 @@ import {
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_OPT_IN_LOOKUP_EMPTY,
   AUDIENCE_OPT_IN_SIGNALS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
@@ -380,6 +395,8 @@ export class AudienceBuilderTabComponent {
   private existingSearchSeq = 0;
   /** Bumped per opt-in lookup, so a superseded one's reply is dropped. */
   private optInSeq = 0;
+  /** The opt-in lookup's discovery stream, cancelled when a newer lookup or a run reset replaces it. */
+  private optInSubscription: Subscription | null = null;
   /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
   private suppressionScope = '';
   /**
@@ -469,7 +486,7 @@ export class AudienceBuilderTabComponent {
   /** The "combine into a master list" disclosure is open. Direct use is the default action. */
   protected readonly composeOpen = signal(false);
   /** The existing opt-in lists an event draft joins to Include. See `lookUpOptIns`. */
-  protected readonly optIns = signal<AudienceOptInLookup>(EMPTY_OPT_INS);
+  protected readonly optIns = signal<AudienceOptInLookup>(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -1067,84 +1084,7 @@ export class AudienceBuilderTabComponent {
    * Everything pausing or limiting the tab, most urgent first, for the one readiness banner.
    * Warnings lead (they need the operator), then fixed limits, then waits that clear on their own.
    */
-  protected readonly readinessNotices = computed<readonly AudienceReadinessNotice[]>(() => {
-    const warn: AudienceReadinessNotice[] = [];
-    const info: AudienceReadinessNotice[] = [];
-    const busy: AudienceReadinessNotice[] = [];
-
-    if (!this.capabilitiesKnown()) {
-      busy.push({ testId: 'campaigns-audience-checking', tone: 'busy', message: 'Checking the HubSpot connection...' });
-    } else if (this.degraded()) {
-      // Both branches fail closed; only the CAUSE differs, and stating the wrong one sends the
-      // operator to fix credentials that are fine. Upstream's own reason beats the generic copy.
-      const detail = this.degradedDetail();
-      let message =
-        'This environment has no HubSpot credentials configured, so lists cannot be discovered or created. An administrator needs to set up the connection.';
-      let messageTestId = 'campaigns-audience-degraded-unconfigured';
-      if (this.capabilitiesFailed()) {
-        message =
-          'The Audience Builder could not be reached, so lists cannot be discovered or created. Reload to try again; if it persists, ask an administrator.';
-        messageTestId = 'campaigns-audience-degraded-unknown';
-      } else if (detail) {
-        message = `${detail} Everything below is read-only until the HubSpot connection is usable.`;
-        messageTestId = 'campaigns-audience-degraded-detail';
-      }
-      warn.push({ testId: 'campaigns-audience-degraded-banner', tone: 'warn', title: 'Audience Builder is unavailable', message, messageTestId });
-    }
-
-    // The brief's saved audience is unknown: every write is blocked, since a second audience on
-    // top of a hidden one is a duplicate HubSpot list.
-    if (this.audienceReadPending()) {
-      busy.push({
-        testId: 'campaigns-audience-read-pending',
-        tone: 'busy',
-        message: 'Checking whether this email already has a send audience. Attaching and composing are paused until it loads.',
-      });
-    } else if (this.audienceReadUnavailable()) {
-      info.push({
-        testId: 'campaigns-audience-read-unavailable',
-        tone: 'info',
-        message: "Saved audiences can't be looked up here, so attaching and composing are off to avoid a duplicate master list.",
-      });
-    } else if (this.audienceReadFailed()) {
-      warn.push({
-        testId: 'campaigns-audience-read-failed',
-        tone: 'warn',
-        title: "This email's saved audience could not be checked",
-        message: 'It may already have one. Attaching and composing are blocked until it can be read.',
-        action: { kind: 'retry-audience-read', label: 'Try again', testId: 'campaigns-audience-read-retry' },
-      });
-    }
-
-    // Why nothing can be attached yet. The parent saves the plan when the tab opens, so an empty
-    // brief id is a save in flight, a failed save, an unapproved plan, or one this session does
-    // not own -- never "go and save it".
-    const state = this.briefState();
-    if (this.briefId() === '' && state !== 'none' && state !== 'ready') {
-      const notice: AudienceReadinessNotice = {
-        testId: 'campaigns-audience-brief-state',
-        tone: 'info',
-        message: this.briefStateMessage(),
-        messageTestId: 'campaigns-audience-brief-state-message',
-      };
-      if (state === 'resolving') busy.push({ ...notice, tone: 'busy' });
-      else if (state === 'failed')
-        warn.push({ ...notice, tone: 'warn', action: { kind: 'retry-brief', label: 'Retry', testId: 'campaigns-audience-brief-retry' } });
-      else if (state === 'unopened') warn.push({ ...notice, tone: 'warn' });
-      else info.push(notice);
-    }
-
-    if (this.stagingInFlight()) {
-      busy.push({
-        testId: 'campaigns-audience-staging-pause',
-        tone: 'busy',
-        message:
-          'A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching resume once it finishes or is confirmed on the Implement tab.',
-      });
-    }
-
-    return [...warn, ...info, ...busy];
-  });
+  protected readonly readinessNotices: Signal<readonly AudienceReadinessNotice[]> = this.initReadinessNotices();
 
   /**
    * Reusing EXISTING lists needs the same settled suppression read that composing does, and at
@@ -2712,7 +2652,10 @@ export class AudienceBuilderTabComponent {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
     this.runGeneration += 1;
-    this.optIns.set(EMPTY_OPT_INS);
+    this.optInSubscription?.unsubscribe();
+    this.optInSubscription = null;
+    this.optIns.set(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
+    this.composeConfirming.set(false);
     this.composing.set(false);
     this.previewing.set(false);
     // `searching` belongs here with its siblings. Guarding onSearch's ERROR handler on the run
@@ -2791,10 +2734,94 @@ export class AudienceBuilderTabComponent {
    * one fix, the same way the run-generation guard and `resetRunState` were.
    */
   private invalidatePreview(): void {
+    // A confirmation names the selection it was asked for, so an edit withdraws it.
+    this.composeConfirming.set(false);
     this.previewSeq += 1;
     this.previewCount.set(null);
     this.previewError.set(null);
     this.previewing.set(false);
+  }
+
+  // === Private Initializers ===
+  private initReadinessNotices(): Signal<readonly AudienceReadinessNotice[]> {
+    return computed(() => {
+      const warn: AudienceReadinessNotice[] = [];
+      const info: AudienceReadinessNotice[] = [];
+      const busy: AudienceReadinessNotice[] = [];
+
+      if (!this.capabilitiesKnown()) {
+        busy.push({ testId: 'campaigns-audience-checking', tone: 'busy', message: 'Checking the HubSpot connection...' });
+      } else if (this.degraded()) {
+        // Both branches fail closed; only the CAUSE differs, and stating the wrong one sends the
+        // operator to fix credentials that are fine. Upstream's own reason beats the generic copy.
+        const detail = this.degradedDetail();
+        let message =
+          'This environment has no HubSpot credentials configured, so lists cannot be discovered or created. An administrator needs to set up the connection.';
+        let messageTestId = 'campaigns-audience-degraded-unconfigured';
+        if (this.capabilitiesFailed()) {
+          message =
+            'The Audience Builder could not be reached, so lists cannot be discovered or created. Reload to try again; if it persists, ask an administrator.';
+          messageTestId = 'campaigns-audience-degraded-unknown';
+        } else if (detail) {
+          message = `${detail} Everything below is read-only until the HubSpot connection is usable.`;
+          messageTestId = 'campaigns-audience-degraded-detail';
+        }
+        warn.push({ testId: 'campaigns-audience-degraded-banner', tone: 'warn', title: 'Audience Builder is unavailable', message, messageTestId });
+      }
+
+      // The brief's saved audience is unknown: every write is blocked, since a second audience on
+      // top of a hidden one is a duplicate HubSpot list.
+      if (this.audienceReadPending()) {
+        busy.push({
+          testId: 'campaigns-audience-read-pending',
+          tone: 'busy',
+          message: 'Checking whether this email already has a send audience. Attaching and composing are paused until it loads.',
+        });
+      } else if (this.audienceReadUnavailable()) {
+        info.push({
+          testId: 'campaigns-audience-read-unavailable',
+          tone: 'info',
+          message: "Saved audiences can't be looked up here, so attaching and composing are off to avoid a duplicate master list.",
+        });
+      } else if (this.audienceReadFailed()) {
+        warn.push({
+          testId: 'campaigns-audience-read-failed',
+          tone: 'warn',
+          title: "This email's saved audience could not be checked",
+          message: 'It may already have one. Attaching and composing are blocked until it can be read.',
+          action: { kind: 'retry-audience-read', label: 'Try again', testId: 'campaigns-audience-read-retry' },
+        });
+      }
+
+      // Why nothing can be attached yet. The parent saves the plan when the tab opens, so an empty
+      // brief id is a save in flight, a failed save, an unapproved plan, or one this session does
+      // not own -- never "go and save it".
+      const state = this.briefState();
+      if (this.briefId() === '' && state !== 'none' && state !== 'ready') {
+        const notice: AudienceReadinessNotice = {
+          testId: 'campaigns-audience-brief-state',
+          tone: 'info',
+          message: this.briefStateMessage(),
+          messageTestId: 'campaigns-audience-brief-state-message',
+        };
+        if (state === 'resolving') busy.push({ ...notice, tone: 'busy' });
+        else if (state === 'failed')
+          warn.push({ ...notice, tone: 'warn', action: { kind: 'retry-brief', label: 'Retry', testId: 'campaigns-audience-brief-retry' } });
+        else if (state === 'unopened') warn.push({ ...notice, tone: 'warn' });
+        else info.push(notice);
+      }
+
+      if (this.stagingInFlight()) {
+        busy.push({
+          testId: 'campaigns-audience-staging-pause',
+          tone: 'busy',
+          message:
+            'A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching resume once it finishes or is confirmed on the Implement tab.',
+        });
+      }
+
+      return [...warn, ...info, ...busy];
+    });
   }
 
   /**
@@ -2812,15 +2839,28 @@ export class AudienceBuilderTabComponent {
     const run = this.runGeneration;
     const seq = ++this.optInSeq;
     const current = (): boolean => run === this.runGeneration && seq === this.optInSeq;
-    this.optIns.set({ ...EMPTY_OPT_INS, status: 'loading' });
+    // A new draft replaces the last one's opt-ins: lists it added that are still included are
+    // taken out again, so a corrected URL or another event does not leave the first event's
+    // lists in the send with nothing on the panel naming them.
+    this.optInSubscription?.unsubscribe();
+    if (!this.selectionLocked()) {
+      const stale = this.optIns().added.filter((list) => this.inclusion().has(list.listId));
+      if (stale.length > 0) {
+        const next = new Map(this.inclusion());
+        stale.forEach((list) => next.delete(list.listId));
+        this.inclusion.set(next);
+        this.invalidatePreview();
+      }
+    }
+    this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'loading' });
     let result: AudienceDiscoveryResult | null = null;
     // Settled on `done` or on completion, whichever comes first: the stream may end either way.
     const settle = (): void => {
       if (!current() || this.optIns().status !== 'loading') return;
-      if (result === null) this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+      if (result === null) this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
       else this.applyOptIns(result);
     };
-    this.campaignService
+    this.optInSubscription = this.campaignService
       .discoverAudience(this.projectSlug(), { eventUrl })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -2831,11 +2871,11 @@ export class AudienceBuilderTabComponent {
           } else if (event.type === 'done') {
             settle();
           } else if (event.type === 'error' || event.type === 'shutdown') {
-            this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+            this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
           }
         },
         error: () => {
-          if (current() && this.optIns().status === 'loading') this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+          if (current() && this.optIns().status === 'loading') this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
         },
         complete: settle,
       });
@@ -2877,8 +2917,6 @@ export class AudienceBuilderTabComponent {
     );
   }
 }
-
-const EMPTY_OPT_INS: AudienceOptInLookup = { status: 'idle', added: [], others: [], missing: [] };
 
 /** Appends the year of the event's first date to a name that has none ("… Japan" → "… Japan 2026"). */
 function withEventYear(name: string, dates: readonly string[]): string {
