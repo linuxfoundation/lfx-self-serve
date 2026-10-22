@@ -110,7 +110,7 @@ describe('EngagementRepresentativesComponent', () => {
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
 
-    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
+    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
     expect(row.textContent).toContain('Dana Fields');
     expect(row.textContent).toContain('Technical Steering Committee');
@@ -168,17 +168,6 @@ describe('EngagementRepresentativesComponent', () => {
     expect(cell('r-ok', 'attended').className).toContain('text-gray-800');
     expect(cell('r-ok', 'last-attended').className).toContain('text-gray-800');
     expect(cell('r-ok', 'last-attended').className).not.toContain('text-amber-600');
-  });
-
-  it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
-    await render();
-    getEngagementRepresentatives.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   // Two unresolved rows must not read as one person listed twice.

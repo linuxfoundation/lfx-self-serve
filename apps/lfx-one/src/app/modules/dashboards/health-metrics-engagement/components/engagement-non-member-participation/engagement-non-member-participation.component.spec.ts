@@ -120,21 +120,6 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(status.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('○');
   });
 
-  // The view carries no project key, so the section stays on the foundation whatever project is picked.
-  it('does not re-read when a project is selected, and says the section stays foundation-wide', async () => {
-    await render();
-    getEngagementNonMemberParticipation.mockClear();
-    const scopeNote = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-scope-note"]');
-    expect(scopeNote()).toBeNull();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(scopeNote()?.textContent).toContain('Foundation-wide; not filtered by project');
-  });
-
   // The period pill re-projects the loaded rows, so switching it must not cost another request.
   it('re-projects the loaded rows when the period changes, without re-reading', async () => {
     await render();

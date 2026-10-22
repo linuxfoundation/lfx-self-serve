@@ -3,12 +3,6 @@
 
 @switch (state()) {
   @case ('present') {
-    <!-- The design sets this note at an exact 12px. -->
-    <p class="mb-4 flex items-center gap-2 text-[12px] text-gray-500" data-testid="training-scope-note">
-      <i class="fa-light fa-circle-info" aria-hidden="true"></i>
-      {{ scopeNote }}
-    </p>
-
     <!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
     <lfx-health-metrics-l2-shell
       #shell
@@ -17,8 +11,7 @@
       [dataSections]="dataSections"
       [subNavItems]="subNavItems()"
       navLabel="Training sections"
-      testIdPrefix="training"
-      [crossReference]="crossReference">
+      testIdPrefix="training">
       <ng-template lfxHealthMetricsL2Section="enroll">
         <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll')" />
       </ng-template>

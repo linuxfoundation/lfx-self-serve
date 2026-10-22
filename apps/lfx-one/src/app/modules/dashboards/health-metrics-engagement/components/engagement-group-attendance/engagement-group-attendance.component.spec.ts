@@ -107,7 +107,6 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith({
       foundationSlug: 'acme',
-      projectSlug: null,
       groupType: 'all',
       range: 'YTD',
       page: 1,
@@ -161,20 +160,6 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
   });
 
-  it('re-reads the selected project from page 1, since its page came from the wider scope', async () => {
-    await render(response({ totalRecords: 80 }));
-    fixture.componentInstance['page'].set(3);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    getEngagementGroupAttendance.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ projectSlug: 'acme-core', page: 1 }));
-  });
-
   // The chips carry labels only, as the design draws them; the caption follows the selected chip.
   it('labels each chip without a count, and captions the chip-filtered total', async () => {
     const typeCounts = [
@@ -214,14 +199,6 @@ describe('EngagementGroupAttendanceComponent', () => {
     // Singular at one, and the badge counts never followed the chip.
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
     expect(emitted.at(-1)).toEqual(counts);
-  });
-
-  it('says the project has no groups, rather than blaming the type chip', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }));
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
-      'No groups recorded for this project'
-    );
   });
 
   // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is

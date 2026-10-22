@@ -300,9 +300,12 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"]').textContent).not.toContain('Gamma note');
   });
 
+  // The design's amber pill beside a card title.
   it('badges only the heading that carries one', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.textContent?.trim()).toBe('Provisional');
-    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.className).toContain('rounded-[4px]');
+    for (const cls of ['rounded-full', 'bg-amber-50', 'text-amber-800', 'uppercase']) {
+      expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.className).toContain(cls);
+    }
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-alpha"]')).toBeNull();
   });
 
@@ -319,7 +322,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(column.style.getPropertyValue('--l2-panes-height')).toBe('');
   });
 
-  it('lands a picked section, and pins the sub-nav, just below the sticky header', () => {
+  it('lands a picked section just below the sticky header, and pins the nav 8px lower', () => {
     const alpha = fixture.nativeElement.querySelector('[data-testid="test-section-alpha"]') as HTMLElement;
 
     const column = alpha.parentElement as HTMLElement;
@@ -327,7 +330,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     // The header only sticks at `lg`, so the margin is a `lg:` utility reading the offset the column carries.
     expect(alpha.className).toContain('lg:scroll-mt-[var(--l2-sticky-top)]');
     expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
-    expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.top).toBe(`${chrome.stickyTopPx()}px`);
+    expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.top).toBe(`${chrome.stickyTopPx() + 8}px`);
 
     chrome.headerHeightPx.set(120);
     fixture.detectChanges();
