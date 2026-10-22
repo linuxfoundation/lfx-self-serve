@@ -41,9 +41,9 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000 },
   change: { enrollments: 0.1, certifications: 0.004, revenueUsd: -0.2 },
   byType: [
-    { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
-    { deliveryType: 'Certification Exam', enrollments: 620, revenueUsd: 70000 },
-    { deliveryType: 'Instructor Led', enrollments: 330, revenueUsd: 30000 },
+    { deliveryType: 'E-Learning', isListed: true, enrollments: 2900, revenueUsd: 0 },
+    { deliveryType: 'Certification Exam', isListed: true, enrollments: 620, revenueUsd: 70000 },
+    { deliveryType: 'Instructor Led', isListed: true, enrollments: 330, revenueUsd: 30000 },
   ],
 };
 
@@ -154,7 +154,7 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
 
   it('sorts a type with unmeasured revenue last', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
-      withPeriod({ byType: [{ deliveryType: 'MicroCourse', enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
+      withPeriod({ byType: [{ deliveryType: 'MicroCourse', isListed: false, enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
       'YTD',
       'revenue'
     );
@@ -169,12 +169,13 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(view.byType.map((row) => row.deliveryType)).toEqual(['Instructor Led', 'E-Learning', 'Certification Exam']);
   });
 
-  it('leaves Bundle and types without enrollments off the enrollment list, and edX off the revenue list', () => {
+  // MicroCourse has enrollments but the model does not list it, as in PCC; it still counts in the totals.
+  it('lists only the types the model lists, with enrollments, and leaves edX off the revenue list', () => {
     const byType = [
       ...PERIOD.byType,
-      { deliveryType: 'Bundle', enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'edX', enrollments: 500, revenueUsd: 0 },
-      { deliveryType: 'MicroCourse', enrollments: 0, revenueUsd: 0 },
+      { deliveryType: 'Bundle', isListed: false, enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'edX', isListed: true, enrollments: 500, revenueUsd: 0 },
+      { deliveryType: 'MicroCourse', isListed: false, enrollments: 3154, revenueUsd: 0 },
     ];
 
     const enrollments = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'enrollments');
@@ -184,15 +185,15 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(revenue.byType.map((row) => row.deliveryType)).toEqual(['Bundle', 'Certification Exam', 'Instructor Led', 'E-Learning', 'MicroCourse']);
   });
 
-  it('counts the delivery types with enrollments, never Bundle', () => {
+  it('counts the listed delivery types with enrollments, never Bundle or MicroCourse', () => {
     expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').typeCountLabel).toBe('3 delivery types');
     expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType: PERIOD.byType.slice(0, 1) }), 'YTD', 'enrollments').typeCountLabel).toBe(
       '1 delivery type'
     );
     const byType = [
       ...PERIOD.byType,
-      { deliveryType: 'Bundle', enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'MicroCourse', enrollments: 0, revenueUsd: 0 },
+      { deliveryType: 'Bundle', isListed: false, enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'MicroCourse', isListed: false, enrollments: 3154, revenueUsd: 0 },
     ];
     expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'revenue').typeCountLabel).toBe('3 delivery types');
   });
@@ -202,6 +203,15 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
       { year: 2025, enrollments: 3400, isPartialYear: false, yearLabel: '2025', enrollmentsLabel: '3,400' },
       { year: 2026, enrollments: 3850, isPartialYear: true, yearLabel: '2026 (partial year)', enrollmentsLabel: '3,850' },
     ]);
+  });
+
+  // The view returns every year from 2016; the design draws the latest six.
+  it('keeps the latest six years of a longer trend', () => {
+    const trend = Array.from({ length: 11 }, (_, index) => ({ year: 2016 + index, enrollments: 1000 + index }));
+    const view = buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, trend }, 'YTD', 'enrollments');
+
+    expect(view.trend.map((point) => point.year)).toEqual([2021, 2022, 2023, 2024, 2025, 2026]);
+    expect(view.trend.at(-1)).toMatchObject({ isPartialYear: true, yearLabel: '2026 (partial year)' });
   });
 
   it('builds an empty view from the unmeasured read', () => {

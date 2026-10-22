@@ -47,7 +47,7 @@
     } @else {
       <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="my-formations-card">
         <lfx-card-tabs-bar
-          [options]="stageTabOptions"
+          [options]="stageTabOptions()"
           [selectedFilter]="stageTab()"
           (filterChange)="onStageTabChange($event)"
           data-testid="my-formations-stage-tabs">

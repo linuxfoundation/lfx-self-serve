@@ -17,6 +17,6 @@ export const PROJECT_PERMISSION_ROLE_OPTIONS: readonly FilterOption<ProjectPermi
 /** Filter pill color for each role in the permissions table */
 export const PROJECT_PERMISSION_ROLE_COLOR: Record<ProjectPermissionRole, FilterPillColor> = {
   manage: 'green',
-  view: 'red',
+  view: 'blue',
   meeting_coordinator: 'purple',
 };

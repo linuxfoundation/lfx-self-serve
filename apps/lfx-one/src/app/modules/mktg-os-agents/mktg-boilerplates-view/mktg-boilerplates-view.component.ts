@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { BOILERPLATES_MODE_LABELS, BOILERPLATES_VIEW_TABS } from '@lfx-one/shared/constants';
 import {
@@ -16,6 +16,7 @@ import {
 import { boilerplatesLengthRows, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 
+import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 // The Boilerplates view: the asset's own app page inside the mktg-os-agents
@@ -35,6 +36,8 @@ export class MktgBoilerplatesViewComponent {
   // === Injections ===
   private readonly destroyRef = inject(DestroyRef);
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -50,7 +53,11 @@ export class MktgBoilerplatesViewComponent {
   public readonly approval = input<MktgRevisionApproval | null>(null);
 
   // === Signals ===
-  protected readonly selectedTab = signal<BoilerplatesViewTabId>('boilerplates');
+  private readonly tabState = createMktgAssetTab(
+    BOILERPLATES_VIEW_TABS.map((tab) => tab.id),
+    'boilerplates'
+  );
+  protected readonly selectedTab = this.tabState.selected;
   /** The length whose text was just copied — drives the transient "Copied" state. */
   protected readonly copiedIndex = signal<number | null>(null);
 
@@ -90,8 +97,6 @@ export class MktgBoilerplatesViewComponent {
   };
   /** Reset timer of the "Copied" state — cleared on destroy. */
   private copyTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Deferred focus move of a panel shortcut (`onGoToTab`) — cleared on destroy. */
-  private focusTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -99,37 +104,34 @@ export class MktgBoilerplatesViewComponent {
         clearTimeout(this.copyTimer);
         this.copyTimer = null;
       }
-      if (this.focusTimer !== null) {
-        clearTimeout(this.focusTimer);
-        this.focusTimer = null;
-      }
     });
   }
 
   // === Protected methods ===
-  protected onSelectTab(id: BoilerplatesViewTabId): void {
-    this.selectedTab.set(id);
+  protected async onSelectTab(id: BoilerplatesViewTabId): Promise<void> {
+    await this.tabState.select(id);
+    if (isPlatformBrowser(this.platformId) && !this.destroyRef.destroyed) {
+      afterNextRender(
+        () => {
+          if (this.selectedTab() !== id) return;
+          const panel = this.host.nativeElement.querySelector<HTMLElement>('[role="tabpanel"]');
+          if (panel) {
+            if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+            panel.focus();
+          }
+        },
+        { injector: this.injector }
+      );
+    }
   }
 
   /**
    * A shortcut from inside a panel (the reviewer card's "Sources read, failed
-   * and gaps") opens that tab and moves focus onto it, as on the framework
-   * view: the button that was clicked leaves the page with the old panel.
+   * and gaps") opens that tab and focuses its rendered panel, as on the other
+   * asset views: the button that was clicked leaves with the old panel.
    */
   protected onGoToTab(id: BoilerplatesViewTabId): void {
-    this.selectedTab.set(id);
-    if (isPlatformBrowser(this.platformId)) {
-      const tab = this.tabs().find((entry) => entry.id === id);
-      if (tab) {
-        if (this.focusTimer !== null) {
-          clearTimeout(this.focusTimer);
-        }
-        this.focusTimer = setTimeout(() => {
-          this.focusTimer = null;
-          this.document.getElementById(tab.tabId)?.focus();
-        });
-      }
-    }
+    void this.onSelectTab(id);
   }
 
   /**
@@ -158,7 +160,7 @@ export class MktgBoilerplatesViewComponent {
         return;
     }
     event.preventDefault();
-    this.selectedTab.set(tabs[next].id);
+    void this.tabState.select(tabs[next].id);
     if (isPlatformBrowser(this.platformId)) {
       this.document.getElementById(tabs[next].tabId)?.focus();
     }

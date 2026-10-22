@@ -30,14 +30,14 @@ test.describe('Marketing kit home content', () => {
     await setupKit(page);
     await openKit(page);
     await expect(page.getByTestId('mktg-kit-in-kit')).toHaveText('0 assets');
-    await expect(page.getByTestId('mktg-kit-asset-messaging-framework')).toContainText('Missing');
-    await expect(page.getByTestId('mktg-kit-asset-boilerplates')).toContainText('Missing');
-    await expect(page.getByTestId('mktg-kit-asset-faq')).toContainText('Missing');
+    await expect(page.getByTestId('mktg-kit-asset-messaging-framework')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-asset-boilerplates')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-asset-faq')).toContainText('Not run yet');
     for (const family of MKTG_KIT_FAMILIES.filter((family) => family.assets.every((asset) => !asset.agentKey))) {
       await expect(page.getByTestId(`mktg-kit-family-availability-${family.id}`)).toHaveText('Coming soon');
       await expect(page.getByTestId(`mktg-kit-family-${family.id}`)).toContainText(family.description);
     }
-    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('None yet');
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Not run yet');
   });
   test('loading never claims zero assets', async ({ page }) => {
     let release = () => {};

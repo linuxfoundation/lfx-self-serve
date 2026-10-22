@@ -110,7 +110,27 @@
         @if (status(); as statusDisplay) {
           <lfx-tag [value]="statusDisplay.label" [severity]="statusDisplay.severity" data-testid="org-easycla-detail-status" />
         }
+        @if (viewOnly()) {
+          <span
+            class="flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700"
+            data-testid="org-easycla-detail-view-only">
+            <i class="fa-light fa-eye" aria-hidden="true"></i>
+            {{ viewOnlyCopy.label }}
+          </span>
+        }
       </div>
+      @if (viewOnly()) {
+        <p class="text-sm text-gray-600" data-testid="org-easycla-detail-view-only-reason">
+          {{ viewOnlyCopy.reason }}
+          <button
+            type="button"
+            class="font-medium text-blue-600 hover:underline"
+            (click)="focusTab('managers')"
+            data-testid="org-easycla-detail-view-only-managers-link">
+            {{ viewOnlyCopy.managersLink }}
+          </button>
+        </p>
+      }
       @if (group.signingEntityName) {
         <p class="text-sm text-gray-500" data-testid="org-easycla-detail-signing-entity">{{ group.signingEntityName }}</p>
       }

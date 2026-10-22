@@ -14,7 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, getUserTimezone, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { buildCommentResponses, getCommentPromptsData, getUserTimezone, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -90,12 +90,6 @@ export class VoteCastDrawerComponent {
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
-  // Missing poll_type defaults to GENERIC (parity with vote-results-drawer.initIsGenericPoll) so the plurality branch renders when upstream omits the field.
-  protected readonly isGenericPoll: Signal<boolean> = computed(() => {
-    const v = this.vote();
-    if (!v) return false;
-    return (v.poll_type ?? PollType.GENERIC) === PollType.GENERIC;
-  });
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
@@ -293,7 +287,15 @@ export class VoteCastDrawerComponent {
           // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
           // same value.
           const lastDetail = lastVoteId === id ? lastVote : null;
-          let fallback = lastDetail ?? listVote;
+          // #4075: never trust an unconfirmed list-row poll_type for the ranked/single-choice decision
+          // while the first detail fetch for this vote is in flight — wait for a confirmed fetch. A
+          // missing poll_type already defaults to non-ranked everywhere it's read, so this transient
+          // startWith emission can only bias toward the safe single-choice shape. If the fetch then
+          // fails outright with no cached detail to fall back to, degrade to the list row's own
+          // poll_type (per @dealako, #4076 review) rather than a doubly-unconfirmed guess — matching
+          // how every other field (poll_questions, etc.) already behaves in that terminal-failure state.
+          const listFallback = listVote ?? null;
+          let fallback = lastDetail ?? (listVote ? { ...listVote, poll_type: undefined } : null);
           if (lastDetail && listVote) {
             fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
           }
@@ -306,7 +308,7 @@ export class VoteCastDrawerComponent {
               lastVoteId = id;
               lastVote = v;
             }),
-            catchError(() => of(fallback)),
+            catchError(() => of(lastDetail ? fallback : listFallback)),
             finalize(() => this.loadingVote.set(false)),
             startWith(fallback)
           );
@@ -317,10 +319,7 @@ export class VoteCastDrawerComponent {
   }
 
   private initIsRankedPoll(): Signal<boolean> {
-    return computed(() => {
-      const t = this.vote()?.poll_type;
-      return !!t && t !== PollType.GENERIC;
-    });
+    return computed(() => isRankedPollType(this.vote()?.poll_type));
   }
 
   private initSubmitDisabled(): Signal<boolean> {

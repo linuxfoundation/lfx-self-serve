@@ -331,12 +331,11 @@
         <a
           routerLink="/docs"
           class="lfxn__icon-btn"
-          [class.is-active]="isDocsActive()"
           [attr.aria-current]="isDocsActive() ? 'page' : null"
           aria-label="Documentation"
           lfxNavTooltip="Documentation"
           data-testid="lens-docs-button">
-          <span class="lfxn__icon-btn-glyph"><i [ngClass]="isDocsActive() ? 'fa-solid fa-book-open' : 'fa-light fa-book-open'" aria-hidden="true"></i></span>
+          <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-book-open" aria-hidden="true"></i></span>
         </a>
       </div>
     </div>

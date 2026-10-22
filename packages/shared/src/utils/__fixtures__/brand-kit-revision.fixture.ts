@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BrandKitRevision } from '@lfx-one/shared/interfaces';
+import type { BrandKitRevision } from '../../interfaces/brand-kit.interface';
 
 /**
  * A minimal, fully synthetic Brand Kit revision — what the Brand Kit agent's

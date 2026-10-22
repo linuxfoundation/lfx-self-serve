@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -56,6 +57,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
   let voteDetailPageEnabled: WritableSignal<boolean>;
+  let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -84,6 +86,7 @@ describe('VotesDashboardComponent personal summary', () => {
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
     voteDetailPageEnabled = signal(false);
+    hasVotesAwaitingInvitationCount = vi.fn(() => false);
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -95,6 +98,9 @@ describe('VotesDashboardComponent personal summary', () => {
           useValue: {
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
+            mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
+            isAwaitingInvitationCount: () => false,
+            hasVotesAwaitingInvitationCount,
             getVotesCountByProject: vi.fn(() => of(20)),
             getVotesSummaryByProject: vi.fn(() => of({ active_votes: 20, closing_soon: 3, as_of: new Date(NOW).toISOString() })),
             getVoteStatusCountsByProject: vi.fn(() => of({ all: 9, active: 4, disabled: 2, ended: 3 })),
@@ -144,6 +150,122 @@ describe('VotesDashboardComponent personal summary', () => {
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);
     expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const fetchPage = list.getMockImplementation()!;
+    // The first fetched page is still counting; the next one (the catch-up refetch) has converged.
+    let fetches = 0;
+    hasVotesAwaitingInvitationCount.mockImplementation((votes: Vote[]) => fetches === 1 && votes.length > 0);
+    list.mockImplementation((...args: Parameters<typeof fetchPage>) => {
+      fetches++;
+      return fetchPage(...args);
+    });
+    dashboard['fetch$'].next();
+    await settle();
+    list.mockClear();
+    counts.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).toHaveBeenCalledTimes(1);
+
+    list.mockClear();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+    await settle();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('polls silently, and a failed poll keeps the rows and retries (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+    expect(rows()).toEqual(['first-page']);
+
+    const setLoading = vi.spyOn(dashboard['loading'], 'set');
+    const setSummaryLoading = vi.spyOn(dashboard['managementSummaryLoading'], 'set');
+    const setCountsLoading = vi.spyOn(dashboard['managementStatusCountsLoading'], 'set');
+    const setTotalReady = vi.spyOn(dashboard['totalCountReady'], 'set');
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    list.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(setLoading).not.toHaveBeenCalledWith(true);
+    expect(setSummaryLoading).not.toHaveBeenCalledWith(true);
+    expect(setCountsLoading).not.toHaveBeenCalledWith(true);
+    expect(setTotalReady).not.toHaveBeenCalledWith(false);
+
+    list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(rows()).toEqual(['first-page']);
+
+    // The kept rows re-arm the poll, so it retries on the next tick.
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it('clears earlier summary/count errors on a successful poll and keeps the total when a polled count fails (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const summary = vi.mocked(service.getVotesSummaryByProject);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const total = vi.mocked(service.getVotesCountByProject);
+    const succeedSummary = summary.getMockImplementation()!;
+    const succeedCounts = counts.getMockImplementation()!;
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    summary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    counts.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    dashboard['fetch$'].next();
+    dashboard['refresh$'].next();
+    await settle();
+    expect(dashboard['managementSummaryError']()).toBe(true);
+    expect(dashboard['managementStatusCountsError']()).toBe(true);
+    expect(dashboard['totalRecords']()).toBe(20);
+
+    summary.mockImplementation(succeedSummary);
+    counts.mockImplementation(succeedCounts);
+    total.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(dashboard['managementSummaryError']()).toBe(false);
+    expect(dashboard['managementStatusCountsError']()).toBe(false);
+    expect(dashboard['totalRecords']()).toBe(20);
+    expect(dashboard['totalCountReady']()).toBe(true);
+  });
+
+  it('skips a poll tick while a foreground fetch is loading, so it cannot cancel it (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+
+    // A foreground fetch (e.g. a scope or page change) is still in flight when the armed timer fires.
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const pending = new Subject<VoteListResponse>();
+    list.mockClear();
+    list.mockReturnValue(pending);
+    dashboard['fetch$'].next();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(pending.observed).toBe(true);
+    expect(dashboard['loading']()).toBe(true);
   });
 
   it('shows personal voting status in the Me lens', () => {

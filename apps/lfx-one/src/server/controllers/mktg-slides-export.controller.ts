@@ -16,7 +16,13 @@ import {
   MktgSlidesExportStartRequest,
   MktgSlidesExportStartResponse,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentType, isMktgSlidesExportAgentKey } from '@lfx-one/shared/utils';
+import {
+  findMktgDocumentType,
+  isMktgSlidesExportAgentKey,
+  mktgFamilyExportBinding,
+  readMktgFamilyExportSnapshot,
+  readMktgFamilyExportTarget,
+} from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
@@ -133,7 +139,7 @@ export class MktgSlidesExportController {
     }
   }
 
-  /** GET /api/mktg-agents/slides-export/last?project=&agentKey=&documentId= — the document's last export and latest revision. */
+  /** GET /api/mktg-agents/slides-export/last?project=&agentKey=&documentId= — the document's last export and its approved current (null when none approved). */
   public async last(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_slides_export_last';
     const target = this.readTarget(req, { project: req.query['project'], agentKey: req.query['agentKey'], documentId: req.query['documentId'] }, operation);
@@ -148,6 +154,47 @@ export class MktgSlidesExportController {
       const last = await this.exportService.getLast(req, project.uid, target.type, target.agentKey, target.documentId);
       logger.success(req, operation, startTime, { has_export: !!last.last });
       res.json(last);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Family routes share the document export's writer boundary; result context is signed, never browser-selected. */
+  public async family(req: Request, res: Response, next: NextFunction, action: 'start' | 'result' | 'last'): Promise<void> {
+    const operation = `mktg_family_export_${action}`;
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const raw: Record<string, unknown> = action === 'last' ? req.query : (req.body ?? {});
+      const target = readMktgFamilyExportTarget(raw);
+      if (!target) throw this.invalidField(req, operation, 'target', 'A project uid and a family supported by the exporter are required.');
+      const project = await this.resolveWritableProject(req, target.project, operation);
+      if (action === 'last') {
+        res.json(await this.exportService.getFamilyLast(req, project.uid, target.familyId));
+      } else {
+        const userId = getEffectiveUsername(req);
+        if (!userId) throw new AuthenticationError('Could not identify the requesting user.', { operation });
+        if (action === 'start') {
+          const mode = raw['mode'];
+          if (mode !== 'create' && mode !== 'update') throw this.invalidField(req, operation, 'mode', 'Choose create or update.');
+          const started = await this.exportService.startFamilyExport(req, { project: project.uid, projectName: project.name, familyId: target.familyId, mode });
+          res.json({ ...started, ownerToken: createSessionOwnerToken(userId, mktgFamilyExportBinding(started.sessionId, started.snapshot)) });
+        } else {
+          const snapshot = readMktgFamilyExportSnapshot(raw['snapshot']);
+          const sessionId = raw['sessionId'];
+          const token = typeof raw['ownerToken'] === 'string' ? raw['ownerToken'] : undefined;
+          if (!snapshot || typeof sessionId !== 'string' || !sessionId.trim())
+            throw this.invalidField(req, operation, 'snapshot', 'The started session and its revision snapshot are required.');
+          if (
+            snapshot.project !== project.uid ||
+            snapshot.familyId !== target.familyId ||
+            !verifySessionOwnerToken(token, userId, mktgFamilyExportBinding(sessionId, snapshot))
+          ) {
+            throw new AuthorizationError('You do not have permission to read this family export.', { operation });
+          }
+          res.json(await this.exportService.getFamilyResult(req, sessionId, snapshot));
+        }
+      }
+      logger.success(req, operation, startTime, { family: target.familyId });
     } catch (error) {
       next(error);
     }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -52,7 +53,7 @@ describe('Marketing kit home', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelectorAll('article')).toHaveLength(9);
-    expect(root.textContent).toContain('Missing');
+    expect(root.textContent).toContain('Not run yet');
     expect(root.textContent).toContain('Coming soon');
     expect(root.textContent).toContain('Lead: HUB lifecycle');
     expect(root.textContent).toContain('Messaging Framework, Boilerplates, FAQ, Brand Kit');
@@ -87,15 +88,42 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).not.toBeNull();
     expect(root.textContent).toContain('No assets in this state');
   });
-  it('keeps Family card links current when context changes without router navigation', async () => {
+  it('restores URL state and pushes user filters without a redundant root breadcrumb', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?project=synthetic&state=approved');
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).toBeNull();
+    const navigate = vi.spyOn(router, 'navigate');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-missing"]')?.click();
+    await fixture.whenStable();
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { project: 'synthetic', state: 'missing' }, queryParamsHandling: 'merge' })
+    );
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(router.url).toContain('state=missing');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).not.toBeNull();
+    await router.navigateByUrl('/?state=unknown');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb"]')).toBeNull();
+  });
+
+  it('keeps Family links and state filters scoped after an address-only project switch', async () => {
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/?project=stale');
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     context.set({ uid: 'next', slug: 'current' });
+    TestBed.inject(Location).replaceState('/?project=current');
     await fixture.whenStable();
     expect(router.url).toContain('project=stale');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-family-link-positioning-brand"]')?.getAttribute('href')).toContain('project=current');
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-missing"]')?.click();
+    await fixture.whenStable();
+    expect(router.url).toContain('project=current');
+    expect(router.url).toContain('state=missing');
   });
   it('defensively renders no-project while isolated from lens navigation', async () => {
     documents.set(null);

@@ -286,8 +286,12 @@ export class VotesTableComponent {
     event.stopPropagation();
     this.rowActionMenuVoteUid.set(vote.uid);
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
-    // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
+    // Managers only, and only while the vote is open — upstream rejects reminders/extension for any
+    // other status. Gated on the vote's own writer flag, not project-level hasPMOAccess() — a
+    // committee writer without project write access can still extend their own vote's deadline
+    // (per @copilot-pull-request-reviewer).
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
+      items.push({ label: 'Extend', icon: 'fa-light fa-calendar', command: () => this.onExtendDeadline(vote) });
       items.push({
         label: 'Send reminder',
         icon: 'fa-light fa-envelope',
@@ -638,7 +642,7 @@ export class VotesTableComponent {
     return {
       ...vote,
       endedEarlyTooltip,
-      participation: computeVoteRowParticipation(vote),
+      participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,
     };

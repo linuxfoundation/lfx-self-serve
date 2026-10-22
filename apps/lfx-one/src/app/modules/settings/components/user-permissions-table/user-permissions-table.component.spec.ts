@@ -49,13 +49,28 @@ describe('UserPermissionsTableComponent role filter', () => {
   });
 
   it('offers one pill per role, colored by the shared role color map', () => {
-    expect(component.roleFilterOptions.map((option) => option.id)).toEqual(PROJECT_PERMISSION_ROLE_OPTIONS.map((option) => option.value));
-    expect(component.roleFilterOptions.find((option) => option.id === 'manage')?.color).toBe('green');
-    expect(component.roleFilterOptions.find((option) => option.id === 'view')?.color).toBe('red');
-    expect(component.roleFilterOptions.find((option) => option.id === 'meeting_coordinator')?.color).toBe('purple');
-    for (const option of component.roleFilterOptions) {
+    const options = component.roleFilterOptions();
+    expect(options.map((option) => option.id)).toEqual(PROJECT_PERMISSION_ROLE_OPTIONS.map((option) => option.value));
+    expect(options.find((option) => option.id === 'manage')?.color).toBe('green');
+    expect(options.find((option) => option.id === 'view')?.color).toBe('blue');
+    expect(options.find((option) => option.id === 'meeting_coordinator')?.color).toBe('purple');
+    for (const option of options) {
       expect(option.color).toBe(PROJECT_PERMISSION_ROLE_COLOR[option.id as ProjectPermissionRole]);
     }
+  });
+
+  it('shows how many users hold each role on its pill, leaving a role nobody holds unlabeled', () => {
+    const labels = () => component.roleFilterOptions().map((option) => option.label);
+    expect(labels()).toEqual(['View (1)', 'Manage (1)', 'Meeting Coordinator (1)']);
+
+    fixture.componentRef.setInput('users', [MANAGER, buildUser('manager-2', 'manage'), VIEWER]);
+    expect(labels()).toEqual(['View (1)', 'Manage (2)', 'Meeting Coordinator']);
+  });
+
+  it('keeps the counts when a role is selected, so every pill still shows its own total', () => {
+    component['onRoleFilterToggle']('view');
+
+    expect(component.roleFilterOptions().map((option) => option.label)).toEqual(['View (1)', 'Manage (1)', 'Meeting Coordinator (1)']);
   });
 
   it('shows every user while no role is selected', () => {

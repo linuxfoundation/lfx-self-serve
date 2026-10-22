@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { MKTG_AGENTS } from '@lfx-one/shared/constants';
 
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
 
@@ -114,10 +115,10 @@ for (const width of [1280, 390]) {
     await openMember360(page);
     const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(breadcrumb.locator('li:not([aria-hidden])')).toHaveCount(3);
-    await expect(breadcrumb.getByTestId('member-360-back')).toHaveText('Sample Foundation kit');
+    await expect(breadcrumb.getByTestId('mktg-breadcrumb-link-0')).toHaveText('Sample Foundation kit');
     await expect(breadcrumb).toContainText('Sample Foundation kit');
     await expect(breadcrumb).toContainText('Member & sponsor kit');
-    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText('Member 360');
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(MKTG_AGENTS.find((agent) => agent.id === 'member-360')?.name ?? 'Member 360');
     const intake = page.getByTestId('member-360-intake');
     await expect(intake).toHaveCount(1);
     await expect(intake.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();

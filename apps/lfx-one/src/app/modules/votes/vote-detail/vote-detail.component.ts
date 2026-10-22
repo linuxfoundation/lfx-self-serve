@@ -10,7 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
   MyVoteResponse,
   PollCommentResponse,
@@ -32,6 +32,7 @@ import {
   buildVoteResultsQuestions,
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
+  isRankedPollType,
   mergeCommentResults,
   normalizePollStatus,
   resolveVoterResultsState,
@@ -148,7 +149,8 @@ export class VoteDetailComponent {
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE);
   /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
-  protected readonly isGenericPoll: Signal<boolean> = computed(() => (this.vote()?.poll_type ?? PollType.GENERIC) === PollType.GENERIC);
+  /** Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality layout — see isRankedPollType. */
+  protected readonly isGenericPoll: Signal<boolean> = computed(() => !isRankedPollType(this.vote()?.poll_type));
   protected readonly participationStats: Signal<VoteParticipationStats> = computed(() => computeVoteParticipationStats(this.voteResults()));
   /** Abstain UI follows the data, not just the flag (same rule as the results drawer). */
   protected readonly showAbstain: Signal<boolean> = computed(

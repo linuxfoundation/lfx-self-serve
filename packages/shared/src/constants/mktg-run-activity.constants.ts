@@ -154,3 +154,17 @@ export const MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS: readonly string[] = [
   'to',
   'with',
 ];
+
+/** What the starting row says while the agent spins up, one line every few seconds, before its first real step arrives. */
+export const MKTG_RUN_ACTIVITY_STARTING_LINES = [
+  'Waking the agent up',
+  'Handing it your project brief',
+  'Pouring it a coffee',
+  'Sharpening its pencils',
+  'Reading the room',
+  'Lining up the sources',
+  'Warming up the writing muscles',
+  'Almost there: the first step is on its way',
+];
+/** How long each starting line stays up. */
+export const MKTG_RUN_ACTIVITY_LINE_MS = 3500;

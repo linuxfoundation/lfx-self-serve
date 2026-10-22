@@ -56,12 +56,46 @@ router navigation state. Family consumes that state once in the browser, clears
 it from history state, and starts only for a matching stale, approved-current
 selection with write access outside impersonation.
 
-Each operation takes a conditional-write claim **before** calling Guild, then
-conditionally commits progress and releases it. Competing tabs/pods cannot start
-or answer the same step twice. An interrupted claim is never automatically
-replayed: the UI stops and asks the user to inspect saved Drafts on the Family
-page. A new rebuild is an explicit user action, not a retry of an uncertain side
-effect. The browser polls sequentially with the existing run cadence. Each active
+Before publishing a chain or calling Guild, `start` claims private
+`rebuilds/{project}/active` with `ifNoneMatch: '*'`. Its shape is
+`{chainId, startedAt, expiresAt}` (ISO start time, epoch-ms expiry), with no requester
+subject or capability. `MKTG_REBUILD_ACTIVE_TTL_MS` is the 10-minute step deadline
+plus a 2-minute margin; the separate 24-hour chain lifetime is unchanged.
+Side-effecting advances and polls observing changed durable progress renew via
+`ifMatch`; unchanged polls, attached starts and passive duplicate advances do not. Questions pause polling, but an
+expired lease still owned by the same chain can be CAS-renewed by an advancing resume
+(including answering). Passive checks of an expired lease return 409 without renewing it.
+If a new start reclaimed it first, the old chain cannot
+renew or drive further effects: `409 MKTG_REBUILD_EXPIRED` asks for a Family reload.
+A non-terminal legacy chain within its 24-hour lifetime can claim an absent marker
+with `ifNoneMatch: '*'`; losing that claim to another chain also returns 409.
+
+A competing start attaches to a published active chain with `attached: true` and
+its own caller-bound owner token, after the existing writer gate; it never shares
+the first writer's capability. A different requested framework returns
+`409 MKTG_REBUILD_FRAMEWORK_CHANGED`, not a silent attach to superseded input.
+Missing, unreadable or expired chain records behind a live marker return retryable
+`503 MKTG_REBUILD_UNAVAILABLE`, without starting Guild. After a publication error,
+`start` re-reads the chain: a landed write returns saved progress and retains its lease;
+only a confirmed absent chain expires its own marker before returning 503. Failed
+verification or cleanup stays closed until TTL.
+Terminal chains best-effort CAS-expire their own marker (release failures are
+logged without hiding saved terminal progress); new starts CAS-reclaim expired or
+terminal markers, never overwriting a replacement chain's claim.
+A corrupt/unparseable marker is not TTL-reclaimed: an operator must inspect the
+chain and repair the private marker through an authorized storage tool; mark stale
+non-terminal chains failed (or confirm none exist) before removing the marker.
+
+Each operation also takes a per-chain conditional-write claim **before** calling
+Guild, then conditionally commits progress and releases it. Competing tabs/pods
+cannot start or answer the same step twice. A contending result poll or already-started,
+answerless advance returns saved progress instead of killing the watch; real
+conflicting advances still fail with 409/412. A failed lease renewal after saved
+progress is logged and non-fatal. An interrupted operation is never automatically replayed;
+inspect saved Drafts before explicitly starting another rebuild after lease expiry.
+In-flight queued steps appear running in attached/passive snapshots to avoid a
+queued-advance hot loop; an interrupted operation can therefore look running until
+the browser's approximately 10-minute step deadline. The browser polls sequentially with the existing run cadence. Each active
 step gets its own `MKTG_RUN_POLL.timeoutMs` (10-minute) deadline, restarted when the
 active step index changes, not on same-step progress or transient retries. Questions
 pause polling; answering starts a new bounded stretch on the same session. Leaving

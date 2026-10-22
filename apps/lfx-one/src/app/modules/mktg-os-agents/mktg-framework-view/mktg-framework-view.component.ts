@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
@@ -41,6 +42,7 @@ import {
   foundationMessagePillarViews,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
@@ -65,6 +67,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 @Component({
   selector: 'lfx-mktg-framework-view',
   imports: [
+    TooltipModule,
     NgClass,
     MktgAssetMetaComponent,
     MessageComponent,
@@ -80,6 +83,8 @@ export class MktgFrameworkViewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly printService = inject(MktgPrintService);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // === Inputs ===
   /** The project the framework is for. */
@@ -99,13 +104,18 @@ export class MktgFrameworkViewComponent {
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
   public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
   // === Signals ===
-  protected readonly selectedTab = signal<FoundationMessageViewTab>('framework');
+  private readonly tabState = createMktgAssetTab(
+    FOUNDATION_MESSAGE_VIEW_TABS.map((tab) => tab.id),
+    'framework'
+  );
+  protected readonly selectedTab = this.tabState.selected;
 
   // === Computed ===
   protected readonly content = computed(() => this.asset()?.content ?? null);
@@ -158,6 +168,8 @@ export class MktgFrameworkViewComponent {
     const approved = this.approvedAsset();
     return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
@@ -179,25 +191,31 @@ export class MktgFrameworkViewComponent {
   }
 
   // === Protected methods ===
-  protected onSelectTab(id: FoundationMessageViewTab): void {
-    this.selectedTab.set(id);
+  protected async onSelectTab(id: FoundationMessageViewTab): Promise<void> {
+    await this.tabState.select(id);
+    if (isPlatformBrowser(this.platformId) && !this.destroyRef.destroyed) {
+      afterNextRender(
+        () => {
+          if (this.selectedTab() !== id) return;
+          const panel = this.host.nativeElement.querySelector<HTMLElement>('[role="tabpanel"]');
+          if (panel) {
+            if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+            panel.focus();
+          }
+        },
+        { injector: this.injector }
+      );
+    }
   }
 
   /**
    * A shortcut from inside a panel (the reviewer note's "Sources read, failed
-   * and gaps") opens that tab and moves focus onto it: the button that was
+   * and gaps") opens that tab and focuses its panel start: the button that was
    * clicked leaves the page with the old panel, so keyboard focus would
    * otherwise fall back to the document.
    */
   protected onGoToTab(id: FoundationMessageViewTab): void {
-    this.selectedTab.set(id);
-    if (isPlatformBrowser(this.platformId)) {
-      const tab = this.tabs().find((entry) => entry.id === id);
-      if (tab) {
-        // After the view updates, so the tab button is the selected, focusable one.
-        setTimeout(() => document.getElementById(tab.tabId)?.focus());
-      }
-    }
+    void this.onSelectTab(id);
   }
 
   /**
@@ -226,7 +244,7 @@ export class MktgFrameworkViewComponent {
         return;
     }
     event.preventDefault();
-    this.selectedTab.set(tabs[next].id);
+    void this.tabState.select(tabs[next].id);
     if (isPlatformBrowser(this.platformId)) {
       document.getElementById(tabs[next].tabId)?.focus();
     }

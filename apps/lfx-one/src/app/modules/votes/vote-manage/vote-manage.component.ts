@@ -19,7 +19,6 @@ import {
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
-import { PollType } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
@@ -27,6 +26,7 @@ import {
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
   getUserTimezone,
+  isRankedPollType,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
@@ -474,8 +474,9 @@ export class VoteManageComponent {
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
       // Speculative create (GH-2826 Design A): the create fired at dialog-open; confirmSpeculativeVote chains
-      // the enable onto it (grace-hint echo) and the service marks the vote opened so the mark survives navigation.
-      // takeUntilDestroyed: a late settlement must not toast/navigate from a dead component.
+      // the enable onto it (grace-hint echo) and marks the vote opened/created service-side (GH-4007) so
+      // both marks survive navigation. takeUntilDestroyed below only guards this component's own
+      // toast/navigate reaction — the marking itself already happened inside the service's own subscription.
       this.voteService
         .confirmSpeculativeVote(createRequest)
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -1113,7 +1114,7 @@ export class VoteManageComponent {
         // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a
         // plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
         // once a published election has ballots coming in a silently-wrong clone can't be corrected.
-        if ((vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC || vote.pseudo_anonymity) {
+        if (isRankedPollType(vote.poll_type) || vote.pseudo_anonymity) {
           this.messageService.add({
             severity: 'warn',
             summary: 'Cannot clone',

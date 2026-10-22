@@ -3,9 +3,13 @@
 
 import { MKTG_KIT_FILTERS } from '@lfx-one/shared/constants';
 import { expect } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing kit responsive structure', () => {
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
   test('captures every filter state at 1440px for the design check', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await setupKit(page, { loaded: true });
@@ -38,6 +42,13 @@ test.describe('Marketing kit responsive structure', () => {
       await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
       await expect(page.getByTestId('mktg-kit-tab-kit')).toHaveAttribute('aria-current', 'page');
       await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
+      if (width === 390) {
+        const first = await page.getByTestId('mktg-kit-tab-kit').boundingBox();
+        const last = await page.getByTestId('mktg-kit-tab-documents').boundingBox();
+        expect(first && last ? Math.abs(first.y - last.y) : Infinity).toBeLessThan(2);
+        await page.getByTestId('mktg-kit-tab-documents').scrollIntoViewIfNeeded();
+        await expect(page.getByTestId('mktg-kit-tab-documents')).toBeInViewport();
+      }
       const overflowing = await page.getByTestId('mktg-kit-page').evaluate((element) => element.scrollWidth > element.clientWidth + 1);
       expect(overflowing).toBe(false);
       await expect(page.getByTestId('filter-pill-all')).toHaveAttribute('aria-pressed', 'true');

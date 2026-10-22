@@ -57,6 +57,7 @@ function summaryWithActivity(): ProjectParticipatingOrgsSummary {
     asOfDate: '2026-10-15',
     orgsCount: 3,
     membersCount: 1,
+    contributingMembersCount: 1,
     nonMembersCount: 2,
     unidentifiedCount: 1,
     memberCommits: 40,

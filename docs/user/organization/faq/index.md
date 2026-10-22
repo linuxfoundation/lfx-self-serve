@@ -1,20 +1,24 @@
 ---
 title: Organization FAQ
-description: Short answers about EasyCLA in the Organization lens — who can edit a corporate CLA, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about EasyCLA in the Organization lens — who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags: [organization, faq, easycla, cla, ccla, cla-manager]
-last_updated: 2026-10-19
+last_updated: 2026-10-21
 intercom_collection: Organization
 ---
 
 ## Why can't I edit this corporate CLA?
 
-You can change a corporate CLA (CCLA) only when you are a CLA Manager named on that agreement, and a role added or removed in the last 30 minutes may not have taken effect yet. An organization admin or a viewer can read every corporate CLA of the company and still be unable to edit one they are not named on. The name on the list has to match your LF username exactly, including capitalization. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
+You can change a corporate CLA (CCLA) only when you are a CLA Manager named on that agreement, and a role added or removed in the last 30 minutes may not have taken effect yet. An organization admin or a viewer can read every corporate CLA of the company and still be unable to edit one they are not named on. A signed corporate CLA that does not name you is marked **View only** on its card and at the top of its page. The name on the list has to match your LF username exactly, including capitalization. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## Why can't I see my company in the Organization lens?
 
-You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager with no other Organization lens role sees **EasyCLA Management** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+
+## What does "View only" mean on a corporate CLA?
+
+**View only** means you can read that signed corporate CLA (CCLA) but cannot change it, because you are not named on its CLA Manager list. It shows on the agreement's card in the EasyCLA list and next to its name at the top of its page, where **See who manages it** opens the **CLA Managers** tab so you can ask one of them. A corporate CLA that names you as a CLA Manager has no label. The label follows the CLA Manager list, but a role added in the last 30 minutes may not have unlocked the controls yet, so reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## Why do I still have access after I was removed as a CLA Manager?
 

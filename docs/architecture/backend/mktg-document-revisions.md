@@ -7,6 +7,46 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Intake size boundary
+
+The Brand Kit, Messaging Framework, Boilerplates, FAQ and ICP generate endpoints
+validate intake answer lengths in the shared validators before parsing attached
+framework JSON or calling a generation service. Oversized answers return HTTP 400
+through the existing `ServiceValidationError` path; no Guild session is created.
+The policy lives in `packages/shared/src/constants/mktg-intake.constants.ts`.
+
+Limits count submitted UTF-16 code units **before trimming**, including whitespace:
+project names take up to 200 characters, individual URLs 2,048, and descriptions,
+notes and short ICP answers 4,000. The Messaging Framework's `links` answer keeps
+its existing link-count limit, with a per-URL cap and an aggregate budget allowing
+CRLF separators. Whole ICP sibling documents take up to 400,000 characters each;
+attached messaging-framework JSON keeps the existing 400,000-character limit.
+Uploaded document text and logo payloads retain their separate existing budgets.
+These intake limits do not change the chat-message or ICP-feedback size gates.
+
+## Run outcomes
+
+Catalog result controllers await `GuildService.resolveRunOutcome` after authorization
+and before logging or recording their response. It only adds failure to pending/questions;
+validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
+The existing idle-runtime completion path uses failed/failureText for a final plain
+reply without an asset. Provider error events add failed/failure when no output
+arrives; both fields are additive, and terminal outcomes are never replaced.
+An error outside a tool task must settle for 30 seconds without recovery. Only
+explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
+agent text, including progress/questions, proves recovery. Status, heartbeat,
+unknown and lifecycle/completion events leave the error standing at any age.
+Tool-task errors are excluded using the same `isMktgToolTaskEvent` metadata predicate
+as Member 360. Queued-turn boundaries discard prior-turn errors; capped pages
+remain inconclusive rather than proving a terminal outcome.
+Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
+the five-second constant remains exported for compatibility, not recovery evidence.
+The recorded healthy stream supports immediate new-work recovery and long silent
+model turns; a recorded failed stream is still unavailable. No unverified session
+metadata probe is used. Lookup failures log a warning and preserve the result.
+Generic browser history retains versions/answers/Q&A on failure, marks session reuse
+invalid, and retries the exact failed request including feedback on a new session.
+
 ## Current is not newest
 
 Revision bundles remain immutable JSON at
@@ -82,9 +122,49 @@ plain and sidecar `readLatest` return null when none is approved. Read failures
 propagate rather than being mislabeled as missing approval. Only the server's
 true pre-revision plain fallback remains; browser runs never supply attachments.
 Explicit export selectors must match approved current or fail instead of
-silently changing bytes. `readNewestRevisionRef` deliberately retains newest
-identity for export freshness comparison, so an approved export can be out of
-date when a newer Draft exists.
+silently changing bytes. Asset export freshness compares the last deck's content
+hash with approved current via `readApprovedCurrentSummary`, not the newest Draft.
+The existing `latestRevision` response field carries that approved identity, or
+null when none is approved (no stale badge). Selecting older approved content can
+also mark a deck out of date; revision number alone never determines freshness.
+
+### Family exports
+
+Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
+`POST /start` selects each catalog member's approved current, `POST /result` polls
+that immutable selection using an owner token, and `GET /last` reports the last
+family deck and its approved-current freshness. Freshness reads approved summaries
+in parallel. Revisions with content-sha metadata need no body read for this lookup;
+historical revisions without it are hydrated by the normal listing path. Export start
+explicitly loads and integrity-checks each selected approved body for composition;
+last-export lookup does not perform that additional export-body load.
+All require project writer access;
+every family route, including last-export reads, is blocked during impersonation. Members without approval are
+listed as skipped; a family with none is refused with 409 (`FAMILY_NOTHING_APPROVED`).
+An approved asset that cannot be composed is refused with `FAMILY_ASSET_UNREADABLE`;
+FAQ groups are flattened to answered `{q, a}` entries, omitting unanswered rows and
+refusing an FAQ with no exportable answers before calling Guild. Storage failures
+are not misreported as missing approval. The deployed exporter supports framework, kit,
+boilerplates and FAQ; the kit's full book and tokens provide branding.
+
+Family records use `slides-exports/{project}/families/{familyId}/{time}-{sha}.json`,
+separate from document records, with the deck id/link, mode/date and each member's
+revision id, number and content hash. Update uses only the stored family's last deck
+id; Create makes a new deck. Polling keeps the originally selected revisions even
+if approval moves, and the server finishes polling when the browser leaves.
+Freshness compares exact approved member/ref sets, including lost or newly gained
+approvals and restored older revisions. A new Draft alone does not stale a family
+export. No personal identity is written into export records.
+
+The Family page eagerly checks last export independently of its document-list read.
+A failed check disables export rather than guessing Create. Download PDF composes
+the existing approved framework print and kit book, in exporter order, using the
+family print body class and each rendering's named page size. Boilerplates and FAQ
+are provisionally omitted from PDF because no print layouts exist; the UI says so.
+Slides still exports those approved assets. Neither export changes the on-screen
+asset rendering or grants Google Drive access.
+
+### Asset approval UI
 
 Approval and the board's approval attribution live on the document Asset view.
 Standalone results are Draft previews with Open in Documents: an available
@@ -166,3 +246,102 @@ acknowledgements cannot update another project or view.
 The pre-revision artifact compatibility write carries `revision-managed`
 metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
 their leftover artifact.
+
+## Durable started runs
+
+Starts use the same private purpose, at
+`document-runs/{project}/{sha256(sessionId)}.json`. The body binds the resolved
+project, registered agent, document, private Guild session and opaque `creatorSubject`.
+Owner tokens are never written; legacy missing subjects mean unattributed writes.
+Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
+retry/answers budget origin, answered questions id, prior revision, persist retry count,
+`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
+This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
+conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
+The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
+Public progress is an explicit projection: opaque run id, project/agent/document,
+Started, state and plain-text failure text (agent reply or server-authored deadline /
+storage-exhaustion reason); no session capability or starter identity is exposed.
+
+States are `writing`, `questions`, `storing`, `failed`, `completed` and
+`superseded`. Questions pause the writing deadline until accepted answers renew
+the same attempt, preserving Started. Only a successful Guild lookup can spend
+the writing deadline. A ready receipt equal to the prior attempt's revision is
+not fresh completion evidence: it follows the pending path and can exhaust the
+writing deadline. Ready without a recorded revision enters storing first,
+with its own three-retry persistence budget, never the writing deadline. A
+matching late receipt can finish a failed attempt on a creator poll or explicit
+detail refresh. Effective start/run-id order retires older same-document runs.
+Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
+Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
+creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+it creates no generation and does not change the document's current pointer.
+
+The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
+the newest-mtime **128-record discovery window**, with concurrency four per operation for both
+navigation reconciliation and Generate's supersede scan. Both paths HEAD first
+and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
+only. A per-process **256-entry LRU terminal key/mtime cache** skips repeated terminal reads;
+it is disposable, invalidated on writes/mtime changes and never an authority.
+Fresh write timestamps are not memoized within S3's current write second. Failed,
+completed and superseded runs are not automatically queried against Guild.
+Failures keep a UTF-8/base64 snapshot capped at 768 source bytes, within object
+metadata's size budget; one scoped detail-navigation refresh can return the full
+reply. Errors are isolated per record. Terminal-record pruning/TTL is a follow-up;
+there is no second active-run index or bucketed listing in this item.
+
+Coverage is a private BFF count plus retained unfinished IDs, never a full list of
+outside-window keys. The count includes unchecked history whose state is unknown
+(and may already be closed); retained IDs require HEAD evidence or a matching
+terminal cache and are capped at discovery + cache limits (384). Matching closed
+cache entries contribute neither IDs nor count. Timer skips within the discovery
+window HEAD first to exclude closed records, without GET/Guild work. The Documents transport treats
+this as opaque partial coverage: retain known rows, never echo coverage IDs to
+the client or interpret an unchecked count as active work or a current revision.
+
+`readProgress` consumes this private coverage before HTTP serialization. It reuses
+known cached public rows or materializes at most 384 retained IDs through bounded
+tracking-store reads (concurrency 4), without Guild calls. Only validated public
+rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
+failure adds `progressUnavailable` so clients can warn/retry even with no row;
+intentional window coverage alone never manufactures active work or endless retries.
+Window-skipped unfinished writing/storing snapshots are last-known, not fresh
+liveness: poll reads mark them unavailable, so the client's existing bounded
+availability budget stops automatic checks. Closed-history coverage is not flagged.
+Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
+timer reads reject that selector. A stale/foreign selector or transient tracking
+error retains the stored document/known rows with an availability warning, never
+a run-id-based document 404. Detail is loaded after refresh so late persistence
+is visible. Retry POSTs recheck the stored session, never submit Generate or move
+the approved-current pointer. Overview polls cancel on project/effective-subject
+changes and destruction. Same-scope reloads and polls retain last loaded documents
+on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
+reads back off to eight intervals and stop after the normal poll timeout, leaving
+a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
+not start automatic polling. Unavailable tracking retains missing same-scope
+run rows and suppresses absence claims, without hiding a known stored-current badge.
+
+Document navigation keeps `?generation=` (single-use in-memory prepared intake)
+separate from `?run=` (durable selected run). Only a fresh prepared proof can
+submit Generate; restored intake needs explicit action. Metadata/body failures
+share one bounded read budget and manual refresh, without hiding an acknowledged
+current-pointer write. Structured views come from the document/intake registry;
+malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
+
+Persistence receipts carry the exact `document_location` with `agent_key`,
+`document_id`, `revision_id`; it is not a lookup of whichever revision is current.
+UI models normalize this to their camel-case location. JSON content, sidecars,
+CAS publication, current selection and attribution stay on the shared writer.
+`getRawEventPayloads` replaces user/trigger content with
+`mktg_session_turn_started`; a full unfiltered page appends
+`mktg_session_events_truncated`. These content-free markers prevent an old
+completion or finalize replay from ending a queued/truncated turn. Reasoning
+MIME is filtered before any text, questions, envelope or reply extraction.
+
+Retained opaque attempt ids reject sequential ACK replay but do not order distinct concurrent same-session
+ACKs. Shipping intake submissions use fresh sessions and serialize their UI
+handoff; arbitrary concurrent chat callers can still reorder start ACKs. A
+monotonic admission token for that uncommon API path is a follow-up, not an
+ordering guarantee supplied by this metadata refresh predicate.

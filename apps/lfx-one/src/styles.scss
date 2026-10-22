@@ -7,6 +7,7 @@
 /* Navbar v2 — global because its body-level popovers/tooltips and the selectors' navbar variant sit
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
+@use 'styles/mktg-family-print';
 
 @layer tailwind-base, primeng, tailwind-utilities;
 

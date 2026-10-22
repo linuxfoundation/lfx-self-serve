@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_INTAKE,
   FOUNDATION_MESSAGE_WEBSITE_KEY,
@@ -13,14 +14,14 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { FaqEnvelope, MktgFrameworkAsset, MktgRevisionResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import type { BoilerplatesEnvelope, FaqEnvelope, MktgFrameworkAsset, MktgRevisionResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, Page } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
-import { brandKitTestRevision } from '../../src/app/shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 
@@ -49,7 +50,7 @@ export const ASSET_PROJECT: Project = {
 };
 
 /** Header/approval scenarios reuse main's canonical FAQ envelope, not a second FAQ contract fixture. */
-export function nativeAssetRevisionResponse(key: 'faq', unreadable = false): MktgRevisionResponse {
+export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreadable = false): MktgRevisionResponse {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
   if (!type) throw new Error('Missing document type');
   const revision: MktgRevisionSummary = {
@@ -66,7 +67,10 @@ export function nativeAssetRevisionResponse(key: 'faq', unreadable = false): Mkt
     latest: true,
     approval: null,
   };
-  const native = JSON.parse(readFileSync(resolve(__dirname, '../../../../packages/shared/src/utils/__fixtures__/faq-envelope.json'), 'utf8')) as FaqEnvelope;
+  const fixtureName = key === 'faq' ? 'faq-envelope.json' : 'boilerplates.envelope.json';
+  const native = JSON.parse(readFileSync(resolve(__dirname, '../../../../packages/shared/src/utils/__fixtures__', fixtureName), 'utf8')) as
+    | FaqEnvelope
+    | BoilerplatesEnvelope;
   return {
     project: ASSET_PROJECT.uid,
     type,
@@ -78,6 +82,49 @@ export function nativeAssetRevisionResponse(key: 'faq', unreadable = false): Mkt
     markdown: unreadable ? '{"unexpected":"synthetic source text"}' : JSON.stringify(native.content),
     sidecar: { mode: native.mode, report: native.report, checks: native.checks },
   };
+}
+
+/** All four native document layouts use synthetic assets and the real document read contract. */
+export function columnAssetRevisionResponse(key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit'): MktgRevisionResponse {
+  const base = nativeAssetRevisionResponse('faq');
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === key);
+  if (!type) throw new Error('Missing native document type');
+  let response = { ...base, type };
+  if (key === 'boilerplates') {
+    const envelope = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../packages/shared/src/utils/__fixtures__/boilerplates.envelope.json'), 'utf8')
+    ) as BoilerplatesEnvelope;
+    response = { ...response, markdown: JSON.stringify(envelope.content), sidecar: { mode: envelope.mode, report: envelope.report, checks: envelope.checks } };
+  } else if (key === 'foundation-message') {
+    const framework = draftFrameworkAsset();
+    response = {
+      ...response,
+      markdown: JSON.stringify(framework.content),
+      sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+    };
+  } else if (key === 'brand-kit') {
+    const kit = brandKitTestRevision();
+    response = {
+      ...response,
+      markdown: '',
+      sidecar: {
+        contract: BRAND_KIT_CONTRACT_ID,
+        project_name: kit.projectName,
+        project: kit.project,
+        version: kit.version,
+        mode: kit.mode,
+        kit: kit.kit,
+        chapters: kit.chapters,
+        report: kit.report,
+        inputs: { website_url: kit.websiteUrl },
+        generated_at: kit.generatedAt,
+        agent: { agent_version: kit.agentVersion },
+      },
+    };
+  }
+  const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: null };
+  const revision = { ...response.revision, approval };
+  return { ...response, revision, revisions: [revision], approval, approvedCurrent: { revisionId: revision.id, number: revision.number } };
 }
 
 /** Synthetic preview: no live generation, credentials or customer data. */
@@ -243,10 +290,10 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
   return revisionId;
 }
 
-/** Stub the FAQ reads; cookie suppression precedes every navigation. */
+/** Stub native asset reads; cookie suppression precedes every navigation. */
 export async function openAssetDocument(
   page: Page,
-  key: 'faq',
+  key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit',
   status = 200,
   writer = true,
   unreadable = false,
@@ -276,7 +323,9 @@ export async function openAssetDocument(
   });
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ json: { sfid: null } }));
   await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => route.fulfill({ json: { last: null, latestRevision: null } }));
-  let response = responseOverride ?? nativeAssetRevisionResponse(key, unreadable);
+  let response =
+    responseOverride ?? (key === 'faq' || key === 'boilerplates' ? nativeAssetRevisionResponse(key, unreadable) : columnAssetRevisionResponse(key));
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

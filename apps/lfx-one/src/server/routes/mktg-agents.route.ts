@@ -183,13 +183,21 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
+// POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/retry - recheck a recorded session, not a generation
+router.post('/documents/:agentKey/:documentId/runs/:runId/retry', (req, res, next) => mktgDocumentsController.retryRun(req, res, next));
+
+// Family exports: the document writer boundary, with every family operation blocked while impersonating.
+router.post('/slides-export/family/start', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'start'));
+router.post('/slides-export/family/result', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'result'));
+router.get('/slides-export/family/last', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'last'));
+
 // POST /api/mktg-agents/slides-export/start - export a stored Messaging Framework or Brand Kit revision to Google Slides (a new deck, or the last export's deck refreshed in place)
 router.post('/slides-export/start', (req, res, next) => mktgSlidesExportController.start(req, res, next));
 
 // POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
 router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
 
-// GET /api/mktg-agents/slides-export/last - last export plus newest identity for freshness, not byte selection.
+// GET /api/mktg-agents/slides-export/last - last export plus approved-current identity for freshness (null when none approved), not byte selection.
 router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

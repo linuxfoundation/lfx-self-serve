@@ -20,6 +20,7 @@ import {
   NewsletterListLoadResult,
   NewsletterOptOut,
   NewsletterRow,
+  NewsletterStatusCounts,
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -74,7 +75,7 @@ export class NewsletterListComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Tab options ===
-  protected readonly statusTabOptions: FilterPillOption[] = [
+  private readonly baseStatusTabOptions: FilterPillOption[] = [
     { id: 'draft', label: 'Drafts' },
     { id: 'scheduled', label: 'Scheduled' },
     { id: 'sent', label: 'Sent' },
@@ -83,6 +84,8 @@ export class NewsletterListComponent {
 
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
+  // Null while loading or after a failed fetch — tabs then render their plain labels.
+  private readonly statusCounts = signal<NewsletterStatusCounts | null>(null);
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
   // `status=sending` rows carrying `scheduled_at` — arms in progress. Populated
   // only while `statusTab() === 'scheduled'`; prepended to `newsletters` for
@@ -121,6 +124,8 @@ export class NewsletterListComponent {
   // change-and-revert (A→B→A) sequences a value comparison would miss. Not a
   // signal: nothing renders from it.
   private loadGeneration = 0;
+  // Same latest-wins guard for the tab counts request.
+  private statusCountsGeneration = 0;
 
   // === Reactive context ===
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
@@ -141,6 +146,8 @@ export class NewsletterListComponent {
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
   // scheduled labels fall back to UTC there and are replaced on client hydration.
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
   protected readonly rows: Signal<NewsletterRow[]> = this.initRows();
@@ -343,6 +350,8 @@ export class NewsletterListComponent {
             this.analyticsCacheGeneration++;
             this.openRateAnalytics.set(new Map());
             this.openRatePendingIds.set(new Set());
+            this.statusCounts.set(null);
+            if (uid) this.loadStatusCounts(uid);
           }
           if (!uid) {
             this.loading.set(false);
@@ -416,6 +425,38 @@ export class NewsletterListComponent {
       });
   }
 
+  private initStatusTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const counts = this.statusCounts();
+      if (!counts) return this.baseStatusTabOptions;
+      return this.baseStatusTabOptions.map((option) => {
+        const count = counts[option.id as NewsletterStatusTabId];
+        if (!count) return option;
+        // A truncated walk makes draft/scheduled/sent lower bounds; opt-outs are never paged.
+        const suffix = counts.truncated && option.id !== 'optout' ? '+' : '';
+        return { ...option, label: `${option.label} (${count}${suffix})` };
+      });
+    });
+  }
+
+  // Counts are per project, not per tab, so they load on project change and after any
+  // mutation that moves a row between tabs. A newer request supersedes an older one. A mutation that
+  // finishes after the user switched project must not refresh the old project's counts: it would
+  // supersede the new project's request, so it is dropped here and again when its response lands.
+  private loadStatusCounts(uid: string): void {
+    if (!uid || uid !== this.projectUid()) return;
+    const generation = ++this.statusCountsGeneration;
+    this.newsletterService
+      .getStatusCounts(uid)
+      .pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((counts) => {
+        if (generation === this.statusCountsGeneration && uid === this.projectUid()) this.statusCounts.set(counts);
+      });
+  }
+
   private runDelete(id: string): void {
     if (!this.projectUid()) return;
     this.deletingId.set(id);
@@ -428,6 +469,7 @@ export class NewsletterListComponent {
       .subscribe({
         next: () => {
           this.newsletters.update((current) => current.filter((n) => n.id !== id));
+          this.loadStatusCounts(this.projectUid());
           this.messageService.add({ severity: 'success', summary: 'Draft deleted', detail: 'The draft has been removed.' });
         },
         error: (err: HttpErrorResponse) => {
@@ -451,6 +493,7 @@ export class NewsletterListComponent {
       .subscribe({
         next: () => {
           this.optOuts.update((current) => current.filter((o) => o.id !== optOut.id));
+          this.loadStatusCounts(projectUid);
           this.messageService.add({ severity: 'success', summary: 'Opt-out removed', detail: `${optOut.email} will receive newsletters again.` });
         },
         error: (err: HttpErrorResponse) => {
@@ -475,6 +518,7 @@ export class NewsletterListComponent {
         next: () => {
           this.newsletters.update((current) => current.filter((n) => n.id !== item.id));
           this.armingNewsletters.update((current) => current.filter((n) => n.id !== item.id));
+          this.loadStatusCounts(projectUid);
           this.messageService.add({ severity: 'success', summary: 'Schedule cancelled', detail: 'The newsletter is back in Drafts.' });
         },
         error: (err: HttpErrorResponse) => this.handleCancelScheduleError(err, item.id),
@@ -502,6 +546,7 @@ export class NewsletterListComponent {
       this.messageService.add({ severity: 'warn', summary: 'Already sent', detail: 'This newsletter has already been sent.' });
       this.newsletters.update((current) => current.filter((n) => n.id !== id));
       this.armingNewsletters.update((current) => current.filter((n) => n.id !== id));
+      this.loadStatusCounts(this.projectUid());
       return;
     }
     this.messageService.add({

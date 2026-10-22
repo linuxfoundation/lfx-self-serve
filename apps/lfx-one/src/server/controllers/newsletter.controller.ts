@@ -168,6 +168,23 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/projects/:projectUid/newsletters/status-counts
+   */
+  public async getStatusCounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_status_counts', { project_uid: projectUid });
+      // Same publisher-only gate as the list: counts expose draft totals.
+      await this.memberBenefitService.assertPublisherRead(req, projectUid);
+      const result = await this.newsletterService.getNewsletterStatusCounts(req, projectUid);
+      logger.success(req, 'newsletter_status_counts', startTime, { truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/projects/:projectUid/newsletters
    */
   public async createNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {

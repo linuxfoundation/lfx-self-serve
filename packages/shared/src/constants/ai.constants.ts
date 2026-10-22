@@ -176,8 +176,14 @@ Respond with a JSON object matching the provided schema exactly. Do not include 
 
 /**
  * AI model configuration
+ *
+ * Carries the `bedrock/` provider prefix because the v2 LiteLLM instances
+ * (`litellm.*.v2.cluster.linuxfound.info`) route on the prefixed name, while the retired OCI
+ * instance (`litellm.tools.lfx.dev`) routed on the bare inference profile id and answered
+ * `401` to the prefixed one. The two names are not interchangeable, so the host and the name
+ * have to move together — see #4087, where the host moved alone and every AI call failed.
  */
-export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
 
 /**
  * AI request configuration

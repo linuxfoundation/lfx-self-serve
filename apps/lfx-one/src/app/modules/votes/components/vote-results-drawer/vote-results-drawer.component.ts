@@ -27,6 +27,7 @@ import {
   formatVoteDeadline,
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
+  isRankedPollType,
   isVoteEndedEarly,
   mergeCommentResults,
   resolveVoterResultsState,
@@ -292,8 +293,8 @@ export class VoteResultsDrawerComponent {
     return computed(() => {
       const v = this.vote();
       if (!v) return false;
-      // Missing poll_type defaults to GENERIC (matches initVotingMethodText) so the plurality branch renders.
-      return (v.poll_type ?? PollType.GENERIC) === PollType.GENERIC;
+      // Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality branch — see isRankedPollType.
+      return !isRankedPollType(v.poll_type);
     });
   }
 
@@ -433,6 +434,7 @@ export class VoteResultsDrawerComponent {
       const pollType = this.vote()?.poll_type ?? PollType.GENERIC;
       switch (pollType) {
         case PollType.GENERIC:
+        case PollType.MAJORITY:
           return 'Each voter picks one option; the option with the most votes wins.';
         case PollType.CONDORCET_IRV:
           return 'Voters rank options; a candidate that beats all others head-to-head wins, else IRV elimination decides.';

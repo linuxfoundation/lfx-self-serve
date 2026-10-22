@@ -8,6 +8,7 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaIsViewOnly,
   orgClaOpenLabel,
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
@@ -134,6 +135,29 @@ describe('orgClaPreviewGroup', () => {
   // none, because it has no signature for them to hang off.
   it('reports no managers and no approval criteria, rather than reporting nothing', () => {
     expect(orgClaPreviewGroup(selection)).toMatchObject({ claManagersCount: 0, approvalCriteriaCount: 0, needsClaManager: false });
+  });
+});
+
+describe('orgClaIsViewOnly', () => {
+  it('is true for a signed agreement whose CLA Manager list does not name the viewer', () => {
+    expect(orgClaIsViewOnly({ signed: true, viewerIsClaManager: false })).toBe(true);
+  });
+
+  it('is false for a signed agreement the viewer manages', () => {
+    expect(orgClaIsViewOnly({ signed: true, viewerIsClaManager: true })).toBe(false);
+  });
+
+  it('is false for the unsigned preview, which also carries viewerIsClaManager false', () => {
+    const preview = orgClaPreviewGroup({
+      claGroupId: 'cla-group-uuid-1',
+      claGroupName: 'Cascade CLA',
+      projectSfid: 'a09410000182dD2AAI',
+      projectName: 'Cascade',
+      orgUid: 'org-uuid-1',
+    });
+
+    expect(preview.viewerIsClaManager).toBe(false);
+    expect(orgClaIsViewOnly(preview)).toBe(false);
   });
 });
 

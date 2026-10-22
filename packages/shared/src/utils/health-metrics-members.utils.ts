@@ -564,10 +564,10 @@ export function buildHealthMetricsMembersChurnView(
   const current = churn.years.find((row) => row.year === year) ?? null;
   const prior = churn.years.find((row) => row.year === year - 1) ?? null;
   const lostCount = Math.max(0, Math.round(current?.lostCount ?? 0));
-  const rateOf = (row: HealthMetricsMembersChurnYear | null): number | null => (mode === 'revenue' ? row?.revenueChurnRate : row?.logoChurnRate) ?? null;
+  const rateOf = (row: HealthMetricsMembersChurnYear | null): number | null => (mode === 'revenue' ? row?.revenueNotRenewedRate : row?.logoChurnRate) ?? null;
   const rate = rateOf(current);
   const priorRate = rateOf(prior);
-  const change = mode === 'revenue' ? churnRevenueChange(current, prior) : churnDifference(rate, priorRate);
+  const change = churnDifference(rate, priorRate);
   const isCurrentYear = year === getYearForRange('YTD');
   const changeTone = churnChangeTone(change);
 
@@ -600,6 +600,7 @@ export function buildHealthMetricsMembersChurnView(
 /** "Who left" rows: dues lost, the lapse and the last engagement, a dash where the model has none. */
 export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsMembersChurnDeparture[]): HealthMetricsMembersChurnDepartureRowView[] {
   return rows.map((row) => ({
+    key: row.key,
     accountId: row.accountId,
     accountName: row.accountName,
     tierLabel: row.membershipTier ?? '—',
@@ -618,12 +619,7 @@ export function buildHealthMetricsMembersChurnDeparturesSubtitle(totalRecords: n
 export function buildHealthMetricsMembersChurnCountNote(totalRecords: number, lostCount: number): string | null {
   if (totalRecords === lostCount) return null;
 
-  return `${pluralize(totalRecords, 'organization')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
-}
-
-/** The view's own point change, read only when the year before is in the read to compare against. */
-function churnRevenueChange(current: HealthMetricsMembersChurnYear | null, prior: HealthMetricsMembersChurnYear | null): number | null {
-  return prior === null ? null : (current?.revenueChurnRateChangePp ?? null);
+  return `${pluralize(totalRecords, 'membership')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
 }
 
 function churnDifference(current: number | null, previous: number | null): number | null {
@@ -654,7 +650,7 @@ function buildChurnSides(
           note: lost === null || opening === null ? null : `(${formatCount(lost)} of ${formatCount(opening)})`,
           isLoss: false,
         }
-      : { key: 'revenue', label: 'Revenue churn', value: formatChurnRate(current?.revenueChurnRate ?? null), note: null, isLoss: false };
+      : { key: 'revenue', label: 'Revenue churn', value: formatChurnRate(current?.revenueNotRenewedRate ?? null), note: null, isLoss: false };
 
   return [
     {

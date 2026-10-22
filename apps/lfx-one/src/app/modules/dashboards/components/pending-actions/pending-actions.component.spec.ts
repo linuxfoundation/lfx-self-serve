@@ -6,7 +6,8 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { PollStatus, PollType } from '@lfx-one/shared/enums';
+import type { Meeting, PendingActionItem, Vote } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -48,7 +49,11 @@ const hiddenActions = { isActionHidden: () => false, hideAction: vi.fn(), dismis
 const reviewClient = { approveApplication: vi.fn(), rejectApplication: vi.fn() };
 const meetingClient = { getMeeting: vi.fn(), getMeetingRsvpForCurrentUser: vi.fn(() => of(null)) };
 
-async function render(actions: PendingActionItem[], flagEnabled = true): Promise<ComponentFixture<PendingActionsComponent>> {
+async function render(
+  actions: PendingActionItem[],
+  flagEnabled = true,
+  voteServiceOverrides: Record<string, unknown> = {}
+): Promise<ComponentFixture<PendingActionsComponent>> {
   await TestBed.configureTestingModule({
     imports: [PendingActionsComponent],
     providers: [
@@ -71,7 +76,7 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
         },
       },
       { provide: LensService, useValue: { activeLens: signal('me') } },
-      { provide: VoteService, useValue: {} },
+      { provide: VoteService, useValue: { ...voteServiceOverrides } },
       { provide: CommitteeService, useValue: reviewClient },
       // The real service: the template's `p-toast` subscribes to its message/clear observables.
       MessageService,
@@ -519,5 +524,70 @@ describe('PendingActionsComponent — RSVP refresh recovery', () => {
     fixture.detectChanges();
     expect(byTestId(fixture, 'meeting-rsvp-button-yes')).not.toBeNull();
     expect(meetingClient.getMeeting).toHaveBeenCalledTimes(2);
+  });
+});
+
+// PR #4076 review (lfx-one bot): voteUsesDrawer()'s swap to isRankedPollType() had no direct test —
+// the pure allowlist function is covered in vote.utils.spec.ts, but this integration point (deciding
+// inline-vs-drawer dispatch for a loaded vote) was not. Pins both outcomes for a single-question vote.
+describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)', () => {
+  const voteRow = (voteUid: string): PendingActionItem => ({
+    type: 'Vote',
+    badge: 'Board',
+    text: 'Approve the amended charter',
+    icon: 'fa-light fa-check-to-slot',
+    severity: 'accent',
+    buttonText: 'Vote now',
+    voteUid,
+  });
+
+  const singleQuestionVote = (overrides: Partial<Vote> = {}): Vote =>
+    ({
+      uid: 'vote-1',
+      name: 'Board Election',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-1',
+      end_time: '2099-01-01T00:00:00Z',
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Approve?',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'c1', choice_text: 'Yes' },
+            { choice_id: 'c2', choice_text: 'No' },
+          ],
+        },
+      ],
+      ...overrides,
+    }) as Vote;
+
+  function clickVoteButton(fixture: ComponentFixture<PendingActionsComponent>): void {
+    byTestId(fixture, 'dashboard-pending-actions-vote-button')!.querySelector<HTMLButtonElement>('button')!.click();
+  }
+
+  it('renders the compact inline ballot for a majority vote', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+  });
+
+  it('falls back to the cast drawer for a ranked-choice vote', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+    const castVoteRequested = vi.fn();
+    fixture.componentInstance.castVoteRequested.subscribe(castVoteRequested);
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(castVoteRequested).toHaveBeenCalledWith('vote-1');
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeNull();
   });
 });

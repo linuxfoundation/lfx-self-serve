@@ -42,6 +42,7 @@ import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.co
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
 import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
+import { isMktgReasoningEvent } from './mktg-session-event.utils';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -156,15 +157,20 @@ function platformStep(toolName: string, input: UnknownRecord, startedAt: string,
   return null;
 }
 
-/** The agent's own tool calls in one `llm_done` response stream, in order. */
-function localToolCalls(event: UnknownRecord): string[] {
+/** Research calls prevent a mixed finalize response from authorizing the asset handoff. */
+function isResearchTool(toolName: string): boolean {
+  if (toolName === MKTG_RUN_ACTIVITY_TOOLS.inspectLogos) return true;
+  if (MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(toolName) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(toolName)) return false;
+  return toolName === MKTG_RUN_ACTIVITY_TOOLS.fetch || toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearch || toolName.startsWith(MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX);
+}
+
+/** Tool names in one model response, for classification only — never feed labels. */
+function toolCalls(event: UnknownRecord): string[] {
   const body = asString(event['body']) || JSON.stringify(event['content'] ?? '');
   const calls: string[] = [];
   const pattern = /"type"\s*:\s*"tool_use"\s*,\s*"id"\s*:\s*"[^"]*"\s*,\s*"name"\s*:\s*"([^"]+)"/g;
   for (let match = pattern.exec(body); match !== null; match = pattern.exec(body)) {
-    if (MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(match[1])) {
-      calls.push(match[1]);
-    }
+    calls.push(match[1]);
   }
   return calls;
 }
@@ -185,7 +191,7 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
  * feed, and ids are positional, so they stay stable while the run appends.
  */
 export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
-  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null);
+  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null && !isMktgReasoningEvent(event));
 
   const finishedTasks = new Set<string>();
   for (const event of events) {
@@ -200,7 +206,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   let finalizeCount = 0;
   let questionsAt = -1;
   let writingStart = '';
-  let firstFinalizeAfterQuestions = '';
+  let modelStart = '';
+  let firstWritingCheck = '';
   /**
    * The run's own writing and first-check sentences: the framework's, until
    * the run shows it is the Brand Kit's (its logo tool, its finalize tool or
@@ -247,13 +254,18 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
       continue;
     }
 
-    if (type === 'llm_start' && questionsAt >= 0 && !writingStart) {
-      writingStart = createdAt;
+    if (type === 'llm_start') {
+      modelStart = createdAt;
+      if (questionsAt >= 0 && !writingStart) writingStart = createdAt;
       continue;
     }
 
     if (type === 'llm_done') {
-      for (const tool of localToolCalls(event)) {
+      const tools = toolCalls(event);
+      const stillResearching = tools.some(isResearchTool);
+      const asksQuestions = tools.includes(MKTG_RUN_ACTIVITY_TOOLS.askRequester);
+      for (const tool of tools) {
+        if (!MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(tool)) continue;
         let step: Step;
         if (tool === MKTG_RUN_ACTIVITY_TOOLS.askRequester) {
           step = { kind: 'questions', label: MKTG_RUN_ACTIVITY_LABELS.questions, status: 'running', startedAt: createdAt };
@@ -262,6 +274,10 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
           identifyBrandKit();
           step = { kind: 'reading', label: MKTG_RUN_ACTIVITY_LABELS.inspectingLogos, status: 'running', startedAt: createdAt };
         } else {
+          // Mixed research/questions calls cannot authorize the handoff, even
+          // when they also name finalize. Wait for an unambiguous completion.
+          if (stillResearching || asksQuestions) continue;
+          if (!writingStart) writingStart = modelStart || createdAt;
           finalizeCount += 1;
           if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit) {
             identifyBrandKit();
@@ -272,8 +288,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
           } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost) {
             identifyLinkedin();
           }
-          if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
-            firstFinalizeAfterQuestions = createdAt;
+          if (writingStart && !firstWritingCheck) {
+            firstWritingCheck = createdAt;
           }
           step = {
             kind: 'checking',
@@ -303,15 +319,15 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
     }
   }
 
-  // The stretch between the answers and the first check is the agent writing:
-  // no tool marks it, so the feed adds it, running until the check starts.
+  // After questions, answers start writing as before. Without questions, only
+  // an observed finalize confirms writing, retroactively for the feed.
   if (writingStart) {
     steps.push({
       kind: 'writing',
       label: runLabels.writing,
-      status: firstFinalizeAfterQuestions ? 'done' : 'running',
+      status: firstWritingCheck ? 'done' : 'running',
       startedAt: writingStart,
-      ...(firstFinalizeAfterQuestions && { endedAt: firstFinalizeAfterQuestions }),
+      ...(firstWritingCheck && { endedAt: firstWritingCheck }),
     });
   }
 

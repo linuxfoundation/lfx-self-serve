@@ -7,6 +7,7 @@
  */
 export enum PollType {
   GENERIC = 'generic',
+  MAJORITY = 'majority',
   CONDORCET_IRV = 'condorcet_irv',
   INSTANT_RUNOFF_VOTE = 'instant_runoff_vote',
   MEEK_STV = 'meek_stv',
@@ -37,6 +38,8 @@ export enum VoteResponseStatus {
  */
 export enum VoteRowParticipationState {
   NOT_OPEN = 'not_open',
+  /** Just opened — the search index has not reported the invited electorate yet (GH-4078) */
+  COUNTING = 'counting',
   UNAVAILABLE = 'unavailable',
   COUNT_ONLY = 'count_only',
   NO_ELECTORATE = 'no_electorate',

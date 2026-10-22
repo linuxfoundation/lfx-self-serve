@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { NgClass } from '@angular/common';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
@@ -74,6 +74,10 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import {
+  applyAttachmentScopeOverrides,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
   getMeetingSelfRemovalMessage,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
@@ -87,6 +91,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -97,9 +102,26 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  Observable,
+  of,
+  pairwise,
+  skip,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
+import { AttachmentScopeBadgeComponent } from '../attachment-scope-badge/attachment-scope-badge.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
@@ -110,6 +132,7 @@ import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule
   selector: 'lfx-meeting-card',
   imports: [
     NgClass,
+    NgTemplateOutlet,
     RouterLink,
     ButtonComponent,
     TagComponent,
@@ -127,6 +150,7 @@ import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule
     MeetingRegistrantsDisplayComponent,
     MeetingInviteeAttendeesComponent,
     MeetingMaterialsDrawerComponent,
+    AttachmentScopeBadgeComponent,
     MeetingOrganizerComponent,
     HostKeyPopoverComponent,
   ],
@@ -136,6 +160,7 @@ import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule
 export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -188,6 +213,7 @@ export class MeetingCardComponent implements OnInit {
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -198,6 +224,20 @@ export class MeetingCardComponent implements OnInit {
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
+  /** True when materials carry a scope worth showing: an upcoming recurring meeting, where each one is for one date or the whole series. */
+  public readonly showAttachmentScopes: Signal<boolean> = computed(() => !this.pastMeeting() && !!this.meeting().recurrence);
+  public readonly occurrenceAttachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = computed(() =>
+    this.attachments().filter((attachment) => getAttachmentScope(attachment as MeetingAttachment) === 'occurrence')
+  );
+  public readonly seriesAttachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = computed(() =>
+    this.attachments().filter((attachment) => getAttachmentScope(attachment as MeetingAttachment) === 'series')
+  );
+  /** The occurrence the materials drawer manages: the one this card shows, for an upcoming recurring meeting. */
+  public readonly attachmentOccurrence: Signal<MeetingOccurrence | null> = computed(() => (this.showAttachmentScopes() ? this.occurrence() : null));
+  /** False once the shown occurrence is cancelled or already past, where the service would reject a scope. */
+  public readonly canScopeToOccurrence: Signal<boolean> = computed(
+    () => this.showAttachmentScopes() && canScopeAttachmentToOccurrence(this.meeting() as Meeting, this.occurrence())
+  );
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
   public readonly meetingTypeBadge: Signal<{
     severity: TagSeverity;
@@ -259,6 +299,11 @@ export class MeetingCardComponent implements OnInit {
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
+  // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
+  // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
+  // honored for every viewer, except right after registering here, when the feed has not caught up yet.
+  public readonly canResendInvite: Signal<boolean> = computed(() => this.isRegisteredAttendee() && (this.optimisticInvited() || this.hasOwnRegistration()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -544,6 +589,12 @@ export class MeetingCardComponent implements OnInit {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
     });
+  }
+
+  public resendInvite(): void {
+    // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
+    // over the next occurrence, and the registration to resend has to fit what the card displays.
+    this.inviteResend.resendOwn(this.meeting().id, (this.occurrence() ?? this.currentOccurrence())?.occurrence_id);
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -926,11 +977,25 @@ export class MeetingCardComponent implements OnInit {
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[]> {
     return runInInjectionContext(this.injector, () => {
       const id = this.pastMeeting() ? getPastMeetingResourceId(this.meetingInput()) : this.meetingInput().id;
-      const attachments$ = this.pastMeeting() ? this.meetingService.getPastMeetingAttachments(id) : this.meetingService.getMeetingAttachments(id);
+      const attachments$: Observable<(MeetingAttachment | PastMeetingAttachment)[]> = this.pastMeeting()
+        ? this.meetingService.getPastMeetingAttachments(id)
+        : this.meetingService.getMeetingAttachments(id);
 
-      return toSignal(
+      const fetched = toSignal(
         this.refreshAttachments$.pipe(switchMap(() => attachments$.pipe(catchError(() => of([] as (MeetingAttachment | PastMeetingAttachment)[]))))),
-        { initialValue: [] }
+        { initialValue: [] as (MeetingAttachment | PastMeetingAttachment)[] }
+      );
+
+      // The meeting's materials span every date; this card shows one, so another date's materials are dropped.
+      // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service
+      // catches up, and this card must not wait for it.
+      return computed(() =>
+        this.pastMeeting()
+          ? fetched()
+          : filterAttachmentsForOccurrence(
+              applyAttachmentScopeOverrides(fetched() as MeetingAttachment[], this.meetingService.attachmentScopeOverrides()),
+              this.occurrence()?.occurrence_id
+            )
       );
     });
   }

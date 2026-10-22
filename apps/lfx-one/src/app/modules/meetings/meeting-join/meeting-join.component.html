@@ -449,7 +449,6 @@
                     <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
                     </lfx-rsvp-button-group>
                   }
-                  <lfx-add-to-calendar [meeting]="meeting()" [currentOccurrence]="currentOccurrence()"></lfx-add-to-calendar>
                   <lfx-meeting-rsvp-details
                     [meeting]="meeting()"
                     [project]="project()"
@@ -464,6 +463,19 @@
                     borderColor="border-gray-200"
                     (addClicked)="showRegistrants.set(true)">
                   </lfx-meeting-rsvp-details>
+                  @if (canResendInvite()) {
+                    <lfx-button
+                      class="w-full"
+                      styleClass="w-full"
+                      icon="fa-light fa-paper-plane"
+                      label="Resend Invite"
+                      size="small"
+                      severity="secondary"
+                      [loading]="resendingInvite()"
+                      (onClick)="resendInvite()"
+                      data-testid="resend-invite-organizer-button">
+                    </lfx-button>
+                  }
                   @if (canLeaveMeeting()) {
                     <lfx-button
                       class="w-full"
@@ -488,7 +500,19 @@
                           <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                         }
                       }
-                      <lfx-add-to-calendar [meeting]="meeting()" [currentOccurrence]="currentOccurrence()"></lfx-add-to-calendar>
+                      @if (canResendInvite()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-paper-plane"
+                          label="Resend Invite"
+                          size="small"
+                          severity="secondary"
+                          [loading]="resendingInvite()"
+                          (onClick)="resendInvite()"
+                          data-testid="resend-invite-button">
+                        </lfx-button>
+                      }
                       @if (canLeaveMeeting()) {
                         <lfx-button
                           class="w-full"
@@ -657,10 +681,19 @@
                                 <div class="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" [ngClass]="[fileType.bgColor]">
                                   <i [ngClass]="[fileType.icon, fileType.textColor]" class="text-base"></i>
                                 </div>
-                                <div class="flex flex-col flex-1 overflow-hidden gap-0.5">
-                                  <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap font-inter">{{
-                                    attachment.name
-                                  }}</span>
+                                <div class="flex flex-col flex-1 min-w-0 gap-1">
+                                  <span
+                                    class="text-sm text-gray-900 line-clamp-2 break-words font-inter"
+                                    [pTooltip]="attachment.name"
+                                    tooltipPosition="top"
+                                    [attr.data-testid]="'meeting-material-file-name-' + i"
+                                    >{{ attachment.name }}</span
+                                  >
+                                  @if (showAttachmentScopes()) {
+                                    <lfx-attachment-scope-badge
+                                      class="self-start"
+                                      [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                                  }
                                   <div class="flex items-center gap-2">
                                     <span class="text-xs uppercase tracking-wide text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{{ fileType.label }}</span>
                                     @if (attachment.updated_at || attachment.created_at) {
@@ -696,9 +729,20 @@
                             @for (attachment of materialLinks(); track attachment.uid; let i = $index) {
                               <div class="flex items-center gap-3 py-1.5" [attr.data-testid]="'meeting-material-link-' + i">
                                 <i class="fa-light fa-link text-gray-400 text-sm flex-shrink-0"></i>
-                                <span class="text-sm text-gray-700 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{
-                                  attachment.name
-                                }}</span>
+                                <div class="flex flex-col flex-1 min-w-0 gap-1">
+                                  <span
+                                    class="text-sm text-gray-700 line-clamp-2 break-words font-inter"
+                                    [pTooltip]="attachment.name"
+                                    tooltipPosition="top"
+                                    [attr.data-testid]="'meeting-material-link-name-' + i"
+                                    >{{ attachment.name }}</span
+                                  >
+                                  @if (showAttachmentScopes()) {
+                                    <lfx-attachment-scope-badge
+                                      class="self-start"
+                                      [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                                  }
+                                </div>
                                 <a
                                   [href]="attachment.link"
                                   target="_blank"
@@ -906,6 +950,8 @@
           [(visible)]="materialsDrawerVisible"
           [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
           [pastMeetingId]="pastMeetingResourceId()"
+          [occurrence]="attachmentOccurrence()"
+          [canScopeToOccurrence]="canScopeToOccurrence()"
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }

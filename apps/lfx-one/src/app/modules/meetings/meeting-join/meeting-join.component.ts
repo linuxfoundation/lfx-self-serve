@@ -75,6 +75,10 @@ import {
 } from '@lfx-one/shared';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
+  applyAttachmentScopeOverrides,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
   getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
@@ -91,6 +95,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -124,9 +129,9 @@ import {
   timer,
 } from 'rxjs';
 
-import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { AttachmentScopeBadgeComponent } from '../components/attachment-scope-badge/attachment-scope-badge.component';
 import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
 import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
@@ -140,7 +145,6 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     DatePipe,
     NgClass,
     ReactiveFormsModule,
-    AddToCalendarComponent,
     ButtonComponent,
     CardComponent,
     TagComponent,
@@ -162,6 +166,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     FileTypeDisplayPipe,
     DynamicDialogModule,
     MeetingMaterialsDrawerComponent,
+    AttachmentScopeBadgeComponent,
     ImpersonationBannerComponent,
   ],
   providers: [DialogService, ConfirmationService],
@@ -174,6 +179,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
@@ -305,6 +311,7 @@ export class MeetingJoinComponent implements OnInit {
   // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
   private optimisticLeft = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting()?.id ?? ''));
   public leavingMeeting = signal(false);
+  public resendingInvite = computed(() => this.inviteResend.isResendingOwn(this.meeting()?.id));
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
@@ -327,7 +334,29 @@ export class MeetingJoinComponent implements OnInit {
   protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
   // Returns meeting_and_occurrence_id when set (occurrences use a composite key for attachment API calls).
   protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() && this.meeting() ? getPastMeetingResourceId(this.meeting()!) : undefined));
-  protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
+  // A live meeting's materials span every date; the page shows one occurrence, so another date's materials are dropped.
+  protected currentAttachments = computed(() =>
+    this.pastMeetingFullAccess()
+      ? this.pastMeetingAttachments()
+      : filterAttachmentsForOccurrence(
+          // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service catches up.
+          applyAttachmentScopeOverrides(this.attachments(), this.meetingService.attachmentScopeOverrides()),
+          this.currentOccurrence()?.occurrence_id
+        )
+  );
+  // Materials carry a scope worth showing only on an upcoming recurring meeting, where each is for one date or the series.
+  protected showAttachmentScopes = computed(() => !this.pastMeetingFullAccess() && !!this.meeting()?.recurrence);
+  // Each listed attachment's scope, keyed by uid, so the template reads a value instead of calling a method per row.
+  protected attachmentScopes = computed(
+    () => new Map(this.currentAttachments().map((attachment) => [attachment.uid, getAttachmentScope(attachment as MeetingAttachment)] as const))
+  );
+  // The occurrence the materials drawer manages: the one this page shows, for an upcoming recurring meeting.
+  protected attachmentOccurrence = computed(() => (this.showAttachmentScopes() && !this.loadedViaPastMeetingId() ? this.currentOccurrence() : null));
+  // False once the shown occurrence is cancelled or past, where the service would reject a scope.
+  protected canScopeToOccurrence = computed(() => {
+    const meeting = this.meeting();
+    return !!meeting && !!this.attachmentOccurrence() && canScopeAttachmentToOccurrence(meeting, this.currentOccurrence());
+  });
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
   protected hasRecentlyUpdatedMaterials = computed(() => {
@@ -410,6 +439,7 @@ export class MeetingJoinComponent implements OnInit {
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
   public canLeaveMeeting: Signal<boolean>;
+  public canResendInvite: Signal<boolean>;
   // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
@@ -539,6 +569,8 @@ export class MeetingJoinComponent implements OnInit {
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
     this.canLeaveMeeting = computed(() => this.effectivelyInvited());
+    // Resending goes to the viewer's own registrant row, so it is offered under the same rule as removing it.
+    this.canResendInvite = computed(() => this.canLeaveMeeting());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -802,6 +834,10 @@ export class MeetingJoinComponent implements OnInit {
       accept: () => this.leaveMeeting(),
       reject: () => this.leaveSource.set('meeting-join'),
     });
+  }
+
+  public resendInvite(): void {
+    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
   }
 
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */

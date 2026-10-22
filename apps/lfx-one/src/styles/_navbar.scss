@@ -1111,35 +1111,12 @@
     align-items: center;
     flex-shrink: 0;
   }
-  // The Create button's filled circle grows with it, which hides the icon's own growth; scale the
-  // glyph further so the + visibly expands too (1.15 × 1.2 ≈ 1.4 overall).
-  .lfxn__head-actions .lfxn__icon-btn-glyph {
-    transition: transform 150ms ease-out;
-  }
-
-  .lfxn__head-actions .lfxn__icon-btn:hover .lfxn__icon-btn-glyph,
-  .lfxn__head-actions .lfxn__icon-btn:focus-visible .lfxn__icon-btn-glyph {
-    transform: scale(1.2);
-
-    @media (prefers-reduced-motion: reduce) {
-      transform: none;
-    }
-  }
-
-  // Footer actions sit on the dark navy — a lighter slate than the default ghost icon for contrast.
+  // Footer actions sit on the dark navy — a lighter slate than the default ghost icon for contrast —
+  // and turn white and grow slightly on hover/focus. None of them carries a selected state:
+  // Documentation looks the same on `/docs` as anywhere else. The Create button keeps its size;
+  // only its fill darkens (`.lfxn__icon-btn--accent`).
   .lfxn__foot-actions .lfxn__icon-btn {
     color: theme('colors.gray.300');
-  }
-
-  // The footer action for the current page (Documentation on `/docs`): white glyph on a filled circle.
-  .lfxn__foot-actions .lfxn__icon-btn.is-active {
-    background: theme('colors.gray.700');
-    color: theme('colors.white');
-  }
-
-  // Footer actions and the Create button: icon turns white and the button grows slightly on hover/focus.
-  .lfxn__foot-actions .lfxn__icon-btn,
-  .lfxn__head-actions .lfxn__icon-btn {
     transition:
       background-color 150ms ease-in-out,
       color 150ms ease-in-out,

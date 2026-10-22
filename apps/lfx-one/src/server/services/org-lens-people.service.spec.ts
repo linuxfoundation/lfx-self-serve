@@ -79,7 +79,7 @@ import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 interface SqlDatabase {
   exec(sql: string): void;
   prepare(sql: string): {
-    run(...values: (string | number)[]): unknown;
+    run(...values: (string | number | null)[]): unknown;
     all(...values: string[]): Record<string, unknown>[];
   };
   close(): void;
@@ -95,11 +95,15 @@ const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], company
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
-function addPerson(account: string, personKey: string, username: string, emails: string[] = []): void {
+function addPerson(account: string, personKey: string, username: string | null, emails: string[] = []): void {
   const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)');
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
   }
+}
+
+function addRosterRow(account: string, key: string, username: string): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
 }
 
 beforeEach(() => {
@@ -109,6 +113,7 @@ beforeEach(() => {
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
@@ -131,7 +136,7 @@ afterEach(() => {
 
 async function expectBothPaths(expected: OrgPersonCompanyEmailsResponse): Promise<void> {
   expect(await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME)).toEqual(expected);
-  expect(await service.getEmployeeDetail({} as never, ACCOUNT, LIVE_PERSON)).toMatchObject(expected);
+  expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(expected);
 }
 
 describe('OrgLensPeopleService username company emails', () => {
@@ -206,7 +211,7 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    expect(cacheValues.size).toBe(2);
+    expect(cacheValues.size).toBe(4);
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
@@ -252,6 +257,22 @@ describe('OrgLensPeopleService username company emails', () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
+  });
+
+  it("reads a roster person's addresses by person key, even when the address rows carry no username", async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' MixedUser ');
+    addPerson(ACCOUNT, 'person-one', null, ['first@company.example']);
+
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('reports a roster person without addresses as none on record, not unavailable', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'MixedUser');
+
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({ companyEmails: [], companyEmailsStatus: 'resolved' });
   });
 });
 
@@ -351,64 +372,66 @@ describe('OrgLensPeopleService person-key company emails', () => {
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
     addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, 'cdp:member-one')).toMatchObject(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, 'cdp:member-one')).toEqual(UNAVAILABLE);
   });
 
-  it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
+  it('returns activity without reading the address view', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({ personKey, ...activity });
+    const addressReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
+    expect(addressReads).toEqual([]);
+  });
+
+  it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['other-person@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example', 'b-secondary@company.example'],
       companyEmailsStatus: 'resolved',
-    });
-  });
-
-  it('preserves board, committee, code, event and training activity when the optional keyed email lookup fails', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
-      companyEmails: [],
-      companyEmailsStatus: 'failed',
     });
   });
 
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
     database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'failed',
-      companyEmails: [],
-    });
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({ companyEmails: [], companyEmailsStatus: 'failed' });
     database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
     });
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
     });
   });
 
-  it('keeps activity rows cached while the email lookup is failing', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
+  describe('by LF username (lfx-self-serve-ops#894)', () => {
+    it("resolves the username to its one roster person in this account and returns that person's activity", async () => {
+      addRosterRow(ACCOUNT, personKey, ' MixedUser ');
+      addRosterRow(ACCOUNT, 'person-two', 'someone-else');
+      // The same username in another account never makes this account's lookup ambiguous.
+      addRosterRow('other-account', 'person-three', 'mixeduser');
 
-    database.exec(
-      'DROP TABLE ORG_PEOPLE_COMMITTEE_MEMBERSHIP; DROP TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS; DROP TABLE ORG_PEOPLE_EVENTS; DROP TABLE ORG_PEOPLE_TRAINING'
-    );
-    const warehouseReads = execute.mock.calls.length;
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
-    expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'MIXEDUSER')).toEqual({ personKey, ...activity });
+    });
+
+    it('fails closed without reading activity when the username matches no roster person or several', async () => {
+      addRosterRow(ACCOUNT, personKey, 'shared');
+      addRosterRow(ACCOUNT, 'person-two', 'shared');
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'shared')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'nobody')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, '  ')).toBeNull();
+      const activityReads = (execute.mock.calls as [string][]).filter(([query]) =>
+        /ORG_PEOPLE_(COMMITTEE_MEMBERSHIP|CODE_CONTRIBUTIONS|EVENTS|TRAINING|COMPANY_EMAILS)/.test(query)
+      );
+      expect(activityReads).toEqual([]);
+    });
   });
 });
 

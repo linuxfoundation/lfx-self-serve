@@ -4,27 +4,7 @@
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
   <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-[32px] py-[14px]">
-    <nav aria-label="Breadcrumb" class="text-sm text-gray-500" data-testid="mktg-linkedin-breadcrumb">
-      <ol class="flex flex-wrap items-center gap-2">
-        <li>
-          <a routerLink=".." queryParamsHandling="preserve" class="text-blue-600 hover:underline" data-testid="mktg-linkedin-back">{{ projectName() }} kit</a>
-        </li>
-        <li aria-hidden="true">›</li>
-        @if (family(); as family) {
-          <li>
-            <a
-              [routerLink]="['..', 'families', family.id]"
-              queryParamsHandling="preserve"
-              class="text-blue-600 hover:underline"
-              data-testid="mktg-linkedin-family-back"
-              >{{ family.name }}</a
-            >
-          </li>
-          <li aria-hidden="true">›</li>
-        }
-        <li aria-current="page">{{ pageLabel }}</li>
-      </ol>
-    </nav>
+    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="context.activeContext()?.slug ?? null" data-testid="mktg-linkedin-breadcrumb" />
     <div class="grow"></div>
     @if (writingAs()) {
       <div class="text-sm text-gray-500" data-testid="mktg-linkedin-identity">
@@ -55,8 +35,13 @@
           @if (!writer() || (!saved() && !editing() && !setup())) {
             <lfx-button label="Try again" size="small" (onClick)="reload.set(reload() + 1)" data-testid="mktg-linkedin-retry-load" />
           }
-          @if (run() && !result() && !questions().length) {
-            <lfx-button label="Retry finishing this run" size="small" [disabled]="busy()" (onClick)="onRetryRun()" data-testid="mktg-linkedin-retry-run" />
+          @if (run() && !result() && !questions().length && !editing()) {
+            <lfx-button
+              [label]="runFailed() ? 'Retry' : 'Retry finishing this run'"
+              size="small"
+              [disabled]="busy()"
+              (onClick)="onRetryRun()"
+              data-testid="mktg-linkedin-retry-run" />
           }
         </div>
       }

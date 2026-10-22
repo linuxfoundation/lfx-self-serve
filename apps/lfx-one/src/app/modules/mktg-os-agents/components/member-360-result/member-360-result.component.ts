@@ -9,9 +9,10 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MessageComponent } from '@components/message/message.component';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ProjectContextService } from '@services/project-context.service';
 import { Member360Service } from '@services/member-360.service';
-import { finalize, firstValueFrom, map, timer } from 'rxjs';
+import { debounceTime, distinctUntilChanged, finalize, firstValueFrom, map, merge, tap, timer } from 'rxjs';
 import {
   ACTION_OWNERS,
   CATEGORY_LABELS,
@@ -21,7 +22,7 @@ import {
   MEMBER_360_OWNER_OPTIONS,
   MEMBER_360_TIER_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { rankMember360Rows } from '@lfx-one/shared/utils';
+import { rankMember360Rows, mktgKitRootPath, mktgRunRouteFor } from '@lfx-one/shared/utils';
 import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360SummaryCard, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -34,6 +35,9 @@ export class Member360ResultComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly api = inject(Member360Service);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly context = inject(ProjectContextService);
   public readonly envelope = input.required<Member360Envelope>();
   public readonly history = input<MktgDocumentListItem[]>([]);
   public readonly documentId = input.required<string>();
@@ -42,6 +46,8 @@ export class Member360ResultComponent {
   protected readonly tierOptions = MEMBER_360_TIER_OPTIONS;
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;
   protected readonly columns = MEMBER_360_SORT_COLUMNS;
+  protected readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
+  protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   public readonly filters = new FormGroup({
     tier: new FormControl(this.tierOptions[0].label, { nonNullable: true }),
     owner: new FormControl(this.ownerOptions[0].label, { nonNullable: true }),
@@ -84,9 +90,69 @@ export class Member360ResultComponent {
     MEMBER_360_HEAT_ORDER.map((key) => ({ label: CATEGORY_LABELS[key], value: this.method().weights_used[key], original: this.method().weights_default[key] }))
   );
 
+  public constructor() {
+    // Restore shared links and browser history without writing another entry.
+    let restoring = false;
+    let searchPending = false;
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      restoring = true;
+      const tier = this.tierOptions.find((option) => option.label === params.get('tier'))?.label ?? this.tierOptions[0].label;
+      const owner = this.ownerOptions.find((option) => option.label === params.get('owner'))?.label ?? this.ownerOptions[0].label;
+      const search = params.get('search') ?? '';
+      if (this.filters.controls.tier.value !== tier) this.filters.controls.tier.setValue(tier);
+      if (this.filters.controls.owner.value !== owner) this.filters.controls.owner.setValue(owner);
+      // An in-flight query echo must not overwrite newer typing or move its caret.
+      const typingEcho = searchPending && this.router.getCurrentNavigation()?.trigger === 'imperative';
+      if (!typingEcho && this.filters.controls.search.value !== search) {
+        this.filters.controls.search.setValue(search);
+        searchPending = false;
+      }
+      this.sortKey.set(this.columns.find((column) => column.key === params.get('sort'))?.key ?? 'engagement_score');
+      this.direction.set(params.get('direction') === 'ascending' ? 'ascending' : 'descending');
+      restoring = false;
+    });
+    merge(this.filters.controls.tier.valueChanges.pipe(distinctUntilChanged()), this.filters.controls.owner.valueChanges.pipe(distinctUntilChanged()))
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (restoring) return;
+        const filters = this.readFilters();
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { ...this.projectParams(), tier: filters.tier || null, owner: filters.owner || null },
+          queryParamsHandling: 'merge',
+        });
+      });
+    this.filters.controls.search.valueChanges
+      .pipe(
+        tap(() => {
+          if (!restoring) searchPending = true;
+        }),
+        debounceTime(300),
+        takeUntilDestroyed()
+      )
+      .subscribe((search) => {
+        searchPending = false;
+        if (search === (this.route.snapshot.queryParamMap.get('search') ?? '')) return;
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { ...this.projectParams(), search: search || null },
+          queryParamsHandling: 'merge',
+        });
+      });
+  }
+
   protected sort(key: keyof Member360RankingRow): void {
     this.direction.set(this.sortKey() === key && this.direction() === 'ascending' ? 'descending' : 'ascending');
     this.sortKey.set(key);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        ...this.projectParams(),
+        sort: key === 'engagement_score' ? null : key,
+        direction: this.direction() === 'descending' ? null : this.direction(),
+      },
+      queryParamsHandling: 'merge',
+    });
   }
   protected toggle(member: number): void {
     this.expanded.update((current) => (current === member ? null : member));

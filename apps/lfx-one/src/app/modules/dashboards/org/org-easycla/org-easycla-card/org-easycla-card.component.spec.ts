@@ -52,6 +52,36 @@ describe('OrgEasyclaCardComponent', () => {
     return Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${id}"]`)).map((el) => (el as HTMLElement).textContent?.trim() ?? '');
   }
 
+  describe('view only', () => {
+    function viewOnlyPill(fixture: ComponentFixture<OrgEasyclaCardComponent>): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[data-testid="org-easycla-card-view-only"]');
+    }
+
+    it('marks a signed CCLA the viewer is not a CLA Manager of', async () => {
+      const fixture = await render(claGroup({ viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)?.textContent?.trim()).toBe('View only');
+    });
+
+    it('leaves a CCLA the viewer manages unmarked', async () => {
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(viewOnlyPill(fixture)).toBeNull();
+    });
+
+    it('leaves an unsigned agreement unmarked, since anyone may start signing it', async () => {
+      const fixture = await render(claGroup({ signed: false, status: 'not-started', viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)).toBeNull();
+    });
+
+    it('marks a signed agreement that is also sanctioned, which is no less read-only', async () => {
+      const fixture = await render(claGroup({ status: 'sanctioned', viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)).not.toBeNull();
+    });
+  });
+
   describe('identity', () => {
     it('names the CLA Group', async () => {
       const fixture = await render(claGroup());
