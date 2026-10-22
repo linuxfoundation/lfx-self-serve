@@ -1,9 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgDocumentType } from '@lfx-one/shared/interfaces';
-import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import {
+  FOUNDATION_MESSAGE_CONTRACT_ID,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
+  MKTG_RUN_STORAGE_KEY_PREFIX,
+} from '@lfx-one/shared/constants';
+import type { MktgDocumentType, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { findMktgRunIntake, mktgRunResultIdentity } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import { returningRunFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-returning-run.fixture';
 import { expect, Page } from '@playwright/test';
 import { DOCUMENT_PROJECT, DOCUMENTS_URL, fulfillDocumentJson, openDocuments, setupDocuments } from './mktg-os-documents.helper';
@@ -11,7 +16,7 @@ import { DOCUMENT_PROJECT, DOCUMENTS_URL, fulfillDocumentJson, openDocuments, se
 export const RETURNING_AGENT_TYPES = MKTG_DOCUMENT_TYPES.filter((type) => !!findMktgRunIntake(type.agentKey)?.endpoints.result);
 
 /** Every domain request is synthetic; setupDocuments also applies suppressCookieBanner and the writer/flag mocks. */
-export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType): Promise<string> {
+export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, olderReplay = false): Promise<string> {
   const intake = findMktgRunIntake(type.agentKey);
   if (!intake) throw new Error('Missing registered result intake');
   await setupDocuments(page, { empty: true });
@@ -47,8 +52,8 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType):
         return fulfillDocumentJson(route, { status: 'pending' });
       }
       receiverPolls++;
-      ready = true;
-      return fulfillDocumentJson(route, fixture.result);
+      ready = !olderReplay || receiverPolls > 1;
+      return fulfillDocumentJson(route, ready ? fixture.result : { ...fixture.result, persistence: undefined });
     }
     if (path.endsWith('/documents'))
       return fulfillDocumentJson(route, {
@@ -88,10 +93,57 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType):
   }
   await page.getByTestId('mktg-agent-run-submit-button').getByRole('button').click();
   await expect.poll(() => intakePolls).toBeGreaterThan(0);
+  if (olderReplay) {
+    const digest = mktgRunResultIdentity(fixture.result, false);
+    const createdAt = new Date().toISOString();
+    const older = {
+      version: 1,
+      document: fixture.result.documentMarkdown ?? '',
+      asset: fixture.result.asset,
+      brandKit: fixture.result.brandKit,
+      derivatives: fixture.result.derivatives,
+      createdAt,
+      source: { sessionId: 'synthetic-return-session', version: fixture.result.version ?? 1, identity: digest, payloadDigest: digest },
+    };
+    const newerDigest = mktgRunResultIdentity({ ...fixture.result, version: 2, documentMarkdown: '# Newer cached outcome' }, false);
+    const cached: MktgStoredAgentRun = {
+      agentId: intake.agentId,
+      projectUid: DOCUMENT_PROJECT.uid,
+      sessionId: 'synthetic-newer-session',
+      ownerToken: 'synthetic-newer-proof',
+      answers: {},
+      savedAt: createdAt,
+      versions: [
+        older,
+        {
+          ...older,
+          version: 2,
+          document: '# Newer cached outcome',
+          source: { sessionId: 'synthetic-newer-session', version: 2, identity: newerDigest, payloadDigest: newerDigest },
+          documentLocation: { agentKey: type.agentKey, documentId: 'living', revisionId: `000002-${'b'.repeat(64)}` },
+        },
+      ],
+    };
+    await page.evaluate(
+      ({ cached, pendingPrefix, runPrefix }) => {
+        const prefix = pendingPrefix + ':';
+        const suffix = ':' + cached.projectUid + ':' + cached.agentId;
+        const key = Object.keys(localStorage).find((entry) => entry.startsWith(prefix) && entry.endsWith(suffix));
+        if (!key) throw new Error('Missing synthetic accepted-attempt fixture');
+        const subject = key.slice(prefix.length, -suffix.length);
+        localStorage.setItem(runPrefix + ':' + subject + suffix, JSON.stringify(cached));
+      },
+      { cached, pendingPrefix: MKTG_PENDING_RUN_STORAGE_KEY_PREFIX, runPrefix: MKTG_RUN_STORAGE_KEY_PREFIX }
+    );
+  }
   await openDocuments(page, DOCUMENTS_URL);
   await expect(page.getByTestId(`mktg-documents-open-started-${runId}`)).toBeVisible();
   onAsset = true;
   await page.getByTestId(`mktg-documents-open-started-${runId}`).click();
+  if (olderReplay) {
+    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Saving the revision');
+    await expect(page).not.toHaveURL(new RegExp(`revision=000002-${'b'.repeat(64)}`));
+  }
   await expect(page.getByTestId(fixture.selector)).toBeVisible({ timeout: 20_000 });
   await expect(page).toHaveURL(new RegExp(`revision=${fixture.revision.revision.id}`));
   await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);

@@ -1317,7 +1317,8 @@ export class MktgAgentRunComponent {
       this.dependencyService.notifyDocumentsChanged(projectUid);
       if (this.navigation()) return;
       const run = progress.run;
-      if (!request || !run) {
+      const attempt = progress.attempt;
+      if (!request || !run || !attempt) {
         this.discardPendingNavigation();
         this.navigating.set(false);
         this.writingStretch.set(false);
@@ -1327,7 +1328,7 @@ export class MktgAgentRunComponent {
         return;
       }
       this.writingStretch.set(true);
-      const location = run.versions.at(-1)?.documentLocation;
+      const location = progress.documentLocation;
       if (location) {
         const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request.agentId);
         if (location.agentKey !== type?.agentKey) {
@@ -1348,7 +1349,7 @@ export class MktgAgentRunComponent {
         // It was generated but its write has not landed. Transfer polling of this accepted session, not a fresh submission.
         this.runAttempts.save({
           request,
-          attempt: { session: { agentId: request.agentId, sessionId: run.sessionId, ownerToken: run.ownerToken }, runId: run.runId, priorVersion: 0 },
+          attempt,
           state: 'writing',
           updatedAt: new Date().toISOString(),
         });

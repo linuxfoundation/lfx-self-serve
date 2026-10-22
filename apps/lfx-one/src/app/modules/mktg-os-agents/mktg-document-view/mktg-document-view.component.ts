@@ -1088,7 +1088,7 @@ export class MktgDocumentViewComponent {
       this.localProgress.set('writing');
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
-      const location = progress.run?.versions.at(-1)?.documentLocation;
+      const location = progress.documentLocation;
       const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === pending.request.agentId);
       if (
         location &&

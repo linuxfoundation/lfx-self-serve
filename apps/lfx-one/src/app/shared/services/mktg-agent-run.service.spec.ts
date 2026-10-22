@@ -603,7 +603,17 @@ describe('MktgAgentRunService', () => {
         .subscribe((event) => events.push(event));
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       expect(service.loadRun('proj-1', 'brand-kit')?.versions).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        type: 'document',
+        documentLocation: null,
+        attempt: { session: { sessionId: 'sess-1', ownerToken: 'token-1' }, priorVersion: 0 },
+      });
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(events[1]).toMatchObject({
+        type: 'persisted',
+        documentLocation: { revisionId: oldLocation.revision_id },
+        attempt: { session: { sessionId: 'sess-1', ownerToken: 'token-1' }, priorVersion: 0 },
+      });
       const versions = service.loadRun('proj-1', 'brand-kit')?.versions;
       expect(versions).toHaveLength(2);
       expect(versions?.[0]).toMatchObject({ version: 1, contentSha256: 'a'.repeat(64), documentLocation: { revisionId: oldLocation.revision_id } });
@@ -611,6 +621,18 @@ describe('MktgAgentRunService', () => {
       expect(versions?.[1]).toMatchObject({ version: 2, contentSha256: 'b'.repeat(64), documentLocation: { revisionId: newLocation.revision_id } });
       expect(events.map((event) => event.type)).toEqual(['document', 'persisted']);
       expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(generateCalls);
+    });
+
+    it('does not expose the prior subject’s attempt or location when a receipt arrives after identity changes', async () => {
+      resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      resultDelayMs = 100;
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      userSignal.set({ sub: 'synthetic-other-user' } as User);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(events.find((event) => event.type === 'persisted')).toEqual({ type: 'persisted', run: null, documentLocation: null, attempt: null });
     });
 
     it('preserves the existing late content digest without treating it as revision identity', async () => {
