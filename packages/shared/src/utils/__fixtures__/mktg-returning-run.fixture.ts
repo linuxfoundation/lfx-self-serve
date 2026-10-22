@@ -9,7 +9,7 @@ import type {
   MktgRevisionResponse,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
-import { BRAND_KIT_CONTRACT_ID, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_CONTRACT_ID, MKTG_AGENT_INTAKES } from '../../constants';
 
 /**
  * A minimal, fully synthetic Brand Kit revision — what the Brand Kit agent's

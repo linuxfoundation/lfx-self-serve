@@ -173,7 +173,7 @@ test.describe('Marketing OS runs land on assets', () => {
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(ASSET_FAILURE);
     await expect(page.getByTestId('mktg-document-view-intake-link').getByRole('button')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-failure-reply').locator('img')).toHaveCount(0);
-    await page.getByTestId('mktg-document-view-retry').getByRole('button').click();
+    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button').click();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     expect(fixture.state.retries).toEqual(['c'.repeat(64)]);
     expect(fixture.state.posts).toHaveLength(1);
@@ -198,7 +198,7 @@ test.describe('Marketing OS runs land on assets', () => {
       window.history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, `/project/mktg-os-agents/documents?project=${ASSET_PROJECT.slug}`);
-    await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-empty-all')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('empty-documents.png'), fullPage: true });
   });
