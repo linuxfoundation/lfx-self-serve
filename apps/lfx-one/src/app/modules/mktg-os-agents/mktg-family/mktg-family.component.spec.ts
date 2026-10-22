@@ -227,19 +227,28 @@ describe('Marketing family page', () => {
     }
   });
 
-  it('disables a living header without its registered intake instead of opening a legacy run', async () => {
-    const saved = MKTG_AGENT_INTAKES['foundation-setup'];
-    delete MKTG_AGENT_INTAKES['foundation-setup'];
+  it.each([
+    { agentId: 'foundation-setup', familyId: 'positioning-brand' },
+    { agentId: 'member-360', familyId: 'member-sponsor' },
+  ])('disables the active $agentId lead header without an intake, regardless of document kind', async ({ agentId, familyId }) => {
+    const saved = MKTG_AGENT_INTAKES[agentId];
+    const index = MKTG_AGENTS.findIndex((agent) => agent.id === agentId);
+    const original = MKTG_AGENTS[index];
+    if (!original) throw new Error('Missing synthetic lead agent');
+    MKTG_AGENTS[index] = { ...original, status: 'active', guildAgentHandle: 'synthetic-lead-fixture' };
+    delete MKTG_AGENT_INTAKES[agentId];
+    families.set([]); // No missing/stale rows: exercise the fallback lead control, not the next-agent gate.
     try {
       const harness = await RouterTestingHarness.create();
-      await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+      await harness.navigateByUrl('/project/mktg-os-agents/families/' + familyId, MktgFamilyComponent);
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
       expect(run?.disabled).toBe(true);
       run?.click();
       expect(navigate).not.toHaveBeenCalled();
     } finally {
-      MKTG_AGENT_INTAKES['foundation-setup'] = saved;
+      MKTG_AGENT_INTAKES[agentId] = saved;
+      MKTG_AGENTS[index] = original;
     }
   });
 

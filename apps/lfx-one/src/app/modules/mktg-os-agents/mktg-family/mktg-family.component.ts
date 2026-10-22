@@ -75,7 +75,7 @@ export class MktgFamilyComponent {
   protected readonly firstRunEnabled = computed(() => {
     const agent = this.firstAgent();
     if (!agent || agent.status !== 'active') return false;
-    return !!MKTG_AGENT_INTAKES[agent.id] || !MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === agent.id);
+    return !!MKTG_AGENT_INTAKES[agent.id];
   });
   protected readonly firstRunName = computed(() => {
     const family = this.definition();
