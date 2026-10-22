@@ -26,6 +26,10 @@ const {
   legacyMeta,
   legacyReddit,
   legacyGoogle,
+  legacyKeywords,
+  legacyAudience,
+  svcKeywords,
+  svcAudience,
   checkRootWriter,
   checkRootCampaignManager,
   isServerFeatureEnabled,
@@ -42,6 +46,10 @@ const {
   legacyMeta: vi.fn(),
   legacyReddit: vi.fn(),
   legacyGoogle: vi.fn(),
+  legacyKeywords: vi.fn(),
+  legacyAudience: vi.fn(),
+  svcKeywords: vi.fn(),
+  svcAudience: vi.fn(),
   checkRootWriter: vi.fn<(req: unknown) => Promise<boolean>>(),
   checkRootCampaignManager: vi.fn<(req: unknown) => Promise<boolean>>(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
@@ -60,6 +68,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getTwitterAdsAccountMonitor = svcTwitter;
       public getHubSpotAccountMonitor = svcHubSpot;
       public getConnection = svcConnection;
+      public getGoogleAdsKeywords = svcKeywords;
+      public getGoogleAdsAudience = svcAudience;
     },
   };
 });
@@ -71,6 +81,8 @@ vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: cla
 vi.mock('../services/campaign-metrics.service', () => ({
   CampaignMetricsService: class {
     public getMonitorData = legacyGoogle;
+    public getKeywords = legacyKeywords;
+    public getAudience = legacyAudience;
   },
   LinkedInMetricsService: class {
     public getLinkedInMonitorData = legacyLinkedIn;
@@ -808,6 +820,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
 
     expect(legacyGoogle).toHaveBeenCalledWith(expect.anything(), 7);
     expect(res.json).toHaveBeenCalledWith(data);
+    expect(checkRootCampaignManager).toHaveBeenCalledTimes(rootWriter ? 0 : 1);
   });
 
   it.each([true, false])('getMonitorData answers a missing project with a 400 before the gate (root: %s)', async (root) => {
@@ -854,5 +867,58 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
     expect(svcHubSpot).toHaveBeenCalledWith(expect.anything(), 'tlf', 30);
     expect(msRes.json).toHaveBeenCalledTimes(1);
     expect(hsRes.json).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.each([
+  { name: 'getKeywords', legacy: legacyKeywords, svc: svcKeywords, payload: { window: 'last_30_days', row_count: 0, truncated: false, rows: [] } },
+  { name: 'getAudience', legacy: legacyAudience, svc: svcAudience, payload: { window: 'last_30_days', bucket_count: 0, buckets: [] } },
+] as const)('shared-account legacy insights: $name', ({ name, legacy, svc, payload }) => {
+  it.each([false, true])('refuses non-root legacy reads before any upstream call, monitor cutover: %s', async (monitorOn) => {
+    flag(monitorOn);
+    nonRoot();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '30' }), res, next);
+
+    expect(nextError(next)).toBeInstanceOf(AuthorizationError);
+    expect((nextError(next) as AuthorizationError).toResponse()).toMatchObject({ code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE });
+    expect(legacy).not.toHaveBeenCalled();
+    expect(svc).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('serves legacy insights to a ROOT caller, writer: %s', async (writer) => {
+    checkRootWriter.mockResolvedValue(writer);
+    checkRootCampaignManager.mockResolvedValue(!writer);
+    const data = { legacy: true };
+    legacy.mockResolvedValueOnce(data);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '7' }), res, next);
+
+    expect(legacy).toHaveBeenCalledWith(expect.anything(), 7);
+    expect(res.json).toHaveBeenCalledWith(data);
+    expect(next).not.toHaveBeenCalled();
+    expect(checkRootCampaignManager).toHaveBeenCalledTimes(writer ? 0 : 1);
+  });
+
+  it('keeps campaign-service project-scoped insights available to a non-root caller', async () => {
+    nonRoot();
+    isServerFeatureEnabled.mockImplementation((f) => f === ServerFeatureFlag.CampaignServiceInsights);
+    svc.mockResolvedValueOnce(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '30' }), res, next);
+
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'acme-foundation', 'last_30_days');
+    expect(legacy).not.toHaveBeenCalled();
+    expect(checkRootWriter).not.toHaveBeenCalled();
+    expect(checkRootCampaignManager).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
   });
 });

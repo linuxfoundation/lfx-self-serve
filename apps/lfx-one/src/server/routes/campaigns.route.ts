@@ -8,7 +8,7 @@ import { AudienceBuilderController } from '../controllers/audience-builder.contr
 import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
-import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
+import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -46,6 +46,10 @@ const router = Router();
 const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
+
+// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
+// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -89,8 +93,6 @@ router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(r
 router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
-// Google Ads account monitor: requires `?project=`, and root-only — the customer is shared by every foundation (lfx-self-serve-ops#54).
-router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
 // Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));

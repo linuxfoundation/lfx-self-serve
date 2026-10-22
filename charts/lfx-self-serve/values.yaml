@@ -739,6 +739,10 @@ environment:
   # foundations' spend. TELL PEOPLE BEFORE FLIPPING IT: a reader who is not warned files the
   # drop as a bug, and "the dashboard lost half its keywords" is a plausible-sounding report.
   #
+  # The legacy arm is ROOT-only (writer or global_marketing_ops, lfx-self-serve-ops#54),
+  # independently of the monitor cutover. Non-root callers receive a shared-account restriction
+  # while this flag is off; campaign-service's project-scoped reads remain available when it is on.
+  #
   # A project with no campaign-service campaigns reads EMPTY rather than falling back. That is
   # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
   # this flag exists to close.

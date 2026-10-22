@@ -5128,4 +5128,49 @@ describe('OptimizationTabComponent — shared Google Ads account restriction', (
     expect(el('optimization-error')).not.toBeNull();
     expect(el('optimization-restricted')).toBeNull();
   });
+
+  it('clears cached Google monitor data after a refusal so a pending retry shows loading', () => {
+    const payload = { campaigns: [], accountTotals: null, actionItems: [], dateRange: { mode: 'last_30_days' }, pulledAt: '2026-10-01T00:00:00Z' };
+    service['getMonitorData'].mockReturnValue(of(payload));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { fetchData(): void; monitorData(): unknown };
+    expect(instance.monitorData()).toEqual(payload);
+
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+    );
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-restricted')).not.toBeNull();
+    expect(instance.monitorData()).toBeNull();
+
+    service['getMonitorData'].mockReturnValue(new Subject<never>());
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-loading')).not.toBeNull();
+    expect(el('optimization-summary')).toBeNull();
+  });
+
+  it('replaces refused legacy keywords with a notice, clears cached rows, and recovers on retry', () => {
+    const restricted = () => new HttpErrorResponse({ status: 403, error: { code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } });
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+
+    const instance = fixture.componentInstance as unknown as { fetchData(): void; keywordsData(): unknown };
+    service['getKeywords'].mockReturnValue(throwError(restricted));
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-keywords-restricted')?.textContent).toContain('keyword insights are limited to LF administrators');
+    expect(el('optimization-low-qs')).toBeNull();
+    expect(el('wasted-keywords-all-clear')).toBeNull();
+    expect(instance.keywordsData()).toBeNull();
+
+    service['getKeywords'].mockReturnValue(of({ keywords: [flaggedKeyword], truncated: false }));
+    fixture.componentRef.setInput('projectSlug', 'acme-foundation');
+    fixture.detectChanges();
+    expect(el('optimization-keywords-restricted')).toBeNull();
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+    expect(service['getKeywords']).toHaveBeenLastCalledWith('acme-foundation', 30);
+  });
 });

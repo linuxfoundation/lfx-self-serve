@@ -2251,4 +2251,56 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     select('google');
     expect(el('monitoring-restricted')).toBeNull();
   });
+
+  it('clears cached Google monitor data after a refusal so a pending retry cannot render it', async () => {
+    await setup(flagOff);
+    const payload = { campaigns: [], accountTotals: null, actionItems: [], dateRange: { mode: 'last_30_days' }, pulledAt: '2026-10-01T00:00:00Z' };
+    service['getMonitorData'].mockReturnValue(of(payload));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { refresh(): void; monitorData(): unknown };
+    expect(instance.monitorData()).toEqual(payload);
+
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-restricted')).not.toBeNull();
+    expect(instance.monitorData()).toBeNull();
+
+    service['getMonitorData'].mockReturnValue(new Subject<never>());
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-loading')).not.toBeNull();
+    expect(el('monitoring-kpis')).toBeNull();
+  });
+
+  it('shows a keyword restriction independently, clears cached keywords, and retries after grants change', async () => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    const keywords = { keywords: [], totalKeywords: 0, totals: { impressions: 0, clicks: 0, spend: 0, conversions: 0, avgCtr: 0 }, days: 30 };
+    service['getKeywords'].mockReturnValue(of(keywords));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { refresh(): void; keywordsData(): unknown };
+    expect(instance.keywordsData()).toEqual(keywords);
+
+    service['getKeywords'].mockReturnValue(throwError(restricted));
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('keyword-restricted')?.textContent).toContain('keyword insights are limited to LF administrators');
+    expect(el('keyword-error')).toBeNull();
+    expect(el('keyword-empty')).toBeNull();
+    expect(instance.keywordsData()).toBeNull();
+
+    service['getKeywords'].mockReturnValue(new Subject<never>());
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('keyword-restricted')).toBeNull();
+    expect(el('keyword-loading')).not.toBeNull();
+
+    service['getKeywords'].mockReturnValue(of(keywords));
+    context.set({ slug: 'acme-foundation' });
+    fixture.detectChanges();
+    expect(el('keyword-restricted')).toBeNull();
+    expect(el('keyword-empty')).not.toBeNull();
+    expect(service['getKeywords']).toHaveBeenLastCalledWith('acme-foundation', 30);
+  });
 });

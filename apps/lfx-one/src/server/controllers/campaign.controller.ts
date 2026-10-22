@@ -2369,13 +2369,12 @@ export class CampaignController {
    *
    * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
    * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
-   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
-   * rows it drops belong to other foundations — see the flag's own docs.
+   * query, restricted to ROOT callers because it cannot isolate one foundation's data.
    *
    * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
    * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
    * so a fallback constant would report one foundation's keywords to another. The legacy arm
-   * ignores the project entirely, which is precisely the leak being closed.
+   * ignores the project entirely and therefore requires the shared-account ROOT gate.
    */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -2420,6 +2419,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_keywords', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getKeywords(req, days);
       logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2694,7 +2696,7 @@ export class CampaignController {
   /**
    * Age/gender/device breakdowns for the campaigns table.
    *
-   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   * Same flag, project requirement and legacy shared-account ROOT gate as `getKeywords` above.
    *
    * Campaign-service fails the whole read if any one breakdown fails rather than returning
    * the two that loaded, so there is no partial-success arm to handle here: an error is an
@@ -2731,6 +2733,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_audience', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getAudience(req, days);
       logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
@@ -3994,24 +3999,18 @@ export class CampaignController {
   }
 
   /**
-   * Whether the caller may read a monitor whose ad account is shared by every foundation, or `false`
+   * Whether the caller may read shared-account monitor data or legacy Google insights, or `false`
    * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
    *
    * `requireCampaignManager` authorises the caller for the ONE project it names, but an account
    * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
    * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
    * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
-   * are request-cached and fail closed, and the refusal runs before any upstream call. The
-   * marketing-access middleware has already primed `checkRootWriter`; it runs `checkRootCampaignManager`
-   * only for a request naming no project, so on these project-scoped reads that check is a fresh ROOT
-   * lookup.
+   * are request-cached and fail closed, and the refusal runs before any upstream call. A ROOT writer
+   * returns immediately without a second ROOT marketing lookup.
    */
   private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
-    const [isRootWriter, isRootCampaignManager] = await Promise.all([
-      personaDetectionService.checkRootWriter(req),
-      personaDetectionService.checkRootCampaignManager(req),
-    ]);
-    if (isRootWriter || isRootCampaignManager) {
+    if ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req))) {
       return true;
     }
     // `apiErrorHandler` logs the 403 itself; this only names the platform for tracing.

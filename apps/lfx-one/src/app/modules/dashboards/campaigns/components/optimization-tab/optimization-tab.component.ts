@@ -608,6 +608,7 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
   protected readonly keywordsError = signal<string | null>(null);
+  protected readonly keywordsRestricted = signal(false);
 
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
@@ -1616,6 +1617,7 @@ export class OptimizationTabComponent implements OnInit {
           this.loading.set(false);
           if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
             this.googleRestricted.set(true);
+            this.monitorData.set(null);
             return;
           }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
@@ -1630,6 +1632,7 @@ export class OptimizationTabComponent implements OnInit {
     this.keywordsLoading.set(true);
     this.keywordsData.set(null);
     this.keywordsError.set(null);
+    this.keywordsRestricted.set(false);
     this.keywordsSub = this.campaignService
       .getKeywords(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -1639,6 +1642,12 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err) => {
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.keywordsData.set(null);
+            this.keywordsRestricted.set(true);
+            this.keywordsLoading.set(false);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic

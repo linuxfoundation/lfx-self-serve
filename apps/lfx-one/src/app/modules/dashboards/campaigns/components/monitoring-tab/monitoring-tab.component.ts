@@ -194,7 +194,7 @@ export class MonitoringTabComponent implements OnInit {
    * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54). Shown as a notice on either path.
    */
   protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
-  /** The Google Ads block's equivalent: its campaigns and KPIs are hidden, its project-scoped keywords and audience still show. */
+  /** The Google Ads monitor is independent of the separately authorized keyword and audience reads. */
   protected readonly googleRestricted = signal(false);
   /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
   protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
@@ -227,6 +227,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
   protected readonly keywordsError = signal<string | null>(null);
+  protected readonly keywordsRestricted = signal(false);
   protected readonly keywordPage = signal(1);
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
@@ -411,6 +412,7 @@ export class MonitoringTabComponent implements OnInit {
           this.loading.set(false);
           if (this.isSharedAccountRestricted(err)) {
             this.googleRestricted.set(true);
+            this.monitorData.set(null);
             return;
           }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
@@ -424,6 +426,7 @@ export class MonitoringTabComponent implements OnInit {
 
     this.keywordsLoading.set(true);
     this.keywordsError.set(null);
+    this.keywordsRestricted.set(false);
     this.keywordPage.set(1);
     this.keywordsSub = this.campaignService
       .getKeywords(this.activeFoundationSlug(), days)
@@ -434,6 +437,12 @@ export class MonitoringTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isSharedAccountRestricted(err)) {
+            this.keywordsData.set(null);
+            this.keywordsRestricted.set(true);
+            this.keywordsLoading.set(false);
+            return;
+          }
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.keywordsError.set(extractErrorMessage(httpErr, 'Failed to load keywords'));
           this.keywordsLoading.set(false);

@@ -297,6 +297,10 @@ export enum ServerFeatureFlag {
    * foundations' spend. Say so when enabling it, because a reader who is not told will file the
    * drop as a bug.
    *
+   * The legacy arm is ROOT-only (writer or `global_marketing_ops`, lfx-self-serve-ops#54),
+   * independently of the monitor cutover. Non-root callers receive the shared-account restriction
+   * instead of keywords or demographics; enabling this flag retains their project-scoped reads.
+   *
    * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
    * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
    * this flag exists to close — so an empty table is the honest answer for a project whose
