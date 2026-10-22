@@ -338,6 +338,26 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(votes?.querySelectorAll('[data-testid="pending-actions-drawer-item-Vote"]').length).toBe(1);
   });
 
+  it('omits the section header and count badge when there is a single section, keeping the labeled group', async () => {
+    await render([row('RSVP', 'RSVP A'), row('RSVP', 'RSVP B')]);
+
+    expect(sectionIds()).toEqual(['pending-actions-drawer-section-meetings']);
+    expect(byTestId('pending-actions-drawer-section-title-meetings')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-count-meetings')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-meetings')?.getAttribute('aria-label')).toBe('Meetings');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+  });
+
+  it('renders the meeting date under the title of a linked meeting row', async () => {
+    await render([
+      row('RSVP', 'Board', { buttonLink: '/meetings/m-1', date: 'Mon, Oct 19, 7:00 PM' }),
+      row('RSVP', 'No Date', { buttonLink: '/meetings/m-2' }),
+    ]);
+
+    const dates = Array.from(document.body.querySelectorAll('[data-testid="pending-actions-drawer-meeting-date"]'));
+    expect(dates.map((el) => el.textContent?.trim())).toEqual(['Mon, Oct 19, 7:00 PM']);
+  });
+
   it('maps the remaining types to their sections', async () => {
     await render([row('Invitation', 'Invite A'), row('FormationItem', 'Formation A'), row('Submitted', 'Submitted A'), row('BriefAction', 'Brief A')]);
 
@@ -449,7 +469,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       .filter((button) => button.loading());
     expect(loadingButtons).toHaveLength(1);
     expect(loadingButtons[0].label()).toBe('Saving');
-    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
+    // Single section: the header badge is skipped, the drawer total still counts both rows.
     expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
 
     fixture.componentRef.setInput('processingApplicationKey', null);

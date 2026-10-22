@@ -24,7 +24,6 @@ import {
   IndexedVote,
   ManagedPendingApplication,
   Meeting,
-  MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
   MyFormationItemRow,
@@ -1392,7 +1391,6 @@ export class UserService {
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
    *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
-   *   - Upcoming meetings within the next two weeks (Review Agenda action — project/foundation lens only)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
    *
@@ -1475,8 +1473,6 @@ export class UserService {
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
-    // Review Agenda is informational, not an action, so the Me lens omits it (#2991); project/foundation lenses keep it.
-    const meetingActions = isMeLens ? [] : this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
     const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
@@ -1484,8 +1480,7 @@ export class UserService {
     const applicationActions = this.transformApplicationsToActions(pendingApplications);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
-    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions on project/foundation lenses, but they
-    // cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
+    // collects LFX RSVPs. Pre-feature series cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
     //
     // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
     // "user hasn't RSVPed" from "we don't know", and a transient failure must not turn every
@@ -1504,10 +1499,8 @@ export class UserService {
     // Order by actionability: pending invitations are the most actionable (someone is waiting on
     // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
-    // Join applications follow assigned work. RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
-    // Agenda appears only on project/foundation lenses and is informational, so it still goes last
-    // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
-    return [...invitationActions, ...formationItemActions, ...applicationActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
+    // Join applications follow assigned work. RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff.
+    return [...invitationActions, ...formationItemActions, ...applicationActions, ...rsvpActions, ...voteActions, ...surveyActions];
   }
 
   /**
@@ -1764,8 +1757,7 @@ export class UserService {
   /**
    * Narrow the meeting list to those with at least one active occurrence (or a single-occurrence
    * meeting) whose start falls inside the 2-week window and hasn't ended yet (with buffer).
-   * Mirrors the filter inside `transformMeetingsToActions` so both derived sources (Review Agenda
-   * actions and Set RSVP actions) operate on the exact same set of meetings.
+   * Feeds the Set RSVP source.
    */
   private filterMeetingsInWindow(meetings: Meeting[]): Meeting[] {
     const now = new Date();
@@ -2001,7 +1993,7 @@ export class UserService {
 
   /**
    * Build a "Set RSVP" pending action for a single meeting. Links to the meeting detail page
-   * where the RSVP UI lives; reuses the meeting password query param like `createMeetingAction`.
+   * where the RSVP UI lives; carries the meeting password query param when set.
    *
    * For recurring series, `meeting.start_time` is the series start (often long past), so use
    * the current-or-next occurrence's start time for the badge and formatted date. Falls back
@@ -2027,7 +2019,7 @@ export class UserService {
     return {
       type: 'RSVP',
       badge,
-      text: `RSVP to ${meeting.title}`,
+      text: meeting.title,
       icon: 'fa-regular fa-calendar-check',
       severity: PENDING_ACTION_SEVERITY.RSVP,
       buttonText: 'Set RSVP',
@@ -2035,88 +2027,6 @@ export class UserService {
       date: formattedDate,
       meetingUid: meeting.id,
       ...(nextOccurrence?.occurrence_id ? { occurrenceId: nextOccurrence.occurrence_id } : {}),
-    };
-  }
-
-  /**
-   * Transform meetings within 2 weeks to pending action items
-   * Only includes meetings that haven't ended yet (accounting for duration + buffer)
-   */
-  private transformMeetingsToActions(meetings: Meeting[]): PendingActionItem[] {
-    const now = new Date();
-    const twoWeeksFromNow = new Date(now.getTime() + this.twoWeeksMs);
-    const actions: PendingActionItem[] = [];
-
-    for (const meeting of meetings) {
-      if (meeting.occurrences && meeting.occurrences.length > 0) {
-        // Recurring meetings emit at most one Agenda action — the earliest in-window occurrence.
-        // Otherwise a weekly series fills the 5-row card with duplicates of the same agenda.
-        const nextInWindow = meeting.occurrences
-          .filter((occ) => occ.status !== 'cancel')
-          .map((occurrence) => {
-            const startTime = new Date(occurrence.start_time);
-            const durationMinutes = parseToInt(occurrence.duration) ?? parseToInt(meeting.duration) ?? 0;
-            const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
-            return { occurrence, startTime, meetingEndWithBuffer };
-          })
-          .filter(({ startTime, meetingEndWithBuffer }) => now < meetingEndWithBuffer && startTime <= twoWeeksFromNow)
-          .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0];
-
-        if (nextInWindow) {
-          actions.push(this.createMeetingAction(meeting, nextInWindow.occurrence));
-        }
-      } else {
-        const startTime = new Date(meeting.start_time);
-        // Parse duration handling both string and number types (v1 meetings return strings)
-        const durationMinutes = parseToInt(meeting.duration) ?? 0;
-        // Calculate meeting end time + buffer
-        const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
-
-        // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
-        if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
-          actions.push(this.createMeetingAction(meeting));
-        }
-      }
-    }
-
-    return actions;
-  }
-
-  /**
-   * Create a PendingActionItem from a meeting
-   */
-  private createMeetingAction(meeting: Meeting, occurrence?: MeetingOccurrence): PendingActionItem {
-    const startTime = occurrence ? new Date(occurrence.start_time) : new Date(meeting.start_time);
-    const title = occurrence?.title || meeting.title;
-
-    const dateStr = startTime.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
-
-    // Format date with time for display below title
-    const formattedDate = startTime.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-
-    const params = new URLSearchParams();
-    if (meeting.password) params.set('password', meeting.password);
-    const queryString = params.toString();
-    const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
-
-    return {
-      type: 'Agenda',
-      badge: dateStr,
-      text: `Review ${title} Agenda and Materials`,
-      icon: 'fa-light fa-calendar-check',
-      severity: PENDING_ACTION_SEVERITY.Agenda,
-      buttonText: 'Review Agenda',
-      buttonLink,
-      date: formattedDate,
     };
   }
 
