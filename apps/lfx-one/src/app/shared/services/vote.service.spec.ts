@@ -311,6 +311,20 @@ describe('VoteService', () => {
       expect(service.isAwaitingInvitationCount('v1')).toBe(false);
     });
 
+    it('does not reopen a just-opened vote as Active from a stale draft row after it was seen as Ended', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
+
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+      // Re-opening the vote restarts the carrier, so a stale draft row is overlaid as Active again.
+      service.markVoteOpened('v1');
+      expect(service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
     it('keeps the just-opened carrier while the index reports a non-draft status before its electorate', () => {
       service.markVoteOpened('v1');
       const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);

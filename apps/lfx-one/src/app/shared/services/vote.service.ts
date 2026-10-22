@@ -47,6 +47,9 @@ export class VoteService {
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
+  // Status a fetched row already confirmed past Draft for a just-opened vote still awaiting its invitation count
+  // (GH-4078), so a later stale Draft row is overlaid with it (e.g. Ended) instead of being reopened as Active.
+  private readonly recentlyOpenedConfirmedStatus = new Map<string, PollStatus>();
   private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
 
   /**
@@ -343,6 +346,7 @@ export class VoteService {
    * immediately after the PUT instead of waiting on index visibility.
    */
   public markVoteOpened(voteUid: string): void {
+    this.recentlyOpenedConfirmedStatus.delete(voteUid);
     this.recentlyOpenedVotes.update((opened) => new Map(opened).set(voteUid, Date.now()));
   }
 
@@ -357,6 +361,8 @@ export class VoteService {
     for (const [uid, markedAt] of current) {
       if (now - markedAt < RECENTLY_OPENED_VOTE_TTL_MS) {
         live.set(uid, markedAt);
+      } else {
+        this.recentlyOpenedConfirmedStatus.delete(uid);
       }
     }
     if (live.size !== current.size) {
@@ -367,6 +373,7 @@ export class VoteService {
 
   /** Evicts a carried uid once a fetched row shows it open with a positive invitation count — the server value has converged. */
   public evictRecentlyOpenedVote(voteUid: string): void {
+    this.recentlyOpenedConfirmedStatus.delete(voteUid);
     this.recentlyOpenedVotes.update((opened) => {
       if (!opened.has(voteUid)) return opened;
       const next = new Map(opened);
@@ -384,6 +391,8 @@ export class VoteService {
    * through unchanged and the carrier empties. Eviction also waits for a positive invitation count
    * (GH-4078): the index can report the open status before the electorate, and evicting early would
    * flip the row back to "No one invited"; the TTL still ends the carrier if the count never arrives.
+   * While it waits, the status that row confirmed is remembered, so a later stale `disabled` row is
+   * overlaid with it (e.g. Ended) rather than reopened as Active.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
@@ -397,9 +406,10 @@ export class VoteService {
       }
       if (vote.status !== PollStatus.DISABLED) {
         if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyOpenedVote(vote.uid);
+        else this.recentlyOpenedConfirmedStatus.set(vote.uid, vote.status);
         return vote;
       }
-      return { ...vote, status: PollStatus.ACTIVE };
+      return { ...vote, status: this.recentlyOpenedConfirmedStatus.get(vote.uid) ?? PollStatus.ACTIVE };
     });
   }
 
