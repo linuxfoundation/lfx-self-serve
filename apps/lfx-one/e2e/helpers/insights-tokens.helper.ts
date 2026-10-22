@@ -24,12 +24,38 @@ export const EXISTING_TOKENS: InsightsToken[] = [
     lookupId: 'Qw7pR4sT8uVx',
     createdAt: '2026-09-01T00:00:00Z',
     lastUsedAt: '2026-09-20T00:00:00Z',
+    // Far enough ahead that the fixture never expires under a real clock.
+    expiresAt: '2099-09-01T00:00:00Z',
   },
-  { uid: '5f0c6f3e-3333-4a1a-9a1a-333333333333', name: 'dashboard-sync', lookupId: 'Mn5bV2cX6zLk', createdAt: '2026-08-15T00:00:00Z', lastUsedAt: null },
+  {
+    uid: '5f0c6f3e-3333-4a1a-9a1a-333333333333',
+    name: 'dashboard-sync',
+    lookupId: 'Mn5bV2cX6zLk',
+    createdAt: '2026-08-15T00:00:00Z',
+    lastUsedAt: null,
+    expiresAt: null,
+  },
 ];
 
+export const EXPIRED_TOKEN: InsightsToken = {
+  uid: '5f0c6f3e-4444-4a1a-9a1a-444444444444',
+  name: 'community-export',
+  lookupId: 'Tz9kW3eR7yHq',
+  createdAt: '2026-03-02T00:00:00Z',
+  lastUsedAt: '2026-03-30T00:00:00Z',
+  // Midday UTC, so the rendered date is 1 Apr in every timezone the suite runs in.
+  expiresAt: '2026-04-01T12:00:00Z',
+};
+
 export const CREATED: CreateInsightsTokenResponse = {
-  token: { uid: '5f0c6f3e-1111-4a1a-9a1a-111111111111', name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-23T00:00:00Z', lastUsedAt: null },
+  token: {
+    uid: '5f0c6f3e-1111-4a1a-9a1a-111111111111',
+    name: 'ci-pipeline',
+    lookupId: 'Ab3kZ9QmT2xL',
+    createdAt: '2026-09-23T00:00:00Z',
+    lastUsedAt: null,
+    expiresAt: '2099-12-22T00:00:00Z',
+  },
   secret: 'lfi_Ab3kZ9QmT2xLe2eFakeSecretValueForTestsOnly',
 };
 

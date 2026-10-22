@@ -16,7 +16,15 @@ import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dia
 import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dialog/insights-token-reveal-dialog.component';
 import { InsightsTokensComponent } from './insights-tokens.component';
 
-const TOKEN: InsightsToken = { uid: 't-1', name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-01T00:00:00Z', lastUsedAt: null };
+const TOKEN: InsightsToken = {
+  uid: 't-1',
+  name: 'ci-pipeline',
+  lookupId: 'Ab3kZ9QmT2xL',
+  createdAt: '2026-09-01T00:00:00Z',
+  lastUsedAt: null,
+  expiresAt: null,
+};
+const EXPIRED: InsightsToken = { ...TOKEN, uid: 't-0', name: 'old-export', createdAt: '2026-03-02T00:00:00Z', expiresAt: '2026-04-01T00:00:00Z' };
 const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, checkFailed: false };
 
 describe('InsightsTokensComponent', () => {
@@ -77,7 +85,42 @@ describe('InsightsTokensComponent', () => {
 
     expect(component['loading']()).toBe(false);
     expect(component['canCreate']()).toBe(true);
-    expect(component['items']()).toEqual([{ token: TOKEN, maskedValue: 'lfi_Ab3kZ9QmT2xL********', lastUsedLabel: 'Never used' }]);
+    expect(component['items']()).toEqual([{ token: TOKEN, maskedValue: 'lfi_Ab3kZ9QmT2xL********', lastUsedLabel: 'Never used', expired: false }]);
+  });
+
+  it('marks a token expired once its expiry has passed, and a future or missing expiry as live', () => {
+    const later: InsightsToken = { ...TOKEN, uid: 't-2', expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+    service.getTokens.mockReturnValue(of([later, TOKEN, EXPIRED]));
+    create();
+
+    expect(component['items']().map((item) => [item.token.uid, item.expired])).toEqual([
+      ['t-2', false],
+      ['t-1', false],
+      ['t-0', true],
+    ]);
+  });
+
+  it('removes an expired token without asking to confirm, and toasts', () => {
+    service.getTokens.mockReturnValue(of([TOKEN, EXPIRED]));
+    create();
+
+    component['remove'](EXPIRED);
+
+    expect(confirmationService.confirm).not.toHaveBeenCalled();
+    expect(service.revokeToken).toHaveBeenCalledWith('t-0');
+    expect(component['items']().map((item) => item.token.uid)).toEqual(['t-1']);
+    expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Token removed.' });
+  });
+
+  it('keeps an expired row and toasts an error when remove fails', () => {
+    service.getTokens.mockReturnValue(of([EXPIRED]));
+    service.revokeToken.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    create();
+
+    component['remove'](EXPIRED);
+
+    expect(component['hasTokens']()).toBe(true);
+    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Remove failed' }));
   });
 
   it('shows the load error state without dropping eligibility when listing fails', () => {
@@ -204,7 +247,7 @@ describe('InsightsTokensComponent', () => {
     expect(service.revokeToken).toHaveBeenCalledWith('t-1');
     expect(component['hasTokens']()).toBe(false);
     expect(component['revokingUid']()).toBeNull();
-    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Token revoked.' });
   });
 
   it('keeps the row, logs and toasts an error when revoke fails', () => {
@@ -245,6 +288,15 @@ describe('InsightsTokensComponent', () => {
       component['confirmRevoke'](TOKEN);
 
       expect(confirmationService.confirm).not.toHaveBeenCalled();
+      expect(service.revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('never removes an expired token', () => {
+      service.getTokens.mockReturnValue(of([EXPIRED]));
+      create();
+
+      component['remove'](EXPIRED);
+
       expect(service.revokeToken).not.toHaveBeenCalled();
     });
   });
