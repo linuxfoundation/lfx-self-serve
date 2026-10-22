@@ -69,7 +69,8 @@ describe('Framework Downstream card', () => {
     expect(root.querySelector('[data-testid="mktg-downstream-card"]')?.classList.contains('bg-amber-50')).toBe(true);
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')?.textContent).toContain('Boilerplates and FAQ were built from v1. Rebuild them from v3?');
     expect(root.querySelector('[data-testid="mktg-downstream-rebuild"]')?.textContent).toContain('Rebuild both');
-    await TestBed.inject(Router).navigateByUrl('/?project=old-slug');
+    TestBed.inject(Router).resetConfig([{ path: '**', children: [] }]);
+    await TestBed.inject(Router).navigateByUrl('/project/mktg-os-agents/documents/foundation-message/living?project=old-slug&tab=sources');
     fixture.componentRef.setInput('project', 'next-project');
     fixture.componentRef.setInput('projectSlug', 'next-slug');
     await fixture.whenStable();
@@ -78,7 +79,7 @@ describe('Framework Downstream card', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     root.querySelector<HTMLButtonElement>('[data-testid="mktg-downstream-rebuild"] button')?.click();
     expect(navigate).toHaveBeenCalledWith(
-      ['families', 'positioning-brand'],
+      ['/project/mktg-os-agents', 'families', 'positioning-brand'],
       expect.objectContaining({
         state: { [MKTG_REBUILD_NAVIGATION_STATE_KEY]: { project: 'next-project', frameworkRevisionId: reference.revisionId } },
         queryParams: { project: 'next-slug' },

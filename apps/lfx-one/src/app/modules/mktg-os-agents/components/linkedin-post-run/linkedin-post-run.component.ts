@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -14,7 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   LINKEDIN_ABOUT_FIELDS,
   LINKEDIN_PAGE_LABEL,
-  MKTG_KIT_FAMILIES,
+  LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_CONTENT_SOURCES,
   LINKEDIN_FILE_ACCEPT,
@@ -39,7 +39,7 @@ import {
   MktgRunQuestion,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink } from '@lfx-one/shared/utils';
+import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -47,9 +47,10 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, distinctUntilChanged, of, Subscription, switchMap, Observable } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, Observable } from 'rxjs';
 
 import { LinkedinPostOptionsComponent } from '../linkedin-post-options/linkedin-post-options.component';
+import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 
@@ -58,12 +59,12 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
   selector: 'lfx-linkedin-post-run',
   imports: [
     ReactiveFormsModule,
-    RouterLink,
     ButtonComponent,
     FileUploadComponent,
     InputTextComponent,
     TextareaComponent,
     LinkedinPostOptionsComponent,
+    MktgBreadcrumbComponent,
     MktgRunQuestionsComponent,
     MktgRunActivityComponent,
   ],
@@ -74,13 +75,14 @@ export class LinkedinPostRunComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly api = inject(LinkedinPostService);
   private readonly documents = inject(MktgDocumentStoreService);
-  private readonly context = inject(ProjectContextService);
+  protected readonly context = inject(ProjectContextService);
   private readonly projects = inject(ProjectService);
   private readonly user = inject(UserService);
   private readonly platform = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly profileForm = new FormGroup(
@@ -106,7 +108,9 @@ export class LinkedinPostRunComponent {
   protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
   protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
   protected readonly pageLabel = LINKEDIN_PAGE_LABEL;
-  protected readonly family = computed(() => MKTG_KIT_FAMILIES.find((family) => family.agentIds.includes(this.intake().agentId)));
+  protected readonly crumbs = computed(() =>
+    mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), this.agent()?.name ?? this.pageLabel)
+  );
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
@@ -147,6 +151,28 @@ export class LinkedinPostRunComponent {
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) return;
+    this.route.queryParamMap
+      .pipe(
+        map((params) => params.get('profile') === 'edit'),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((editing) => {
+        if (this.loading() || (!this.saved() && !this.setup())) return;
+        if (editing) {
+          if (!this.editing()) this.fillProfile();
+        }
+        this.editing.set(editing);
+      });
+    this.route.queryParamMap
+      .pipe(
+        map((params) => this.sources.find((source) => source.value === params.get('source'))?.value ?? 'text'),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((source) => {
+        if (source !== this.source()) this.applySource(source);
+      });
     this.contentForm.controls.url.valueChanges.pipe(takeUntilDestroyed()).subscribe((url) => {
       if (this.source() === 'url' && !this.contentForm.controls.share_link.dirty) this.contentForm.controls.share_link.setValue(url);
     });
@@ -184,7 +210,7 @@ export class LinkedinPostRunComponent {
           this.file.set(null);
           this.profileForm.reset();
           this.contentForm.reset();
-          this.source.set('text');
+          this.source.set(this.sources.find((source) => source.value === this.route.snapshot.queryParamMap.get('source'))?.value ?? 'text');
           if (!context || !sub) {
             this.error.set(context ? 'Sign in to load your LinkedIn profile.' : 'Select a project to continue.');
             this.loading.set(false);
@@ -211,9 +237,6 @@ export class LinkedinPostRunComponent {
           this.fillProfile();
           const editProfile = this.route.snapshot.queryParamMap.get('profile') === 'edit';
           this.editing.set(!response.profile || editProfile);
-          if (editProfile) {
-            void this.router.navigate([], { relativeTo: this.route, queryParams: { profile: null }, queryParamsHandling: 'merge', replaceUrl: true });
-          }
           const pending = this.api.pending(this.intake(), this.context.activeContextUid());
           if (pending) {
             this.run.set(pending);
@@ -266,9 +289,15 @@ export class LinkedinPostRunComponent {
     this.fillProfile();
     this.error.set('');
     this.editing.set(true);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      queryParams: { profile: 'edit', project: this.context.activeContext()?.slug ?? null },
+      queryParamsHandling: 'merge',
+    });
   }
   protected onCancelEdit(): void {
-    this.editing.set(false);
+    this.finishEditing();
     this.error.set('');
     if (this.run() && !this.result()) this.onRetryRun();
   }
@@ -286,7 +315,7 @@ export class LinkedinPostRunComponent {
     this.error.set('');
     if (!this.saved() && !this.result()) {
       this.setup.set(answers);
-      this.editing.set(false);
+      this.finishEditing(false);
       return;
     }
     this.busy.set(true);
@@ -298,7 +327,7 @@ export class LinkedinPostRunComponent {
           this.saved.set(response.profile);
           this.profileSaved.set(true);
           this.setup.set(null);
-          this.editing.set(false);
+          this.finishEditing();
           this.busy.set(false);
           if (this.run() && !this.result()) this.onRetryRun();
         },
@@ -309,11 +338,12 @@ export class LinkedinPostRunComponent {
       });
   }
   protected onSource(source: LinkedinContentSource): void {
-    if (source !== this.source()) this.file.set(null);
-    this.source.set(source);
-    this.contentForm.controls.share_link.setValue(source === 'url' ? this.contentForm.controls.url.value : '');
-    this.contentForm.controls.share_link.markAsPristine();
-    this.error.set('');
+    this.applySource(source);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { source: source === 'text' ? null : source, project: this.context.activeContext()?.slug ?? null },
+      queryParamsHandling: 'merge',
+    });
   }
   protected onFile(event: FileSelectEvent): void {
     this.file.set(event.files[0] ?? null);
@@ -533,6 +563,35 @@ export class LinkedinPostRunComponent {
       queryParams: { profile: null },
       queryParamsHandling: 'merge',
     });
+  }
+
+  private applySource(source: LinkedinContentSource): void {
+    if (source !== this.source()) this.file.set(null);
+    this.source.set(source);
+    this.contentForm.controls.share_link.setValue(source === 'url' ? this.contentForm.controls.url.value : '');
+    this.contentForm.controls.share_link.markAsPristine();
+    this.error.set('');
+  }
+
+  private finishEditing(returnToOrigin = true): void {
+    this.editing.set(false);
+    if (this.route.snapshot.queryParamMap.get('profile') !== 'edit') return;
+    if (returnToOrigin && this.editEntryWasPushed()) {
+      this.location.back();
+      return;
+    }
+    // Cold entries and setup-only submissions must stay here; setup is not persisted yet.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { profile: null, project: this.context.activeContext()?.slug ?? null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  private editEntryWasPushed(): boolean {
+    const state = this.location.getState();
+    return !!state && typeof state === 'object' && LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY in state && state[LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY] === true;
   }
 
   private fillProfile(): void {
