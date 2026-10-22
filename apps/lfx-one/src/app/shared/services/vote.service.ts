@@ -366,7 +366,7 @@ export class VoteService {
     return live;
   }
 
-  /** Evicts a carried uid once a fetched row already shows it open — the server value has converged. */
+  /** Evicts a carried uid once a fetched row shows it open with a positive invitation count — the server value has converged. */
   public evictRecentlyOpenedVote(voteUid: string): void {
     this.recentlyOpenedVotes.update((opened) => {
       if (!opened.has(voteUid)) return opened;
@@ -444,7 +444,7 @@ export class VoteService {
     this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote: carried, markedAt: Date.now() }));
   }
 
-  /** Evicts a carried uid once a fetched row already carries it — the server row is now the source of truth. */
+  /** Evicts a carried uid once a fetched row carries it with a positive invitation count — the server row is now the source of truth. */
   public evictRecentlyCreatedVote(voteUid: string): void {
     this.recentlyCreatedVotes.update((created) => {
       if (!created.has(voteUid)) return created;
@@ -457,8 +457,8 @@ export class VoteService {
   /**
    * Inserts any still-live recently-created vote (GH-4007) that is missing from a fetched page —
    * prepended so a just-created or cloned vote appears in the list immediately instead of only
-   * after the search index converges. Self-healing: once a fetched page already contains the uid,
-   * the carried entry is evicted and the server row is used instead.
+   * after the search index converges. Self-healing: once a fetched page contains the uid with a
+   * positive invitation count, the carried entry is evicted and the server row is used instead.
    *
    * `options` scope the insertion to the list actually being rendered:
    * - `projectUid`/`committeeUid` keep a vote created in one project/committee from leaking into
@@ -480,7 +480,8 @@ export class VoteService {
    * Draft → Active before the index catches up) so the carried status is kept instead of
    * discarding the synthesized vote; only a fetched row reporting any other status is treated as
    * real convergence and evicts the carrier — once it also reports a positive invitation count
-   * (GH-4078, same reasoning as `mergeRecentlyOpenedVotes`).
+   * (GH-4078, same reasoning as `mergeRecentlyOpenedVotes`). Until then the carrier adopts the
+   * fetched status, so a vote fetched as Ended isn't later re-inserted as Active.
    */
   public mergeRecentlyCreatedVotes(
     votes: Vote[],
@@ -508,6 +509,7 @@ export class VoteService {
       present.add(vote.uid);
       if (vote.status !== PollStatus.DISABLED) {
         if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyCreatedVote(vote.uid);
+        else this.updateRecentlyCreatedVoteStatus(vote.uid, vote.status);
         return vote;
       }
       // Don't re-badge a stale Disabled row outside the tab its carried status actually belongs to
@@ -680,5 +682,18 @@ export class VoteService {
       this.recentlyCreatedVotes.set(live);
     }
     return liveVotes;
+  }
+
+  /**
+   * Adopts a fetched row's status for a carried vote still waiting on its invitation count (GH-4078) — keeps
+   * `markedAt` so the window doesn't restart, and stops a vote fetched as Ended from being re-inserted as
+   * Active under a tab whose page no longer returns it.
+   */
+  private updateRecentlyCreatedVoteStatus(voteUid: string, status: PollStatus): void {
+    this.recentlyCreatedVotes.update((created) => {
+      const entry = created.get(voteUid);
+      if (!entry || entry.vote.status === status) return created;
+      return new Map(created).set(voteUid, { ...entry, vote: { ...entry.vote, status } });
+    });
   }
 }

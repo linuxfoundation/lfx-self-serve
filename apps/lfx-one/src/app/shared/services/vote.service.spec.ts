@@ -318,6 +318,21 @@ describe('VoteService', () => {
       expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
     });
 
+    it('adopts a fetched Ended status so the retained carrier is not re-inserted as Active', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote', project_uid: 'p1' }), true);
+
+      // All tab: the index already reports Ended, but no electorate yet — the carrier is retained.
+      const ended = buildVote({ uid: 'new-vote', project_uid: 'p1', status: PollStatus.ENDED, total_voting_request_invitations: 0 });
+      expect(service.mergeRecentlyCreatedVotes([ended], { projectUid: 'p1', statusFilter: null })).toEqual([ended]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+
+      // Active tab: the server no longer returns the ended vote, and the carrier must not put it back.
+      expect(service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      // Ended tab: the carrier now inserts under the status the server reported.
+      const endedTab = service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ENDED });
+      expect(endedTab.map((vote) => [vote.uid, vote.status])).toEqual([['new-vote', PollStatus.ENDED]]);
+    });
+
     it('counts a list as awaiting only for open rows still missing a positive electorate', () => {
       service.markVoteOpened('v1');
 

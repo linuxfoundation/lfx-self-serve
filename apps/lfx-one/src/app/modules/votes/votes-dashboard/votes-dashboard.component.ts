@@ -106,6 +106,10 @@ export class VotesDashboardComponent {
   // fetch$ triggers votes list re-fetch (pagination, manual refresh)
   private readonly fetch$ = new BehaviorSubject<void>(undefined);
   private readonly managementSummaryRefresh$ = new BehaviorSubject<void>(undefined);
+  // True only while the invitation-count poll fires fetch$/refresh$ (GH-4078). Both subjects emit
+  // synchronously, so each pipeline reads it in the same call and runs a silent refresh: no loading
+  // state, and a failed request keeps the last rows/counts instead of clearing them.
+  private backgroundRefresh = false;
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -380,19 +384,23 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.managementSummaryScope), this.refresh$, this.managementSummaryRefresh$]).pipe(
         switchMap(([scope]) => {
-          this.managementSummaryLoading.set(!!scope);
-          this.managementSummaryError.set(false);
+          const silent = this.backgroundRefresh;
+          if (!silent) {
+            this.managementSummaryLoading.set(!!scope);
+            this.managementSummaryError.set(false);
+          }
           if (!scope) return of(null);
-          return this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
+          const summary$ = this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
             catchError(() => {
+              if (silent) return EMPTY;
               if (this.managementSummaryScope() === scope) this.managementSummaryError.set(true);
               return of(null);
             }),
             finalize(() => {
               if (this.managementSummaryScope() === scope) this.managementSummaryLoading.set(false);
-            }),
-            startWith(null)
+            })
           );
+          return silent ? summary$ : summary$.pipe(startWith(null));
         })
       ),
       { initialValue: null }
@@ -423,19 +431,23 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.managementStatusCountsScope), this.refresh$]).pipe(
         switchMap(([scope]) => {
-          this.managementStatusCountsLoading.set(!!scope);
-          this.managementStatusCountsError.set(false);
+          const silent = this.backgroundRefresh;
+          if (!silent) {
+            this.managementStatusCountsLoading.set(!!scope);
+            this.managementStatusCountsError.set(false);
+          }
           if (!scope) return of(null);
-          return this.voteService.getVoteStatusCountsByProject(scope.uid, scope.search || undefined, scope.group || undefined).pipe(
+          const counts$ = this.voteService.getVoteStatusCountsByProject(scope.uid, scope.search || undefined, scope.group || undefined).pipe(
             catchError(() => {
+              if (silent) return EMPTY;
               if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(true);
               return of(null);
             }),
             finalize(() => {
               if (this.managementStatusCountsScope() === scope) this.managementStatusCountsLoading.set(false);
-            }),
-            startWith(null)
+            })
           );
+          return silent ? counts$ : counts$.pipe(startWith(null));
         })
       ),
       { initialValue: null }
@@ -563,7 +575,8 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([scope$, this.refresh$]).pipe(
         switchMap(([{ project, lens, closingOnly }]) => {
-          this.totalCountReady.set(false);
+          const silent = this.backgroundRefresh;
+          if (!silent) this.totalCountReady.set(false);
           if (lens === 'me' || closingOnly) {
             return of(0);
           }
@@ -579,7 +592,7 @@ export class VotesDashboardComponent {
                 this.totalCountReady.set(true);
               }
             }),
-            catchError(() => of(0))
+            catchError(() => (silent ? EMPTY : of(0)))
           );
         })
       ),
@@ -592,6 +605,8 @@ export class VotesDashboardComponent {
    * (GH-4078), so its real participation count — and the tab counts / footer total — appear once the
    * search index catches up, without a manual reload. Self-terminating: each fetch re-evaluates, and
    * the carrier window (RECENTLY_OPENED_VOTE_TTL_MS) ends the polling even if the index never converges.
+   * Runs as a silent refresh (see `backgroundRefresh`) so the table, tabs and stat cards don't flash
+   * their loading states, and a failed poll keeps the rows and retries inside the window.
    */
   private initInvitationCountRefresh(): void {
     toObservable(this.votes)
@@ -600,8 +615,13 @@ export class VotesDashboardComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => {
-        this.fetch$.next();
-        this.refresh$.next();
+        this.backgroundRefresh = true;
+        try {
+          this.fetch$.next();
+          this.refresh$.next();
+        } finally {
+          this.backgroundRefresh = false;
+        }
       });
   }
 
@@ -617,7 +637,9 @@ export class VotesDashboardComponent {
 
     return toSignal(
       combineLatest([scope$, this.fetch$]).pipe(
-        tap(() => this.loading.set(true)),
+        tap(() => {
+          if (!this.backgroundRefresh) this.loading.set(true);
+        }),
         tap(([{ project, lens }]) => {
           const scope = `${lens}:${project?.uid ?? ''}`;
           if (scope !== previousScope) {
@@ -628,6 +650,7 @@ export class VotesDashboardComponent {
           }
         }),
         switchMap(([{ project, filters: filterState, lens }]) => {
+          const silent = this.backgroundRefresh;
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);
@@ -680,7 +703,9 @@ export class VotesDashboardComponent {
             map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.loading.set(false);
-              return of([]);
+              // A failed background poll keeps the current rows; the new array re-arms the poll so it
+              // retries while the carrier window is still live (GH-4078).
+              return of(silent ? [...this.votes()] : []);
             })
           );
         })

@@ -178,6 +178,41 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(list).not.toHaveBeenCalled();
   });
 
+  it('polls silently, and a failed poll keeps the rows and retries (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+    expect(rows()).toEqual(['first-page']);
+
+    const setLoading = vi.spyOn(dashboard['loading'], 'set');
+    const setSummaryLoading = vi.spyOn(dashboard['managementSummaryLoading'], 'set');
+    const setCountsLoading = vi.spyOn(dashboard['managementStatusCountsLoading'], 'set');
+    const setTotalReady = vi.spyOn(dashboard['totalCountReady'], 'set');
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    list.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(setLoading).not.toHaveBeenCalledWith(true);
+    expect(setSummaryLoading).not.toHaveBeenCalledWith(true);
+    expect(setCountsLoading).not.toHaveBeenCalledWith(true);
+    expect(setTotalReady).not.toHaveBeenCalledWith(false);
+
+    list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(rows()).toEqual(['first-page']);
+
+    // The kept rows re-arm the poll, so it retries on the next tick.
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
   it('shows personal voting status in the Me lens', () => {
     expect(table.showParticipationProgress()).toBe(false);
   });

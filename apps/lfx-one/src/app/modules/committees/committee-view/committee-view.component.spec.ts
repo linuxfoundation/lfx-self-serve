@@ -22,7 +22,7 @@ import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, EMPTY, of, Subject } from 'rxjs';
+import { BehaviorSubject, EMPTY, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeViewComponent } from './committee-view.component';
@@ -180,6 +180,38 @@ describe('CommitteeViewComponent', () => {
       vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
       flush();
       expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the votes, badge and silence when a background poll fails, then retries (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const messageService = TestBed.inject(MessageService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+
+      const setVotesLoading = vi.spyOn(component.votesLoading, 'set');
+      getVotesByCommittee.mockReturnValue(throwError(() => new Error('index unavailable')));
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+      expect(setVotesLoading).not.toHaveBeenCalledWith(true);
+      expect(messageService.add).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
