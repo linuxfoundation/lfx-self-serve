@@ -253,6 +253,22 @@ describe('FaqService.getResult', () => {
     expect(documentStoreMocks.recorded).toHaveLength(0);
   });
 
+  it.each([
+    { text: '', status: 'pending' },
+    { text: questionsText, status: 'questions' },
+    { text: FAQ_NOT_FINALIZED_REPLY, status: 'refused' },
+  ])('never lets a prior finalize hide renewed-turn $status', async ({ text, status }) => {
+    const old = toolResultPayload(ENVELOPE, 'old-finalize');
+    const events = [old, JSON.stringify({ type: 'mktg_session_turn_started' }), old];
+    if (text) events.push(agentTextPayload(text));
+    guildMocks.getRawEventPayloads.mockResolvedValue(events);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe(status);
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+    guildMocks.getRawEventPayloads.mockResolvedValue([...events, toolResultPayload(ENVELOPE, 'new-finalize')]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('ready');
+    expect(documentStoreMocks.recorded).toHaveLength(1);
+  });
+
   it('reports the reply that ended the run — even after a questions round — and stores nothing', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(questionsText), agentTextPayload(FAQ_NOT_FINALIZED_REPLY)]);
 

@@ -19,7 +19,7 @@ import {
   extractFaqRefusal,
   extractMktgCurrentTurnAgentTexts,
   extractMktgEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
   faqAsset,
   faqContentJson,
   foundationMessageQuestionsId,
@@ -67,7 +67,7 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
  * Who wrote what matters here: every page the agent fetches comes back as a
  * tool result in the same event stream, so a questions block or a reply is
  * taken only from the agent's own text turns and an envelope only from the
- * finalize tool's results (`extractMktgAgentTexts`, `extractMktgToolResults`).
+ * finalize tool's current-turn results (`extractMktgCurrentTurnAgentTexts`, `extractMktgCurrentTurnToolResults`).
  */
 export class FaqService {
   private readonly guildService = new GuildService();
@@ -229,7 +229,7 @@ export class FaqService {
   }
 
   /**
-   * The authoritative envelope of the session: the LATEST valid result of the
+   * The authoritative envelope of the current queued turn: the LATEST valid result of the
    * agent's finalize tool (`finalize_faq`), read only from that tool's result
    * events. The raw payloads are chronological, so a later valid finalize
    * supersedes an earlier one; the envelope's self-declared `version` plays
@@ -242,31 +242,29 @@ export class FaqService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, FAQ_FINALIZE_TOOL)) {
-        for (const candidate of extractMktgEnvelopeCandidates(resultText, FAQ_CONTRACT_ID)) {
-          candidateCount++;
-          const result = validateFaqEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'faq_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateFaqEnvelope passed every schema gate.
-          const envelope = candidate as FaqEnvelope;
-          const recomputedSha = createHash('sha256')
-            .update(Buffer.from(faqContentJson(envelope.content), 'utf8'))
-            .digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'faq_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-          latest = envelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, FAQ_FINALIZE_TOOL)) {
+      for (const candidate of extractMktgEnvelopeCandidates(resultText, FAQ_CONTRACT_ID)) {
+        candidateCount++;
+        const result = validateFaqEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'faq_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
         }
+        // Safe: validateFaqEnvelope passed every schema gate.
+        const envelope = candidate as FaqEnvelope;
+        const recomputedSha = createHash('sha256')
+          .update(Buffer.from(faqContentJson(envelope.content), 'utf8'))
+          .digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'faq_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        latest = envelope;
       }
     }
 
