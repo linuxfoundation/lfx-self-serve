@@ -222,7 +222,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(noMeetings.textContent.trim()).toBe('No meetings this period');
     expect(noMeetings.className).toContain('text-gray-400');
     expect(noMeetings.className).toContain('font-medium');
-    expect(noMeetings.className).toContain('text-[11.5px]');
+    expect(noMeetings.className).toContain('text-[12px]');
     // The design's `.badge.b-act`: red, not the amber of a low rate.
     const badge = row.querySelector('[data-testid="engagement-group-attendance-dormant"]');
     expect(badge.textContent.trim()).toBe('Dormant');

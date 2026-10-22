@@ -114,7 +114,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
 
     const status = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1-status"]') as HTMLElement;
     expect(status.textContent?.replace(/\s+/g, ' ').trim()).toBe('○ Non-member');
-    expect(status.className).toContain('text-[11.5px]');
+    expect(status.className).toContain('text-[12px]');
     expect(status.className).toContain('text-gray-400');
     expect(status.className).toContain('lg:whitespace-nowrap');
     expect(status.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('○');

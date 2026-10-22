@@ -20,24 +20,28 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Group attendance unavailable"
       subtitle="We could not load group attendance for this foundation. Refresh the page to try again."
       data-testid="engagement-group-attendance-error" />
   } @else if (!loading() && counts() === null) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-users"
       title="No groups recorded for this foundation"
       subtitle="The analytics model has no group attendance records for this foundation."
       data-testid="engagement-group-attendance-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-users"
       title="No groups of this type"
       subtitle="This foundation has no groups matching the selected filter."
       data-testid="engagement-group-attendance-empty" />
   } @else {
     <lfx-table
+      styleClass="hm-table"
       [value]="rowViews()"
       [loading]="loading()"
       [lazy]="true"
@@ -55,12 +59,12 @@
       data-testid="engagement-group-attendance-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Group</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Type</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Last met</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Trend</span></th>
-          <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Group</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Type</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Last met</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Trend</span></th>
+          <th scope="col" class="w-[150px]"><span class="text-[12px] font-normal text-gray-500">Attendance</span></th>
         </tr>
       </ng-template>
 
@@ -78,10 +82,10 @@
           (keydown.space)="$event.preventDefault(); onRowSelect(row)">
           <td>
             <div class="flex flex-col gap-0.5">
-              <span class="text-sm font-medium text-gray-900">{{ row.committeeName }}</span>
+              <span class="text-[13px] font-medium text-gray-900">{{ row.committeeName }}</span>
               <!-- The only sub-line, as in the design; the project shows in the drawer. 11.5px is the design's size. -->
               @if (period?.dormant) {
-                <span class="text-[11.5px] font-medium text-gray-400" data-testid="engagement-group-attendance-no-meetings">No meetings this period</span>
+                <span class="text-[12px] font-medium text-gray-400" data-testid="engagement-group-attendance-no-meetings">No meetings this period</span>
               }
             </div>
           </td>
@@ -89,14 +93,14 @@
             @if (row.groupTypeLabel) {
               <lfx-tag [value]="row.groupTypeLabel" severity="secondary" [rounded]="true" />
             } @else {
-              <span class="text-sm text-gray-400">—</span>
+              <span class="text-[13px] text-gray-400">—</span>
             }
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.meetingsHeld ?? '—' }}</span>
           </td>
           <td>
-            <span class="text-sm text-gray-800">{{ view.lastMetLabel }}</span>
+            <span class="text-[13px] text-gray-900">{{ view.lastMetLabel }}</span>
           </td>
           <td>
             <lfx-engagement-sparkline [series]="view.trend" [ariaLabel]="'Attendance history for ' + row.committeeName" />

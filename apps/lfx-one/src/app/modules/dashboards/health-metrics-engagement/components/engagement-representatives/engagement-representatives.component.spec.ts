@@ -162,11 +162,11 @@ describe('EngagementRepresentativesComponent', () => {
       expect(cell('r-never', part).className).toContain('text-red-600');
       expect(cell('r-never', part).className).toContain('font-medium');
     }
-    expect(cell('r-lapsed', 'attended').className).toContain('text-gray-800');
+    expect(cell('r-lapsed', 'attended').className).toContain('text-gray-900');
     expect(cell('r-lapsed', 'last-attended').className).toContain('text-amber-600');
     expect(cell('r-lapsed', 'last-attended').className).not.toContain('text-red-600');
-    expect(cell('r-ok', 'attended').className).toContain('text-gray-800');
-    expect(cell('r-ok', 'last-attended').className).toContain('text-gray-800');
+    expect(cell('r-ok', 'attended').className).toContain('text-gray-900');
+    expect(cell('r-ok', 'last-attended').className).toContain('text-gray-900');
     expect(cell('r-ok', 'last-attended').className).not.toContain('text-amber-600');
   });
 

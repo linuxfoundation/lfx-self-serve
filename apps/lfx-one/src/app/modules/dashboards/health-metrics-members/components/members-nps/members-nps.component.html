@@ -23,6 +23,7 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Satisfaction unavailable"
       subtitle="We could not load this foundation's survey results. Refresh the page to try again."
@@ -31,6 +32,7 @@
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-nps-loading" aria-hidden="true" />
   } @else if (noSurvey()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-square-poll-horizontal"
       title="No survey in this period"
       subtitle="The score appears here once a survey of this foundation's audiences is sent in the selected period."
@@ -47,7 +49,7 @@
       <div class="flex flex-col gap-2">
         <span class="flex items-baseline gap-2">
           <span
-            class="text-3xl font-semibold tabular-nums"
+            class="text-[24px] font-semibold leading-[1.2] tabular-nums"
             [class.text-gray-400]="summary().isUnscored"
             [class.text-amber-600]="summary().isLowConfidence"
             [class.text-gray-900]="!summary().isUnscored && !summary().isLowConfidence"
@@ -65,18 +67,18 @@
             >
           }
         </span>
-        <span class="text-[12.5px] text-gray-500" data-testid="members-nps-caption">{{ summary().caption }}</span>
+        <span class="text-[12px] text-gray-500" data-testid="members-nps-caption">{{ summary().caption }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-nps-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Responded</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Responded</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Response rate</dt>
+          <dt class="text-[12px] text-gray-500">Response rate</dt>
           <dd
-            class="text-[17px] font-semibold tabular-nums"
+            class="text-[24px] font-semibold leading-[1.2] tabular-nums"
             [class.text-amber-600]="summary().isRateBelowFloor"
             [class.text-gray-900]="!summary().isRateBelowFloor"
             data-testid="members-nps-rate">
@@ -88,7 +90,7 @@
 
     <div class="flex flex-col gap-2" data-testid="members-nps-distribution">
       <div class="flex items-baseline justify-between gap-2">
-        <h4 class="text-sm font-medium text-gray-900">Response distribution</h4>
+        <h4 class="text-[13px] font-medium text-gray-900">Response distribution</h4>
         <span class="text-[11px] tabular-nums text-gray-400" data-testid="members-nps-surveyed">{{ summary().surveyedLabel }}</span>
       </div>
       <div
@@ -102,7 +104,7 @@
           }
         }
       </div>
-      <ul class="flex flex-wrap gap-4 text-[11.5px] text-gray-600" data-testid="members-nps-legend">
+      <ul class="flex flex-wrap gap-4 text-[12px] text-gray-600" data-testid="members-nps-legend">
         @for (segment of segments(); track segment.key) {
           <li class="inline-flex items-center gap-1.5" [attr.data-testid]="'members-nps-legend-' + segment.key">
             <span class="h-2 w-2 rounded-full" [class]="segment.colorClass" aria-hidden="true"></span>
@@ -115,13 +117,13 @@
     @if (trend().length > 1) {
       <div class="flex flex-col gap-2" data-testid="members-nps-trend">
         <div class="flex items-baseline justify-between gap-2">
-          <h4 class="text-sm font-medium text-gray-900">Score and response rate over time</h4>
+          <h4 class="text-[13px] font-medium text-gray-900">Score and response rate over time</h4>
           <span class="text-[11px] text-gray-400">a score is only as good as the sample under it</span>
         </div>
         <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-nps-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
-        <div class="flex flex-wrap gap-4 text-[10px] text-gray-500" aria-hidden="true" data-testid="members-nps-chart-legend">
+        <div class="flex flex-wrap gap-4 text-[12px] text-gray-400" aria-hidden="true" data-testid="members-nps-chart-legend">
           <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-blue-300"></span>NPS score (left)</span>
           @if (hasLowConfidenceWave()) {
             <span class="inline-flex items-center gap-1.5" data-testid="members-nps-legend-low-response"
