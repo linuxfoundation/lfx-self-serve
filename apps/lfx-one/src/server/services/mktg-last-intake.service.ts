@@ -40,8 +40,6 @@ export class MktgLastIntakeService {
         record.schema !== MKTG_LAST_INTAKE_SCHEMA ||
         record.project !== project ||
         record.agentKey !== agentKey ||
-        typeof record.authorId !== 'string' ||
-        !record.authorId ||
         typeof record.startedAt !== 'string' ||
         !Number.isFinite(Date.parse(record.startedAt)) ||
         typeof record.runId !== 'string' ||
@@ -66,8 +64,7 @@ export class MktgLastIntakeService {
   public async recordStartBestEffort(req: Request, input: MktgLastIntakeStart): Promise<void> {
     try {
       const { agentKey, intake } = this.registration(MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === input.agentId)?.agentKey);
-      const authorId = getEffectiveSub(req);
-      if (!authorId) throw new AuthenticationError('A signed-in writer subject is required.');
+      if (!getEffectiveSub(req)) throw new AuthenticationError('A signed-in writer subject is required.');
       if (!MKTG_STARTED_RUN_ID_REGEX.test(input.runId) || !this.validCount(input.documentCount) || !this.validCount(input.logoCount)) {
         throw ServiceValidationError.forField('intake', 'Invalid accepted intake metadata.');
       }
@@ -75,7 +72,6 @@ export class MktgLastIntakeService {
         schema: MKTG_LAST_INTAKE_SCHEMA,
         project: input.project,
         agentKey,
-        authorId,
         startedAt: new Date().toISOString(),
         runId: input.runId,
         answers: this.scalarAnswers(intake, input.answers),

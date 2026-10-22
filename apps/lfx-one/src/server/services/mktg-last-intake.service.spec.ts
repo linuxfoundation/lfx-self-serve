@@ -74,11 +74,12 @@ describe('MktgLastIntakeService', () => {
       schema: MKTG_LAST_INTAKE_SCHEMA,
       project,
       agentKey: type.agentKey,
-      authorId: 'auth0|synthetic-writer',
       runId: 'a'.repeat(64),
       documentCount: intake.documents ? 2 : 0,
       logoCount: intake.logoFiles ? 1 : 0,
     });
+    expect(record).not.toHaveProperty('authorId');
+    expect(JSON.stringify(record)).not.toContain('auth0|synthetic-writer');
     expect(Number.isFinite(Date.parse(record.startedAt))).toBe(true);
     expect(Object.keys(record.answers)).toEqual(
       intake.fields.filter((field) => !intake.attachments?.some((attachment) => attachment.answerKey === field.key)).map((field) => field.key)
@@ -90,6 +91,18 @@ describe('MktgLastIntakeService', () => {
     expect(call[7].refreshMetadataWhen({})).toBe(true);
     mocks.get.mockResolvedValue({ body: JSON.stringify({ ...record, ownerToken: 'private proof' }) });
     expect(await service.read(req, project, type.agentKey)).toEqual({
+      answers: record.answers,
+      documentCount: record.documentCount,
+      logoCount: record.logoCount,
+    });
+  });
+
+  it('reads legacy snapshots without depending on or exposing their former author field', async () => {
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, input());
+    const record = written();
+    mocks.get.mockResolvedValue({ body: JSON.stringify({ ...record, authorId: 'legacy-synthetic-subject' }) });
+    expect(await service.read(req, project, 'foundation-message')).toEqual({
       answers: record.answers,
       documentCount: record.documentCount,
       logoCount: record.logoCount,

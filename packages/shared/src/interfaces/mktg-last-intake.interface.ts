@@ -25,7 +25,6 @@ export interface MktgStoredLastIntake extends MktgLastIntake {
   schema: string;
   project: string;
   agentKey: string;
-  authorId: string;
   startedAt: string;
   runId: string;
 }

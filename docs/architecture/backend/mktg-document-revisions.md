@@ -220,8 +220,10 @@ Dependency attachment answer keys are excluded and dependencies must be resolved
 not replayed from this snapshot.
 
 This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
-conflict resolution. It holds an opaque effective author ID, run ID and start time,
-scalar answers, and document/logo counts only. It never stores uploaded bytes,
+conflict resolution. It holds run ID and start time, scalar answers, and document/logo
+counts only; it does not retain an author identifier because there is no audit consumer.
+Existing snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response. It never stores uploaded bytes,
 extracted source text, source filenames, Guild sessions or capability tokens.
 `GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
 `private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
