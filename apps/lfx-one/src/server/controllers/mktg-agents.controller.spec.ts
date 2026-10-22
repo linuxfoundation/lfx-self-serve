@@ -14,6 +14,13 @@ const runMocks = vi.hoisted(() => ({
   recordResultBestEffort: vi.fn(),
   resumeAfterQuestions: vi.fn(),
 }));
+const lastIntakeMocks = vi.hoisted(() => ({ read: vi.fn(), recordStartBestEffort: vi.fn() }));
+vi.mock('../services/mktg-last-intake.service', () => ({
+  MktgLastIntakeService: class {
+    public read = lastIntakeMocks.read;
+    public recordStartBestEffort = lastIntakeMocks.recordStartBestEffort;
+  },
+}));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = runMocks.resolveProject;
@@ -245,6 +252,8 @@ describe('MktgAgentsController', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Every accepted Generate must finish even when the optional snapshot never settles.
+    lastIntakeMocks.recordStartBestEffort.mockReset().mockImplementation(() => new Promise<void>(() => undefined));
     runMocks.resolveProject.mockReset().mockResolvedValue('proj-uid-1');
     runMocks.resolveCatalogProject.mockImplementation((req: unknown, _agentId: string, raw: unknown) => runMocks.resolveProject(req, raw));
     runMocks.startForCatalogAgent.mockResolvedValue(publicRunId);
@@ -256,6 +265,35 @@ describe('MktgAgentsController', () => {
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  describe('last intake GET', () => {
+    it.each([null, { answers: { website_url: 'https://project.example' }, documentCount: 2, logoCount: 0 }])(
+      'returns writer-only history without caching (%s)',
+      async (intake) => {
+        lastIntakeMocks.read.mockResolvedValueOnce(intake);
+        const req = { query: { project: 'synthetic-project' }, params: { agentKey: 'foundation-message' } } as unknown as Request;
+        const res = { ...buildRes(), setHeader: vi.fn() };
+        await controller.getLastIntake(req, res as unknown as Response, next);
+        expect(lastIntakeMocks.read).toHaveBeenCalledWith(req, 'synthetic-project', 'foundation-message');
+        expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+        expect(res.json).toHaveBeenCalledWith({ intake });
+        expect(next).not.toHaveBeenCalled();
+        expect(guildMocks.createSession).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each([new AuthorizationError('No write access'), new MicroserviceError('History unavailable', 503, 'TEST')])(
+      'delegates denial/outage rather than returning empty history',
+      async (failure) => {
+        lastIntakeMocks.read.mockRejectedValueOnce(failure);
+        const req = { query: { project: 'synthetic-project' }, params: { agentKey: 'faq' } } as unknown as Request;
+        const res = { ...buildRes(), setHeader: vi.fn() };
+        await controller.getLastIntake(req, res as unknown as Response, next);
+        expect(next).toHaveBeenCalledWith(failure);
+        expect(res.json).not.toHaveBeenCalled();
+      }
+    );
   });
 
   it.each([undefined, 'existing-session'])('rejects dedicated one-off chat for a non-writer (session %s)', async (sessionId) => {
@@ -301,6 +339,7 @@ describe('MktgAgentsController', () => {
     await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), project: 'synthetic-project' }), buildRes(), next);
     expect(next).toHaveBeenCalledWith(failure);
     expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+    expect(lastIntakeMocks.recordStartBestEffort).not.toHaveBeenCalled();
   });
 
   for (const [method, adapter] of [
@@ -512,10 +551,35 @@ describe('MktgAgentsController', () => {
         'proj-uid-1',
         'brand-kit'
       );
+      expect(lastIntakeMocks.recordStartBestEffort).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          project: 'proj-uid-1',
+          agentId: 'brand-kit',
+          runId: publicRunId,
+          documentCount: 0,
+          logoCount: 2,
+          answers: req.body.answers,
+        })
+      );
+      expect(res.json.mock.invocationCallOrder[0]).toBeLessThan(lastIntakeMocks.recordStartBestEffort.mock.invocationCallOrder[0]);
       expect(res.json).toHaveBeenCalledWith(acknowledgement('sess-bk'));
       expect(runMocks.startForCatalogAgent).toHaveBeenCalledWith(req, 'brand-kit', 'proj-uid-1', 'sess-bk', 0, 'initial');
       expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(brandKitMocks.startGeneration.mock.invocationCallOrder[0]);
       expect(runMocks.startForCatalogAgent.mock.invocationCallOrder[0]).toBeLessThan(res.json.mock.invocationCallOrder[0]);
+    });
+
+    it('does not fail or leak a rejected detached snapshot after the Generate ACK', async () => {
+      brandKitMocks.startGeneration.mockResolvedValue('sess-bk');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+      lastIntakeMocks.recordStartBestEffort.mockRejectedValueOnce(new MicroserviceError('private-body-marker', 503, 'TEST'));
+      const res = buildRes();
+      await controller.generateBrandKit(buildIcpReq('/api/mktg-agents/brand-kit/generate', { answers: brandKitAnswers(), project: 'proj-uid-1' }), res, next);
+      await Promise.resolve();
+      expect(res.json).toHaveBeenCalledWith(acknowledgement('sess-bk'));
+      expect(next).not.toHaveBeenCalled();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(expect.anything(), 'mktg_last_intake_write', expect.any(String));
+      expect(JSON.stringify(loggerMocks.warning.mock.calls)).not.toContain('private-body-marker');
     });
 
     it('refuses a form without the website, without the messaging framework, a logo file with two contents, and a feedback or prior version', async () => {
@@ -646,6 +710,10 @@ describe('MktgAgentsController', () => {
         expect.objectContaining({ project_name: 'TestOrbit' }),
         { feedback: undefined, priorVersion: undefined },
         'icp'
+      );
+      expect(lastIntakeMocks.recordStartBestEffort).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ project: 'proj-uid-1', agentId: 'icp', runId: publicRunId, documentCount: 0, logoCount: 0 })
       );
       expect(res.json).toHaveBeenCalledWith(acknowledgement('sess-icp', { readme: { fetched: true, source: 'repository' } }));
     });
@@ -784,7 +852,8 @@ describe('MktgAgentsController', () => {
       ];
       const res = buildRes();
 
-      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), documents, project: ' proj-uid-1 ' }), res, next);
+      const req = generateReq({ answers: messagingAnswers(), documents, project: ' proj-uid-1 ' });
+      await controller.generateFoundationMessage(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       const [, answers, sentDocuments, project, handle] = foundationMessageMocks.startGeneration.mock.calls[0];
@@ -794,6 +863,17 @@ describe('MktgAgentsController', () => {
       expect(sentDocuments).toEqual(documents);
       expect(project).toBe('proj-uid-1');
       expect(handle).toBe('foundation-message');
+      expect(lastIntakeMocks.recordStartBestEffort).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          project: 'proj-uid-1',
+          agentId: 'foundation-setup',
+          runId: publicRunId,
+          answers: req.body.answers,
+          documentCount: 2,
+          logoCount: 0,
+        })
+      );
       expect(res.json).toHaveBeenCalledWith(acknowledgement('sess-1'));
     });
 
@@ -1182,6 +1262,10 @@ describe('MktgAgentsController', () => {
         'proj-uid-1',
         'boilerplates'
       );
+      expect(lastIntakeMocks.recordStartBestEffort).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ project: 'proj-uid-1', agentId: 'boilerplates', runId: publicRunId, documentCount: 0, logoCount: 0 })
+      );
       expect(res.json).toHaveBeenCalledWith(acknowledgement('sess-bp'));
       expect(runMocks.startForCatalogAgent).toHaveBeenCalledWith(expect.anything(), 'boilerplates', 'proj-uid-1', 'sess-bp', 0, 'initial');
     });
@@ -1296,7 +1380,8 @@ describe('MktgAgentsController', () => {
       const documents = [{ kind: 'link', title: 'https://testorbit.example.org/faq', url: 'https://testorbit.example.org/faq', tag: 'doc' }];
       const res = buildRes();
 
-      await controller.generateFaq(faqReq('generate', { answers: faqAnswers(), documents, project: 'proj-uid-1' }), res, next);
+      const req = faqReq('generate', { answers: faqAnswers(), documents, project: 'proj-uid-1' });
+      await controller.generateFaq(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       const [, answers, sentDocuments, project, handle] = faqMocks.startGeneration.mock.calls[0];
@@ -1309,6 +1394,10 @@ describe('MktgAgentsController', () => {
       expect(sentDocuments).toEqual(documents);
       expect(project).toBe('proj-uid-1');
       expect(handle).toBe('faq');
+      expect(lastIntakeMocks.recordStartBestEffort).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ project: 'proj-uid-1', agentId: 'faq', runId: publicRunId, answers: req.body.answers, documentCount: 1, logoCount: 0 })
+      );
       expect(runMocks.resolveProject).toHaveBeenCalledWith(expect.anything(), 'proj-uid-1');
       expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(faqMocks.startGeneration.mock.invocationCallOrder[0]);
       expect(runMocks.startForCatalogAgent).toHaveBeenCalledWith(expect.anything(), 'faq', 'proj-uid-1', 'sess-1', 0, 'initial');

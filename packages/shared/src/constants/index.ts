@@ -158,3 +158,4 @@ export * from './mktg-rebuild.constants';
 export * from './linkedin-post.constants';
 export * from './member-360.constants';
 export * from './mktg-family-export.constants';
+export * from './mktg-last-intake.constants';
