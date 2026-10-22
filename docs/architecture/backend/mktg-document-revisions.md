@@ -211,8 +211,14 @@ Starts use the same private purpose, at
 `document-runs/{project}/{sha256(sessionId)}.json`. The body binds the resolved
 project, registered agent, document, private Guild session and opaque `creatorSubject`.
 Owner tokens are never written; legacy missing subjects mean unattributed writes.
-Mutable metadata holds attempt id, original Started date, retry/answers budget origin,
-answered questions id, prior revision, persist retry count, `failure-text`, `revision-id` and state.
+Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
+retry/answers budget origin, answered questions id, prior revision, persist retry count,
+`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
+This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
+conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
+The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
 Started, state and plain-text failure text (agent reply or server-authored deadline /
 storage-exhaustion reason); no session capability or starter identity is exposed.
@@ -292,7 +298,7 @@ CAS publication, current selection and attribution stay on the shared writer.
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 
-Opaque attempt ids deduplicate ACKs but do not order concurrent same-session
+Retained opaque attempt ids reject sequential ACK replay but do not order distinct concurrent same-session
 ACKs. Shipping intake submissions use fresh sessions and serialize their UI
 handoff; arbitrary concurrent chat callers can still reorder start ACKs. A
 monotonic admission token for that uncommon API path is a follow-up, not an

@@ -211,6 +211,43 @@ describe('MktgDocumentRunService core', () => {
     expect(stored()).toBe(before);
   });
 
+  it.each(['failed', 'storing'] as const)('reproduces the accepted non-atomic limitation: stale %s PUT can replace completion', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    let release: () => void = () => {
+      throw new Error('Missing suspended conditional failure');
+    };
+    let reached: () => void = () => {
+      throw new Error('Missing failure barrier');
+    };
+    const paused = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    flows.beforePut.mockImplementation(async (metadata: Record<string, string>) => {
+      if (metadata['state'] === state) {
+        reached();
+        await gate;
+      }
+    });
+    const stale: MktgRunResultResponse =
+      state === 'failed' ? { status: 'failed', failureText: 'Synthetic stale failure' } : { ...ready(), persistence: undefined };
+    flows.result.mockResolvedValueOnce(stale).mockResolvedValueOnce(ready());
+    const failure = service.recordResult(req, session, stale, project);
+    await paused;
+    const before = stored().body;
+    await service.recordResult(req, session, ready(), project);
+    const completed = stored();
+    expect(completed.body).toBe(before);
+    expect(completed.metadata).toMatchObject({ state: 'completed', 'revision-id': location().revision_id });
+    release();
+    await failure;
+    // Known limitation, NOT a claimed atomic guarantee: a separate conditional-store WorkItem must fix it.
+    expect(stored().metadata['state']).toBe(state);
+    expect(stored().metadata['revision-id']).toBeUndefined();
+  });
+
   it('rejects ledger overflow instead of evicting an accepted ACK', async () => {
     const first = 'a'.repeat(128);
     await service.start(req, project, types[0].agentKey, session, 0, first);
