@@ -192,6 +192,11 @@ export class MailingListManageComponent {
         error: (error: unknown) => {
           const httpStatus = error instanceof HttpErrorResponse ? error.status : undefined;
           const isDuplicateName = !this.isEditMode() && httpStatus === 409 && (!isCreatingService || serviceWasCreated);
+          // The upstream rejects names Groups.io considers invalid with a 400 whose message names the
+          // `group_name` field (e.g. "invalid group_name"); anything else on a 400 keeps the generic toast.
+          const upstreamMessage = error instanceof HttpErrorResponse ? error.error?.error : undefined;
+          const isInvalidName =
+            httpStatus === 400 && typeof upstreamMessage === 'string' && /group_?name/i.test(upstreamMessage) && (!isCreatingService || serviceWasCreated);
 
           if (isDuplicateName) {
             const groupNameControl = this.form().get('group_name');
@@ -203,6 +208,15 @@ export class MailingListManageComponent {
               severity: 'error',
               summary: 'Error',
               detail: 'A mailing list with this name already exists',
+            });
+          } else if (isInvalidName) {
+            // The form already enforces the name rules, so a rejection here means the address we generated
+            // from the project prefix was refused, not that the user typed something wrong. Say so, and
+            // don't flag the field or send them back to fix a name that was valid.
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to create mailing list',
+              detail: `We couldn't ${this.isEditMode() ? 'update' : 'create'} this list because its generated address was rejected. Please try again, and contact support if it keeps happening.`,
             });
           } else {
             const isServiceError = isCreatingService && !serviceWasCreated;
@@ -232,7 +246,7 @@ export class MailingListManageComponent {
           Validators.required,
           Validators.minLength(3),
           Validators.maxLength(34),
-          Validators.pattern(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/),
+          Validators.pattern(/^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/),
         ]),
         description: new FormControl('', [htmlRequiredValidator(), htmlMinLengthValidator(11), htmlMaxLengthValidator(500)]),
 
