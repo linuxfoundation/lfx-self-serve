@@ -193,26 +193,32 @@ export class PublicMeetingController {
       if (isAuthenticated) {
         const userEmail = getEffectiveEmail(req);
         let fallbackMatch = false;
-        try {
-          if (userEmail) {
-            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
-            fallbackMatch = registrantsByEmail.length > 0;
+        if (userEmail) {
+          try {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken)).length > 0;
             if (fallbackMatch) {
               logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
                 meeting_id: id,
                 email: userEmail,
               });
             }
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing', {
+              meeting_id: id,
+              err: fallbackError,
+            });
           }
-          // An alias row (meeting-invite preference) only matches through the user's other verified emails.
-          if (!fallbackMatch && !isImpersonating(req)) {
+        }
+        // An alias row (meeting-invite preference) only matches through the user's other verified emails.
+        if (!fallbackMatch && !isImpersonating(req)) {
+          try {
             fallbackMatch = (await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, userEmail || undefined)).registrants.length > 0;
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Verified-email registrant check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
+            });
           }
-        } catch (fallbackError) {
-          logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
-            meeting_id: id,
-            err: fallbackError,
-          });
         }
         if (fallbackMatch) {
           meeting.invited = true;
