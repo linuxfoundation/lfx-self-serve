@@ -6,7 +6,6 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   LINKEDIN_API,
-  LINKEDIN_RETRY_TEXT_MAX_CHARS,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   MKTG_DOCUMENT_ID_REGEX,
@@ -56,27 +55,15 @@ export class LinkedinPostService {
       tap((run) => {
         if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
           throw new Error('The run belongs to a different user or has no document destination.');
-        // Allowlist bounded reload fields; upload bytes and large text stay in the live snapshot only.
-        const storedAnswers = Object.fromEntries(
-          Object.entries(answers).filter(
-            ([key, value]) =>
-              (['content_source', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY].includes(key) && value.length <= LINKEDIN_SHARE_LINK_MAX_CHARS) ||
-              (key === 'content_text' && value.length <= LINKEDIN_RETRY_TEXT_MAX_CHARS)
-          )
-        );
         const pending: LinkedinPendingRun = {
           ...run,
-          retryInputs: {
-            answers: storedAnswers,
-            requiresSource: answers['content_source'] === 'file' || (answers['content_text']?.length ?? 0) > LINKEDIN_RETRY_TEXT_MAX_CHARS,
-          },
           agentId: intake.agentId,
           projectUid: project,
           savedAt: new Date().toISOString(),
         };
         if (isPlatformBrowser(this.platform)) {
           try {
-            localStorage.setItem(`${this.prefix(owner)}${project}:${run.documentId}`, JSON.stringify(pending));
+            localStorage.setItem(`${this.prefix(owner)}${project}:${run.documentId}`, this.serializePending(pending));
           } catch {
             console.warn('Pending-run recovery is unavailable in this browser.');
           }
@@ -95,7 +82,11 @@ export class LinkedinPostService {
       for (const key of keys) {
         if (!key?.startsWith(prefix)) continue;
         try {
-          const run = JSON.parse(localStorage.getItem(key) ?? 'null') as LinkedinPendingRun | null;
+          const raw = localStorage.getItem(key) ?? 'null';
+          const parsed = JSON.parse(raw) as LinkedinPendingRun | null;
+          const sanitized = parsed ? this.serializePending(parsed) : 'null';
+          const run = JSON.parse(sanitized) as LinkedinPendingRun | null;
+          if (parsed && sanitized !== raw) localStorage.setItem(key, sanitized);
           if (!run || !Number.isFinite(Date.parse(run.savedAt)) || Date.now() - Date.parse(run.savedAt) > MKTG_RUN_STORAGE_TTL_MS) {
             localStorage.removeItem(key);
             continue;
@@ -127,7 +118,7 @@ export class LinkedinPostService {
       const key = `${this.prefix(owner)}${project}:${run.documentId}`;
       const pending = JSON.parse(localStorage.getItem(key) ?? 'null') as LinkedinPendingRun | null;
       if (!pending || pending.projectUid !== project || pending.documentId !== run.documentId || pending.sessionId !== run.sessionId) return;
-      localStorage.setItem(key, JSON.stringify({ ...pending, answers: { ...pending.answers, [LINKEDIN_SHARE_LINK_ANSWER_KEY]: link } }));
+      localStorage.setItem(key, this.serializePending({ ...pending, answers: { ...pending.answers, [LINKEDIN_SHARE_LINK_ANSWER_KEY]: link } }));
     } catch {
       console.warn('Pending-run answer recovery is unavailable in this browser.');
     }
@@ -207,10 +198,25 @@ export class LinkedinPostService {
       const key = `${this.prefix(owner)}${project}:${run.documentId}`;
       const pending = JSON.parse(localStorage.getItem(key) ?? 'null') as LinkedinPendingRun | null;
       if (pending?.sessionId === run.sessionId && pending.projectUid === project)
-        localStorage.setItem(key, JSON.stringify({ ...pending, answeredQuestionsId: questionsId }));
+        localStorage.setItem(key, this.serializePending({ ...pending, answeredQuestionsId: questionsId }));
     } catch {
       /* Disabled recovery storage does not prevent same-session answers. */
     }
+  }
+
+  /** Raw sources/setup stay in the live request; every persisted retry snapshot requires source re-entry. */
+  private serializePending(pending: LinkedinPendingRun): string {
+    const retry = pending.retryInputs;
+    if (!retry) return JSON.stringify(pending);
+    const answers = Object.fromEntries(
+      Object.entries(retry.answers).filter(
+        ([key, value]) => ['content_source', LINKEDIN_SHARE_LINK_ANSWER_KEY].includes(key) && value.length <= LINKEDIN_SHARE_LINK_MAX_CHARS
+      )
+    );
+    return JSON.stringify({
+      ...pending,
+      retryInputs: { answers, requiresSource: !!retry.requiresSource || !!retry.answers['content_source'] },
+    });
   }
 
   private prefix(owner: string): string {

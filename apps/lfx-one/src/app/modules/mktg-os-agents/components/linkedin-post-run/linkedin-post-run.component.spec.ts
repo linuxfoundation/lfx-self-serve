@@ -910,7 +910,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.wait).not.toHaveBeenCalled(); // A failed new-session POST never makes the dead session resumable again.
   });
 
-  it.each(['file', 'text'] as const)('asks for a missing %s source after reload, never resumes the failed session', async (source) => {
+  it.each(['file', 'text', 'url'] as const)('asks for a missing %s source after reload, never resumes the failed session', async (source) => {
     const fixture = await render();
     const component = fixture.componentInstance;
     component['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
@@ -926,7 +926,8 @@ describe('LinkedIn profile and post surface', () => {
     component['onRetryRun']();
     expect(component['source']()).toBe(source);
     expect(component['run']()).toBeNull();
-    expect(component['error']()).toContain(source === 'file' ? 'choose the file again' : 'paste it again');
+    const prompts = { file: 'choose the file again', text: 'paste it again', url: 'enter the link again' };
+    expect(component['error']()).toContain(prompts[source]);
     expect(api.start).not.toHaveBeenCalled();
     expect(api.wait).not.toHaveBeenCalled();
   });

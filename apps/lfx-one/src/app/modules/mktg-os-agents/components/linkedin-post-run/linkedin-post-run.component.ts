@@ -434,18 +434,17 @@ export class LinkedinPostRunComponent {
       return;
     }
     if (this.runFailed() && inputs?.requiresSource) {
-      const fileSource = inputs.answers['content_source'] === 'file';
+      const source = this.sources.find((candidate) => candidate.value === inputs.answers['content_source'])?.value ?? 'text';
       this.busy.set(false);
-      this.source.set(fileSource ? 'file' : 'text');
+      this.source.set(source);
       this.file.set(null);
       this.contentForm.controls.text.setValue('');
+      this.contentForm.controls.url.setValue('');
       this.run.set(null);
       this.runFailed.set(false);
-      this.error.set(
-        fileSource
-          ? "Your source isn't kept in the browser — choose the file again to draft"
-          : "Your source isn't kept in the browser — paste it again to draft"
-      );
+      if (source === 'file') this.error.set("Your source isn't kept in the browser — choose the file again to draft");
+      else if (source === 'url') this.error.set("Your source isn't kept in the browser — enter the link again to draft");
+      else this.error.set("Your source isn't kept in the browser — paste it again to draft");
       return;
     }
     if (this.runFailed() && !inputs) {

@@ -53,11 +53,11 @@ export interface LinkedinForm {
   content_url?: string;
   content_file_name?: string;
 }
-/** Live retry snapshot; large sources and personal setup are never persisted. */
+/** Live retry snapshot; raw sources and personal setup stay in memory only. */
 export interface LinkedinRetryInputs {
   answers: Record<string, string>;
   setup?: LinkedinSetup;
-  /** A restored run needs the requester to choose/paste its source again. */
+  /** A restored run needs the requester to choose/paste/re-enter its source again. */
   requiresSource?: boolean;
 }
 export interface LinkedinGeneration extends MktgRunSessionResponse {
@@ -70,7 +70,7 @@ export interface LinkedinGeneration extends MktgRunSessionResponse {
   source: { label: string; words: number; fetched: boolean };
 }
 export interface LinkedinPendingRun extends MktgPendingDocumentRun {
-  /** Source inputs only; never persist personal profile setup. */
+  /** Reload metadata only; no content_text, content_url, upload bytes or personal setup. */
   retryInputs?: Omit<LinkedinRetryInputs, 'setup'>;
   answeredQuestionsId?: string;
   source: LinkedinGeneration['source'];

@@ -113,7 +113,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.screenshot({ path: info.outputPath('failed-session-retry.png'), fullPage: true });
   });
 
-  for (const source of ['text', 'file'] as const)
+  for (const source of ['text', 'file', 'url'] as const)
     test(`restoring a pending dead ${source} run fails once and never resumes on another reload`, async ({ page }, info) => {
       await suppressCookieBanner(page);
       await setupLinkedin(page, { saved: true });
@@ -132,6 +132,9 @@ test.describe('Marketing OS LinkedIn posts', () => {
           .locator('input[type="file"]')
           .first()
           .setInputFiles({ name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic file source.') });
+      } else if (source === 'url') {
+        await page.getByTestId('mktg-linkedin-source-url').click();
+        await page.getByTestId('mktg-linkedin-content-url').locator('input').fill('https://source.example/release');
       } else await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic recoverable source.');
       await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
       await expect(page.getByTestId('mktg-linkedin-generating')).toBeVisible();
@@ -144,11 +147,12 @@ test.describe('Marketing OS LinkedIn posts', () => {
       expect(pollsAfterReload).toBe(1);
       await expect(page.getByTestId('mktg-linkedin-retry-run').getByRole('button')).toHaveText('Retry');
       await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-      if (source === 'file') {
-        await page.getByTestId('mktg-linkedin-retry-run').getByRole('button').click();
-        await expect(page.getByTestId('mktg-linkedin-error')).toContainText('choose the file again');
-        await expect(page.getByTestId('mktg-linkedin-file')).toBeVisible();
-      }
+      await page.getByTestId('mktg-linkedin-retry-run').getByRole('button').click();
+      const prompts = { file: 'choose the file again', text: 'paste it again', url: 'enter the link again' };
+      await expect(page.getByTestId('mktg-linkedin-error')).toContainText(prompts[source]);
+      if (source === 'file') await expect(page.getByTestId('mktg-linkedin-file')).toBeVisible();
+      else if (source === 'url') await expect(page.getByTestId('mktg-linkedin-content-url').locator('input')).toHaveValue('');
+      else await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('');
       await openLinkedin(page);
       await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
       await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);

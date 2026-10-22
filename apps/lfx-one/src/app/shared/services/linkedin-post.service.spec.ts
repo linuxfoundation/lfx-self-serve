@@ -76,7 +76,7 @@ describe('LinkedIn pending document recovery', () => {
     service.start(LINKEDIN_POST_INTAKE, 'project-one', inputs).subscribe();
     http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
     const restored = service.pending(LINKEDIN_POST_INTAKE, 'project-one');
-    expect(restored?.retryInputs?.answers).toEqual(inputs);
+    expect(restored?.retryInputs).toEqual({ answers: { content_source: 'text' }, requiresSource: true });
     if (!restored) throw new Error('Expected pending run');
     const next = vi.fn();
     const complete = vi.fn();
@@ -92,10 +92,35 @@ describe('LinkedIn pending document recovery', () => {
     expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')).toBeNull();
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs * 3);
     http.expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
-    service.start(LINKEDIN_POST_INTAKE, 'project-one', restored.retryInputs?.answers ?? {}).subscribe();
+    // Reload requires the requester to supply the source again before starting a fresh run.
+    service.start(LINKEDIN_POST_INTAKE, 'project-one', inputs).subscribe();
     const retry = http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate);
     expect(retry.request.body.answers).toEqual(inputs);
     retry.flush({ ...run, sessionId: 'fresh-session' });
+    http.verify();
+  });
+
+  it('keeps pasted text and source URLs in memory only, including legacy retry snapshots and later writes', () => {
+    const service = TestBed.inject(LinkedinPostService);
+    const http = TestBed.inject(HttpTestingController);
+    const key = `${MKTG_PENDING_DOCUMENT_STORAGE_PREFIX}:subject-one:project-one:${run.documentId}`;
+    for (const [source, field, value] of [
+      ['text', 'content_text', 'Synthetic confidential release notes.'],
+      ['url', 'content_url', 'https://source.example/release?token=synthetic#private'],
+    ] as const) {
+      const answers = { content_source: source, [field]: value };
+      const live = vi.fn();
+      service.start(LINKEDIN_POST_INTAKE, 'project-one', answers).subscribe(live);
+      http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
+      expect(live.mock.calls[0][0].retryInputs.answers).toEqual(answers);
+      expect(localStorage.getItem(key)).not.toContain(value);
+      expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')?.retryInputs).toEqual({ answers: { content_source: source }, requiresSource: true });
+      const pending = service.pending(LINKEDIN_POST_INTAKE, 'project-one');
+      localStorage.setItem(key, JSON.stringify({ ...pending, retryInputs: { answers } }));
+      expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')?.retryInputs?.answers).not.toHaveProperty(field);
+      service.rememberShareLink('project-one', run, 'https://public.example/edited');
+      expect(localStorage.getItem(key)).not.toContain(value);
+    }
     http.verify();
   });
 
