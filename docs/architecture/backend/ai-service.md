@@ -214,9 +214,19 @@ AI_API_KEY=your-ai-api-key
 
 ### Model Configuration
 
+The model name is tied to which LiteLLM instance `AI_PROXY_URL` names. The v2 instances
+(`litellm.*.v2.cluster.linuxfound.info`) route on the `bedrock/`-prefixed name and answer `400`
+to the bare inference profile id. The retired OCI instance (`litellm.tools.lfx.dev`) routed on
+the bare id and answered `401` to the prefixed name.
+
+Those two codes say different things, and the difference is what to read when generation fails: a
+`400` is the key being accepted and the request body rejected — auth is fine and the model name is
+wrong for this host — while a `401` is the key itself being refused. The host and the name have to
+move together; #4087 is the case where the host moved alone.
+
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
