@@ -110,6 +110,7 @@ separate from document records, with the deck id/link, mode/date and each member
 revision id, number and content hash. Update uses only the stored family's last deck
 id; Create makes a new deck. Polling keeps the originally selected revisions even
 if approval moves, and the server finishes polling when the browser leaves.
+Recording a finished document or family export integrity-checks its start revision without requiring today's approved current to be readable; last-family freshness still fails closed if approved current is unreadable.
 Freshness compares exact approved member/ref sets, including lost or newly gained
 approvals and restored older revisions. A new Draft alone does not stale a family
 export. No personal identity is written into export records.

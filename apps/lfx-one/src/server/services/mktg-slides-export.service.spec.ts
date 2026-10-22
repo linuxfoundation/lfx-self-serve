@@ -414,6 +414,43 @@ describe('MktgSlidesExportService', () => {
       expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last).toBeNull();
     });
 
+    it.each(['family', 'document'] as const)('records a finished %s export on A when a later approved B disappears', async (scope) => {
+      await seedFramework(documentStore);
+      const family = scope === 'family' ? await service.startFamilyExport(req, familyInput) : null;
+      const document = scope === 'document' ? await service.startExport(req, input()) : null;
+      const startedId = family?.snapshot.members[0]?.revisionId ?? document?.revision.id;
+      expect(startedId).toBeTruthy();
+      await seedFramework(documentStore, 'New approved.');
+      const current = (await documentStore.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.approvedCurrent;
+      if (!current) throw new Error('Missing synthetic approval');
+      expect(current.revisionId).not.toBe(startedId);
+      const key = `documents/${PROJECT}/foundation-message/living/${current.revisionId}.json`;
+      expect(store.objects.delete(key)).toBe(true);
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      if (family) {
+        expect(await service.getFamilyResult(req, family.sessionId, family.snapshot)).toMatchObject({
+          status: 'ready',
+          record: { deckId: DECK_ID, members: family.snapshot.members },
+        });
+      }
+      if (document) {
+        const context = { project: PROJECT, type: FRAMEWORK, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: document.revision.id };
+        expect(await service.getResult(req, document.sessionId, context)).toMatchObject({
+          status: 'ready',
+          record: { deckId: DECK_ID, revisionId: startedId, revisionNumber: 1 },
+        });
+        expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last?.revisionId).toBe(startedId);
+      }
+      const records = [...store.objects.entries()].filter(([key]) => key.startsWith('slides-exports/'));
+      expect(records).toHaveLength(1);
+      expect(JSON.parse(records[0][1].body)).toMatchObject({ deckId: DECK_ID });
+      await expect(service.getFamilyLast(req, PROJECT, familyInput.familyId)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'MKTG_APPROVED_REVISION_UNREADABLE',
+      });
+    });
+
     it('reads approved identities without loading revision bodies, even when an approved body is corrupt', async () => {
       await seedFramework(documentStore);
       const started = await service.startFamilyExport(req, familyInput);

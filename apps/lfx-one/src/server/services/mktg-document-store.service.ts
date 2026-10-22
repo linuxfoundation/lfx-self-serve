@@ -626,7 +626,9 @@ export class MktgDocumentStoreService {
     documentId: string,
     revisionId: string
   ): Promise<MktgRevisionSummary | null> {
-    return (await this.getRevision(req, project, type, documentId, revisionId))?.revision ?? null;
+    const snapshot = await this.readCurrent(req, project, type, documentId);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot);
+    return detail ? ((await this.readRevision(req, detail, revisionId))?.revision ?? null) : null;
   }
 
   /** Explicit newest-identity lookup for export comparison; never returns a pre-revision artifact. */

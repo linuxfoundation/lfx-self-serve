@@ -1512,6 +1512,29 @@ describe('MktgDocumentStoreService', () => {
       expect(latest?.summary.number).toBe(1);
     });
 
+    it('finishes the exact exported revision when a later approved current disappears, retaining integrity checks', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+      await approveStored(FRAMEWORK, 1);
+      const started = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', {});
+      if (!started) throw new Error('Missing synthetic export revision');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      await approveStored(FRAMEWORK, 2);
+      const [firstKey, secondKey] = revisionKeys();
+      store.objects.delete(secondKey);
+
+      await expect(service.getDocument(req, PROJECT, FRAMEWORK, 'living')).rejects.toMatchObject({ code: 'MKTG_APPROVED_REVISION_UNREADABLE' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toMatchObject({
+        id: started.summary.id,
+        number: 1,
+        contentSha256: started.summary.contentSha256,
+      });
+      const first = storedObject(firstKey);
+      store.objects.set(firstKey, { ...first, body: 'corrupt synthetic revision' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+      store.objects.delete(firstKey);
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+    });
+
     it('exports the existing selected content after Make current without creating a copy', async () => {
       const first = jsonEnvelope('First');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
