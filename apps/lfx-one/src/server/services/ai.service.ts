@@ -32,6 +32,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { AiProxyError, aiErrorDetail } from '../helpers/ai-error.helper';
 import { logger } from './logger.service';
 
 export class AiService {
@@ -623,9 +624,12 @@ export class AiService {
       signal: AbortSignal.timeout(timeoutMs),
     });
 
+    // Same three guards the campaign brief path uses, from the same helper: the body read cannot
+    // throw over the status it is reporting, the body cannot bury the log line, and the key cannot
+    // ride out in it — this message reaches logger.error in three of the four callers, and
+    // `AI_API_KEY` travels in the Authorization header the proxy is free to echo back.
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new AiProxyError(`AI request failed: ${response.status} ${response.statusText}`, await aiErrorDetail(response, this.aiKey));
     }
 
     return response.json();
