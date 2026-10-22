@@ -32,7 +32,7 @@
             </div>
           } @else if (firstAgent()?.name ?? definition.pendingAgentName; as name) {
             <span
-              [pTooltip]="firstAgent()?.status === 'active' ? '' : (definition.pendingAgentReason ?? 'This agent is coming soon')"
+              [pTooltip]="firstAgent()?.status === 'active' ? '' : pendingReason()"
               tooltipPosition="bottom"
               [attr.tabindex]="firstAgent()?.status === 'active' ? null : 0">
               <lfx-button
@@ -43,9 +43,7 @@
                 (onClick)="runFirstAgent()"
                 data-testid="mktg-family-run" />
               @if (firstAgent()?.status !== 'active') {
-                <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{
-                  definition.pendingAgentReason ?? 'Coming soon'
-                }}</span>
+                <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ pendingReason() }}</span>
               }
             </span>
           }

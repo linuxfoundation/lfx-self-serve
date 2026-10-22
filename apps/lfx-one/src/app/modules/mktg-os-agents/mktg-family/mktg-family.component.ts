@@ -12,6 +12,7 @@ import {
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_KIT_STATE_LABELS,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
@@ -62,6 +63,8 @@ export class MktgFamilyComponent {
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
+  /** Why the family's lead agent cannot run yet: one copy for the tooltip and the note under the button. */
+  protected readonly pendingReason = computed(() => this.definition()?.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon']);
   protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();

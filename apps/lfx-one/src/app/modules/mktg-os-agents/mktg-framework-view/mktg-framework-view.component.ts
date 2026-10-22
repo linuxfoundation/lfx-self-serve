@@ -167,6 +167,8 @@ export class MktgFrameworkViewComponent {
     const approved = this.approvedAsset();
     return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>

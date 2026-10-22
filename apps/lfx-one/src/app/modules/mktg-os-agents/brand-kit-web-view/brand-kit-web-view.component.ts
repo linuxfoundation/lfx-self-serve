@@ -105,6 +105,8 @@ export class BrandKitWebViewComponent {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that could not be read. */

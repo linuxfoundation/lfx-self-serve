@@ -24,7 +24,7 @@
     }
     <div class="grow"></div>
     <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <span [pTooltip]="printView() ? '' : approvalRequiredNote" tooltipPosition="bottom" [attr.tabindex]="printView() ? '' : approvalRequiredNote ? 0 : null">
+      <span [pTooltip]="pdfTooltip()" tooltipPosition="bottom" [attr.tabindex]="pdfTooltip() ? 0 : null">
         <lfx-button
           label="Download PDF"
           icon="fa-light fa-file-pdf"
