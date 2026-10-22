@@ -39,7 +39,7 @@ export class MktgSlidesExportService {
   private readonly inFlight = new Map<string, Observable<MktgSlidesExportRunUpdate>>();
 
   /**
-   * The document's last export and its latest revision. A failed read is
+   * The document's last export and its approved current. A failed read is
    * logged and rethrown: the panel says the check failed and offers to
    * check again, never Create, since a deck may already exist.
    */

@@ -82,9 +82,11 @@ plain and sidecar `readLatest` return null when none is approved. Read failures
 propagate rather than being mislabeled as missing approval. Only the server's
 true pre-revision plain fallback remains; browser runs never supply attachments.
 Explicit export selectors must match approved current or fail instead of
-silently changing bytes. `readNewestRevisionRef` deliberately retains newest
-identity for export freshness comparison, so an approved export can be out of
-date when a newer Draft exists.
+silently changing bytes. Asset export freshness compares the last deck's content
+hash with approved current via `readApprovedCurrentSummary`, not the newest Draft.
+The existing `latestRevision` response field carries that approved identity, or
+null when none is approved (no stale badge). Selecting older approved content can
+also mark a deck out of date; revision number alone never determines freshness.
 
 ### Family exports
 

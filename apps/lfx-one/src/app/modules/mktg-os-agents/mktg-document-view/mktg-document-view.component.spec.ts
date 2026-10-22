@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
@@ -43,6 +44,7 @@ import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
+import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
 // Typed document fixtures and providers share one seam with sibling agents.
 import { Title } from '@angular/platform-browser';
@@ -164,7 +166,7 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   /** A Messaging Framework document whose latest revision is the framework's JSON, as the store serves it. */
-  function useFrameworkRevision(): void {
+  function useFrameworkRevision(viewingDraft = false): void {
     const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
     const content = {
       mf: {
@@ -208,9 +210,9 @@ describe('MktgDocumentViewComponent', () => {
       },
       nums: [['1,200', 'members']],
     };
-    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+    const approval = viewingDraft ? null : { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
     const jsonRevision = revision(2, { latest: true, format: 'json', status: '', approval });
-    const approvedCurrent = { revisionId: jsonRevision.id, number: jsonRevision.number };
+    const approvedCurrent = approval ? { revisionId: jsonRevision.id, number: jsonRevision.number } : null;
     store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision], approvedCurrent }));
     store.getRevision.mockReturnValue(
       of({
@@ -300,7 +302,7 @@ describe('MktgDocumentViewComponent', () => {
         ]),
         provideNoopAnimations(),
         MessageService,
-        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn() } },
+        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
@@ -1847,6 +1849,7 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/brand-kit/living');
 
     expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+    expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(false);
     expect(query('mktg-document-view-framework')).toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('@[800px]:col-span-2');
@@ -1877,6 +1880,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${draft.id}`);
     expect(query('mktg-document-view-version')?.textContent).toContain('v3');
     expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(true);
     expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v1, approved by Project writer');
     expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
     expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
@@ -1890,6 +1894,12 @@ describe('MktgDocumentViewComponent', () => {
       revisionId: approved.id,
       mode: 'create',
     });
+  });
+
+  it.each([true, false])('passes the viewed framework Draft state (%s) through to its export panel', async (viewingDraft) => {
+    useFrameworkRevision(viewingDraft);
+    await render('/documents/foundation-message/living');
+    expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(viewingDraft);
   });
 
   it.each(['loading', 'error'] as const)('keeps approved PDF/Slides disabled while the approved payload is %s', async (state) => {
