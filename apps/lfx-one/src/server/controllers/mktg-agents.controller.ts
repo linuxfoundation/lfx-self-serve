@@ -6,6 +6,7 @@ import {
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   FAQ_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -15,6 +16,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_CHAT_MESSAGE_MAX_CHARS,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -111,6 +113,17 @@ export class MktgAgentsController {
     if (!message || typeof message !== 'string' || !message.trim()) {
       next(
         ServiceValidationError.forField('message', 'message is required and must be a non-empty string', {
+          operation: 'mktg_agents_chat',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (message.trim().length > MKTG_CHAT_MESSAGE_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('message', `message must be at most ${MKTG_CHAT_MESSAGE_MAX_CHARS} characters`, {
           operation: 'mktg_agents_chat',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -1120,6 +1133,16 @@ export class MktgAgentsController {
     if (feedback !== undefined && typeof feedback !== 'string') {
       next(
         ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (typeof feedback === 'string' && feedback.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('feedback', `feedback must be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS} characters`, {
           operation: 'icp_generate',
           service: 'mktg_agents_controller',
           path: req.path,

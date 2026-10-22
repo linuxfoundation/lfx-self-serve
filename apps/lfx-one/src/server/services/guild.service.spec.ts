@@ -163,6 +163,84 @@ describe('GuildService.getRawEventPayloads', () => {
 });
 
 /**
+ * `trigger_message` content is user-authored and unbounded, so the history
+ * parser must keep every legitimate payload shape and run in linear time
+ * (CWE-1333, linuxfoundation/lfx-self-serve-ops#53): the former ```json regex
+ * stalled the event loop for seconds on a few KB of unclosed whitespace.
+ */
+describe('GuildService.getHistory — trigger_message parsing', () => {
+  let service: GuildService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    service = new GuildService();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  /** Resolves the user-visible text of a single trigger_message with the given content. */
+  async function triggerText(content: unknown): Promise<string | undefined> {
+    fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'trigger_message', created_at: '2026-01-01T00:00:00Z', content }]));
+    const messages = await service.getHistory(req, 'session-1');
+    return messages[0]?.text;
+  }
+
+  describe('payload shapes', () => {
+    it('reads text from a fenced JSON block', async () => {
+      expect(await triggerText('```json\n{"text":"hi"}\n```')).toBe('hi');
+    });
+
+    it('unwraps double-serialized text inside a fenced block', async () => {
+      expect(await triggerText('```json\n{"text":"{\\"text\\":\\"inner\\"}"}\n```')).toBe('inner');
+    });
+
+    it('reads agent_input.text from raw JSON', async () => {
+      expect(await triggerText('{"agent_input":{"text":"ai"}}')).toBe('ai');
+    });
+
+    it('falls back to plain text', async () => {
+      expect(await triggerText('hello')).toBe('hello');
+    });
+
+    it('reads a fenced block from object-form content', async () => {
+      expect(await triggerText({ data: '```json {"text":"obj"} ```' })).toBe('obj');
+    });
+
+    it('falls through to the plain-text fallback for an empty fenced block', async () => {
+      expect(await triggerText('```json```')).toBe('```json```');
+    });
+  });
+
+  describe('linear-time fence scan (ReDoS regression)', () => {
+    it('returns an unclosed fence followed by 1 MB of whitespace as plain text without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json' + ' '.repeat(1_000_000));
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('```json');
+      expect(elapsed).toBeLessThan(500);
+    });
+
+    it('parses a closed fence wrapping 1 MB of whitespace without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json {"text": "' + ' '.repeat(1_000_000) + 'x"} ```');
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('x');
+      expect(elapsed).toBeLessThan(500);
+    });
+  });
+});
+
+/**
  * Session-creation routing during the Guild mention-routing outage: the
  * body must carry the explicit `agent_id` (Guild's recommended
  * {agent_id, agent_input} format) ALONGSIDE the transitional `@handle`
