@@ -40,6 +40,7 @@ import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -192,7 +193,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions, resume: vi.fn(() => NEVER) } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged, documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
@@ -495,6 +496,47 @@ describe('MktgAgentRunComponent', () => {
       expect(answerQuestions).not.toHaveBeenCalled();
     });
 
+    it.each((['document', 'persisted'] as const).flatMap((event) => [false, true].map((receipted) => ({ event, receipted }))))(
+      'opens the selected older $event outcome, or recovers its exact attempt (receipt=$receipted)',
+      async ({ event, receipted }) => {
+        await configure('browser', target.agentId);
+        await fill();
+        const { request, attempts } = accepted();
+        const attempt = attempts.load(PROJECT_1.uid, target.agentId)?.attempt;
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === target.agentId);
+        if (!attempt || !type) throw new Error('Missing selected outcome fixture');
+        const location = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+        const run = storedRun(PROJECT_1.uid, '# Older replay', request.answers);
+        run.agentId = target.agentId;
+        run.sessionId = 'synthetic-newer-session';
+        run.ownerToken = 'synthetic-newer-proof';
+        if (receipted) run.versions[0].documentLocation = location;
+        run.versions.push({
+          version: 2,
+          document: '# Newer cached document',
+          createdAt: run.savedAt,
+          documentLocation: { ...location, revisionId: `000002-${'b'.repeat(64)}` },
+        });
+        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+        component['onProgress'](mktgRunProgressFixture(event, run, 1, attempt), PROJECT_1.uid);
+        await fixture.whenStable();
+        expect(navigate).toHaveBeenCalledTimes(1);
+        if (receipted) {
+          expect(navigate).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ queryParams: expect.objectContaining({ revision: location.revisionId }) })
+          );
+        } else {
+          const token = component['navigation']()?.generation;
+          expect(token).toBeTruthy();
+          expect(component['navigation']()?.revisionId).toBeUndefined();
+          expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)?.pending.attempt).toEqual(attempt);
+        }
+        expect(generate).not.toHaveBeenCalled();
+        expect(answerQuestions).not.toHaveBeenCalled();
+      }
+    );
+
     it.each([false, true])('admits only the current catalog asset receipt before navigation (foreign=%s)', async (foreign) => {
       await configure('browser', target.agentId);
       await fill();
@@ -506,7 +548,7 @@ describe('MktgAgentRunComponent', () => {
       const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
       run.agentId = target.agentId;
       run.versions[0].documentLocation = { agentKey: foreign ? other.agentKey : type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
-      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
+      component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
       await fixture.whenStable();
       if (foreign) {
         expect(navigate).not.toHaveBeenCalled();
@@ -542,13 +584,13 @@ describe('MktgAgentRunComponent', () => {
         );
       const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
       run.agentId = target.agentId;
-      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
+      component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
       const destination = component['navigation']();
       expect(destination?.generation).toBeTruthy();
       const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
       if (!type || !finish || !fail) throw new Error('Missing deferred document navigation');
       run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
-      component['onProgress']({ type: 'persisted', run }, PROJECT_1.uid);
+      component['onProgress'](mktgRunProgressFixture('persisted', run, 1), PROJECT_1.uid);
       expect(component['navigation']()).toBe(destination);
       expect(navigate).toHaveBeenCalledTimes(1);
       if (outcome === 'rejected') fail(new Error('Synthetic navigation rejection'));
@@ -586,8 +628,8 @@ describe('MktgAgentRunComponent', () => {
       const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
       run.agentId = target.agentId;
       run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
-      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
-      component['onProgress']({ type: 'persisted', run }, PROJECT_1.uid);
+      component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
+      component['onProgress'](mktgRunProgressFixture('persisted', run, 1), PROJECT_1.uid);
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(component['navigation']()).toBe(destination);
       if (!finish) throw new Error('Expected deferred navigation');
@@ -692,7 +734,9 @@ describe('MktgAgentRunComponent', () => {
     component['writingStretch'].set(true);
     component['activeRequest'] = missing === 'request' ? null : { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: {} };
     const progress: MktgGenerateProgress =
-      missing === 'run' ? { type: 'persisted', run: null } : { type: 'document', run: storedRun(PROJECT_1.uid, '# Synthetic asset', {}) };
+      missing === 'run'
+        ? mktgRunProgressFixture('persisted', null, 1)
+        : mktgRunProgressFixture('document', storedRun(PROJECT_1.uid, '# Synthetic asset', {}), 1);
     component['onProgress'](progress, PROJECT_1.uid);
     await fixture.whenStable();
     expect(component['phase']()).toBe('form');
@@ -710,7 +754,7 @@ describe('MktgAgentRunComponent', () => {
     component['phase'].set('running');
     component['writingStretch'].set(true);
     component['activeRequest'] = { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: {} };
-    component['onProgress']({ type: 'document', run: storedRun(PROJECT_2.uid, '# Foreign synthetic asset', {}) }, PROJECT_2.uid);
+    component['onProgress'](mktgRunProgressFixture('document', storedRun(PROJECT_2.uid, '# Foreign synthetic asset', {}), 1), PROJECT_2.uid);
     expect(component['phase']()).toBe('running');
     expect(component['writingStretch']()).toBe(true);
     expect(component['errorText']()).toBe('');
@@ -935,8 +979,8 @@ describe('MktgAgentRunComponent', () => {
       dependencyDocs = {};
       const progress: MktgGenerateProgress[] = [
         { type: 'submitted' },
-        { type: 'document', run: storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }) },
-        { type: 'persisted', run: null },
+        mktgRunProgressFixture('document', storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }), 1),
+        mktgRunProgressFixture('persisted', null, 1),
       ];
       generate.mockImplementation(() => from(progress));
       activeContext.set(PROJECT_1);
@@ -1615,18 +1659,21 @@ describe('MktgAgentRunComponent', () => {
 
       vi.useFakeTimers();
       try {
-        progress.next({
-          type: 'document',
-          run: {
-            agentId: 'boilerplates',
-            projectUid: 'proj-1',
-            sessionId: 'sess-bp',
-            ownerToken: 'token-bp',
-            answers: {},
-            versions: [{ version: 1, document: '', asset: BOILERPLATES, createdAt: '2026-10-19T09:00:00.000Z' }],
-            savedAt: '2026-10-19T09:00:00.000Z',
-          },
-        });
+        progress.next(
+          mktgRunProgressFixture(
+            'document',
+            {
+              agentId: 'boilerplates',
+              projectUid: 'proj-1',
+              sessionId: 'sess-bp',
+              ownerToken: 'token-bp',
+              answers: {},
+              versions: [{ version: 1, document: '', asset: BOILERPLATES, createdAt: '2026-10-19T09:00:00.000Z' }],
+              savedAt: '2026-10-19T09:00:00.000Z',
+            },
+            1
+          )
+        );
         vi.advanceTimersByTime(600);
       } finally {
         vi.useRealTimers();
@@ -2178,7 +2225,7 @@ describe('MktgAgentRunComponent', () => {
           { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
         ];
         const run = assetRun([{ version: 1, document: '', asset: ASSET, questions: QUESTIONS, answers, createdAt: '2026-10-17T00:00:00.000Z' }]);
-        answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'document', run }]));
+        answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, mktgRunProgressFixture('document', run, 1)]));
 
         await click('mktg-run-questions-next');
         await type('words-to-avoid', 'Avoid "synergy".');

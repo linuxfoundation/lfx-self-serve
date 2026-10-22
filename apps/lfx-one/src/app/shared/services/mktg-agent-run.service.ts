@@ -417,7 +417,12 @@ export class MktgAgentRunService {
         }
         const { run, version } = this.appendVersion(request, attempt, result, answered);
         this.attempts.clear(request.projectUid, request.agentId, subject);
-        return concat(activity$, of<MktgGenerateProgress>({ type: 'document', run }), this.retryPersistence(request, attempt.session, result, version));
+        const documentLocation = run.versions.find((entry) => entry.version === version)?.documentLocation ?? null;
+        return concat(
+          activity$,
+          of<MktgGenerateProgress>({ type: 'document', run, documentLocation, attempt }),
+          this.retryPersistence(request, attempt, result, version)
+        );
       })
     );
   }
@@ -543,14 +548,14 @@ export class MktgAgentRunService {
    */
   private retryPersistence(
     request: MktgGenerateRequest,
-    session: MktgSessionInfo,
+    attempt: MktgRunAttempt,
     result: MktgRunResultResponse,
     version: number
   ): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
-    const body = this.resultBody(session, request.projectUid);
+    const body = this.resultBody(attempt.session, request.projectUid);
     const subject = this.attempts.subject();
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
@@ -574,12 +579,15 @@ export class MktgAgentRunService {
       // Inclusive takeWhile emits that matching response and then completes.
       takeWhile((response) => !matches(response), true),
       filter(matches),
-      map(
-        (response): MktgGenerateProgress => ({
+      map((response): MktgGenerateProgress => {
+        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
+        return {
           type: 'persisted',
-          run: subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null,
-        })
-      )
+          run,
+          attempt: run ? attempt : null,
+          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
+        };
+      })
     );
   }
 

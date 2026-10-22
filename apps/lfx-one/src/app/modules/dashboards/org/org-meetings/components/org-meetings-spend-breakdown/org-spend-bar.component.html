@@ -5,6 +5,11 @@
   <div class="mb-3.5 flex items-center gap-2">
     <i [class]="icon()" class="text-base text-blue-600" aria-hidden="true"></i>
     <span class="text-sm font-medium text-gray-900">{{ title() }}</span>
+    @if (totalAttendances() > 0) {
+      <span class="ml-auto text-xs text-gray-500" [attr.data-testid]="'org-spend-bar-' + titleSlug() + '-total'"
+        >{{ totalAttendances() | number }} attendances</span
+      >
+    }
   </div>
   <div class="flex flex-col gap-3">
     <!-- aria-expanded is only valid on a widget role, so the row that owns the disclosure also takes

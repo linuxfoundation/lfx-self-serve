@@ -2,12 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { test } from '@playwright/test';
+import { ICP_INTAKE } from '@lfx-one/shared/constants';
 import { leaveAndReturnToAsset, RETURNING_AGENT_TYPES } from './helpers/mktg-os-asset-return.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 test.describe('Marketing OS leave-and-return result recovery', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  test('recovers the selected older outcome instead of a newer cached receipt', async ({ page }) => {
+    const type = RETURNING_AGENT_TYPES.find((entry) => entry.catalogAgentId === ICP_INTAKE.agentId);
+    if (!type) throw new Error('Missing registered Markdown recovery fixture');
+    await leaveAndReturnToAsset(page, type, true);
+    await page.screenshot({ path: test.info().outputPath('older-replay-exact-revision.png'), fullPage: true });
+  });
   for (const type of RETURNING_AGENT_TYPES) {
     test(`${type.agentKey}: Generate, leave mid-run, open the recorded asset and land its revision`, async ({ page }) => {
       await leaveAndReturnToAsset(page, type);

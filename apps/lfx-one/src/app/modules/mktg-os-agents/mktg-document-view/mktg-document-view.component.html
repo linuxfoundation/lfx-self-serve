@@ -242,8 +242,7 @@
       </ng-template>
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
-        <!-- Structured assets span the full page; Markdown retains its document column. -->
-        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
+        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
           @if (current.type.kind === 'living' && !current.revision.latest) {
             @let active = currentRevision();
             @let viewedAuthor = viewedAuthorLabel();
@@ -312,6 +311,7 @@
           <!-- History precedes the asset headers in DOM, preserving its keyboard summary after Back. -->
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
+              class="block min-w-0"
               [projectName]="projectName()"
               [asset]="framework"
               state="ready"
@@ -324,6 +324,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-framework">
               <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
@@ -331,6 +332,7 @@
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
             <lfx-mktg-boilerplates-view
+              class="block min-w-0"
               [projectName]="projectName()"
               [asset]="boilerplatesAsset"
               [version]="current.revision.number"
@@ -341,6 +343,7 @@
             </lfx-mktg-boilerplates-view>
           } @else if (faq(); as faqAsset) {
             <lfx-mktg-faq-view
+              class="block min-w-0"
               [projectName]="projectName()"
               [asset]="faqAsset"
               [version]="current.revision.number"
@@ -352,6 +355,7 @@
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view
+              class="block min-w-0"
               [kit]="kit"
               [version]="current.revision.number"
               [showMetadata]="false"
@@ -361,6 +365,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-brand-kit">
               <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
@@ -390,7 +395,7 @@
           }
         </section>
 
-        <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
+        <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>

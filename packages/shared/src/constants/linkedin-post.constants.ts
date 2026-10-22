@@ -3,6 +3,9 @@
 
 import type { LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
 
+/** Provenance belongs to the pushed edit history entry, not the previous route. */
+export const LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY = 'mktgEditPushed';
+
 /** Verbatim Step 1/2 copy and defaults from the live agent src/profile.ts. */
 export const LINKEDIN_ABOUT_FIELDS = [
   { key: 'name', label: 'Name', ask: 'Their name' },

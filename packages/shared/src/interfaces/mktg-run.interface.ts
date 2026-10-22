@@ -1189,8 +1189,9 @@ export type MktgGenerateProgress =
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
-  | { type: 'document'; run: MktgStoredAgentRun }
-  | { type: 'persisted'; run: MktgStoredAgentRun | null };
+  /** The selected outcome, not necessarily the newest cached version; null location keeps its accepted attempt recoverable. */
+  | { type: 'document'; run: MktgStoredAgentRun; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt }
+  | { type: 'persisted'; run: MktgStoredAgentRun | null; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt | null };
 
 /** Subject/project/agent-bound client attempt, retained BEFORE the first POST and through accepted answers. */
 export interface MktgPendingGeneration {
