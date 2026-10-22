@@ -66,12 +66,15 @@ test.describe('Marketing family responsive structure', () => {
           await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
           const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === familyId);
           const runnable = MKTG_AGENTS.find((agent) => family?.agentIds.includes(agent.id) && agent.status === 'active');
-          const runButton = page.getByTestId('mktg-family-run').locator('a, button').first();
+          const runButton = page.getByTestId('mktg-family-run').getByRole('button');
           const run = await page.getByTestId('mktg-family-run').boundingBox();
           expect(run).not.toBeNull();
           if (runnable) {
             await expect(runButton).toBeVisible();
-            await expect(runButton).toHaveAccessibleName(new RegExp(`Run (next agent: )?${runnable.name}`));
+            const asset = family?.assets.find((row) =>
+              MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === runnable.id)
+            );
+            await expect(runButton).toHaveAccessibleName('Run ' + (asset?.runName ?? asset?.label ?? runnable.name));
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {
             await expect(runButton).toBeDisabled();

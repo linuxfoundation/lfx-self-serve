@@ -71,7 +71,7 @@ test.describe('Marketing family content', () => {
     // Nothing is stale, so the header offers no rebuild.
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
-    await expect(page.getByTestId('mktg-family-exports')).toContainText('Coming soon');
+    await expect(page.getByTestId('mktg-family-exports')).toContainText("Exports use the family's approved current assets.");
   });
   test('stored asset opens its document view, preserving project scope', async ({ page }) => {
     await setupKit(page, { loaded: true });
@@ -171,16 +171,16 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('labels a disabled Run, including a pending catalog agent, with no rebuild outside Positioning', async ({ page }) => {
+  test('labels disabled and active Run controls with no rebuild outside Positioning', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveText('Coming soon');
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
-    await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
-    await expect(page.getByTestId('mktg-family-run').getByRole('button')).toHaveAccessibleName('Run Member 360 (coming soon)');
-    await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveText('Coming soon — the Member 360 page is on its way');
+    await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-family-run').getByRole('button')).toHaveAccessibleName('Run Member 360');
+    await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-coming-soon')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-asset-member-360')).toBeVisible();
   });

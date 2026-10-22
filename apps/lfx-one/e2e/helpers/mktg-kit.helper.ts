@@ -216,6 +216,14 @@ export async function setupKit(
   });
   // Safety net: abort and FAIL the test for unexpected reads or writes, never hide a path regression.
   await page.route((url) => url.pathname.startsWith('/api/mktg-'), rejectUnexpected);
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/slides-export/family/last',
+    (route) => {
+      const familyId = new URL(route.request().url()).searchParams.get('familyId');
+      if (!isProjectRead(route) || !familyId) return rejectUnexpected(route);
+      return kitJson(route, { last: null, currentMembers: [], skippedMembers: [], stale: false });
+    }
+  );
   const intakePaths = new Set(
     MKTG_DOCUMENT_TYPES.filter((type) => !!findMktgRunIntake(type.agentKey)).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
   );

@@ -88,7 +88,11 @@ name; header pending copy remains a fallback. Catalog identity still controls ro
 availability. Row headings and the Agents grid's catalog names are not renamed.
 Every available living row offers Run for its active, non-excluded catalog agent with a
 registered intake, whether Missing, Draft, Approved or Needs rebuild. Coming-soon and one-off
-rows do not gain this action. Living header/row Run and asset Run again open `?mode=new`,
+rows do not gain this action. Required approved-document dependencies still disable row actions
+with the same reason as the run page. The header keeps its state-driven priority: Rebuild what
+is stale, otherwise Run next agent for the first missing asset, otherwise the lead agent.
+Adding built-row actions does not change which missing asset the header selects.
+Living header/row Run and asset Run again open `?mode=new`,
 clearing old questions/generation/revision/run selectors; the Sources page still waits for
 explicit Start. This per-row action is a provisional addition: the Family board depicts only
 the header framework Run. Dedicated one-off routing/availability and breadcrumbs stay unchanged.
