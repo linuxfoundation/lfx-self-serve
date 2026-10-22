@@ -7,6 +7,23 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Intake size boundary
+
+The Brand Kit, Messaging Framework, Boilerplates, FAQ and ICP generate endpoints
+validate intake answer lengths in the shared validators before parsing attached
+framework JSON or calling a generation service. Oversized answers return HTTP 400
+through the existing `ServiceValidationError` path; no Guild session is created.
+The policy lives in `packages/shared/src/constants/mktg-intake.constants.ts`.
+
+Limits count submitted UTF-16 code units **before trimming**, including whitespace:
+project names take up to 200 characters, individual URLs 2,048, and descriptions,
+notes and short ICP answers 4,000. The Messaging Framework's `links` answer keeps
+its existing link-count limit, with a per-URL cap and an aggregate budget allowing
+CRLF separators. Whole ICP sibling documents take up to 400,000 characters each;
+attached messaging-framework JSON keeps the existing 400,000-character limit.
+Uploaded document text and logo payloads retain their separate existing budgets.
+These intake limits do not change the chat-message or ICP-feedback size gates.
+
 ## Run outcomes
 
 Catalog result controllers await `GuildService.resolveRunOutcome` after authorization

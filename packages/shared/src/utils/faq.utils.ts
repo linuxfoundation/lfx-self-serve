@@ -76,6 +76,8 @@ import {
   validateFoundationMessageAnswers,
 } from './foundation-message.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>(FAQ_ANSWER_KEYS);
@@ -142,7 +144,10 @@ export function validateFaqIntakeAnswers(answers: unknown): FaqValidationResult 
   if (!isObject(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(answers, MKTG_INTAKE_ANSWER_LIMITS.faq);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = answers['project_name'];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
