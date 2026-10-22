@@ -301,7 +301,7 @@ describe('VoteService', () => {
       expect(service.isAwaitingInvitationCount('v1')).toBe(false);
     });
 
-    it('keeps the just-opened carrier while the index reports the open status before its electorate', () => {
+    it('keeps the just-opened carrier while the index reports a non-draft status before its electorate', () => {
       service.markVoteOpened('v1');
       const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
 
