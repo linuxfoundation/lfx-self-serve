@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
+import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -20,6 +21,7 @@ export class ImpersonationBannerComponent {
   private readonly impersonationService = inject(ImpersonationService);
   private readonly dialogService = inject(DialogService);
   protected readonly userService = inject(UserService);
+  protected readonly truncatedLabels = signal<ReadonlySet<string>>(new Set());
   protected readonly transitioning = computed(() => this.impersonationService.transition() !== null);
   protected readonly transitionMessage = computed(() => {
     const transition = this.impersonationService.transition();
@@ -35,6 +37,11 @@ export class ImpersonationBannerComponent {
       resizable: false,
       data: { switching: true },
     });
+  }
+
+  /** Records whether a banner label is cut off, so its tooltip only shows when it adds something. */
+  protected onLabelEnter(key: string, event: Event): void {
+    this.truncatedLabels.set(updateTruncatedKeys(this.truncatedLabels(), key, event.currentTarget as HTMLElement));
   }
 
   protected stopImpersonation(): void {

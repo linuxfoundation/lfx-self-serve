@@ -6,7 +6,7 @@
     role="status"
     aria-live="polite"
     aria-label="Impersonation active"
-    class="fixed top-0 left-0 right-0 z-[60] flex h-[36px] items-center justify-center gap-2 overflow-hidden whitespace-nowrap bg-yellow-400 px-4 text-sm font-medium text-black"
+    class="fixed top-0 left-0 right-0 z-[60] flex h-[36px] items-center justify-center gap-2 overflow-hidden whitespace-nowrap bg-yellow-400 px-4 text-xs font-medium text-black"
     data-testid="impersonation-banner">
     @if (transitionMessage(); as message) {
       <!-- Pure-CSS spinner: the Font Awesome kit is deferred and must not gate a loading indicator (see styling.md). -->
@@ -15,27 +15,40 @@
     } @else {
       <i class="fa-light fa-eye shrink-0 text-sm" aria-hidden="true"></i>
       <!-- One line at every width: the banner height is a fixed layout offset, so lower-priority text drops out and the email truncates instead of wrapping. -->
-      <span class="min-w-0 truncate" [pTooltip]="userService.user()?.email" tooltipEvent="both" tooltipPosition="bottom" tabindex="0" role="note"
+      <!-- Tooltips only show when a label is actually cut off (measured on hover/focus); otherwise they repeat visible text. -->
+      <span
+        class="min-w-0 truncate"
+        [pTooltip]="truncatedLabels().has('email') ? userService.user()?.email : ''"
+        tooltipEvent="both"
+        tooltipPosition="bottom"
+        (mouseenter)="onLabelEnter('email', $event)"
+        (focus)="onLabelEnter('email', $event)"
+        tabindex="0"
+        role="note"
         ><span class="hidden sm:inline">Viewing as </span><strong>{{ userService.user()?.email }}</strong></span
       >
       <span
         class="hidden min-w-0 truncate text-black/60 md:inline"
-        [pTooltip]="userService.impersonator()?.name"
+        [pTooltip]="truncatedLabels().has('impersonator') ? userService.impersonator()?.name : ''"
         tooltipEvent="both"
         tooltipPosition="bottom"
+        (mouseenter)="onLabelEnter('impersonator', $event)"
+        (focus)="onLabelEnter('impersonator', $event)"
         tabindex="0"
         role="note"
         >— by {{ userService.impersonator()?.name }}</span
       >
     }
     <!-- Short labels below sm leave the email room to show; the full labels return from sm up. -->
-    <div class="ml-2 flex shrink-0 items-center gap-2 sm:ml-4">
+    <!-- !h-[22px] / !px-[8px]: exact design sizes; h-6 and px-2 would undershoot on the 14px root. -->
+    <!-- Resting border stays non-important: Tailwind emits hover: variants unlayered, and a layered !important would beat hover:!border-black. -->
+    <div class="ml-1 flex shrink-0 items-center gap-2">
       <lfx-button
         severity="contrast"
         size="small"
         [outlined]="true"
         [rounded]="true"
-        styleClass="!h-[24px] !py-0 !px-3 !border-black/30 !text-black hover:!border-black hover:!bg-transparent"
+        styleClass="!h-[22px] !py-0 !px-[8px] border-black/30 !text-black hover:!border-black hover:!bg-transparent"
         [disabled]="transitioning()"
         (onClick)="openSwitchDialog()"
         data-testid="switch-impersonation-button">
@@ -45,7 +58,7 @@
         severity="contrast"
         size="small"
         [rounded]="true"
-        styleClass="!h-[24px] !py-0 !px-3 hover:!border-gray-800 hover:!bg-gray-800"
+        styleClass="!h-[22px] !py-0 !px-[8px] hover:!border-gray-800 hover:!bg-gray-800"
         [disabled]="transitioning()"
         [loading]="transitioning()"
         (onClick)="stopImpersonation()"
