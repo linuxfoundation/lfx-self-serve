@@ -90,12 +90,6 @@ export class VoteCastDrawerComponent {
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
-  // Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality branch — see isRankedPollType.
-  protected readonly isGenericPoll: Signal<boolean> = computed(() => {
-    const v = this.vote();
-    if (!v) return false;
-    return !isRankedPollType(v.poll_type);
-  });
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
@@ -293,9 +287,14 @@ export class VoteCastDrawerComponent {
           // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
           // same value.
           const lastDetail = lastVoteId === id ? lastVote : null;
-          // #4075: never trust an unconfirmed list-row poll_type for the ranked/single-choice decision —
-          // wait for a confirmed detail fetch. A missing poll_type already defaults to non-ranked everywhere
-          // it's read, so this can only bias an unconfirmed render toward the safe single-choice shape.
+          // #4075: never trust an unconfirmed list-row poll_type for the ranked/single-choice decision
+          // while the first detail fetch for this vote is in flight — wait for a confirmed fetch. A
+          // missing poll_type already defaults to non-ranked everywhere it's read, so this transient
+          // startWith emission can only bias toward the safe single-choice shape. If the fetch then
+          // fails outright with no cached detail to fall back to, degrade to the list row's own
+          // poll_type (per @dealako, #4076 review) rather than a doubly-unconfirmed guess — matching
+          // how every other field (poll_questions, etc.) already behaves in that terminal-failure state.
+          const listFallback = listVote ?? null;
           let fallback = lastDetail ?? (listVote ? { ...listVote, poll_type: undefined } : null);
           if (lastDetail && listVote) {
             fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
@@ -309,7 +308,7 @@ export class VoteCastDrawerComponent {
               lastVoteId = id;
               lastVote = v;
             }),
-            catchError(() => of(fallback)),
+            catchError(() => of(lastDetail ? fallback : listFallback)),
             finalize(() => this.loadingVote.set(false)),
             startWith(fallback)
           );

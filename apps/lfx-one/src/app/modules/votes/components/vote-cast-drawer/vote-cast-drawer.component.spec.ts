@@ -317,3 +317,28 @@ describe('VoteCastDrawerComponent — majority poll_type renders single-choice (
     expect(payload.userVoteContent[0]['ranked_choices']).toBeUndefined();
   });
 });
+
+/**
+ * PR #4076 review (dealako, copilot-pull-request-reviewer): the first-open fallback strips poll_type
+ * from an unconfirmed listVote so an unconfirmed majority claim can't flip the ballot to ranked (see
+ * the block above) — but stripping it unconditionally also meant a failed first detail fetch for a
+ * genuinely ranked vote fell back to that same stripped value, silently downgrading it to a
+ * submittable single-choice ballot. Pins the fix: the terminal-failure fallback (no cached detail to
+ * fall back to) restores the list row's own poll_type instead of the stripped transient one.
+ */
+describe('VoteCastDrawerComponent — ranked listVote survives a failed first-open detail fetch (#4076 review)', () => {
+  it('keeps a ranked listVote classified as ranked when the first detail fetch fails outright', async () => {
+    const rankedListVote: Vote = { ...VOTE, poll_type: PollType.INSTANT_RUNOFF_VOTE };
+    await setup(vi.fn().mockReturnValue(throwError(() => new Error('500'))));
+
+    fixture.componentRef.setInput('voteId', rankedListVote.uid);
+    fixture.componentRef.setInput('listVote', rankedListVote);
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['isRankedPoll']()).toBe(true);
+    expect(el('vote-cast-rank-c1')).toBeTruthy();
+    expect(el('vote-cast-choice-c1')).toBeNull();
+  });
+});
