@@ -9,7 +9,7 @@ test.describe('Marketing family content', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
-  test('opens from the kit, shows stored versions, and leaves exports and rebuild inert', async ({ page }) => {
+  test('opens from the kit, shows stored versions, leaves exports inert and offers no rebuild', async ({ page }) => {
     await setupKit(page, { loaded: true });
     await openKit(page);
     await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
@@ -25,9 +25,11 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-sources')).toContainText('Sources read on the last run: project.example, Synthetic plan.');
     await expect(page.getByTestId('mktg-family-sources')).toContainText('2 sources failed: README: Timed out; Analyst note: Login required.');
     await expect(page.getByTestId('mktg-family-approve')).toContainText('Any project writer approves an asset in October.');
-    for (const id of ['family-export-pdf', 'family-export-slides', 'mktg-family-rebuild']) {
+    for (const id of ['family-export-pdf', 'family-export-slides']) {
       await expect(page.getByTestId(id).getByRole('button')).toBeDisabled();
     }
+    // Nothing is stale, so the header offers no rebuild.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
     await expect(page.getByTestId('mktg-family-exports')).toContainText('Coming soon');
   });
@@ -47,10 +49,11 @@ test.describe('Marketing family content', () => {
     await expect(page).toHaveURL(/\/mktg-os-agents\?project=kit-synthetic-project$/);
     await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
   });
-  test('runs the family’s first catalog agent without making a live generation request', async ({ page }) => {
+  test('runs the family’s next agent without making a live generation request', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/positioning-brand');
-    await page.getByTestId('mktg-family-run').getByRole('button').click();
+    await expect(page.getByTestId('mktg-family-run-next')).toHaveText('Next: Messaging framework');
+    await page.getByTestId('mktg-family-run').getByRole('link').click();
     await expect(page).toHaveURL(/\/mktg-os-agents\/foundation-setup\?project=/);
     await expect(page.getByTestId('mktg-agent-run-page')).toBeVisible();
   });
@@ -133,12 +136,12 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('labels disabled Run and Rebuild independently, including a pending catalog agent', async ({ page }) => {
+  test('labels a disabled Run, including a pending catalog agent, with no rebuild outside Positioning', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveText('Coming soon');
-    await expect(page.getByTestId('mktg-family-rebuild-unavailable')).toHaveText('Coming soon');
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toHaveAccessibleName('Run Member 360 (coming soon)');

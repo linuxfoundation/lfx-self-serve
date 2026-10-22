@@ -70,11 +70,12 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     expect(calls.starts).toEqual(['boilerplates', 'faq']);
   });
 
-  test('empty and unknown historical provenance never enable a false rebuild', async ({ page }) => {
+  test('empty and unknown historical provenance never offer a false rebuild', async ({ page }) => {
     await setupStaleness(page, { empty: true });
     await openStaleness(page);
     await expect(page.getByTestId('mktg-family-state-messaging-framework')).toContainText('Not run yet');
-    await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
+    // Rebuild is offered only when something is stale.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
   });
   test('unknown provenance has no Downstream warning', async ({ page }) => {
     await setupStaleness(page, { unknown: true });
@@ -86,7 +87,8 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await setupStaleness(page, { stale: false });
     await openStaleness(page);
     await expect(page.getByTestId('mktg-family-state-boilerplates')).toContainText('Approved');
-    await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
+    // Rebuild is offered only when something is stale.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
   });
   test('shows listing errors separately from Missing and offers retry', async ({ page }) => {
     await setupStaleness(page, { listError: true });
@@ -94,13 +96,15 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await expect(page.getByTestId('mktg-family-error')).toContainText('could not be loaded');
     await expect(page.getByTestId('mktg-family-error-retry')).toBeVisible();
     await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
+    // Rebuild is offered only when something is stale.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
   });
   test('requires write access without calling any rebuild endpoint', async ({ page }) => {
     const calls = await setupStaleness(page, { writer: false });
     await openStaleness(page);
     await expect(page.getByTestId('mktg-family-error')).toContainText('write access');
-    await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
+    // Rebuild is offered only when something is stale.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     expect(calls.starts).toEqual([]);
   });
   test('has a real loading state before the listing arrives', async ({ page }) => {
@@ -111,7 +115,8 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await setupStaleness(page, { holdListing: held });
     await openStaleness(page, STALENESS_FAMILY_URL);
     await expect(page.getByTestId('mktg-family-loading')).toBeVisible();
-    await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
+    // Rebuild is offered only when something is stale.
+    await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     release();
     await expect(page.getByTestId('mktg-family-state-faq')).toContainText('Needs rebuild');
   });

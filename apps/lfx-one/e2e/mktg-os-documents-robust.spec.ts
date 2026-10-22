@@ -62,7 +62,7 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
     await page.getByTestId('mktg-breadcrumb-link-0').click();
     await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
-    // Enter via the fifth tab, then select the type to exercise content-ready scrolling.
+    // Enter via the fourth tab, then select the type to exercise content-ready scrolling.
     await page.getByTestId('mktg-kit-tab-documents').click();
     await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
     await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(5);

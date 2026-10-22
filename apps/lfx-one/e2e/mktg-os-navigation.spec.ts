@@ -31,11 +31,11 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
   });
 
-  test('Documents is the fifth tab, lists all assets and filters by type in the URL', async ({ page }) => {
+  test('Documents is the fourth tab, lists all assets and filters by type in the URL', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await page.getByTestId('mktg-kit-tab-documents').click();
-    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(5);
+    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
     await expect(page.getByTestId('mktg-documents-all')).toContainText(DOCUMENT_TYPE.label);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
     if (!type) throw new Error('Synthetic navigation test requires a catalog run type');
@@ -71,7 +71,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       history.pushState({}, '', `/project/mktg-os-agents/not-catalogued?project=${project}`);
       dispatchEvent(new PopStateEvent('popstate'));
     }, DOCUMENT_PROJECT.slug);
-    await expect(page.getByTestId('mktg-os-agents-page')).toBeVisible();
+    // No Agents tab any more: an unrunnable agent URL lands on the Kit.
+    await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
     await page.goBack();
     await expect(page.getByTestId('mktg-documents-page')).toBeVisible();
   });
