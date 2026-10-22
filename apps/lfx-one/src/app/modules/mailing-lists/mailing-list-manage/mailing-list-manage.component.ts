@@ -381,7 +381,7 @@ export class MailingListManageComponent {
         return project ? `${this.cleanSlug(project.slug)}` : '';
       }
 
-      return this.selectedService()?.prefix || '';
+      return this.normalizePrefix(this.selectedService()?.prefix);
     });
   }
 
@@ -456,7 +456,7 @@ export class MailingListManageComponent {
     // Strip prefix from group_name in edit mode to prevent double-prefixing on submit
     // The prefix is added back in prepareMailingListData when submitting
     let groupName = mailingList.group_name;
-    const servicePrefix = mailingList.service?.prefix;
+    const servicePrefix = this.normalizePrefix(mailingList.service?.prefix);
 
     if (servicePrefix && mailingList.service?.type !== GroupsIOServiceType.PRIMARY) {
       const prefixWithSeparator = `${servicePrefix}-`;
@@ -555,6 +555,15 @@ export class MailingListManageComponent {
    */
   private cleanSlug(slug: string): string {
     return slug?.replace(/_/g, '-').replace(/^-*|-*$/g, '') || '';
+  }
+
+  /**
+   * Strips trailing hyphens from a stored service prefix. Some services are stored with a
+   * trailing hyphen (e.g. `example-project-`) and some without; the group name is always built as
+   * `${prefix}-${name}`, so a trailing hyphen would produce `--`, which Groups.io rejects.
+   */
+  private normalizePrefix(prefix?: string | null): string {
+    return prefix?.replace(/-+$/, '') || '';
   }
 
   /**
