@@ -1,7 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- On the body: the page column is a size container, which would otherwise trap this fixed panel inside it. -->
 <p-drawer
+  appendTo="body"
   [(visible)]="visible"
   position="right"
   [modal]="true"

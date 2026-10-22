@@ -82,8 +82,8 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
 };
 
 /**
- * The project selector's scope on views that denormalize an all-projects roll-up row: a null slug
- * reads the roll-up, since summing per-project rows would double-count shared meetings and people.
+ * The optional project scope on views that denormalize an all-projects roll-up row (the page no longer sends one):
+ * a null slug reads the roll-up, since summing per-project rows would double-count shared meetings and people.
  */
 const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)';
 

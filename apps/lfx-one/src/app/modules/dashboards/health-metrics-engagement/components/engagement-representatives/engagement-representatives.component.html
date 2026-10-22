@@ -84,7 +84,7 @@
         @let period = view.period;
         <tr [attr.data-testid]="'engagement-representatives-row-' + row.key">
           <td>
-            <!-- The organization rides under the name, as in the design; 11.5px is its exact size. -->
+            <!-- The organization rides under the name, as in the design. -->
             <div class="flex flex-col gap-0.5">
               <span class="text-[13px] font-medium" [class]="row.identityUnresolved ? 'italic text-gray-500' : 'text-gray-900'">{{ view.displayName }}</span>
               @if (view.orgLabel !== '—') {

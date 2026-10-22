@@ -55,16 +55,17 @@
             }
           </div>
           <!-- Narrow headers trade the pill for a dropdown. -->
-          <select
-            aria-label="Period"
-            class="h-[30px] rounded-full border border-gray-200 bg-white px-[10px] text-[12px] font-medium text-gray-700 outline-none @[820px]/hmhead:hidden"
-            [value]="chrome.selectedRange()"
-            (change)="selectPeriod($event)"
-            data-testid="health-metrics-period-select">
-            @for (period of chrome.periods; track period.range) {
-              <option [value]="period.range" [selected]="period.range === chrome.selectedRange()">{{ period.label }}</option>
-            }
-          </select>
+          <div class="@[820px]/hmhead:hidden">
+            <lfx-select
+              [form]="periodForm"
+              control="range"
+              [options]="periodOptions"
+              optionLabel="label"
+              optionValue="range"
+              ariaLabel="Period"
+              styleClass="!h-[30px] items-center !rounded-full !border-gray-200 [&_.p-select-label]:!text-[12px] [&_.p-select-label]:font-medium [&_.p-select-label]:text-gray-700"
+              data-testid="health-metrics-period-select" />
+          </div>
         </div>
       </div>
 

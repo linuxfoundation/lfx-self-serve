@@ -6,9 +6,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { NgClass } from '@angular/common';
+import { SelectComponent } from '@components/select/select.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { FormControl, FormGroup } from '@angular/forms';
+import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 import { HealthMetricsGateComponent } from './health-metrics-gate.component';
@@ -36,7 +40,7 @@ describe('HealthMetricsGateComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
-        set: { imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, LegacyStubComponent] },
+        set: { imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, SelectComponent, LegacyStubComponent] },
       })
       .compileComponents();
 
@@ -61,6 +65,10 @@ describe('HealthMetricsGateComponent', () => {
   async function settle(): Promise<void> {
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function periodForm(): FormGroup<{ range: FormControl<HealthMetricsRange> }> {
+    return (fixture.componentInstance as unknown as { periodForm: FormGroup<{ range: FormControl<HealthMetricsRange> }> }).periodForm;
   }
 
   function currentUrl(): string {
@@ -202,7 +210,8 @@ describe('HealthMetricsGateComponent', () => {
       expect(pills.map((pill) => pill.textContent?.trim())).toEqual(chrome.periods.map((period) => period.label));
       expect(pills).toHaveLength(4);
       expect(pills.find((pill) => pill.getAttribute('aria-pressed') === 'true')?.textContent?.trim()).toBe('YTD');
-      expect((query('health-metrics-period-select') as HTMLSelectElement).value).toBe('YTD');
+      expect(query('health-metrics-period-select')).not.toBeNull();
+      expect(periodForm().controls.range.value).toBe('YTD');
     });
 
     it('shows the year-to-date span only while YTD is selected', async () => {
@@ -215,16 +224,17 @@ describe('HealthMetricsGateComponent', () => {
       expect(query('health-metrics-period-range')).toBeNull();
     });
 
-    it('sets the period from the dropdown', async () => {
+    it('sets the period from the dropdown, and keeps the dropdown in step with the pill', async () => {
       await render(signal(true));
-      const select = query('health-metrics-period-select') as HTMLSelectElement;
       const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
 
-      select.value = chrome.periods[0].range;
-      select.dispatchEvent(new Event('change'));
+      periodForm().controls.range.setValue(chrome.periods[0].range);
       await settle();
-
       expect(chrome.selectedRange()).toBe(chrome.periods[0].range);
+
+      (query('health-metrics-overview-period-selector')?.querySelectorAll('button')[1] as HTMLButtonElement).click();
+      await settle();
+      expect(periodForm().controls.range.value).toBe(chrome.periods[1].range);
     });
   });
 

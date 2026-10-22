@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { SelectComponent } from '@components/select/select.component';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -14,7 +16,7 @@ import { HealthMetricsComponent } from '../health-metrics/health-metrics.compone
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 import type { IsActiveMatchOptions } from '@angular/router';
-import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
 
 /**
  * Route target for `foundation/health-metrics`. Renders the legacy page by default (server and
@@ -45,7 +47,7 @@ import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
-  imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent],
+  imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent, SelectComponent],
   providers: [HealthMetricsChromeService],
   templateUrl: './health-metrics-gate.component.html',
   styleUrl: './health-metrics-gate.component.scss',
@@ -60,6 +62,9 @@ export class HealthMetricsGateComponent {
   protected readonly basePath = HEALTH_METRICS_BASE_PATH;
   protected readonly tabs: readonly HealthMetricsTab[] = HEALTH_METRICS_TABS;
   protected readonly ytdRangeLabel = buildHealthMetricsYtdRangeLabel(new Date());
+  protected readonly periodOptions = [...this.chrome.periods];
+  /** The narrow header's dropdown, kept in step with the pill through the shared period. */
+  protected readonly periodForm = new FormGroup({ range: new FormControl<HealthMetricsRange>(this.chrome.selectedRange(), { nonNullable: true }) });
 
   // queryParams must be `ignored` rather than the `{ exact: true }` shorthand's `exact` — the tab
   // links carry no query params of their own while the URL always carries `foundationSlug`.
@@ -76,6 +81,7 @@ export class HealthMetricsGateComponent {
 
   public constructor() {
     afterNextRender(() => this.hydrated.set(true));
+    this.initPeriodSelect();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
     // latches — watching the viewChild signal picks it up whenever that happens.
     toObservable(this.pageHeader)
@@ -87,11 +93,16 @@ export class HealthMetricsGateComponent {
     this.chrome.setPeriod(period);
   }
 
-  /** The narrow header's dropdown carries the range as its value. */
-  protected selectPeriod(event: Event): void {
-    const range = (event.target as HTMLSelectElement).value;
-    const period = this.chrome.periods.find((option) => option.range === range);
-    if (period) this.chrome.setPeriod(period);
+  private initPeriodSelect(): void {
+    const control = this.periodForm.controls.range;
+    effect(() => {
+      const range = this.chrome.selectedRange();
+      if (control.value !== range) control.setValue(range, { emitEvent: false });
+    });
+    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((range) => {
+      const period = this.chrome.periods.find((option) => option.range === range);
+      if (period) this.chrome.setPeriod(period);
+    });
   }
 
   private observeHeaderHeight(header: HTMLElement | undefined): void {

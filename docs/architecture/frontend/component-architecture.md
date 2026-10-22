@@ -203,7 +203,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 13px subtitle and pins the tab bar inside the header.
 
 ### Tab shells: signal state vs. child routes
 

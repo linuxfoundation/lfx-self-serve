@@ -44,10 +44,6 @@ export class HealthMetricsL2SubNavComponent {
   /** Keeps the collapsed panel shut after a pick until the pointer leaves, as hover would reopen it at once. */
   protected readonly closed = signal(false);
 
-  protected noteId(key: string): string {
-    return `${this.testIdPrefix()}-sub-nav-${key}-note-text`;
-  }
-
   protected pick(key: string, event: Event): void {
     this.sectionPicked.emit(key);
     this.dismiss(event.currentTarget as HTMLElement);
@@ -60,8 +56,16 @@ export class HealthMetricsL2SubNavComponent {
     this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item[aria-current]')?.focus();
   }
 
+  /** Shuts the collapsed panel; the wide column has nothing to close, so it keeps the reader's focus. */
   protected dismiss(focused: HTMLElement | null = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-item:focus')): void {
+    if (!this.isCollapsed()) return;
     this.closed.set(true);
     focused?.blur();
+  }
+
+  /** The rail only shows while the page is narrow enough to collapse the nav. */
+  private isCollapsed(): boolean {
+    const rail = this.elementRef.nativeElement.querySelector<HTMLElement>('.hmn-rail');
+    return !!rail && getComputedStyle(rail).display !== 'none';
   }
 }
