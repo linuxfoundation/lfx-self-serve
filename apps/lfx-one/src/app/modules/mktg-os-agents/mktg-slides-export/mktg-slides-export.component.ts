@@ -7,7 +7,12 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_SLIDES_EXPORT_ASSET_LABELS, MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_SLIDES_EXPORT_ASSET_LABELS,
+  MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
+} from '@lfx-one/shared/constants';
 import {
   MktgSlidesExportBrandSummary,
   MktgSlidesExportFailure,
@@ -95,6 +100,14 @@ export class MktgSlidesExportComponent {
       this.lookupSettled() &&
       !this.busy()
     );
+  });
+  /** Why the header's Slides button is greyed out, for its tooltip; empty while it takes a click. */
+  public readonly disabledReason = computed(() => {
+    if (this.canExport()) return '';
+    if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+    if (this.busy()) return 'An export is already running';
+    if (this.lookupFailed()) return 'Could not check the last export. Use Check again below.';
+    return 'Checking the last export…';
   });
   protected readonly assetLabel = computed(() => {
     const target = this.lastTarget();

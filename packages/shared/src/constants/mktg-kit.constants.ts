@@ -113,18 +113,17 @@ export const MKTG_KIT_FILTERS = [
   { id: 'approved', label: 'Approved' },
   { id: 'draft', label: 'Draft' },
   { id: 'needs-rebuild', label: 'Needs rebuild' },
-  { id: 'missing', label: 'Missing' },
+  { id: 'missing', label: 'Not run yet' },
 ] satisfies (FilterPillOption & { id: MktgKitFilter })[];
 export const MKTG_KIT_STATE_LABELS = {
   approved: 'Approved',
   draft: 'Draft',
   'needs-rebuild': 'Needs rebuild',
-  missing: 'Missing',
+  missing: 'Not run yet',
   'coming-soon': 'Coming soon',
 } as const;
 export const MKTG_KIT_TABS = [
   { path: '', label: 'Kit' },
-  { path: 'agents', label: 'Agents' },
   { path: 'requests', label: 'Requests' },
   { path: 'access', label: 'Access' },
   { path: 'documents', label: 'Documents' },

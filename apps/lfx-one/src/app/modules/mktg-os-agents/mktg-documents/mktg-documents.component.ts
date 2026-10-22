@@ -6,12 +6,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
   MktgDocumentNavItem,
+  MktgDocumentRunRow,
   MktgDocumentsResponse,
   MktgDocumentType,
   MktgRevisionRow,
@@ -21,7 +23,26 @@ import {
 import { describeMktgRevision, describeMktgRevisionAuthor, mktgKitRootCrumb } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { UserService } from '@services/user.service';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  expand,
+  filter,
+  map,
+  merge,
+  Observable,
+  of,
+  Subject,
+  switchMap,
+  takeUntil,
+  tap,
+  throwError,
+  timer,
+  withLatestFrom,
+} from 'rxjs';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
@@ -36,7 +57,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
   // Layout queries use the padded inner page's content width, not this routed host.
   // The 800px switch leaves headroom for classic scrollbars.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-documents-width' },
-  imports: [DatePipe, NgClass, RouterLink, MessageComponent, MktgBreadcrumbComponent, MktgKitTabsComponent, MktgKitHeaderComponent],
+  imports: [DatePipe, NgClass, RouterLink, MessageComponent, MktgBreadcrumbComponent, MktgKitTabsComponent, MktgKitHeaderComponent, ButtonComponent],
   templateUrl: './mktg-documents.component.html',
 })
 export class MktgDocumentsComponent {
@@ -50,10 +71,12 @@ export class MktgDocumentsComponent {
   private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
   private readonly listRefresh = new Subject<void>();
+  private readonly userService = inject(UserService);
 
   // === Signals ===
   protected readonly loading = signal(true);
   protected readonly errorText = signal('');
+  protected readonly refreshWarning = signal('');
   // The documents list could not be read: nothing is known about what the
   // project has stored, so neither the empty states nor the nav badges may
   // assert an absence while this is set.
@@ -63,11 +86,12 @@ export class MktgDocumentsComponent {
   protected readonly detailLoading = signal(false);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly notice = signal('');
-  // The project whose list is shown. Switching projects clears the previous
-  // project's documents and badges while the new project's list loads.
-  private listedProject = '';
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
+  private readonly reloads = signal(0);
+  private listedScope = '';
+  private detailedScope = '';
+  private restoreEpoch = 0;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
@@ -80,8 +104,15 @@ export class MktgDocumentsComponent {
   protected readonly allDocuments = computed(() =>
     (this.documents()?.groups ?? []).flatMap((group) => group.documents.map((document) => ({ type: group.type, document })))
   );
-  protected readonly livingNav: Signal<MktgDocumentNavItem[]> = this.initNav('living');
-  protected readonly runNav: Signal<MktgDocumentNavItem[]> = this.initNav('run');
+  /** All documents under their Kit family headings, in Kit order. */
+  protected readonly allDocumentSections = computed(() => {
+    const documents = this.allDocuments();
+    return this.familyTypes()
+      .map((family) => ({ name: family.name, items: family.types.flatMap((type) => documents.filter((item) => item.type.agentKey === type.agentKey)) }))
+      .filter((family) => family.items.length > 0);
+  });
+  /** The nav, grouped and ordered as the Kit's families. */
+  protected readonly familyNav: Signal<{ name: string; items: MktgDocumentNavItem[] }[]> = this.initFamilyNav();
   protected readonly selectedGroup: Signal<MktgDocumentGroup | null> = computed(
     () => this.documents()?.groups.find((group) => group.type.agentKey === this.selectedType().agentKey) ?? null
   );
@@ -101,56 +132,36 @@ export class MktgDocumentsComponent {
   });
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions.find((revision) => revision.latest) ?? null);
 
-  // Requests, as observables of their inputs (toObservable needs the injection context).
-  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid(), type: this.selectedParam() })));
+  protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
+  protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
+
+  // Type navigation follows main; identity/reload changes cancel scoped reads and timers.
+  private readonly listRequest$ = toObservable(
+    computed(() => ({
+      project: this.projectContext.activeContextUid(),
+      userSub: this.userService.user()?.sub,
+      type: this.selectedParam(),
+    }))
+  );
   private readonly detailRequest$ = toObservable(
     computed(() => {
       const living = this.selectedLiving();
       return {
         project: this.projectContext.activeContextUid(),
+        userSub: this.userService.user()?.sub,
         agentKey: living?.type.agentKey ?? '',
         documentId: living?.document?.documentId ?? '',
+        latestRevisionId: living?.document?.latestRevisionId ?? '',
+        revisionCount: living?.document?.revisionCount ?? 0,
+        reload: this.reloads(),
       };
     })
   );
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      this.listRequest$
-        .pipe(
-          filter((request) => !!request.project),
-          tap((request) => {
-            this.pendingSelectionScroll = request.project === this.listedProject && request.type !== this.listedType;
-            this.listedType = request.type;
-            this.loading.set(true);
-            this.errorText.set('');
-            this.listFailed.set(false);
-            if (request.project !== this.listedProject) {
-              this.listedProject = request.project;
-              this.documents.set(null);
-              this.notice.set('');
-            }
-          }),
-          switchMap((request) =>
-            this.listRefresh.pipe(
-              startWith(undefined),
-              switchMap(() =>
-                this.documentStore.listDocuments(request.project).pipe(
-                  catchError((error: HttpErrorResponse) => {
-                    this.listFailed.set(true);
-                    this.errorText.set(
-                      error.status === 403
-                        ? 'You need write access to this project to see its Marketing OS documents.'
-                        : 'The documents could not be loaded. Try again in a moment.'
-                    );
-                    return of(null);
-                  })
-                )
-              )
-            )
-          ),
-          takeUntilDestroyed()
-        )
+      this.initLists()
+        .pipe(takeUntilDestroyed())
         .subscribe((documents) => {
           this.documents.set(documents);
           this.loading.set(false);
@@ -160,19 +171,29 @@ export class MktgDocumentsComponent {
       this.detailRequest$
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          tap(() => {
-            this.detail.set(null);
-            this.notice.set('');
-            if (!this.listFailed()) this.errorText.set('');
+          tap((request) => {
+            const scope = JSON.stringify([request.project, request.userSub, request.agentKey, request.documentId]);
+            if (scope !== this.detailedScope) {
+              this.detailedScope = scope;
+              this.detail.set(null);
+              this.notice.set('');
+              if (!this.listFailed()) this.errorText.set('');
+            }
           }),
           switchMap((request) => {
-            if (!request.project || !request.documentId) {
+            if (!request.project || !request.userSub || !request.documentId) {
               return of(null);
             }
             this.detailLoading.set(true);
+            const known = this.detail();
             return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
+              takeUntil(this.listRefresh),
               catchError((error: HttpErrorResponse) => {
                 this.errorText.set(this.actionErrorText(error));
+                if (known && isTransientHttpError(error)) {
+                  this.refreshWarning.set('Could not refresh revisions. The last loaded revisions are kept; refresh to check again.');
+                  return of(known);
+                }
                 return of(null);
               })
             );
@@ -188,29 +209,45 @@ export class MktgDocumentsComponent {
   }
 
   // === Protected methods ===
+  protected onRefreshProgress(): void {
+    this.errorText.set('');
+    this.reloads.update((value) => value + 1);
+    this.listRefresh.next();
+  }
+
   protected onRestore(revision: MktgRevisionSummary): void {
     const detail = this.detail();
     const project = this.projectContext.activeContextUid();
-    if (!detail || detail.type.kind === 'run' || !project || this.restoringId()) {
+    const userSub = this.userService.user()?.sub;
+    if (!detail || detail.type.kind === 'run' || !project || !userSub || this.restoringId()) {
       return;
     }
 
+    const epoch = ++this.restoreEpoch;
     this.restoringId.set(revision.id);
     this.notice.set('');
     this.errorText.set('');
     // Do not cancel an accepted write when the component is destroyed.
     this.documentStore.restoreRevision(project, detail.type.agentKey, detail.documentId, revision.id).subscribe({
       next: (restored) => {
+        if (
+          epoch !== this.restoreEpoch ||
+          this.destroyRef.destroyed ||
+          this.projectContext.activeContextUid() !== project ||
+          this.userService.user()?.sub !== userSub
+        )
+          return;
         this.restoringId.set(null);
-        if (this.destroyRef.destroyed || this.projectContext.activeContextUid() !== project) return;
-        // Replace a read started before this write committed; it must not undo the restored pointer.
-        if (this.loading()) this.listRefresh.next();
         this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
+        this.reloads.update((value) => value + 1);
+        // Cancel and replace list reads synchronously so pre-write responses cannot undo this ACK.
+        this.listRefresh.next();
         if (!this.sameDocument(project, detail.type.agentKey)) return;
         this.detail.set(restored);
         this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
       },
       error: (error: HttpErrorResponse) => {
+        if (epoch !== this.restoreEpoch || this.userService.user()?.sub !== userSub) return;
         this.restoringId.set(null);
         if (this.sameDocument(project, detail.type.agentKey)) this.errorText.set(this.actionErrorText(error));
       },
@@ -218,6 +255,127 @@ export class MktgDocumentsComponent {
   }
 
   // === Private initializers ===
+  private initRuns(): Signal<MktgDocumentRunRow[]> {
+    return computed(() =>
+      (this.documents()?.runs ?? []).map((run) => ({
+        ...run,
+        label: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.itemLabel ?? 'Document',
+      }))
+    );
+  }
+
+  private initLists(): Observable<MktgDocumentsResponse | null> {
+    return merge(
+      this.listRequest$,
+      this.listRefresh.pipe(
+        withLatestFrom(this.listRequest$),
+        map(([, request]) => request)
+      )
+    ).pipe(
+      tap((request) => {
+        const scope = JSON.stringify([request.project, request.userSub]);
+        this.pendingSelectionScroll = scope === this.listedScope && request.type !== this.listedType;
+        const typeChanged = request.type !== this.listedType;
+        this.listedType = request.type;
+        if (typeChanged) this.loading.set(true);
+        if (scope !== this.listedScope) {
+          this.listedScope = scope;
+          this.restoreEpoch++;
+          this.restoringId.set(null);
+          this.loading.set(true);
+          this.documents.set(null);
+          this.notice.set('');
+          this.errorText.set('');
+          this.refreshWarning.set('');
+          this.listFailed.set(false);
+        }
+      }),
+      switchMap((request) => {
+        if (!request.project || !request.userSub) return EMPTY;
+        const scope = JSON.stringify([request.project, request.userSub]);
+        const currentScope = () => JSON.stringify([this.projectContext.activeContextUid(), this.userService.user()?.sub]);
+        let known = this.documents();
+        let unavailableSince: number | null = null;
+        let activeSince: number | null = null;
+        let failures = 0;
+        const unavailable = () => {
+          unavailableSince ??= Date.now();
+          failures++;
+        };
+        const expired = () =>
+          (unavailableSince !== null && Date.now() - unavailableSince >= MKTG_RUN_POLL.timeoutMs) ||
+          (activeSince !== null && Date.now() - activeSince >= MKTG_RUN_POLL.timeoutMs);
+        const pause = () => this.refreshWarning.set('Automatic progress checks paused. Refresh progress to try again; the last loaded documents are kept.');
+        const read = (poll = false) =>
+          (poll ? this.documentStore.listDocuments(request.project, true) : this.documentStore.listDocuments(request.project)).pipe(
+            filter(() => scope === currentScope()),
+            map((data) =>
+              data.progressUnavailable
+                ? {
+                    ...data,
+                    runs: [...new Map([...(known?.runs ?? []), ...(data.runs ?? [])].map((run) => [run.runId, run] as const)).values()],
+                  }
+                : data
+            ),
+            tap((data) => {
+              if (this.listFailed()) this.errorText.set('');
+              this.listFailed.set(false);
+              known = data;
+              if (data.runs?.some((run) => run.state === 'writing' || run.state === 'storing')) activeSince ??= Date.now();
+              else if (!data.progressUnavailable) activeSince = null;
+              if (data.progressUnavailable) unavailable();
+              else {
+                unavailableSince = null;
+                failures = 0;
+              }
+              this.refreshWarning.set(data.progressUnavailable ? 'Run progress could not be fully refreshed. Retrying.' : '');
+            }),
+            catchError((error: unknown) => {
+              if (scope !== currentScope()) return EMPTY;
+              if (!known || !isTransientHttpError(error)) return throwError(() => error);
+              unavailable();
+              this.refreshWarning.set('Could not refresh. Showing the last loaded documents; retrying.');
+              return of(known);
+            })
+          );
+        return read().pipe(
+          expand((data) => {
+            if (expired()) {
+              pause();
+              return EMPTY;
+            }
+            const active = data.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
+            if (!active && unavailableSince === null) return EMPTY;
+            let delay: number = MKTG_RUN_POLL.intervalMs;
+            if (failures) delay = Math.min(MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs, delay * 2 ** (failures - 1));
+            if (unavailableSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - unavailableSince)));
+            if (activeSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - activeSince)));
+            return timer(delay).pipe(
+              switchMap(() => {
+                if (expired()) {
+                  pause();
+                  return EMPTY;
+                }
+                return read(true);
+              })
+            );
+          }),
+          takeUntil(this.listRefresh),
+          catchError((error: HttpErrorResponse) => {
+            this.refreshWarning.set('');
+            this.listFailed.set(true);
+            this.errorText.set(
+              error.status === 403 || error.status === 401
+                ? 'You need write access to this project to see its Marketing OS documents.'
+                : 'The documents could not be loaded. Try again in a moment.'
+            );
+            return of(null);
+          })
+        );
+      })
+    );
+  }
+
   /**
    * The type in `?type=`, when it names one; otherwise the first living
    * document the project has, or the first living type.
@@ -233,22 +391,41 @@ export class MktgDocumentsComponent {
     });
   }
 
-  private initNav(kind: MktgDocumentType['kind']): Signal<MktgDocumentNavItem[]> {
+  /** Document types per Kit family in board order; types no family lists (e.g. legacy ICPs) close the list as Other documents. */
+  private familyTypes(): { name: string; types: MktgDocumentType[] }[] {
+    const placed = new Set<string>();
+    const families = MKTG_KIT_FAMILIES.map((family) => {
+      const types = family.assets.flatMap((asset) => MKTG_DOCUMENT_TYPES.filter((type) => type.agentKey === asset.agentKey && !placed.has(type.agentKey)));
+      types.forEach((type) => placed.add(type.agentKey));
+      return { name: family.name, types };
+    });
+    const others = MKTG_DOCUMENT_TYPES.filter((type) => !placed.has(type.agentKey));
+    return [...families, { name: 'Other documents', types: others }].filter((family) => family.types.length > 0);
+  }
+
+  private initFamilyNav(): Signal<{ name: string; items: MktgDocumentNavItem[] }[]> {
     return computed(() => {
       const groups = this.documents()?.groups ?? [];
       // Until a list read succeeds (still loading, during SSR, or failed) nothing is
       // known about the counts: no badge rather than "Not generated yet" / "No runs yet".
       const countsUnknown = this.listFailed() || this.loading() || !this.documents();
       const selected = this.selectedType().agentKey;
-      return MKTG_DOCUMENT_TYPES.filter((type) => type.kind === kind).map((type, index) => {
-        const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
+      return this.familyTypes().map((family) => {
+        // Number living documents only where a family has a run order to show.
+        const living = family.types.filter((type) => type.kind === 'living');
         return {
-          type,
-          position: kind === 'living' ? index + 1 : null,
-          ...(countsUnknown
-            ? { badge: '', badgeClass: '' }
-            : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
-          selected: !this.showAll() && type.agentKey === selected,
+          name: family.name,
+          items: family.types.map((type) => {
+            const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
+            return {
+              type,
+              position: type.kind === 'living' && living.length > 1 ? living.indexOf(type) + 1 : null,
+              ...(countsUnknown
+                ? { badge: '', badgeClass: '' }
+                : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
+              selected: !this.showAll() && type.agentKey === selected,
+            };
+          }),
         };
       });
     });
@@ -306,6 +483,12 @@ export class MktgDocumentsComponent {
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
+    const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
+    if (active) {
+      if (active.state === 'questions') return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
+      return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };
+    }
+    if (documentCount === 0 && this.documents()?.progressUnavailable) return { badge: '', badgeClass: '' };
     if (type.kind === 'run') {
       if (documentCount === 0) {
         return { badge: 'No runs yet', badgeClass: 'text-gray-500' };

@@ -7,10 +7,18 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_STARTED_RUN_POLL_WINDOW_MS } from '@lfx-one/shared/constants';
+import {
+  MktgDocumentDetailResponse,
+  MktgDocumentsResponse,
+  MktgDocumentType,
+  MktgDocumentRunProgress,
+  MktgRevisionSummary,
+  ProjectContext,
+} from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,7 +55,11 @@ describe('MktgDocumentsComponent', () => {
     approvedCurrent: null,
   };
 
-  function documentsResponse(): MktgDocumentsResponse {
+  function startedRun(state: MktgDocumentRunProgress['state'] = 'writing'): MktgDocumentRunProgress {
+    return { project: PROJECT.uid, agentKey: BRAND_KIT.agentKey, documentId: 'living', runId: 'b'.repeat(64), startedAt: '2026-10-19T12:00:00Z', state };
+  }
+
+  function documentsResponse(current = 2): MktgDocumentsResponse {
     return {
       project: PROJECT.uid,
       groups: MKTG_DOCUMENT_TYPES.map((type) => ({
@@ -59,8 +71,9 @@ describe('MktgDocumentsComponent', () => {
                   agentKey: 'brand-kit',
                   documentId: 'living',
                   revisionCount: 2,
-                  latestRevisionId: detail.revisions[0].id,
+                  latestRevisionId: revision(current).id,
                   approvedCurrent: null,
+                  currentRevisionNumber: current,
                   updatedAt: null,
                   createdAt: null,
                 },
@@ -72,6 +85,7 @@ describe('MktgDocumentsComponent', () => {
 
   let fixture: ComponentFixture<MktgDocumentsComponent>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
+  let effectiveUser: ReturnType<typeof signal<{ sub: string } | null>>;
   let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn>; restoreRevision: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
@@ -91,9 +105,15 @@ describe('MktgDocumentsComponent', () => {
     store = {
       listDocuments: vi.fn(() => of(documentsResponse())),
       getDocument: vi.fn(() => of(detail)),
-      restoreRevision: vi.fn(() => of({ ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) })),
+      restoreRevision: vi.fn(() => {
+        const restored = { ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) };
+        store.listDocuments.mockReturnValue(of(documentsResponse(1)));
+        store.getDocument.mockReturnValue(of(restored));
+        return of(restored);
+      }),
     };
     activeContext = signal<ProjectContext | null>(PROJECT);
+    effectiveUser = signal<{ sub: string } | null>({ sub: 'synthetic-subject' });
 
     await TestBed.configureTestingModule({
       imports: [MktgDocumentsComponent],
@@ -103,11 +123,14 @@ describe('MktgDocumentsComponent', () => {
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
+        { provide: UserService, useValue: { user: effectiveUser } },
       ],
     }).compileComponents();
   });
 
   afterEach(() => {
+    fixture?.destroy();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -193,12 +216,13 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-page')?.textContent).not.toContain('this project');
   });
 
-  it('lists the living documents in run order with their revision state, and the runs', async () => {
+  it('lists the documents grouped and ordered as the Kit families, with their revision state', async () => {
     await render();
 
     expect(query('mktg-documents-nav-all')?.classList.contains('border-gray-200')).toBe(true);
     expect(query('mktg-documents-nav-all')?.classList.contains('font-semibold')).toBe(false);
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('1 · Brand Kit');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('1 ·');
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('Not generated yet');
     expect(query('mktg-documents-nav-linkedin-post')?.textContent).toContain('No runs yet');
@@ -265,7 +289,7 @@ describe('MktgDocumentsComponent', () => {
     fixture.detectChanges();
 
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', detail.revisions[1].id);
-    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    expect(store.listDocuments).toHaveBeenCalledTimes(2); // Cancel stale polls and reload the acknowledged current pointer.
     expect(query('mktg-documents-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
     expect(query('mktg-documents-document-subtitle')?.textContent).toContain('revision 1 of 2');
@@ -297,6 +321,7 @@ describe('MktgDocumentsComponent', () => {
     query('mktg-documents-restore-1')?.click();
     await TestBed.inject(Router).navigateByUrl('/?type=foundation-message');
     await fixture.whenStable();
+    store.listDocuments.mockReturnValue(of(documentsResponse(1)));
     pending.next({ ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) });
     pending.complete();
     await fixture.whenStable();
@@ -348,10 +373,335 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-notice')).toBeNull();
   });
 
+  it.each(['unavailable', 'started'])('never asserts no one-off runs while %s progress exists', async (state) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing synthetic one-off document type');
+    const data: MktgDocumentsResponse = {
+      project: PROJECT.uid,
+      groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })),
+      runs: state === 'started' ? [{ ...startedRun(), agentKey: type.agentKey }] : [],
+      progressUnavailable: state === 'unavailable',
+    };
+    store.listDocuments.mockReturnValue(of(data));
+    await render('/?type=' + type.agentKey);
+    expect(query('mktg-documents-empty-runs')).toBeNull();
+    expect(query('mktg-documents-pending-run')).not.toBeNull();
+    expect(query('mktg-documents-pending-run')?.textContent).toContain(state === 'unavailable' ? 'unavailable' : 'recorded run');
+  });
+
   it('shows a run type’s runs, or says there are none yet', async () => {
     await render('/?type=linkedin-post');
 
     expect(query('mktg-documents-empty-runs')?.textContent).toContain('a new run is a new document');
+  });
+
+  it.each(['writing', 'questions', 'storing', 'failed'] as const)('shows a %s recorded run without inventing a stored draft', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
+    await render();
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
+    expect(query('mktg-documents-pending-document')).not.toBeNull();
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
+    if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    if (state === 'failed') {
+      vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+      expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('retains loaded documents on transient refresh failure, retries and removes completed progress', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] }))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of({ ...documentsResponse(), runs: [] }));
+    await render();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('last loaded');
+    expect(query('mktg-documents-document-subtitle')).not.toBeNull();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+  });
+
+  it('retains the acknowledged current pointer on a transient same-scope non-poll reload', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    await render();
+    store.restoreRevision.mockImplementationOnce(() => {
+      const restored = { ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) };
+      store.getDocument.mockReturnValue(of(restored));
+      store.listDocuments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 }))).mockReturnValue(of(documentsResponse(1)));
+      return of(restored);
+    });
+    query('mktg-documents-restore-1')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenNthCalledWith(2, PROJECT.uid);
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('last loaded');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenNthCalledWith(3, PROJECT.uid, true);
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
+  });
+
+  it.each(['unavailable', 'transient'])('backs off and bounds consecutive %s reads, then manual refresh resets the budget', async (kind) => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    if (kind === 'unavailable') store.listDocuments.mockReturnValue(of({ ...documentsResponse(), progressUnavailable: true }));
+    else
+      store.listDocuments
+        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] }))
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    if (kind === 'transient') {
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+    }
+    const first = store.listDocuments.mock.calls.length;
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(first + 1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(first + 2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
+    const stopped = store.listDocuments.mock.calls.length;
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.timeoutMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
+    store.listDocuments.mockReturnValue(of(documentsResponse()));
+    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+  });
+
+  it.each(['writing', 'storing'] as const)('bounds healthy but stuck %s polling while keeping the last rows', async (state) => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
+    await render('/');
+    expect(query('mktg-documents-all')).not.toBeNull();
+    expect(query('mktg-documents-started-runs')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
+    expect(query('mktg-documents-started-runs')).not.toBeNull();
+    const stopped = store.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
+    store.listDocuments.mockReturnValue(of(documentsResponse()));
+    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+  });
+
+  it.each([401, 403, 500])('shows recovered list content after initial %s and successful same-scope refresh', async (status) => {
+    store.listDocuments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status }))).mockReturnValue(of(documentsResponse()));
+    await render();
+    expect(query('mktg-documents-list-failed')).not.toBeNull();
+    expect(query('mktg-documents-error')).not.toBeNull();
+    const refresh = query('mktg-documents-refresh-progress')?.querySelector('button');
+    if (!refresh) throw new Error('Missing list refresh control');
+    refresh.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-list-failed')).toBeNull();
+    expect(query('mktg-documents-error')).toBeNull();
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+  });
+
+  it('retains same-scope revisions on a detail 503 and allows explicit recheck', async () => {
+    store.getDocument
+      .mockReturnValueOnce(of(detail))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValue(of(detail));
+    await render();
+    fixture.componentInstance['onRefreshProgress']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-revision-2')).not.toBeNull();
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+    expect(query('mktg-documents-refresh-progress')).not.toBeNull();
+    fixture.componentInstance['onRefreshProgress']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.getDocument).toHaveBeenCalledTimes(3);
+    expect(query('mktg-documents-revision-2')).not.toBeNull();
+    expect(query('mktg-documents-error')).toBeNull();
+  });
+
+  it('refetches detail when revisionCount grows without changing the acknowledged current id', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const updated = documentsResponse();
+    const current = updated.groups.find((group) => group.type.agentKey === BRAND_KIT.agentKey)?.documents[0];
+    if (!current) throw new Error('Missing synthetic document');
+    current.revisionCount = 3;
+    store.listDocuments.mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] })).mockReturnValue(of(updated));
+    store.getDocument.mockReturnValueOnce(of(detail)).mockReturnValue(of({ ...detail, revisions: [revision(3), ...detail.revisions] }));
+    await render();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.getDocument).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-revision-3')).not.toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+  });
+
+  it('leaves questions-only rows visible without automatic polling', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('questions')] }));
+    await render();
+    vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+  });
+
+  it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const empty: MktgDocumentsResponse = { project: PROJECT.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: [] };
+    if (hasKnownRun) store.listDocuments.mockReturnValueOnce(of({ ...empty, runs: [startedRun()] }));
+    store.listDocuments.mockReturnValue(of({ ...empty, progressUnavailable: true }));
+    await render();
+    if (hasKnownRun) {
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-pending-document')?.textContent).toContain('unavailable');
+    expect(query('mktg-documents-nav')?.textContent).not.toMatch(/Not generated yet|No runs yet/);
+    expect(!!query('mktg-documents-open-started-' + startedRun().runId)).toBe(hasKnownRun);
+    expect(query('mktg-documents-refresh-progress')?.tagName).toBe('LFX-BUTTON');
+  });
+
+  it('lets new server rows replace known rows while keeping missing same-scope rows', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const second = { ...startedRun(), runId: 'c'.repeat(64) };
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun(), second] }))
+      .mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')], progressUnavailable: true }));
+    await render();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-run-' + startedRun().runId)?.textContent).toContain('A previous run did not finish');
+    expect(query('mktg-documents-started-run-' + second.runId)).not.toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).not.toContain('Not generated yet');
+  });
+
+  it('stops polling a repeatedly returned stale writing snapshot flagged unavailable by the server', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const stale = { ...startedRun(), startedAt: new Date(Date.now() - MKTG_STARTED_RUN_POLL_WINDOW_MS - 1).toISOString() };
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...documentsResponse(), runs: [stale] }))
+      .mockReturnValue(of({ ...documentsResponse(), runs: [stale], progressUnavailable: true }));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
+    expect(query('mktg-documents-started-run-' + stale.runId)).not.toBeNull();
+    const stopped = store.listDocuments.mock.calls.length;
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
+    store.listDocuments.mockReturnValue(of(documentsResponse()));
+    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+  });
+
+  it('retries an unavailable progress read without inventing active work', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValueOnce(of({ ...documentsResponse(), runs: [], progressUnavailable: true })).mockReturnValueOnce(of(documentsResponse()));
+    await render();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('Retrying');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears data and stops polling after a 403 instead of preserving inaccessible rows', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] }))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await render();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-error')?.textContent).toContain('write access');
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-revisions')).toBeNull();
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['subject', 'null-context'])('clears rows and cancels old polling on %s changes', async (change) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun()] })).mockReturnValue(NEVER);
+    await render();
+    if (change === 'subject') effectiveUser.set({ sub: 'other-synthetic-subject' });
+    else activeContext.set(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    const calls = store.listDocuments.mock.calls.length;
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(calls);
+  });
+
+  it('lets an accepted current-pointer write finish but ignores its receipt after an effective-subject switch', async () => {
+    const pending = new Subject<unknown>();
+    store.restoreRevision.mockReturnValue(pending);
+    await render();
+    query('mktg-documents-restore-1')?.click();
+    store.listDocuments.mockReturnValue(NEVER);
+    effectiveUser.set({ sub: 'other-synthetic-subject' });
+    await fixture.whenStable();
+    expect(pending.observed).toBe(true);
+    pending.next({ ...detail, revision: revision(1, { latest: true }) });
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-notice')).toBeNull();
+    expect(query('mktg-documents-document-subtitle')).toBeNull();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels polling when the page is destroyed', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun()] }));
+    await render();
+    fixture.destroy();
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(1);
   });
 
   it('shows only the error when the documents list cannot be read, never an empty state', async () => {

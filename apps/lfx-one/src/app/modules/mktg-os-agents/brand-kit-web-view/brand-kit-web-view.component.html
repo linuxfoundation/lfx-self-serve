@@ -24,26 +24,41 @@
     }
     <div class="grow"></div>
     <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <lfx-button
-        label="Download PDF"
-        icon="fa-light fa-file-pdf"
-        [outlined]="true"
-        size="small"
-        [disabled]="!printView()"
-        ariaLabel="Download the approved current brand kit as a PDF"
-        data-testid="brand-kit-web-view-download-pdf"
-        (onClick)="onDownloadPdf()" />
+      <ng-content select="[asset-actions]" />
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [outlined]="true"
+          size="small"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current brand kit as a PDF"
+          data-testid="brand-kit-web-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
       <!-- The kit as a deck: the panel below the header shows the export. -->
-      <lfx-button
-        label="Export to Google Slides"
-        icon="fa-light fa-presentation-screen"
-        [outlined]="true"
-        size="small"
-        [loading]="slidesExport.busy()"
-        [disabled]="!slidesExport.canExport()"
-        ariaLabel="Export the brand kit to Google Slides"
-        data-testid="brand-kit-web-view-export-slides"
-        (onClick)="slidesExport.onExport()" />
+      <span
+        [pTooltip]="slidesExport.disabledReason()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="slidesExport.disabledReason() || null"
+        [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          size="small"
+          [loading]="slidesExport.busy()"
+          [disabled]="!slidesExport.canExport()"
+          ariaLabel="Export the brand kit to Google Slides"
+          data-testid="brand-kit-web-view-export-slides"
+          (onClick)="slidesExport.onExport()" />
+      </span>
       <lfx-button
         label="Report"
         icon="fa-light fa-clipboard-list"
@@ -53,7 +68,6 @@
         ariaLabel="Open the run's report: sources read, failed and gaps"
         data-testid="brand-kit-web-view-report"
         (onClick)="onGoToTab('sources')" />
-      <ng-content select="[asset-actions]" />
     </div>
   </div>
 

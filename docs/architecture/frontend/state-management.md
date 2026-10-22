@@ -370,3 +370,67 @@ export class EventBusService {
 6. **Error handling**: Always handle loading and error states
 7. **Type safety**: Use proper TypeScript interfaces for all state
 8. **Performance**: Use computed signals to avoid unnecessary recalculations
+
+## Marketing OS asset-run handoff
+
+The run route owns intake, the research/writing feed and questions, not the
+result or a feedback form. Direct no-answers intakes open the document route
+before their first POST. Questions runs transfer their owned attempt after the
+accepted answers ACK. Without questions, the first finalize/checking step (or
+an earlier receipt-less ready result) transfers the same attempt. A partial
+Guild stream cannot distinguish writing from another research/questions round;
+model starts or completions alone never authorize a handoff. The producer can
+label no-questions writing retroactively once an unambiguous finalize confirms
+it. An agent-emitted writing marker would allow an earlier writing-start
+handoff; it is a follow-up in marketing-os-agents' [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md), not a contract change here.
+There is no unused no-feed submitted-ACK fallback.
+The asset page resumes the same attempt without a second POST and owns writing
+until the exact stored revision lands. Catalog/intakes own membership/routing.
+Framework, kit and boilerplates renderers, exports and dependency sidecars stay
+on the document view. Revision workflows, not the retired inline feedback form,
+own changes; the existing asset-store current pointer remains authoritative.
+The Markdown-era README outcome note was dropped with the Markdown result
+surface; it was not moved to About. Source/gap information in asset views remains.
+
+The BFF records a private session-keyed start before acknowledging generation.
+Documents reads require the resolved project's writer grant and reconcile those
+starts through each agent's schema/hash-validated result path. Public progress
+contains an opaque run id, never a Guild session, owner token or starter identity.
+A persistence receipt names the exact recorded revision. Turn identity, not a
+resettable envelope version, renews an attempt; retries preserve its original
+Started date and poll the same session without starting generation. Only a
+successful Guild lookup can spend the writing deadline; unresolved questions
+pause it. A refusal or a completed idle agent runtime with no valid asset fails
+immediately, with its reply rendered as plain text. Reasoning MIME is excluded
+before activity, questions, envelope or reply extraction. No new worker, bucket
+or atomic-write guarantee is introduced; concurrent completion keeps the
+existing revision writer's CAS publication and current-pointer semantics.
+
+Client drafts and pending attempts are subject/project/agent-bound, including a
+draft saved before the first POST and the acknowledged answers block saved before
+polling. A failed answers poll resumes that bookkeeping; it never repeats the
+answers POST. A failed navigation retries its saved destination only. Project or
+effective-user changes cancel the handoff and clear displayed progress. Public
+selected-run ids travel from Started-run links through the asset view to Retry,
+so two failed sessions of one living document cannot share a retry target.
+
+Initial navigation discovers runs of all ages. Timer reads are bounded; private
+coverage is materialized into validated public rows, never serialized as skipped
+ids or counts. Window-skipped unfinished snapshots are last-known and unavailable.
+Clients retain missing same-scope rows while unavailable, back off and stop at the
+shared availability timeout; manual refresh resets that budget. One stale row can
+make the project's progress unknown and retain another completed run's last-known
+row until that pause/manual refresh. Known stored-current metadata is not changed.
+Transient reads retain the last same-scope asset/list with a warning; auth,
+permission and scope changes fail closed. A first run can have zero revisions and
+progress only. Other browsers can read writer-authorized progress, not creator
+session capabilities. A restored owned attempt can check questions without another
+POST; missing memory-only files require reattachment and explicit Generate.
+
+A stored-revision count or newest write is not an approved-current selection.
+Generation receipts identify the produced revision; they do not move an approval
+pointer. Client `document`/`persisted` events carry the selected outcome's explicit
+location (or `null` until its receipt arrives) and accepted attempt. Cached history
+order never selects a handoff revision; receipt-less recovery retains that attempt's
+session, capability and prior-version hint, not a newer cached run's. The asset-store item's single approved-current pointer and its chip/state
+are the authority for current status, never a separate run/list-derived flag.

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat } from '../interfaces';
 import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
@@ -74,8 +74,8 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  * The agent itself refuses a run without a framework up front; that reply,
  * should it ever come, is shown as the run's outcome.
  *
- * The result is a JSON kit, not a Markdown document: the run page renders it
- * with the kit's web view (an app page, one tab per chapter), which prints
+ * The result is a JSON kit, not a Markdown document: the document route renders
+ * it with the kit's web view (an app page, one tab per chapter), which prints
  * the reference kit's 16-page book with Download PDF. Every submission is a fresh generate
  * (`freshRunPerSubmission`); each result is stored as a new revision of the
  * project's Brand Kit document, whose Markdown rendering is what sibling
@@ -153,7 +153,6 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   ],
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   sections: BRAND_KIT_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
@@ -343,7 +342,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   assetView: 'messaging-framework',
   // The asset view shows the framework itself; there is no section checklist to tick.
   sections: [],
@@ -365,7 +363,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
  * project name from LFX, the website from LFX (its host is the domain the
  * 100-word version ends on: "Learn more at <domain>."; left empty, the agent
  * takes the LFX record's website or asks) and notes. The LFX project uid
- * rides the form (`submitsProject`) for the agent's own LFX lookups. The
+ * is the writer-resolved run scope, also used for the agent's LFX lookups. The
  * agent reads the website, the launch press release and the LFX record
  * itself, then asks only the gaps it could not settle — the domain, the main
  * programs, the member names it may use — each with a suggested answer
@@ -447,7 +445,6 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   assetView: 'boilerplates',
   // The asset view shows the boilerplates themselves; there is no section checklist to tick.
@@ -585,7 +582,6 @@ export const FAQ_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   assetView: 'faq',
   // The FAQ view shows the questions themselves; there is no section checklist to tick.
@@ -791,24 +787,6 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
 export const MKTG_INTAKE_ONE_LINE_ERROR = 'Keep this to one line — the line breaks in it would make the run fail.';
 
 /**
- * What the result says when the document was generated WITHOUT a README. The
- * agent tolerates a missing README by design — it marks the gaps TBD — but a
- * thinner document with no explanation reads as the agent underperforming.
- * Each reason states what actually happened so the user knows whether a
- * corrected URL and a regeneration would help.
- */
-export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
-  'not-a-repo-url': 'Generated without a README — the repo URL didn’t resolve to a readable repository, so the agent had no README to work from.',
-  'no-readme': 'Generated without a README — that repository has no README the agent could read.',
-  'not-public':
-    'Generated without a README — that repository isn’t publicly readable, so the agent couldn’t open its README. Use a public repository, or add the details by hand.',
-  'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
-};
-
-/** Running-phase stage checklist labels, in order. */
-export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
-
-/**
  * Validation of the questions step: an answer that is not one. There is no
  * skip and no TBD there — the agent already suggested what it could settle,
  * so what is left needs the requester's answer.
@@ -852,13 +830,12 @@ export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed
  */
 export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
 
-/** Prefix of the reviewed label — the one status that is no longer a draft. */
-export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
-
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
 /** Pending LinkedIn capabilities; namespace/shape converged with the in-flight AEO/GEO intake. */
 export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
+/** Separately scoped intake/attempt recovery, including submissions that never received an ACK. */
+export const MKTG_PENDING_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-pending-run';
 
 /**
  * TTL for browser-persisted runs. A stored run carries the session's

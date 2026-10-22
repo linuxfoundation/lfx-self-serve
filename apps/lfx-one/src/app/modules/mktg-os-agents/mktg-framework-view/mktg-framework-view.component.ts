@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
@@ -66,6 +67,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 @Component({
   selector: 'lfx-mktg-framework-view',
   imports: [
+    TooltipModule,
     NgClass,
     MktgAssetMetaComponent,
     MessageComponent,
@@ -165,6 +167,8 @@ export class MktgFrameworkViewComponent {
     const approved = this.approvedAsset();
     return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>

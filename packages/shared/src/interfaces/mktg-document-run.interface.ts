@@ -33,6 +33,17 @@ export interface MktgDocumentRunProgress {
   failureText?: string;
 }
 
+/** Public rows only; read unavailability is not evidence of active work or current selection. */
+export interface MktgDocumentRunSnapshot {
+  runs: MktgDocumentRunProgress[];
+  progressUnavailable?: boolean;
+}
+
+/** Catalog-labelled row in the Documents overview. */
+export interface MktgDocumentRunRow extends MktgDocumentRunProgress {
+  label: string;
+}
+
 /**
  * Mutable server-only started-run record in the private document store.
  * It must never be returned by spreading it into a public response: project
@@ -48,11 +59,23 @@ export interface MktgStartedRunRecord {
   /** Private initiating subject; absent legacy records are unknown, never the reconciling visitor. */
   creatorSubject?: string | null;
   startedAt: string;
-  /** Prior draft hint; result services validate current-turn finalization before completion. */
+  /** Generate-path prior-draft hint (chat records 0); completion uses current-turn finalization and receipts. */
   priorVersion: number;
+  /** Delivered turn identity; a duplicate ACK cannot reopen that attempt. */
+  attemptId?: string;
+  /** Private bounded ACK ledger; overflow rejects a new turn rather than forgetting accepted ones. */
+  acceptedAttemptIds?: string[];
   state: MktgStoredDocumentRunState;
+  /** Retry/answers-continuation budget origin; does not change the original Started label. */
+  retryAt?: string;
+  /** Latest questions block answered on this session; a different block is a new human pause. */
+  answeredQuestionsId?: string;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
+  /** Separate bounded retries once a valid asset is ready but its revision write has not landed. */
+  persistRetries?: number;
+  /** Prior attempt's revision cannot complete a renewed same-session turn. */
+  priorRevisionId?: string;
   /** Exact persisted result after recording this session through the existing generation path. */
   result: MktgDocumentLocation | null;
 }
@@ -61,4 +84,26 @@ export interface MktgStartedRunRecord {
 export interface MktgGenerationAttribution {
   /** Explicit null is unknown, never a fallback to the visitor's subject. */
   creatorSubject: string | null;
+}
+
+/** Private fetched started-run record and the exact bytes used for metadata-only refreshes. */
+export interface MktgStoredStartedRun {
+  key: string;
+  body: string;
+  record: MktgStartedRunRecord;
+}
+
+/** BFF-only partial coverage; The Documents transport retains known rows, never echoes these IDs to the client. */
+export interface MktgDocumentRunCoverage {
+  /** Unchecked entries, including unknown outside-window history that may already be closed. */
+  uncheckedCount: number;
+  /** Opaque IDs known unfinished/failed from HEAD or a matching terminal cache; bounded by discovery + cache limits. */
+  retainedRunIds: string[];
+  /** A lookup failed, distinct from intentionally bounded history coverage. */
+  lookupFailed?: boolean;
+}
+
+/** The Documents transport's retry body, scoped by its document/run route; no generation is started. */
+export interface MktgRetryDocumentRunRequest {
+  project: string;
 }

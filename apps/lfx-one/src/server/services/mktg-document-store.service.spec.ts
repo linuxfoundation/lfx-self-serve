@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 
@@ -48,6 +49,10 @@ vi.mock('./user.service', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/foundation-message.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-envelope.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-session-event.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-activity.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
@@ -79,12 +84,14 @@ vi.mock('./object-store.service', () => ({
       body: Buffer,
       _contentType: string,
       _cacheControl: string,
-      metadata?: Record<string, string>
+      metadata?: Record<string, string>,
+      options: { refreshMetadataWhen?: (metadata: Record<string, string>) => boolean } = {}
     ): Promise<boolean> {
       if (store.failPutsMatching?.test(key)) {
         throw new Error('store unavailable');
       }
-      if (store.objects.has(key)) {
+      const previous = store.objects.get(key);
+      if (previous && !options.refreshMetadataWhen?.(previous.metadata)) {
         return false;
       }
       store.clock += 1000;
@@ -146,7 +153,7 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, BOILERPLATES_FINALIZE_TOOL } from '@lfx-one/shared/constants';
 import type {
   MktgArtifactEnvelope,
   MktgArtifactJsonEnvelope,
@@ -154,13 +161,15 @@ import type {
   MktgRevisionRecord,
   MktgRevisionRecordFields,
 } from '@lfx-one/shared/interfaces';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
+import { MktgDocumentRunService } from './mktg-document-run.service';
+import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 
 const req = {
   path: '/api/mktg-agents/documents',
@@ -279,6 +288,91 @@ describe('MktgDocumentStoreService', () => {
     });
     await expect(service.listDocuments(req, PROJECT, 'member-360')).rejects.toMatchObject({ statusCode: 503 });
     read.mockRestore();
+  });
+
+  it.each(['synthetic-creator', null])('keeps generated attribution %s separate from the visiting writer authorization', async (creatorSubject) => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const attributed = new MktgDocumentStoreService({ creatorSubject });
+    const receipt = await attributed.persistGeneration(visitor, SPEC, envelope('# Synthetic attributed asset'), PROJECT, 'attributed-session');
+    if (!receipt) throw new Error('Expected a synthetic revision receipt');
+    expect(storedObject(receipt.s3_key).metadata['author-id']).toBe(creatorSubject ?? undefined);
+    expect(projectMocks.getProjectById).toHaveBeenCalledWith(visitor, PROJECT, true);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
+  it('does not cross attribution between concurrent generations under the same visiting request', async () => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const receipts = await Promise.all(
+      ['synthetic-creator-a', 'synthetic-creator-b'].map((creatorSubject) =>
+        new MktgDocumentStoreService({ creatorSubject }).persistGeneration(visitor, SPEC, envelope(`# ${creatorSubject}`), PROJECT, creatorSubject)
+      )
+    );
+    const authors = receipts.map((receipt) => {
+      if (!receipt) throw new Error('Expected both synthetic revision receipts');
+      return storedObject(receipt.s3_key).metadata['author-id'];
+    });
+    expect(authors.sort()).toEqual(['synthetic-creator-a', 'synthetic-creator-b']);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
+  it.each([false, true])('reconciles through Documents HTTP with creator attribution, never the visiting writer (legacy=%s)', async (legacy) => {
+    MktgDocumentRunService['terminalCache'].clear();
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-creator' } } });
+    const visitor = Object.assign({}, req, {
+      oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } },
+      params: { agentKey: 'boilerplates', documentId: 'living' },
+      query: { project: PROJECT },
+    });
+    const runs = new MktgDocumentRunService();
+    const runId = await runs.start(creator, PROJECT, 'boilerplates', 'synthetic-transport-session');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const runKey = `document-runs/${PROJECT}/${runId}.json`;
+    if (legacy) {
+      const object = storedObject(runKey);
+      const record: Record<string, unknown> = JSON.parse(object.body);
+      delete record['creatorSubject'];
+      object.body = JSON.stringify(record);
+    }
+    const native = JSON.parse(
+      readFileSync(new URL('../../../../../packages/shared/src/utils/__fixtures__/boilerplates.envelope.json', import.meta.url), 'utf8')
+    );
+    const events = [
+      JSON.stringify({
+        type: 'llm_start',
+        payload: JSON.stringify({
+          messages: [
+            { role: 'assistant', content: [{ type: 'tool_use', id: 'synthetic-finalize', name: BOILERPLATES_FINALIZE_TOOL, input: {} }] },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'synthetic-finalize',
+                  content: [{ type: 'text', text: JSON.stringify({ envelope_json: JSON.stringify(native) }) }],
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    ];
+    const read = vi.spyOn(GuildService.prototype, 'getRawEventPayloads').mockResolvedValue(events);
+    const jsonResponse = vi.fn();
+    const response = { json: jsonResponse } as unknown as Response;
+    const next = vi.fn();
+    try {
+      await new MktgDocumentsController().getDocument(visitor, response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(revisionKeys()).toHaveLength(1);
+      expect(storedObject(revisionKeys()[0]).metadata['author-id']).toBe(legacy ? undefined : 'synthetic-creator');
+      expect(projectMocks.getProjectById).toHaveBeenCalledWith(visitor, PROJECT, true);
+      expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+      expect(jsonResponse).toHaveBeenCalledWith(expect.objectContaining({ project: PROJECT, runs: [], revisions: [expect.anything()] }));
+      expect(JSON.stringify(jsonResponse.mock.calls)).not.toContain('creatorSubject');
+    } finally {
+      read.mockRestore();
+      MktgDocumentRunService['terminalCache'].clear();
+    }
   });
 
   describe('captured framework provenance', () => {

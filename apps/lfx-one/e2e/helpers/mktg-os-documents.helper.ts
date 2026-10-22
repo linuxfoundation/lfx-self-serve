@@ -9,19 +9,20 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentRunProgress, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
+import { DATA_LOAD_TIMEOUT } from './mktg-os-assets.helper';
 
 export const DOCUMENT_PROJECT = { uid: 'd0000000-0000-4000-8000-000000000001', slug: 'synthetic-documents', name: 'Synthetic Documents Project', writer: true };
 export const DOCUMENT_TYPE = livingDocumentType();
 
 function livingDocumentType() {
-  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living');
-  if (!type) throw new Error('Documents fixtures require a living document type in the catalog');
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'icp');
+  if (!type) throw new Error('Markdown fixtures require the catalog ICP document type');
   return type;
 }
 export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${DOCUMENT_TYPE.agentKey}`;
@@ -31,6 +32,18 @@ export async function returnToDocumentType(page: Page): Promise<void> {
   await page.getByTestId('mktg-breadcrumb-link-0').click();
   await page.getByTestId('mktg-kit-tab-documents').click();
   await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+}
+
+export function startedDocumentRun(state: MktgDocumentRunProgress['state'] = 'writing'): MktgDocumentRunProgress {
+  return {
+    project: DOCUMENT_PROJECT.uid,
+    agentKey: DOCUMENT_TYPE.agentKey,
+    documentId: 'living',
+    runId: 'b'.repeat(64),
+    startedAt: '2026-10-19T12:00:00Z',
+    state,
+    ...(state === 'failed' && { failureText: 'Synthetic full failure: the requested source is unavailable. Your intake is kept.' }),
+  };
 }
 
 export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): MktgDocumentDetailResponse {
@@ -84,6 +97,8 @@ export async function setupDocuments(
     currentRevisionNumber?: number;
     longDocument?: boolean;
     revisionAuthorName?: string;
+    runs?: MktgDocumentRunProgress[];
+    progressUnavailable?: boolean;
   } = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
@@ -120,7 +135,7 @@ export async function setupDocuments(
       lens,
     });
   });
-  let detail = documentFixture(options.revisionCount, options.currentRevisionNumber);
+  let detail = { ...documentFixture(options.revisionCount, options.currentRevisionNumber), runs: options.runs ?? [] };
   if (options.revisionAuthorName !== undefined) {
     const name = options.revisionAuthorName;
     detail = {
@@ -143,6 +158,12 @@ export async function setupDocuments(
     const path = url.pathname;
     const status = writer ? (options.status ?? 200) : 403;
     if (status !== 200) return fulfillDocumentJson(route, { code: status === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, status);
+    if (route.request().method() === 'POST' && path.endsWith('/retry')) {
+      const index = detail.runs.findIndex((run) => path.includes(run.runId));
+      if (index < 0) return fulfillDocumentJson(route, { code: 'NOT_FOUND' }, 404);
+      detail.runs[index] = { ...detail.runs[index], state: 'writing', failureText: undefined };
+      return fulfillDocumentJson(route, options.empty ? { ...detail, revisions: [], current: null } : detail);
+    }
     if (route.request().method() === 'POST' && path.endsWith('/restore')) {
       if (options.writeStatus) {
         return fulfillDocumentJson(route, { code: options.writeStatus === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, options.writeStatus);
@@ -162,6 +183,8 @@ export async function setupDocuments(
       if (!current) throw new Error('Documents fixture has no current revision');
       const response: MktgDocumentsResponse = {
         project: DOCUMENT_PROJECT.uid,
+        runs: options.runs ?? [],
+        ...(options.progressUnavailable && { progressUnavailable: true }),
         groups: MKTG_DOCUMENT_TYPES.map((type) => ({
           type,
           documents:
@@ -198,12 +221,12 @@ export async function setupDocuments(
       }
       return fulfillDocumentJson(route, { ...detail, revision, markdown });
     }
-    if (path.endsWith('/living')) return fulfillDocumentJson(route, detail);
+    if (path.endsWith('/living')) return fulfillDocumentJson(route, options.empty ? { ...detail, revisions: [], current: null } : detail);
     return fulfillDocumentJson(route, {}, 404);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: 20_000 });
-  if ((page.viewportSize()?.width ?? 1024) >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+  if ((page.viewportSize()?.width ?? 1024) >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await seedCookies();
 }
 
@@ -214,5 +237,5 @@ export async function openDocuments(page: Page, url = DOCUMENTS_URL): Promise<vo
     dispatchEvent(new PopStateEvent('popstate'));
   }, url);
   const viewingDocument = new URL(url, 'http://localhost').pathname.includes('/documents/');
-  await expect(page.getByTestId(viewingDocument ? 'mktg-document-view-page' : 'mktg-documents-page')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId(viewingDocument ? 'mktg-document-view-page' : 'mktg-documents-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }

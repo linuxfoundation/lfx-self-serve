@@ -5,6 +5,7 @@ import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   BRAND_KIT_MODE_LABELS,
@@ -46,7 +47,16 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 // and the revision to export.
 @Component({
   selector: 'lfx-brand-kit-web-view',
-  imports: [NgClass, NgTemplateOutlet, MktgAssetMetaComponent, MessageComponent, ButtonComponent, BrandKitViewComponent, MktgSlidesExportComponent],
+  imports: [
+    TooltipModule,
+    NgClass,
+    NgTemplateOutlet,
+    MktgAssetMetaComponent,
+    MessageComponent,
+    ButtonComponent,
+    BrandKitViewComponent,
+    MktgSlidesExportComponent,
+  ],
   templateUrl: './brand-kit-web-view.component.html',
 })
 export class BrandKitWebViewComponent {
@@ -95,6 +105,8 @@ export class BrandKitWebViewComponent {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that could not be read. */

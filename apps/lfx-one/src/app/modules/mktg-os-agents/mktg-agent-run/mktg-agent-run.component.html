@@ -23,24 +23,6 @@
             <span class="text-xs text-gray-400 truncate">{{ agentTagline }}</span>
           </div>
         </div>
-        @if (showVersionChips()) {
-          <div class="flex items-center gap-1.5 shrink-0" data-testid="mktg-agent-run-version-chips">
-            @for (version of versions(); track version.version) {
-              <button
-                type="button"
-                class="rounded-full border px-2.5 py-1 text-xs font-medium"
-                [ngClass]="
-                  version.version === currentVersion()?.version
-                    ? 'border-blue-300 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                "
-                [attr.data-testid]="'mktg-agent-run-version-chip-' + version.version"
-                (click)="onPickVersion(version.version)">
-                v{{ version.version }}
-              </button>
-            }
-          </div>
-        }
       </div>
 
       <!-- Body -->
@@ -56,114 +38,19 @@
           </div>
         }
 
-        @if (assetViewActive()) {
-          <!-- ASSET VIEW: while the run is live the page is the feed, or the questions, on their own — no document title, status or tabs until there is a document (hand test, 18 Oct); the rendered framework takes the page once it exists. -->
-          <div
-            class="w-full flex flex-col gap-4"
-            [ngClass]="phase() === 'result' ? 'px-6 lg:px-10 pt-6 pb-10' : ''"
-            [attr.data-testid]="phase() === 'result' ? 'mktg-agent-run-result' : 'mktg-agent-run-asset'">
-            @if (phase() === 'questions') {
-              <!-- No card around the live steps: the page's own frame is the one border (hand test, 18 Oct). -->
-              <div data-testid="mktg-agent-run-questions">
-                <lfx-mktg-run-questions
-                  [questions]="pendingQuestions()"
-                  [projectName]="projectName()"
-                  [previousAnswers]="lastAnswers()"
-                  [busy]="answersSending()"
-                  (answered)="onAnswerQuestions($event)" />
-              </div>
-            } @else if (phase() === 'result') {
-              @if (currentBoilerplatesAsset(); as boilerplates) {
-                <!-- The Boilerplates' own app page: the four lengths with their word counts, then the run's report. -->
-                <lfx-mktg-boilerplates-view
-                  [projectName]="projectName()"
-                  [asset]="boilerplates"
-                  [version]="assetVersion()"
-                  [headerMetadata]="previewMetadata()" />
-              } @else if (currentFaqAsset(); as faq) {
-                <lfx-mktg-faq-view [projectName]="projectName()" [asset]="faq" [version]="assetVersion()" [headerMetadata]="previewMetadata()" />
-              } @else {
-                <lfx-mktg-framework-view
-                  [projectName]="projectName()"
-                  [asset]="currentFrameworkAsset()"
-                  [state]="frameworkState()"
-                  [version]="assetVersion()"
-                  [kit]="printKit()"
-                  [headerMetadata]="previewMetadata()" />
-              }
-            } @else {
-              <div data-testid="mktg-agent-run-live">
-                <lfx-mktg-run-activity
-                  [activity]="activity()"
-                  [title]="activityTitle()"
-                  [startedAt]="activityStartedAt()"
-                  [icon]="agent.icon"
-                  [iconClass]="agentIconClass" />
-              </div>
-            }
-
-            @if (phase() === 'result') {
-              <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
-              @if (askedRows().length > 0) {
-                <div class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 flex flex-col gap-2" data-testid="mktg-agent-run-asked">
-                  <button
-                    type="button"
-                    class="flex items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900"
-                    [attr.aria-expanded]="askedExpanded()"
-                    data-testid="mktg-agent-run-asked-toggle"
-                    (click)="onToggleAsked()">
-                    <i class="fa-light" [ngClass]="askedExpanded() ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
-                    The agent asked {{ askedRows().length }} question(s) before writing this draft
-                  </button>
-                  @if (askedExpanded()) {
-                    <dl class="flex flex-col gap-3" data-testid="mktg-agent-run-asked-list">
-                      @for (row of askedRows(); track row.key) {
-                        <div class="flex flex-col gap-0.5" [attr.data-testid]="'mktg-agent-run-asked-' + row.key">
-                          <dt class="text-xs font-semibold text-gray-700">{{ row.label }}</dt>
-                          <dd class="text-xs text-gray-500">{{ row.question }}</dd>
-                          <dd class="text-xs text-gray-800 whitespace-pre-wrap">{{ row.answer }}</dd>
-                          @if (row.originLabel) {
-                            <dd class="text-2xs text-gray-400">{{ row.originLabel }}</dd>
-                          }
-                        </div>
-                      }
-                    </dl>
-                  }
-                </div>
-              }
-
-              <!-- Every stored asset is a document with revisions in the Documents area. -->
-              <!-- Draft previews open in Documents for approval and approved export; a fresh run starts from edited inputs. -->
-              <div
-                class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
-                data-testid="mktg-agent-run-new-run">
-                <div class="flex flex-col gap-0.5 min-w-0">
-                  <span class="text-sm font-medium text-gray-900">Every revision is kept in Documents.</span>
-                  <span class="text-xs text-gray-500" data-testid="mktg-agent-run-change-note">{{ assetChangeNote() }}</span>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  @if (documentsAgentKey) {
-                    <lfx-button
-                      label="Open in Documents"
-                      icon="fa-light fa-folder-open"
-                      [text]="true"
-                      size="small"
-                      data-testid="mktg-agent-run-documents-link"
-                      (onClick)="onOpenDocuments()" />
-                  }
-                  <lfx-button
-                    label="Edit inputs"
-                    icon="fa-light fa-pen"
-                    size="small"
-                    data-testid="mktg-agent-run-edit-inputs-button"
-                    (onClick)="onEditInputs()" />
-                </div>
-              </div>
-            }
+        @if (navigation()) {
+          <div class="px-6 py-4">
+            <lfx-button
+              label="Open asset"
+              [loading]="navigating()"
+              [disabled]="navigating()"
+              (onClick)="onRetryHandoff()"
+              data-testid="mktg-agent-run-open-asset" />
           </div>
-        } @else {
+        }
+
+        <ng-container>
           @switch (phase()) {
-            <!-- FORM phase -->
             @case ('form') {
               <form
                 class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-5"
@@ -423,7 +310,6 @@
               </form>
             }
 
-            <!-- RUNNING phase -->
             @case ('running') {
               @if (intake.liveActivity) {
                 <!-- What the agent is doing, step by step, as it happens: the feed alone in the page frame, as on the asset view (hand test, 18 Oct). -->
@@ -436,36 +322,10 @@
                     [iconClass]="agentIconClass" />
                 </div>
               } @else {
-                <div class="flex flex-col items-center gap-4 px-7 pt-32 pb-16" data-testid="mktg-agent-run-running">
-                  <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="agentIconClass">
-                    <i [class]="agent.icon + ' text-xl'" aria-hidden="true"></i>
-                    <span
-                      class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 animate-spin"
-                      aria-hidden="true"></span>
-                  </span>
-                  <div class="flex flex-col gap-2" role="status" aria-live="polite">
-                    @for (runStage of stages(); track runStage.label) {
-                      <div class="flex items-center gap-2">
-                        @switch (runStage.state) {
-                          @case ('done') {
-                            <i class="fa-light fa-check text-xs text-gray-400" aria-hidden="true"></i>
-                          }
-                          @case ('active') {
-                            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" aria-hidden="true"></span>
-                          }
-                          @default {
-                            <span class="w-2 h-2 rounded-full bg-gray-200" aria-hidden="true"></span>
-                          }
-                        }
-                        <span class="text-sm" [ngClass]="runStage.labelClass">{{ runStage.label }}</span>
-                      </div>
-                    }
-                  </div>
-                </div>
+                <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">Opening the asset page…</div>
               }
             }
 
-            <!-- QUESTIONS phase: the agent read the sources and asks only the gaps, one at a time, each with a suggested answer — on their own, with no document shell or second card around them. -->
             @case ('questions') {
               <div data-testid="mktg-agent-run-questions">
                 <lfx-mktg-run-questions
@@ -476,239 +336,8 @@
                   (answered)="onAnswerQuestions($event)" />
               </div>
             }
-
-            <!-- RESULT phase -->
-            @case ('result') {
-              <div class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-4" data-testid="mktg-agent-run-result">
-                @if (currentBrandKit(); as brandKit) {
-                  <!-- The Brand Kit's revision is the kit itself, shown as an app page with its own header and actions (hand test, 18 Oct); the 16-page book is its print rendering. -->
-                  <div data-testid="mktg-agent-run-brand-kit">
-                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [headerMetadata]="previewMetadata()" />
-                  </div>
-                  <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
-                  @if (askedRows().length > 0) {
-                    <div class="bg-white border border-gray-200 rounded-xl px-4 py-2.5 flex flex-col gap-2" data-testid="mktg-agent-run-asked">
-                      <button
-                        type="button"
-                        class="flex items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900"
-                        [attr.aria-expanded]="askedExpanded()"
-                        data-testid="mktg-agent-run-asked-toggle"
-                        (click)="onToggleAsked()">
-                        <i class="fa-light" [ngClass]="askedExpanded() ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
-                        The agent asked {{ askedRows().length }} question(s) before writing this draft
-                      </button>
-                      @if (askedExpanded()) {
-                        <dl class="flex flex-col gap-3" data-testid="mktg-agent-run-asked-list">
-                          @for (row of askedRows(); track row.key) {
-                            <div class="flex flex-col gap-0.5" [attr.data-testid]="'mktg-agent-run-asked-' + row.key">
-                              <dt class="text-xs font-semibold text-gray-700">{{ row.label }}</dt>
-                              <dd class="text-xs text-gray-500">{{ row.question }}</dd>
-                              <dd class="text-xs text-gray-800 whitespace-pre-wrap">{{ row.answer }}</dd>
-                              @if (row.originLabel) {
-                                <dd class="text-2xs text-gray-400">{{ row.originLabel }}</dd>
-                              }
-                            </div>
-                          }
-                        </dl>
-                      }
-                    </div>
-                  }
-                } @else {
-                  <!-- Document card -->
-                  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                    <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100">
-                      <!-- flex-wrap: on narrow widths the version and status chips drop under the title instead of clipping it or themselves. -->
-                      <div class="flex flex-wrap items-center gap-2 min-w-0">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
-                        <span class="text-sm font-medium text-gray-700 truncate" data-testid="mktg-agent-run-doc-title">{{ docTitle() }}</span>
-                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 shrink-0" data-testid="mktg-agent-run-doc-version">
-                          v{{ currentVersion()?.version }}
-                        </span>
-                        <!--
-                        The review status, verbatim from the document (Draft — pre-filled / from your documents /
-                        ED-reviewed — name, date). The label is never truncated — it wraps — so the full text is always
-                        visible to every user and no hover-only tooltip is needed.
-                      -->
-                        @if (statusChip(); as statusChip) {
-                          <span
-                            class="rounded-full border px-2 py-0.5 text-xs font-medium whitespace-normal"
-                            [ngClass]="statusChip.chipClass"
-                            data-testid="mktg-agent-run-doc-status">
-                            {{ statusChip.label }}
-                          </span>
-                        }
-                      </div>
-                      <div class="flex items-center gap-2 shrink-0">
-                        <lfx-button
-                          label="View"
-                          icon="fa-light fa-eye"
-                          [outlined]="true"
-                          size="small"
-                          data-testid="mktg-agent-run-view-button"
-                          (onClick)="onToggleDocument()" />
-                        <lfx-button
-                          label="Download"
-                          icon="fa-light fa-download"
-                          [outlined]="true"
-                          size="small"
-                          data-testid="mktg-agent-run-download-button"
-                          (onClick)="onDownload()" />
-                      </div>
-                    </div>
-
-                    @if (feedbackNote()) {
-                      <div class="px-4 py-2 border-b border-gray-100 bg-blue-50 text-xs text-blue-700" data-testid="mktg-agent-run-feedback-note">
-                        Incorporates your feedback: “{{ feedbackNote() }}”
-                      </div>
-                    }
-
-                    <!-- A README-less run makes a materially thinner document — say so rather than let it read as the agent underperforming. -->
-                    @if (readmeNote()) {
-                      <div class="flex items-start gap-2 px-4 py-2 border-b border-gray-100 bg-amber-50" data-testid="mktg-agent-run-readme-note">
-                        <i class="fa-light fa-circle-info text-amber-600 text-xs mt-0.5 shrink-0" aria-hidden="true"></i>
-                        <span class="text-xs text-amber-700">{{ readmeNote() }}</span>
-                      </div>
-                    }
-
-                    @if (derivativeChips().length > 0) {
-                      <div class="flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-gray-100" data-testid="mktg-agent-run-derivatives">
-                        @for (chip of derivativeChips(); track chip.key) {
-                          <button
-                            type="button"
-                            class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
-                            [ngClass]="
-                              chip.copied ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
-                            "
-                            [attr.aria-label]="chip.copied ? chip.label + ' copied to the clipboard' : 'Copy the ' + chip.label + ' to the clipboard'"
-                            [attr.data-testid]="'mktg-agent-run-derivative-' + chip.key"
-                            (click)="onCopyDerivative(chip)">
-                            <!-- Copied state is conveyed by text + icon, never color alone. -->
-                            @if (chip.copied) {
-                              <i class="fa-light fa-check" aria-hidden="true"></i>
-                              Copied
-                            } @else {
-                              <i class="fa-light fa-copy" aria-hidden="true"></i>
-                              {{ chip.label }}
-                            }
-                          </button>
-                        }
-                        <!-- aria-label swaps alone aren't announced — this live region tells screen-reader users the copy succeeded. -->
-                        <span class="sr-only" role="status">{{ copiedAnnouncement() }}</span>
-                      </div>
-                    }
-
-                    @if (docExpanded()) {
-                      <div class="px-4 py-4 border-b border-gray-100 max-h-96 overflow-y-auto" data-testid="mktg-agent-run-doc-preview">
-                        <lfx-markdown-renderer [content]="currentVersion()?.document ?? ''" />
-                      </div>
-                    }
-
-                    <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
-                    @if (askedRows().length > 0) {
-                      <div class="flex flex-col gap-2 px-4 py-2.5 border-b border-gray-100" data-testid="mktg-agent-run-asked">
-                        <button
-                          type="button"
-                          class="flex items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900"
-                          [attr.aria-expanded]="askedExpanded()"
-                          data-testid="mktg-agent-run-asked-toggle"
-                          (click)="onToggleAsked()">
-                          <i class="fa-light" [ngClass]="askedExpanded() ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
-                          The agent asked {{ askedRows().length }} question(s) before writing this draft
-                        </button>
-                        @if (askedExpanded()) {
-                          <dl class="flex flex-col gap-3" data-testid="mktg-agent-run-asked-list">
-                            @for (row of askedRows(); track row.key) {
-                              <div class="flex flex-col gap-0.5" [attr.data-testid]="'mktg-agent-run-asked-' + row.key">
-                                <dt class="text-xs font-semibold text-gray-700">{{ row.label }}</dt>
-                                <dd class="text-xs text-gray-500">{{ row.question }}</dd>
-                                <dd class="text-xs text-gray-800 whitespace-pre-wrap">{{ row.answer }}</dd>
-                                @if (row.originLabel) {
-                                  <dd class="text-2xs text-gray-400">{{ row.originLabel }}</dd>
-                                }
-                              </div>
-                            }
-                          </dl>
-                        }
-                      </div>
-                    }
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-3.5" data-testid="mktg-agent-run-sections">
-                      @for (section of sectionChecklist(); track section.label) {
-                        <div class="flex items-center gap-2 min-w-0">
-                          <i class="text-xs shrink-0" [ngClass]="section.iconClass" aria-hidden="true"></i>
-                          <span class="text-xs text-gray-600 truncate">{{ section.label }}</span>
-                          <span class="sr-only">{{ section.srText }}</span>
-                        </div>
-                      }
-                    </div>
-                  </div>
-                }
-
-                <!-- Every stored output is a document with revisions in the Documents area. -->
-                @if (documentsAgentKey) {
-                  <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500" data-testid="mktg-agent-run-documents-note">
-                    <span>Every revision is kept in Documents, where you can open it for review.</span>
-                    <lfx-button
-                      label="Open in Documents"
-                      icon="fa-light fa-folder-open"
-                      [text]="true"
-                      size="small"
-                      data-testid="mktg-agent-run-documents-link"
-                      (onClick)="onOpenDocuments()" />
-                  </div>
-                }
-
-                @if (intake.freshRunPerSubmission) {
-                  <!-- No feedback box: this agent's generate takes none. A new run from edited inputs is stored as a new revision. -->
-                  <div
-                    class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
-                    data-testid="mktg-agent-run-new-run">
-                    <span class="text-xs text-gray-500">Change your answers or documents and generate again; each result is stored as a new revision.</span>
-                    <lfx-button
-                      label="Edit inputs"
-                      icon="fa-light fa-pen"
-                      [outlined]="true"
-                      data-testid="mktg-agent-run-edit-inputs-button"
-                      (onClick)="onEditInputs()" />
-                  </div>
-                } @else {
-                  <!-- Request changes -->
-                  <form class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [formGroup]="feedbackForm" (ngSubmit)="onRegenerate()">
-                    <div class="flex flex-col gap-0.5">
-                      <span class="text-sm font-medium text-gray-700">Request changes</span>
-                      <span class="text-xs text-gray-400"
-                        >Feedback regenerates the document as v{{ nextVersion() }}. Your intake answers are kept — edit them anytime.</span
-                      >
-                    </div>
-                    <lfx-textarea
-                      id="mktg-agent-run-feedback"
-                      [form]="feedbackForm"
-                      control="feedback"
-                      [rows]="3"
-                      placeholder="What should change in this draft?"
-                      styleClass="w-full min-h-20 resize-y"
-                      dataTest="mktg-agent-run-feedback" />
-                    <div class="flex items-center gap-3">
-                      <lfx-button
-                        type="submit"
-                        [label]="'Regenerate as v' + nextVersion()"
-                        icon="fa-light fa-rotate-right"
-                        [disabled]="regenerateDisabled()"
-                        data-testid="mktg-agent-run-regenerate-button" />
-                      <lfx-button
-                        label="Edit inputs"
-                        icon="fa-light fa-pen"
-                        [outlined]="true"
-                        data-testid="mktg-agent-run-edit-inputs-button"
-                        (onClick)="onEditInputs()" />
-                    </div>
-                    <span class="text-xs text-gray-400">Foundation agents re-run quarterly — regenerate anytime to keep this current.</span>
-                  </form>
-                }
-              </div>
-            }
           }
-        }
+        </ng-container>
       </div>
     </div>
   </div>
