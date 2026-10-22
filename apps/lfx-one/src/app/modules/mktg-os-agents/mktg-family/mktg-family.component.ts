@@ -15,7 +15,7 @@ import {
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
+import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, mktgKitRootCrumb, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -26,6 +26,7 @@ import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-s
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
 import { MktgFamilyDetailsComponent } from '../components/mktg-family-details/mktg-family-details.component';
 import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.component';
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 
 @Component({
   selector: 'lfx-mktg-family',
@@ -38,6 +39,7 @@ import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.co
     MktgFamilyDetailsComponent,
     PageHeaderComponent,
     MktgRebuildComponent,
+    MktgBreadcrumbComponent,
   ],
   providers: [MktgKitService],
   templateUrl: './mktg-family.component.html',
@@ -58,6 +60,7 @@ export class MktgFamilyComponent {
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
+  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();

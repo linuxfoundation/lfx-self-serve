@@ -136,6 +136,9 @@ describe('Marketing family page', () => {
     await harness.fixture.whenStable();
     expect(TestBed.inject(Title).getTitle()).toBe('Positioning & brand · LFX');
     expect(root?.textContent).toContain('Boilerplates');
+    expect(root?.querySelector('[data-testid="mktg-breadcrumb-link-0"]')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=synthetic');
+    expect(root?.querySelector('[aria-current="page"]')?.textContent).toBe('Positioning & brand');
+    expect(root?.querySelector('[data-testid="mktg-family-kit-link"]')).toBeNull();
     expect(root?.querySelector('[data-testid="mktg-family-open-messaging-framework"]')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/documents/foundation-message/living?project=synthetic'
     );

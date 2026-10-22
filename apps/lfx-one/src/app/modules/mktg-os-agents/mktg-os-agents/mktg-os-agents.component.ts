@@ -15,12 +15,13 @@ import {
   MktgKitAgentTile,
   MktgDocumentsResponse,
 } from '@lfx-one/shared/interfaces';
-import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { mktgAgentDocumentName, mktgKitRootCrumb } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, forkJoin, map, merge, Observable, of, switchMap } from 'rxjs';
 
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 
@@ -29,7 +30,7 @@ import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.
 // resolution and listing dates follow the active project.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [DatePipe, NgClass, MktgKitTabsComponent, MktgKitHeaderComponent],
+  imports: [DatePipe, NgClass, MktgKitTabsComponent, MktgKitHeaderComponent, MktgBreadcrumbComponent],
   templateUrl: './mktg-os-agents.component.html',
 })
 export class MktgOsAgentsComponent {
@@ -59,6 +60,8 @@ export class MktgOsAgentsComponent {
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
   protected readonly hasProject = computed(() => !!this.projectContext.activeContext()?.uid);
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
+  protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.projectName(), ['..']), { label: 'Agents' }]);
   protected readonly tiles: Signal<MktgKitAgentTile[]> = this.initTiles();
   protected readonly familyGroups: Signal<MktgKitAgentGroup[]> = this.initFamilyGroups();
 

@@ -11,6 +11,7 @@
  * `/api/mktg-agents/documents` answering with every group empty.
  *
  * Coverage:
+ *   D0  No type filter: All documents empty state
  *   D1  Living document with no revisions: `mktg-documents-empty-living` and its "Run the …" link
  *   D2  Run type with no runs: `mktg-documents-empty-runs`
  *
@@ -33,6 +34,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { MktgDocumentsResponse, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const PROJECT_UID = 'p0000000-0000-0000-0000-00000000d0c5';
@@ -94,6 +96,7 @@ async function stubContext(page: Page): Promise<void> {
  * route on the Express server, whose fetches bypass `page.route` and hit the real BFF.
  */
 async function gotoDocuments(page: Page, query = ''): Promise<void> {
+  await suppressCookieBanner(page);
   await pinMktgFlag(page);
   await seedContextCookies(page);
   await stubContext(page);
@@ -116,13 +119,24 @@ test.describe('Marketing OS Documents area empty states', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test.beforeEach(() => {
-    if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+    if (!process.env['TEST_USERNAME'] || !process.env['TEST_PASSWORD']) {
       test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
     }
   });
 
-  test('D1: a living document with no revisions says so and links to its agent', async ({ page }) => {
+  test.afterEach(async ({ page }, info) => {
+    await page.screenshot({ path: info.outputPath('documents-empty.png'), fullPage: true });
+  });
+
+  test('D0: no type filter shows the empty All documents collection', async ({ page }) => {
     await gotoDocuments(page);
+    await expect(page.getByTestId('mktg-documents-empty-all')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-project-title')).toHaveText(PROJECT_NAME);
+  });
+
+  test('D1: a living document with no revisions says so and links to its agent', async ({ page }) => {
+    await gotoDocuments(page, '&type=brand-kit');
 
     const empty = page.getByTestId('mktg-documents-empty-living');
     await expect(empty).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });

@@ -22,6 +22,8 @@ describe('Kit placeholder tabs', () => {
       expect(fixture.nativeElement.textContent).toContain(`${title} comes with its own item`);
       expect(fixture.nativeElement.textContent).toContain('Coming soon');
       expect(fixture.nativeElement.querySelector('h1').textContent).toBe('Synthetic Project');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb-current"]')?.textContent).toBe(title);
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-breadcrumb"] a')).toHaveLength(1);
     });
   }
 });

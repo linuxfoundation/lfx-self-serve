@@ -1,11 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
 import { expect } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing family responsive structure', () => {
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
   for (const width of [1440, 1280, 390]) {
     for (const familyId of ['positioning-brand', 'member-sponsor']) {
       test(`${familyId} structure and export placement at ${width}px`, async ({ page }, testInfo) => {
@@ -30,21 +34,40 @@ test.describe('Marketing family responsive structure', () => {
         for (const cell of await page.getByTestId(/^mktg-family-(state|current)-/).all()) {
           await expect(cell).toHaveCSS('white-space', 'nowrap');
         }
-        const rebuild = await page.getByTestId('mktg-family-rebuild').getByRole('button').boundingBox();
-        const caption = await page.getByTestId('mktg-family-rebuild-unavailable').boundingBox();
+        const rebuildButton = page.getByTestId('mktg-family-rebuild').getByRole('button');
+        const rebuild = await rebuildButton.boundingBox();
         expect(rebuild).not.toBeNull();
-        expect(caption).not.toBeNull();
-        if (rebuild && caption) expect(caption.y).toBeGreaterThanOrEqual(rebuild.y + rebuild.height);
-        await expect(page.getByTestId('mktg-family-kit-link')).toContainText('Synthetic Kit Project kit');
+        await expect(rebuildButton).toBeDisabled();
+        if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
+          // The real producer is present; this fixture has no stale downstream assets.
+          await expect(page.locator('lfx-mktg-rebuild')).toBeAttached();
+          await expect(page.getByTestId('mktg-rebuild-progress')).toHaveCount(0);
+          await expect(page.getByTestId('mktg-family-rebuild-unavailable')).toHaveCount(0);
+        } else {
+          await expect(page.locator('lfx-mktg-rebuild')).toHaveCount(0);
+          const caption = await page.getByTestId('mktg-family-rebuild-unavailable').boundingBox();
+          expect(caption).not.toBeNull();
+          if (rebuild && caption) expect(caption.y).toBeGreaterThanOrEqual(rebuild.y + rebuild.height);
+        }
+        await expect(page.getByTestId('mktg-breadcrumb-link-0')).toContainText('Synthetic Kit Project kit');
         if (familyId === 'positioning-brand') await expect(page.getByTestId('mktg-family-sources')).toBeVisible();
         else {
           await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
-          await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
+          const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === familyId);
+          const runnable = MKTG_AGENTS.find((agent) => family?.agentIds.includes(agent.id) && agent.status === 'active');
+          const runButton = page.getByTestId('mktg-family-run').getByRole('button');
           const run = await page.getByTestId('mktg-family-run').boundingBox();
-          const reason = await page.getByTestId('mktg-family-run-unavailable').boundingBox();
           expect(run).not.toBeNull();
-          expect(reason).not.toBeNull();
-          if (run && reason) expect(reason.y).toBeGreaterThanOrEqual(run.y + run.height);
+          if (runnable) {
+            await expect(runButton).toBeEnabled();
+            await expect(runButton).toHaveAccessibleName(`Run ${runnable.name}`);
+            await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
+          } else {
+            await expect(runButton).toBeDisabled();
+            const reason = await page.getByTestId('mktg-family-run-unavailable').boundingBox();
+            expect(reason).not.toBeNull();
+            if (run && reason) expect(reason.y).toBeGreaterThanOrEqual(run.y + run.height);
+          }
         }
         await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
         await expect(page.getByTestId('mktg-family-exports').getByRole('button')).toHaveCount(2);

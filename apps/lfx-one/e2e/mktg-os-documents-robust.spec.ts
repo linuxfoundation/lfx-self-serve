@@ -2,11 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
-import { DOCUMENTS_URL, DOCUMENT_VIEW_URL, documentFixture, fulfillDocumentJson, openDocuments, setupDocuments } from './helpers/mktg-os-documents.helper';
+import {
+  DOCUMENT_PROJECT,
+  DOCUMENT_TYPE,
+  DOCUMENTS_URL,
+  DOCUMENT_VIEW_URL,
+  documentFixture,
+  fulfillDocumentJson,
+  openDocuments,
+  setupDocuments,
+} from './helpers/mktg-os-documents.helper';
 
 test.describe('Marketing OS Documents structure', () => {
   test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
   test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath('final-structure.png'), fullPage: true });
   });
@@ -32,21 +45,26 @@ test.describe('Marketing OS Documents structure', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await page.route(/\/api\/mktg-agents\/documents\?/, async (route) => {
-      await gate;
-      await fulfillDocumentJson(route, { project: 'synthetic', groups: [] });
-    });
+    await page.route(
+      /\/api\/mktg-agents\/documents\?/,
+      async (route) => {
+        await gate;
+        await fulfillDocumentJson(route, { project: 'synthetic', groups: [] });
+      },
+      { times: 1 }
+    );
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
     release();
     await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
-    await page.unroute(/\/api\/mktg-agents\/documents\?/);
     await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
     await page.getByTestId('mktg-document-crumb-kit').click();
-    await expect(page).toHaveURL(DOCUMENTS_URL.replace('/documents', ''));
-    // The kit crumb returns to the scoped kit; reopen Documents for its table checks.
-    await openDocuments(page);
+    await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
+    // Enter via the fifth tab, then select the type to exercise content-ready scrolling.
+    await page.getByTestId('mktg-kit-tab-documents').click();
+    await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
     await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(5);
     await expect(page.getByTestId('mktg-documents-page').locator('main, aside')).toHaveCount(0);
   });
@@ -113,9 +131,10 @@ test.describe('Marketing OS Documents structure', () => {
       expect(actions.width).toBeGreaterThan(40);
       expect(actions.width).toBeLessThanOrEqual(64);
       await page.getByTestId('mktg-document-crumb-kit').click();
-      await expect(page).toHaveURL(DOCUMENTS_URL.replace('/documents', ''));
-      // Keep the Documents layout assertions after checking the scoped kit destination.
-      await openDocuments(page);
+      await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
+      // Keep the Kit URL assertion, then exercise the real tab → type-pick scroll path.
+      await page.getByTestId('mktg-kit-tab-documents').click();
+      await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
       await expect(page).toHaveURL(new RegExp(DOCUMENTS_URL.split('?')[0]));
       await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
       await expect(page.getByTestId('mktg-documents-page').locator('main')).toHaveCount(0);

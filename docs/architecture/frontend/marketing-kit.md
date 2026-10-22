@@ -6,7 +6,15 @@ The project opens its kit. `MKTG_KIT_FAMILIES` owns the Main board's family orde
 asset membership and lead copy. Agent names, routing and availability come from
 `MKTG_AGENTS`; declared ids without a catalog entry create no tile or enabled Run action.
 The Kit tab keeps all nine families; the Agents tab groups only catalog-backed agents.
-All four tabs share the Marketing kit/project header. Requests and Access are placeholders.
+All five tabs (Kit, Agents, Requests, Access and Documents) share `lfx-mktg-kit-header`
+(the project h1), the `max-w-screen-2xl` page width and `lfx-mktg-kit-tabs`.
+Requests and Access are placeholders. Documents lists all stored assets by default;
+`?type=<agentKey>` filters to a document type, and an absent or unknown type shows All documents.
+The `/documents` route remains a deep-link target. Its Documents title/description sit below the tab strip.
+The listing refreshes on entry and type changes; below the page container's 800px content-box breakpoint,
+a type change brings the selected panel into view once its content renders. A successful restore cancels
+any pre-write listing refetch and reads the committed current pointer before accepting new list data.
+The five Kit tabs stay in one horizontally scrollable row on narrow screens.
 
 ## Plan-of-record conformance
 
