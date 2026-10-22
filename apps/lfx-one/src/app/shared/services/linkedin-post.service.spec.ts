@@ -68,6 +68,66 @@ describe('LinkedIn pending document recovery', () => {
     http.verify();
   });
 
+  it.each(['provider', 'idle'] as const)('ends a reloaded %s failure on its first poll and retires the pending capability', (kind) => {
+    vi.useFakeTimers();
+    const service = TestBed.inject(LinkedinPostService);
+    const http = TestBed.inject(HttpTestingController);
+    const inputs = { content_source: 'text', content_text: 'Synthetic release notes' };
+    service.start(LINKEDIN_POST_INTAKE, 'project-one', inputs).subscribe();
+    http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
+    const restored = service.pending(LINKEDIN_POST_INTAKE, 'project-one');
+    expect(restored?.retryInputs?.answers).toEqual(inputs);
+    if (!restored) throw new Error('Expected pending run');
+    const next = vi.fn();
+    const complete = vi.fn();
+    service.wait(LINKEDIN_POST_INTAKE, 'project-one', restored).subscribe({ next, complete });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    const failure =
+      kind === 'provider'
+        ? { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry with your inputs.' } }
+        : { status: 'failed', failureText: 'Synthetic idle-runtime reply.' };
+    http.expectOne(LINKEDIN_POST_INTAKE.endpoints.result).flush(failure);
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')).toBeNull();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs * 3);
+    http.expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+    service.start(LINKEDIN_POST_INTAKE, 'project-one', restored.retryInputs?.answers ?? {}).subscribe();
+    const retry = http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate);
+    expect(retry.request.body.answers).toEqual(inputs);
+    retry.flush({ ...run, sessionId: 'fresh-session' });
+    http.verify();
+  });
+
+  it.each(['file', 'text'])('keeps a large %s source in live memory, never in the reload capability', (kind) => {
+    const service = TestBed.inject(LinkedinPostService);
+    const http = TestBed.inject(HttpTestingController);
+    const key = kind === 'file' ? 'content_file_base64' : 'content_text';
+    const answers = { content_source: kind, [key]: 's'.repeat(1_400_000) };
+    const next = vi.fn();
+    service.start(LINKEDIN_POST_INTAKE, 'project-one', answers).subscribe(next);
+    http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
+    expect(next.mock.calls[0][0].retryInputs.answers[key]).toBe(answers[key]);
+    const stored = service.pending(LINKEDIN_POST_INTAKE, 'project-one');
+    expect(stored?.retryInputs?.requiresSource).toBe(true);
+    expect(stored?.retryInputs?.answers).not.toHaveProperty(key);
+    expect(JSON.stringify(stored).length).toBeLessThan(2000);
+    http.verify();
+  });
+
+  it('keeps first-run profile setup in live memory, never in the pending browser capability', () => {
+    const service = TestBed.inject(LinkedinPostService);
+    const http = TestBed.inject(HttpTestingController);
+    const setup = { name: 'Synthetic author', role: 'Maintainer', focus_areas: 'Tools', primary_audience: 'Developers' };
+    const next = vi.fn();
+    service.start(LINKEDIN_POST_INTAKE, 'project-one', { content_source: 'text', content_text: 'Synthetic source.' }, setup).subscribe(next);
+    http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
+    expect(next.mock.calls[0][0].retryInputs.setup).toEqual(setup);
+    expect(JSON.stringify(service.pending(LINKEDIN_POST_INTAKE, 'project-one'))).not.toContain('Synthetic author');
+    expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')?.retryInputs).not.toHaveProperty('setup');
+    http.verify();
+  });
+
   it('keeps the sibling pending shape, isolates users/projects and prunes expired capabilities', () => {
     const service = TestBed.inject(LinkedinPostService);
     const http = TestBed.inject(HttpTestingController);

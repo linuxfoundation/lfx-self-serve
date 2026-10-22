@@ -6,6 +6,8 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   LINKEDIN_API,
+  LINKEDIN_RETRY_TEXT_MAX_CHARS,
+  LINKEDIN_SHARE_LINK_MAX_CHARS,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
@@ -23,7 +25,7 @@ import {
   MktgRunAnswer,
   MktgRunAnswersResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, exhaustMap, filter, Observable, of, take, tap, throwError, timeout, timer } from 'rxjs';
+import { catchError, exhaustMap, filter, map, Observable, of, take, tap, throwError, timeout, timer } from 'rxjs';
 import { UserService } from './user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -50,10 +52,28 @@ export class LinkedinPostService {
     const owner = this.user.user()?.sub;
     return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}) }).pipe(
       take(1),
+      map((run) => ({ ...run, retryInputs: { answers: { ...answers }, ...(setup ? { setup: { ...setup } } : {}) } })),
       tap((run) => {
         if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
           throw new Error('The run belongs to a different user or has no document destination.');
-        const pending: LinkedinPendingRun = { ...run, agentId: intake.agentId, projectUid: project, savedAt: new Date().toISOString() };
+        // Allowlist bounded reload fields; upload bytes and large text stay in the live snapshot only.
+        const storedAnswers = Object.fromEntries(
+          Object.entries(answers).filter(
+            ([key, value]) =>
+              (['content_source', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY].includes(key) && value.length <= LINKEDIN_SHARE_LINK_MAX_CHARS) ||
+              (key === 'content_text' && value.length <= LINKEDIN_RETRY_TEXT_MAX_CHARS)
+          )
+        );
+        const pending: LinkedinPendingRun = {
+          ...run,
+          retryInputs: {
+            answers: storedAnswers,
+            requiresSource: answers['content_source'] === 'file' || (answers['content_text']?.length ?? 0) > LINKEDIN_RETRY_TEXT_MAX_CHARS,
+          },
+          agentId: intake.agentId,
+          projectUid: project,
+          savedAt: new Date().toISOString(),
+        };
         if (isPlatformBrowser(this.platform)) {
           try {
             localStorage.setItem(`${this.prefix(owner)}${project}:${run.documentId}`, JSON.stringify(pending));
@@ -159,6 +179,7 @@ export class LinkedinPostService {
       }),
       filter(
         (result) =>
+          result.status === 'failed' ||
           (result.status === 'ready' && !!result.envelope && !!result.persistence) ||
           (result.status === 'questions' &&
             !!result.questions?.length &&
@@ -169,7 +190,7 @@ export class LinkedinPostService {
       timeout(MKTG_RUN_POLL.timeoutMs),
       tap((result) => {
         if (owner !== this.user.user()?.sub) throw new Error('The effective user changed.');
-        if (result.status === 'ready' && owner && isPlatformBrowser(this.platform)) {
+        if ((result.status === 'ready' || result.status === 'failed') && owner && isPlatformBrowser(this.platform)) {
           try {
             localStorage.removeItem(`${this.prefix(owner)}${project}:${run.documentId}`);
           } catch {

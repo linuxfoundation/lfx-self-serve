@@ -4,7 +4,13 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import {
+  MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_KEY_PREFIX,
+  MKTG_RUN_STORAGE_TTL_MS,
+} from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
   MktgChatRequest,
@@ -139,7 +145,7 @@ export class MktgAgentRunService {
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
-    } else if (request.intake.regenerateViaGenerate) {
+    } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
       attempt$ = this.resubmitRun(request, stored);
     } else {
       attempt$ = this.followUp(request, stored);
@@ -346,6 +352,22 @@ export class MktgAgentRunService {
             })
           );
         }
+        if (result.status === 'failed') {
+          // Both provider failure metadata and main's idle failureText use the same safe Retry path.
+          // Invalidate session reuse, not successful versions, answers or Q&A.
+          const stored = this.loadRun(request.projectUid, request.agentId);
+          if (stored) this.saveRun({ ...stored, sessionFailed: true });
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'failed',
+              failure: result.failure ?? {
+                reason: MKTG_RUN_FAILURE_REASON,
+                eventType: 'session_failed',
+              },
+            })
+          );
+        }
         if (result.status === 'refused') {
           // The agent did not run: nothing to store, nothing to retry.
           return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
@@ -409,7 +431,8 @@ export class MktgAgentRunService {
       !!result.questionsId &&
       result.questionsId !== answeredQuestionsId;
     const isRefused = (result: MktgRunResultResponse): boolean => result.status === 'refused' && !!result.reply;
-    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result) || isRefused(result);
+    const isTerminal = (result: MktgRunResultResponse): boolean =>
+      result.status === 'failed' || isDocument(result) || isNewQuestions(result) || isRefused(result);
     return defer(() => {
       // One wall-clock deadline for the whole wait: with a live feed the poll
       // emits along the way, so a per-emission timeout would never fire.

@@ -1158,6 +1158,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
  * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
+  /** A failed attempt invalidates session reuse, never the successful version history. */
+  sessionFailed?: boolean;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */
@@ -1242,6 +1244,7 @@ export type MktgGenerateProgress =
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
+  | { type: 'failed'; failure: MktgRunFailure }
   | { type: 'document'; run: MktgStoredAgentRun }
   | { type: 'persisted'; run: MktgStoredAgentRun | null };
 

@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   FOUNDATION_MESSAGE_INTAKE,
   ICP_INTAKE,
+  MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -83,6 +84,33 @@ describe('MktgAgentRunService', () => {
     versions: [{ version: 1, document: '# v1', createdAt: '2026-08-19T00:00:00.000Z' }],
     // Freshly saved — well inside the storage TTL (fake timers pin Date.now to real time).
     savedAt: new Date().toISOString(),
+  });
+
+  it.each(['provider', 'idle'] as const)('stops on %s failure without losing history and retries with a fresh session', (kind) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const failure =
+      kind === 'provider'
+        ? { eventType: 'runtime_error', reason: 'The agent could not complete this run. Retry.' }
+        : { eventType: 'session_failed', reason: MKTG_RUN_FAILURE_REASON };
+    resultResponses = [kind === 'provider' ? { status: 'failed', failure } : { status: 'failed', failureText: 'Synthetic idle-runtime reply.' }];
+    const events: MktgGenerateProgress[] = [];
+    service.generate(generateRequest()).subscribe((event) => events.push(event));
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    expect(events).toEqual([{ type: 'submitted' }, { type: 'failed', failure }]);
+    expect(service.loadRun('proj-1', 'brand-kit')).toMatchObject({ sessionFailed: true, versions: storedV1Run().versions });
+    httpPost.mockClear();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs * 2);
+    expect(httpPost).not.toHaveBeenCalled();
+    resultResponses = [{ status: 'ready', version: 2, documentMarkdown: '# v2' }];
+    service.generate(generateRequest('Keep this feedback.')).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      CHAT_INTAKE.endpoints.generate,
+      expect.objectContaining({ answers: ANSWERS, priorVersion: 1, feedback: 'Keep this feedback.' })
+    );
+    expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2]);
+    expect(service.loadRun('proj-1', 'brand-kit')?.sessionFailed).toBeUndefined();
   });
 
   beforeEach(() => {

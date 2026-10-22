@@ -26,6 +26,7 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_VOICE_FIELDS,
   MKTG_AGENTS,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
   LinkedinContentSource,
@@ -112,6 +113,7 @@ export class LinkedinPostRunComponent {
   protected readonly writer = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly runFailed = signal(false);
   protected readonly editing = signal(false);
   protected readonly saved = signal<LinkedinStoredProfile | null>(null);
   protected readonly profileSaved = signal(false);
@@ -179,6 +181,7 @@ export class LinkedinPostRunComponent {
           this.setup.set(null);
           this.result.set(null);
           this.run.set(null);
+          this.runFailed.set(false);
           this.error.set('');
           this.editing.set(false);
           this.file.set(null);
@@ -287,6 +290,7 @@ export class LinkedinPostRunComponent {
     if (!this.saved() && !this.result()) {
       this.setup.set(answers);
       this.editing.set(false);
+      if (this.runFailed()) this.error.set('Your setup is ready. Retry to draft with your kept source inputs.');
       return;
     }
     this.busy.set(true);
@@ -332,6 +336,7 @@ export class LinkedinPostRunComponent {
     this.busy.set(true);
     this.startedAt.set(Date.now());
     this.profileSaved.set(false);
+    this.runFailed.set(false);
     this.activity.set([]);
     this.questionsId.set('');
     this.questionsProject.set('');
@@ -386,11 +391,48 @@ export class LinkedinPostRunComponent {
     const run = this.run();
     const project = this.context.activeContextUid();
     if (!run || !project || this.busy() || this.questions().length) return;
-    if (!this.startedAt()) this.startedAt.set(Date.now());
+    if (this.runFailed() || !this.startedAt()) this.startedAt.set(Date.now());
     this.busy.set(true);
     this.error.set('');
-    this.generation = this.api
-      .wait(this.intake(), project, run, (response) => this.activity.set(response.activity ?? []))
+    const inputs = run.retryInputs;
+    if (this.runFailed() && !this.saved() && !inputs?.setup && !this.setup()) {
+      this.busy.set(false);
+      this.profileForm.reset();
+      this.editing.set(true);
+      this.error.set("Your setup answers aren't kept in the browser — enter them again to draft");
+      return;
+    }
+    if (this.runFailed() && inputs?.requiresSource) {
+      const fileSource = inputs.answers['content_source'] === 'file';
+      this.busy.set(false);
+      this.source.set(fileSource ? 'file' : 'text');
+      this.file.set(null);
+      this.contentForm.controls.text.setValue('');
+      this.run.set(null);
+      this.runFailed.set(false);
+      this.error.set(
+        fileSource
+          ? "Your source isn't kept in the browser — choose the file again to draft"
+          : "Your source isn't kept in the browser — paste it again to draft"
+      );
+      return;
+    }
+    if (this.runFailed() && !inputs) {
+      this.busy.set(false);
+      this.error.set('This failed run cannot be resumed. Your inputs are kept — draft again to start a new run.');
+      return;
+    }
+    const outcome =
+      this.runFailed() && inputs
+        ? this.api.start(this.intake(), project, inputs.answers, inputs.setup ?? this.setup() ?? undefined).pipe(
+            switchMap((fresh) => {
+              this.run.set(fresh);
+              this.runFailed.set(false);
+              return this.waitForRun(project, fresh);
+            })
+          )
+        : this.waitForRun(project, run);
+    this.generation = outcome
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({ next: (response) => this.handleResult(response), error: (error: unknown) => this.failedRun(error) });
   }
@@ -472,6 +514,14 @@ export class LinkedinPostRunComponent {
 
   private handleResult(response: LinkedinResult): void {
     this.activity.set(response.activity ?? []);
+    if (response.status === 'failed') {
+      this.busy.set(false);
+      this.questions.set([]);
+      this.runFailed.set(true);
+      // An idle failureText is a raw final reply, not requester-safe provider diagnostics.
+      this.error.set(response.failure?.reason ?? MKTG_RUN_FAILURE_REASON);
+      return;
+    }
     if (response.status === 'questions' && response.questions?.length && response.questionsId) {
       this.busy.set(false);
       this.questions.set(response.questions);

@@ -226,6 +226,7 @@ export class MktgAgentRunComponent {
   protected readonly phase = signal<MktgRunPhase>('form');
   protected readonly stage = signal(0);
   protected readonly errorText = signal('');
+  protected readonly runFailed = signal(false);
   protected readonly run = signal<MktgStoredAgentRun | null>(null);
   protected readonly viewVersion = signal<number | null>(null);
   protected readonly docExpanded = signal(false);
@@ -730,6 +731,29 @@ export class MktgAgentRunComponent {
       return;
     }
     this.startGeneration();
+  }
+
+  protected onRetryRun(): void {
+    const request = this.activeRequest;
+    if (!this.runFailed() || !request || this.phase() === 'running') return;
+    this.runFailed.set(false);
+    this.errorText.set('');
+    this.activity.set([]);
+    this.activityStartedAt.set(Date.now());
+    this.phase.set('running');
+    this.stage.set(0);
+    this.generationSub?.unsubscribe();
+    this.generationSub = this.runService
+      .generate(request)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (progress) => this.onProgress(progress, request.projectUid),
+        error: () => {
+          this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
+          this.runFailed.set(true);
+          this.phase.set(this.versions().length ? 'result' : 'form');
+        },
+      });
   }
 
   protected onRegenerate(): void {
@@ -1323,6 +1347,7 @@ export class MktgAgentRunComponent {
     this.viewVersion.set(null);
     this.phase.set('form');
     this.stage.set(0);
+    this.runFailed.set(false);
     this.errorText.set('');
     this.docExpanded.set(false);
     this.fromLfxApplied.set({});
@@ -1478,6 +1503,7 @@ export class MktgAgentRunComponent {
     // re-offered once this run's 24h record expires.
     this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
+    this.runFailed.set(false);
     this.errorText.set('');
     this.docExpanded.set(false);
     this.clearQuestions();
@@ -1557,6 +1583,14 @@ export class MktgAgentRunComponent {
         this.run.set(progress.run);
       }
       this.dependencyService.notifyDocumentsChanged(projectUid);
+      return;
+    }
+    if (progress.type === 'failed') {
+      this.writingStretch.set(false);
+      this.clearQuestions();
+      this.errorText.set(progress.failure.reason);
+      this.runFailed.set(true);
+      this.phase.set(this.versions().length > 0 ? 'result' : 'form');
       return;
     }
     if (progress.type === 'refused') {

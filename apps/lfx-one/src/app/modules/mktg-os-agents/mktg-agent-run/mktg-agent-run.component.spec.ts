@@ -221,6 +221,35 @@ describe('MktgAgentRunComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
   });
 
+  it('leaves the running phase on terminal failure, keeps typed inputs and offers Retry', async () => {
+    await configure();
+    const before = component['intakeForm'].getRawValue();
+    component['phase'].set('running');
+    component['onProgress']({ type: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry.' } }, 'proj-1');
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('form');
+    expect(component['intakeForm'].getRawValue()).toEqual(before);
+    expect(query('mktg-agent-run-error')?.textContent).toContain('The agent could not start. Retry.');
+    expect(query('mktg-agent-run-retry')?.textContent).toContain('Retry');
+    const actions = query('mktg-agent-run-error-actions');
+    expect(actions?.classList.contains('mt-3')).toBe(true);
+    expect(actions?.classList.contains('flex')).toBe(true);
+    expect(actions?.classList.contains('gap-2')).toBe(true);
+    expect(actions?.contains(query('mktg-agent-run-retry'))).toBe(true);
+    const request: MktgGenerateRequest = {
+      agentId: SHELL_AGENT.id,
+      projectUid: 'proj-1',
+      intake: SHELL_INTAKE,
+      answers: before,
+      feedback: 'Keep the revision feedback.',
+    };
+    component['activeRequest'] = request;
+    component['intakeForm'].reset(); // Retry must not rebuild from a subsequently edited form.
+    component['onRetryRun']();
+    expect(generate).toHaveBeenLastCalledWith(request);
+    expect(generate.mock.calls.at(-1)?.[0].feedback).toBe('Keep the revision feedback.');
+  });
+
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
     it(`redirects unrunnable ${agentId} to the grid route`, async () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);

@@ -25,6 +25,8 @@ Slides deliberately shares this rule: new work or text inside five seconds now
 recovers; its undated-error policy is unchanged. No session metadata probe is used
 because its status vocabulary is unverified. Lookup failures log a warning and
 preserve the original outcome.
+Generic browser history retains versions/answers/Q&A on failure, marks session reuse
+invalid, and retries the exact failed request including feedback on a new session.
 
 ## Current is not newest
 
