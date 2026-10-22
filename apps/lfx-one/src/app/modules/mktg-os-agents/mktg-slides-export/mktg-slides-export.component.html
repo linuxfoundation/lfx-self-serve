@@ -54,6 +54,11 @@
                 <lfx-button label="Close" [text]="true" size="small" data-testid="mktg-slides-export-close" (onClick)="onClose()" />
               </div>
               <p class="text-xs text-gray-500" data-testid="mktg-slides-export-detail">{{ resultDetail() }}</p>
+              @if (stale()) {
+                <span class="self-start rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700" data-testid="mktg-slides-export-stale"
+                  >Out of date: the {{ assetLabel() }}'s approved revision has changed</span
+                >
+              }
               @if (brand(); as summary) {
                 <p class="text-xs text-gray-600" data-testid="mktg-slides-export-brand">{{ summary.text }}</p>
                 @if (summary.logoNote) {
@@ -95,9 +100,7 @@
 
       @if (showLookupFailed()) {
         <div class="flex flex-wrap items-center gap-2 text-sm text-gray-700" data-testid="mktg-slides-export-lookup-failed">
-          <span
-            >Could not check for an earlier deck of this {{ assetLabel() }}. Export waits until the check succeeds, so no second deck is made by mistake.</span
-          >
+          <span>Could not check for an earlier deck of this {{ assetLabel() }}. Check again to refresh its export status.</span>
           <lfx-button
             [label]="lookupChecking() ? 'Checking…' : 'Check again'"
             icon="fa-light fa-rotate-right"
@@ -119,10 +122,20 @@
               [href]="previous.link"
               target="_blank"
               rel="noopener noreferrer"
-              data-testid="mktg-slides-export-last-link"
-              >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
+              data-testid="mktg-slides-export-last-link">
+              @if (viewingDraft()) {
+                Last export: from approved v{{ previous.revisionNumber }}
+              } @else {
+                Open the last export
+              }
+              <span class="sr-only"> (opens in a new tab)</span></a
             >
-            <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from revision {{ previous.revisionNumber }}</span>
+            <span
+              >· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }}
+              @if (!viewingDraft()) {
+                · from revision {{ previous.revisionNumber }}
+              }
+            </span>
             @if (stale()) {
               <span class="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700" data-testid="mktg-slides-export-stale"
                 >Out of date: the {{ assetLabel() }}'s approved revision has changed</span

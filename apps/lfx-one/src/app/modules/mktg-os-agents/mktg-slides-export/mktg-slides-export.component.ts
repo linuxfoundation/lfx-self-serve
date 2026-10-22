@@ -27,8 +27,9 @@ import {
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, merge, Observable, of, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
 
 // Export to Google Slides on a Marketing OS asset page (the Messaging
 // Framework and the Brand Kit): the panel under the asset's header that the
@@ -51,6 +52,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, S
 })
 export class MktgSlidesExportComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly exportService = inject(MktgSlidesExportService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -60,6 +62,8 @@ export class MktgSlidesExportComponent {
   public readonly target = input<MktgSlidesExportTarget | null>(null);
   /** Read the viewed document's history before its approved export bytes resolve. */
   public readonly lookupTarget = input<MktgSlidesExportTarget | null>(null);
+  /** The viewed revision is a Draft, independent of the approved export target. */
+  public readonly viewingDraft = input(false);
 
   // === Signals ===
   public readonly phase = signal<MktgSlidesExportPhase>('idle');
@@ -73,7 +77,7 @@ export class MktgSlidesExportComponent {
   private readonly mode = signal<MktgSlidesExportMode>('create');
   /** True once the current target's last export has been read: until then Export cannot tell Update from Create. */
   private readonly lookupSettled = signal(false);
-  /** True when the current target's last export could not be read: the panel offers to check again, and Export waits. */
+  /** True when a lookup failed: offer Check again, retaining any previously successful lookup. */
   protected readonly lookupFailed = signal(false);
   /** True while the last export is being read: after a failed read the line stays, its "Check again" shown as checking. */
   protected readonly lookupChecking = signal(false);
@@ -84,8 +88,9 @@ export class MktgSlidesExportComponent {
   /**
    * The header's button takes a click only for a target whose last export is
    * known and with no export running: a click while the last export is still
-   * being read, or after the read failed, would see no deck and create a
-   * second one instead of offering Update.
+   * being read, or before its first successful read, could see no deck and
+   * create a second one instead of offering Update. A failed refresh keeps
+   * the previous successful lookup available.
    */
   private readonly lastTarget = computed(() => this.lookupTarget() ?? this.target());
   public readonly canExport = computed(() => {
@@ -98,6 +103,7 @@ export class MktgSlidesExportComponent {
       target.agentKey === lookup.agentKey &&
       target.documentId === lookup.documentId &&
       this.lookupSettled() &&
+      !this.lookupChecking() &&
       !this.busy()
     );
   });
@@ -155,8 +161,15 @@ export class MktgSlidesExportComponent {
             return;
           }
           this.lookupFailed.set(false);
-          // A deck this panel saw finished is newer than any record the read found.
-          this.last.set(this.record() ?? response.last);
+          // Keep a local completion ahead of an older in-flight read, but accept
+          // a later export made in another tab or by another writer.
+          const local = this.record();
+          const server = response.last;
+          const newest = local && (!server || Date.parse(local.exportedAt) >= Date.parse(server.exportedAt)) ? local : server;
+          this.last.set(newest);
+          if (local && newest !== local) {
+            this.record.set(newest);
+          }
           this.latest.set(response.latestRevision);
           this.lookupSettled.set(true);
         });
@@ -240,12 +253,13 @@ export class MktgSlidesExportComponent {
   }
 
   /**
-   * The target's last export, read again on "Check again"; null while the
+   * The target's last export, read again on "Check again" or a project
+   * document change (approval / Make current); null while the
    * read has failed. A failed read's line stays until a read succeeds, so a
    * slow or unanswered check never takes away the way to check again.
    */
   private readLast(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse | null> {
-    return this.lookupRetry.pipe(
+    return merge(this.lookupRetry, this.dependencyService.documentsChanged$.pipe(filter((project) => project === target.project))).pipe(
       startWith(undefined),
       tap(() => this.lookupChecking.set(true)),
       // The service logs the failure; the panel offers to check again.

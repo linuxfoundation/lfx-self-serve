@@ -324,6 +324,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-framework">
               <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
@@ -361,6 +362,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-brand-kit">
               <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
