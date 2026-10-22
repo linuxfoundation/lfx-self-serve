@@ -52,11 +52,12 @@ function record(overrides: Partial<MktgSlidesExportRecord> = {}): MktgSlidesExpo
   imports: [MktgSlidesExportComponent],
   template: `
     <button type="button" data-testid="host-export" (click)="exporter.onExport()">Export</button>
-    <lfx-mktg-slides-export #exporter [target]="target()" />
+    <lfx-mktg-slides-export #exporter [target]="target()" [lookupTarget]="lookupTarget()" />
   `,
 })
 class HostComponent {
   public readonly target = signal<MktgSlidesExportTarget | null>(TARGET);
+  public readonly lookupTarget = signal<MktgSlidesExportTarget | null>(null);
 }
 
 describe('MktgSlidesExportComponent', () => {
@@ -112,6 +113,29 @@ describe('MktgSlidesExportComponent', () => {
     expect(element().querySelector('lfx-mktg-slides-export')?.classList.contains('hidden')).toBe(true);
   });
 
+  it('reads document history before approved bytes without authorizing an export or repeating the lookup', async () => {
+    lastResponse = { ...lastResponse, last: record() };
+    await setup();
+    service.last.mockClear();
+    const host = fixture.componentInstance;
+    host.target.set(null);
+    host.lookupTarget.set({ project: TARGET.project, agentKey: TARGET.agentKey, documentId: TARGET.documentId });
+    await fixture.whenStable();
+    expect(service.last).toHaveBeenCalledTimes(1);
+    expect(query('mktg-slides-export-last-link')).not.toBeNull();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.canExport()).toBe(false);
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+    host.target.set(TARGET);
+    await fixture.whenStable();
+    expect(exporter.canExport()).toBe(true);
+    expect(service.last).toHaveBeenCalledTimes(1);
+    host.target.set({ ...TARGET, project: 'another-synthetic-project' });
+    await fixture.whenStable();
+    expect(exporter.canExport()).toBe(false);
+  });
+
   it('creates a deck straight away when none exists: progress, then the deck in a new tab, its slides and its brand', async () => {
     pollResult = new Observable<MktgSlidesExportResultResponse>(() => undefined);
     await setup();
@@ -137,7 +161,7 @@ describe('MktgSlidesExportComponent', () => {
     expect(open.href).toBe(DECK_LINK);
     expect(open.target).toBe('_blank');
     expect(open.rel).toContain('noopener');
-    expect(query('mktg-slides-export-detail')?.textContent).toContain('17 slides · a new deck in the Marketing OS folder');
+    expect(query('mktg-slides-export-detail')?.textContent).toContain('17 slides · a new deck in Google Drive');
     expect(query('mktg-slides-export-brand')?.textContent).toContain('In the kit’s colours and typeface.');
     expect(query('mktg-slides-export-logo-note')?.textContent).toContain(MKTG_SLIDES_EXPORT_LOGO_NOTES['not-public']);
   });

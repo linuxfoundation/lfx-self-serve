@@ -20,8 +20,14 @@ export type HealthMetricsEngagementGroupTypeFilter = (typeof HEALTH_METRICS_ENGA
 
 export type HealthMetricsTabKey = (typeof HEALTH_METRICS_TABS)[number]['key'];
 
-/** Attendance-bar tone: grey at zero, amber below the low threshold, blue otherwise. */
-export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'ok';
+/** Attendance-bar tone: grey at zero, amber or red below the rule's threshold, blue otherwise. */
+export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'critical' | 'ok';
+
+/** A group level's attendance rule: a 0-1 share below `threshold` takes `tone`. */
+export interface HealthMetricsEngagementAttendanceRule {
+  threshold: number;
+  tone: Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical'>;
+}
 
 /** One entry in the Health Metrics tab bar. */
 export interface HealthMetricsTab {
@@ -45,6 +51,7 @@ export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNav
 export interface HealthMetricsEngagementSubNavCounts {
   groups: number | null;
   dormantGroups: number;
+  lowAttendanceGroups: number;
   orgs: number | null;
   lapsedOrgs: number;
   reps: number | null;
@@ -80,6 +87,13 @@ export interface HealthMetricsEngagementGroupRow {
   periods: HealthMetricsEngagementGroupPeriod[];
 }
 
+/** One bar of the group trend sparkline; `heightPx` is `null` for an unrated period's empty slot. */
+export interface HealthMetricsEngagementSparkBar {
+  heightPx: number | null;
+  /** The current period, drawn in the strong colour. */
+  last: boolean;
+}
+
 /** One table row with its selected-period numbers and sparkline series already resolved. */
 export interface HealthMetricsEngagementGroupRowView {
   row: HealthMetricsEngagementGroupRow;
@@ -94,10 +108,12 @@ export interface HealthMetricsEngagementGroupRowView {
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
+  /** Not dormant, rated (enough meetings to state a rate) and below the low-attendance threshold. */
+  lowAttendanceGroups: number;
 }
 
 /** One group type's own counts, independent of whichever chip is selected. */
-export interface HealthMetricsEngagementGroupTypeCount extends HealthMetricsEngagementGroupCounts {
+export interface HealthMetricsEngagementGroupTypeCount extends Omit<HealthMetricsEngagementGroupCounts, 'lowAttendanceGroups'> {
   groupType: HealthMetricsEngagementGroupTypeFilter;
 }
 
@@ -109,8 +125,8 @@ export interface HealthMetricsEngagementGroupAttendance {
   /** `null` when the all-projects scope has no rows at all — distinct from a real zero. */
   counts: HealthMetricsEngagementGroupCounts | null;
   /**
-   * One entry per group type, `all` included; empty whenever `counts` is `null`. The chips show labels only, so
-   * nothing renders these yet; they are kept for the group count to follow the selected chip.
+   * One entry per group type, `all` included; empty whenever `counts` is `null`. The chips show labels only and the
+   * caption reads `totalRecords`, so nothing renders these yet.
    */
   typeCounts: HealthMetricsEngagementGroupTypeCount[];
 }
@@ -181,10 +197,71 @@ export interface HealthMetricsEngagementParticipationQuery {
   range: HealthMetricsRange;
 }
 
+/** One month of the trailing twelve-month attendance trend, as the view reports it. */
+export interface HealthMetricsEngagementAttendanceMonth {
+  /** ISO date of the month's first day. */
+  monthStartDate: string;
+  meetingsHeld: number | null;
+  invited: number | null;
+  attended: number | null;
+  /** 0-1 fraction; `null` in a month with no invited population. */
+  attendancePct: number | null;
+  /** The view's change against the previous month, as a 0-1 fraction of a point. */
+  attendanceChangePp: number | null;
+}
+
+/** `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months, oldest first. */
+export interface HealthMetricsEngagementAttendanceTrend {
+  months: HealthMetricsEngagementAttendanceMonth[];
+}
+
+/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The trend always covers the last
+ * twelve months, so the period selector never reaches the wire. */
+export interface HealthMetricsEngagementAttendanceTrendQuery {
+  foundationSlug: string;
+  /** `null` reads the view's all-projects roll-up rows. */
+  projectSlug: string | null;
+}
+
+/** One chart point. `rate` is a percent (0-100), `null` for a gap in the line. */
+export interface HealthMetricsEngagementAttendanceTrendPointView {
+  monthStartDate: string;
+  /** Axis label, e.g. `Oct 25`. */
+  label: string;
+  /** Long label for the tooltip and the screen-reader table, e.g. `October 2025 (to date)`. */
+  monthLabel: string;
+  rate: number | null;
+  rateLabel: string;
+  meetingsLabel: string;
+  /** The current month, still collecting meetings: plotted, but kept out of the headline and stats. */
+  isInProgress: boolean;
+}
+
+/** Which body the Attendance trend renders: nothing rated, a single rated month, or a line. */
+export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'insufficient' | 'trend';
+
+/** The Attendance trend headline, side stats and low-confidence note. */
+export interface HealthMetricsEngagementAttendanceTrendSummaryView {
+  state: HealthMetricsEngagementAttendanceTrendState;
+  /** Months with a reportable rate, the month in progress included. */
+  ratedMonths: number;
+  latestLabel: string;
+  /** The month the headline describes, e.g. `September 2026`. */
+  latestCaption: string;
+  deltaLabel: string;
+  deltaDirection: 'up' | 'down' | 'neutral';
+  rangeChangeLabel: string;
+  rangeHighLabel: string;
+  rangeLowLabel: string;
+  isLowConfidence: boolean;
+  lowConfidenceNote: string;
+}
+
 /** One participation table row with its selected-period numbers resolved. */
 export interface HealthMetricsEngagementParticipationRowView {
   row: HealthMetricsEngagementParticipationRow;
   period: HealthMetricsEngagementParticipationPeriod | null;
+  attendanceRule: HealthMetricsEngagementAttendanceRule;
 }
 
 /** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */
@@ -233,6 +310,8 @@ export interface HealthMetricsEngagementOrgRowView {
   avgRepsLabel: string;
   /** `12 / 27` — attended over total for the selected period; "—" when either side is unmeasured. */
   attendedLabel: string;
+  /** Blue for the top tiers, grey for every other tier. */
+  tierPillClass: string;
 }
 
 /** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
@@ -275,9 +354,6 @@ export interface HealthMetricsEngagementNonMemberRow {
   accountName: string;
   /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
   membershipStatus: string;
-  /** All-time ISO dates, not per period; `null` renders as an em dash. */
-  firstSeenDate: string | null;
-  lastAttendedDate: string | null;
   periods: HealthMetricsEngagementNonMemberPeriod[];
 }
 
@@ -285,13 +361,11 @@ export interface HealthMetricsEngagementNonMemberRow {
 export interface HealthMetricsEngagementNonMemberRowView {
   row: HealthMetricsEngagementNonMemberRow;
   period: HealthMetricsEngagementNonMemberPeriod | null;
-  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
-  firstSeenLabel: string;
-  lastAttendedLabel: string;
 }
 
-/** Sub-nav badge input for `#nonmem`. Period-agnostic, denormalized onto every row. */
-export interface HealthMetricsEngagementNonMemberCounts {
+/** The `#nonmem` caption and sub-nav badge for one period: organizations that attended a meeting in it. */
+export interface HealthMetricsEngagementNonMemberPeriodCounts {
+  range: HealthMetricsRange;
   orgs: number;
 }
 
@@ -299,7 +373,7 @@ export interface HealthMetricsEngagementNonMemberCounts {
 export interface HealthMetricsEngagementNonMemberParticipation {
   rows: HealthMetricsEngagementNonMemberRow[];
   /** `null` when the view reports no scope count on rows that exist — unmeasured, not zero. */
-  counts: HealthMetricsEngagementNonMemberCounts | null;
+  counts: HealthMetricsEngagementNonMemberPeriodCounts[] | null;
 }
 
 /** Wire query for `GET /api/analytics/engagement-non-member-participation`. The view carries no
@@ -338,17 +412,12 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  personRole: string | null;
-  jobTitle: string | null;
-  /** The row's organization, rendered in its own column; not a second identity. */
+  /** The row's organization, shown under the name with its tier; not a second identity. */
   accountName: string;
   membershipTier: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
-  daysSinceLastAttended: number | null;
-  /** The view's all-time `IS_LAPSED_180D`, distinct from the per-period `lapsed` flag. */
-  lapsed180d: boolean;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 
@@ -360,21 +429,17 @@ export interface HealthMetricsEngagementRepRowView {
   attendedLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastAttendedLabel: string;
-  /** `N days ago`, or `null` when the view has no day count. */
-  daysAgoLabel: string | null;
   /** Name, or the unresolved-identity placeholder. */
   displayName: string;
-  /** `role · title`, or `null` when neither is known. */
-  roleLabel: string | null;
-  /** `org · tier`, or just the org when the tier is unknown. */
+  /** `org · tier`, just the org when the tier is unknown, or "—" when neither is. */
   orgLabel: string;
 }
 
 /** The all-time labels of a representatives row, built once per response rather than per period. */
 export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
 
-/** Scope counts for one period. Unlike the org and non-member captions, this view's scope counts
- * are period-suffixed, so the caption and the sub-nav badge follow the pill. */
+/** Scope counts for one period. Unlike the org caption, this view's scope counts are
+ * period-suffixed, so the caption and the sub-nav badge follow the pill. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;

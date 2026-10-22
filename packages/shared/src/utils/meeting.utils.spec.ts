@@ -77,6 +77,7 @@ import {
   resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
+  resolveShownOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
   sanitizeMeetingCommittees,
@@ -291,6 +292,55 @@ describe('resolveRsvpOccurrenceId', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('resolveShownOccurrenceId', () => {
+  const NEXT_START = '2030-03-07T15:00:00Z';
+  const NEXT_START_SECONDS = String(Date.parse(NEXT_START) / 1000);
+  const weekly = { recurrence: { type: 'weekly' } } as unknown as Partial<Meeting>;
+  const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({ id: 'm-1', start_time: '2029-01-04T15:00:00Z', ...overrides }) as Meeting;
+
+  it('uses an explicitly given occurrence over everything else', () => {
+    const shown = meeting({ ...weekly, next_occurrence_start_time: NEXT_START });
+
+    expect(resolveShownOccurrenceId(shown, { occurrence_id: 'explicit-1', start_time: '2030-04-01T15:00:00Z' } as MeetingOccurrence)).toBe('explicit-1');
+  });
+
+  it('finds the meeting occurrence that starts at the date the card shows when no occurrence is passed', () => {
+    const shown = meeting({
+      ...weekly,
+      next_occurrence_start_time: NEXT_START,
+      occurrences: [
+        { occurrence_id: 'occ-earlier', start_time: '2030-02-28T15:00:00Z', duration: 60 },
+        { occurrence_id: 'occ-next', start_time: NEXT_START, duration: 60 },
+      ] as MeetingOccurrence[],
+    });
+
+    expect(resolveShownOccurrenceId(shown)).toBe('occ-next');
+  });
+
+  it("falls back to the shown start's Unix seconds when the list has no matching occurrence (LFXV2-2054)", () => {
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: NEXT_START, occurrences: [] }))).toBe(NEXT_START_SECONDS);
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: NEXT_START }))).toBe(NEXT_START_SECONDS);
+  });
+
+  it('matches an occurrence whose start is written with a different but equal timestamp format', () => {
+    const shown = meeting({
+      ...weekly,
+      next_occurrence_start_time: NEXT_START,
+      occurrences: [{ occurrence_id: 'occ-next', start_time: '2030-03-07T15:00:00.000Z', duration: 60 }] as MeetingOccurrence[],
+    });
+
+    expect(resolveShownOccurrenceId(shown)).toBe('occ-next');
+  });
+
+  it('resolves to null for a one-time meeting, which has no occurrences to tell apart', () => {
+    expect(resolveShownOccurrenceId(meeting())).toBeNull();
+  });
+
+  it('resolves to null when the shown start cannot be parsed', () => {
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: 'not-a-date' }))).toBeNull();
   });
 });
 

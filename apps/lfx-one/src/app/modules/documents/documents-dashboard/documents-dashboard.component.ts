@@ -14,15 +14,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import {
-  DocumentFormMode,
-  FilterPillOption,
-  MyDocumentItem,
-  MyDocumentSource,
-  ProjectContext,
-  ProjectDocument,
-  ProjectDocumentSource,
-} from '@lfx-one/shared/interfaces';
+import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
@@ -37,6 +29,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-documents-dashboard',
@@ -55,6 +48,7 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
     EmptyStateComponent,
     SkeletonModule,
     TooltipModule,
+    PageHeaderComponent,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
@@ -85,21 +79,19 @@ export class DocumentsDashboardComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    /** Project-mode source filter by subsystem (project, committee, meeting, mailing_list). */
-    projectDocumentSource: new FormControl<ProjectDocumentSource | null>(null),
     foundation: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     meeting: new FormControl<string | null>(null),
     mailingList: new FormControl<string | null>(null),
   });
 
-  /** Source filter options for the Project / Foundation lens — filter by subsystem origin. */
-  protected readonly projectDocumentSourceOptions: { label: string; value: ProjectDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Project', value: 'project' },
-    { label: COMMITTEE_LABEL.singular, value: 'committee' },
-    { label: 'Meeting', value: 'meeting' },
-    { label: 'Mailing List', value: 'mailing_list' },
+  /** Source pills for the Project / Foundation lens — filter by subsystem origin. */
+  private readonly baseProjectSourceTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'project', label: 'Project' },
+    { id: 'committee', label: COMMITTEE_LABEL.plural },
+    { id: 'meeting', label: 'Meetings' },
+    { id: 'mailing_list', label: 'Mailing Lists' },
   ];
 
   // === Subjects ===
@@ -110,6 +102,8 @@ export class DocumentsDashboardComponent {
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
   protected readonly sourceTab = signal<string>('all');
+  /** Project-mode source pill: 'all' or a subsystem bucket (project, committee, meeting, mailing_list). */
+  protected readonly projectSourceTab = signal<string>('all');
   /** Bumped after a successful upload/folder/link create so the document list re-fetches. */
   protected readonly refreshTrigger = signal<number>(0);
   /** UID of the folder the user has drilled into; null means the root view (project mode only). */
@@ -147,7 +141,6 @@ export class DocumentsDashboardComponent {
     return lens === 'project' || lens === 'foundation';
   });
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly projectDocumentSourceFilter: Signal<ProjectDocumentSource | null> = this.initProjectDocumentSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
@@ -157,6 +150,9 @@ export class DocumentsDashboardComponent {
   /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
+  /** Rows for the current view (root, folder, or root-wide search) before search/source/legacy filters. */
+  private readonly viewDocuments: Signal<MyDocumentItem[]> = this.initViewDocuments();
+  protected readonly projectSourceTabOptions: Signal<FilterPillOption[]> = this.initProjectSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
@@ -180,9 +176,14 @@ export class DocumentsDashboardComponent {
     this.sourceTab.set(tab);
   }
 
+  protected onProjectSourceTabChange(tab: string): void {
+    this.projectSourceTab.set(tab);
+  }
+
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', projectDocumentSource: null, foundation: null, group: null, meeting: null, mailingList: null });
+    this.filterForm.reset({ search: '', foundation: null, group: null, meeting: null, mailingList: null });
     this.sourceTab.set('all');
+    this.projectSourceTab.set('all');
   }
 
   protected openDocument(doc: MyDocumentItem): void {
@@ -238,10 +239,6 @@ export class DocumentsDashboardComponent {
       ).pipe(distinctUntilChanged(), startWith('')),
       { initialValue: '' }
     );
-  }
-
-  private initProjectDocumentSourceFilter(): Signal<ProjectDocumentSource | null> {
-    return toSignal(this.filterForm.controls.projectDocumentSource.valueChanges.pipe(startWith<ProjectDocumentSource | null>(null)), { initialValue: null });
   }
 
   private initFoundationFilter(): Signal<string | null> {
@@ -445,16 +442,14 @@ export class DocumentsDashboardComponent {
     });
   }
 
-  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+  private initViewDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
-      const projectDocSource = this.projectDocumentSourceFilter();
 
       // When in project mode with an active search query at root (no folder drilled into),
       // search across ALL nested documents so users can find a document without knowing
       // which folder it lives in. Inside a folder, the folder-scoped view is used instead.
-      let docs: MyDocumentItem[];
       if (projectMode && query && !this.currentFolderUid()) {
         const raw = this.rawProjectDocuments();
         const project = this.project();
@@ -465,14 +460,56 @@ export class DocumentsDashboardComponent {
             childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
           }
         }
-        docs = raw.map((d) => ({
+        return raw.map((d) => ({
           ...this.toMyDocumentItem(d, project, false),
           isFolder: d.type === 'folder',
           ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
         }));
-      } else {
-        docs = this.documents();
       }
+      return this.documents();
+    });
+  }
+
+  /** Counts reflect the search and current folder, not the selected pill, so each pill shows what it would list. */
+  private initProjectSourceTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const query = this.searchQuery().toLowerCase().trim();
+      const rows = this.viewDocuments().filter((doc) => this.matchesSearch(doc, query));
+      const counts = new Map<string, number>();
+      for (const doc of rows) {
+        const bucket = this.projectSourceBucket(doc);
+        counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+      }
+      // Don't show counts while the list is still loading; zero counts keep the plain label.
+      if (this.loading()) return this.baseProjectSourceTabOptions;
+      return this.baseProjectSourceTabOptions.map((option) => {
+        const count = option.id === 'all' ? rows.length : (counts.get(option.id) ?? 0);
+        return count > 0 ? { ...option, label: `${option.label} (${count})` } : option;
+      });
+    });
+  }
+
+  /** "Meetings" bucket covers attachments, recordings, transcripts, and summaries. */
+  private projectSourceBucket(doc: MyDocumentItem): string {
+    const docSource = doc.projectDocumentSource ?? 'project';
+    return ['meeting', 'recording', 'transcript', 'summary'].includes(docSource) ? 'meeting' : docSource;
+  }
+
+  private matchesSearch(doc: MyDocumentItem, query: string): boolean {
+    return (
+      !query ||
+      doc.name.toLowerCase().includes(query) ||
+      doc.foundationName.toLowerCase().includes(query) ||
+      doc.groupOrMeetingName.toLowerCase().includes(query)
+    );
+  }
+
+  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+    return computed(() => {
+      const query = this.searchQuery().toLowerCase().trim();
+      const projectMode = this.useProjectSource();
+      const projectSourceTab = this.projectSourceTab();
+      const docs = this.viewDocuments();
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
@@ -480,23 +517,10 @@ export class DocumentsDashboardComponent {
       const sourceTab = this.sourceTab();
 
       const filtered = docs.filter((doc) => {
-        if (
-          query &&
-          !doc.name.toLowerCase().includes(query) &&
-          !doc.foundationName.toLowerCase().includes(query) &&
-          !doc.groupOrMeetingName.toLowerCase().includes(query)
-        ) {
-          return false;
-        }
+        if (!this.matchesSearch(doc, query)) return false;
 
         if (projectMode) {
-          if (projectDocSource) {
-            const docSource = doc.projectDocumentSource ?? 'project';
-            // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
-            const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);
-            if (!isMeetingBucket && docSource !== projectDocSource) return false;
-          }
-          return true;
+          return projectSourceTab === 'all' || this.projectSourceBucket(doc) === projectSourceTab;
         }
 
         // Legacy aggregator filters (no project context)

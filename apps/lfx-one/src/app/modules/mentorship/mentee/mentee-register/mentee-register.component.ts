@@ -51,6 +51,7 @@ import { TermsAcknowledgementComponent } from '../../components/terms-acknowledg
 import { MenteeCountrySectionComponent } from './components/mentee-country-section/mentee-country-section.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
 import { MenteeEligibilitySectionComponent } from './components/mentee-eligibility-section/mentee-eligibility-section.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Become a Mentee registration form. Mirrors `MentorRegisterComponent`'s shape: one flat
@@ -77,6 +78,7 @@ import { MenteeEligibilitySectionComponent } from './components/mentee-eligibili
     ProfileCardComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './mentee-register.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

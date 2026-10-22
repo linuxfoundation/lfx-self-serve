@@ -29,6 +29,7 @@ import {
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
   MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
@@ -2220,19 +2221,22 @@ describe('getMentorshipMenteeTaskStatusOptions', () => {
     expect(getMentorshipMenteeTaskStatusOptions(view).hint).toBeNull();
   });
 
-  it('locks a submitted task with every option disabled and a hidden hint', () => {
-    const view = taskView('submitted');
+  it('lets a submitted task go back to in progress, but not to pending, with no hint', () => {
+    const view = taskView('submitted', 'required', true);
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(state.locked).toBe(false);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: false });
+    expect(state.hint).toBeNull();
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('locks a complete task, which normalises to submitted, with every option disabled and a hidden hint', () => {
+    const view = taskView('complete');
     const state = getMentorshipMenteeTaskStatusOptions(view);
     expect(state.locked).toBe(true);
     expect(disabledByValue(view)).toEqual({ pending: true, in_progress: true, submitted: true });
     expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
     expect(state.hintVisible).toBe(false);
-  });
-
-  it('locks a complete task, which normalises to submitted', () => {
-    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), status: 'complete' });
-    expect(state.locked).toBe(true);
-    expect(state.options.every((option) => option.disabled)).toBe(true);
   });
 
   it('lets a past-due pending task start but not be submitted, with a visible hint', () => {
@@ -2257,8 +2261,16 @@ describe('getMentorshipMenteeTaskStatusOptions', () => {
     expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
   });
 
-  it('keeps a past-due submitted task locked rather than past due', () => {
+  it('locks a past-due submitted task, since reopening it could not be undone', () => {
     const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), pastDue: true });
+    expect(state.locked).toBe(true);
+    expect(state.options.every((option) => option.disabled)).toBe(true);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE);
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('keeps a past-due complete task locked as complete', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('complete'), pastDue: true });
     expect(state.locked).toBe(true);
     expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
   });

@@ -3,6 +3,11 @@
 
 import {
   MKTG_ARTIFACT_SPECS,
+  MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_FAMILY_EXPORT_SCHEMA,
+  MKTG_KIT_FAMILIES,
+  MKTG_LIVING_DOCUMENT_ID,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_SLIDES_EXPORT_CONTRACT_ID,
   MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS,
   MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS,
@@ -16,6 +21,17 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
+  MktgFamilyExportLastResponse,
+  MktgFamilyExportAgentKey,
+  MktgFamilyExportMember,
+  MktgFamilyExportRecord,
+  MktgFamilyExportResultResponse,
+  MktgFamilyExportSelection,
+  MktgFamilyExportSnapshot,
+  MktgFamilyExportStarted,
+  MktgFamilyExportStartRequest,
+  MktgSlidesExportDeckRecord,
+  MktgSlidesExportPollOutcome,
   MktgDocumentType,
   MktgRevisionSummary,
   MktgSlidesExportAgentKey,
@@ -23,6 +39,7 @@ import {
   MktgSlidesExportForm,
   MktgSlidesExportLastResponse,
   MktgSlidesExportLogoNote,
+  MktgSlidesExportLogContext,
   MktgSlidesExportRecord,
   MktgSlidesExportResultContext,
   MktgSlidesExportResultResponse,
@@ -33,6 +50,12 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildMktgSlidesExportPrefix,
+  buildMktgFamilyExportPrefix,
+  buildMktgFamilyExportRecordKey,
+  findMktgDocumentType,
+  isMktgFamilyExportStale,
+  mktgFamilyExportAgentKeys,
+  readMktgFamilyExportRecord,
   buildMktgSlidesExportRecordKey,
   classifyMktgSlidesExportFailure,
   extractMktgEnvelopeCandidates,
@@ -43,6 +66,9 @@ import {
   mktgSlidesExportToday,
   parseMktgSlidesExportRecordKey,
   readBrandKitRevision,
+  readBoilerplatesContent,
+  readFaqContent,
+  faqSlidesExportQuestions,
   readFoundationMessageContent,
   readMktgSlidesExportRecord,
   renderMktgSlidesExportFormMessage,
@@ -154,13 +180,14 @@ export class MktgSlidesExportService {
       mentionOnOwnLine: true,
     });
 
-    this.finishInBackground(req, sessionId, {
+    const context: MktgSlidesExportResultContext = {
       project: input.project,
       type: input.type,
       agentKey: input.agentKey,
       documentId: input.documentId,
       revisionId: found.summary.id,
-    });
+    };
+    this.finishInBackground(req, sessionId, () => this.getResult(req, sessionId, context), { agent: input.agentKey });
 
     return { sessionId, revision: this.revisionRef(found.summary), mode: input.mode, logoNote: logo.note };
   }
@@ -172,19 +199,18 @@ export class MktgSlidesExportService {
    * `failed` with a plain message on an error, `pending` otherwise.
    */
   public async getResult(req: Request, sessionId: string, context: MktgSlidesExportResultContext): Promise<MktgSlidesExportResultResponse> {
-    const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
-    const { envelope, otherOutput } = this.readOutputs(req, payloads);
-
-    if (envelope) {
-      const found = await this.documentStore.readExportRevision(req, context.project, context.type, context.documentId, { revisionId: context.revisionId });
-      if (!found) {
+    const outcome = await this.readResult(req, sessionId, context.agentKey);
+    if (outcome.status === 'ready') {
+      const { envelope } = outcome;
+      const revision = await this.documentStore.readExportedRevision(req, context.project, context.type, context.documentId, context.revisionId);
+      if (!revision) {
         throw new ResourceNotFoundError('Exported revision', context.revisionId, {
           operation: 'mktg_slides_export_result',
           service: 'mktg_slides_export_service',
           path: req.path,
         });
       }
-      const record = this.buildRecord(context, found.summary, envelope);
+      const record = this.buildRecord(context, revision, envelope);
       await this.keepRecord(req, record);
       logger.info(req, 'mktg_slides_export_result', 'Slides export ready', {
         agent: context.agentKey,
@@ -198,27 +224,13 @@ export class MktgSlidesExportService {
       return { status: 'ready', record };
     }
 
-    const failureText = otherOutput ?? this.readErrorText(payloads);
-    if (failureText !== null) {
-      const { failure, deckLink } = classifyMktgSlidesExportFailure(failureText);
-      logger.warning(req, 'mktg_slides_export_result', 'Slides export failed', {
-        agent: context.agentKey,
-        failure,
-        has_deck: !!deckLink,
-        detail: failureText.slice(0, 500),
-      });
-      return mktgSlidesExportFailed(failure, deckLink);
-    }
-
-    return { status: 'pending' };
+    return outcome;
   }
 
   /**
-   * The document's last export and its latest stored revision, which the
-   * panel compares by hash to say the deck is out of date. Read from the
-   * revision listing and the newest revision's body alone: every page view
-   * and version switch asks, and Export waits for the answer. Start and the
-   * result poll read every revision, where the exact one matters.
+   * Last export and newest readable identity for freshness comparison only.
+   * Export start selects approved-current bytes; result polling loads the
+   * exact revision selected at start even if approval/current has moved.
    */
   public async getLast(
     req: Request,
@@ -234,22 +246,150 @@ export class MktgSlidesExportService {
     return { last, latestRevision };
   }
 
+  /** One family export from approved members only; a missing approval is not an unreadable stored asset. */
+  public async startFamilyExport(req: Request, input: MktgFamilyExportStartRequest & { projectName: string }): Promise<MktgFamilyExportStarted> {
+    const last = input.mode === 'update' ? await this.readFamilyRecord(req, input.project, input.familyId) : null;
+    if (input.mode === 'update' && !last) throw new ConflictError(MKTG_SLIDES_EXPORT_START_MESSAGES['NO_DECK_TO_UPDATE'], 'NO_DECK_TO_UPDATE');
+    const { selections, skippedMembers } = await this.selectFamily(req, input.project, input.familyId);
+    if (!selections.length) throw new ConflictError(MKTG_SLIDES_EXPORT_START_MESSAGES['FAMILY_NOTHING_APPROVED'], 'FAMILY_NOTHING_APPROVED');
+    const assets: MktgSlidesExportForm['assets'] = {};
+    let kit: BrandKitRevision | null = null;
+    for (const { member, revision } of selections) {
+      const bundle = revision.record.bundle;
+      let content: unknown = null;
+      switch (member.agentKey) {
+        case 'foundation-message':
+          content = bundle.format === 'json' ? readFoundationMessageContent(bundle.markdown) : null;
+          break;
+        case 'brand-kit': {
+          kit = readBrandKitRevision(bundle.sidecar);
+          if (kit) content = this.kitExportContent(kit);
+          break;
+        }
+        case 'boilerplates':
+          content = readBoilerplatesContent(bundle.markdown)?.bp ?? null;
+          break;
+        case 'faq': {
+          const faq = readFaqContent(bundle.markdown);
+          content = faq ? faqSlidesExportQuestions(faq) : null;
+          break;
+        }
+      }
+      if (!content || (Array.isArray(content) && content.length === 0)) {
+        throw new ConflictError(MKTG_SLIDES_EXPORT_START_MESSAGES['FAMILY_ASSET_UNREADABLE'], 'FAMILY_ASSET_UNREADABLE');
+      }
+      assets[MKTG_FAMILY_EXPORT_KINDS[member.agentKey]] = content;
+    }
+    const logo = await this.publishLogo(req, input.project, kit);
+    const projectName = mktgSlidesExportOneLine(input.projectName) || input.project;
+    const runDate = mktgSlidesExportToday();
+    const familyName = MKTG_KIT_FAMILIES.find((family) => family.id === input.familyId)?.name ?? input.familyId;
+    const form: MktgSlidesExportForm = {
+      project_name: projectName,
+      run_date: runDate,
+      assets,
+      ...(last ? { deck_id: last.deckId } : { folder_id: this.folderId(), deck_title: `${projectName} · ${familyName} · ${runDate}` }),
+      ...(logo.url && { logo_url: logo.url }),
+    };
+    const sessionId = await this.guildService.createSession(req, {
+      message: renderMktgSlidesExportFormMessage(form),
+      handle: MKTG_SLIDES_EXPORT_GUILD_HANDLE,
+      mentionOnOwnLine: true,
+    });
+    const snapshot: MktgFamilyExportSnapshot = {
+      project: input.project,
+      familyId: input.familyId,
+      mode: input.mode,
+      deckId: last?.deckId ?? null,
+      members: selections.map((selection) => selection.member),
+    };
+    logger.info(req, 'mktg_family_export_start', 'Composed approved family export', {
+      family: input.familyId,
+      assets: Object.keys(assets),
+      skipped: skippedMembers,
+      mode: input.mode,
+    });
+    this.finishInBackground(req, sessionId, () => this.getFamilyResult(req, sessionId, snapshot), { family: input.familyId });
+    return { sessionId, snapshot, skippedMembers, logoNote: logo.note };
+  }
+
+  public async getFamilyResult(req: Request, sessionId: string, snapshot: MktgFamilyExportSnapshot): Promise<MktgFamilyExportResultResponse> {
+    const outcome = await this.readResult(req, sessionId);
+    if (outcome.status !== 'ready') return outcome;
+    const { envelope } = outcome;
+    if (envelope.mode !== snapshot.mode || (snapshot.deckId && envelope.deck.id !== snapshot.deckId)) {
+      logger.warning(req, 'mktg_family_export_result', 'Exporter result does not match the chosen mode or update deck', { session_id: sessionId });
+      return mktgSlidesExportFailed('unknown');
+    }
+    // Validate the signed refs against immutable revisions, never today's approvals.
+    for (const member of snapshot.members) {
+      const type = findMktgDocumentType(member.agentKey);
+      const revision = type ? await this.documentStore.readExportedRevision(req, snapshot.project, type, member.documentId, member.revisionId) : null;
+      if (!revision || revision.contentSha256 !== member.contentSha256 || revision.number !== member.revisionNumber) {
+        throw new ResourceNotFoundError('Exported family revision', member.revisionId);
+      }
+    }
+    const record: MktgFamilyExportRecord = {
+      ...this.deckRecord(snapshot.project, envelope),
+      schema: MKTG_FAMILY_EXPORT_SCHEMA,
+      familyId: snapshot.familyId,
+      members: snapshot.members,
+    };
+    await this.keepRecord(req, record);
+    return { status: 'ready', record };
+  }
+
+  public async getFamilyLast(req: Request, project: string, familyId: string): Promise<MktgFamilyExportLastResponse> {
+    const keys = mktgFamilyExportAgentKeys(familyId);
+    const [last, members] = await Promise.all([
+      this.readFamilyRecord(req, project, familyId),
+      Promise.all(
+        keys.map(async (agentKey) => {
+          const type = findMktgDocumentType(agentKey);
+          const summary = type ? await this.documentStore.readApprovedCurrentSummary(req, project, type, MKTG_LIVING_DOCUMENT_ID) : null;
+          return summary ? this.familyMember(agentKey, summary) : null;
+        })
+      ),
+    ]);
+    const currentMembers = members.filter((member): member is MktgFamilyExportMember => member !== null);
+    const skippedMembers = keys.filter((key) => !currentMembers.some((member) => member.agentKey === key));
+    return { last, currentMembers, skippedMembers, stale: isMktgFamilyExportStale(last, currentMembers) };
+  }
+
+  /** Common envelope verification/failure handling for every export scope. */
+  private async readResult(req: Request, sessionId: string, agent?: MktgSlidesExportAgentKey): Promise<MktgSlidesExportPollOutcome> {
+    const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
+    const { envelope, otherOutput } = this.readOutputs(req, payloads);
+    if (envelope) return { status: 'ready', envelope };
+    const failureText = otherOutput ?? this.readErrorText(payloads);
+    if (failureText === null) return { status: 'pending' };
+    const { failure, deckLink } = classifyMktgSlidesExportFailure(failureText);
+    logger.warning(req, 'mktg_slides_export_result', 'Slides export failed', {
+      ...(agent && { agent }),
+      failure,
+      has_deck: !!deckLink,
+      detail: failureText.slice(0, 500),
+    });
+    return mktgSlidesExportFailed(failure, deckLink);
+  }
+
   /**
    * Poll a started export to its end on the server, on the browser's
-   * interval and within its deadline: `getResult` keeps the record of a ready
-   * deck, so the deck is never left without one when the page that started
+   * interval and within its deadline. The injected `read` callback
+   * (`getResult` or `getFamilyResult`) keeps the ready deck's record,
+   * so the deck is never left without one when the page that started
    * it goes before the end (the next visit would offer Create again and make
    * a second deck). A failed poll is logged and the next one tries again.
    * The timers never hold the process open; an export still running when the
    * server stops is kept by the browser's own polls, as before.
    */
-  private finishInBackground(req: Request, sessionId: string, context: MktgSlidesExportResultContext): void {
+  private finishInBackground(req: Request, sessionId: string, read: () => Promise<{ status: string }>, logContext?: MktgSlidesExportLogContext): void {
     const deadline = Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs;
     const schedule = (): void => {
       if (Date.now() + MKTG_SLIDES_EXPORT_POLL.intervalMs > deadline) {
         logger.warning(req, 'mktg_slides_export_finish', 'Slides export still pending at its deadline — no record kept by the server', {
           session_id: sessionId,
-          agent: context.agentKey,
+          ...logContext,
         });
         return;
       }
@@ -257,12 +397,12 @@ export class MktgSlidesExportService {
     };
     const poll = async (): Promise<void> => {
       try {
-        const result = await this.getResult(req, sessionId, context);
+        const result = await read();
         if (result.status !== 'pending') {
           return;
         }
       } catch (error) {
-        logger.warning(req, 'mktg_slides_export_finish', 'Server-side export poll failed — trying again', { session_id: sessionId, err: error });
+        logger.warning(req, 'mktg_slides_export_finish', 'Server-side export poll failed — trying again', { session_id: sessionId, ...logContext, err: error });
       }
       schedule();
     };
@@ -298,8 +438,7 @@ export class MktgSlidesExportService {
       // lays out the whole book (slides-export >= 1.1.0); its tokens alone only
       // make the short deck. A framework export below sends the tokens: they
       // brand that deck without adding the kit's pages to it.
-      const { projectName, version, generatedAt, websiteUrl, chapters } = kit;
-      return { assets: { kit: { kit: kit.kit, chapters, projectName, version, generatedAt, websiteUrl } }, kit };
+      return { assets: { kit: this.kitExportContent(kit) }, kit };
     }
 
     const framework = revision.record.bundle.format === 'json' ? readFoundationMessageContent(revision.record.bundle.markdown) : null;
@@ -319,6 +458,12 @@ export class MktgSlidesExportService {
       });
     }
     return { assets: kit ? { framework, kit: kit.kit } : { framework }, kit };
+  }
+
+  /** The full book and branding payload, identical for document and family exports. */
+  private kitExportContent(kit: BrandKitRevision): Pick<BrandKitRevision, 'kit' | 'chapters' | 'projectName' | 'version' | 'generatedAt' | 'websiteUrl'> {
+    const { projectName, version, generatedAt, websiteUrl, chapters } = kit;
+    return { kit: kit.kit, chapters, projectName, version, generatedAt, websiteUrl };
   }
 
   /**
@@ -379,8 +524,11 @@ export class MktgSlidesExportService {
    * The exporter's outputs in the session: the latest valid envelope, and the
    * last final output that is not one (an exporter that answered with
    * something else has failed). Only the runtime's final outputs are read —
-   * `agent_notification_message` events — never a tool's result, where a
-   * deck's own text comes back from Slides.
+   * the `content.data` of `agent_notification_message` events — never a
+   * plain notice or a progress event, and never a tool's result, where a
+   * deck's own text comes back from Slides. The exporter has no model and no
+   * finalize tool: its final output is the one place its envelope is
+   * delivered, so an envelope anywhere else is not its result.
    *
    * A valid envelope wins over any other output, wherever it falls: the
    * exporter returns it only once the deck is filled, and its hash is checked
@@ -396,19 +544,19 @@ export class MktgSlidesExportService {
       if (output === null) {
         continue;
       }
-      const valid = extractMktgEnvelopeCandidates(output.text, MKTG_SLIDES_EXPORT_CONTRACT_ID).filter((candidate) => this.isValidEnvelope(req, candidate));
+      const valid = extractMktgEnvelopeCandidates(output, MKTG_SLIDES_EXPORT_CONTRACT_ID).filter((candidate) => this.isValidEnvelope(req, candidate));
       if (valid.length > 0) {
         // Safe: isValidEnvelope passed every schema gate and the sha recompute.
         envelope = valid[valid.length - 1] as MktgSlidesExportEnvelope;
-      } else if (output.final) {
-        otherOutput = output.text;
+      } else {
+        otherOutput = output;
       }
     }
     return { envelope, otherOutput };
   }
 
-  /** A notification's text, and whether it is a final output (`content.data`) rather than a plain notice. */
-  private finalOutputText(payload: string): { text: string; final: boolean } | null {
+  /** A final output's text (`content.data` of an agent_notification_message); a plain notice, whose content is a string, is not one. */
+  private finalOutputText(payload: string): string | null {
     let event: unknown;
     try {
       event = JSON.parse(payload);
@@ -419,14 +567,11 @@ export class MktgSlidesExportService {
       return null;
     }
     const content = event['content'];
-    if (typeof content === 'string') {
-      return { text: content, final: false };
-    }
     if (!this.isRecord(content) || content['data'] === undefined || content['data'] === null) {
       return null;
     }
     const data = content['data'];
-    return { text: typeof data === 'string' ? data : JSON.stringify(data), final: true };
+    return typeof data === 'string' ? data : JSON.stringify(data);
   }
 
   private isValidEnvelope(req: Request, candidate: unknown): boolean {
@@ -493,13 +638,19 @@ export class MktgSlidesExportService {
 
   private buildRecord(context: MktgSlidesExportResultContext, summary: MktgRevisionSummary, envelope: MktgSlidesExportEnvelope): MktgSlidesExportRecord {
     return {
-      schema: MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
-      project: context.project,
+      ...this.deckRecord(context.project, envelope),
       agentKey: context.agentKey,
       documentId: context.documentId,
       revisionId: summary.id,
       revisionNumber: summary.number,
       contentSha256: summary.contentSha256,
+    };
+  }
+
+  private deckRecord(project: string, envelope: MktgSlidesExportEnvelope): MktgSlidesExportDeckRecord {
+    return {
+      schema: MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
+      project,
       mode: envelope.mode,
       deckId: envelope.deck.id,
       link: envelope.deck.link,
@@ -517,10 +668,13 @@ export class MktgSlidesExportService {
    * same finished session writes nothing new. A failed write is logged; the
    * deck still reaches the user.
    */
-  private async keepRecord(req: Request, record: MktgSlidesExportRecord): Promise<void> {
+  private async keepRecord(req: Request, record: MktgSlidesExportRecord | MktgFamilyExportRecord): Promise<void> {
     const body = JSON.stringify(record);
     const sha = createHash('sha256').update(Buffer.from(body, 'utf8')).digest('hex');
-    const key = buildMktgSlidesExportRecordKey(record.project, record.agentKey, record.documentId, Date.parse(record.exportedAt), sha);
+    const key =
+      'familyId' in record
+        ? buildMktgFamilyExportRecordKey(record.project, record.familyId, Date.parse(record.exportedAt), sha)
+        : buildMktgSlidesExportRecordKey(record.project, record.agentKey, record.documentId, Date.parse(record.exportedAt), sha);
     try {
       await this.objectStore.putContentAddressedObject(req, 'marketing-os-artifacts', key, Buffer.from(body, 'utf8'), MKTG_REVISION_CONTENT_TYPE, 'private', {
         mode: record.mode,
@@ -532,7 +686,14 @@ export class MktgSlidesExportService {
 
   /** The newest export record of a document that passes its integrity checks, or null. Throws on a storage failure. */
   private async readLastExport(req: Request, project: string, agentKey: MktgSlidesExportAgentKey, documentId: string): Promise<MktgSlidesExportRecord | null> {
-    const prefix = buildMktgSlidesExportPrefix(project, agentKey, documentId);
+    return this.readRecord(req, buildMktgSlidesExportPrefix(project, agentKey, documentId), (value) => {
+      const record = readMktgSlidesExportRecord(value);
+      return record && record.project === project && record.agentKey === agentKey && record.documentId === documentId ? record : null;
+    });
+  }
+
+  /** Shared content-addressed store reader; scope readers check their own schema and key identity. */
+  private async readRecord<T extends MktgSlidesExportDeckRecord>(req: Request, prefix: string, reader: (value: unknown) => T | null): Promise<T | null> {
     const listed = (await this.objectStore.listObjects(req, 'marketing-os-artifacts', prefix))
       .map((object) => ({ key: object.key, parsed: parseMktgSlidesExportRecordKey(object.key, prefix) }))
       .filter((entry): entry is { key: string; parsed: { time: string; sha: string } } => entry.parsed !== null)
@@ -549,13 +710,50 @@ export class MktgSlidesExportService {
       } catch {
         continue;
       }
-      const record = readMktgSlidesExportRecord(parsed);
-      if (record && record.project === project && record.agentKey === agentKey && record.documentId === documentId) {
+      const record = reader(parsed);
+      if (record) {
         return record;
       }
       logger.warning(req, 'mktg_slides_export_record', 'Stored export record does not match its key or schema — skipping', { key: entry.key });
     }
     return null;
+  }
+
+  private async selectFamily(req: Request, project: string, familyId: string) {
+    const keys = mktgFamilyExportAgentKeys(familyId);
+    const selections: MktgFamilyExportSelection[] = [];
+    const skippedMembers: typeof keys = [];
+    for (const agentKey of keys) {
+      const type = findMktgDocumentType(agentKey);
+      if (!type) continue;
+      try {
+        const found = await this.documentStore.readExportRevision(req, project, type, MKTG_LIVING_DOCUMENT_ID, {});
+        if (!found) {
+          skippedMembers.push(agentKey);
+          continue;
+        }
+        selections.push({
+          type,
+          revision: found.revision,
+          member: this.familyMember(agentKey, found.summary),
+        });
+      } catch (error) {
+        if (!(error instanceof ConflictError) || error.code !== 'MKTG_ASSET_NOT_APPROVED') throw error;
+        skippedMembers.push(agentKey);
+      }
+    }
+    return { selections, skippedMembers };
+  }
+
+  private familyMember(agentKey: MktgFamilyExportAgentKey, summary: MktgRevisionSummary): MktgFamilyExportMember {
+    return { agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, revisionId: summary.id, revisionNumber: summary.number, contentSha256: summary.contentSha256 };
+  }
+
+  private readFamilyRecord(req: Request, project: string, familyId: string): Promise<MktgFamilyExportRecord | null> {
+    return this.readRecord(req, buildMktgFamilyExportPrefix(project, familyId), (value) => {
+      const record = readMktgFamilyExportRecord(value);
+      return record && record.project === project && record.familyId === familyId ? record : null;
+    });
   }
 
   /** The Drive folder new decks go to: the environment's, else the Marketing OS folder. */

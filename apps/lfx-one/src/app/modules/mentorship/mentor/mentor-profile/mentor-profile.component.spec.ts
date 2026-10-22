@@ -42,6 +42,7 @@ class StubProfileCardComponent {
 })
 class StubMentorProfileEditDrawerComponent {
   public readonly saved = output<MentorshipMentorProfileUpdateResponse>();
+  public readonly invitationAccepted = output<string>();
 }
 
 describe('MentorProfileComponent', () => {
@@ -215,6 +216,60 @@ describe('MentorProfileComponent', () => {
       await fixture.whenStable();
 
       expect(fixture.componentInstance['profile']()).toEqual(refetched.profile);
+    });
+  });
+
+  describe('accepting an invitation in the drawer', () => {
+    const acceptedHistory: MentorshipMentorProfileResponse['history'] = [
+      ...mockProfile.history,
+      { id: 'mh_accepted', programName: 'Kubernetes Contributors', term: 'Fall 2026', menteesCount: 0, status: 'in-progress' },
+    ];
+
+    const drawerStub = (): StubMentorProfileEditDrawerComponent =>
+      fixture.debugElement.query(By.directive(StubMentorProfileEditDrawerComponent)).componentInstance as StubMentorProfileEditDrawerComponent;
+
+    const emitAccepted = (): void => {
+      drawerStub().invitationAccepted.emit('member_1');
+      fixture.detectChanges();
+    };
+
+    it('re-reads the history quietly, keeping the saved profile and never flashing the loading state', async () => {
+      await bootstrap();
+      const savedResponse: MentorshipMentorProfileUpdateResponse = { profile: { ...mockProfile.profile, aboutMe: '<p>Saved.</p>' } };
+      drawerStub().saved.emit(savedResponse);
+      getMentorProfile.mockReturnValue(of({ ...mockProfile, history: acceptedHistory }));
+
+      emitAccepted();
+
+      expect(getMentorProfile).toHaveBeenCalledTimes(2);
+      expect(fixture.componentInstance['history']()).toEqual(acceptedHistory);
+      expect(fixture.componentInstance['profile']()).toEqual(savedResponse.profile);
+      expect(element().querySelector('[data-testid="mentorship-mentoring-history-row-mh_accepted"]')).not.toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-mentor-profile-loading"]')).toBeNull();
+    });
+
+    it('keeps the rows already shown when the re-read fails', async () => {
+      await bootstrap();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getMentorProfile.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+      emitAccepted();
+
+      expect(fixture.componentInstance['history']()).toEqual(mockProfile.history);
+      expect(element().querySelector('[data-testid="mentorship-mentor-profile-error-state"]')).toBeNull();
+    });
+
+    it('drops the refreshed history on Retry, so the freshly loaded data wins', async () => {
+      await bootstrap();
+      getMentorProfile.mockReturnValue(of({ ...mockProfile, history: acceptedHistory }));
+      emitAccepted();
+      getMentorProfile.mockReturnValue(of(mockProfile));
+
+      fixture.componentInstance['retry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['history']()).toEqual(mockProfile.history);
     });
   });
 });

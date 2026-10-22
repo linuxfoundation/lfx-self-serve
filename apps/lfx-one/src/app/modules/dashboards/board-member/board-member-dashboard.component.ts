@@ -9,6 +9,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -27,6 +28,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
     SkeletonModule,
     DashboardSidebarComponent,
     DashboardCastDrawerHostComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',

@@ -54,11 +54,7 @@
       <button
         type="button"
         (click)="handleFilterChange(option.id)"
-        [class]="
-          selectedFilter() === option.id
-            ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
-            : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
-        "
+        [class]="pillClasses()[option.id]"
         [pTooltip]="option.fullLabel || ''"
         [tooltipDisabled]="!option.fullLabel || option.fullLabel === option.label"
         tooltipPosition="top"

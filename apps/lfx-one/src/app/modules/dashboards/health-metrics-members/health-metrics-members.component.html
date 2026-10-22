@@ -20,8 +20,8 @@
     <div class="flex flex-col gap-6">
       <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers')" />
       <lfx-members-bridge
-        (reading)="shell.sectionReading('bridge')"
-        (settled)="shell.sectionSettled('bridge')"
+        (reading)="shell.sectionReading('bridge', 'tiers')"
+        (settled)="shell.sectionSettled('bridge', 'tiers')"
         (sectionPicked)="shell.scrollToSection($event)" />
     </div>
   </ng-template>

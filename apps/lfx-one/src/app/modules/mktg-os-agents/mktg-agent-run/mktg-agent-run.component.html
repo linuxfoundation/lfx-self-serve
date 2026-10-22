@@ -1,19 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (agent && intake) {
+@if (agent && intake && intake.oneOffDocument) {
+  @switch (intake.agentId) {
+    @case (linkedinIntake.agentId) {
+      <lfx-linkedin-post-run [intake]="intake" />
+    }
+  }
+}
+@if (agent && intake && !intake.oneOffDocument) {
   <div [ngClass]="pageClass" data-testid="mktg-agent-run-page">
+    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="projectSlug()" class="mb-4 block" />
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-gray-200">
         <div class="flex items-center gap-3 min-w-0">
-          <lfx-button
-            icon="fa-light fa-arrow-left"
-            [text]="true"
-            size="small"
-            ariaLabel="Back to agents"
-            data-testid="mktg-agent-run-back-button"
-            (onClick)="onBack()" />
           <span class="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" [ngClass]="agentIconClass">
             <i [class]="agent.icon" aria-hidden="true"></i>
           </span>
@@ -69,7 +70,13 @@
             } @else if (phase() === 'result') {
               @if (currentBoilerplatesAsset(); as boilerplates) {
                 <!-- The Boilerplates' own app page: the four lengths with their word counts, then the run's report. -->
-                <lfx-mktg-boilerplates-view [projectName]="projectName()" [asset]="boilerplates" [version]="assetVersion()" />
+                <lfx-mktg-boilerplates-view
+                  [projectName]="projectName()"
+                  [asset]="boilerplates"
+                  [version]="assetVersion()"
+                  [headerMetadata]="previewMetadata()" />
+              } @else if (currentFaqAsset(); as faq) {
+                <lfx-mktg-faq-view [projectName]="projectName()" [asset]="faq" [version]="assetVersion()" [headerMetadata]="previewMetadata()" />
               } @else {
                 <lfx-mktg-framework-view
                   [projectName]="projectName()"
@@ -77,7 +84,7 @@
                   [state]="frameworkState()"
                   [version]="assetVersion()"
                   [kit]="printKit()"
-                  [exportTarget]="slidesExportTarget()" />
+                  [headerMetadata]="previewMetadata()" />
               }
             } @else {
               <div data-testid="mktg-agent-run-live">
@@ -121,7 +128,7 @@
               }
 
               <!-- Every stored asset is a document with revisions in the Documents area. -->
-              <!-- Where the asset goes next: Documents, or a new run from edited inputs. The framework's Download PDF and Google Slides export sit in its own header, as on the Brand Kit's web view; the Boilerplates' are shown here but inert until they ship (hand test, 18 Oct). No raw-JSON download: nobody reads it. -->
+              <!-- Draft previews open in Documents for approval and approved export; a fresh run starts from edited inputs. -->
               <div
                 class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
                 data-testid="mktg-agent-run-new-run">
@@ -130,29 +137,9 @@
                   <span class="text-xs text-gray-500" data-testid="mktg-agent-run-change-note">{{ assetChangeNote() }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  @if (currentBoilerplatesAsset()) {
-                    <lfx-button
-                      label="Download PDF"
-                      icon="fa-light fa-file-pdf"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="true"
-                      badge="coming soon"
-                      ariaLabel="Download PDF — coming soon"
-                      data-testid="mktg-agent-run-download-pdf" />
-                    <lfx-button
-                      label="Export to Google Slides"
-                      icon="fa-light fa-presentation-screen"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="true"
-                      badge="coming soon"
-                      ariaLabel="Export to Google Slides — coming soon"
-                      data-testid="mktg-agent-run-export-slides" />
-                  }
                   @if (documentsAgentKey) {
                     <lfx-button
-                      label="Go to Documents"
+                      label="Open in Documents"
                       icon="fa-light fa-folder-open"
                       [text]="true"
                       size="small"
@@ -312,26 +299,31 @@
                   </div>
                 </ng-template>
 
+                <!-- One titled group of fields (e.g. the Messaging Framework's Sources) as a card. -->
+                <ng-template #groupTpl let-group>
+                  <section
+                    class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
+                    [attr.aria-labelledby]="'mktg-intake-group-' + group.id"
+                    [attr.data-testid]="'mktg-agent-run-group-' + group.id">
+                    <h2 class="text-base font-semibold text-gray-900" [id]="'mktg-intake-group-' + group.id">
+                      {{ group.title }}
+                      @if (group.hint) {
+                        <span class="ml-1 text-sm font-normal text-gray-500">{{ group.hint }}</span>
+                      }
+                    </h2>
+                    @for (field of group.fields; track field.key) {
+                      <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+                    }
+                    @if (group.footnote) {
+                      <p class="max-w-prose text-xs text-gray-500">{{ group.footnote }}</p>
+                    }
+                  </section>
+                </ng-template>
+
                 @if (fieldGroups.length > 0) {
-                  <!-- Titled groups (e.g. the Messaging Framework's Sources), one card each. -->
-                  @for (group of fieldGroups; track group.id) {
-                    <section
-                      class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
-                      [attr.aria-labelledby]="'mktg-intake-group-' + group.id"
-                      [attr.data-testid]="'mktg-agent-run-group-' + group.id">
-                      <h2 class="text-base font-semibold text-gray-900" [id]="'mktg-intake-group-' + group.id">
-                        {{ group.title }}
-                        @if (group.hint) {
-                          <span class="ml-1 text-sm font-normal text-gray-500">{{ group.hint }}</span>
-                        }
-                      </h2>
-                      @for (field of group.fields; track field.key) {
-                        <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
-                      }
-                      @if (group.footnote) {
-                        <p class="max-w-prose text-xs text-gray-500">{{ group.footnote }}</p>
-                      }
-                    </section>
+                  <!-- Titled groups, one card each; a group marked to follow the documents (the FAQ's notes) comes after them. -->
+                  @for (group of leadingFieldGroups; track group.id) {
+                    <ng-container *ngTemplateOutlet="groupTpl; context: { $implicit: group }" />
                   }
                 } @else {
                   @for (field of intake.fields; track field.key) {
@@ -342,6 +334,10 @@
                 <!-- Optional existing documents, last: a file is read to text by the BFF as it is added; a link goes to the agent as is. -->
                 @if (intake.documents) {
                   <lfx-mktg-intake-documents [config]="intake.documents" [(documents)]="documents" [(busy)]="documentsBusy" />
+                }
+
+                @for (group of trailingFieldGroups; track group.id) {
+                  <ng-container *ngTemplateOutlet="groupTpl; context: { $implicit: group }" />
                 }
 
                 <!-- The logo files (the Brand Kit): read in the browser as they are picked and sent with the form; a link goes to the agent as is. -->
@@ -482,7 +478,7 @@
                 @if (currentBrandKit(); as brandKit) {
                   <!-- The Brand Kit's revision is the kit itself, shown as an app page with its own header and actions (hand test, 18 Oct); the 16-page book is its print rendering. -->
                   <div data-testid="mktg-agent-run-brand-kit">
-                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [exportTarget]="slidesExportTarget()" />
+                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [headerMetadata]="previewMetadata()" />
                   </div>
                   <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
                   @if (askedRows().length > 0) {
@@ -646,9 +642,9 @@
                 <!-- Every stored output is a document with revisions in the Documents area. -->
                 @if (documentsAgentKey) {
                   <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500" data-testid="mktg-agent-run-documents-note">
-                    <span>Every revision of this document is kept in Documents, where you can view and restore it.</span>
+                    <span>Every revision is kept in Documents, where you can open it for review.</span>
                     <lfx-button
-                      label="Go to Documents"
+                      label="Open in Documents"
                       icon="fa-light fa-folder-open"
                       [text]="true"
                       size="small"

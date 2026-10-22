@@ -223,10 +223,6 @@
               <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
                 <i class="fa-light fa-paperclip text-xs"></i>
                 <span>Materials</span>
-                @if (meeting().recurrence && !pastMeeting()) {
-                  <!-- Upcoming materials have no occurrence field upstream, so they apply to every date. -->
-                  <span class="text-[10px] text-gray-400" data-testid="materials-scope-hint">· all dates</span>
-                }
                 @if (attachments().length > 0) {
                   <span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-200/80 px-1.5 py-0.5 rounded-full">
                     {{ attachments().length }}
@@ -244,29 +240,49 @@
               }
             </div>
             @if (attachments().length > 0) {
-              <div class="grid grid-cols-4 gap-2">
-                @for (attachment of attachments(); track attachment.uid; let i = $index) {
-                  @if (attachment.type === 'link') {
-                    <a
-                      [href]="attachment.link"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
-                      [attr.data-testid]="'resource-link-' + i">
-                      <i class="fa-light fa-arrow-up-right-from-square text-xs text-black flex-shrink-0"></i>
-                      <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
-                    </a>
-                  } @else {
-                    <a
-                      (click)="downloadAttachment(attachment)"
-                      class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
-                      [attr.data-testid]="'resource-file-' + i">
-                      <i class="fa-light fa-file-arrow-down text-xs text-black flex-shrink-0"></i>
-                      <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
-                    </a>
-                  }
+              @if (showAttachmentScopes()) {
+                <!-- Recurring: label which materials are for this date and which are for the whole series -->
+                @if (occurrenceAttachments().length > 0) {
+                  <div class="flex flex-col gap-1.5" data-testid="materials-group-occurrence">
+                    <lfx-attachment-scope-badge class="self-start" scope="occurrence"></lfx-attachment-scope-badge>
+                    <ng-container *ngTemplateOutlet="attachmentChips; context: { $implicit: occurrenceAttachments(), offset: 0 }"></ng-container>
+                  </div>
                 }
-              </div>
+                @if (seriesAttachments().length > 0) {
+                  <div class="flex flex-col gap-1.5" data-testid="materials-group-series">
+                    <lfx-attachment-scope-badge class="self-start" scope="series"></lfx-attachment-scope-badge>
+                    <ng-container
+                      *ngTemplateOutlet="attachmentChips; context: { $implicit: seriesAttachments(), offset: occurrenceAttachments().length }"></ng-container>
+                  </div>
+                }
+              } @else {
+                <ng-container *ngTemplateOutlet="attachmentChips; context: { $implicit: attachments(), offset: 0 }"></ng-container>
+              }
+              <ng-template #attachmentChips let-items let-offset="offset">
+                <div class="grid grid-cols-4 gap-2">
+                  @for (attachment of items; track attachment.uid; let i = $index) {
+                    @if (attachment.type === 'link') {
+                      <a
+                        [href]="attachment.link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
+                        [attr.data-testid]="'resource-link-' + (offset + i)">
+                        <i class="fa-light fa-arrow-up-right-from-square text-xs text-black flex-shrink-0"></i>
+                        <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
+                      </a>
+                    } @else {
+                      <a
+                        (click)="downloadAttachment(attachment)"
+                        class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
+                        [attr.data-testid]="'resource-file-' + (offset + i)">
+                        <i class="fa-light fa-file-arrow-down text-xs text-black flex-shrink-0"></i>
+                        <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{ attachment.name }}</span>
+                      </a>
+                    }
+                  }
+                </div>
+              </ng-template>
             } @else {
               <p class="text-xs text-gray-400 italic">No materials yet</p>
             }
@@ -483,19 +499,35 @@
             </lfx-button>
           }
         </div>
-        @if (canLeaveMeeting()) {
-          <div class="mt-2">
-            <lfx-button
-              class="w-full"
-              styleClass="w-full"
-              icon="fa-light fa-user-xmark"
-              label="Remove Myself"
-              size="small"
-              severity="secondary"
-              data-testid="leave-meeting-button"
-              [loading]="leavingMeeting()"
-              (onClick)="confirmLeaveMeeting()">
-            </lfx-button>
+        <!-- Viewer's own actions, side by side like Guests / See Meeting Details; a lone button fills the row -->
+        @if (canResendInvite() || canLeaveMeeting()) {
+          <div class="flex gap-2 mt-2" data-testid="own-invite-actions">
+            @if (canResendInvite()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-paper-plane"
+                label="Resend Invite"
+                size="small"
+                severity="secondary"
+                data-testid="resend-invite-button"
+                [loading]="resendingInvite()"
+                (onClick)="resendInvite()">
+              </lfx-button>
+            }
+            @if (canLeaveMeeting()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-user-xmark"
+                label="Remove Myself"
+                size="small"
+                severity="secondary"
+                data-testid="leave-meeting-button"
+                [loading]="leavingMeeting()"
+                (onClick)="confirmLeaveMeeting()">
+              </lfx-button>
+            }
           </div>
         }
       </div>
@@ -552,6 +584,8 @@
         [(visible)]="materialsDrawerVisible"
         [meetingId]="pastMeeting() ? undefined : meeting().id"
         [pastMeetingId]="pastMeeting() ? pastMeetingResourceId() : undefined"
+        [occurrence]="attachmentOccurrence()"
+        [canScopeToOccurrence]="canScopeToOccurrence()"
         (materialsChanged)="onMaterialsChanged()"
         data-testid="meeting-materials-drawer-card">
       </lfx-meeting-materials-drawer>

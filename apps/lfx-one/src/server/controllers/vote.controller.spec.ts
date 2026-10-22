@@ -4,15 +4,18 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getVotes, getVotesSummary, getVoteStatusCounts, getMyVotes, getVoteReminderRecipients, sendVoteReminders, assertVoteWrite } = vi.hoisted(() => ({
-  getVotes: vi.fn(),
-  getVotesSummary: vi.fn(),
-  getVoteStatusCounts: vi.fn(),
-  getMyVotes: vi.fn(),
-  getVoteReminderRecipients: vi.fn(),
-  sendVoteReminders: vi.fn(),
-  assertVoteWrite: vi.fn(),
-}));
+const { getVotes, getVotesSummary, getVoteStatusCounts, getMyVotes, getVoteReminderRecipients, getVoteVoters, sendVoteReminders, assertVoteWrite, success } =
+  vi.hoisted(() => ({
+    getVotes: vi.fn(),
+    getVotesSummary: vi.fn(),
+    getVoteStatusCounts: vi.fn(),
+    getMyVotes: vi.fn(),
+    getVoteReminderRecipients: vi.fn(),
+    getVoteVoters: vi.fn(),
+    sendVoteReminders: vi.fn(),
+    assertVoteWrite: vi.fn(),
+    success: vi.fn(),
+  }));
 vi.mock('../services/vote.service', () => ({
   VoteService: class {
     public getVotes = getVotes;
@@ -20,14 +23,18 @@ vi.mock('../services/vote.service', () => ({
     public getVoteStatusCounts = getVoteStatusCounts;
     public getMyVotes = getMyVotes;
     public getVoteReminderRecipients = getVoteReminderRecipients;
+    public getVoteVoters = getVoteVoters;
     public sendVoteReminders = sendVoteReminders;
   },
 }));
 vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite }));
-vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success: vi.fn(), sanitize: vi.fn((value: unknown) => value) } }));
+vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success, sanitize: vi.fn((value: unknown) => value) } }));
 vi.mock('@lfx-one/shared/utils', () => ({ codePointLength: (value: string) => [...value].length }));
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { VOTE_VOTERS_DRAFT, VOTE_VOTERS_PSEUDO_ANONYMOUS } from '@lfx-one/shared/constants';
+import { VoteVoterStatus } from '@lfx-one/shared/enums';
+
+import { AuthorizationError, ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
 import { VoteController } from './vote.controller';
 
 describe('VoteController management reads', () => {
@@ -256,5 +263,64 @@ describe('VoteController reminders (#3769)', () => {
       expect(next).toHaveBeenCalledWith(upstream);
       expect(json).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('VoteController voters (#3911)', () => {
+  const controller = new VoteController();
+  const json = vi.fn();
+  const res = { json } as unknown as Response;
+  const next = vi.fn();
+  const request = (params: Record<string, unknown>) => ({ params, path: '/votes/vote-1/voters' }) as unknown as Request;
+  beforeEach(() => vi.resetAllMocks());
+
+  it.each([' ', '', undefined])('rejects an invalid uid (%j) without checking access or reading', async (uid) => {
+    await controller.getVoteVoters(request({ uid }), res, next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(assertVoteWrite).not.toHaveBeenCalled();
+    expect(getVoteVoters).not.toHaveBeenCalled();
+  });
+
+  it('passes a 403 write-gate rejection to next(error) without reading voters — voters without writer included (AC-3)', async () => {
+    const forbidden = new MicroserviceError('You do not have access to manage this vote.', 403, 'FORBIDDEN', {});
+    assertVoteWrite.mockRejectedValue(forbidden);
+    await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);
+    expect(next).toHaveBeenCalledWith(forbidden);
+    expect(getVoteVoters).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('passes a 503 access-check failure to next(error) without reading voters', async () => {
+    const unavailable = new MicroserviceError('Access check unavailable', 503, 'ACCESS_CHECK_UNAVAILABLE', {});
+    assertVoteWrite.mockRejectedValue(unavailable);
+    await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);
+    expect(next).toHaveBeenCalledWith(unavailable);
+    expect(getVoteVoters).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it('checks vote write access, then returns the voter list and logs the count only (AC-1)', async () => {
+    const voters = [{ uid: 'b-1', user_name: 'Avery Example', user_email: 'avery@acme-motors.example', status: VoteVoterStatus.VOTED }];
+    assertVoteWrite.mockResolvedValue(undefined);
+    getVoteVoters.mockResolvedValue(voters);
+    const req = request({ uid: 'vote-1' });
+    await controller.getVoteVoters(req, res, next);
+    expect(assertVoteWrite).toHaveBeenCalledWith(req, 'vote-1', 'get_vote_voters');
+    expect(assertVoteWrite.mock.invocationCallOrder[0]).toBeLessThan(getVoteVoters.mock.invocationCallOrder[0]);
+    expect(getVoteVoters).toHaveBeenCalledWith(req, 'vote-1');
+    expect(json).toHaveBeenCalledWith(voters);
+    expect(success).toHaveBeenCalledWith(req, 'get_vote_voters', undefined, { vote_uid: 'vote-1', voter_count: 1 });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new ConflictError('This vote is still a draft.', VOTE_VOTERS_DRAFT, {}),
+    new AuthorizationError('Individual ballots are not available for pseudo-anonymous votes.', { code: VOTE_VOTERS_PSEUDO_ANONYMOUS }),
+  ])('passes the service refusal $code to next(error) unchanged (AC-2, AC-4)', async (refusal) => {
+    assertVoteWrite.mockResolvedValue(undefined);
+    getVoteVoters.mockRejectedValue(refusal);
+    await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);
+    expect(next).toHaveBeenCalledWith(refusal);
+    expect(json).not.toHaveBeenCalled();
   });
 });

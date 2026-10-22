@@ -103,6 +103,33 @@ export class MktgDocumentsController {
     }
   }
 
+  /** POST …/revisions/:revisionId/approve?project=<uid> — approve the selected revision. */
+  public async approveRevision(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_revision_approve';
+    const params = this.readDocumentParams(req, req.query['project'], operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    const revisionId = this.readRevisionId(req.params['revisionId']);
+    if (!revisionId) {
+      next(this.invalidField(req, operation, 'revisionId', 'revisionId is required and must be a revision id'));
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId);
+      if (!revision) {
+        throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
+      }
+      logger.success(req, operation, startTime, { project, revision: revision.revision.number });
+      res.json(revision);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * POST /api/mktg-agents/documents/:agentKey/:documentId/restore — make an
    * revision current by moving its pointer. Body: `{ project, revisionId }`.

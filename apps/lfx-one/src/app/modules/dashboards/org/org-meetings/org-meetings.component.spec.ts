@@ -7,6 +7,7 @@ import { provideRouter } from '@angular/router';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -29,7 +30,7 @@ async function render(options: { pageReady?: boolean; pageState?: OrgLensEmptySt
   TestBed.resetTestingModule();
   // The meetings sections fetch their own data; shallow-render them so the page's own gating is what's under test.
   TestBed.overrideComponent(OrgMeetingsComponent, {
-    set: { imports: [EmptyStateComponent, OrgLensEmptyStateComponent, SkeletonModule], schemas: [NO_ERRORS_SCHEMA] },
+    set: { imports: [EmptyStateComponent, OrgLensEmptyStateComponent, SkeletonModule, PageHeaderComponent], schemas: [NO_ERRORS_SCHEMA] },
   });
   await TestBed.configureTestingModule({
     imports: [OrgMeetingsComponent],

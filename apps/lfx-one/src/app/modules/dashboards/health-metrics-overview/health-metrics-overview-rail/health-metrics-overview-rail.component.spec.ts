@@ -24,19 +24,21 @@ describe('HealthMetricsOverviewRailComponent', () => {
   const foundationSummary: HealthMetricsOverviewFoundationSummary = {
     dataAvailable: true,
     size: '1,725 members',
-    projects: '14',
+    projects: '14 projects',
     tiers: '4 tiers',
-    board: '12 seats',
-    nextRenewals: '5 in the next 90 days',
+    board: '12 board seats',
+    nextRenewals: '5 renewals in 90 days',
   };
 
   async function render(
     summary: HealthMetricsOverviewFoundationSummary = foundationSummary,
-    revenueInput: HealthMetricsOverviewRevenue = revenue
+    revenueInput: HealthMetricsOverviewRevenue = revenue,
+    periodLabel = 'YTD'
   ): Promise<void> {
     await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewRailComponent] }).compileComponents();
     fixture = TestBed.createComponent(HealthMetricsOverviewRailComponent);
     fixture.componentRef.setInput('revenue', revenueInput);
+    fixture.componentRef.setInput('revenuePeriodLabel', periodLabel);
     fixture.componentRef.setInput('foundationSummary', summary);
     fixture.componentRef.setInput('topPx', 88);
     fixture.detectChanges();
@@ -57,6 +59,44 @@ describe('HealthMetricsOverviewRailComponent', () => {
     expect(text).toContain('10%');
   });
 
+  it('labels the revenue total with the selected period, at the design size and weight', async () => {
+    await render(foundationSummary, revenue, '2025');
+
+    const total: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-total"]');
+    const [label, value] = Array.from<HTMLElement>(total.querySelectorAll('span'));
+    expect(label.textContent?.trim()).toBe('Total 2025');
+    expect(value.textContent?.trim()).toBe('$1M');
+    expect(value.classList).toContain('text-[24px]');
+    expect(value.classList).toContain('font-medium');
+  });
+
+  it('reads each legend entry "<percent> · <value>", with the value at regular weight', async () => {
+    await render();
+
+    const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-legend-memberships"]');
+    const cells = Array.from<HTMLElement>(row.querySelectorAll('span'));
+    expect(cells.map((el) => el.textContent?.trim())).toEqual(['', 'Memberships', '60%', '·', '$600K']);
+    expect(cells[2].classList).not.toContain('text-gray-400');
+    expect(cells[4].classList).not.toContain('font-semibold');
+  });
+
+  it('draws one rounded bar segment per measured stream, with no track behind them', async () => {
+    await render(foundationSummary, {
+      dataAvailable: true,
+      total: 600_000,
+      streams: [
+        { key: 'memberships', value: 600_000, share: 100 },
+        { key: 'events', value: null, share: null },
+      ],
+    });
+
+    const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-bar"]');
+    expect(bar.classList).not.toContain('bg-gray-100');
+    const segments = Array.from<HTMLElement>(bar.querySelectorAll('div'));
+    expect(segments).toHaveLength(1);
+    expect(segments[0].classList).toContain('rounded-full');
+  });
+
   it('renders the foundation summary fields and the fixed data-sources tag list', async () => {
     await render();
 
@@ -66,10 +106,12 @@ describe('HealthMetricsOverviewRailComponent', () => {
     expect(sizeRow.parentElement?.firstElementChild).toBe(sizeRow);
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('14');
+    expect(text).toContain('14 projects');
     expect(text).toContain('4 tiers');
-    expect(text).toContain('12 seats');
-    expect(text).toContain('5 in the next 90 days');
+    expect(text).toContain('12 board seats');
+    expect(text).toContain('5 renewals in 90 days');
+    // Values read at regular weight, per the design's `.rrow2 b{font-weight:400}`.
+    expect(sizeRow.querySelectorAll('.font-semibold')).toHaveLength(0);
 
     const dataSourceTags = Array.from<HTMLElement>(
       fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')
@@ -99,7 +141,7 @@ describe('HealthMetricsOverviewRailComponent', () => {
       (el) => el.textContent?.trim() === 'Events'
     )?.parentElement;
     const cells = Array.from<HTMLElement>(eventsRow?.querySelectorAll('span') ?? []).map((el) => el.textContent?.trim());
-    expect(cells).toEqual(['', 'Events', '—', '—']);
+    expect(cells).toEqual(['', 'Events', '—', '·', '—']);
   });
 
   it('labels each stream with the model share, not a share recomputed from the streams', async () => {

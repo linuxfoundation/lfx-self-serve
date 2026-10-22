@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="extend-vote-deadline-dialog">
+  <p class="text-sm text-gray-600">Choose a new deadline for "{{ data.voteName }}". It must be later than the current deadline.</p>
+
+  <div class="flex flex-col gap-1">
+    <label for="extend-vote-close-date" class="text-sm font-medium text-gray-700"> New Close Date <span class="text-red-500">*</span> </label>
+    <lfx-calendar
+      [form]="form"
+      control="close_date"
+      inputId="extend-vote-close-date"
+      placeholder="Select close date"
+      [minDate]="minDate()"
+      [showButtonBar]="true"
+      appendTo="body"
+      data-testid="extend-vote-close-date-calendar">
+    </lfx-calendar>
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label for="extend-vote-close-time" class="text-sm font-medium text-gray-700"> New Close Time <span class="text-red-500">*</span> </label>
+    <lfx-time-picker
+      [form]="form"
+      control="close_time"
+      inputId="extend-vote-close-time"
+      placeholder="Select close time"
+      styleClass="w-full"
+      data-testid="extend-vote-close-time-picker">
+    </lfx-time-picker>
+    @if (form.get('close_time')?.touched && form.get('close_time')?.errors?.['invalidTimeFormat']) {
+      <p class="text-red-500 text-xs">Enter a valid time (e.g., 11:59 PM).</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label for="extend-vote-timezone" class="text-sm font-medium text-gray-700"> Timezone <span class="text-red-500">*</span> </label>
+    <lfx-select
+      [filter]="true"
+      styleClass="w-full"
+      appendTo="body"
+      [form]="form"
+      control="timezone"
+      inputId="extend-vote-timezone"
+      [options]="timezoneOptions()"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select timezone"
+      data-testid="extend-vote-timezone-select">
+    </lfx-select>
+  </div>
+
+  @if (form.dirty && form.errors?.['notAfterCurrentDeadline']) {
+    <p class="text-red-500 text-xs">The new deadline must be later than the current deadline.</p>
+  }
+  @if (form.dirty && form.errors?.['nonexistentWallTime']) {
+    <p class="text-red-500 text-xs">This close time doesn't exist in the selected timezone (DST transition) — pick another time.</p>
+  }
+
+  <div class="flex justify-end gap-2">
+    <lfx-button label="Cancel" size="small" severity="secondary" (onClick)="onCancel()" data-testid="extend-vote-deadline-cancel" />
+    <lfx-button
+      label="Extend Deadline"
+      size="small"
+      severity="primary"
+      [disabled]="!canConfirm()"
+      (onClick)="onConfirm()"
+      data-testid="extend-vote-deadline-confirm" />
+  </div>
+</div>

@@ -3,8 +3,8 @@ title: Manage Votes
 description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, manage, polls, results, reminders]
-last_updated: 2026-10-16
+tags: [votes, manage, polls, results, reminders, mailing-list]
+last_updated: 2026-10-18
 intercom_collection: Votes
 ---
 
@@ -14,7 +14,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Votes** from the left navigation sidebar.
-3. The votes dashboard lists all polls for your active project context.
+3. The votes dashboard opens on the **Active** tab, listing open polls for your active project context. Select **All**, **Draft**, or **Ended** to see polls with other statuses.
 4. Select a poll to open its detail view.
 
 ## Cast your vote
@@ -44,6 +44,19 @@ The voter list is checked again before sending. If a selected voter is no longer
 If the access or voter-list checks fail before sending starts, the dialog confirms that no reminders were sent and asks you to try again.
 
 While sending, the dialog's close button, Escape, and Cancel are disabled. If the connection is lost or the request times out, the outcome may be unconfirmed: reminders might already have been queued. Retrying may send duplicate emails.
+
+## Send a reminder to the mailing list
+
+Draft a reminder to the poll's group mailing list in your own email app. LFX doesn't send this message: you review it and send it yourself. Only users who can manage the poll see this option, and only on active polls.
+
+1. Find an active poll and select the **More** (⋮) menu on its row.
+2. Select **Send reminder to mailing list**. Your email app opens a draft addressed to the group's mailing list. The draft names the poll, its closing date and time, and links to the poll.
+3. If the group has several mailing lists, LFX first asks which one to use. Pick a list and select **Open in email**.
+4. Review and edit the draft in your email app, then send it.
+
+The message goes to everyone on the list, including people who have already voted or can't vote. If nothing opens, check that your device has a default email app set up.
+
+If the group has no mailing list, LFX tells you so. Use **Copy link** to share the poll another way, or **Send reminder** to email the voters directly.
 
 ## Edit a poll
 

@@ -39,6 +39,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
 
+// GET /votes/:uid/voters - invited voters with their current ballot (vote#writer only, named votes)
+router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));
+
 // GET /votes/:uid - get a single vote
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
@@ -56,5 +59,8 @@ router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteControl
 
 // POST /votes/:uid/reminders - resend the vote email to selected recipients
 router.post('/:uid/reminders', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteReminders(req, res, next));
+
+// POST /votes/:uid/extend - extend a vote's deadline
+router.post('/:uid/extend', voteWriteRateLimiter, (req, res, next) => voteController.extendVote(req, res, next));
 
 export default router;

@@ -61,24 +61,29 @@
     </div>
 
     @if (view().progress; as progress) {
-      <div class="flex max-w-[420px] flex-col gap-1.5" data-testid="events-sponsorship-progress">
-        <div class="flex items-baseline justify-between gap-2 text-[12.5px]">
-          <span class="text-gray-500" id="events-sponsorship-progress-label">Progress to goal</span>
-          <span class="font-medium tabular-nums text-gray-900" data-testid="events-sponsorship-progress-value">{{ progress.pctLabel }}</span>
-        </div>
-        <div
-          class="h-2 w-full rounded-full bg-gray-100"
-          role="progressbar"
-          aria-labelledby="events-sponsorship-progress-label"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          [attr.aria-valuenow]="progress.widthPct"
-          [attr.aria-valuetext]="progress.pctLabel">
-          <div class="h-full rounded-full" [class]="barClass" [style.width.%]="progress.widthPct"></div>
+      <!-- The design's progress row: a short fixed bar with the bold percent to its right. -->
+      <div class="flex flex-col gap-3" data-testid="events-sponsorship-progress">
+        <h4 class="text-[10px] font-semibold uppercase tracking-[0.02em] text-gray-600" id="events-sponsorship-progress-label">Progress to goal</h4>
+        <div class="flex max-w-[420px] items-center gap-[9px]">
+          <div
+            class="h-[6px] w-[62px] shrink-0 overflow-hidden rounded-full bg-gray-100"
+            role="progressbar"
+            aria-labelledby="events-sponsorship-progress-label"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            [attr.aria-valuenow]="progress.widthPct"
+            [attr.aria-valuetext]="progress.pctLabel">
+            <div class="h-full rounded-full" [class]="barClass" [style.width.%]="progress.widthPct"></div>
+          </div>
+          <b class="min-w-[34px] font-semibold tabular-nums text-gray-900" data-testid="events-sponsorship-progress-value">{{ progress.pctLabel }}</b>
         </div>
       </div>
     } @else if (!view().goalSet) {
-      <p class="rounded-lg bg-gray-50 px-3 py-2 text-[12.5px] text-gray-500" data-testid="events-sponsorship-no-goal">
+      <!-- The design's low-confidence banner. -->
+      <p
+        class="inline-flex items-center gap-[6px] self-start rounded-[6px] bg-amber-50 px-[10px] py-[6px] text-[12px] text-amber-700"
+        data-testid="events-sponsorship-no-goal">
+        <span aria-hidden="true">◐</span>
         No sponsorship goal is set for this period, so no progress bar is shown.
       </p>
     }

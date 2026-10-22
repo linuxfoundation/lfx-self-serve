@@ -19,7 +19,7 @@ import type { MktgRunPersistReceipt } from './mktg-run.interface';
  * `foundation-message`. Keying storage by the catalog id would make the
  * storage layout hostage to a marketplace-facing label.
  */
-export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp' | 'boilerplates';
+export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp' | 'boilerplates' | 'faq' | 'linkedin-post';
 
 /**
  * How an agent's intake answers were collected. Every Marketing OS envelope
@@ -114,14 +114,11 @@ export interface MktgArtifactPersistReceipt extends MktgRunPersistReceipt {
 
 /**
  * Response of an agent's `GET /api/mktg-agents/{agent}/stored?project=<uid>`
- * endpoint — the project's LATEST server-persisted document for that agent
- * (the dec-agent-dependency-gating read path). Entitlement-gated (project
- * writer) and partitioned by the SERVER-resolved project uid, never client
- * input; a project with nothing persisted returns 404.
- *
- * "Latest" means most recently WRITTEN for the project — the only ordering
- * that holds across the multiple writers, browsers and sessions that share one
- * partition (see {@link MktgRunPersistReceipt.version}).
+ * endpoint — plain and sidecar reads select the project's approved current.
+ * Entitlement-gated (project writer) and partitioned by the SERVER-resolved
+ * project uid, never client input. No approved selection returns 404, even
+ * when stored Drafts exist. Only the server's true pre-revision plain fallback
+ * remains; browser drafts never substitute for an approved attachment.
  */
 export interface MktgArtifactStoredResponse {
   /**
@@ -143,16 +140,16 @@ export interface MktgArtifactStoredResponse {
   storedAt?: string;
   /**
    * The revision's number in Documents (its position among the document's
-   * revisions, in write order), on a sidecar read — what names the revision
+   * revisions, in write order), on plain and sidecar reads — what names the revision
    * a consumer attaches. Not `receipt.version`: that is the agent's draft
    * version within its run, which restarts at 1 on every fresh run.
    */
   revisionNumber?: number;
   /**
    * The revision's sidecar JSON — the envelope's structured fields — on a
-   * sidecar read (`?sidecar=true`: the latest stored revision with it),
+   * sidecar read (`?sidecar=true`: the Kit's approved current framework),
    * which is what a consumer attaching the document as JSON needs. The
-   * plain latest read carries the Markdown only: a Brand Kit sidecar holds
+   * plain approved-current read carries content text without the sidecar: a Brand Kit sidecar holds
    * the logo artwork, and the marketplace resolves every dependency on
    * every load.
    */

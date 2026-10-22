@@ -23,7 +23,34 @@ const afterAnswers = events.findIndex(
 );
 const labels = (activity: MktgRunActivity[]): string[] => activity.map((step) => step.label);
 
+it('does not let reasoning MIME create a questions step or leak into the activity feed', () => {
+  const reasoning = JSON.stringify({
+    type: 'agent_notification_progress',
+    created_at: '2026-10-19T10:00:00Z',
+    content: { type: 'application/guild-reasoning-progress', data: 'messaging-framework-questions/v1 Private reasoning' },
+  });
+  expect(buildMktgRunActivity([reasoning])).toEqual([]);
+  expect(buildMktgRunActivity([...payloads(), reasoning])).toEqual(buildMktgRunActivity(payloads()));
+});
+
 describe('buildMktgRunActivity — the live feed from a real session', () => {
+  it('reuses the generic phases with LinkedIn-specific writing/checking labels after its gap round', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T10:00:00Z',
+        content: { type: 'text', data: 'LINKEDIN POST — QUESTIONS (linkedin-post-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T10:00:01Z' }),
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-19T10:00:02Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'check-1', name: 'finalize_linkedin_post' }),
+      }),
+    ]);
+    expect(labels(activity)).toEqual(['Writing three post options', 'Checking the post options']);
+    expect(activity.map((step) => step.status)).toEqual(['done', 'running']);
+  });
   it('reads the research in order, in plain sentences, ending with the questions', () => {
     const activity = buildMktgRunActivity(payloads(afterAnswers));
 
@@ -157,6 +184,33 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
       ['questions', 'Preparing a few questions for you', 'done'],
       ['writing', 'Writing the boilerplates', 'done'],
       ['checking', 'Checking the boilerplates against their word limits', 'done'],
+      ['checking', 'Fixing what the check found', 'done'],
+    ]);
+  });
+
+  it('names an FAQ run by its own sentences: its questions turn and its finalize tool', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const faqRun = [
+      toolCall('2026-10-19T08:00:00Z', 'ask_requester'),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T08:01:00Z',
+        content: { type: 'text', data: 'FAQ — QUESTIONS (faq-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:02:00Z' }),
+      toolCall('2026-10-19T08:03:00Z', 'finalize_faq'),
+      toolCall('2026-10-19T08:04:00Z', 'finalize_faq'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:05:00Z' }),
+    ];
+    expect(buildMktgRunActivity(faqRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['questions', 'Preparing a few questions for you', 'done'],
+      ['writing', 'Writing the FAQ', 'done'],
+      ['checking', 'Checking the FAQ', 'done'],
       ['checking', 'Fixing what the check found', 'done'],
     ]);
   });

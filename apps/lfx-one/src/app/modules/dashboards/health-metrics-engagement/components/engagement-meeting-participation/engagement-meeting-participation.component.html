@@ -106,12 +106,15 @@
         <ng-template #header>
           <tr>
             <th scope="col"><span class="text-xs font-medium text-gray-500">Meeting type</span></th>
+            <!-- Meetings mode keeps three columns as the design does: the count moves into the bar, so this one is blank. -->
             <th scope="col">
-              <span class="text-xs font-medium text-gray-500">{{ attendanceMode() ? 'Meetings' : 'Meetings held' }}</span>
+              @if (attendanceMode()) {
+                <span class="text-xs font-medium text-gray-500">Meetings</span>
+              }
             </th>
-            @if (attendanceMode()) {
-              <th scope="col" class="w-[170px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
-            }
+            <th scope="col" class="w-[170px]">
+              <span class="text-xs font-medium text-gray-500">{{ attendanceMode() ? 'Attendance' : 'Meetings held' }}</span>
+            </th>
           </tr>
         </ng-template>
 
@@ -148,14 +151,20 @@
               </div>
             </td>
             <td>
-              <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
+              @if (attendanceMode()) {
+                <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
+              }
             </td>
-            <!-- Meetings mode drops this column rather than repeating the count beside itself. -->
-            @if (attendanceMode()) {
-              <td class="w-[170px]">
-                <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
-              </td>
-            }
+            <td class="w-[170px]">
+              @if (attendanceMode()) {
+                <lfx-engagement-attendance-bar
+                  [attendancePct]="period?.attendancePct ?? null"
+                  [meetingsHeld]="period?.meetingsHeld ?? 0"
+                  [rule]="view.attendanceRule" />
+              } @else {
+                <lfx-engagement-attendance-bar [meetingsHeld]="period?.meetingsHeld ?? null" [countMax]="maxTypeMeetings()" />
+              }
+            </td>
           </tr>
         </ng-template>
       </lfx-table>

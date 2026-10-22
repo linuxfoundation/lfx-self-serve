@@ -18,6 +18,11 @@ import {
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUES,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
@@ -35,6 +40,7 @@ import type {
   CampaignImplementationDraft,
   CampaignPlatformResult,
   CampaignSitelink,
+  CampaignStructuredSnippet,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
 } from '@lfx-one/shared/interfaces';
@@ -6363,6 +6369,40 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /**
+   * The channel reason does not depend on the capability answer, so the sentence must not wait for
+   * one. It used to: the warning read `googleBiddingChannel`, which is null while the capability is
+   * unanswered, so a stalled capability read left a Demand Gen operator with callouts that would
+   * never be sent and nothing on screen saying so — the capability block stays silent here too,
+   * because retrying the check could not rescue the list.
+   */
+  it('still names the channel while the capability answer has not come back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsWithheldWarning']()).toContain('Demand Gen campaigns do not take callouts');
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The other half of that gate, and the reason it tests the channel rather than
+   * `googleCalloutsAvailable`: that signal is false for EITHER reason, so on Search with the
+   * capability unanswered it would put "Search campaigns do not take callouts" on screen — a
+   * sentence about Search that is simply untrue. The capability block owns this state.
+   */
+  it('never tells Search it takes no callouts while the capability is unanswered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+  });
+
+  /**
    * Through `submit()`, not the payload helper: deleting the payload spread would leave every
    * helper-level test above green while every callout an operator adds is dropped.
    */
@@ -6698,6 +6738,28 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
   });
 
+  /** The sitelink half of the channel-vs-capability split the callout tests describe in full. */
+  it('still names the channel while the capability answer has not come back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksWithheldWarning']()).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  it('never tells Search it takes no sitelinks while the capability is unanswered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+  });
+
   /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
   it.each([
     ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
@@ -6724,6 +6786,486 @@ describe('ImplementationTabComponent google sitelinks', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+});
+
+/**
+ * The structured-snippet sub-form: the form-side twin of the BFF guard, one case per branch of
+ * upstream's `validateStructuredSnippets`, plus the accept-cases that keep the add button from
+ * withholding a snippet Google would have taken.
+ *
+ * Snippets differ from callouts and sitelinks in one way worth stating: nothing GENERATES them.
+ * There is no brief field and no carry in `campaigns.component.ts`, so the draft is the only thing
+ * that moves a typed list between visits — which is why the draft tests below are not redundant
+ * with the sitelink ones.
+ */
+describe('ImplementationTabComponent google structured snippets', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const VALUES = ['Alpha', 'Beta', 'Gamma'];
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it("trims the header and every value with Go's rules, and drops only the blank lines", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    // 'alpha' is a case-folded repeat of 'Alpha' and is KEPT: upstream collapses repeats when it
+    // counts, but the list it is sent must be the list this app judged.
+    expect(c['addGoogleStructuredSnippet'](' Brands', [' Alpha ', '', 'Beta', 'Gamma', '  ', 'alpha'])).toBe(true);
+
+    expect(c['googleStructuredSnippets']()).toEqual([{ header: 'Brands', values: ['Alpha', 'Beta', 'Gamma', 'alpha'] }]);
+  });
+
+  it.each([
+    ['a blank header', '   ', VALUES],
+    ['a header over the rune bound', 'A'.repeat(GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES + 1), VALUES],
+    ['a value over the rune bound', 'Brands', ['Alpha', 'B'.repeat(GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES + 1), 'Gamma']],
+    ['fewer than the minimum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MIN_SNIPPET_VALUES - 1 }, (_, i) => `Value ${i + 1}`)],
+    ['three values of which two are the same, which renders as two', 'Brands', ['Go', 'go', 'Rust']],
+    ['more than the maximum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MAX_SNIPPET_VALUES + 1 }, (_, i) => `Value ${i + 1}`)],
+  ])('refuses %s and keeps the list empty', (_label, header, values) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleStructuredSnippet'](header, values)).toBe(false);
+    expect(c['googleStructuredSnippets']()).toHaveLength(0);
+  });
+
+  /**
+   * The subtlety the de-duplication would otherwise hide: upstream's value loop checks the rune
+   * bound BEFORE it collapses a case-folded repeat, so an over-long value that merely repeats an
+   * earlier one still fails the create. Collapsing first here would send it.
+   */
+  it('refuses an over-long value that merely repeats an earlier one', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const long = 'B'.repeat(GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES + 1);
+
+    expect(c['addGoogleStructuredSnippet']('Brands', ['Alpha', long, 'Gamma', long])).toBe(false);
+  });
+
+  it.each([
+    ['exactly the minimum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MIN_SNIPPET_VALUES }, (_, i) => `Value ${i + 1}`)],
+    ['a header of 25 EMOJI, which is 50 UTF-16 units', '🎉'.repeat(GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES), VALUES],
+    ['a non-English header, which Google publishes per locale', 'Marcas', VALUES],
+    ['exactly the maximum distinct values', 'Brands', Array.from({ length: GOOGLE_ADS_MAX_SNIPPET_VALUES }, (_, i) => `Value ${i + 1}`)],
+  ])('adds %s, because Google accepts it', (_label, header, values) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleStructuredSnippet'](header, values)).toBe(true);
+  });
+
+  it.each([
+    ['a trailing U+0085', 'Brands', 'brands'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeated header hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet'](first, VALUES);
+
+    c['googleStructuredSnippetDraft'].set({ header: repeat, values: VALUES.join('\n') });
+    expect(c['googleSnippetHeaderDuplicate']()).toBe(true);
+    expect(c['addGoogleStructuredSnippet'](repeat, VALUES)).toBe(false);
+    expect(c['googleStructuredSnippets']()).toHaveLength(1);
+  });
+
+  it('refuses an eleventh snippet once the campaign holds the maximum', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS; i++) c['addGoogleStructuredSnippet'](`Header ${i + 1}`, VALUES);
+
+    expect(c['googleStructuredSnippetsFull']()).toBe(true);
+    expect(c['addGoogleStructuredSnippet']('One more', VALUES)).toBe(false);
+    expect(c['googleStructuredSnippets']()).toHaveLength(GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS);
+  });
+
+  /**
+   * "Unfilled is not yet a mistake", the rule the sitelink URL warning follows: an operator who has
+   * typed a header and no values yet is mid-entry, not wrong. The add button withholds; the warning
+   * only describes input that is present and unservable.
+   */
+  it('stays silent about too few values while the values box is empty, but disables the add', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: '   \n\n' });
+
+    expect(c['googleSnippetTooFewValues']()).toBe(false);
+    expect(c['googleSnippetValuesErrorId']()).toBeNull();
+    expect(c['googleStructuredSnippetAddDisabled']()).toBe(true);
+  });
+
+  it('enables the add only once the draft is one Google would accept', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: 'Alpha\nBeta' });
+    expect(c['googleStructuredSnippetAddDisabled']()).toBe(true);
+
+    c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: VALUES.join('\n') });
+    expect(c['googleStructuredSnippetAddDisabled']()).toBe(false);
+  });
+
+  it.each([
+    [
+      'a header over the rune bound',
+      { header: 'A'.repeat(GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES + 1), values: VALUES.join('\n') },
+      'google-snippet-header-too-long',
+      null,
+    ],
+    [
+      'a value over the rune bound',
+      { header: 'Brands', values: `Alpha\n${'B'.repeat(GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES + 1)}\nGamma` },
+      null,
+      'google-snippet-value-too-long',
+    ],
+    ['too few distinct values', { header: 'Brands', values: 'Go\ngo\nRust' }, null, 'google-snippet-too-few-values'],
+    [
+      'too many distinct values',
+      { header: 'Brands', values: Array.from({ length: GOOGLE_ADS_MAX_SNIPPET_VALUES + 1 }, (_, i) => `Value ${i + 1}`).join('\n') },
+      null,
+      'google-snippet-too-many-values',
+    ],
+  ])('points the boxes at the message for %s, and renders it', (_label, draft, headerId, valuesId) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    c['googleStructuredSnippetDraft'].set(draft);
+    fixture.detectChanges();
+
+    expect(c['googleSnippetHeaderErrorId']()).toBe(headerId);
+    expect(c['googleSnippetValuesErrorId']()).toBe(valuesId);
+    // The id the computed names must be an element actually on the page, or `aria-describedby`
+    // points at nothing and the screen reader says nothing.
+    const rendered = headerId ?? valuesId;
+    expect(fixture.nativeElement.querySelector(`#${rendered}`)).not.toBeNull();
+    expect(find('implementation-google-snippet-header')?.getAttribute('aria-describedby')).toBe(headerId);
+    expect(find('implementation-google-snippet-values')?.getAttribute('aria-describedby')).toBe(valuesId);
+  });
+
+  it('clears the sub-form only when the snippet was actually added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleStructuredSnippetDraft'].set({ header: 'Brands', values: VALUES.join('\n') });
+    c['onGoogleStructuredSnippetAdd']();
+    expect(c['googleStructuredSnippetDraft']()).toEqual({ header: '', values: '' });
+
+    // A refusal leaves every typed line in place, so the operator fixes the one thing named.
+    c['googleStructuredSnippetDraft'].set({ header: 'brands', values: VALUES.join('\n') });
+    c['onGoogleStructuredSnippetAdd']();
+    expect(c['googleStructuredSnippetDraft']().header).toBe('brands');
+    expect(c['googleStructuredSnippetDraft']().values).toBe(VALUES.join('\n'));
+  });
+
+  it('removes a snippet by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('First', VALUES);
+    c['addGoogleStructuredSnippet']('Second', VALUES);
+
+    c['removeGoogleStructuredSnippet'](0);
+
+    expect(c['googleStructuredSnippets']().map((s: CampaignStructuredSnippet) => s.header)).toEqual(['Second']);
+  });
+
+  /**
+   * The chip renders the values pre-joined by a computed, not by a `.join()` in the `@for`
+   * (`docs/reviews/frontend-checklist.md`). This pins the rendered text to the live list, so the
+   * indirection cannot drift from what was added or survive a removal.
+   */
+  it('renders each added snippet with its values joined, and drops the row on removal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+    c['addGoogleStructuredSnippet']('Courses', ['Go', 'Rust', 'Zig']);
+    fixture.detectChanges();
+
+    const rows = (): string[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid="implementation-google-structured-snippets-section"] .flex-col > span')).map(
+        (el) => (el as HTMLElement).textContent?.trim() ?? ''
+      );
+
+    expect(rows()).toEqual(expect.arrayContaining(['Brands', VALUES.join(', '), 'Courses', 'Go, Rust, Zig']));
+
+    c['removeGoogleStructuredSnippet'](0);
+    fixture.detectChanges();
+
+    expect(rows()).not.toContain(VALUES.join(', '));
+    expect(rows()).toContain('Go, Rust, Zig');
+  });
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the other two are. */
+  it('offers snippets on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+
+    expect(c['googleStructuredSnippetsPayload']()).toEqual({ structuredSnippets: [{ header: 'Brands', values: VALUES }] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleStructuredSnippetsPayload']()).toEqual({});
+    expect(c['googleStructuredSnippets']()).toHaveLength(1);
+  });
+
+  it('omits the structuredSnippets key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleStructuredSnippetsPayload']()).toEqual({});
+  });
+
+  /**
+   * The payload copies `values` as its own array, not just the entry around it: a shallow spread of
+   * the entry would hand the request the very array the chip list is still holding.
+   */
+  it('does not share the payload values array with the live list', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+
+    const sent = c['googleStructuredSnippetsPayload']() as { structuredSnippets: CampaignStructuredSnippet[] };
+    sent.structuredSnippets[0].values.push('Delta');
+
+    expect(c['googleStructuredSnippets']()[0].values).toEqual(VALUES);
+  });
+
+  it('says out loud that snippets are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    expect(find('implementation-google-structured-snippets-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-structured-snippets-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take structured snippets');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-structured-snippets-withheld-live')?.textContent?.trim()).toBe(c['googleStructuredSnippetsWithheldWarning']());
+  });
+
+  it('shows no snippets notice when none were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleStructuredSnippetsWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-structured-snippets-withheld"]')).toBeNull();
+  });
+
+  /** The capability block counts all three lists, so its sentence stays true for a snippet-only brief. */
+  it('counts the snippets in the capability block when extensions cannot be sent', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    const block = fixture.nativeElement.querySelector('[data-testid="implementation-google-extensions-capability-unsupported"]')?.textContent ?? '';
+    expect(block).toContain('1 structured snippet');
+    // Not "generated for this brief": snippets are typed by hand, and that clause would be false.
+    expect(block).not.toContain('generated');
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it.each([
+    ['Search', { includeSearch: true }, [{ header: 'Brands', values: VALUES }]],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the snippets on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['structuredSnippets']).toEqual(expected);
+  });
+
+  /** The ONLY thing that carries a typed snippet list between visits — nothing generates one. */
+  it('round-trips the snippets through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+
+    expect(emitted?.googleStructuredSnippets).toEqual([{ header: 'Brands', values: VALUES }]);
+
+    c['googleStructuredSnippets'].set([]);
+    restoreGoogleDraft(fixture, c, { googleStructuredSnippets: [{ header: 'Brands', values: [...VALUES] }] });
+
+    expect(c['googleStructuredSnippets']()).toEqual([{ header: 'Brands', values: VALUES }]);
+  });
+
+  /** `values` copied too, for the reason the entries are: it is an array INSIDE the entry. */
+  it('does not share the restored entries or their values with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [{ header: 'Brands', values: [...VALUES] }];
+
+    restoreGoogleDraft(fixture, c, { googleStructuredSnippets: saved });
+    c['googleStructuredSnippets']()[0].header = 'Edited';
+    c['googleStructuredSnippets']()[0].values.push('Delta');
+
+    expect(saved[0].header).toBe('Brands');
+    expect(saved[0].values).toEqual(VALUES);
+  });
+
+  it('leaves the list alone when the draft carries no snippets key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleStructuredSnippets']()).toHaveLength(1);
+  });
+});
+
+/**
+ * The OTHER reason callouts and sitelinks are withheld: the create capability is not an explicit
+ * yes.
+ *
+ * The two channel warnings above cannot cover this state — both open on `googleBiddingChannel()`,
+ * which is itself null whenever the capability is unanswered — so without this block the create
+ * succeeds, ships no extensions, and says nothing. Each branch of
+ * `googleExtensionsCapabilityBlock` gets its own test, plus the three ways it must stay silent and
+ * the one thing it deliberately does NOT do: block Create.
+ */
+describe('ImplementationTabComponent google extensions capability block', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /** Search, one callout and one sitelink generated, then the capability answer taken away. */
+  function seedWithheld(capability: boolean | null, read: 'unknown' | 'pending' | 'ready' | 'failed', briefId: string | null): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Hands-On Labs');
+    c['addGoogleSitelink']({ text: 'Register', finalUrl: 'https://events.example.org/register' });
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+    return c;
+  }
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('names the deployment when the capability answered no, counting both lists', () => {
+    const c = seedWithheld(false, 'ready', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('unsupported');
+    const block = find('implementation-google-extensions-capability-unsupported')?.textContent ?? '';
+    expect(block).toContain('not available on this deployment');
+    expect(block).toContain('1 callout and 1 sitelink');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe(c['googleExtensionsCapabilityMessage']());
+    // Nothing to retry: a `false` answer is the deployment's, not a failed read.
+    expect(find('implementation-google-extensions-capability-retry')).toBeNull();
+  });
+
+  /**
+   * The pending sentence carries the counts for a reason the other three do not need: this block
+   * does not gate Create, so a create started mid-check is allowed and ships no extensions. A bare
+   * "checking…" would be the one message in this set that lets the lists go without saying so.
+   */
+  it('says it is still checking while the read is in flight, and what creating now would cost', () => {
+    const c = seedWithheld(null, 'pending', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
+    const block = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
+    expect(block).toContain('Checking whether Google ad extensions can be sent');
+    expect(block).toContain('Creating the campaign before the check finishes');
+    expect(block).toContain('1 callout and 1 sitelink');
+    // Create is deliberately not blocked here — the sentence is the whole mitigation.
+    expect(c['canSubmit']()).toBe(true);
+    expect(find('implementation-google-extensions-capability-retry')).toBeNull();
+  });
+
+  it('asks for the brief to be saved when there is no brief to check against', () => {
+    const c = seedWithheld(null, 'unknown', null);
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('unsaved');
+    expect(find('implementation-google-extensions-capability-unsaved')?.textContent).toContain('Save the brief to send them');
+  });
+
+  /**
+   * `unknown` is treated like a failure, not like `pending` — no read is out and nothing else will
+   * start one, so a spinner would spin forever. Retry is the way out, and it reaches the parent.
+   */
+  it.each([['failed'], ['unknown']])('offers a Retry that asks the parent to re-read when the read is %s', (read) => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = seedWithheld(null, read as 'failed' | 'unknown', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('failed');
+    expect(find('implementation-google-extensions-capability-failed')?.textContent).toContain('Could not confirm');
+    (find('implementation-google-extensions-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing once the capability answers yes — the channel warnings own it from there', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleExtensionsCapabilityMessage']()).toBe('');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe('');
+  });
+
+  it('says nothing when there are no extensions to withhold', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The message promises the lists go out once the check passes. On a channel that takes no
+   * extensions that promise cannot be kept — the lists are withheld whatever the capability says —
+   * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
+   * the true reason, which is asserted here so the pair can never both go quiet.
+   */
+  it.each([['includeDemandGen'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleCalloutsWithheldWarning']()).toContain('do not take callouts');
+    expect(c['googleSitelinksWithheldWarning']()).toContain('do not take sitelinks');
+  });
+
+  it('says nothing while no Google channel is ticked', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  it('says nothing when Google is not one of the selected platforms', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['selectedPlatforms'].set([]);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The deliberate difference from `biddingCapabilityBlock`, which DOES block Create. A withheld
+   * manual bid changes what the campaign does; withheld extensions cost only the extensions, so the
+   * create goes ahead and the block says what was left out.
+   */
+  it('does not block Create', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+    expect(c['canSubmit']()).toBe(true);
   });
 });
 
@@ -7248,7 +7790,7 @@ describe('ImplementationTabComponent bidding control', () => {
       f.componentRef.setInput('draft', draft);
       f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
       f.componentRef.setInput('biddingEnabled', bidding);
-      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('createCapabilityRead', read);
       f.componentRef.setInput('briefData', brief());
       f.detectChanges();
       await f.whenStable();
@@ -7275,7 +7817,7 @@ describe('ImplementationTabComponent bidding control', () => {
 
       // The answer arrives: the control returns with the retained choice, and it is sent.
       fixture.componentRef.setInput('biddingEnabled', true);
-      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.componentRef.setInput('createCapabilityRead', 'ready');
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -7287,7 +7829,7 @@ describe('ImplementationTabComponent bidding control', () => {
     it('blocks Create with a Retry that asks the parent to re-read when the read failed', async () => {
       fixture = await remount(null, 'failed');
       const retried = vi.fn();
-      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(component()['canSubmit']()).toBe(false);
       expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not confirm that manual bidding is supported');
@@ -7333,7 +7875,7 @@ describe('ImplementationTabComponent bidding control', () => {
     it('offers Retry and Switch to Automatic when no read is in flight (after a foundation switch)', async () => {
       fixture = await remount(null, 'unknown');
       const retried = vi.fn();
-      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(component()['canSubmit']()).toBe(false);
       expect(query('implementation-bidding-capability-pending')).toBeNull();
@@ -7422,7 +7964,7 @@ describe('ImplementationTabComponent bidding control', () => {
       fixture.detectChanges();
 
       fixture.componentRef.setInput('biddingEnabled', true);
-      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.componentRef.setInput('createCapabilityRead', 'ready');
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -7862,7 +8404,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
 
-    f.componentRef.setInput('biddingCapabilityRead', read);
+    f.componentRef.setInput('createCapabilityRead', read);
     f.componentRef.setInput('redditAssetUploadEnabled', upload);
     f.detectChanges();
 
@@ -7888,7 +8430,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     resumeCreativeAssetUpload.mockReturnValue(pending);
 
     const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
-    f.componentRef.setInput('biddingCapabilityRead', 'pending');
+    f.componentRef.setInput('createCapabilityRead', 'pending');
     const c = at(f);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
@@ -8261,7 +8803,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
       first.fixture.destroy();
       const f = (await mount(upload, creative as boolean, draft)).fixture;
       f.componentRef.setInput('redditCreativeEnabled', creative);
-      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('createCapabilityRead', read);
       const c = at(f);
       c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
       c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
@@ -8285,7 +8827,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
       f.componentRef.setInput('redditCreativeEnabled', true);
       f.componentRef.setInput('redditAssetUploadEnabled', true);
-      f.componentRef.setInput('biddingCapabilityRead', 'ready');
+      f.componentRef.setInput('createCapabilityRead', 'ready');
       f.detectChanges();
       await f.whenStable();
 
@@ -8296,7 +8838,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     it.each(['failed', 'unknown'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
       const f = await remount(null, null, read);
       const retried = vi.fn();
-      f.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      f.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(at(f).canSubmit()).toBe(false);
       expect(q(f, 'implementation-reddit-image-asset-block-failed')?.textContent).toContain('Could not confirm that Reddit image upload is supported');

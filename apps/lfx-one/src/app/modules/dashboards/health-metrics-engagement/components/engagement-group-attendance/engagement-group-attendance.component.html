@@ -85,10 +85,9 @@
           <td>
             <div class="flex flex-col gap-0.5">
               <span class="text-sm font-medium text-gray-900">{{ row.committeeName }}</span>
+              <!-- The only sub-line, as in the design; the project shows in the drawer. 11.5px is the design's size. -->
               @if (period?.dormant) {
-                <span class="text-[12px] text-amber-700">No meetings this period</span>
-              } @else if (row.projectName) {
-                <span class="text-[12px] text-gray-500">{{ row.projectName }}</span>
+                <span class="text-[11.5px] font-medium text-gray-400" data-testid="engagement-group-attendance-no-meetings">No meetings this period</span>
               }
             </div>
           </td>
@@ -110,7 +109,14 @@
           </td>
           <td class="w-[150px]">
             @if (period?.dormant) {
-              <lfx-tag value="Dormant" severity="warn" [rounded]="true" />
+              <!-- The design's `.badge.b-act`, at its exact 11px and 2px 8px padding. -->
+              <div class="flex justify-end">
+                <span
+                  class="whitespace-nowrap rounded-full bg-red-50 px-[8px] py-[2px] text-[11px] font-medium leading-[16px] text-red-600"
+                  data-testid="engagement-group-attendance-dormant"
+                  >Dormant</span
+                >
+              </div>
             } @else {
               <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
             }

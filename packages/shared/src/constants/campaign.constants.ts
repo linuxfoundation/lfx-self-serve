@@ -1941,6 +1941,51 @@ export const GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES = 35;
 export const GOOGLE_ADS_MAX_FINAL_URL_BYTES = 2084;
 
 /**
+ * Upstream's own bound on a Google Ads structured-snippet list (`assets.go`'s
+ * `maxStructuredSnippets`), checked on the raw slice before any entry is inspected — the same shape
+ * as {@link GOOGLE_ADS_MAX_CALLOUTS}, at half the count.
+ */
+export const GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS = 10;
+
+/**
+ * Upstream's per-snippet header bound (`assets.go`'s `maxSnippetHeaderRunes`), in RUNES.
+ *
+ * Count it with the spread (`[...header].length`), never `.length` — see
+ * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} for why a UTF-16 count over-refuses here.
+ *
+ * The LENGTH is all that is bounded. Google also requires the header to be one of its predefined
+ * ones, but that list is PER LOCALE — "Brands" in English, "Marcas" in Spanish — so upstream
+ * validates the header's shape and not its membership, and this mirror does the same. A hardcoded
+ * English list would refuse every correct non-English header, and refusing a create Google would
+ * have accepted is the more expensive error. Same reasoning as the numeric geo-target constant ids.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES = 25;
+
+/**
+ * Upstream's per-value bound (`assets.go`'s `maxSnippetValueRunes`), in RUNES, applied to each value
+ * separately rather than to their total.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES = 25;
+
+/**
+ * How many values upstream requires on a snippet (`assets.go`'s `minSnippetValues`), counted AFTER
+ * blanks are dropped and case-folded repeats are collapsed.
+ *
+ * The order matters and is upstream's own: "three values of which two are the same renders as two,
+ * which is below what Google accepts". So a snippet listing `Go`, `go` and `Rust` is refused for
+ * having two values, not for repeating one — and a guard that counted the raw list would report it
+ * as acceptable and let the create fail upstream as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MIN_SNIPPET_VALUES = 3;
+
+/**
+ * Upstream's ceiling on one snippet's values (`assets.go`'s `maxSnippetValues`), counted on the same
+ * de-duplicated list as {@link GOOGLE_ADS_MIN_SNIPPET_VALUES} — so a list over the ceiling only
+ * because it repeats a value is NOT refused.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUES = 10;
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
@@ -2131,7 +2176,7 @@ export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
 
 /**
  * Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`),
- * across the three platforms. Which of them a campaign's platform takes is upstream's to decide: it
+ * across the four platforms. Which of them a campaign's platform takes is upstream's to decide: it
  * refuses any other with 400 before the platform is contacted.
  */
 export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
@@ -2154,8 +2199,26 @@ export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
 /** Most negative keywords one request may carry on X: one write per keyword, paced at one a second, so upstream caps it at 20. */
 export const MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST = 20;
 
-/** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
+/**
+ * Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). Upstream
+ * admits this length on every platform, so it is also what the BFF enforces — a platform with a
+ * shorter limit narrows it in `CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES.maxTextLength`.
+ */
 export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
+
+/**
+ * Google Ads' limit on a negative keyword's text (`KeywordInfo.text`), in characters. Shorter than
+ * the shared limit above, and campaign-service applies it in its Google dispatcher: a longer text
+ * is refused with 400 before Google is contacted, taking the whole request with it. The editor
+ * therefore refuses it first, so the UI never submits a Google batch upstream will reject whole.
+ *
+ * Enforced in the editor and in what the brief suggests, NOT at the BFF route, which guards the
+ * shared 100: `POST /:campaignId/negative-keywords` is given a campaign id and a brief id and no
+ * platform, so it would have to fetch the campaign to know which limit applies. A caller that
+ * bypasses the editor can still earn upstream's 400 — which is upstream's to give, and loses
+ * nothing, since the request is refused before Google is contacted.
+ */
+export const MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH = 80;
 
 /**
  * The characters a negative keyword's text may hold: letters, combining marks, digits, spaces and
@@ -2386,6 +2449,7 @@ export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
 
 /** The platforms a negative keyword can be added on (`add-negative-keywords`). */
 export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<NegativeKeywordCampaignPlatform>([
+  'google-ads',
   'microsoft-ads',
   'reddit-ads',
   'twitter-ads',
@@ -2404,18 +2468,37 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNega
 /**
  * What the negative-keyword editor offers and sends per platform, from campaign-service's
  * `add-negative-keywords` contract:
+ * - Google Ads: Broad, Phrase or Exact, as campaign criteria, up to 60, and a keyword's text is
+ *   capped at 80 characters rather than the shared 100.
  * - Microsoft Advertising: Exact or Phrase, at campaign level, up to 60.
  * - Reddit: Broad only (its excluded keywords carry no match type), on the campaign's one ad group,
  *   up to 60, and the keyword-targeting read's `revision` is REQUIRED.
  * - X: Broad, Phrase or Exact, as negated targeting on the campaign's one line item, up to 20.
  */
 export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeKeywordCampaignPlatform, CampaignNegativeKeywordPlatformRules>> = {
+  'google-ads': {
+    label: 'Google Ads',
+    matchTypes: [
+      { value: 'Exact', label: 'Exact' },
+      { value: 'Phrase', label: 'Phrase' },
+      { value: 'Broad', label: 'Broad' },
+    ],
+    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    // Google's own mutate is ATOMIC, so one over-long keyword would take the whole batch with it.
+    maxTextLength: MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+    requiresRevision: false,
+    destination: 'Added to this campaign in Google Ads.',
+    matchTypeHint: 'Applies to every keyword in this request. Google Ads supports Exact, Phrase and Broad for negatives.',
+  },
   'microsoft-ads': {
     label: 'Microsoft Advertising',
     matchTypes: CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS,
     // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
     defaultMatchType: 'Exact',
     maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: false,
     destination: 'Added to this campaign in Microsoft Advertising.',
     matchTypeHint: 'Applies to every keyword in this request. Microsoft supports Exact and Phrase for negatives.',
@@ -2425,6 +2508,7 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeK
     matchTypes: [{ value: 'Broad', label: 'Broad' }],
     defaultMatchType: 'Broad',
     maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: true,
     destination: "Added to the excluded keywords of this campaign's ad group on Reddit.",
     matchTypeHint: "Reddit's excluded keywords carry no match type, so Broad is the only choice.",
@@ -2438,6 +2522,7 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeK
     ],
     defaultMatchType: 'Exact',
     maxKeywords: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: false,
     destination: "Added as negative keyword targeting on this campaign's line item on X.",
     matchTypeHint: 'Applies to every keyword in this request. X supports Exact, Phrase and Broad for negatives.',
@@ -3344,6 +3429,43 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
+
+/**
+ * The same resource bound for a list nested INSIDE a list entry, where the widest legitimate list
+ * is not the one a cap names.
+ *
+ * `structuredSnippets[].values` is the only such list today, and upstream puts no cap on its raw
+ * length at all: `validateStructuredSnippets` skips blanks and collapses case-folded repeats
+ * BEFORE counting, so its 3..10 bound is on DISTINCT values
+ * ({@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, {@link GOOGLE_ADS_MAX_SNIPPET_VALUES}) and a hundred
+ * lines of `Alpha` / `Beta` / `Gamma` is a valid three-value snippet. The Implementation tab
+ * stores what the operator typed rather than the collapsed list, so a duplicate-heavy paste
+ * reaches the BFF at its raw length — which is why the 100 above, sized against lists whose caps
+ * are 20 and 60, would refuse a create upstream would have accepted.
+ *
+ * Far above any paste an operator produces, so the invariant the bound above states — a resource
+ * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
+ * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
+ * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
+ * is a body upstream refuses outright and has no over-refusal to relax.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
+
+/**
+ * The ceiling on nested entries SUMMED across one list, because per-list ceilings multiply: the
+ * outer list is bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, so the bound above on its own
+ * would admit a hundred thousand nested strings for the normalisers to trim and re-allocate one at
+ * a time — the hazard the flat ceiling above names, back at the same order of magnitude.
+ *
+ * Derived rather than chosen, so it cannot refuse what upstream accepts: `validateStructuredSnippets`
+ * refuses more than {@link GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS} snippets on the RAW `len()`, before it
+ * reads a single one, so no body upstream accepts can carry more than that many snippets — and with
+ * each snippet's values bounded above, this product is the most nested entries such a body can hold.
+ * A smaller round number would not be: three snippets of a thousand-line duplicate-heavy paste is a
+ * create upstream takes, and a bound of a few thousand would refuse it, which is the very
+ * over-refusal this file exists to prevent.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL = MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES * GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS;
 
 /**
  * The Google channels this application can ask campaign-service to create, in the order the

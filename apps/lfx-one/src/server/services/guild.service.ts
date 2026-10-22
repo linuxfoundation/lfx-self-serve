@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
 import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -209,10 +210,11 @@ export class GuildService {
    * for the contract envelope; this method makes no shape assumptions beyond
    * `{ items: [...] }` with an optional `type` per item.
    *
-   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
-   * intake answers are echoed verbatim into the trigger message, so a caller
-   * could otherwise plant a schema-valid envelope in an answer and have it
-   * selected as the agent's output. The authoritative envelope only ever rides
+   * User-originated CONTENT (`user_message`, `trigger_message`) is excluded:
+   * intake answers could plant an envelope, so only a content-free queued-turn
+   * marker survives. A full page also carries an incomplete-page marker so
+   * completion consumers cannot fail a turn whose later work is outside the cap.
+   * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
@@ -227,7 +229,10 @@ export class GuildService {
 
     const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
     const rawItems = data.items || [];
-    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+    // Retain only the timing of queued turns, never their caller-controlled content.
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.
@@ -245,7 +250,11 @@ export class GuildService {
       });
     }
 
-    return sorted.map((item) => JSON.stringify(item));
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    return payloads;
   }
 
   /**

@@ -13,10 +13,12 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  LINKEDIN_POST_INTAKE,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
   MKTG_DOCUMENT_TYPES,
+  MKTG_HOST_ASSET_STATES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
@@ -33,6 +35,8 @@ import {
   MktgBoilerplatesAsset,
   MktgDependencyDocument,
   MktgDocumentStatusChip,
+  MktgFaqAsset,
+  MktgDocumentAgentKey,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgIntakeAttachment,
@@ -53,12 +57,20 @@ import {
   MktgRunPhase,
   MktgRunQuestionsPending,
   MktgRunVersion,
-  MktgSlidesExportTarget,
   MktgStoredAgentRun,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, isMktgSlidesExportAgentKey, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import {
+  buildMktgDocumentProjectPrefix,
+  findMktgDocumentStatus,
+  mktgAssetHeaderFallback,
+  mktgKitCrumbsFor,
+  mktgKitRootPath,
+  mktgAgentDocumentName,
+  mktgJsonAttachmentUsable,
+  parseMktgRevisionKey,
+} from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -71,8 +83,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
+import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -86,7 +101,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // or replace, answered on the same run →) document result with versions and a
 // "Request changes" feedback box that regenerates as v+1 through the existing
 // chat/session BFF. An agent whose output is a structured asset (the Messaging
-// Framework, the Boilerplates: `intake.assetView`) lands on the asset's own view instead: the
+// Framework, the Boilerplates, the FAQ: `intake.assetView`) lands on the asset's own view instead: the
 // feed and the questions on their own while the run is live, then the
 // rendered asset. The Brand Kit, whose revision is a JSON kit, shows the kit
 // laid out as its 16-page book on the result. The page is driven entirely by
@@ -95,7 +110,9 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 @Component({
   selector: 'lfx-mktg-agent-run',
   imports: [
+    LinkedinPostRunComponent,
     NgClass,
+    MktgBreadcrumbComponent,
     NgTemplateOutlet,
     ReactiveFormsModule,
     ButtonComponent,
@@ -106,6 +123,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     MessageComponent,
     BrandKitWebViewComponent,
     MktgBoilerplatesViewComponent,
+    MktgFaqViewComponent,
     MktgFrameworkViewComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
@@ -155,6 +173,7 @@ export class MktgAgentRunComponent {
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
+  protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
    * dependency ids PLUS the intake's REQUIRED attachments (the Brand Kit's
@@ -177,14 +196,9 @@ export class MktgAgentRunComponent {
     ...new Set([...(this.agent?.dependsOn ?? []), ...(this.intake?.attachments ?? []).map((attachment) => attachment.sourceAgentId)]),
   ];
   /**
-   * The attachment sources submitted as JSON — resolved from the server's
-   * LATEST stored revision with its sidecar (the newest revision that passes
-   * its integrity checks; a restore is itself the newest revision), never a
-   * browser-stored run. The latest regardless of its
-   * review status: LFX One has no Approve action yet (product decision,
-   * 17 Oct 2026; Approve is a later item). A revision the agent can read
-   * nothing from (`mktgJsonAttachmentUsable`) counts as unmet, not as the
-   * attachment.
+   * JSON attachment sources use the server sidecar read: the Brand Kit's
+   * approved current framework, never a browser-stored run. A revision the
+   * agent cannot read still counts as unmet, not as an attachment.
    */
   private readonly sidecarSourceIds: string[] = (this.intake?.attachments ?? [])
     .filter((attachment) => attachment.format === 'json')
@@ -259,7 +273,7 @@ export class MktgAgentRunComponent {
    * True when the last dependency resolution FAILED (a 403, a 5xx, the
    * network) rather than found nothing: `dependencyDocs` stays null, submit
    * stays disabled, and the page says the check could not be made — never
-   * "Run the messaging framework first", which would read a failed read as
+   * "Approve a messaging framework first", which would read a failed read as
    * a measured absence. Try again re-resolves.
    */
   protected readonly dependencyCheckFailed = signal(false);
@@ -306,6 +320,10 @@ export class MktgAgentRunComponent {
   private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
+  protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly crumbs = computed(() =>
+    mktgKitCrumbsFor(this.agent?.id ?? '', this.projectName(), mktgKitRootPath(this.router.url), this.agent?.name ?? 'Agent')
+  );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly docTitle = computed(() => `${this.projectName()} ${this.intake?.documentName}`);
   protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
@@ -337,17 +355,24 @@ export class MktgAgentRunComponent {
     const asset = this.currentVersion()?.asset;
     return asset?.kind === 'boilerplates' ? asset : null;
   });
-  /** How the result's footer says the asset is changed: a new run from edited inputs is a new revision. */
-  protected readonly assetChangeNote = computed(
-    () => `To change the ${(this.intake?.documentName ?? 'document').toLowerCase()}, edit the inputs and generate again; the result is a new revision.`
-  );
+  /** The FAQ of the version on screen, for the FAQ view. */
+  protected readonly currentFaqAsset: Signal<MktgFaqAsset | null> = computed(() => {
+    const asset = this.currentVersion()?.asset;
+    return asset?.kind === 'faq' ? asset : null;
+  });
+  /** How the result's footer says the asset is changed: a new run from edited inputs is a new revision. An acronym (the FAQ) keeps its capitals. */
+  protected readonly assetChangeNote = computed(() => {
+    const name = this.intake?.documentName ?? 'document';
+    const noun = name === name.toUpperCase() ? name : name.toLowerCase();
+    return `To change the ${noun}, edit the inputs and generate again; the result is a new revision.`;
+  });
   /** The project's stored Brand Kit, which the framework's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
   /** Where the asset view stands: generating while the feed shows, questions while the stepper does, ready on the result. */
   protected readonly frameworkState: Signal<MktgFrameworkViewState> = computed(() => {
     const phase = this.phase();
     if (phase === 'running') {
-      return 'generating';
+      return MKTG_HOST_ASSET_STATES.drafting;
     }
     if (phase === 'questions') {
       return 'questions';
@@ -358,22 +383,10 @@ export class MktgAgentRunComponent {
   protected readonly assetVersion = computed(() => (this.phase() === 'result' ? (this.currentVersion()?.version ?? null) : null));
   /** The Brand Kit of the version on screen, when the agent's revision is a kit rather than a document. */
   protected readonly currentBrandKit: Signal<BrandKitRevision | null> = computed(() => this.currentVersion()?.brandKit ?? null);
-  /**
-   * The stored revision Export to Google Slides reads for the version on
-   * screen: the agent's living document, the revision named by the hash of
-   * what the server stored for this version. Null outside the result, for an
-   * agent whose document does not export, and while the version carries no
-   * hash (its server copy has not landed yet): the export never falls back
-   * to the document's latest revision, which may be another version.
-   */
-  protected readonly slidesExportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
-    const agentKey = this.documentsAgentKey;
-    const project = this.projectContext.activeContextUid();
-    const version = this.currentVersion();
-    if (this.phase() !== 'result' || !version?.contentSha256 || !project || !isMktgSlidesExportAgentKey(agentKey)) {
-      return null;
-    }
-    return { project, agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, contentSha256: version.contentSha256 };
+  /** Run results are Draft previews, never approval evidence or approved export targets. */
+  protected readonly previewMetadata = computed(() => {
+    const key = this.documentsAgentKey;
+    return key ? mktgAssetHeaderFallback(key, this.assetVersion(), this.currentVersion()?.createdAt ?? null, null) : null;
   });
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
@@ -402,15 +415,15 @@ export class MktgAgentRunComponent {
    * Non-interactive "Using <project>'s <document> (vN)" chips for the
    * intake's auto-attached dependency documents (dec-agent-dependency-gating)
    * — there is no choice UI; the stored document is always what is submitted.
-   * A `json` attachment's chip names the latest revision and links to the
-   * page it is made on ("Uses the latest messaging framework · v3 · 16 Oct").
+   * The Brand Kit's `json` attachment names the approved current revision
+   * and links to its page ("Uses the approved messaging framework · v3 · 16 Oct").
    */
   protected readonly attachmentChips: Signal<MktgAttachmentChip[]> = this.initAttachmentChips();
   /**
    * The required `json` attachment the project cannot satisfy, once
-   * resolution has completed: no stored revision at all (the Brand Kit on a
-   * project that never ran the messaging framework), or — `incomplete` —
-   * a latest revision the agent can read nothing from (positioning and
+   * resolution has completed: no approved selection (absent framework or
+   * stored but unapproved draft), or — `incomplete` —
+   * an approved revision the agent can read nothing from (positioning and
    * tagline both still "tbd", a restored revision without its sidecar),
    * which the BFF validator would refuse with a 400 no retry could clear.
    * Null while resolving and when satisfied.
@@ -437,8 +450,8 @@ export class MktgAgentRunComponent {
   /**
    * Honest note shown when a dependency has no stored output for the active
    * project (deep-link case — the marketplace card is disabled then), or
-   * when a required attachment has no stored revision at all ("Run the
-   * messaging framework first") or one the agent cannot read (the
+   * when a required attachment has no approved selection (the configured
+   * approval-required message) or one the agent cannot read (the
    * attachment's `incompleteNote`), with the link below it. Empty while
    * dependency resolution is still in flight and when all are met.
    */
@@ -451,13 +464,13 @@ export class MktgAgentRunComponent {
       return unmet.attachment.incompleteNote ?? `Finish the ${unmet.attachment.documentName.toLowerCase()} first.`;
     }
     if (unmet) {
-      return `Run the ${unmet.attachment.documentName.toLowerCase()} first.`;
+      return unmet.attachment.missingNote ?? `Approve the ${unmet.attachment.documentName.toLowerCase()} in Documents first.`;
     }
     const names = this.missingDependencyNames();
     if (names.length === 0) {
       return '';
     }
-    return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+    return `This agent builds on the project’s ${names.join(' and ')} — approve ${names.length > 1 ? 'them' : 'it'} in Documents first.`;
   });
   /** The link under the note: the page where the required document is made (the Messaging Framework page). */
   protected readonly missingDependencyLink: Signal<MktgMissingDependencyLink | null> = computed(() => {
@@ -596,8 +609,13 @@ export class MktgAgentRunComponent {
   protected readonly pageClass: string = this.intake?.fullWidth ? 'w-full px-4 sm:px-6 lg:px-8 mt-3' : 'container mx-auto px-4 sm:px-6 lg:px-8 mt-3';
   /** The intake's titled field groups with their fields resolved, or empty for a flat form. */
   protected readonly fieldGroups: MktgResolvedFieldGroup[] = this.initFieldGroups();
+  /** The groups shown before the documents section. */
+  protected readonly leadingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => !group.afterDocuments);
+  /** The groups shown after it (the FAQ's notes). */
+  protected readonly trailingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => group.afterDocuments);
   /** The Documents area type this agent's output is stored as, when it has one. */
-  protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
+  protected readonly documentsAgentKey: MktgDocumentAgentKey | null =
+    MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
     // One empty row per list field from the start, so the form never shows a list with no box.
@@ -614,10 +632,13 @@ export class MktgAgentRunComponent {
         this.copyTimer = null;
       }
     });
-    // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
+    // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
       return;
+    }
+    if (this.intake.oneOffDocument) {
+      return; // The dedicated surface owns profile, source intake and one-off output.
     }
     // Stored runs + LFX prefill read browser state (localStorage, HTTP-backed
     // project detail), and the project selector reuses this component on a
@@ -668,13 +689,23 @@ export class MktgAgentRunComponent {
   }
 
   // === Protected methods ===
-  protected onBack(): void {
-    this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
-  /** Every revision of this agent's document is kept in the Documents area. */
+  /** Only a canonical receipt key can identify this run's revision; never infer it from content. */
   protected onOpenDocuments(): void {
-    this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.documentsAgentKey);
+    if (!type || type.kind !== 'living') {
+      this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
+      return;
+    }
+    const version = this.currentVersion();
+    const key = version ? this.runService.receiptKey(version) : null;
+    const project = this.projectContext.activeContextUid();
+    const parsed = key && project ? parseMktgRevisionKey(key, buildMktgDocumentProjectPrefix(project)) : null;
+    const revision = parsed?.agentKey === type.agentKey && parsed.documentId === MKTG_LIVING_DOCUMENT_ID ? parsed.id : null;
+    this.router.navigate(['..', 'documents', type.agentKey, MKTG_LIVING_DOCUMENT_ID], {
+      relativeTo: this.route,
+      queryParams: { revision },
+      queryParamsHandling: 'merge',
+    });
   }
 
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
@@ -927,17 +958,15 @@ export class MktgAgentRunComponent {
             if (!mktgJsonAttachmentUsable(attachment, doc.sidecar)) {
               // A revision the agent can read nothing from is not what the
               // run uses: the gate's note names it (an optional one is
-              // simply not sent), so a "Uses the latest …" chip would
+              // simply not sent), so a "Uses the approved current …" chip would
               // contradict the stop beside it.
               continue;
             }
-            // A JSON attachment names the latest revision it is — its version
-            // and the date it was stored — and links to the page it is made
-            // on. Latest, not approved: Approve is a later item.
+            // The sidecar read supplies the approved current framework and its date.
             const storedOn = doc.storedAt ? ` · ${formatDate(doc.storedAt, 'd MMM', 'en-US')}` : '';
             chips.push({
               key: attachment.sourceAgentId,
-              label: `Uses the latest ${attachment.documentName.toLowerCase()} · v${doc.version}${storedOn}`,
+              label: `Uses the approved ${attachment.documentName.toLowerCase()} · v${doc.version}${storedOn}`,
               linkAgentId: attachment.sourceAgentId,
               ...this.attachmentChipStyle.present,
             });
@@ -974,6 +1003,7 @@ export class MktgAgentRunComponent {
       title: group.title,
       hint: group.hint ?? '',
       footnote: group.footnote ?? '',
+      afterDocuments: !!group.afterDocuments,
       fields: group.fieldKeys.map((key) => this.intake?.fields.find((field) => field.key === key)).filter((field): field is MktgIntakeField => !!field),
     }));
   }
@@ -1521,10 +1551,8 @@ export class MktgAgentRunComponent {
     }
     if (progress.type === 'persisted') {
       // The server copy landed on a retry after the document was already
-      // announced. Dependency resolution prefers the server copy, so
-      // without this second announcement consumers would stay attached
-      // to the PREVIOUS server version until a page reload. The run now
-      // names the version's stored revision, which its export reads.
+      // announced. Refresh server-approved dependencies; the run remains a
+      // Draft preview and never infers approval from the receipt's digest.
       if (progress.run) {
         this.run.set(progress.run);
       }

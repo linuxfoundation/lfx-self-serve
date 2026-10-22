@@ -82,13 +82,6 @@
                 {{ tile.delta }}
               </span>
             }
-            @if (tile.warn) {
-              <i
-                class="fa-light fa-triangle-exclamation self-center text-sm text-amber-500"
-                aria-label="Steep fall"
-                role="img"
-                [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-warn'"></i>
-            }
           </div>
         </div>
       }

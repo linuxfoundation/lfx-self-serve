@@ -29,6 +29,7 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  MKTG_SLIDES_EXPORT_API_PATH,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
@@ -42,6 +43,7 @@ import type {
   PersonaType,
 } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const PROJECT_UID = 'p0000000-0000-0000-0000-00000000f0f0';
@@ -126,17 +128,19 @@ function revisionSummary(): MktgRevisionSummary {
     format: 'json',
     commentCount: 0,
     latest: true,
+    approval: null,
   };
 }
 
 function documentDetail(): MktgDocumentDetailResponse {
-  return { project: PROJECT_UID, type: frameworkType(), documentId: DOCUMENT_ID, revisions: [revisionSummary()] };
+  return { project: PROJECT_UID, type: frameworkType(), documentId: DOCUMENT_ID, revisions: [revisionSummary()], approvedCurrent: null };
 }
 
 function revisionResponse(): MktgRevisionResponse {
   return {
     ...documentDetail(),
     revision: revisionSummary(),
+    approval: null,
     markdown: JSON.stringify(CONTENT),
     sidecar: { mode: 'draft', report: { sources_read: [], sources_failed: [], gaps: [], notes: '' }, checks: { findings: [] } },
   };
@@ -179,6 +183,7 @@ async function stubContext(page: Page): Promise<void> {
     const items = isFoundation ? [] : [{ uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, logoUrl: null, isFoundation: false }];
     return fulfillJson(route, { items, next_page_token: null, upstream_failed: false, lens: isFoundation ? 'foundation' : 'project' });
   });
+  await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => fulfillJson(route, { last: null, latestRevision: null }));
   // The document read (`/documents/foundation-message/<id>?project=`), then the revision read the view chains after it.
   await page.route(new RegExp(`/api/mktg-agents/documents/foundation-message/${DOCUMENT_ID}\\?`), (route) => fulfillJson(route, documentDetail()));
   await page.route(new RegExp(`/api/mktg-agents/documents/foundation-message/${DOCUMENT_ID}/revisions/`), (route) => fulfillJson(route, revisionResponse()));
@@ -189,6 +194,7 @@ async function stubContext(page: Page): Promise<void> {
  * route on the Express server, whose fetches bypass `page.route` and hit the real BFF.
  */
 async function gotoFrameworkDocument(page: Page): Promise<void> {
+  await suppressCookieBanner(page);
   await pinMktgFlag(page);
   await seedContextCookies(page);
   await stubContext(page);
@@ -212,7 +218,7 @@ test.describe('Messaging Framework view empty states', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test.beforeEach(() => {
-    if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+    if (!process.env['TEST_USERNAME'] || !process.env['TEST_PASSWORD']) {
       test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
     }
   });

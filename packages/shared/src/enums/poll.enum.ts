@@ -7,6 +7,7 @@
  */
 export enum PollType {
   GENERIC = 'generic',
+  MAJORITY = 'majority',
   CONDORCET_IRV = 'condorcet_irv',
   INSTANT_RUNOFF_VOTE = 'instant_runoff_vote',
   MEEK_STV = 'meek_stv',
@@ -56,4 +57,15 @@ export enum IndexedVoteResponseStatus {
   RESPONDED = 'responded',
   ENDED = 'ended',
   AWAITING_RESPONSE_BUT_POLL_ENDED = 'awaiting_response_but_poll_ended',
+}
+
+/**
+ * Participation status of an invited voter, as returned by GET /api/votes/:uid/voters (#3911).
+ * @description Derived from the voter's `vote_response` row: a submitted row is `abstained` or
+ * `voted`; every other row is `not_voted`.
+ */
+export enum VoteVoterStatus {
+  VOTED = 'voted',
+  ABSTAINED = 'abstained',
+  NOT_VOTED = 'not_voted',
 }

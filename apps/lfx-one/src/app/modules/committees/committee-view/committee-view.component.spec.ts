@@ -91,7 +91,14 @@ describe('CommitteeViewComponent', () => {
         },
         { provide: MeetingService, useValue: { getMeetingsByCommittee } },
         { provide: MailingListService, useValue: { getMailingListsByCommittee: vi.fn(() => of([])) } },
-        { provide: VoteService, useValue: { getVotesByCommittee: vi.fn(() => of([])), mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v) } },
+        {
+          provide: VoteService,
+          useValue: {
+            getVotesByCommittee: vi.fn(() => of([])),
+            mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
+            mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
+          },
+        },
         { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: vi.fn(), clear: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },

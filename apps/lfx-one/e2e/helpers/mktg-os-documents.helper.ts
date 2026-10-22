@@ -24,8 +24,14 @@ function livingDocumentType() {
   if (!type) throw new Error('Documents fixtures require a living document type in the catalog');
   return type;
 }
-export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}`;
+export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${DOCUMENT_TYPE.agentKey}`;
 export const DOCUMENT_VIEW_URL = `/project/mktg-os-agents/documents/${DOCUMENT_TYPE.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`;
+
+export async function returnToDocumentType(page: Page): Promise<void> {
+  await page.getByTestId('mktg-breadcrumb-link-0').click();
+  await page.getByTestId('mktg-kit-tab-documents').click();
+  await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+}
 
 export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): MktgDocumentDetailResponse {
   const revisions: MktgRevisionSummary[] = Array.from({ length: revisionCount }, (_, index) => revisionCount - index).map((number) => ({
@@ -41,6 +47,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     commentCount: 0,
     latest: number === currentNumber,
     author: null,
+    approval: null,
   }));
   for (const revision of revisions) {
     if (revision.number > 2) revision.author = { name: 'The writer' };
@@ -55,6 +62,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     type: DOCUMENT_TYPE,
     documentId: 'living',
     revisions,
+    approvedCurrent: null,
     current: { revisionId: selected.id, changedAt: '2026-10-14T12:00:00.000Z', changedBy: { name: 'The writer' } },
   };
 }
@@ -136,8 +144,9 @@ export async function setupDocuments(
     const status = writer ? (options.status ?? 200) : 403;
     if (status !== 200) return fulfillDocumentJson(route, { code: status === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, status);
     if (route.request().method() === 'POST' && path.endsWith('/restore')) {
-      if (options.writeStatus)
+      if (options.writeStatus) {
         return fulfillDocumentJson(route, { code: options.writeStatus === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, options.writeStatus);
+      }
       const { revisionId } = route.request().postDataJSON() as { revisionId: string };
       const selected = detail.revisions.find((revision) => revision.id === revisionId);
       if (!selected) return fulfillDocumentJson(route, { code: 'NOT_FOUND' }, 404);
@@ -163,6 +172,7 @@ export async function setupDocuments(
                     documentId: 'living',
                     revisionCount: detail.revisions.length,
                     latestRevisionId: current.id,
+                    approvedCurrent: null,
                     currentRevisionNumber: current.number,
                     updatedAt: current.createdAt,
                     createdAt: detail.revisions[detail.revisions.length - 1].createdAt,
@@ -192,7 +202,8 @@ export async function setupDocuments(
     return fulfillDocumentJson(route, {}, 404);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: 20_000 });
+  if ((page.viewportSize()?.width ?? 1024) >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 });
   await seedCookies();
 }
 
@@ -202,5 +213,6 @@ export async function openDocuments(page: Page, url = DOCUMENTS_URL): Promise<vo
     history.pushState({}, '', destination);
     dispatchEvent(new PopStateEvent('popstate'));
   }, url);
-  await expect(page.getByTestId('mktg-documents-page').or(page.getByTestId('mktg-document-view-page'))).toBeVisible({ timeout: 20_000 });
+  const viewingDocument = new URL(url, 'http://localhost').pathname.includes('/documents/');
+  await expect(page.getByTestId(viewingDocument ? 'mktg-document-view-page' : 'mktg-documents-page')).toBeVisible({ timeout: 20_000 });
 }

@@ -91,7 +91,7 @@ async function stubMentorRequests(
 
   await page.route('**/api/mentorship/mentor/requests', (route) => {
     if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: requests, invitedProgramIds: [] }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: requests, invitations: [] }) });
     }
     const body = route.request().postDataJSON() as { programId: string };
     requestBodies.push(body);

@@ -113,10 +113,11 @@ function baseUrl(slug: string): string {
   return `/api/projects/${encodeURIComponent(slug)}/participating-orgs`;
 }
 
-/** Filters shared by the list read and the export. Empty search and no tier are omitted. */
+/** Filters shared by the list read and the export. Empty search, no tier and the all-contribution default are omitted. */
 function filterParams(filters: ProjectParticipatingOrgsExportFilters): HttpParams {
   let params = strictHttpParams().set('range', filters.range).set('segment', filters.segment).set('sort', filters.sort).set('dir', filters.dir);
   if (filters.search) params = params.set('search', filters.search);
   if (filters.tier) params = params.set('tier', filters.tier);
+  if (filters.contribution) params = params.set('contribution', filters.contribution);
   return params;
 }

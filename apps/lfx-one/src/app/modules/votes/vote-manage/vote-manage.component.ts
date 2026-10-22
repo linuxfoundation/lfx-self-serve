@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -11,8 +12,10 @@ import {
   COMMITTEE_LABEL,
   OPEN_VOTE_CONFIRMATION,
   VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
   VOTE_LABEL,
   VOTE_QUESTION_MIN_LENGTH,
+  VOTE_TITLE_MAX_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
@@ -23,6 +26,8 @@ import {
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
   getUserTimezone,
+  isRankedPollType,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
@@ -40,7 +45,7 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -77,6 +82,7 @@ export class VoteManageComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly projectService = inject(ProjectService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -95,8 +101,16 @@ export class VoteManageComponent {
   public readonly submitting = signal<boolean>(false);
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
+  // Clone mode never populates `vote` (route has no :id, see initVote) — this carries the fetched
+  // source vote's own project/foundation context for entity-context sync and project-UID resolution.
+  private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
-  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+  // Reactive, not a snapshot read — the rail's Create Vote dialog can navigate this reused component
+  // to a new ?committee_uid= without a full reload (GH-3781); a one-time read would leave writeAccess's
+  // committee leg and initCommitteeContext() pinned to whatever group was active when the route first matched.
+  private readonly committeeUidFromUrl: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('committee_uid'))), {
+    initialValue: this.route.snapshot.queryParamMap.get('committee_uid'),
+  });
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -110,10 +124,18 @@ export class VoteManageComponent {
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
   private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
-  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
+  private readonly accessLegs = this.initWriteAccess();
+  private readonly writeAccess: Signal<boolean> = this.accessLegs.optimistic;
+  // Strict counterpart to `writeAccess`: collapses a pending leg to false instead of true. `writeAccess`
+  // stays optimistic so an organizer isn't evicted mid-flicker while a leg re-resolves, but submission
+  // authorization must fail closed on "not yet confirmed" rather than trust an unresolved check — a
+  // provisionally-true `writeAccess()` is not proof that the current project is actually write-authorized
+  // (GH-3781 review: dealako, "Confirmed cross-tenant authorization bypass").
+  private readonly resolvedWriteAccess: Signal<boolean> = this.accessLegs.resolved;
 
   public constructor() {
     this.initCommitteeContext();
+    this.initCloneFromQuery();
     evictOnWriteAccessLoss(this.writeAccess);
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
@@ -204,7 +226,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.resolveAuthorizedProjectUid();
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',
@@ -283,7 +305,7 @@ export class VoteManageComponent {
 
       // Speculative create (GH-2826 Design A): fire the plain create at dialog-open, hiding the ~3 s
       // create behind reading time; accept chains onto it, every dismiss path discards via reject.
-      const projectUid = this.project()?.uid;
+      const projectUid = this.resolveAuthorizedProjectUid();
       if (projectUid) {
         const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
         this.voteService
@@ -396,7 +418,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.resolveAuthorizedProjectUid();
     if (!projectUid) {
       // Same discard reasoning as the invalid path above: a pending speculation (if any) must not
       // outlive an accept that cannot proceed.
@@ -452,8 +474,9 @@ export class VoteManageComponent {
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
       // Speculative create (GH-2826 Design A): the create fired at dialog-open; confirmSpeculativeVote chains
-      // the enable onto it (grace-hint echo) and the service marks the vote opened so the mark survives navigation.
-      // takeUntilDestroyed: a late settlement must not toast/navigate from a dead component.
+      // the enable onto it (grace-hint echo) and marks the vote opened/created service-side (GH-4007) so
+      // both marks survive navigation. takeUntilDestroyed below only guards this component's own
+      // toast/navigate reaction — the marking itself already happened inside the service's own subscription.
       this.voteService
         .confirmSpeculativeVote(createRequest)
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -492,7 +515,46 @@ export class VoteManageComponent {
    * Rebuilds the questions FormArray to match the vote's poll_questions.
    */
   private patchFormWithVote(vote: Vote): void {
-    const formValue = mapVoteToFormValue(vote);
+    this.patchFormWithValue(mapVoteToFormValue(vote));
+  }
+
+  /**
+   * Patches the (create-mode) form with a clone of a fetched Vote entity.
+   * Rebuilds the questions FormArray to match the source vote's poll_questions.
+   */
+  private patchFormWithClonedVote(vote: Vote): void {
+    const fallbackTimezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+    this.patchFormWithValue(mapVoteToCloneFormValue(vote, Date.now(), fallbackTimezone));
+  }
+
+  /** Resolves the project to submit against, verified against the project writeAccess actually
+   *  authorized. A clone whose own project diverges from the synced active context fails closed
+   *  rather than silently submitting into a project the organizer wasn't granted (GH-3781). */
+  private resolveAuthorizedProjectUid(): string | null {
+    const editProjectUid = this.vote()?.project_uid;
+    if (editProjectUid) {
+      return editProjectUid;
+    }
+    const activeProjectUid = this.project()?.uid ?? null;
+    const cloneProjectUid = this.cloneSourceVote()?.project_uid ?? null;
+    if (cloneProjectUid && activeProjectUid && cloneProjectUid !== activeProjectUid) {
+      return null;
+    }
+    const candidateProjectUid = cloneProjectUid ?? activeProjectUid;
+    // Gate on the strict (pending-fails-closed) leg, not `writeAccess()` — that signal is
+    // deliberately optimistic while a leg is pending (to avoid UX flicker via
+    // evictOnWriteAccessLoss) and so isn't proof the *current* candidate project is actually
+    // write-authorized. Without this, a reused component instance whose active project/committee
+    // context changed after writerGuard's one-time check (e.g. via the rail's Create Vote dialog)
+    // could submit into a project the organizer was never granted (GH-3781 review: dealako,
+    // "Confirmed cross-tenant authorization bypass").
+    if (!candidateProjectUid || !this.resolvedWriteAccess()) {
+      return null;
+    }
+    return candidateProjectUid;
+  }
+
+  private patchFormWithValue(formValue: VoteFormValue): void {
     const form = this.form();
 
     // Patch scalar fields (Step 1)
@@ -548,12 +610,12 @@ export class VoteManageComponent {
     return new FormGroup(
       {
         // Step 1: Vote Basics
-        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
+        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(VOTE_TITLE_MAX_LENGTH)]),
         description: new FormControl(''),
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
         eligible_participants: new FormControl('', [Validators.required]),
         close_date: new FormControl<Date | null>(null, [Validators.required]),
-        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
+        close_time: new FormControl<string>(VOTE_DEFAULT_CLOSE_TIME, { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // The v2 mutation contract requires end_time_timezone on every request (responses keep it
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
@@ -607,10 +669,11 @@ export class VoteManageComponent {
     );
   }
 
-  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null. */
+  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null.
+   *  Falls back to cloneSourceVote since edit-mode's `vote` signal never populates in clone mode. */
   private initVoteEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
-      const vote = this.vote();
+      const vote = this.vote() ?? this.cloneSourceVote();
       if (!vote) {
         return null;
       }
@@ -628,9 +691,22 @@ export class VoteManageComponent {
     return computed(() => this.projectContextService.activeContext());
   }
 
+  /** Reactive to `this.form` itself, not just one FormGroup instance's `valueChanges` — the clone-clear
+   *  cleanup path (`initCloneFromQuery()`) replaces the form via `form.set(...)` on a reused component,
+   *  and a subscription pinned to the discarded group would silently stop tracking edits, leaving
+   *  `canGoNext`/`isDraftSavable` stuck on the old form's last value. */
   private initFormValue(): Signal<Record<string, unknown>> {
-    const form = this.form();
-    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((form) =>
+          form.valueChanges.pipe(
+            map(() => form.getRawValue()),
+            startWith(form.getRawValue())
+          )
+        )
+      ),
+      { initialValue: this.form().getRawValue() }
+    );
   }
 
   private initCanGoPrevious(): Signal<boolean> {
@@ -691,10 +767,12 @@ export class VoteManageComponent {
   }
 
   /**
-   * Access predicate mirroring writerGuard's votes standard — project writer on the vote's OWN project
-   * (never the boot context), or committee writer via ?committee_uid=; pending legs stay provisionally true.
+   * Access predicates mirroring writerGuard's votes standard — project writer on the vote's OWN
+   * project (never the boot context), or committee writer via ?committee_uid=. Returns an optimistic
+   * predicate (pending legs provisionally true, used for eviction) and a strict one (pending legs
+   * false, used to authorize submission).
    */
-  private initWriteAccess(): Signal<boolean> {
+  private initWriteAccess(): { optimistic: Signal<boolean>; resolved: Signal<boolean> } {
     const editVoteId = this.route.snapshot.paramMap.get('id');
     const projectKey$: Observable<string | null | undefined> = editVoteId
       ? toObservable(this.vote).pipe(
@@ -719,9 +797,16 @@ export class VoteManageComponent {
             return of(false);
           }
           // writerGuard admits no coordinator-style role for votes — project.writer only.
+          // startWith(undefined): a key change (e.g. clone's context sync re-targeting the
+          // active project mid-flight, GH-3781) must park this leg back at pending immediately,
+          // not leave the PREVIOUS key's resolved value in place while the new fetch is in
+          // flight — otherwise, if the committee leg has already resolved to a definite false,
+          // the stale previous-key project value could combine with it into a false `writeAccess`
+          // before the new key's own fetch has had a chance to resolve true.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            startWith(undefined)
           );
         })
       )
@@ -731,20 +816,28 @@ export class VoteManageComponent {
     // mirroring writerGuard's entity-scoped resolution. Hoisted: toObservable needs the injection
     // context, so it can't be created lazily inside the switchMap below.
     const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.vote).pipe(
-      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined))
+      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl()) : undefined))
     );
+    // Reactive on committeeUidFromUrl too (create mode) — the rail's Create Vote dialog can swap
+    // ?committee_uid= on this reused component without a full reload (GH-3781). Once a source loads,
+    // swapped for the SOURCE's own committee_uid rather than ?committee_uid= — the clone form itself
+    // ignores that param (see initCommitteeContext()) — so a caller can't borrow write access from an
+    // unrelated committee they happen to write to that the committee leg never actually vouched for
+    // (GH-3781 review: cursor, "Clone submit trusts unrelated committee grant"). Falling back to null
+    // (rather than removing committee access entirely) keeps a committee-only writer — writer on the
+    // source vote's own committee but not its project — able to clone it (GH-3781 review round 4:
+    // greptile/copilot, "Committee writers cannot clone").
+    const committeeCandidate$: Observable<string | null | undefined> = editVoteId
+      ? editCommitteeUid$
+      : combineLatest([toObservable(this.committeeUidFromUrl), toObservable(this.cloneSourceVote)]).pipe(
+          map(([uid, clone]) => (clone ? (clone.committee_uid ?? null) : uid))
+        );
     // Gated on the project leg resolving false: a granted project leg makes the committee fetch
     // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
-    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
-      filter((project): project is boolean => project !== undefined),
-      distinctUntilChanged(),
-      switchMap((project) => {
-        if (project) {
-          // Project leg granted — resolve the committee leg without firing the HTTP probe.
-          return of<string | null>(null);
-        }
-        return editVoteId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
-      })
+    const committeeUid$: Observable<string | null | undefined> = combineLatest([toObservable(projectAccess), committeeCandidate$]).pipe(
+      filter(([project]) => project !== undefined),
+      map(([project, uid]) => (project ? null : uid)),
+      distinctUntilChanged()
     );
     const committeeAccess = toSignal(
       committeeUid$.pipe(
@@ -754,24 +847,35 @@ export class VoteManageComponent {
           uid
             ? this.committeeService.fetchCommittee(uid).pipe(
                 map((committee) => committee?.writer === true),
-                catchError(() => of(false))
+                catchError(() => of(false)),
+                // startWith(undefined): a uid change must park this leg at pending while the new
+                // committee fetch is in flight, rather than keep the PREVIOUS uid's resolved value
+                // in place — otherwise a stale resolved committee value could combine with an
+                // already-resolved false project leg into a false `writeAccess` before this leg's
+                // own fetch for the new uid has had a chance to resolve true.
+                startWith(undefined)
               )
             : of(false)
         )
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
-    return computed(() => {
-      const project = projectAccess();
-      const committee = committeeAccess();
-      if (project === true || committee === true) {
-        return true;
-      }
-      if (project === undefined || committee === undefined) {
-        return true; // provisional — a pending leg can still grant access
-      }
-      return false;
-    });
+    return {
+      optimistic: computed(() => {
+        const project = projectAccess();
+        const committee = committeeAccess();
+        if (project === true || committee === true) {
+          return true;
+        }
+        if (project === undefined || committee === undefined) {
+          return true; // provisional — a pending leg can still grant access
+        }
+        return false;
+      }),
+      // Fails closed on a pending leg instead of granting provisional access — used to gate
+      // submission authorization, where "not yet confirmed" must block rather than pass.
+      resolved: computed(() => projectAccess() === true || committeeAccess() === true),
+    };
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -873,26 +977,153 @@ export class VoteManageComponent {
     this.form().get('committee')?.markAsTouched();
   }
 
-  /** Reads committee_uid from queryParams and pre-populates the committee field (locked). */
+  /** Reads committee_uid from queryParams and pre-populates the committee field (locked).
+   *  Reactive rather than one-shot: the rail's Create Vote dialog can navigate this reused component
+   *  to a new ?committee_uid= (e.g. after leaving a clone) without a full reload — a `take(1)` read
+   *  would leave the group unlocked and unpopulated for every change after the first (GH-3781).
+   *  A `?clone=` value folds to a null uid here (rather than being filtered out before `map`) so that
+   *  entering a clone still reaches this switchMap and clears any lock left over from a prior
+   *  activation, instead of leaving it stuck behind the clone's own (unlocked) committee prefill
+   *  (GH-3781 review round 3: dealako/greptile/Copilot/cursor — stale lock across a clone transition). */
   private initCommitteeContext(): void {
     this.route.queryParamMap
       .pipe(
-        take(1),
-        map((params) => params.get('committee_uid')),
-        filter((uid): uid is string => !!uid && !this.route.snapshot.paramMap.has('id')),
-        switchMap((uid) => this.committeeService.getCommittee(uid)),
-        catchError(() => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
-          return of(null);
-        })
+        map((params) => (params.get('clone') ? null : params.get('committee_uid'))),
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          // A group switch (including into/out of a clone) invalidates whatever confirmation dialog
+          // and speculative vote belonged to the previous form state — see
+          // resetOpenConfirmationIfPending (GH-3781 review round 3: dealako).
+          this.resetOpenConfirmationIfPending();
+          if (!uid || this.route.snapshot.paramMap.has('id')) {
+            return of(null);
+          }
+          return this.committeeService.getCommittee(uid).pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((committee) => {
-        if (!committee) return;
+        // committee_uid removed/cleared (or never applicable) on a reused component — unlock the
+        // field rather than leaving it stuck disabled/prefilled from a prior activation.
         this.committeeContext.set(committee);
-        const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
-        const committeeControl = this.form().get('committee');
-        committeeControl?.setValue(ref);
-        committeeControl?.disable();
+        this.applyCommitteeLock(committee);
+      });
+  }
+
+  /** Locks (or unlocks) the committee control on the CURRENT form. Extracted so both a synchronous
+   *  committee-cache replay (above) and the clone-transition form swap (initCloneFromQuery, below) can
+   *  target whichever form instance is actually current, instead of racing to apply a lock to a form
+   *  that's about to be replaced (GH-3781 review round 3: dealako — cache-hit race). */
+  private applyCommitteeLock(committee: Committee | null): void {
+    const committeeControl = this.form().get('committee');
+    if (!committee) {
+      committeeControl?.enable();
+      return;
+    }
+    const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
+    committeeControl?.setValue(ref);
+    committeeControl?.disable();
+  }
+
+  /** Tears down an open confirmation dialog and discards its speculative vote. Shared between the
+   *  clone and committee transition handlers so navigating away mid-confirmation always cleans up,
+   *  regardless of which query param drove the navigation (GH-3781 review round 3: dealako). */
+  private resetOpenConfirmationIfPending(): void {
+    if (this.confirmingOpenVote()) {
+      this.confirmingOpenVote.set(false);
+      this.confirmationService.close();
+      this.voteService.discardSpeculativeVote();
+    }
+  }
+
+  /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only).
+   *  Reactive rather than one-shot: the rail's Create Vote dialog navigates within this same `create`
+   *  route (e.g. `?project=A&clone=X` -> `?project=B`), and Angular's default RouteReuseStrategy reuses
+   *  this component instance instead of reconstructing it (same gotcha documented in
+   *  committee-overview.component.ts / weekly-brief-card.component.ts). A `take(1)` read would leave
+   *  `cloneSourceVote` — and every submission path's project-uid resolution — pinned to the old clone
+   *  forever; switchMap cancels any in-flight fetch and the removal branch clears the stale state. */
+  private initCloneFromQuery(): void {
+    this.route.queryParamMap
+      .pipe(
+        map((params) => params.get('clone')),
+        distinctUntilChanged(),
+        switchMap((cloneId) => {
+          // A confirmation dialog (and its speculative vote) belongs to whatever form state preceded
+          // this clone-param change — e.g. clone X -> start a regular vote via the rail -> open its
+          // confirmation -> browser Back to X. Left alone, accepting the surviving dialog would open
+          // the earlier pending speculative record instead of the newly-selected vote (GH-3781).
+          this.resetOpenConfirmationIfPending();
+
+          if (!cloneId || this.route.snapshot.paramMap.has('id')) {
+            // Clone removed (or never applicable) on a reused component — drop any stale source/form/step
+            // state left over from a prior activation instead of letting it keep winning at submit time.
+            if (this.cloneSourceVote()) {
+              this.cloneSourceVote.set(null);
+              this.form.set(this.createFormGroup());
+              this.internalStep.set(1);
+            }
+            return of(null);
+          }
+          // Entering a clone — unconditionally drop whatever form/step state the reused component
+          // instance is currently holding before fetching the source. This covers switching from one
+          // clone to another (stale source data would otherwise re-enable under the new URL), and also
+          // a normal-create -> clone back-navigation: the rail can drive this same route to a plain
+          // create with no `?clone=`, which advances the form/step with `cloneSourceVote` staying null
+          // (see the removal branch above), so gating this reset on `cloneSourceVote()` being truthy
+          // would leave that regular vote's Review step reachable while this fetch is in flight. The
+          // form itself gets `disable()`d below regardless, but a disabled FormGroup reports
+          // `invalid === false` — `onSubmit()`'s `form.invalid` guard can't catch a stale submit on its
+          // own, so it's this `internalStep` reset that actually keeps the stale Review step unreachable
+          // if the fetch is slow or fails.
+          this.cloneSourceVote.set(null);
+          this.form.set(this.createFormGroup());
+          this.internalStep.set(1);
+          this.loading.set(true);
+          // Lock the form while the source vote loads so an organizer can't type into fields a slow
+          // fetch is about to overwrite with patchFormWithClonedVote.
+          this.form().disable();
+          return this.voteService.fetchVote(cloneId).pipe(
+            catchError(() => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to load ${this.voteLabel.singular.toLowerCase()} to clone.`,
+              });
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((vote) => {
+        this.loading.set(false);
+        this.form().enable();
+        // Re-apply whatever committee lock is currently in effect — initCommitteeContext() may have
+        // already resolved (possibly synchronously, from its 10s committee cache) against the form
+        // instance this just replaced/re-enabled, and the blanket enable() above would otherwise strip
+        // a lock that's still supposed to be in effect (GH-3781 review round 3: dealako — cache-hit race).
+        this.applyCommitteeLock(this.committeeContext());
+        if (!vote) return;
+        // This form has no poll-type/num-winners UI and can only represent a generic, non-anonymous
+        // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a
+        // plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
+        // once a published election has ballots coming in a silently-wrong clone can't be corrected.
+        if (isRankedPollType(vote.poll_type) || vote.pseudo_anonymity) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Cannot clone',
+            detail: `Ranked-choice and anonymous ${this.voteLabel.plural.toLowerCase()} can't be cloned yet.`,
+          });
+          return;
+        }
+        this.cloneSourceVote.set(vote);
+        this.patchFormWithClonedVote(vote);
       });
   }
 }

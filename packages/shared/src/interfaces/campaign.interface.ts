@@ -257,6 +257,7 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
   | 'callouts'
   | 'sitelinks'
   | 'linkedin_strategy'
@@ -361,6 +362,33 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, for the Optimize tab's
+   * negative-keyword editor to open pre-filled with once the campaign is live.
+   *
+   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
+   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
+   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
+   * So this list is never sent by anything; it fills the editor's text, the operator edits it
+   * there, and nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
+   * never opens holding a line it would refuse the operator for typing.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;
@@ -966,6 +994,25 @@ export interface CampaignImplementationDraft {
    * and a list saved under a non-Search channel is kept rather than discarded.
    */
   googleSitelinks?: CampaignSitelink[];
+  /**
+   * Google's structured snippets, as the operator typed them.
+   *
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
+   */
+  googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
@@ -1986,6 +2033,42 @@ export interface CampaignSitelink {
 }
 
 /**
+ * One Google structured snippet: a header and the list of things it enumerates, rendered under the
+ * text ad as a single "Header: value, value, value" line.
+ *
+ * Both fields are REQUIRED. A snippet carries no link of its own, so unlike {@link CampaignSitelink}
+ * there is no destination; what makes it servable is having a header and enough values, and upstream
+ * (`assets.go`'s `validateStructuredSnippets`) refuses the whole create when either is missing.
+ *
+ * `values` is bounded at BOTH ends — see {@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, which is counted
+ * after blanks and case-folded repeats are removed, so the length of this array is not the number
+ * upstream judges.
+ *
+ * `header` must be one of Google's predefined headers FOR THE CAMPAIGN'S LANGUAGE, a list Google
+ * publishes per locale; neither upstream nor this app checks membership. See
+ * {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}.
+ */
+export interface CampaignStructuredSnippet {
+  header: string;
+  values: string[];
+}
+
+/**
+ * The structured-snippet sub-form as the operator is filling it in, before it becomes a
+ * {@link CampaignStructuredSnippet}.
+ *
+ * `values` is ONE STRING here, not a list: the box is a textarea taking one value per line, the
+ * same shape the Google conversion-action textarea uses. Keeping the raw text rather than a parsed
+ * list is what lets a refused snippet stay on screen exactly as it was typed — trailing blank
+ * lines, repeats and all — so the warning the operator is being asked to act on still describes
+ * what they can see.
+ */
+export interface CampaignStructuredSnippetDraft {
+  header: string;
+  values: string;
+}
+
+/**
  * The radius unit a {@link CampaignProximityTarget} is measured in.
  *
  * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
@@ -2253,6 +2336,13 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   sitelinks?: CampaignSitelink[];
+  /**
+   * The Google campaign's structured snippets — one "Header: value, value, value" line each,
+   * enumerating what the campaign offers rather than claiming anything about it.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  structuredSnippets?: CampaignStructuredSnippet[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -3940,7 +4030,7 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
@@ -4075,13 +4165,14 @@ export interface CampaignNegativeKeywordsSubmission {
   matchType: CampaignNegativeKeywordMatchType;
   /**
    * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
-   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    */
   revision?: string;
 }
 
 /** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
-export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
 
 /** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
 export interface CampaignNegativeKeywordPlatformRules {
@@ -4093,6 +4184,13 @@ export interface CampaignNegativeKeywordPlatformRules {
   defaultMatchType: CampaignNegativeKeywordMatchType;
   /** Most keywords one request may carry on this platform. */
   maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
   /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
   requiresRevision: boolean;
   /** Where the negatives land, for the field hint. */
@@ -4493,6 +4591,22 @@ export interface CampaignBiddingCapabilityBlock {
 }
 
 /**
+ * Why generated Google callouts and sitelinks are being WITHHELD from the create because the
+ * create-capability answer is not an explicit yes. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ *
+ * Unlike that one this does not block Create, and the difference is deliberate. A withheld manual
+ * bid changes what the campaign DOES — it would be created automatic, spending differently from
+ * what was chosen — so the create waits for the answer. Withheld extensions cost only the
+ * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
+ * capability read for that is worse than creating and saying so.
+ */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
  * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
  * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
@@ -4770,7 +4884,7 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
   errorCode?: string;
 }
 

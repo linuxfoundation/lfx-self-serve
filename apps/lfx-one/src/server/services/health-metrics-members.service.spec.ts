@@ -1190,7 +1190,7 @@ describe('HealthMetricsMembersService.getNps', () => {
     expect((await service.getNps(req, { ...query, audience: 'Ambassador' })).selectedAudience).toBe('Board');
   });
 
-  it('withholds a flagged score and change, and drops blank audiences and undated waves', async () => {
+  it('keeps a flagged score and change with the flag, and drops blank audiences and undated waves', async () => {
     respond({
       audiences: [
         audienceRow('Board', { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 80, NPS_SCORE_CHANGE_PP: 12, LAST_UPDATED_QUARTER: null }),
@@ -1206,9 +1206,9 @@ describe('HealthMetricsMembersService.getNps', () => {
     const result = await new HealthMetricsMembersService().getNps(req, query);
 
     expect(result.audiences).toEqual([
-      expect.objectContaining({ audience: 'Board', npsScore: null, scoreChangePp: null, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
+      expect.objectContaining({ audience: 'Board', npsScore: 80, scoreChangePp: 12, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
     ]);
-    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: null, responseRatePct: null, isSampleTooSmall: true }]);
+    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: 90, responseRatePct: null, isSampleTooSmall: true }]);
   });
 
   it('reads a foundation never surveyed as no audiences, no selection and no trend', async () => {
@@ -1229,9 +1229,7 @@ function churnRow(overrides: Record<string, unknown> = {}) {
     MEMBERSHIPS_OPENING_COUNT: 120,
     DUES_LOST_USD: 450000,
     DUES_LOST_PRIOR_USD: 300000,
-    REVENUE_CHURN_RATE: 15.2,
-    REVENUE_CHURN_RATE_PRIOR: 10.6,
-    REVENUE_CHURN_RATE_CHANGE_PP: 4.6,
+    REVENUE_NOT_RENEWED_RATE: 15.2,
     TIER_CHURN_RATE: 10,
     SHARE_OF_LOSS_PCT: 100,
     LOGO_CHURN_RATE: 10,
@@ -1256,10 +1254,20 @@ describe('HealthMetricsMembersService.getChurn', () => {
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP + 1}`);
   });
 
+  // The view's revenue_churn_rate is net of upgrades and can go negative; the headline is the dues that did not renew.
+  it('reads the share of opening dues that did not renew, not the net revenue churn rate', async () => {
+    await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    const [sql] = readOf('MEMBERSHIP_CHURN');
+    expect(sql).toContain('IFF(opening_arr_usd > 0, dues_lost_usd / opening_arr_usd * 100, NULL) AS revenue_not_renewed_rate');
+    const selected = sql.replace(/--.*$/gm, '');
+    expect(selected).not.toMatch(/\brevenue_churn_rate\b/);
+  });
+
   it('splits the all-tiers rows from the tier rows and keeps unmeasured values null', async () => {
     execute.mockResolvedValue({
       rows: [
-        churnRow({ IS_PARTIAL_YEAR: null, MEMBERSHIPS_OPENING_COUNT: null, REVENUE_CHURN_RATE_PRIOR: null, REVENUE_CHURN_RATE_CHANGE_PP: null }),
+        churnRow({ IS_PARTIAL_YEAR: null, MEMBERSHIPS_OPENING_COUNT: null, REVENUE_NOT_RENEWED_RATE: null }),
         churnRow({
           IS_ALL_TIERS: false,
           MEMBERSHIP_TIER: 'Gold',
@@ -1292,9 +1300,7 @@ describe('HealthMetricsMembersService.getChurn', () => {
           openingCount: null,
           duesLostUsd: 450000,
           duesLostPriorUsd: 300000,
-          revenueChurnRate: 15.2,
-          revenueChurnRatePrior: null,
-          revenueChurnRateChangePp: null,
+          revenueNotRenewedRate: null,
           logoChurnRate: 10,
         },
       ],
@@ -1344,13 +1350,14 @@ function departureRow(overrides: Record<string, unknown> = {}) {
   return {
     TOTAL_RECORDS: 3,
     IS_PAGE_ROW: true,
+    CHURN_KEY: 'term-acme',
     ACCOUNT_ID: '0014100000AcmeAAAA',
     ACCOUNT_NAME: 'Acme Motors',
     MEMBERSHIP_TIER: 'Gold',
-    DUES_IMPACT_USD: 150000,
+    REVENUE_LOST_USD: 150000,
     LAPSED_DATE: new Date('2025-03-31T00:00:00Z'),
     LAST_ENGAGED_DATE: null,
-    SORT_RANK: 1,
+    REVENUE_LOST_SORT_RANK: 1,
     ...overrides,
   };
 }
@@ -1363,35 +1370,55 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
     execute.mockResolvedValue({ rows: [departureRow()] });
   });
 
-  it('binds foundation and year in placeholder order, scoped to lapsed members, and pages in sort-rank order', async () => {
+  it('reads the churned members for the year, binding foundation and year once per CTE, in sort-rank order', async () => {
     await new HealthMetricsMembersService().getChurnDepartures(req, query);
 
-    const [sql, binds] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
-    expect(binds).toEqual(['acme', 2025, 'churned']);
+    const [sql, binds] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    expect(binds).toEqual(['acme', 2025, 'acme', 2025]);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
-    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
-    expect(scoped).toContain('AND movement_type = ?');
-    expect(sql).toContain('lapsed_date,');
-    expect(scoped).toContain('AND account_id IS NOT NULL');
-    expect(scoped).toContain("AND account_id <> ''");
-    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST');
+    const scoped = sql.slice(sql.indexOf('scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURNED_MEMBERS lost');
+    expect(scoped).toContain('AND lost._key IS NOT NULL');
+    expect(scoped).toContain("AND lost.account_id <> ''");
+    expect(sql).toContain('ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC');
     expect(sql).toContain('LIMIT 25 OFFSET 25');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  // A downgrade's lapse is its movement date; one movement row per organization keeps the join from multiplying rows.
+  it('takes the lapse and last engagement from the matching movement, deduplicated per organization', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    const [sql] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    const movements = sql.slice(sql.indexOf('WITH movements AS'), sql.indexOf('scoped AS'));
+    expect(movements).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL');
+    expect(movements).toContain('COALESCE(lapsed_date, movement_date) AS lapsed_date');
+    expect(movements).toContain("AND movement_type IN ('churned', 'downgrade')");
+    expect(movements).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id, movement_type ORDER BY movement_date DESC NULLS LAST) = 1');
+    expect(sql).toContain("AND movements.movement_type = IFF(LOWER(lost.churn_type) = 'downgrade', 'downgrade', 'churned')");
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
     await new HealthMetricsMembersService().getChurnDepartures(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
 
-    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    const [sql] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
     const size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE;
     expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
   });
 
-  it('maps rows with ISO dates and falls back to the account id for a missing name', async () => {
+  it('maps rows by their lost term with ISO dates, falling back to the account id for a missing name', async () => {
     execute.mockResolvedValue({
       rows: [
         departureRow(),
-        departureRow({ ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', DUES_IMPACT_USD: null, LAPSED_DATE: '2025-06-30' }),
+        departureRow({
+          CHURN_KEY: 'term-vendor',
+          ACCOUNT_ID: '0014100000VendAAAA',
+          ACCOUNT_NAME: '',
+          MEMBERSHIP_TIER: '',
+          REVENUE_LOST_USD: null,
+          LAPSED_DATE: '2025-06-30',
+        }),
+        departureRow({ CHURN_KEY: null }),
       ],
     });
 
@@ -1401,6 +1428,7 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
       totalRecords: 3,
       rows: [
         {
+          key: 'term-acme',
           accountId: '0014100000AcmeAAAA',
           accountName: 'Acme Motors',
           membershipTier: 'Gold',
@@ -1409,6 +1437,7 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
           lastEngagedDate: null,
         },
         {
+          key: 'term-vendor',
           accountId: '0014100000VendAAAA',
           accountName: '0014100000VendAAAA',
           membershipTier: null,

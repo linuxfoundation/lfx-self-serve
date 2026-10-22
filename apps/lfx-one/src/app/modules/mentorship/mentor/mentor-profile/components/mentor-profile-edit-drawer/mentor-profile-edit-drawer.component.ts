@@ -30,6 +30,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { catchError, filter, finalize, map, of, startWith, switchMap } from 'rxjs';
 
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
+import { MentorInvitationRespondService } from '../../../../services/mentor-invitation-respond.service';
 import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
 import { MentorProfileSaveService } from '../../../../services/mentor-profile-save.service';
 import { MentorRequestWithdrawService } from '../../../../services/mentor-request-withdraw.service';
@@ -45,8 +46,10 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
  * profile visit that never opens the drawer reads no programs, and stays mounted after a close, so
  * reopening lists what it already read and the content does not vanish while the drawer slides out.
  * Program requests are live: picking a program sends the request at once, and Withdraw (shown only
- * on pending rows) confirms and withdraws at once. Both leave the toasts to their services and the
- * refresh to `MentorshipMentorService`, whose revision signal makes the list re-read after a write.
+ * on pending rows) confirms and withdraws at once. An open invitation is answered the same way: Accept at
+ * once, Decline after a confirmation. All leave the toasts to their services and the refresh to
+ * `MentorshipMentorService`, whose revision signal makes the list re-read after a write. An accepted
+ * invitation also emits `invitationAccepted`, since the membership can add a row to the host's history.
  *
  * Save sends only the introduction and skills the mentor changed (see `buildMentorshipMentorProfileUpdate`),
  * checked by the rules register uses, and emits `saved` with the response so the host can show it in place.
@@ -55,7 +58,7 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
 @Component({
   selector: 'lfx-mentorship-mentor-profile-edit-drawer',
   imports: [ConfirmDialogModule, DrawerModule, ButtonComponent, RichEditorComponent, MentorProgramsSectionComponent, SkillsPickerComponent],
-  providers: [ConfirmationService, MentorRequestWithdrawService],
+  providers: [ConfirmationService, MentorRequestWithdrawService, MentorInvitationRespondService],
   templateUrl: './mentor-profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -63,6 +66,7 @@ export class MentorProfileEditDrawerComponent {
   private readonly mentorService = inject(MentorshipMentorService);
   private readonly programRequests = inject(MentorProgramRequestService);
   private readonly withdrawService = inject(MentorRequestWithdrawService);
+  private readonly invitationService = inject(MentorInvitationRespondService);
   private readonly saveService = inject(MentorProfileSaveService);
   private readonly injector = inject(Injector);
   private readonly errorRef = viewChild<ElementRef<HTMLElement>>('errorRef');
@@ -71,6 +75,8 @@ export class MentorProfileEditDrawerComponent {
 
   /** Emits the saved profile once the update succeeds, just before the drawer closes. */
   public readonly saved = output<MentorshipMentorProfileUpdateResponse>();
+  /** Emits the invitation id once an Accept succeeds. */
+  public readonly invitationAccepted = output<string>();
 
   protected readonly title = MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL;
   protected readonly saveLabel = MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL;
@@ -103,10 +109,12 @@ export class MentorProfileEditDrawerComponent {
   /** True while a picked program's request is in flight; the picker is disabled meanwhile. */
   protected readonly requesting = signal(false);
   protected readonly withdrawingId = this.withdrawService.withdrawingId;
+  protected readonly respondingInvitationId = this.invitationService.respondingId;
+  protected readonly respondingDecision = this.invitationService.respondingDecision;
 
   private readonly requestsState = this.initRequests();
   protected readonly requests = computed(() => this.requestsState().requests);
-  protected readonly invitedProgramIds = computed(() => this.requestsState().invitedProgramIds);
+  protected readonly invitations = computed(() => this.requestsState().invitations);
   protected readonly requestsFailed = computed(() => this.requestsState().failed);
   protected readonly requestsLoading = computed(() => this.requestsState().loading);
 
@@ -119,6 +127,8 @@ export class MentorProfileEditDrawerComponent {
       });
 
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.errorMessage.set(''));
+
+    this.invitationService.accepted$.pipe(takeUntilDestroyed()).subscribe((invitationId) => this.invitationAccepted.emit(invitationId));
   }
 
   protected onAddProgram(program: MentorshipMentorOpenProgram): void {
@@ -133,6 +143,14 @@ export class MentorProfileEditDrawerComponent {
 
   protected onWithdraw(requestId: string): void {
     this.withdrawService.confirmWithdraw(requestId);
+  }
+
+  protected onAcceptInvitation(invitationId: string): void {
+    this.invitationService.accept(invitationId);
+  }
+
+  protected onDeclineInvitation(invitationId: string): void {
+    this.invitationService.confirmDecline(invitationId);
   }
 
   /** Dropping the cache bumps the revision, so the request list reads again. */
@@ -189,8 +207,8 @@ export class MentorProfileEditDrawerComponent {
    * the picker disabled instead of offering programs that are already requested.
    */
   private initRequests() {
-    const empty: MentorshipMentorRequestsState = { requests: [], invitedProgramIds: [], loading: true, failed: false };
-    const failed: MentorshipMentorRequestsState = { requests: [], invitedProgramIds: [], loading: false, failed: true };
+    const empty: MentorshipMentorRequestsState = { requests: [], invitations: [], loading: true, failed: false };
+    const failed: MentorshipMentorRequestsState = { requests: [], invitations: [], loading: false, failed: true };
     const revision$ = toObservable(this.mentorService.mentorRequestsRevision);
 
     return toSignal(
@@ -203,7 +221,7 @@ export class MentorProfileEditDrawerComponent {
                 map(
                   (response): MentorshipMentorRequestsState => ({
                     requests: response.data,
-                    invitedProgramIds: response.invitedProgramIds,
+                    invitations: response.invitations,
                     loading: false,
                     failed: false,
                   })

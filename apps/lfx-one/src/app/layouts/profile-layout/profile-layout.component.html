@@ -31,13 +31,9 @@
       }
 
       <!-- Page head -->
-      <div>
-        <h1 class="text-[22px] font-bold tracking-tight text-slate-900" data-testid="profile-page-title">Profile &amp; Account</h1>
-        <div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p class="text-sm text-slate-500">Manage your profile and account settings</p>
-          <lfx-open-profile-banner (linkClick)="trackOpenProfileBannerClick()" />
-        </div>
-      </div>
+      <lfx-page-header title="Profile & Account" description="Manage your profile and account settings" titleTestId="profile-page-title">
+        <lfx-open-profile-banner pageHeaderActions (linkClick)="trackOpenProfileBannerClick()" />
+      </lfx-page-header>
 
       <!-- Profile panel — capped at max-w-md below sm (stacked card, matches the design's "stacked
            card below sm" state — the content column can exceed the cap there, e.g. ~515px at a 550px
@@ -48,7 +44,7 @@
            flow). -->
       <div
         class="max-w-md sm:max-w-none 2xl:fixed 2xl:bottom-0 2xl:right-0 2xl:z-40 2xl:w-[300px]"
-        [ngClass]="{ '2xl:top-12': impersonating(), '2xl:top-0': !impersonating() }"
+        [ngClass]="{ '2xl:top-[36px]': impersonating(), '2xl:top-0': !impersonating() }"
         data-testid="profile-panel-rail">
         <lfx-profile-panel
           [loading]="loading()"

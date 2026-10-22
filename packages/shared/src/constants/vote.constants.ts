@@ -51,8 +51,23 @@ export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;
 /** Reminder reads/sends reject an inactive poll with this state-conflict code. */
 export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
+/** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
+export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
+
+/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
+export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
+
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
 /** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
 export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
+
+/** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
+
+/** Encoded-length cap for the same title: it appears in both subject and body, and CJK/emoji expand ~3–9× under `encodeURIComponent`. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
+
+/** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
+export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;

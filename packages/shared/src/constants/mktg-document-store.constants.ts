@@ -14,6 +14,9 @@ import { MKTG_AGENT_INTAKES } from './mktg-run.constants';
 /** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
+/** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
+export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
+
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
 export const MKTG_DOCUMENT_STORE_KEY_PREFIX = 'documents';
 
@@ -110,6 +113,15 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     label: intakeDocumentName('boilerplates'),
     itemLabel: intakeDocumentName('boilerplates'),
   },
+  // The FAQ was stored as revisions from its first run: it has no pre-revision partition.
+  {
+    agentKey: 'faq',
+    kind: 'living',
+    catalogAgentId: 'faq',
+    agentName: catalogAgentName('faq'),
+    label: intakeDocumentName('faq'),
+    itemLabel: intakeDocumentName('faq'),
+  },
   {
     agentKey: 'aeo-geo',
     kind: 'run',
@@ -129,8 +141,8 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   {
     agentKey: 'member-360',
     kind: 'run',
-    // Member 360 has no catalog entry yet, so its name is spelled out here.
-    agentName: 'Member 360 Agent',
+    catalogAgentId: 'member-360',
+    agentName: catalogAgentName('member-360'),
     label: 'Member 360',
     itemLabel: 'Member 360 run',
   },

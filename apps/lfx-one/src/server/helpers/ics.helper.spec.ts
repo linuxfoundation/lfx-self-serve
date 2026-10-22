@@ -10,24 +10,9 @@ vi.mock('../services/logger.service', () => ({
 // real barrel pulls in Angular-dependent code that fails to JIT-compile outside the browser build.
 vi.mock('@lfx-one/shared/utils', () => ({
   addMinutesToDate: vi.fn((iso: string) => ({ toISOString: () => iso })),
-  isSameOccurrenceId: (a?: string | null, b?: string | null) => !!a && !!b && String(a) === String(b),
 }));
 
-import { Meeting } from '@lfx-one/shared/interfaces';
-
-import { buildMeetingCalendarEvents, buildVCalendar, buildVEvent, ICS_UID_DOMAIN } from './ics.helper';
-
-function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
-  return {
-    id: 'meeting-1',
-    title: 'Weekly Sync',
-    start_time: '2026-01-15T14:00:00Z',
-    duration: 30,
-    description: 'Discuss roadmap',
-    occurrences: [],
-    ...overrides,
-  } as Meeting;
-}
+import { buildVCalendar, buildVEvent, ICS_UID_DOMAIN } from './ics.helper';
 
 describe('buildVCalendar', () => {
   it('omits X-WR-CALNAME when no calname is provided', () => {
@@ -60,99 +45,29 @@ describe('buildVCalendar', () => {
 });
 
 describe('buildVEvent', () => {
-  it('falls back to the title for DESCRIPTION when no extras are given', () => {
+  it('uses the title for DESCRIPTION and carries no URL property', () => {
     const vevent = buildVEvent('uid-1', 'Weekly Sync', '2026-01-15T14:00:00Z', 30);
 
     expect(vevent).toContain('DESCRIPTION:Weekly Sync');
     expect(vevent).not.toContain('URL:');
   });
 
-  it('appends the join link to DESCRIPTION and sets URL when joinUrl is given', () => {
-    const vevent = buildVEvent('uid-1', 'Weekly Sync', '2026-01-15T14:00:00Z', 30, {
-      description: 'Discuss roadmap',
-      joinUrl: 'https://zoom.us/j/123',
-    });
+  it('builds a complete VEVENT with a globally unique UID and SEQUENCE:0', () => {
+    const vevent = buildVEvent('uid-1', 'Weekly Sync', '2026-01-15T14:00:00Z', 30);
 
-    expect(vevent).toContain('DESCRIPTION:Discuss roadmap\\n\\nJoin: https://zoom.us/j/123');
-    expect(vevent).toContain('URL:https://zoom.us/j/123');
-  });
-});
-
-describe('buildMeetingCalendarEvents', () => {
-  it('builds a single event for a non-recurring meeting regardless of scope', () => {
-    const meeting = makeMeeting();
-
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'series', joinUrl: 'https://zoom.us/j/123' });
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toContain(`UID:meeting-1@${ICS_UID_DOMAIN}`);
-    expect(events[0]).toContain('URL:https://zoom.us/j/123');
+    const lines = vevent.split('\r\n');
+    expect(lines[0]).toBe('BEGIN:VEVENT');
+    expect(lines[lines.length - 1]).toBe('END:VEVENT');
+    expect(lines).toContain(`UID:uid-1@${ICS_UID_DOMAIN}`);
+    expect(lines).toContain('SEQUENCE:0');
+    expect(lines).toContain('SUMMARY:Weekly Sync');
+    expect(lines).toContain('DTSTART:20260115T140000Z');
   });
 
-  it('builds only the requested occurrence when scope is "occurrence"', () => {
-    const meeting = makeMeeting({
-      occurrences: [
-        { occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30 },
-        { occurrence_id: 'occ-2', start_time: '2026-01-22T14:00:00Z', duration: 30 },
-      ] as Meeting['occurrences'],
-    });
+  it('escapes the title in SUMMARY and DESCRIPTION', () => {
+    const vevent = buildVEvent('uid-1', 'Q&A; notes, agenda', '2026-01-15T14:00:00Z', 30);
 
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: 'occ-2' });
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toContain(`UID:meeting-1-occ-2@${ICS_UID_DOMAIN}`);
-  });
-
-  it('expands every non-cancelled occurrence when scope is "series"', () => {
-    const meeting = makeMeeting({
-      recurrence: {} as Meeting['recurrence'],
-      occurrences: [
-        { occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30 },
-        { occurrence_id: 'occ-2', start_time: '2026-01-22T14:00:00Z', duration: 30, status: 'cancel' },
-        { occurrence_id: 'occ-3', start_time: '2026-01-29T14:00:00Z', duration: 30 },
-      ] as Meeting['occurrences'],
-    });
-
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'series' });
-
-    expect(events).toHaveLength(2);
-    expect(events[0]).toContain(`UID:meeting-1-occ-1@${ICS_UID_DOMAIN}`);
-    expect(events[1]).toContain(`UID:meeting-1-occ-3@${ICS_UID_DOMAIN}`);
-  });
-
-  it('returns no events when every occurrence of a recurring series is cancelled, rather than falling back to the series start (GH-3505)', () => {
-    const meeting = makeMeeting({
-      recurrence: {} as Meeting['recurrence'],
-      occurrences: [
-        { occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30, status: 'cancel' },
-        { occurrence_id: 'occ-2', start_time: '2026-01-22T14:00:00Z', duration: 30, status: 'cancel' },
-      ] as Meeting['occurrences'],
-    });
-
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'series' });
-
-    expect(events).toHaveLength(0);
-  });
-
-  it('falls back to the meeting start/duration when occurrenceId is not found', () => {
-    const meeting = makeMeeting({
-      occurrences: [{ occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30 }] as Meeting['occurrences'],
-    });
-
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: 'does-not-exist' });
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toContain(`UID:meeting-1@${ICS_UID_DOMAIN}`);
-  });
-
-  it('matches an occurrence whose id differs by seconds vs milliseconds units via isSameOccurrenceId (GH-3505)', () => {
-    const meeting = makeMeeting({
-      occurrences: [{ occurrence_id: '1700000000', start_time: '2026-01-15T14:00:00Z', duration: 30 }] as Meeting['occurrences'],
-    });
-
-    const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: '1700000000' });
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toContain(`UID:meeting-1-1700000000@${ICS_UID_DOMAIN}`);
+    expect(vevent).toContain('SUMMARY:Q&A\\; notes\\, agenda');
+    expect(vevent).toContain('DESCRIPTION:Q&A\\; notes\\, agenda');
   });
 });

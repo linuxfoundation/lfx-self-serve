@@ -28,8 +28,8 @@ const SPEC_PATTERN = /\.(spec|test)\.[cm]?[jt]sx?$/;
  *      file that loads cleanly but silently contributes zero tests (including the degenerate case
  *      of `e2e/` itself having no spec files at all).
  *
- * Runs as the `e2e:check-collection` script, wired into the root `quality-checks` CI job (cheap
- * enough to run there; the full `e2e` job needs a live server + secrets and stays separate).
+ * Runs as the `e2e:check-collection` script in the Quality Checks workflow's `static-checks` job;
+ * the full `e2e` job needs a live server + secrets and stays separate.
  */
 
 /**

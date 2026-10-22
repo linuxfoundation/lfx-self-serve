@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet, ViewportScroller } from '@angular/common';
 import {
   afterNextRender,
   Component,
@@ -20,7 +20,17 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import {
+  ActivatedRoute,
+  NavigationCancel,
+  NavigationError,
+  NavigationSkipped,
+  NavigationSkippedCode,
+  NavigationStart,
+  Router,
+  Scroll,
+  UrlTree,
+} from '@angular/router';
 import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsL2SectionId, buildHealthMetricsL2SectionViews, isHealthMetricsL2SectionKey } from '@lfx-one/shared/utils';
 import { debounceTime, filter, Subject } from 'rxjs';
@@ -37,6 +47,9 @@ import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetri
  * position, per the design's `l2Shell`. The tab projects each section's body
  * through a keyed `lfxHealthMetricsL2Section` template and reports its reads back through
  * `sectionReading` / `sectionSettled`, so a fragment deep link lands once the page stops reflowing.
+ *
+ * Every in-section pill, search and pager writes the query string, and the app-wide router scrolls
+ * each such navigation to the top; the shell keeps the reader's place instead.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
@@ -46,6 +59,8 @@ import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetri
 export class HealthMetricsL2ShellComponent implements OnInit {
   protected readonly chrome = inject(HealthMetricsChromeService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly viewportScroller = inject(ViewportScroller);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
@@ -84,6 +99,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * pending key: another one reflowing afterwards would move the anchor out from under it.
    */
   private readonly unsettledSections = new Set<string>();
+  /** Read key → the section it renders in, for a section that holds more than one read. */
+  private readonly readSections = new Map<string, string>();
   private readonly resize$ = new Subject<void>();
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
@@ -97,6 +114,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // offset is a third, rebuilt from its own subscription rather than compared here.
   private spyEndBelowFold?: boolean;
   private spyViewportHeight?: number;
+  /** Navigation id → where the page stood when a query-only navigation began, put back after the router's scroll. */
+  private readonly heldScrolls = new Map<number, [number, number]>();
+  /** A section jumped to while a router scroll was still due, replayed after it since that scroll cuts it short. */
+  private jumpAfterRouterScroll: string | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -129,6 +150,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     // Resize fires per animation frame while dragging; rebuilding the observers each time is wasteful.
     // The band is sized off the viewport, and a reflow can move the end sentinel past the first screen.
     this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => this.rebuildScrollSpyIfGeometryChanged());
+    this.initQueryScrollKeeping();
   }
 
   /** Reads the inputs, so it waits for them here rather than running in the constructor. */
@@ -153,9 +175,12 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /**
    * A starting read puts the section back among those a deep link waits on, and restarts the
    * deadline against that read rather than leaving it to expire on the fragment that armed it.
+   * `sectionKey` names the section the read renders in, when a section holds more than one read.
    */
-  public sectionReading(key: string): void {
+  public sectionReading(key: string, sectionKey = key): void {
     this.unsettledSections.add(key);
+    this.readSections.set(key, sectionKey);
+    this.holdSectionHeight(sectionKey);
 
     const pending = this.pendingSection();
     if (pending) this.armPendingSection(pending);
@@ -165,10 +190,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * A read landing changes the page's height, so a waiting deep link re-scrolls here, a paint later
    * than the emission. The key is released only once every data section has settled.
    */
-  public sectionSettled(key: string): void {
+  public sectionSettled(key: string, sectionKey = key): void {
     this.unsettledSections.delete(key);
     afterNextRender(
       () => {
+        // Released once every read in the section has painted, so neither a sibling still loading nor a
+        // newer read that re-held it for its own skeleton loses the height.
+        if (!this.hasUnsettledRead(sectionKey)) this.sectionElement(sectionKey)?.style.removeProperty('min-height');
         this.rebuildScrollSpyIfGeometryChanged();
         this.settlePendingSection();
         // A still-pending key would scroll the page back to the anchor on every later re-emission.
@@ -188,11 +216,66 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.activeSection.set(key);
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const section = document.getElementById(buildHealthMetricsL2SectionId(this.idPrefix(), key));
+    const section = this.sectionElement(key);
     if (!section) return;
 
+    if (this.heldScrolls.size > 0) this.jumpAfterRouterScroll = key;
     // The section's `scroll-margin-top` keeps it clear of the sticky page header.
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  private initQueryScrollKeeping(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        if (this.changesOnlyQuery(event.url)) this.heldScrolls.set(event.id, this.viewportScroller.getScrollPosition());
+      } else if (event instanceof NavigationSkipped) {
+        // A write that restates the current URL is skipped without a start, yet still scrolled to the top.
+        if (event.code === NavigationSkippedCode.IgnoredSameUrlNavigation) this.heldScrolls.set(event.id, this.viewportScroller.getScrollPosition());
+        else this.heldScrolls.delete(event.id);
+      } else if (event instanceof NavigationCancel || event instanceof NavigationError) {
+        this.heldScrolls.delete(event.id);
+      } else if (event instanceof Scroll) {
+        this.restoreHeldScroll(event.routerEvent.id);
+      }
+    });
+  }
+
+  private restoreHeldScroll(id: number): void {
+    const position = this.heldScrolls.get(id);
+    if (!position) return;
+
+    this.heldScrolls.delete(id);
+    const jump = this.jumpAfterRouterScroll;
+    if (this.heldScrolls.size === 0) this.jumpAfterRouterScroll = null;
+    // A microtask lands after the router's own scroll, whichever subscribed first, and before paint.
+    queueMicrotask(() => {
+      this.viewportScroller.scrollToPosition(position, { behavior: 'instant' });
+      if (jump) this.scrollTo(jump);
+    });
+  }
+
+  /** Same path and fragment as the current URL: only the query string moves. */
+  private changesOnlyQuery(url: string): boolean {
+    const withoutQuery = (tree: UrlTree) => this.router.serializeUrl(new UrlTree(tree.root, {}, tree.fragment));
+    return withoutQuery(this.router.parseUrl(url)) === withoutQuery(this.router.parseUrl(this.router.url));
+  }
+
+  /** A reloading section shrinks to its skeleton, which would shorten the page under the reader. */
+  private holdSectionHeight(key: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const section = this.sectionElement(key);
+    if (section) section.style.minHeight = `${section.offsetHeight}px`;
+  }
+
+  private hasUnsettledRead(sectionKey: string): boolean {
+    return [...this.unsettledSections].some((key) => (this.readSections.get(key) ?? key) === sectionKey);
+  }
+
+  private sectionElement(key: string): HTMLElement | null {
+    return document.getElementById(buildHealthMetricsL2SectionId(this.idPrefix(), key));
   }
 
   /**

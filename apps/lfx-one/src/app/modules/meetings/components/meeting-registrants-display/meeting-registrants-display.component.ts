@@ -39,6 +39,7 @@ import {
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -73,6 +74,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly inviteResend = inject(MeetingInviteResendService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
@@ -337,6 +339,10 @@ export class MeetingRegistrantsDisplayComponent {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.deleteGuest(registrant),
     });
+  }
+
+  public onRequestResendInvite(registrant: MeetingRegistrant): void {
+    this.inviteResend.confirmAndResend(this.confirmationService, this.meeting().id, registrant);
   }
 
   // === Protected Methods (template helpers) ===

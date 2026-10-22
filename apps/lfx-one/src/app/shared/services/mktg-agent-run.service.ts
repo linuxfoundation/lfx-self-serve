@@ -17,6 +17,7 @@ import {
   MktgRunAttempt,
   MktgRunGenerateBody,
   MktgRunQuestionsPending,
+  MktgRunPersistReceipt,
   MktgRunResultBody,
   MktgRunResultResponse,
   MktgRunSessionResponse,
@@ -94,6 +95,13 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+  // Receipt keys support exact document navigation during this page session only.
+  // They never become persisted run fields or approval evidence.
+  private readonly receiptKeys = new WeakMap<MktgRunVersion, string>();
+
+  public receiptKey(version: MktgRunVersion): string | null {
+    return this.receiptKeys.get(version) ?? null;
+  }
 
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
@@ -443,9 +451,10 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Bounded background persistence retry for agents whose result endpoint
-   * persists the validated document (`intake.persistsDocument`, today the
-   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   * Bounded background persistence retry for every agent whose result
+   * endpoint persists the validated document: any intake that sets
+   * `persistsDocument`, not only the Brand Kit (the Messaging Framework's
+   * export, for one, relies on this retry too).
    *
    * A `ready` result with NO persistence receipt means the server-side write
    * did not happen — usually a transient object-store failure, which the BFF
@@ -463,13 +472,10 @@ export class MktgAgentRunService {
    * emission is `{ type: 'persisted', run }` when a receipt finally arrives,
    * after which polling stops. The receipt's hash is written onto the stored
    * `version` it persisted and `run` is that stored run (null when this
-   * browser no longer holds the run): the hash is what names the version's
-   * stored revision, so an export of it reads exactly that revision and
-   * never the document's latest. The event exists because
-   * dependency resolution prefers the SERVER copy over any browser-stored
-   * run: a v2 announced while the write was still failing would leave
-   * consumers attached to the server's v1 with nothing to tell them it had
-   * been superseded. No project scope means the BFF never persists at all,
+   * browser no longer holds the run). The digest never identifies approval;
+   * a retained canonical receipt key supports document navigation only.
+   * The event refreshes server-approved dependency reads, never substitutes
+   * the browser Draft for an attachment. No project scope means the BFF never persists at all,
    * so there is nothing to retry.
    */
   private retryPersistence(
@@ -500,19 +506,25 @@ export class MktgAgentRunService {
       // one that emits, and the stream completes right after it.
       takeWhile((response) => !response.persistence, true),
       filter((response) => !!response.persistence),
-      map((response): MktgGenerateProgress => ({ type: 'persisted', run: this.recordReceipt(request, version, response.persistence?.content_sha256 ?? '') }))
+      map((response): MktgGenerateProgress => ({ type: 'persisted', run: this.recordReceipt(request, version, response.persistence) }))
     );
   }
 
-  /** Writes a late persistence receipt's hash onto the stored version it persisted and saves the run; null when the run is no longer stored. */
-  private recordReceipt(request: MktgGenerateRequest, version: number, contentSha256: string): MktgStoredAgentRun | null {
+  /** Keep existing hash persistence; retain the receipt key only in memory for document navigation. */
+  private recordReceipt(request: MktgGenerateRequest, version: number, receipt: MktgRunPersistReceipt | undefined): MktgStoredAgentRun | null {
+    const contentSha256 = receipt?.content_sha256;
     const stored = this.loadRun(request.projectUid, request.agentId);
     if (!stored || !contentSha256) {
       return stored;
     }
     const run: MktgStoredAgentRun = {
       ...stored,
-      versions: stored.versions.map((entry) => (entry.version === version ? { ...entry, contentSha256 } : entry)),
+      versions: stored.versions.map((entry) => {
+        if (entry.version !== version) return entry;
+        const updated = { ...entry, contentSha256 };
+        if (receipt?.project === request.projectUid) this.receiptKeys.set(updated, receipt.s3_key);
+        return updated;
+      }),
       savedAt: new Date().toISOString(),
     };
     this.saveRun(run);
@@ -552,10 +564,11 @@ export class MktgAgentRunService {
       ...(answered && { questions: answered.questions, answers: answered.answers }),
       // The Brand Kit's revision is a JSON kit: stored with the version so the kit view renders it back without a poll.
       ...(result.brandKit && { brandKit: result.brandKit }),
-      // What the server stored for this version: an export names its revision by it.
+      // Preserve the existing content digest; it is not approval or revision identity.
       ...(result.persistence?.content_sha256 && { contentSha256: result.persistence.content_sha256 }),
       createdAt: new Date().toISOString(),
     };
+    if (result.persistence?.project === request.projectUid) this.receiptKeys.set(version, result.persistence.s3_key);
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,

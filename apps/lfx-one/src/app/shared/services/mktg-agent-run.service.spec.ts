@@ -520,7 +520,7 @@ describe('MktgAgentRunService', () => {
       expect(events[2].type).toBe('persisted');
     });
 
-    it('writes a late receipt’s hash onto the version it persisted, so an export of it reads that exact revision', async () => {
+    it('preserves the existing late content digest without treating it as revision identity', async () => {
       resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
       const events: MktgGenerateProgress[] = [];
       service.generate(generateRequest()).subscribe((event) => events.push(event));
@@ -532,11 +532,11 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
       const persisted = events.find((event) => event.type === 'persisted');
       expect(persisted?.type === 'persisted' ? persisted.run?.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
-      // The stored run carries it too, so a restored run exports the same revision.
+      // Digest persistence remains compatible; document identity comes only from a receipt key.
       expect(service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1)?.contentSha256).toBe('abc');
     });
 
-    it('keeps the hash of what the server stored with the version, which names the revision an export reads', async () => {
+    it('keeps the existing content digest with the version', async () => {
       resultResponses = [READY_WITH_RECEIPT];
       const events: MktgGenerateProgress[] = [];
       service.generate(generateRequest()).subscribe((event) => events.push(event));
@@ -545,6 +545,25 @@ describe('MktgAgentRunService', () => {
 
       const document = events.find((event) => event.type === 'document');
       expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
+    });
+
+    it.each([false, true])('retains receipt keys only in memory for immediate/late document navigation (late=%s)', async (late) => {
+      const key = `documents/proj-1/brand-kit/living/000001-${'a'.repeat(64)}.json`;
+      const ready: MktgRunResultResponse = { ...READY_NO_RECEIPT, persistence: { s3_key: key, content_sha256: 'a'.repeat(64), project: 'proj-1', version: 1 } };
+      resultResponses = late ? [READY_NO_RECEIPT, ready] : [ready];
+      service.generate(generateRequest()).subscribe();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      if (late) {
+        const first = service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1);
+        if (!first) throw new Error('Missing synthetic run');
+        expect(service.receiptKey(first)).toBeNull();
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      }
+      const version = service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1);
+      if (!version) throw new Error('Missing synthetic run');
+      expect(service.receiptKey(version)).toBe(key);
+      expect(JSON.stringify(version)).not.toContain(key);
+      expect(service.receiptKey({ ...version })).toBeNull();
     });
 
     it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {

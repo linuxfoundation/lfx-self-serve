@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
+import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ProjectContextService } from '@services/project-context.service';
 import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
@@ -39,7 +42,7 @@ describe('BrandKitWebViewComponent', () => {
     await fixture.whenStable();
   };
 
-  const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision()): Promise<void> => {
+  const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision(), url = '/'): Promise<void> => {
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -47,10 +50,20 @@ describe('BrandKitWebViewComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [BrandKitWebViewComponent],
-      providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }, provideMktgSlidesExportStub(slidesExport)],
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platformId },
+        provideMktgSlidesExportStub(slidesExport),
+      ],
     }).compileComponents();
+    await TestBed.inject(Router).navigateByUrl(url);
     fixture = TestBed.createComponent(BrandKitWebViewComponent);
     fixture.componentRef.setInput('kit', kit);
+    // This fixture explicitly supplies the independently approved print payload.
+    fixture.componentRef.setInput('approvedKit', kit);
+    fixture.componentRef.setInput('approvedVersion', 1);
     await fixture.whenStable();
   };
 
@@ -63,6 +76,44 @@ describe('BrandKitWebViewComponent', () => {
     print.mockRestore();
     document.body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS);
     document.head.querySelectorAll('link[id^="brand-kit-font-"]').forEach((link) => link.remove());
+  });
+
+  it('loads its URL tab and pushes one history entry per user switch', async () => {
+    await configure('browser', brandKitTestRevision(), '/?project=synthetic&profile=edit&tab=logo');
+    expect(tab('logo').getAttribute('aria-selected')).toBe('true');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    await open('color');
+    expect(TestBed.inject(Router).url).toContain('tab=color');
+    expect(TestBed.inject(Router).url).toContain('profile=edit');
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
+  });
+
+  it('focuses the opened panel start only after routed content renders', async () => {
+    await configure('browser');
+    const router = TestBed.inject(Router);
+    const navigate = router.navigate.bind(router);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = vi.spyOn(router, 'navigate').mockImplementationOnce(async (...args) => {
+      await gate;
+      return navigate(...args);
+    });
+    tab('overview').focus();
+    const before = document.activeElement;
+    tab('color').click();
+    await fixture.whenStable();
+    expect(query('brand-kit-web-view-panel-color')).toBeNull();
+    expect(document.activeElement).toBe(before);
+    release();
+    await pending.mock.results[0]?.value;
+    await fixture.whenStable();
+    const panel = query('brand-kit-web-view-panel-color');
+    expect(panel).not.toBeNull();
+    expect(document.activeElement).toBe(panel);
+    expect(panel?.getAttribute('tabindex')).toBe('-1');
   });
 
   describe('in the browser', () => {
@@ -87,19 +138,57 @@ describe('BrandKitWebViewComponent', () => {
     it('heads the page as the framework view does: the title, the kit’s version, the mode, and the actions', async () => {
       expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
-      expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-mode')).toBeNull();
+      expect(query('brand-kit-web-view-header')?.textContent?.match(/v1/g)).toHaveLength(1);
       expect(button('brand-kit-web-view-download-pdf')?.disabled).toBe(false);
       // Export to Google Slides waits for the page to name a stored revision.
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
 
       fixture.componentRef.setInput('version', 3);
-      fixture.componentRef.setInput('note', 'latest');
       await fixture.whenStable();
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
-      expect(query('brand-kit-web-view-header')?.textContent).toContain('latest');
-      // The printed book says what the page says: Download PDF of v3 prints V3.0, never the kit's own draft version.
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V3.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // Viewing a new Draft does not relabel the independently approved print target.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
+    });
+
+    it('prints approved kit bytes while the screen renders a different Draft', async () => {
+      fixture.componentRef.setInput('kit', { ...brandKitTestRevision(), projectName: 'Synthetic draft only' });
+      fixture.componentRef.setInput('version', 3);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-title')?.textContent).toContain('Synthetic draft only');
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('Project One');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+    });
+
+    it('omits the book and guards Download PDF when no approved kit is supplied', async () => {
+      fixture.componentRef.setInput('approvedKit', null);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-print')).toBeNull();
+      expect(button('brand-kit-web-view-download-pdf')?.disabled).toBe(true);
+      button('brand-kit-web-view-download-pdf')?.click();
+      await fixture.whenStable();
+      expect(print).not.toHaveBeenCalled();
+    });
+
+    it('shows Approved only from a store approval and hides the draft mode badge', async () => {
+      fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Approved');
+      expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
+      expect(query('brand-kit-web-view-mode')).toBeNull();
+    });
+
+    it.each([
+      ['redraft', 'Redraft'],
+      ['check', 'Checked'],
+    ] as const)('retains the distinct %s mode beside the state word', async (mode, label) => {
+      fixture.componentRef.setInput('kit', { ...brandKitTestRevision(), mode });
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
     it('keeps the book in its print-only wrapper — never on screen — and wraps every text block', () => {
@@ -167,9 +256,8 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(tab('color').getAttribute('aria-selected')).toBe('true');
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
-      // The clicked button went with the Overview panel: focus lands on the tab it opened, once that has rendered.
-      await new Promise((resolve) => setTimeout(resolve));
-      expect(document.activeElement).toBe(tab('color'));
+      // The clicked Overview shortcut leaves with its panel; focus moves to the new panel's start.
+      expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
     it('Overview: a logo on a CDN is named as the logo you supplied — never its URL', async () => {

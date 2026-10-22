@@ -1,0 +1,58 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it, vi } from 'vitest';
+import type { Request, Response } from 'express';
+
+const approve = vi.hoisted(() => vi.fn());
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/foundation-message.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
+}));
+vi.mock('../controllers/mktg-slides-export.controller', () => ({ MktgSlidesExportController: class {} }));
+vi.mock('../controllers/mktg-agents.controller', () => ({ MktgAgentsController: class {} }));
+vi.mock('../controllers/member-360.controller', () => ({ Member360Controller: class {} }));
+vi.mock('../controllers/member-360-workbook.controller', () => ({ Member360WorkbookController: class {} }));
+vi.mock('../controllers/mktg-documents.controller', () => ({
+  MktgDocumentsController: class {
+    public approveRevision = approve;
+  },
+}));
+vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn() } }));
+
+import { AuthorizationError } from '../errors';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
+import router from './mktg-agents.route';
+
+describe('Marketing OS approval route', () => {
+  it.each(['start', 'advance', 'result'])('guards rebuild %s before invoking its controller', (method) => {
+    const layer = router.stack.find((entry) => entry.route?.path === `/rebuild/${method}`);
+    expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    layer?.route?.stack[0].handle({ path: `/rebuild/${method}`, method: 'POST', impersonationActive: true } as Request, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
+
+  it.each(['start', 'result', 'last'])('blocks family export %s during impersonation before calling the controller', (action) => {
+    const layer = router.stack.find((entry) => entry.route?.path === `/slides-export/family/${action}`);
+    expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    layer?.route?.stack[0].handle(
+      { path: `/slides-export/family/${action}`, method: action === 'last' ? 'GET' : 'POST', impersonationActive: true } as Request,
+      {} as Response,
+      next
+    );
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
+
+  it('installs the impersonation guard before the approval handler', () => {
+    const layer = router.stack.find((entry) => entry.route?.path === '/documents/:agentKey/:documentId/revisions/:revisionId/approve');
+    expect(layer?.route?.stack[0].method).toBe('post');
+    expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    const req = { path: '/documents/faq/living/revisions/example/approve', method: 'POST', impersonationActive: true } as Request;
+    layer?.route?.stack[0].handle(req, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(approve).not.toHaveBeenCalled();
+  });
+});

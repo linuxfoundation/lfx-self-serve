@@ -20,7 +20,9 @@
     @if (opened()) {
       <lfx-mentorship-mentor-programs-section
         [requests]="requests()"
-        [invitedProgramIds]="invitedProgramIds()"
+        [invitations]="invitations()"
+        [respondingInvitationId]="respondingInvitationId()"
+        [respondingDecision]="respondingDecision()"
         [requestsLoading]="requestsLoading()"
         [requestsFailed]="requestsFailed()"
         [requesting]="requesting()"
@@ -28,6 +30,8 @@
         [bordered]="false"
         (add)="onAddProgram($event)"
         (withdraw)="onWithdraw($event)"
+        (acceptInvitation)="onAcceptInvitation($event)"
+        (declineInvitation)="onDeclineInvitation($event)"
         (retry)="onRetryRequests()" />
     }
 

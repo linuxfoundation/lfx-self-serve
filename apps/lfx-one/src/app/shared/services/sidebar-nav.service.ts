@@ -76,7 +76,7 @@ export class SidebarNavService {
   private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Rollout gate for the Project Lens Participating Organizations entry (#2091), matching `projectParticipatingOrgsEnabledGuard`. */
   private readonly isProjectParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(PROJECT_LENS_PARTICIPATING_ORGS_FLAG, false);
-  /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
+  /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
@@ -204,7 +204,7 @@ export class SidebarNavService {
       case 'project': {
         // A project in a Formation stage (GH-1958, #2754) gets a reduced sidebar: the checklist, plus
         // the Meetings, Mailing Lists and Groups a forming project already collaborates through
-        // (#3059). The dashboard, documents, governance, communications and Mktg OS entries stay
+        // (#3059). The dashboard, documents, governance, newsletters and Mktg OS entries stay
         // hidden while it forms — for every persona, hybrid marketing-grant users included: the
         // Marketing section they regained in this lens under LFXV2-2235 (see the end of this case) is
         // knowingly withheld while the project is forming, a product decision on #2754. Dark-launched
@@ -235,14 +235,15 @@ export class SidebarNavService {
         const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite() ? [this.projectInitiativesNavItem] : [];
         // Participating Organizations (#2091) is rolled out behind its flag; shown to every project-lens viewer — the BFF enforces project `viewer`.
         const participatingOrgsItems = this.isProjectParticipatingOrgsEnabled() ? [this.projectParticipatingOrgsNavItem] : [];
-        const base = [...this.projectLensItems, ...participatingOrgsItems, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
-        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
+        // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
+        const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
+        const items = [...coreItems, ...participatingOrgsItems, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
         // (LFXV2-2235 review finding: hybrid marketing users lost the Marketing section in project lens).
         const marketingSection = this.marketingSectionItem();
-        return marketingSection ? [...withComms, marketingSection] : withComms;
+        return marketingSection ? [...items, marketingSection] : items;
       }
       case 'org':
         return this.visibleOrgLensItems();
@@ -253,9 +254,9 @@ export class SidebarNavService {
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
-    if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaSection()];
+    if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaSection(base) : base;
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
     const afterProjectsItems = [
       ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
       // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
@@ -290,7 +291,8 @@ export class SidebarNavService {
 
   // --- Me Lens Items ---
   // Crowdfunding is a top-level section (peer of My Engagement / Education), with its
-  // sub-pages as section children. Security/Akrites is filtered out reactively in visibleMeLensItems.
+  // sub-pages as section children. Security/Akrites is always the last section and is filtered out
+  // reactively in visibleMeLensItems.
   private readonly meLensItems: SidebarMenuItem[] = [
     {
       label: 'My Dashboard',
@@ -348,18 +350,6 @@ export class SidebarNavService {
       ],
     },
     {
-      label: 'Security',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Akrites Program',
-          icon: 'lfx-icon-akrites',
-          routerLink: '/akrites',
-        },
-      ],
-    },
-    {
       label: 'Education',
       isSection: true,
       expanded: true,
@@ -412,6 +402,18 @@ export class SidebarNavService {
           label: 'Admin',
           icon: 'fa-light fa-shield-halved',
           routerLink: '/mentorship/admin',
+        },
+      ],
+    },
+    {
+      label: 'Security',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Akrites Program',
+          icon: 'lfx-icon-akrites',
+          routerLink: '/akrites',
         },
       ],
     },
@@ -905,13 +907,6 @@ export class SidebarNavService {
     testId: 'sidebar-org-easycla',
   }));
 
-  private readonly orgEasyclaSection: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'EasyCLA Management',
-    isSection: true,
-    expanded: true,
-    items: [this.orgEasyclaNavItem()],
-  }));
-
   /**
    * Org Lens items address the selected organization (`/org/{segment}/{page}`, spec 050 US2) and
    * re-render on every switch; while nothing is selected they fall back to the legacy `/org/{page}`
@@ -966,7 +961,7 @@ export class SidebarNavService {
           { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
-      // Org admin — divider only (no section label); Profile sits under it.
+      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
       {
         label: 'Organization Profile',
         icon: 'fa-light fa-memo',
@@ -1048,10 +1043,20 @@ export class SidebarNavService {
     });
   }
 
-  private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
+  /**
+   * Inserts EasyCLA directly before Organization Profile, taking over Profile's divider so the two
+   * share the org-admin group; appended if Profile ever goes away.
+   */
+  private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));
-    if (profileIndex === -1) return [...items, this.orgEasyclaSection()];
-    return [...items.slice(0, profileIndex), this.orgEasyclaSection(), ...items.slice(profileIndex)];
+    if (profileIndex === -1) return [...items, this.orgEasyclaNavItem()];
+    const profile = items[profileIndex];
+    return [
+      ...items.slice(0, profileIndex),
+      { ...this.orgEasyclaNavItem(), dividerBefore: profile.dividerBefore },
+      { ...profile, dividerBefore: false },
+      ...items.slice(profileIndex + 1),
+    ];
   }
 
   /**
@@ -1066,19 +1071,30 @@ export class SidebarNavService {
   }
 
   /**
-   * Project-lens Communications section; appended dynamically in sidebarItems().
+   * Inserts the project-lens Newsletters item directly after Mailing Lists (appended if Mailing Lists
+   * ever goes away). Only called while `canSeeNewsletters()` holds.
+   */
+  private withProjectNewslettersNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    const mailingListsIndex = items.indexOf(this.projectMailingListsNavItem);
+    if (mailingListsIndex === -1) return [...items, this.buildProjectNewslettersNavItem()];
+    const afterMailingLists = mailingListsIndex + 1;
+    return [...items.slice(0, afterMailingLists), this.buildProjectNewslettersNavItem(), ...items.slice(afterMailingLists)];
+  }
+
+  /**
+   * Project-lens Newsletters item; inserted dynamically in sidebarItems().
    *
    * Visibility is `canSeeNewsletters()` — ED persona or writer — matching the route guards on both
-   * embed mounts. Only the link TARGETS depend on the pilot flag, for the reason below.
+   * embed mounts. Only the link TARGET depends on the pilot flag, for the reason below.
    *
    * Built per-call rather than held as a constant because the embed's routes only *match* while
    * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to
    * `/` otherwise. A fixed link to the embed would therefore bounce every ED and writer to the
    * dashboard whenever the flag is off (its default), and take LFX's own newsletters page out of
-   * the sidebar with it. The visibility of this section and the target of its links have to be
+   * the sidebar with it. The visibility of this item and the target of its link have to be
    * gated on the same thing.
    */
-  private buildProjectCommunicationsSection(): SidebarMenuItem {
+  private buildProjectNewslettersNavItem(): SidebarMenuItem {
     // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
     // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
     // the data-isolation half; the flag is only the rollout half.
@@ -1093,20 +1109,13 @@ export class SidebarNavService {
     const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
 
     return {
-      label: 'Communications',
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'Newsletters',
-          icon: 'fa-light fa-paper-plane',
-          // With the flag on this points at the embedded Gatewaze newsletters module instead of
-          // LFX's own page. Both are gated identically, so this chooses the surface, not the
-          // audience — keep the conditional: the embed's routes only match while the flag is on.
-          routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
-          testId: 'sidebar-project-newsletters',
-        },
-      ],
+      label: 'Newsletters',
+      icon: 'fa-light fa-paper-plane',
+      // With the flag on this points at the embedded Gatewaze newsletters module instead of
+      // LFX's own page. Both are gated identically, so this chooses the surface, not the
+      // audience — keep the conditional: the embed's routes only match while the flag is on.
+      routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
+      testId: 'sidebar-project-newsletters',
     };
   }
 

@@ -6,7 +6,6 @@ import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -43,7 +42,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-organizations',
-  imports: [AvatarComponent, EmptyStateComponent, FilterPillsComponent, InputTextComponent, RouterLink, TableComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, RouterLink, TableComponent],
   templateUrl: './events-organizations.component.html',
 })
 export class EventsOrganizationsComponent {

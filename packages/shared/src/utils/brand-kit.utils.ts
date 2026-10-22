@@ -13,6 +13,7 @@
 
 import {
   BRAND_KIT_AGENT_IDENTIFIER,
+  BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
   BRAND_KIT_ANSWER_KEYS,
   BRAND_KIT_ANSWER_MAX_CHARS,
   BRAND_KIT_ANSWERS_HEADER,
@@ -144,12 +145,13 @@ export function brandKitOptionalUrl(answer: string | undefined): string | null {
  * line; `website_url` required, an http(s) URL (the agent reads the site);
  * `brand_page_url` optional — blank, "none", or an http(s) URL; `notes`
  * optional free text; the messaging framework
- * (`BRAND_KIT_FRAMEWORK_ANSWER_KEY`) required — the latest stored
- * revision's JSON, at most `BRAND_KIT_MAX_FRAMEWORK_CHARS` characters, a
+ * (`BRAND_KIT_FRAMEWORK_ANSWER_KEY`) required — browser-attached JSON from
+ * the approved-current attach path, at most `BRAND_KIT_MAX_FRAMEWORK_CHARS` characters, a
  * JSON object the agent reads an umbrella message or a brand line from
  * ({@link parseBrandKitFramework}); no unknown keys. There are no questions
  * on this form: the agent inspects the artwork, reads the site, takes the
- * voice from the framework, and asks only the gaps.
+ * voice from the framework, and asks only the gaps. This validator checks
+ * content shape, not the supplied framework's store approval.
  */
 export function validateBrandKitIntakeAnswers(answers: unknown): BrandKitValidationResult {
   if (!isRecord(answers)) {
@@ -190,7 +192,7 @@ export function validateBrandKitIntakeAnswers(answers: unknown): BrandKitValidat
   // provisional by the agent later.
   const framework = answers[BRAND_KIT_FRAMEWORK_ANSWER_KEY];
   if (typeof framework !== 'string' || !framework.trim()) {
-    errors.push(`answers.${BRAND_KIT_FRAMEWORK_ANSWER_KEY} is required: the project needs a messaging framework first`);
+    errors.push(`answers.${BRAND_KIT_FRAMEWORK_ANSWER_KEY}: ${BRAND_KIT_APPROVAL_REQUIRED_MESSAGE}`);
   } else if (framework.length > BRAND_KIT_MAX_FRAMEWORK_CHARS) {
     errors.push(`answers.${BRAND_KIT_FRAMEWORK_ANSWER_KEY} must be at most ${BRAND_KIT_MAX_FRAMEWORK_CHARS} characters`);
   } else if (parseBrandKitFramework(framework) === null) {
@@ -306,9 +308,9 @@ export function buildBrandKitFormPayload(answers: Record<string, string>, inputs
   if (notes) {
     payload.notes = notes;
   }
-  // The messaging framework, as the run page attached it (the latest stored
-  // revision's JSON, serialized), in the shape the agent reads the voice
-  // from; the validator already refused anything it could read no voice from.
+  // The browser-attached framework JSON in the shape the agent reads voice
+  // from. The attach path selects approved current; this builder parses the
+  // supplied JSON, not its approval state.
   const framework = parseBrandKitFramework(answers[BRAND_KIT_FRAMEWORK_ANSWER_KEY] ?? '');
   if (framework !== null) {
     payload.messaging_framework = framework;
@@ -317,8 +319,8 @@ export function buildBrandKitFormPayload(answers: Record<string, string>, inputs
 }
 
 /**
- * The messaging framework as the run page attached it — the latest stored
- * revision's JSON, serialized — parsed back and put in the shape the agent's
+ * The framework JSON supplied by the run page's approved-current attachment,
+ * parsed back and put in the shape the agent's
  * form takes ({@link brandKitFrameworkOfRevision}). Null when the text is
  * not a JSON object (an array, a scalar, or not JSON at all) or when no
  * voice can be read from it.

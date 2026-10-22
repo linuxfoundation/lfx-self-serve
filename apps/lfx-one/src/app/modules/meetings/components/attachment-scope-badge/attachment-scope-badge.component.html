@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- 10px/9px: matches the compact count pill on the meeting card, which is smaller than the standard text scale goes. -->
+<span
+  class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none"
+  [class]="isOccurrence() ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'"
+  [attr.data-scope]="scope()"
+  data-testid="attachment-scope-badge">
+  <i class="text-[9px]" [class]="isOccurrence() ? 'fa-light fa-calendar-day' : 'fa-light fa-repeat'" aria-hidden="true"></i>
+  {{ label() }}
+</span>

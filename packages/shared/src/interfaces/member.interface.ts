@@ -131,6 +131,13 @@ export interface CreateCommitteeMemberOptions {
   skipNotification?: boolean;
 }
 
+/** Client-only wizard state. Strip these options before sending the native member request body. */
+export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberRequest {
+  createOptions?: CreateCommitteeMemberOptions;
+  /** Matching pending invitations to revoke only after this member is successfully created. */
+  pendingInviteUids?: string[];
+}
+
 /**
  * Voting-status option for the member form select
  * @description Legacy values excluded from MEMBER_FORM_VOTING_STATUSES (e.g. None) are
@@ -186,6 +193,9 @@ export interface CommitteeMemberWithState extends CommitteeMember {
   originalData?: CommitteeMember;
   /** Temporary ID for new members before API creates uid */
   tempId?: string;
+  /** Client-only create behavior retained while a new member is edited or the step remounts. */
+  createOptions?: CreateCommitteeMemberOptions;
+  pendingInviteUids?: string[];
 }
 
 /**
@@ -194,7 +204,7 @@ export interface CommitteeMemberWithState extends CommitteeMember {
  */
 export interface MemberPendingChanges {
   /** Members to be created via API */
-  toAdd: CreateCommitteeMemberRequest[];
+  toAdd: StagedCommitteeMemberRequest[];
   /** Members to be updated via API (full member object) */
   toUpdate: { uid: string; changes: CreateCommitteeMemberRequest }[];
   /** Member UIDs to be deleted via API */
@@ -205,6 +215,8 @@ export interface MemberPendingChanges {
    * the wizard sends nothing (LFXV2-2606).
    */
   toInvite: CreateCommitteeInviteRequest[];
+  /** Pending server-invitation snapshot used to rematch edited CSV emails; retained across wizard-step remounts. */
+  importInvites?: Pick<CommitteeInvite, 'uid' | 'invitee_email'>[];
 }
 
 /** Kind of staged operation flushed by the committee-manage wizard (GH-1608). */
@@ -223,6 +235,8 @@ export interface MemberOperationResult {
   identifier: string;
   success: boolean;
   createdMember?: CommitteeMember;
+  /** Creation succeeded, but at least one matching pending invitation could not be revoked. */
+  cleanupWarning?: boolean;
 }
 
 /**

@@ -32,10 +32,9 @@ class PeopleStubComponent {
   public readonly reading = output<void>();
 }
 
-/** Stands in for Conversion opportunity, whose read its own spec covers. */
+/** Stands in for Conversion opportunity, whose read its own spec covers; it reports no count. */
 @Component({ selector: 'lfx-non-members-conversion', template: '<div data-testid="non-members-conversion-stub"></div>' })
 class ConversionStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
 }
@@ -168,16 +167,13 @@ describe('HealthMetricsNonMembersComponent', () => {
     expect(item()).not.toMatch(/\d/);
   });
 
-  it('badges Conversion opportunity with the high-fit count once it reports one', async () => {
+  it('never badges Conversion opportunity, even once the other sections report counts', async () => {
     await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-conversion"]').textContent;
 
-    stub(ConversionStubComponent).countChange.emit(14);
+    stub(OrgsStubComponent).countChange.emit(412);
+    stub(PeopleStubComponent).countChange.emit(388);
+    stub(ConversionStubComponent).settled.emit();
     await flush();
-    expect(item()).toContain('14');
-
-    stub(ConversionStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
+    expect(fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-conversion"]').textContent).not.toMatch(/\d/);
   });
 });

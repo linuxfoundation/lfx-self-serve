@@ -74,7 +74,7 @@
     <div class="flex flex-col gap-2" data-testid="members-tiers-matrix">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Membership breakdown by tier</h4>
-        <span class="text-[12px] text-gray-400" data-testid="members-tiers-matrix-unit">{{ mode() === 'members' ? 'exact counts' : 'in USD' }}</span>
+        <span class="text-[12px] text-gray-400" data-testid="members-tiers-matrix-unit">{{ matrixCaption() }}</span>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="members-tiers-table">
@@ -102,12 +102,7 @@
           <tbody>
             @for (tier of view().tiers; track tier.tier; let tierIndex = $index) {
               <tr class="border-b border-gray-50" [attr.data-testid]="'members-tiers-row-' + tierIndex">
-                <th scope="row" class="py-2 pr-4 text-left font-medium text-gray-900">
-                  <span class="inline-flex items-center gap-2">
-                    <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" [style.background-color]="tier.color" aria-hidden="true"></span>
-                    {{ tier.tier }}
-                  </span>
-                </th>
+                <th scope="row" class="py-2 pr-4 text-left font-medium text-gray-900">{{ tier.tier }}</th>
                 @for (cell of tier.cells; track cell.year; let yearIndex = $index) {
                   <td
                     class="px-3 py-2 text-right tabular-nums"
@@ -141,9 +136,7 @@
     <div class="flex flex-col gap-2" data-testid="members-tiers-composition">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Tier composition by year</h4>
-        <span class="text-[12px] text-gray-400"
-          >each tier's share of the year's {{ mode() === 'members' ? 'members' : 'revenue' }}, so a shifting mix is visible</span
-        >
+        <span class="text-[12px] text-gray-400" data-testid="members-tiers-composition-caption">{{ compositionCaption }}</span>
       </div>
       <!-- The matrix above carries the same figures for screen readers. -->
       <div class="h-72" aria-hidden="true" data-testid="members-tiers-chart">

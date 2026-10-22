@@ -3,21 +3,16 @@
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-events-page">
   <!-- Page Header -->
-  <header class="flex items-start justify-between" data-testid="org-events-header">
-    <div class="flex flex-col gap-1">
-      <h1 class="font-display font-light text-2xl" data-testid="org-events-title">
-        @if (companyName() && contentVisible()) {
-          Events &mdash; {{ companyName() }}
-        } @else {
-          Events
-        }
-      </h1>
-      <p class="text-sm text-gray-500" data-testid="org-events-subtitle">Your organization's event footprint across LF events.</p>
-    </div>
+  <lfx-page-header
+    [title]="companyName() && contentVisible() ? 'Events — ' + companyName() : 'Events'"
+    description="Your organization's event footprint across LF events."
+    titleTestId="org-events-title"
+    descriptionTestId="org-events-subtitle"
+    data-testid="org-events-header">
     @if (!pageState()) {
-      <lfx-discover-events-button testId="org-events-discover-button" />
+      <lfx-discover-events-button pageHeaderActions testId="org-events-discover-button" />
     }
-  </header>
+  </lfx-page-header>
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state

@@ -71,7 +71,7 @@ describe('HealthMetricsChromeService', () => {
 
     impersonating.set(true);
 
-    expect(service.stickyTopPx()).toBe(178);
+    expect(service.stickyTopPx()).toBe(172);
   });
 
   it('selects the range off the clicked period, so every tab reads the same one', () => {

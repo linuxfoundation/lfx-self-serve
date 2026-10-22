@@ -145,6 +145,16 @@ export class MentorshipMentorController {
     }
   }
 
+  // POST /api/mentorship/mentor/invitations/:invitationId/accept -> 204
+  public async acceptMentorInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvitation(req, res, next, 'accept');
+  }
+
+  // POST /api/mentorship/mentor/invitations/:invitationId/decline -> 204
+  public async declineMentorInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvitation(req, res, next, 'decline');
+  }
+
   // POST /api/mentorship/mentor/invites/accept  { token } -> 204
   public async acceptMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
     await this.respondToMentorInvite(req, res, next, 'accept');
@@ -310,6 +320,31 @@ export class MentorshipMentorController {
 
       await this.mentorService.respondToMentorInvite(req, token, decision);
       logger.success(req, operation, startTime);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Auth: logged-in user required (401 otherwise). Upstream's 404 passes through when the invitation is not
+  // the caller's, and its 409 once it is no longer open.
+  private async respondToMentorInvitation(req: Request, res: Response, next: NextFunction, decision: MentorshipMentorInviteDecision): Promise<void> {
+    const operation = `${decision}_mentorship_mentor_invitation`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      // An invitation is a `program_members` row, which upstream addresses only by UUID.
+      const invitationId = parseTrimmedString(req.params['invitationId']);
+      if (!invitationId || !isUuid(invitationId)) {
+        throw ServiceValidationError.forField('invitationId', 'invitationId must be an invitation UUID', { operation });
+      }
+
+      await this.mentorService.respondToMentorInvitation(req, invitationId, decision);
+      logger.success(req, operation, startTime, { invitationId });
       res.status(204).send();
     } catch (error) {
       next(error);

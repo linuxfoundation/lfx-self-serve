@@ -194,7 +194,12 @@ export class MktgArtifactService {
    * as the write path, whose bucket env var is intentionally absent in some
    * deployed environments.
    */
-  public async readLatest(req: Request, spec: MktgArtifactSpec, projectUid: string): Promise<MktgArtifactStoredResponse | null> {
+  public async readLatest(
+    req: Request,
+    spec: MktgArtifactSpec,
+    projectUid: string,
+    options: { legacyOnly?: boolean } = {}
+  ): Promise<MktgArtifactStoredResponse | null> {
     const operation = this.storedOperation(spec);
 
     // The partition uid comes from the server-resolved project — but it must
@@ -219,7 +224,7 @@ export class MktgArtifactService {
         // Non-null by the filter above.
         const keySha = extractMktgArtifactKeySha(candidate.key, prefix) as string;
         const object = await this.objectStore.getObject(req, 'marketing-os-artifacts', candidate.key);
-        if (!object) {
+        if (!object || (options.legacyOnly && object.metadata['revision-managed'] === 'true')) {
           continue;
         }
 

@@ -1007,6 +1007,139 @@ describe('ProfileController.setPrimaryEmail', () => {
     expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+
+  // Meeting invites stick to an address, not the primary role (#3983).
+  describe('meeting-invite pin', () => {
+    const OLD_PRIMARY = 'old-primary@example.com';
+    const NEW_PRIMARY = 'new-primary@example.com';
+
+    function buildPrimaryReq(overrides: Record<string, unknown> = {}): any {
+      return buildReq({ params: { emailId: NEW_PRIMARY }, path: `/api/profile/emails/${NEW_PRIMARY}/primary`, apiGatewayToken: 'v1-token', ...overrides });
+    }
+
+    beforeEach(() => {
+      profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+      getUsernameFromAuthMock.mockResolvedValue('testuser');
+      getEffectiveSubMock.mockReturnValue('auth0|testuser');
+      meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: null, email: null });
+      emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: OLD_PRIMARY, alternate_emails: [] });
+      meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: 'id-old', email: OLD_PRIMARY } });
+      emailVerificationSvc.setPrimaryEmail.mockResolvedValue({ success: true });
+    });
+
+    it('pins the current primary as the invite email before switching the primary, under the invite lock', async () => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), res, next);
+
+      expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
+      expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|testuser');
+      expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', OLD_PRIMARY);
+      expect(meetingPrefSvc.setMeetingInviteEmail.mock.invocationCallOrder[0]).toBeLessThan(emailVerificationSvc.setPrimaryEmail.mock.invocationCallOrder[0]);
+      expect(emailVerificationSvc.setPrimaryEmail).toHaveBeenCalledWith(expect.anything(), 'mgmt-token', NEW_PRIMARY);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('leaves an existing override alone', async () => {
+      meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-alt', email: 'alt@example.com' });
+      const res = buildRes();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), res, vi.fn());
+
+      expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.setPrimaryEmail).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('skips the pin when the target is already the primary', async () => {
+      emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${NEW_PRIMARY.toUpperCase()} `, alternate_emails: [] });
+      const res = buildRes();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), res, vi.fn());
+
+      expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it.each([
+      ['the invite preference lookup fails', () => meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null)],
+      ['the current primary cannot be resolved', () => emailVerificationSvc.getUserEmails.mockResolvedValue(null)],
+      ['the pin write fails', () => meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'unavailable', error: 'down' })],
+    ])('blocks the primary change with a 503 advisory when %s', async (_label, arrange) => {
+      arrange();
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_ADVISORY', statusCode: 503 }));
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('blocks with a 400 pointing at the invite setting, not a retry, when the pin is rejected as invalid', async () => {
+      meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'validation', error: 'not an active, verified address' });
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 400, message: expect.stringContaining('Choose a different address for meeting invitations') })
+      );
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('keeps the pin and responds 502 when the primary switch itself fails after pinning', async () => {
+      emailVerificationSvc.setPrimaryEmail.mockResolvedValue({ success: false, message: 'auth-service down' });
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), res, next);
+
+      expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', OLD_PRIMARY);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 502 }));
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('never logs the email address', async () => {
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), vi.fn());
+
+      expect(logger.startOperation).toHaveBeenCalledWith(expect.anything(), 'set_primary_email');
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'set_primary_email', expect.anything(), { pinned_invite: true });
+    });
+
+    it('blocks the primary change with a 503 advisory when the v1 api-gateway token is missing', async () => {
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq({ apiGatewayToken: undefined }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_ADVISORY', statusCode: 503 }));
+      expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('rejects with a 400 instead of skipping the lock when the username cannot be resolved', async () => {
+      getUsernameFromAuthMock.mockResolvedValue(undefined);
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+      expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('forwards lock contention without changing the primary', async () => {
+      const conflict = Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' });
+      withMeetingInviteLockMock.mockRejectedValueOnce(conflict);
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(conflict);
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('ProfileController.sendPasswordResetEmail', () => {

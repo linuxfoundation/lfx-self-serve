@@ -67,6 +67,11 @@ import {
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUES,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -118,6 +123,7 @@ import type {
   CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
+  CampaignGoogleExtensionsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
@@ -125,6 +131,8 @@ import type {
   CampaignPlatformResult,
   CampaignRedditImageAssetBlock,
   CampaignSitelink,
+  CampaignStructuredSnippet,
+  CampaignStructuredSnippetDraft,
   CampaignType,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
@@ -362,14 +370,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
 
   /**
-   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
-   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
-   * answer; see `biddingCapabilityBlock`.
+   * Where the create-capability read stands — what tells "still checking" from "the check failed"
+   * while a capability is `null`.
+   *
+   * The state of the WHOLE read, not of one capability: the parent's `loadCreateCapabilitiesFor`
+   * sets `biddingEnabled`, `googleCreativeEnabled` and the rest from ONE response and moves this one
+   * signal for all of them. Read by `biddingCapabilityBlock` and by
+   * `googleExtensionsCapabilityBlock`, and correct for any capability that joins them later.
    */
-  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
+  public readonly createCapabilityRead = input<CampaignCapabilityReadState>('unknown');
 
-  /** Asks the parent to re-read the create capabilities after a failed read. */
-  public readonly retryBiddingCapability = output<void>();
+  /** Asks the parent to re-read the create capabilities after a failed read. Raised by either capability block. */
+  public readonly retryCreateCapabilities = output<void>();
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -943,6 +955,27 @@ export class ImplementationTabComponent implements OnInit {
    * reaching the saved draft only when a sitelink is added.
    */
   protected readonly googleSitelinkDraft = signal<CampaignSitelink>({ text: '', description1: '', description2: '', finalUrl: '' });
+  /**
+   * Google's structured snippets — one "Header: value, value, value" line each, enumerating what
+   * the campaign offers rather than claiming anything about it.
+   *
+   * TYPED, not generated: unlike the callouts and sitelinks above there is no generator event for
+   * these, so this list only ever grows through {@link addGoogleStructuredSnippet} or a restored
+   * draft. The BFF guard re-checks every entry against `validateStructuredSnippets` before anything
+   * is sent.
+   */
+  protected readonly googleStructuredSnippets = signal<CampaignStructuredSnippet[]>([]);
+  protected readonly googleMaxStructuredSnippets = GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS;
+  protected readonly googleMaxSnippetHeaderRunes = GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES;
+  protected readonly googleMaxSnippetValueRunes = GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES;
+  protected readonly googleMinSnippetValues = GOOGLE_ADS_MIN_SNIPPET_VALUES;
+  protected readonly googleMaxSnippetValues = GOOGLE_ADS_MAX_SNIPPET_VALUES;
+  /**
+   * The snippet sub-form's live values, on the same rule as {@link googleSitelinkDraft}: transient,
+   * reaching the saved draft only when a snippet is added. `values` is the textarea's raw text —
+   * see {@link CampaignStructuredSnippetDraft} for why it is not parsed here.
+   */
+  protected readonly googleStructuredSnippetDraft = signal<CampaignStructuredSnippetDraft>({ header: '', values: '' });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1421,6 +1454,116 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * The snippet box's values as a list: split on newlines, trimmed with Go's rules, blanks dropped.
+   *
+   * REPEATS ARE KEPT, in the order they were typed. That is what makes this the list upstream's own
+   * value loop walks: it skips blanks, then checks each remaining value's rune bound, and only then
+   * collapses case-folded repeats — so an over-long value that merely repeats an earlier one is
+   * still refused, and a list that de-duplicated first would never see it.
+   */
+  protected readonly googleSnippetDraftValues = computed(() =>
+    this.googleStructuredSnippetDraft()
+      .values.split('\n')
+      .map((value) => googleAdsTrimSpace(value))
+      .filter((value) => value !== '')
+  );
+
+  /**
+   * How many values the snippet would actually RENDER: the list above with case-folded repeats
+   * collapsed, which is the number upstream counts against both bounds.
+   *
+   * Upstream's own words for why the order matters: "three values of which two are the same renders
+   * as two, which is below what Google accepts".
+   */
+  protected readonly googleSnippetDistinctValueCount = computed(() => new Set(this.googleSnippetDraftValues().map((v) => googleAdsToLower(v))).size);
+
+  /** Rune length of the in-progress snippet header. Spread, not `.length` — as the callout. */
+  protected readonly googleSnippetHeaderLength = computed(() => [...googleAdsTrimSpace(this.googleStructuredSnippetDraft().header)].length);
+
+  protected readonly googleSnippetHeaderTooLong = computed(() => this.googleSnippetHeaderLength() > GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES);
+
+  /**
+   * Whether the header in the box is already on the list, case-folded with Go's rules.
+   *
+   * Upstream REFUSES rather than merging: Google serves one line per header, so a campaign listing
+   * the same header twice would silently drop the second.
+   */
+  protected readonly googleSnippetHeaderDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleStructuredSnippetDraft().header));
+    if (key === '') return false;
+    return this.googleStructuredSnippets().some((s) => googleAdsToLower(s.header) === key);
+  });
+
+  /** The rune length of the first over-long value in the box, or 0 when every value fits. */
+  protected readonly googleSnippetValueOverLength = computed(() => {
+    const over = this.googleSnippetDraftValues().find((value) => [...value].length > GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES);
+    return over === undefined ? 0 : [...over].length;
+  });
+
+  /**
+   * Whether the box holds too few DISTINCT values to render.
+   *
+   * False while the box is EMPTY, on the rule {@link googleSitelinkUrlInvalid} follows: an unfilled
+   * field is not yet a mistake, and the add button's own disabled state is what withholds the add
+   * until it is filled. This warns only about values that are present and unservable as a set.
+   */
+  protected readonly googleSnippetTooFewValues = computed(() => {
+    if (this.googleSnippetDraftValues().length === 0) return false;
+    return this.googleSnippetDistinctValueCount() < GOOGLE_ADS_MIN_SNIPPET_VALUES;
+  });
+
+  protected readonly googleSnippetTooManyValues = computed(() => this.googleSnippetDistinctValueCount() > GOOGLE_ADS_MAX_SNIPPET_VALUES);
+
+  /**
+   * Ids of the message lines currently describing the header box and the values box, or `null` when
+   * each is clean. Same reason as {@link googleCalloutDraftErrorId}, and the same one-computed-per-
+   * group shape as the sitelink sub-form's two.
+   */
+  protected readonly googleSnippetHeaderErrorId = computed<string | null>(() => {
+    if (this.googleSnippetHeaderTooLong()) return 'google-snippet-header-too-long';
+    if (this.googleSnippetHeaderDuplicate()) return 'google-snippet-header-duplicate';
+    return null;
+  });
+
+  protected readonly googleSnippetValuesErrorId = computed<string | null>(() => {
+    if (this.googleSnippetValueOverLength() > 0) return 'google-snippet-value-too-long';
+    if (this.googleSnippetTooFewValues()) return 'google-snippet-too-few-values';
+    if (this.googleSnippetTooManyValues()) return 'google-snippet-too-many-values';
+    return null;
+  });
+
+  protected readonly googleStructuredSnippetsFull = computed(() => this.googleStructuredSnippets().length >= GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS);
+
+  /**
+   * The added snippets with their values pre-joined for display. A computed rather than `.join()`
+   * in the `@for`: `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes
+   * in bindings but not logic-bearing calls, which here would re-run once per row on every
+   * change-detection pass. Same reason as {@link microsoftEffectiveGeoLabel}, applied per row.
+   *
+   * `header` is carried through unchanged so the template keeps tracking by it — the add refuses a
+   * case-folded duplicate, which is what makes the header a stable identity for the whole list.
+   */
+  protected readonly googleStructuredSnippetRows = computed(() =>
+    this.googleStructuredSnippets().map((snippet) => ({ header: snippet.header, valuesLabel: snippet.values.join(', ') }))
+  );
+
+  /**
+   * Whether the snippet add button is withheld — the sitelink sub-form's rule exactly, so the
+   * button's condition and {@link addGoogleStructuredSnippet}'s refusals stay one list in one place.
+   */
+  protected readonly googleStructuredSnippetAddDisabled = computed(() => {
+    if (googleAdsTrimSpace(this.googleStructuredSnippetDraft().header) === '' || this.googleSnippetDraftValues().length === 0) return true;
+    return (
+      this.googleStructuredSnippetsFull() ||
+      this.googleSnippetHeaderTooLong() ||
+      this.googleSnippetHeaderDuplicate() ||
+      this.googleSnippetValueOverLength() > 0 ||
+      this.googleSnippetTooFewValues() ||
+      this.googleSnippetTooManyValues()
+    );
+  });
+
+  /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
    * not logic-bearing calls, which re-run on every change-detection pass.
@@ -1730,6 +1873,13 @@ export class ImplementationTabComponent implements OnInit {
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
     // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
     if (this.biddingCapabilityBlock() !== null) return false;
+    // `googleExtensionsCapabilityBlock` is its sibling on the SAME capability read and is
+    // deliberately NOT a gate here. The difference is what the withholding costs. A withheld Manual
+    // bid changes what the campaign does — it would be created automatic and spend differently from
+    // the choice on screen — so that create waits for the answer. Withheld callouts and sitelinks
+    // cost only the extensions: the campaign created is still the one that was asked for, and the
+    // lists stay in the brief for a later edit. Blocking a create on a stalled capability read for
+    // that is the worse failure, so the create goes ahead and the block says what was left out.
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
@@ -1823,6 +1973,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
+  protected readonly googleStructuredSnippetsWithheldWarning: Signal<string | null> = this.initGoogleStructuredSnippetsWithheldWarning();
+  /**
+   * Why generated callouts and sitelinks are being withheld because the CAPABILITY is not an
+   * explicit yes, or `null`. The two warnings above cover the other reason — the channel takes no
+   * extensions — and the two readers partition every withholding between them, so none is silent.
+   *
+   * Without this one the capability case had no reader at all: the section hides, both payload
+   * helpers return `{}`, and `canSubmit` does not ask for the answer, so the create succeeded,
+   * shipped no extensions and said nothing.
+   */
+  protected readonly googleExtensionsCapabilityBlock: Signal<CampaignGoogleExtensionsCapabilityBlock | null> = this.initGoogleExtensionsCapabilityBlock();
+  /** The always-mounted live region's text for `googleExtensionsCapabilityBlock`; `''` when nothing is withheld. */
+  protected readonly googleExtensionsCapabilityMessage = computed(() => this.googleExtensionsCapabilityBlock()?.message ?? '');
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
@@ -2554,6 +2717,65 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one structured snippet, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleSitelink} is: a refusal must leave the sub-form filled,
+   * so the operator can fix the field the warning names rather than retype a header and four values.
+   *
+   * One refusal per branch of upstream's `validateStructuredSnippets`, in its order — the cap on the
+   * raw list, a blank header, the header's rune bound, the case-folded header duplicate, then the
+   * values in ITS loop's order (blanks skipped, each remaining value's rune bound, case-folded
+   * repeats collapsed), and finally the minimum and maximum counted on what survived that loop. A
+   * snippet that passes every one is one upstream accepts.
+   *
+   * The values are stored AS TYPED, minus blank lines: the repeats upstream collapses are left in
+   * place, because the guard above has already established that enough distinct ones remain and
+   * dropping them here would make the dispatched list disagree with the one this app judged.
+   */
+  protected addGoogleStructuredSnippet(header: string, values: string[]): boolean {
+    if (this.googleStructuredSnippets().length >= GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS) return false;
+
+    const trimmedHeader = googleAdsTrimSpace(header);
+    if (!trimmedHeader) return false;
+    if ([...trimmedHeader].length > GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES) return false;
+    if (this.googleStructuredSnippets().some((s) => googleAdsToLower(s.header) === googleAdsToLower(trimmedHeader))) return false;
+
+    const trimmedValues = values.map((value) => googleAdsTrimSpace(value)).filter((value) => value !== '');
+    // The rune bound BEFORE the repeat is collapsed, exactly as upstream's loop checks it — so an
+    // over-long value that merely repeats an earlier one is still refused.
+    if (trimmedValues.some((value) => [...value].length > GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES)) return false;
+
+    const distinct = new Set(trimmedValues.map((value) => googleAdsToLower(value))).size;
+    if (distinct < GOOGLE_ADS_MIN_SNIPPET_VALUES) return false;
+    if (distinct > GOOGLE_ADS_MAX_SNIPPET_VALUES) return false;
+
+    this.googleStructuredSnippets.update((snippets) => [...snippets, { header: trimmedHeader, values: trimmedValues }]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleStructuredSnippetDraftInput(field: keyof CampaignStructuredSnippetDraft, event: Event): void {
+    // Draft only — no `emitDraft()`, matching the callout and sitelink boxes. It reaches the draft
+    // on ADD. The values box is a `<textarea>`, which is why this widens past `HTMLInputElement`.
+    const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+    this.googleStructuredSnippetDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected onGoogleStructuredSnippetAdd(): void {
+    const draft = this.googleStructuredSnippetDraft();
+    // Cleared ONLY on success, so a refused snippet keeps its header and every value it was typed
+    // with, beside the warning naming what to change.
+    if (this.addGoogleStructuredSnippet(draft.header, draft.values.split('\n'))) {
+      this.googleStructuredSnippetDraft.set({ header: '', values: '' });
+    }
+  }
+
+  protected removeGoogleStructuredSnippet(index: number): void {
+    this.googleStructuredSnippets.update((snippets) => snippets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -2686,6 +2908,7 @@ export class ImplementationTabComponent implements OnInit {
       // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
       // upstream refuses the whole create when any extension list reaches a non-Search campaign.
       ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
+      ...(platforms.includes('google-ads') ? this.googleStructuredSnippetsPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2893,6 +3116,27 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Which channel a Google create would carry, resolved the way `buildGoogleAdsConfig` resolves it:
+   * Search whenever Search is ticked, otherwise the first ticked channel. Null when Google is
+   * unselected or no channel is ticked — there is no default channel to fall back on.
+   *
+   * Deliberately knows nothing about the CREATIVE capability. {@link initGoogleBiddingChannel} adds
+   * that gate on top, because every field it owns rides the `googleAdsConfig` envelope the legacy
+   * creator ignores. {@link initGoogleExtensionsCapabilityBlock} cannot: it exists to report on that
+   * very gate, so it has to see the channel underneath it. One resolution with two readers, so the
+   * two can never drift apart on which channel they mean — the rule
+   * {@link initGoogleLanguagesChannel} already follows by reading the bidding channel rather than
+   * re-deriving it.
+   */
+  private resolveGoogleChannel(): GoogleCampaignChannel | null {
+    void this.campaignFormRevision();
+    if (!this.showGoogleSection()) return null;
+    const channels = this.selectedGoogleChannels();
+    if (channels.length === 0) return null;
+    return channels.includes('search') ? 'search' : channels[0];
+  }
+
+  /**
    * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
    *
    * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
@@ -2949,7 +3193,7 @@ export class ImplementationTabComponent implements OnInit {
       }
       // The same create-capability read answers this and the bidding capability, so its state says
       // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
-      if (this.biddingCapabilityRead() === 'pending') {
+      if (this.createCapabilityRead() === 'pending') {
         return { kind: 'pending', message: 'Checking Reddit image upload support…' };
       }
       if (!this.briefPersistence().briefId) {
@@ -3229,6 +3473,13 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleSitelinks !== undefined) {
       this.googleSitelinks.set(draft.googleSitelinks.map((s) => ({ ...s })));
     }
+    // `values` copied too, for the reason the entries are: it is an array inside the entry, and a
+    // shallow spread of the entry would share it with the stored draft. There is no brief-restore
+    // twin for this one — snippets are typed, not generated, so this draft is the only thing that
+    // carries them between visits.
+    if (draft.googleStructuredSnippets !== undefined) {
+      this.googleStructuredSnippets.set(draft.googleStructuredSnippets.map((s) => ({ ...s, values: [...s.values] })));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -3400,6 +3651,8 @@ export class ImplementationTabComponent implements OnInit {
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
       googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
+      // `values` copied as its own array, matching the restore.
+      googleStructuredSnippets: this.googleStructuredSnippets().map((s) => ({ ...s, values: [...s.values] })),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -3548,7 +3801,8 @@ export class ImplementationTabComponent implements OnInit {
     // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
     // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
     // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
-    // tells them that is happening.
+    // tells them that is happening — or `googleExtensionsCapabilityBlock`, when what withheld the
+    // list is the unanswered capability rather than the channel.
     if (brief.googleCallouts !== undefined) {
       this.googleCallouts.set([...brief.googleCallouts]);
     }
@@ -3943,12 +4197,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleBiddingChannel(): Signal<GoogleCampaignChannel | null> {
     return computed(() => {
-      void this.campaignFormRevision();
-      if (!this.showGoogleSection()) return null;
       if (!this.googleCreativeAvailable()) return null;
-      const channels = this.selectedGoogleChannels();
-      if (channels.length === 0) return null;
-      return channels.includes('search') ? 'search' : channels[0];
+      return this.resolveGoogleChannel();
     });
   }
 
@@ -4006,27 +4256,129 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The sentence saying callouts are held back, or null when none are. Set when the dispatched
-   * channel is known, takes no callouts, and the operator added some — in practice callouts typed
+   * The sentence saying callouts are held back, or null when none are. Set when the channel a
+   * create would carry takes no callouts and the operator added some — in practice callouts typed
    * under Search and left behind by a switch to another channel. Held is not silent: the section
    * disappears with the switch, so without this the operator would not know the campaign is created
    * without them. One string feeds both the visible notice and its live region.
+   *
+   * Asks {@link resolveGoogleChannel}, NOT `googleBiddingChannel`, and tests the channel directly
+   * rather than reading `googleCalloutsAvailable`. Both changes say the same thing: this sentence is
+   * about the CHANNEL alone. `googleBiddingChannel` is null whenever the create capability is
+   * unanswered, which would mute this warning on a Demand Gen create merely because a capability
+   * read had not come back — and `googleCalloutsAvailable` is false for either reason, which on
+   * Search with an unanswered capability would put the words "Search campaigns do not take callouts"
+   * on screen. Read the channel, state the channel's truth, and leave the capability reason to
+   * {@link initGoogleExtensionsCapabilityBlock}. Between them no withholding is now silent.
    */
   private initGoogleCalloutsWithheldWarning(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
+      const channel = this.resolveGoogleChannel();
       const count = this.googleCallouts().length;
-      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
-  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same channel gate. */
   private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
+      const channel = this.resolveGoogleChannel();
       const count = this.googleSitelinks().length;
-      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+  /** The structured-snippet twin of {@link initGoogleCalloutsWithheldWarning}, on the same gate. */
+  private initGoogleStructuredSnippetsWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      const count = this.googleStructuredSnippets().length;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take structured snippets, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+
+  /**
+   * Why the callouts, sitelinks and structured snippets on this brief are being withheld for want of
+   * a capability answer.
+   *
+   * The sibling of {@link initBiddingCapabilityBlock}, on the SAME read — `loadCreateCapabilitiesFor`
+   * sets `googleCreativeEnabled` and `biddingEnabled` from one response, so `createCapabilityRead`
+   * is that whole read's state and either block may report on it.
+   *
+   * It differs from that sibling in one way on purpose: it does not block Create. A withheld manual
+   * bid would create the campaign automatic, spending differently from the choice on screen, so
+   * that one waits. Withheld extensions cost only the extensions, and holding a demo's create
+   * hostage to a stalled capability read is worse than creating and saying what was left out.
+   *
+   * Says nothing about the CHANNEL reason — {@link initGoogleCalloutsWithheldWarning} and its
+   * sitelink twin own that, on every channel that takes no extensions and whatever the capability
+   * says. The two divide the ground exactly: this block speaks only where an answer could change
+   * the outcome, which is only on a channel that takes extensions, and those warnings speak
+   * everywhere else. Nothing is withheld in silence and nothing is explained twice.
+   */
+  private initGoogleExtensionsCapabilityBlock(): Signal<CampaignGoogleExtensionsCapabilityBlock | null> {
+    return computed(() => {
+      if (this.googleCreativeAvailable()) return null;
+
+      // `resolveGoogleChannel`, not `googleBiddingChannel`: the latter's capability gate is the very
+      // thing being reported on here, so reading it would always give null.
+      //
+      // The channel matters because the capability is not the only reason a list is withheld. On a
+      // channel that takes no extensions the list is not going anywhere whatever the capability
+      // answers, so "Retry the check to send them" would be a promise this code cannot keep. Stay
+      // silent there instead: nothing is lost that the answer could recover, and
+      // `googleCalloutsWithheldWarning` is already saying the true reason — it reads the same
+      // resolved channel, so it does not wait for the capability either.
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
+
+      const callouts = this.googleCallouts().length;
+      const sitelinks = this.googleSitelinks().length;
+      const snippets = this.googleStructuredSnippets().length;
+      if (callouts + sitelinks + snippets === 0) return null;
+
+      // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty. The
+      // counts are the point: they are what the operator is about to lose, and they are the only way
+      // to tell this notice from a generic capability warning.
+      const parts: string[] = [];
+      if (callouts > 0) parts.push(`${callouts} callout${callouts === 1 ? '' : 's'}`);
+      if (sitelinks > 0) parts.push(`${sitelinks} sitelink${sitelinks === 1 ? '' : 's'}`);
+      if (snippets > 0) parts.push(`${snippets} structured snippet${snippets === 1 ? '' : 's'}`);
+      // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
+      const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Google ad extensions are not available on this deployment, so the ${lost} on this brief will not be sent. The campaign is created without them.`,
+        };
+      }
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure, for the reason the bidding block records:
+      // nothing else will start the read.
+      //
+      // This one names the counts too, for a reason specific to it: unlike the bidding block, this
+      // one does not gate Create. A create started while the check is in flight is allowed, and it
+      // ships no extensions — so "checking…" on its own would be the only message in this set that
+      // lets the operator lose the lists without having been told. Waiting costs nothing; creating
+      // now costs the lists, and the sentence has to say which.
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether Google ad extensions can be sent. Creating the campaign before the check finishes sends it without the ${lost} on this brief.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Google ad extension support can't be checked until this brief is saved, so the ${lost} on it will not be sent. Save the brief to send them.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that Google ad extensions can be sent, so the ${lost} on this brief will not be sent. Retry the check to send them.`,
+      };
     });
   }
 
@@ -4043,6 +4395,15 @@ export class ImplementationTabComponent implements OnInit {
    * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
    * campaign at all. The section hides and the payload holds the list rather than forwarding it;
    * the operator's typed callouts survive in the draft and come back if they re-tick Search.
+   *
+   * False for TWO reasons, not one: the channel takes no extensions, or `googleBiddingChannel` is
+   * null because the create capability is not an explicit yes. Because this signal cannot tell which,
+   * nothing that has to NAME the reason may read it. Each reason has its own reader, and each asks
+   * the question it can answer: {@link initGoogleCalloutsWithheldWarning} and its sitelink twin read
+   * the resolved channel and speak for the channel reason;
+   * {@link initGoogleExtensionsCapabilityBlock} reads the capability and speaks for that one. The
+   * two are mutually exclusive by construction — the block stays silent on a channel that takes no
+   * extensions — so exactly one of them speaks whenever a list is withheld.
    */
   private initGoogleCalloutsAvailable(): Signal<boolean> {
     return computed(() => {
@@ -4134,7 +4495,7 @@ export class ImplementationTabComponent implements OnInit {
       // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
       // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
       // start the read the block is waiting for.
-      if (this.biddingCapabilityRead() === 'pending') {
+      if (this.createCapabilityRead() === 'pending') {
         return { kind: 'pending', message: 'Checking bidding support…' };
       }
       // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
@@ -4565,6 +4926,19 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleCalloutsAvailable()) return {};
     const sitelinks = this.googleSitelinks();
     return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
+  /**
+   * The structured snippets as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. `values` is
+   * copied as its own array, not just the entry around it — a shallow spread would hand the request
+   * the very array the chip list is still holding.
+   */
+  private googleStructuredSnippetsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const snippets = this.googleStructuredSnippets();
+    return snippets.length > 0 ? { structuredSnippets: snippets.map((s) => ({ ...s, values: [...s.values] })) } : {};
   }
 
   /**

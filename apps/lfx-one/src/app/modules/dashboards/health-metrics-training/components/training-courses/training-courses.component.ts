@@ -36,7 +36,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#courses` — every course with enrollments in the period, ranked by enrollments.
+ * `#courses` — every course ever enrolled in, ranked by the period's enrollments; a quiet course shows 0.
  * Paged, filtered and searched server-side: the view's `sort_rank_<period>` only holds across the full set.
  */
 @Component({
@@ -52,7 +52,7 @@ export class TrainingCoursesComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every course with enrollments in the period, for the sub-nav badge; `null` while a read is pending or failed. */
+  /** Every course ever enrolled in, for the sub-nav badge; `null` while a read is pending or failed. */
   public readonly countChange = output<number | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
@@ -92,6 +92,7 @@ export class TrainingCoursesComponent {
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
+  protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

@@ -7,7 +7,12 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_SLIDES_EXPORT_ASSET_LABELS, MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_SLIDES_EXPORT_ASSET_LABELS,
+  MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
+} from '@lfx-one/shared/constants';
 import {
   MktgSlidesExportBrandSummary,
   MktgSlidesExportFailure,
@@ -34,7 +39,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, S
 // tab), its slide count and what was branded — or a plain message with a
 // retry. When the last export cannot be read it says so and offers to check
 // again rather than Create, and a panel that comes back to a document whose
-// export is still under way in this browser shows that export instead of
+// export is still under way in this tab shows that export instead of
 // offering a second deck. Slides are only an export: the asset itself stays
 // the app page.
 @Component({
@@ -53,6 +58,8 @@ export class MktgSlidesExportComponent {
   // === Inputs ===
   /** The stored revision to export; null when there is none (no project, or nothing stored yet). */
   public readonly target = input<MktgSlidesExportTarget | null>(null);
+  /** Read the viewed document's history before its approved export bytes resolve. */
+  public readonly lookupTarget = input<MktgSlidesExportTarget | null>(null);
 
   // === Signals ===
   public readonly phase = signal<MktgSlidesExportPhase>('idle');
@@ -80,9 +87,30 @@ export class MktgSlidesExportComponent {
    * being read, or after the read failed, would see no deck and create a
    * second one instead of offering Update.
    */
-  public readonly canExport = computed(() => this.target() !== null && this.lookupSettled() && !this.busy());
-  protected readonly assetLabel = computed(() => {
+  private readonly lastTarget = computed(() => this.lookupTarget() ?? this.target());
+  public readonly canExport = computed(() => {
     const target = this.target();
+    const lookup = this.lastTarget();
+    return Boolean(
+      target &&
+      lookup &&
+      target.project === lookup.project &&
+      target.agentKey === lookup.agentKey &&
+      target.documentId === lookup.documentId &&
+      this.lookupSettled() &&
+      !this.busy()
+    );
+  });
+  /** Why the header's Slides button is greyed out, for its tooltip; empty while it takes a click. */
+  public readonly disabledReason = computed(() => {
+    if (this.canExport()) return '';
+    if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+    if (this.busy()) return 'An export is already running';
+    if (this.lookupFailed()) return 'Could not check the last export. Use Check again below.';
+    return 'Checking the last export…';
+  });
+  protected readonly assetLabel = computed(() => {
+    const target = this.lastTarget();
     return target ? MKTG_SLIDES_EXPORT_ASSET_LABELS[target.agentKey] : 'asset';
   });
   protected readonly stale = computed(() => isMktgSlidesExportStale(this.last(), this.latest()));
@@ -96,7 +124,7 @@ export class MktgSlidesExportComponent {
       return '';
     }
     const slides = record.slideCount === 1 ? '1 slide' : `${record.slideCount} slides`;
-    return record.mode === 'update' ? `${slides} · the same deck, refreshed in place` : `${slides} · a new deck in the Marketing OS folder`;
+    return record.mode === 'update' ? `${slides} · the same deck, refreshed in place` : `${slides} · a new deck in Google Drive`;
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
@@ -110,12 +138,10 @@ export class MktgSlidesExportComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The panel belongs to one target (project, document and revision). When
-      // the page names another, the panel stops watching the export under way
-      // (it keeps running, and the server keeps its record either way), the
-      // last export is read again for the new one, and an export of the new
-      // target's document still under way in this browser is shown again.
-      toObservable(this.target)
+      // Follow the document lookup identity (the export target by default).
+      // Approved bytes resolving later must not reset an independent lookup.
+      // Changing documents detaches this tab's panel, not the server-side export.
+      toObservable(this.lastTarget)
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap(() => this.reset()),
@@ -181,7 +207,7 @@ export class MktgSlidesExportComponent {
     this.watch(this.exportService.run(target, mode));
   }
 
-  /** Show an export of the target's document still under way in this browser (started before the panel last left it). */
+  /** Show an export of the target's document still under way in this tab (started before the panel last left it). */
   private attach(target: MktgSlidesExportTarget | null): void {
     const running = target ? this.exportService.running(target) : null;
     if (running) {

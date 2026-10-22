@@ -1,29 +1,27 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-6" data-testid="marketing-impact-page">
-  <!-- Header -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="flex flex-col gap-1">
-      <h2 class="text-xl font-semibold text-gray-900" data-testid="marketing-impact-title">Campaign Impact</h2>
-      <p class="text-sm text-gray-500" data-testid="marketing-impact-subtitle">Marketing Performance Detail Dashboard</p>
-      @if (hasFoundation() && contextLabel()) {
-        <p class="text-xs text-gray-400" data-testid="marketing-impact-context">{{ contextLabel() }}</p>
-      }
-    </div>
-    <div class="flex items-center gap-3">
-      <lfx-select
-        [form]="headerForm"
-        control="period"
-        [options]="periodOptions"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Select period"
-        ariaLabel="Select reporting period"
-        styleClass="w-[180px]"
-        data-testid="marketing-impact-period-picker" />
-    </div>
-  </div>
+<div class="flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="marketing-impact-page">
+  <lfx-page-header
+    title="Campaign Impact"
+    description="Marketing Performance Detail Dashboard"
+    titleTestId="marketing-impact-title"
+    descriptionTestId="marketing-impact-subtitle">
+    @if (hasFoundation() && contextLabel()) {
+      <span pageHeaderDescription data-testid="marketing-impact-context">{{ contextLabel() }}</span>
+    }
+    <lfx-select
+      pageHeaderActions
+      [form]="headerForm"
+      control="period"
+      [options]="periodOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select period"
+      ariaLabel="Select reporting period"
+      styleClass="w-[180px]"
+      data-testid="marketing-impact-period-picker" />
+  </lfx-page-header>
 
   @if (!hasFoundation()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="marketing-impact-empty-state">

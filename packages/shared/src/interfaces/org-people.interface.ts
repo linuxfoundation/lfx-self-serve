@@ -161,7 +161,10 @@ export interface OrgAllEmployeeTraining {
   coursesCount: number;
 }
 
-/** Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). */
+/**
+ * Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). Company
+ * addresses are not part of it: they are served by the separate company-emails routes.
+ */
 export interface OrgAllEmployeeDetail {
   personKey: string;
   boardSeats: OrgAllEmployeeCommitteeMembership[];
@@ -169,40 +172,32 @@ export interface OrgAllEmployeeDetail {
   code: OrgAllEmployeeCodeContribution[];
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
-  /**
-   * Addresses on the org's domains, primary-first. Uncapped. Empty means "none on record" only when
-   * `companyEmailsStatus === 'resolved'`; failed and unavailable lookups also return empty arrays.
-   */
-  companyEmails: string[];
-  /**
-   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: no usable
-   * identity. `failed`: lookup errored; never fails the whole detail response.
-   */
-  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 
 /**
- * Response for the username-keyed company-emails lookup. Keyed on an identity, never on an address:
- * an address key would let a caller enumerate a person's other addresses from an arbitrary input.
+ * Response for the company-emails lookups, keyed on a person key or an LF username and never on an
+ * address: an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
 export interface OrgPersonCompanyEmailsResponse {
+  /** Addresses on the org's domains, primary-first. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
-   * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
-   * (no username, no qualifying address, or ambiguous match). A missing status must be
-   * treated as `failed`, never as `unavailable` or an empty set.
+   * `resolved`: the lookup succeeded; an empty list means none on record (person-key lookups only — a
+   * username-keyed response is `resolved` only with at least one address). `unavailable`: no usable
+   * identity, or a username with no qualifying address or an ambiguous match. `failed`: the lookup
+   * errored. A missing status must be treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
- * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
- * stays truthful instead of implying verified-empty activity.
+ * Internal detail-fetch result for `PersonDetailDrawerService`. `detail` stays `null` when the opener has no
+ * `personKey` and its username resolves to no single roster person (or it has neither), so the drawer's
+ * "Detailed activity isn't available" state stays truthful instead of implying verified-empty activity.
  */
-export interface OrgDrawerFetchResult {
+export interface OrgDrawerDetailResult {
   detail: OrgAllEmployeeDetail | null;
-  companyEmails: string[];
+  error: boolean;
 }

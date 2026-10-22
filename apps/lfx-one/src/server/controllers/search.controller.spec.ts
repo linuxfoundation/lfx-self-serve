@@ -8,7 +8,9 @@ import '@angular/compiler';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { searchUsers } = vi.hoisted(() => ({ searchUsers: vi.fn() }));
+const { searchUsers, resolveImpersonatorToken } = vi.hoisted(() => ({ searchUsers: vi.fn(), resolveImpersonatorToken: vi.fn() }));
+
+vi.mock('../utils/impersonator-token', () => ({ resolveImpersonatorToken }));
 
 vi.mock('../services/search.service', () => ({
   SearchService: class {
@@ -46,7 +48,7 @@ describe('SearchController.searchUsers — tags', () => {
 
     await controller.searchUsers(buildReq({ type: 'committee_member', tags: 'email:kim.park@partner-corp.example' }), res, next);
 
-    expect(searchUsers).toHaveBeenCalledWith(expect.anything(), { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' });
+    expect(searchUsers).toHaveBeenCalledWith(expect.anything(), { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' }, undefined);
     expect(res.json).toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
@@ -96,7 +98,49 @@ describe('SearchController.searchUsers — tags', () => {
 
     await controller.searchUsers(buildReq({ type: 'committee_member', name: 'kim' }), res, next);
 
-    expect(searchUsers).toHaveBeenCalledWith(expect.anything(), { name: 'kim', sort: 'best_match', type: 'committee_member' });
+    expect(searchUsers).toHaveBeenCalledWith(expect.anything(), { name: 'kim', sort: 'best_match', type: 'committee_member' }, undefined);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('SearchController.searchUsersAsImpersonator', () => {
+  let controller: SearchController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchUsers.mockResolvedValue({ results: [], total: 0 });
+    resolveImpersonatorToken.mockResolvedValue('real-admin-token');
+    controller = new SearchController();
+  });
+
+  it("runs the search with the admin's own token, not the request's bearer token", async () => {
+    const res = buildRes();
+    const next = vi.fn();
+    const req = { ...buildReq({ type: 'committee_member', name: 'kim' }), bearerToken: 'current-target-token' } as unknown as Request;
+
+    await controller.searchUsersAsImpersonator(req, res, next);
+
+    expect(resolveImpersonatorToken).toHaveBeenCalledWith(req, 'search_users');
+    expect(searchUsers).toHaveBeenCalledWith(req, { name: 'kim', sort: 'best_match', type: 'committee_member' }, { bearerToken: 'real-admin-token' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('does not search when the caller cannot impersonate', async () => {
+    const denied = new Error('Insufficient permissions to impersonate users');
+    resolveImpersonatorToken.mockRejectedValue(denied);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.searchUsersAsImpersonator(buildReq({ type: 'committee_member', name: 'kim' }), res, next);
+
+    expect(searchUsers).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(denied);
+  });
+
+  it('leaves the plain route on the request token', async () => {
+    await controller.searchUsers(buildReq({ type: 'committee_member', name: 'kim' }), buildRes(), vi.fn());
+
+    expect(resolveImpersonatorToken).not.toHaveBeenCalled();
   });
 });

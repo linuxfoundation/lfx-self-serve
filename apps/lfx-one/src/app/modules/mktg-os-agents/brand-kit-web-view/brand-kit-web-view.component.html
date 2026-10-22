@@ -13,38 +13,51 @@
 <section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
   <!-- Header: what this is, which version, and what you can do with it -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="brand-kit-web-view-header">
-    <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
-    <h2 class="text-base font-semibold text-gray-900" data-testid="brand-kit-web-view-title">{{ title() }}</h2>
-    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" data-testid="brand-kit-web-view-version">v{{ versionNumber() }}</span>
-    @if (note()) {
-      <span class="text-xs text-gray-400">{{ note() }}</span>
-    }
-    @if (modeLabel()) {
-      <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="brand-kit-web-view-mode">{{
-        modeLabel()
-      }}</span>
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="brand-kit-web-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="brand-kit-web-view" />
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="brand-kit-web-view-mode">{{ modeLabel() }}</span>
+      }
     }
     <div class="grow"></div>
     <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <lfx-button
-        label="Download PDF"
-        icon="fa-light fa-file-pdf"
-        [outlined]="true"
-        size="small"
-        ariaLabel="Download the brand kit as a PDF (prints the 16-page book)"
-        data-testid="brand-kit-web-view-download-pdf"
-        (onClick)="onDownloadPdf()" />
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [outlined]="true"
+          size="small"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current brand kit as a PDF"
+          data-testid="brand-kit-web-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
       <!-- The kit as a deck: the panel below the header shows the export. -->
-      <lfx-button
-        label="Export to Google Slides"
-        icon="fa-light fa-presentation-screen"
-        [outlined]="true"
-        size="small"
-        [loading]="slidesExport.busy()"
-        [disabled]="!slidesExport.canExport()"
-        ariaLabel="Export the brand kit to Google Slides"
-        data-testid="brand-kit-web-view-export-slides"
-        (onClick)="slidesExport.onExport()" />
+      <span
+        [pTooltip]="slidesExport.disabledReason()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="slidesExport.disabledReason() || null"
+        [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          size="small"
+          [loading]="slidesExport.busy()"
+          [disabled]="!slidesExport.canExport()"
+          ariaLabel="Export the brand kit to Google Slides"
+          data-testid="brand-kit-web-view-export-slides"
+          (onClick)="slidesExport.onExport()" />
+      </span>
       <lfx-button
         label="Report"
         icon="fa-light fa-clipboard-list"
@@ -54,11 +67,21 @@
         ariaLabel="Open the run's report: sources read, failed and gaps"
         data-testid="brand-kit-web-view-report"
         (onClick)="onGoToTab('sources')" />
+      <ng-content select="[asset-actions]" />
     </div>
   </div>
 
+  @if (!exportTarget()) {
+    @if (approvedLoading()) {
+      <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
+    } @else if (approvedError()) {
+      <lfx-message severity="error" [text]="approvedError()" />
+    } @else {
+      <p class="text-xs text-gray-500" data-testid="brand-kit-web-view-approval-required">{{ approvalRequiredNote }}</p>
+    }
+  }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" data-testid="brand-kit-web-view-slides-export" />
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="brand-kit-web-view-slides-export" />
 
   <!-- Tabs: the overview, the six chapters, the run's report -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">
@@ -708,14 +731,16 @@
 
   <!-- Footer: what Download PDF and the Google Slides export give you -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in the
-    Marketing OS folder in Google Drive, in the kit’s colours, typeface and logo.
+    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in
+    Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
   <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->
-  <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-    <lfx-brand-kit-view [view]="view()" />
-  </div>
+  @if (printView(); as approvedPrint) {
+    <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
+      <lfx-brand-kit-view [view]="approvedPrint" />
+    </div>
+  }
 </section>
 
 <!-- A logo as drawn in a sample: the artwork, or a placeholder naming what goes there (no file, or a PNG/ZIP member the kit carries no bytes for). -->

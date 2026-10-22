@@ -58,7 +58,7 @@
       <p class="text-sm text-red-600">{{ requestsFailedMessage }}</p>
       <lfx-button label="Retry" size="small" [text]="true" (onClick)="retry.emit()" data-testid="mentorship-mentor-requests-retry" />
     </div>
-  } @else if (rows().length) {
+  } @else if (rows().length || invitations().length) {
     <div class="overflow-x-auto rounded-xl border border-gray-200">
       <!-- 36rem is the width the three columns need before the program name starts wrapping; below it the wrapper scrolls. -->
       <table class="w-full min-w-[36rem] text-left">
@@ -70,6 +70,49 @@
           </tr>
         </thead>
         <tbody>
+          @for (invitation of invitations(); track invitation.id) {
+            <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-invitation-row-' + invitation.id">
+              <td class="px-4 py-4">
+                <span class="text-sm font-medium text-gray-900">{{ invitation.programName }}</span>
+              </td>
+              <td class="px-4 py-4">
+                <span
+                  class="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium"
+                  [class]="invitationStatusBadgeClass"
+                  [attr.data-testid]="'mentorship-mentor-invitation-status-' + invitation.id">
+                  {{ invitationStatusLabel }}
+                </span>
+              </td>
+              <td class="px-4 py-4">
+                <div class="flex items-center gap-1">
+                  <lfx-button
+                    icon="fa-light fa-check"
+                    severity="success"
+                    size="small"
+                    [rounded]="true"
+                    [text]="true"
+                    [tooltip]="acceptLabel"
+                    [loading]="respondingInvitationId() === invitation.id && respondingDecision() === 'accept'"
+                    [disabled]="respondingInvitationId() !== null"
+                    [ariaLabel]="acceptLabel + ' invitation to mentor ' + invitation.programName"
+                    (onClick)="acceptInvitation.emit(invitation.id)"
+                    [attr.data-testid]="'mentorship-mentor-invitation-accept-' + invitation.id" />
+                  <lfx-button
+                    icon="fa-light fa-xmark"
+                    severity="danger"
+                    size="small"
+                    [rounded]="true"
+                    [text]="true"
+                    [tooltip]="declineLabel"
+                    [loading]="respondingInvitationId() === invitation.id && respondingDecision() === 'decline'"
+                    [disabled]="respondingInvitationId() !== null"
+                    [ariaLabel]="declineLabel + ' invitation to mentor ' + invitation.programName"
+                    (onClick)="declineInvitation.emit(invitation.id)"
+                    [attr.data-testid]="'mentorship-mentor-invitation-decline-' + invitation.id" />
+                </div>
+              </td>
+            </tr>
+          }
           @for (row of rows(); track row.id) {
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-request-row-' + row.id">
               <td class="px-4 py-4">

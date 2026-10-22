@@ -7,11 +7,16 @@
     <lfx-empty-state
       icon="fa-light fa-calendar-check"
       [title]="closedTitle()"
-      subtitle="There is nothing left to forecast for a period that has already ended. See how events actually finished under Past events."
-      ctaLabel="View past events"
-      ctaIcon="fa-light fa-arrow-down"
-      (ctaClick)="onViewPastEvents()"
-      data-testid="events-registration-forecast-closed" />
+      subtitle="There is nothing left to forecast for a period that has already ended."
+      data-testid="events-registration-forecast-closed">
+      <!-- The design's empty-state hint: a pointer, not a link. -->
+      <p
+        class="flex max-w-full items-start gap-[8px] rounded-[8px] bg-gray-50 px-[14px] py-[9px] text-left text-[12px] leading-[1.5] text-gray-500"
+        data-testid="events-registration-forecast-closed-hint">
+        <i class="fa-light fa-circle-info mt-[3px]" aria-hidden="true"></i>
+        <span>See how events actually finished in the <b class="font-semibold">Past events</b> section below.</span>
+      </p>
+    </lfx-empty-state>
   } @else if (loadFailed()) {
     <lfx-empty-state
       icon="fa-light fa-triangle-exclamation"
@@ -28,12 +33,16 @@
       data-testid="events-registration-forecast-empty" />
   } @else {
     @if (selectedEvent()) {
-      <lfx-filter-pills
-        variant="track"
-        [options]="eventOptions()"
-        [selectedFilter]="selectedEvent()?.eventId ?? ''"
-        (filterChange)="onEventChange($event)"
-        data-testid="events-registration-forecast-event-pills" />
+      <!-- Pills carry the name only; the selected event's date sits at the row's end. -->
+      <div class="flex flex-wrap items-center gap-[10px]">
+        <lfx-filter-pills
+          variant="track"
+          [options]="eventOptions()"
+          [selectedFilter]="selectedEvent()?.eventId ?? ''"
+          (filterChange)="onEventChange($event)"
+          data-testid="events-registration-forecast-event-pills" />
+        <span class="ml-auto text-[12px] tabular-nums text-gray-400" data-testid="events-registration-forecast-event-date">{{ selectedDateLabel() }}</span>
+      </div>
 
       <div class="flex flex-col gap-4" data-testid="events-registration-forecast-card">
         <!-- The design's hero: forecast with its likely range inline, caption below, then label-over-value stats. -->
@@ -70,46 +79,61 @@
         </div>
 
         @if (verdict(); as v) {
-          <p class="rounded-md border px-3 py-2 text-sm" [class]="verdictClass()" data-testid="events-registration-forecast-verdict" [attr.data-kind]="v.kind">
-            @switch (v.kind) {
-              @case ('no-goal') {
-                No registration goal is set, so there is nothing to pace against. The forecast still projects <b>{{ forecastLabel() }}</b> registrations.
-              }
-              @case ('no-data') {
-                There is no forecast for this event yet.
-              }
-              @case ('stale') {
-                Forecast of <b>{{ forecastLabel() }}</b> is {{ ratioLabel() }}&times; the goal of {{ goalLabel() }} &mdash; the goal looks stale rather than the
-                event over-performing. Worth re-setting before it is reported as success.
-              }
-              @case ('goal-suspect') {
-                @if (goalSuspectAbove()) {
-                  Forecast of <b>{{ forecastLabel() }}</b> is ten or more times the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
-                  event over-performing. Worth checking before it is reported as success.
-                } @else {
-                  Forecast of <b>{{ forecastLabel() }}</b> is a tenth or less of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than
-                  the event falling short. Worth checking before it is reported as a miss.
+          <!-- The design's insight banner: a tone tag over the verdict, a left accent and a faint tint. -->
+          <div
+            class="flex flex-col gap-[10px] border-l-2 p-[20px]"
+            [class]="verdictBannerClass()"
+            data-testid="events-registration-forecast-verdict"
+            [attr.data-kind]="v.kind"
+            [attr.data-tone]="v.tone">
+            <span
+              class="inline-flex items-center gap-[6px] text-[12px] font-semibold leading-[16px]"
+              [class]="verdictTone().textClass"
+              data-testid="events-registration-forecast-verdict-tag">
+              <i [class]="verdictTone().icon" aria-hidden="true"></i>
+              {{ verdictTone().label }}
+            </span>
+            <p class="text-[12px] leading-[16px] text-gray-900" data-testid="events-registration-forecast-verdict-text">
+              @switch (v.kind) {
+                @case ('no-goal') {
+                  No registration goal is set, so there is nothing to pace against. The forecast still projects <b>{{ forecastLabel() }}</b> registrations.
+                }
+                @case ('no-data') {
+                  There is no forecast for this event yet.
+                }
+                @case ('stale') {
+                  Forecast of <b>{{ forecastLabel() }}</b> is {{ ratioLabel() }}&times; the goal of {{ goalLabel() }} &mdash; the goal looks stale rather than
+                  the event over-performing. Worth re-setting before it is reported as success.
+                }
+                @case ('goal-suspect') {
+                  @if (goalSuspectAbove()) {
+                    Forecast of <b>{{ forecastLabel() }}</b> is ten or more times the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than
+                    the event over-performing. Worth checking before it is reported as success.
+                  } @else {
+                    Forecast of <b>{{ forecastLabel() }}</b> is a tenth or less of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than
+                    the event falling short. Worth checking before it is reported as a miss.
+                  }
+                }
+                @case ('on-track') {
+                  @if (v.gap === 0) {
+                    On track to meet the goal. No action needed beyond keeping promotion running.
+                  } @else {
+                    On track to clear the goal by about <b>{{ gapLabel() }}</b> registrations. No action needed beyond keeping promotion running.
+                  }
+                }
+                @case ('short') {
+                  @if (v.gap === 0) {
+                    Projected to finish just short of the {{ goalLabel() }} goal.
+                  } @else {
+                    Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal.
+                  }
+                  @if (v.daysLeft !== null) {
+                    {{ daysLeftGapLead() }} to close the gap &mdash; after that the opportunity is gone.
+                  }
                 }
               }
-              @case ('on-track') {
-                @if (v.gap === 0) {
-                  On track to meet the goal. No action needed beyond keeping promotion running.
-                } @else {
-                  On track to clear the goal by about <b>{{ gapLabel() }}</b> registrations. No action needed beyond keeping promotion running.
-                }
-              }
-              @case ('short') {
-                @if (v.gap === 0) {
-                  Projected to finish just short of the {{ goalLabel() }} goal.
-                } @else {
-                  Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal.
-                }
-                @if (v.daysLeft !== null) {
-                  {{ daysLeftGapLead() }} to close the gap &mdash; after that the opportunity is gone.
-                }
-              }
-            }
-          </p>
+            </p>
+          </div>
         }
 
         <div class="flex flex-col gap-2">
@@ -176,7 +200,14 @@
         <ng-template #body let-view>
           <tr [attr.data-testid]="'events-registration-forecast-row-' + view.event.eventId">
             <td>
-              <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+              <div class="flex flex-col gap-[2px]">
+                <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+                @if (view.event.forecastAvg !== null) {
+                  <span class="text-[11.5px] font-medium text-blue-500" [attr.data-testid]="'events-registration-forecast-available-' + view.event.eventId"
+                    >forecast available</span
+                  >
+                }
+              </div>
             </td>
             <td>
               <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
@@ -207,5 +238,7 @@
         </ng-template>
       </lfx-table>
     </div>
+
+    <lfx-health-metrics-footnote [parts]="footnote" data-testid="events-registration-forecast-footnote" />
   }
 </div>

@@ -3,14 +3,23 @@
 
 import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import {
+  CLONE_VOTE_DEFAULT_DURATION_DAYS,
+  CLONE_VOTE_TITLE_PREFIX,
+  DRAFT_VOTE_DEFAULT_DURATION_DAYS,
+  DRAFT_VOTE_PLACEHOLDER_QUESTION,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_TITLE_MAX_LENGTH,
+} from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
-import { normalizePollStatus } from './poll.utils';
+import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
+import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
+import { truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -23,12 +32,16 @@ import type {
   CursorWalkOutcome,
   MyVotesQuickFilter,
   PollCommentPrompt,
+  PollCommentResult,
   PollQuestion,
   QuestionFormValue,
+  RankedQuestionView,
   UpdateVoteRequest,
   Vote,
   VoteFormValue,
   VoteParticipationStats,
+  VoteResultsOption,
+  VoteResultsQuestion,
   VoteResultsResponse,
   VoteRowParticipation,
 } from '../interfaces/poll.interface';
@@ -44,6 +57,16 @@ export function isVoteClosingSoon(vote: Vote, nowMs: number): boolean {
 export function matchesMyVotesQuickFilter(vote: Vote, filter: MyVotesQuickFilter, nowMs: number): boolean {
   if (filter === 'closing-soon') return isVoteClosingSoon(vote, nowMs);
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+}
+
+/**
+ * True when a poll type uses ranked-choice balloting (drag-to-reorder UI, `ranked_choices` wire shape).
+ * @description Implemented as an allowlist, not a negation of GENERIC — upstream ITX can emit poll_type
+ * values with no corresponding ranked UI (e.g. `majority`, #4075), and PollType may grow more non-ranked
+ * members later. An unrecognized or missing value defaults to false (single/multi-choice), never to ranked.
+ */
+export function isRankedPollType(pollType: PollType | string | null | undefined): boolean {
+  return pollType === PollType.CONDORCET_IRV || pollType === PollType.INSTANT_RUNOFF_VOTE || pollType === PollType.MEEK_STV;
 }
 
 /**
@@ -145,7 +168,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
-    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
+    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
@@ -156,6 +179,54 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
 /** Rounds participation against a positive electorate, capping incomplete counts at 99% and complete/excess counts at 100%. */
 function computeParticipationPercent(responses: number, invited: number): number {
   return Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+}
+
+/**
+ * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
+ * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
+ * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
+ * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
+ * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
+ * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
+ * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
+ * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
+ * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
+ * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
+ * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
+ * timezone rather than the source's stored zone (a still-future deadline is reused as-is, in its own zone).
+ * @param vote - The source Vote entity to clone
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
+ * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
+ * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
+ * hydration — this does not prevent a server/client difference, it just makes the server side
+ * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
+ * @returns VoteFormValue to patch into the create form
+ */
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
+  const base = mapVoteToFormValue(vote);
+  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
+    ? base.title
+    : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);
+
+  const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
+  const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;
+  if (deadlineInFuture) {
+    return { ...base, title };
+  }
+
+  const timezone = fallbackTimezone;
+  const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
+  return {
+    ...base,
+    title,
+    timezone,
+    close_date: toZonedDateCarrier(resetDate, timezone),
+    close_time: VOTE_DEFAULT_CLOSE_TIME,
+  };
 }
 
 /**
@@ -179,6 +250,131 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
   const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
 
   return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
+}
+
+/**
+ * Builds the generic (plurality) per-question results view model from the results API payload
+ * @description Choice percentages prefer the upstream value and fall back to `num_votes_cast` as the base. Winner and
+ * tie markers are only set when `isClosed`; `isLeading` marks the top option(s) regardless of `isClosed`, and live
+ * views use it for the highlight.
+ * @param results - VoteResultsResponse from the results API, or null when not yet loaded
+ * @param isClosed - Whether the vote is finalized (ended, or 100% participation)
+ * @returns One VoteResultsQuestion per poll question, in API order
+ */
+export function buildVoteResultsQuestions(results: VoteResultsResponse | null, isClosed: boolean): VoteResultsQuestion[] {
+  if (!results?.poll_results?.length) {
+    return [];
+  }
+
+  return results.poll_results.map((pollResult) => {
+    const choiceVotes = pollResult.generic_choice_votes || [];
+
+    // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
+    const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
+
+    // Build options with vote counts from the results API
+    const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
+      choiceId: cv.choice_id,
+      text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
+      voteCount: cv.vote_count,
+      percentage: computeResultPercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
+      isWinner: false,
+      isTied: false,
+      isLeading: false,
+    }));
+
+    // Determine winner/ties based on max votes
+    const maxVotes = Math.max(...optionsWithCounts.map((o) => o.voteCount), 0);
+    const optionsWithMaxVotes = optionsWithCounts.filter((o) => o.voteCount === maxVotes);
+    const isTied = optionsWithMaxVotes.length > 1 && maxVotes > 0;
+
+    const processedOptions = optionsWithCounts.map((option) => ({
+      ...option,
+      isWinner: isClosed && !isTied && option.voteCount === maxVotes && maxVotes > 0,
+      isTied: isClosed && isTied && option.voteCount === maxVotes,
+      isLeading: option.voteCount === maxVotes && maxVotes > 0,
+    }));
+
+    return {
+      questionId: pollResult.question.question_id,
+      question: pollResult.question.prompt,
+      options: processedOptions,
+      totalVotes,
+    };
+  });
+}
+
+/**
+ * Builds the ranked-choice per-question view model from the results API payload
+ * @description The round-summary payload is untyped upstream, so only its presence is surfaced (`hasRoundSummary`);
+ * detailed round visualization is deferred to a placeholder banner.
+ * @param results - VoteResultsResponse from the results API, or null when not yet loaded
+ * @returns One RankedQuestionView per poll question, in API order
+ */
+export function buildRankedQuestionViews(results: VoteResultsResponse | null): RankedQuestionView[] {
+  if (!results?.poll_results?.length) return [];
+
+  return results.poll_results.map((pr) => {
+    // Choice text: prefer winner_info.poll_choices, fall back to question.choices.
+    const choiceTextById = new Map((pr.ranked_choice_winner_info?.poll_choices ?? pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
+
+    const choiceDistributions = (pr.ranked_choice_votes ?? []).map((rcv) => {
+      const totalRanked = rcv.rank_counts.reduce((sum, rc) => sum + rc.count, 0);
+      const rankCounts = rcv.rank_counts.map((rc) => ({
+        rank: rc.rank,
+        count: rc.count,
+        percentage: totalRanked > 0 ? Math.round((rc.count / totalRanked) * 100) : 0,
+      }));
+      return {
+        choiceId: rcv.choice_id,
+        choiceText: choiceTextById.get(rcv.choice_id) ?? rcv.choice_id,
+        totalRanked,
+        rankCounts,
+      };
+    });
+
+    return {
+      questionId: pr.question.question_id,
+      prompt: pr.question.prompt,
+      choiceDistributions,
+      hasRoundSummary: !!pr.irv_round_summary || !!pr.meek_stv_round_summary,
+    };
+  });
+}
+
+/**
+ * Merges the vote detail's comment prompts with the results payload's comment responses
+ * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
+ * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
+ * left-join in by `prompt_id` when present, sorted newest-first (pagination slices the already-sorted list, so page 1
+ * always shows the most recent comments). If the detail supplied no prompts (e.g. it failed and the list-vote
+ * fallback lacks them), degrade to the results payload's prompts that have responses.
+ * @param commentResults - `comment_results` from the results API
+ * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
+ * @returns One PollCommentResult per prompt, with responses sorted newest-first
+ */
+export function mergeCommentResults(commentResults: PollCommentResult[], detailPrompts: PollCommentPrompt[] | undefined): PollCommentResult[] {
+  if (!detailPrompts?.length) {
+    return commentResults.flatMap((cr) => (cr.responses.length > 0 ? [{ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }] : []));
+  }
+
+  const resultsByPromptId = new Map(commentResults.map((cr) => [cr.prompt.prompt_id, cr]));
+
+  return detailPrompts.map((prompt) => {
+    const result = resultsByPromptId.get(prompt.prompt_id);
+    return {
+      prompt,
+      responses: sortCommentResponsesByRecency(result?.responses ?? []),
+      total_responses: result?.total_responses,
+    };
+  });
+}
+
+/** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
+function computeResultPercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
+  if (apiPercentage > 0) return apiPercentage;
+  if (totalResponses <= 0) return 0;
+  return Math.round((voteCount / totalResponses) * 100);
 }
 
 /** A count is usable only when upstream sent a real non-negative number — strings/null/NaN are never coerced to 0. */

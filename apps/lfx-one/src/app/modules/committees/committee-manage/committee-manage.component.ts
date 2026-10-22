@@ -26,7 +26,24 @@ import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, concat, distinctUntilChanged, EMPTY, filter, finalize, from, map, merge, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import {
+  catchError,
+  concat,
+  concatMap,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  from,
+  map,
+  merge,
+  mergeMap,
+  Observable,
+  of,
+  switchMap,
+  take,
+  toArray,
+} from 'rxjs';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
@@ -126,6 +143,8 @@ export class CommitteeManageComponent {
       this.memberUpdates().toDelete.length > 0 ||
       this.memberUpdates().toInvite.length > 0
   );
+  // A missing/loading/failed child cannot safely reconcile pending changes after a partial save.
+  public readonly memberSaveDisabled = computed(() => this.submitting() || this.membersManager()?.mutationsDisabled() !== false);
 
   // UI labels
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
@@ -222,6 +241,11 @@ export class CommitteeManageComponent {
   }
 
   public onSubmit(): void {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (this.isEditMode() && !committeeUid) {
+      return;
+    }
+
     // Mark all form controls as touched to show validation errors
     Object.keys(this.form.controls).forEach((key) => {
       const control = this.form.get(key);
@@ -252,9 +276,9 @@ export class CommitteeManageComponent {
 
     const committeeData = this.cleanFormData(formValue);
 
-    if (this.isEditMode() && this.committeeId()) {
-      // Update existing committee
-      this.committeeService.updateCommittee(this.committeeId()!, committeeData).subscribe({
+    if (this.isEditMode() && committeeUid) {
+      // Update existing committee using its resolved UUID, never the route slug.
+      this.committeeService.updateCommittee(committeeUid, committeeData).subscribe({
         next: () => this.handleCommitteeSuccess('updated'),
         error: (err: HttpErrorResponse) => this.handleCommitteeError('update', err),
       });
@@ -268,6 +292,11 @@ export class CommitteeManageComponent {
   }
 
   public onDone(): void {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!committeeUid || this.memberSaveDisabled()) {
+      return;
+    }
+
     // Create mode - process member changes then navigate
     this.submitting.set(true);
 
@@ -281,7 +310,7 @@ export class CommitteeManageComponent {
     // flushMemberUpdates() wraps every operation in its own catchError, so this can only ever
     // emit a results array and complete — never error. Failures surface through the results
     // array (see showMemberOperationToast's partial-failure branch), not here.
-    this.flushMemberUpdates()
+    this.flushMemberUpdates(committeeUid)
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe((results) => {
         this.showMemberOperationToast(results);
@@ -304,7 +333,8 @@ export class CommitteeManageComponent {
 
   public onSubmitAll(): void {
     // Edit mode only - save the committee, then flush member/invite changes once it lands
-    if (!this.isEditMode()) {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!this.isEditMode() || !committeeUid || this.memberSaveDisabled()) {
       return;
     }
 
@@ -339,14 +369,14 @@ export class CommitteeManageComponent {
     const committeeData = this.cleanFormData(formValue);
 
     // Prepare committee update
-    const updateCommittee$ = this.committeeService.updateCommittee(this.committeeId()!, committeeData);
+    const updateCommittee$ = this.committeeService.updateCommittee(committeeUid, committeeData);
 
     // Invite creation snapshots committee_name/organization_required server-side at POST time, so
     // the committee update must land before invites flush — otherwise a race can bake stale
     // committee metadata into an invite. Sequence rather than run them in parallel.
     updateCommittee$
       .pipe(
-        switchMap((committee) => this.flushMemberUpdates().pipe(map((members) => ({ committee, members })))),
+        switchMap((committee) => this.flushMemberUpdates(committeeUid).pipe(map((members) => ({ committee, members })))),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
@@ -737,6 +767,23 @@ export class CommitteeManageComponent {
     }
   }
 
+  /** Resolve once per save so every write uses the same group UUID, even after a slug change. */
+  private resolveCommitteeWriteUid(): string | null {
+    const routeId = this.committeeId();
+    if (!this.isEditMode()) {
+      return routeId;
+    }
+    const committee = this.committee();
+    if (!routeId || !committee?.uid) {
+      return null;
+    }
+    const normalizedId = routeId.toLowerCase();
+    if (normalizedId !== committee.uid.toLowerCase() && normalizedId !== committee.sso_group_name?.toLowerCase()) {
+      return null;
+    }
+    return committee.uid;
+  }
+
   private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges) {
     const operations: ReturnType<typeof this.createMemberOperation>[] = [];
 
@@ -759,18 +806,39 @@ export class CommitteeManageComponent {
     // Add create operation if there are members to add
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
+        const { createOptions, pendingInviteUids = [], ...payload } = member;
         operations.push(
           this.createMemberOperation(
             'add',
             member.email,
-            () => this.committeeService.createCommitteeMember(committeeId, member),
+            () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
             (createdMember) => createdMember
-          )
+          ).pipe(switchMap((result) => this.revokeImportedInvites(committeeId, pendingInviteUids, result)))
         );
       }
     }
 
     return operations;
+  }
+
+  /** Cleanup is best-effort: a failed revoke must never put a successfully-created member back in toAdd. */
+  private revokeImportedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
+    if (!result.success || inviteUids.length === 0) {
+      return of(result);
+    }
+    return from(inviteUids).pipe(
+      concatMap((uid) =>
+        this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
+          map(() => true),
+          catchError((error: HttpErrorResponse) => {
+            console.error('CSV member import invitation cleanup failed', { status: error.status });
+            return of(false);
+          })
+        )
+      ),
+      toArray(),
+      map((outcomes) => ({ ...result, cleanupWarning: outcomes.some((success) => !success) }))
+    );
   }
 
   /**
@@ -779,8 +847,7 @@ export class CommitteeManageComponent {
    * (LFXV2-2606) — run with the same bounded concurrency as the immediate-send invite path
    * (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
    */
-  private flushMemberUpdates(): Observable<MemberOperationResult[]> {
-    const committeeId = this.committeeId()!;
+  private flushMemberUpdates(committeeId: string): Observable<MemberOperationResult[]> {
     const memberUpdates = this.memberUpdates();
 
     const memberOperations = this.buildMemberOperations(committeeId, memberUpdates);
@@ -857,6 +924,15 @@ export class CommitteeManageComponent {
         severity: 'error',
         summary: 'Operation Failed',
         detail: `Failed to ${failVerb} ${totalFailed} ${noun}`,
+      });
+    }
+    const cleanupWarnings = results.filter((result) => result.cleanupWarning).length;
+    if (cleanupWarnings > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Pending Invitation Cleanup',
+        detail: `${cleanupWarnings} added member(s) still have pending invitations that could not be revoked. Revoke them from the Pending tab.`,
+        life: 10000,
       });
     }
   }

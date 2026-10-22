@@ -28,10 +28,12 @@ import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedIn
 import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 /**
- * Adds negative keywords to one Microsoft Advertising, Reddit or X campaign from the Optimize tab.
+ * Adds negative keywords to one Google Ads, Microsoft Advertising, Reddit or X campaign from the
+ * Optimize tab.
  *
  * What it offers follows the campaign's platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`):
- * Microsoft Exact or Phrase, X Exact, Phrase or Broad (20 per request), Reddit Broad only. A Reddit
+ * Microsoft Exact or Phrase, Google and X Exact, Phrase or Broad (X 20 per request, Google a
+ * keyword text of at most 80 characters against the shared 100), Reddit Broad only. A Reddit
  * request must carry the `revision` of the ad group's targeting, so for Reddit the editor reads the
  * campaign's keyword targeting first, and again whenever a request for the campaign settles (the
  * write changes the fingerprint, and a 409 means it changed under us). While one is still in flight
@@ -67,16 +69,34 @@ export class CampaignNegativeKeywordsFormComponent {
   public readonly campaignName = input.required<string>();
   /** The campaign's ad platform. Decides the match types, the cap, the wording and whether a revision is read and sent. */
   public readonly platform = input<NegativeKeywordCampaignPlatform>('microsoft-ads');
+  /**
+   * Negative keywords the brief generated from the event page, to open this editor pre-filled with.
+   *
+   * A SUGGESTION and nothing more: it is seeded into the text box, the operator edits or deletes it
+   * there, and nothing is sent until they press the button. Seeded once, into an empty field, and
+   * only when this campaign has no earlier request — see `initSuggestedKeywords`.
+   */
+  public readonly suggestedKeywords = input<string[] | null>(null);
 
   public readonly cancelEdit = output<void>();
 
-  // Before the form: its validator reads the cap on construction.
+  // Before the form: its validator reads the caps on construction.
   protected readonly rules: Signal<CampaignNegativeKeywordPlatformRules> = computed(() => CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[this.platform()]);
   protected readonly maxKeywords: Signal<number> = computed(() => this.rules().maxKeywords);
+  /** The platform's own text limit, shorter than the shared one on Google Ads. */
+  private readonly maxTextLength: Signal<number> = computed(() => this.rules().maxTextLength);
   protected readonly matchTypeOptions: Signal<readonly CampaignNegativeKeywordMatchTypeOption[]> = computed(() => this.rules().matchTypes);
 
   public readonly form = new FormGroup({
-    keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator(() => this.maxKeywords())] }),
+    keywords: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [
+        campaignNegativeKeywordsValidator(
+          () => this.maxKeywords(),
+          () => this.maxTextLength()
+        ),
+      ],
+    }),
     // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic
     // where the platform offers it; Reddit offers Broad only (see `initPlatformDefaults`).
     matchType: new FormControl<CampaignNegativeKeywordMatchType>('Exact', { nonNullable: true, validators: [Validators.required] }),
@@ -129,10 +149,10 @@ export class CampaignNegativeKeywordsFormComponent {
   );
 
   /** How many keywords the text holds right now, for the live counter. */
-  protected readonly keywordCount: Signal<number> = computed(() => parseNegativeKeywordInput(this.keywordsText()).keywords.length);
+  protected readonly keywordCount: Signal<number> = computed(() => parseNegativeKeywordInput(this.keywordsText(), this.maxTextLength()).keywords.length);
   /** The lines that cannot be sent, shown once the field has been left or a submit was tried. */
   protected readonly lineProblems: Signal<NegativeKeywordInputProblem[]> = computed(() =>
-    this.keywordsTouched() ? parseNegativeKeywordInput(this.keywordsText()).problems : []
+    this.keywordsTouched() ? parseNegativeKeywordInput(this.keywordsText(), this.maxTextLength()).problems : []
   );
   /** The field-level message (none, too many), or `''`. Line problems are listed separately. */
   protected readonly keywordsError: Signal<string> = this.initKeywordsError();
@@ -155,6 +175,7 @@ export class CampaignNegativeKeywordsFormComponent {
 
   public constructor() {
     this.initPlatformDefaults();
+    this.initSuggestedKeywords();
     this.initRestoreUnsettledInput();
   }
 
@@ -172,7 +193,7 @@ export class CampaignNegativeKeywordsFormComponent {
     }
     const { keywords: text, matchType } = this.form.getRawValue();
     // The SAME list the outcomes are zipped onto: parsed once, sent as-is, rendered by index.
-    const keywords = parseNegativeKeywordInput(text).keywords;
+    const keywords = parseNegativeKeywordInput(text, this.maxTextLength()).keywords;
     const revision = this.revisionState().revision;
 
     this.negativeKeywordsService.submit(
@@ -195,6 +216,50 @@ export class CampaignNegativeKeywordsFormComponent {
         }
       }
     );
+  }
+
+  /**
+   * Opens the editor pre-filled with the brief's generated negative keywords, so the operator starts
+   * from a list instead of a blank box.
+   *
+   * Once, at the first non-empty suggestion this form sees — not in the constructor, where a signal
+   * input still holds its default because Angular binds inputs after construction — and only when
+   * the field is empty AND this campaign has no request on the shared service yet.
+   *
+   * Both conditions, not either. The empty check is what keeps a suggestion arriving late (the
+   * brief loading while the editor is already open) from overwriting what the operator has typed.
+   * The no-request check is what keeps it out of {@link initRestoreUnsettledInput}'s way: that
+   * restores the keywords of the last request which were refused or unconfirmed, and skips a
+   * non-empty field, so a form seeded before it ran would silently drop the ones the operator
+   * actually tried to send. The check is on the request EXISTING, not on it having left anything to
+   * restore: where every keyword of the last request was confirmed added, neither initializer fills
+   * the field and the editor opens blank for the rest of the session — which is the right default
+   * for a campaign whose exclusions are already in place, and never a loss, since the operator can
+   * still type. A campaign that has not been sent to is where a suggestion helps.
+   *
+   * Re-parsed against THIS platform's caps rather than pasted in: the generator bounds the list to
+   * Google Ads' 80 characters and 60 keywords because it cannot know which campaign it will be sent
+   * to, and X takes only 20 per request. Re-parsing and truncating here means the editor never opens
+   * holding a list its own validator would refuse.
+   */
+  private initSuggestedKeywords(): void {
+    toObservable(this.suggestedKeywords)
+      .pipe(
+        filter((suggested): suggested is string[] => Array.isArray(suggested) && suggested.length > 0),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe((suggested) => {
+        const control = this.form.controls.keywords;
+        if (control.value.trim() !== '' || this.request() !== null) {
+          return;
+        }
+        const keywords = parseNegativeKeywordInput(suggested.join('\n'), this.maxTextLength()).keywords.slice(0, this.maxKeywords());
+        if (keywords.length === 0) {
+          return;
+        }
+        control.setValue(keywords.join('\n'));
+      });
   }
 
   /**
@@ -236,8 +301,9 @@ export class CampaignNegativeKeywordsFormComponent {
   }
 
   /**
-   * Keeps the match type one the platform takes (Reddit: Broad only) and re-checks the keyword cap,
-   * which differs by platform. A match type restored from an earlier request is kept when valid.
+   * Keeps the match type one the platform takes (Reddit: Broad only) and re-checks the keyword text
+   * against the new platform's caps, both of which differ by platform (X takes 20 keywords; Google
+   * caps a keyword's text at 80). A match type restored from an earlier request is kept when valid.
    */
   private initPlatformDefaults(): void {
     toObservable(this.rules)

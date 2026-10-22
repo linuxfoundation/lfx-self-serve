@@ -1467,8 +1467,8 @@
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
               [redditAssetUploadEnabled]="briefCampaignsRedditAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
-              [biddingCapabilityRead]="briefCampaignsBiddingRead()"
-              (retryBiddingCapability)="retryBiddingCapability()"
+              [createCapabilityRead]="briefCampaignsCapabilityRead()"
+              (retryCreateCapabilities)="retryCreateCapabilities()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>
@@ -1488,7 +1488,8 @@
               [statusToggleEnabled]="briefCampaignsToggleEnabled()"
               (retryCampaigns)="retryBriefCampaigns()"
               [projectSlug]="activeFoundationSlug()"
-              [briefId]="briefPersistence().briefId ?? ''" />
+              [briefId]="briefPersistence().briefId ?? ''"
+              [suggestedNegativeKeywords]="briefOutput()?.negativeKeywords ?? null" />
           </div>
         }
       }

@@ -110,6 +110,46 @@ describe('FilterPillsComponent', () => {
     expect(pill('kubecon').className).toContain('bg-gray-100');
   });
 
+  // An option's color swaps the blue selected / grey idle look for its own tint; options without one keep the default.
+  describe.each([
+    { color: 'green', selected: 'bg-emerald-600', idle: 'bg-emerald-50' },
+    { color: 'red', selected: 'bg-red-600', idle: 'bg-red-50' },
+    { color: 'purple', selected: 'bg-purple-600', idle: 'bg-purple-50' },
+    { color: 'blue', selected: 'bg-blue-600', idle: 'bg-blue-50' },
+  ] as const)('with a $color option', ({ color, selected, idle }) => {
+    beforeEach(async () => {
+      fixture.componentRef.setInput('options', [
+        { id: 'plain', label: 'Plain' },
+        { id: 'tinted', label: 'Tinted', color },
+      ]);
+      fixture.componentRef.setInput('selectedFilter', '');
+      await fixture.whenStable();
+    });
+
+    it('tints the idle pill with its color', () => {
+      expect(pill('tinted').className).toContain(idle);
+      expect(pill('tinted').className).not.toContain(selected);
+      expect(pill('tinted').className).not.toContain('bg-gray-100');
+    });
+
+    it('fills the selected pill with its color instead of the default blue', async () => {
+      fixture.componentRef.setInput('selectedFilter', 'tinted');
+      await fixture.whenStable();
+
+      expect(pill('tinted').className).toContain(selected);
+      expect(pill('tinted').className).not.toContain('bg-blue-500');
+    });
+
+    it('leaves an uncolored sibling on the default look', async () => {
+      expect(pill('plain').className).toContain('bg-gray-100');
+
+      fixture.componentRef.setInput('selectedFilter', 'plain');
+      await fixture.whenStable();
+
+      expect(pill('plain').className).toContain('bg-blue-500');
+    });
+  });
+
   it('renders the track variant as one grey track with the selected option as a white chip', async () => {
     fixture.componentRef.setInput('variant', 'track');
     fixture.componentRef.setInput('ariaLabel', 'Group type');

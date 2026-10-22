@@ -2,25 +2,36 @@
 // SPDX-License-Identifier: MIT
 
 import { ReplyError } from 'ioredis';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ACCESS_TOKEN = 'eyJ-access-token-secret';
 const REFRESH_TOKEN = 'v1.refresh-token-secret';
 const RAW_KEY = 'lfx:session:v1:alice-session-id';
 
+let serverLogger: typeof import('./server-logger').serverLogger;
+let reqSerializer: typeof import('./server-logger').reqSerializer;
+
+// All cases use the same production configuration. Load the real logger and its OpenTelemetry
+// graph once; only the cold import needs extra time, not each synchronous logging assertion.
+beforeAll(async () => {
+  vi.stubEnv('NODE_ENV', 'production');
+  vi.stubEnv('LOG_LEVEL', 'info');
+  try {
+    ({ serverLogger, reqSerializer } = await import('./server-logger'));
+  } finally {
+    vi.unstubAllEnvs();
+  }
+}, 20_000);
+
 /**
  * Drives the real serverLogger (production stream → stdout) end to end, so the assertion is on
- * the emitted line rather than on a serializer called in isolation. Each test re-imports the logger
- * (and its OpenTelemetry graph) after `resetModules`; a cold first import can approach vitest's 5s
- * default, hence the longer timeout.
+ * the emitted line rather than on a serializer called in isolation. Each test captures its own
+ * stdout writes without replacing the production logger.
  */
-describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
+describe('serverLogger credential scrubbing', () => {
   let lines: string[];
 
   beforeEach(() => {
-    vi.resetModules();
-    vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('LOG_LEVEL', 'info');
     lines = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
       lines.push(chunk.toString());
@@ -33,8 +44,7 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     vi.unstubAllEnvs();
   });
 
-  it('never emits a Valkey ReplyError command args or a nested session token', async () => {
-    const { serverLogger } = await import('./server-logger');
+  it('never emits a Valkey ReplyError command args or a nested session token', () => {
     const err = new ReplyError("OOM command not allowed when used memory > 'maxmemory'.");
     err.command = { name: 'set', args: [RAW_KEY, JSON.stringify({ data: { access_token: ACCESS_TOKEN, refresh_token: REFRESH_TOKEN } }), 'EX', 3600] };
 
@@ -56,9 +66,7 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     expect(first.data.cache_key).toBe('lfx:session:v1:***');
   });
 
-  it('scrubs child-logger bindings, including those of a grandchild', async () => {
-    const { serverLogger } = await import('./server-logger');
-
+  it('scrubs child-logger bindings, including those of a grandchild', () => {
     serverLogger
       .child({ session: { access_token: ACCESS_TOKEN } })
       .child({ meta: { command: { name: 'set', args: [RAW_KEY, REFRESH_TOKEN] } } })
@@ -72,8 +80,7 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     expect(JSON.parse(lines[0]).meta.command).toEqual({ name: 'set' });
   });
 
-  it('logs a throwing top-level getter as [Unserializable] instead of throwing', async () => {
-    const { serverLogger } = await import('./server-logger');
+  it('logs a throwing top-level getter as [Unserializable] instead of throwing', () => {
     const throwing = (extra: Record<string, unknown>) =>
       Object.defineProperty(extra, 'boom', {
         enumerable: true,
@@ -90,8 +97,7 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     expect(JSON.parse(lines[1])).toMatchObject({ ok: 2, boom: '[Unserializable]', msg: 'child' });
   });
 
-  it('logs a marker instead of throwing when listing a log object or child bindings throws', async () => {
-    const { serverLogger } = await import('./server-logger');
+  it('logs a marker instead of throwing when listing a log object or child bindings throws', () => {
     const unlistable = () =>
       new Proxy(
         { access_token: 'tok-unlistable' },
@@ -112,9 +118,8 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
   });
 });
 
-describe('reqSerializer', { timeout: 20_000 }, () => {
-  it('redacts a meeting passcode and an invite token from the logged request URL', async () => {
-    const { reqSerializer } = await import('./server-logger');
+describe('reqSerializer', () => {
+  it('redacts a meeting passcode and an invite token from the logged request URL', () => {
     const req = (originalUrl: string) => ({ method: 'GET', originalUrl, headers: {}, socket: {} }) as unknown as Parameters<typeof reqSerializer>[0];
 
     expect(reqSerializer(req('/meetings/m-1?password=SUPER_SECRET&tab=a')).url).toBe('/meetings/m-1?password=redacted&tab=a');

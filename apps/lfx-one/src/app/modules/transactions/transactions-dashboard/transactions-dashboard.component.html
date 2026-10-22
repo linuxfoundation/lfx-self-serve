@@ -4,10 +4,7 @@
 <div [class]="embedded ? 'w-full' : 'container mx-auto px-4 sm:px-6 lg:px-8'" data-testid="transactions-dashboard">
   <!-- Page Header — suppressed when embedded in the Profile shell, which owns the header -->
   @if (!embedded) {
-    <div class="mb-6">
-      <h1 class="font-display font-light text-2xl" data-testid="transactions-title">My Transactions</h1>
-      <p class="mt-1 text-sm text-gray-500" data-testid="transactions-subtitle">{{ subtitle }}</p>
-    </div>
+    <lfx-page-header class="mb-6" title="My Transactions" [description]="subtitle" titleTestId="transactions-title" descriptionTestId="transactions-subtitle" />
   }
 
   <!-- Tab switcher -->

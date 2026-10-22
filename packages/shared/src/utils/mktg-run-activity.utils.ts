@@ -37,9 +37,12 @@ import {
   MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS,
   MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
+import { LINKEDIN_QUESTIONS_CONTRACT } from '../constants/linkedin-post.constants';
 import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.constants';
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
+import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
+import { isMktgReasoningEvent } from './mktg-session-event.utils';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -183,7 +186,7 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
  * feed, and ids are positional, so they stay stable while the run appends.
  */
 export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
-  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null);
+  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null && !isMktgReasoningEvent(event));
 
   const finishedTasks = new Set<string>();
   for (const event of events) {
@@ -202,8 +205,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   /**
    * The run's own writing and first-check sentences: the framework's, until
    * the run shows it is the Brand Kit's (its logo tool, its finalize tool or
-   * its questions turn) or the Boilerplates' (its finalize tool or its
-   * questions turn). The first agent the run shows is the one it stays.
+   * its questions turn), the Boilerplates' or the FAQ's (its finalize tool or
+   * its questions turn). The first agent the run shows is the one it stays.
    */
   let runLabels: { checking: string; writing: string } = { checking: MKTG_RUN_ACTIVITY_LABELS.checking, writing: MKTG_RUN_ACTIVITY_LABELS.writing };
   let identified = false;
@@ -215,6 +218,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   };
   const identifyBrandKit = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit, MKTG_RUN_ACTIVITY_LABELS.writingBrandKit);
   const identifyBoilerplates = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBoilerplates, MKTG_RUN_ACTIVITY_LABELS.writingBoilerplates);
+  const identifyFaq = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingFaq, MKTG_RUN_ACTIVITY_LABELS.writingFaq);
+  const identifyLinkedin = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingLinkedinPost, MKTG_RUN_ACTIVITY_LABELS.writingLinkedinPost);
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
 
@@ -263,6 +268,10 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
             identifyBrandKit();
           } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates) {
             identifyBoilerplates();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq) {
+            identifyFaq();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost) {
+            identifyLinkedin();
           }
           if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
             firstFinalizeAfterQuestions = createdAt;
@@ -287,6 +296,10 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
         identifyBrandKit();
       } else if (content.includes(BOILERPLATES_QUESTIONS_CONTRACT_ID)) {
         identifyBoilerplates();
+      } else if (content.includes(FAQ_QUESTIONS_CONTRACT_ID)) {
+        identifyFaq();
+      } else if (content.includes(LINKEDIN_QUESTIONS_CONTRACT)) {
+        identifyLinkedin();
       }
     }
   }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
+import { DATE_PIPE_DEFAULT_OPTIONS, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -12,7 +12,7 @@ import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, Mk
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentsComponent } from './mktg-documents.component';
 
@@ -34,6 +34,7 @@ describe('MktgDocumentsComponent', () => {
       commentCount: 0,
       latest: false,
       author: null,
+      approval: null,
       ...overrides,
     };
   }
@@ -43,6 +44,7 @@ describe('MktgDocumentsComponent', () => {
     type: BRAND_KIT,
     documentId: 'living',
     revisions: [revision(2, { latest: true }), revision(1, { origin: 'legacy' })],
+    approvedCurrent: null,
   };
 
   function documentsResponse(): MktgDocumentsResponse {
@@ -52,7 +54,17 @@ describe('MktgDocumentsComponent', () => {
         type,
         documents:
           type.agentKey === 'brand-kit'
-            ? [{ agentKey: 'brand-kit', documentId: 'living', revisionCount: 2, latestRevisionId: detail.revisions[0].id, updatedAt: null, createdAt: null }]
+            ? [
+                {
+                  agentKey: 'brand-kit',
+                  documentId: 'living',
+                  revisionCount: 2,
+                  latestRevisionId: detail.revisions[0].id,
+                  approvedCurrent: null,
+                  updatedAt: null,
+                  createdAt: null,
+                },
+              ]
             : [],
       })),
     };
@@ -66,7 +78,7 @@ describe('MktgDocumentsComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
-  async function render(url = '/'): Promise<void> {
+  async function render(url = '/?type=brand-kit'): Promise<void> {
     await TestBed.inject(Router).navigateByUrl(url);
     fixture = TestBed.createComponent(MktgDocumentsComponent);
     await fixture.whenStable();
@@ -74,6 +86,8 @@ describe('MktgDocumentsComponent', () => {
   }
 
   beforeEach(async () => {
+    // jsdom has no layout; non-layout cases use a desktop container width.
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1024);
     store = {
       listDocuments: vi.fn(() => of(documentsResponse())),
       getDocument: vi.fn(() => of(detail)),
@@ -93,10 +107,99 @@ describe('MktgDocumentsComponent', () => {
     }).compileComponents();
   });
 
-  it('lists the living documents in run order with their revision state, and the runs', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('opens All documents by default as the fifth Kit tab, without fetching revision detail', async () => {
+    await render('/');
+    expect(query('mktg-documents-all')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-documents-nav-all')?.getAttribute('aria-current')).toBe('page');
+    expect(query('mktg-documents-nav-all')?.classList.contains('border-blue-600')).toBe(true);
+    expect(query('mktg-documents-nav-all')?.classList.contains('font-semibold')).toBe(true);
+    expect(query('mktg-kit-tab-documents')).not.toBeNull();
+    expect(query('mktg-documents-project-title')?.textContent).toBe(PROJECT.name);
+    expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);
+    expect(query('mktg-documents-title')?.tagName).toBe('H2');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-documents-page"]')?.classList.contains('max-w-screen-2xl')).toBe(true);
+    expect(query('mktg-breadcrumb-current')?.textContent).toBe('Documents');
+    expect(store.getDocument).not.toHaveBeenCalled();
+  });
+
+  it('keeps type filters scoped to the active project after an address-only project switch', async () => {
+    await render('/?project=previous&type=brand-kit');
+    activeContext.set({ ...PROJECT, slug: 'current' });
+    TestBed.inject(Location).replaceState('/?project=current&type=brand-kit');
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toContain('project=previous');
+    expect(query('mktg-documents-nav-faq')?.getAttribute('href')).toContain('project=current');
+    query('mktg-documents-nav-faq')?.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toContain('project=current');
+    expect(TestBed.inject(Router).url).toContain('type=faq');
+  });
+
+  it('refreshes an empty listing on type selection and again on re-entry', async () => {
+    store.listDocuments.mockReturnValueOnce(of({ project: PROJECT.uid, groups: [] }));
+    await render('/');
+    expect(query('mktg-documents-empty-all')).not.toBeNull();
+    await TestBed.inject(Router).navigateByUrl('/?type=brand-kit');
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-revisions')?.querySelectorAll('th[scope="col"]')).toHaveLength(5);
+    fixture.destroy();
+    await render();
+    expect(store.listDocuments).toHaveBeenCalledTimes(3);
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+  });
+
+  it('scrolls after detail renders below the 800px content-box breakpoint, not at its boundary', async () => {
+    await render('/');
+    const pendingDetail = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValueOnce(pendingDetail);
+    const panel = fixture.nativeElement.querySelector('[aria-label="Documents and revisions"]');
+    const container = query('mktg-documents-page');
+    if (!container) throw new Error('Documents container must render');
+    container.style.paddingLeft = '24px';
+    container.style.paddingRight = '24px';
+    const width = vi.spyOn(container, 'clientWidth', 'get').mockReturnValue(847);
+    const scroll = vi.fn();
+    Object.defineProperty(panel, 'scrollIntoView', { configurable: true, value: scroll });
+    try {
+      vi.stubGlobal('innerWidth', 1024);
+      await TestBed.inject(Router).navigateByUrl('/?type=brand-kit');
+      await fixture.whenStable();
+      expect(scroll).not.toHaveBeenCalled();
+      expect(query('mktg-documents-revisions')).toBeNull();
+      pendingDetail.next(detail);
+      await fixture.whenStable();
+      expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'start' });
+      expect(query('mktg-documents-revisions')).not.toBeNull();
+      width.mockReturnValue(848);
+      await TestBed.inject(Router).navigateByUrl('/?type=faq');
+      await fixture.whenStable();
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      width.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('uses the projectName fallback as the single source for unresolved project copy', async () => {
+    activeContext.set(null);
+    await render('/');
+    expect(query('mktg-documents-project-title')?.textContent).toBe('Project');
+    expect(query('mktg-documents-page')?.textContent).toContain('stored for Project, with its revisions.');
+    expect(query('mktg-documents-page')?.textContent).not.toContain('this project');
+  });
+
+  it('lists the documents grouped and ordered as the Kit families, with their revision state', async () => {
     await render();
 
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('1 · Brand Kit');
+    expect(query('mktg-documents-nav-all')?.classList.contains('border-gray-200')).toBe(true);
+    expect(query('mktg-documents-nav-all')?.classList.contains('font-semibold')).toBe(false);
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('1 ·');
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('Not generated yet');
     expect(query('mktg-documents-nav-linkedin-post')?.textContent).toContain('No runs yet');
@@ -202,6 +305,37 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
     expect(query('mktg-documents-empty-living')).not.toBeNull();
     expect(query('mktg-documents-document-subtitle')).toBeNull();
+    expect(query('mktg-documents-notice')).toBeNull();
+  });
+
+  it('cancels a pre-restore type refetch and reads the committed current pointer instead', async () => {
+    const restore = new Subject<unknown>();
+    const stale = new Subject<MktgDocumentsResponse>();
+    const fresh = new Subject<MktgDocumentsResponse>();
+    store.restoreRevision.mockReturnValue(restore);
+    store.listDocuments.mockReturnValueOnce(of(documentsResponse())).mockReturnValueOnce(stale).mockReturnValueOnce(fresh);
+    await render();
+    query('mktg-documents-restore-1')?.click();
+    await TestBed.inject(Router).navigateByUrl('/?type=foundation-message');
+    await fixture.whenStable();
+    expect(stale.observed).toBe(true);
+    restore.next({ ...detail, revision: revision(1, { latest: true }) });
+    restore.complete();
+    expect(stale.observed).toBe(false);
+    expect(fresh.observed).toBe(true);
+    stale.next(documentsResponse());
+    await fixture.whenStable();
+    expect(query('mktg-documents-loading')).not.toBeNull();
+    const committed = documentsResponse();
+    const document = committed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0];
+    if (!document) throw new Error('Synthetic brand kit must exist');
+    document.latestRevisionId = detail.revisions[1].id;
+    document.currentRevisionNumber = 1;
+    fresh.next(committed);
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(3);
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
+    expect(query('mktg-documents-empty-living')).not.toBeNull();
     expect(query('mktg-documents-notice')).toBeNull();
   });
 

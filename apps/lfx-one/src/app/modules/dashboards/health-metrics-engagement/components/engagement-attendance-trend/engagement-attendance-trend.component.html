@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="engagement-attendance-trend">
+  <!-- The window is fixed, so it is named here rather than following the period pill. -->
+  <div class="flex items-center justify-end">
+    <span class="text-[13px] text-gray-500" data-testid="engagement-attendance-trend-window">Last 12 months</span>
+  </div>
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Attendance trend unavailable"
+      subtitle="We could not load the attendance trend for this foundation. Refresh the page to try again."
+      data-testid="engagement-attendance-trend-error" />
+  } @else if (loading()) {
+    <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="engagement-attendance-trend-loading" aria-hidden="true" />
+  } @else if (summary().state === 'empty') {
+    <lfx-empty-state
+      icon="fa-light fa-chart-line"
+      title="No meeting attendance in the last 12 months"
+      [subtitle]="'A month appears here once it holds ' + minMeetings + ' or more meetings with invited attendees.'"
+      data-testid="engagement-attendance-trend-empty" />
+  } @else if (summary().state === 'insufficient') {
+    <lfx-empty-state
+      icon="fa-light fa-chart-line"
+      title="Not enough data to chart a trend"
+      [subtitle]="'Only one of the last 12 months has attendance from ' + minMeetings + ' or more meetings.'"
+      data-testid="engagement-attendance-trend-insufficient" />
+  } @else {
+    <!-- The design's hero: latest value with its delta inline, caption below, then label-over-value side stats. -->
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
+      <div class="flex flex-col gap-2" data-testid="engagement-attendance-trend-hero">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-latest">{{ summary().latestLabel }}</span>
+          <span
+            class="text-[13px] font-medium tabular-nums"
+            [class.text-emerald-600]="summary().deltaDirection === 'up'"
+            [class.text-red-600]="summary().deltaDirection === 'down'"
+            [class.text-gray-400]="summary().deltaDirection === 'neutral'"
+            data-testid="engagement-attendance-trend-delta"
+            >{{ summary().deltaLabel }}<span class="sr-only"> vs previous month</span></span
+          >
+        </div>
+        <span class="text-[12.5px] text-gray-500" data-testid="engagement-attendance-trend-caption">{{ summary().latestCaption }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="engagement-attendance-trend-side">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-500">Change over range</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-change">
+            {{ summary().rangeChangeLabel }}
+          </dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-500">Range high</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-high">{{ summary().rangeHighLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-500">Range low</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-low">{{ summary().rangeLowLabel }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (summary().isLowConfidence) {
+      <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="engagement-attendance-trend-low-confidence">
+        <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+        {{ summary().lowConfidenceNote }}
+      </p>
+    }
+
+    <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="engagement-attendance-trend-chart">
+      <lfx-chart type="line" [data]="chartData()" [options]="chartOptions" height="100%" />
+    </div>
+    <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+    <table class="sr-only" data-testid="engagement-attendance-trend-table">
+      <caption>
+        All-meeting attendance by month, oldest first
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Month</th>
+          <th scope="col">Attendance</th>
+          <th scope="col">Meetings</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (point of points(); track point.monthStartDate) {
+          <tr>
+            <th scope="row">{{ point.monthLabel }}</th>
+            <td>{{ point.rateLabel }}</td>
+            <td>{{ point.meetingsLabel }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>

@@ -66,7 +66,7 @@
           <th scope="col"><span class="text-xs font-medium text-gray-500">Person</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last attended (all time)</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last attended</span></th>
         </tr>
       </ng-template>
 
@@ -117,9 +117,8 @@
       </ng-template>
     </lfx-table>
 
-    <p class="flex items-center gap-2 border-t border-slate-100 pt-3 text-[12px] text-gray-400" data-testid="non-members-people-provisional">
-      <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
-      {{ provisionalNote }}
-    </p>
+    <lfx-health-metrics-footnote [parts]="footnote" data-testid="non-members-people-provisional">
+      <span class="block" data-testid="non-members-people-all-time">{{ allTimeNote }}</span>
+    </lfx-health-metrics-footnote>
   }
 </div>
