@@ -214,9 +214,15 @@ AI_API_KEY=your-ai-api-key
 
 ### Model Configuration
 
+The model name is tied to which LiteLLM instance `AI_PROXY_URL` names. The v2 instances
+(`litellm.*.v2.cluster.linuxfound.info`) route on the `bedrock/`-prefixed name; the retired OCI
+instance routed on the bare inference profile id and rejected the prefixed one with a `400`.
+Moving the host without moving the name — or the reverse — breaks generation while auth keeps
+succeeding, so the two belong in the same change.
+
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
