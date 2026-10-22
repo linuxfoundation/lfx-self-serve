@@ -42,6 +42,7 @@ export * from './badge.utils';
 export * from './button.utils';
 export * from './marketing.utils';
 export * from './mktg-intake.utils';
+export * from './mktg-intake-validation.utils';
 export * from './marketing-impact.utils';
 export * from './flywheel.utils';
 export * from './rewards.utils';

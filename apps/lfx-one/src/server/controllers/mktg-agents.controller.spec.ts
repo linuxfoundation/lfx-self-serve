@@ -42,7 +42,7 @@ const icpMocks = vi.hoisted(() => ({
   getResult: vi.fn(),
 }));
 const validatorMocks = vi.hoisted(() => ({
-  validateIcpIntakeAnswers: vi.fn((): { valid: boolean; errors: string[] } => ({ valid: true, errors: [] })),
+  validateIcpIntakeAnswers: vi.fn<(answers: unknown) => { valid: boolean; errors: string[] }>(),
 }));
 const foundationMessageMocks = vi.hoisted(() => ({
   getStoredFoundationMessage: vi.fn(),
@@ -168,7 +168,14 @@ vi.mock('../utils/auth-helper', () => authMocks);
 vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
-import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_AGENT_INTAKES, MKTG_CHAT_MESSAGE_MAX_CHARS } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
+  MKTG_AGENT_INTAKES,
+  MKTG_CHAT_MESSAGE_MAX_CHARS,
+} from '@lfx-one/shared/constants';
+import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../../../../../packages/shared/src/constants/mktg-intake.constants';
+import { validateIcpIntakeAnswers as validateRealIcpIntakeAnswers } from '../../../../../packages/shared/src/utils/icp.utils';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
@@ -252,7 +259,7 @@ describe('MktgAgentsController', () => {
     runMocks.resumeAfterQuestions.mockResolvedValue(undefined);
     guildMocks.createSession.mockReset().mockResolvedValue('synthetic-chat-session');
     guildMocks.sendFollowUp.mockReset().mockResolvedValue(undefined);
-    validatorMocks.validateIcpIntakeAnswers.mockReturnValue({ valid: true, errors: [] });
+    validatorMocks.validateIcpIntakeAnswers.mockImplementation(validateRealIcpIntakeAnswers);
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
@@ -384,6 +391,100 @@ describe('MktgAgentsController', () => {
       // member-360 is form-only, so the request stops at the later agent gate —
       // proof the message cleared the size gate.
       expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'agentId' })] });
+    });
+  });
+
+  describe('intake answer size caps', () => {
+    const frameworkAnswers = {
+      project_name: 'Synthetic Project',
+      website_url: 'https://project.example',
+      messaging_framework: '{"mf":{"positioning":"Synthetic positioning"}}',
+    };
+    const cases = [
+      { agentId: 'icp', method: 'generateIcp', adapter: icpMocks, answers: icpAnswers() },
+      { agentId: 'brand-kit', method: 'generateBrandKit', adapter: brandKitMocks, answers: frameworkAnswers },
+      {
+        agentId: 'foundation-setup',
+        method: 'generateFoundationMessage',
+        adapter: foundationMessageMocks,
+        answers: { project_name: 'Synthetic Project', website_url: 'https://project.example' },
+      },
+      { agentId: 'boilerplates', method: 'generateBoilerplates', adapter: boilerplatesMocks, answers: frameworkAnswers },
+      { agentId: 'faq', method: 'generateFaq', adapter: faqMocks, answers: frameworkAnswers },
+    ] as const;
+
+    function atLimit(key: string, maxChars: number): string {
+      if (key === 'messaging_framework') {
+        const prefix = '{"mf":{"positioning":"';
+        const suffix = '"}}';
+        return prefix + 'x'.repeat(maxChars - prefix.length - suffix.length) + suffix;
+      }
+      if (key === 'links') {
+        return ('https://source.example/'.padEnd(MKTG_INTAKE_URL_MAX_CHARS, 'x') + '\r\n').repeat(FOUNDATION_MESSAGE_MAX_OTHER_LINKS);
+      }
+      if (key.endsWith('_url')) {
+        return 'https://source.example/'.padEnd(maxChars, 'x');
+      }
+      return 'x'.repeat(maxChars);
+    }
+
+    describe.each(cases)('$agentId generate endpoint', ({ agentId, method, adapter, answers }) => {
+      const endpoint = agentId === 'foundation-setup' ? 'foundation-message' : agentId;
+      const path = `/api/mktg-agents/${endpoint}/generate`;
+
+      it.each(Object.entries(MKTG_INTAKE_ANSWER_LIMITS[agentId]))('accepts %s exactly at its %i-character limit', async (key, maxChars) => {
+        const value = atLimit(key, maxChars);
+        expect(value.length).toBe(maxChars);
+        adapter.startGeneration.mockResolvedValue(
+          agentId === 'icp' ? { sessionId: 'synthetic-intake-session', readme: { fetched: false, skipReason: 'no-readme' } } : 'synthetic-intake-session'
+        );
+        const res = buildRes();
+
+        await controller[method](buildIcpReq(path, { answers: { ...answers, [key]: value } }), res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(adapter.startGeneration).toHaveBeenCalledTimes(1);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'synthetic-intake-session' }));
+      });
+
+      it.each(Object.entries(MKTG_INTAKE_ANSWER_LIMITS[agentId]))('rejects %s over its %i-character limit before generation', async (key, maxChars) => {
+        const res = buildRes();
+
+        await controller[method](buildIcpReq(path, { answers: { ...answers, [key]: atLimit(key, maxChars) + 'x' } }), res, next);
+
+        expect(next.mock.calls[0]?.[0]).toMatchObject({
+          statusCode: 400,
+          validationErrors: [{ field: 'answers', message: `answers.${key} must be at most ${maxChars} characters` }],
+        });
+        for (const candidate of cases) {
+          expect(candidate.adapter.startGeneration).not.toHaveBeenCalled();
+        }
+        expect(guildMocks.createSession).not.toHaveBeenCalled();
+        expect(guildMocks.sendFollowUp).not.toHaveBeenCalled();
+        expect(runMocks.resolveProject).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+      });
+    });
+
+    it('rejects an oversized individual URL even when the links answer is below its aggregate cap', async () => {
+      await controller.generateFoundationMessage(
+        buildIcpReq('/api/mktg-agents/foundation-message/generate', {
+          answers: {
+            project_name: 'Synthetic Project',
+            website_url: 'https://project.example',
+            links: 'https://source.example/'.padEnd(MKTG_INTAKE_URL_MAX_CHARS + 1, 'x'),
+          },
+        }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0]?.[0]).toMatchObject({
+        statusCode: 400,
+        validationErrors: [{ field: 'answers', message: `answers.links URLs must be at most ${MKTG_INTAKE_URL_MAX_CHARS} characters each` }],
+      });
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
     });
   });
 
