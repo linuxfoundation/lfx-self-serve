@@ -260,6 +260,8 @@ export class MktgAgentRunComponent {
   protected readonly linkRows = signal<Record<string, string[]>>({});
   /** Ever-increasing counter behind the row ids, so a removed row's id is never reused. */
   private linkRowSerial = 0;
+  /** Never reuse a restored row ID: mounted tag controls are keyed by it. */
+  private restoredDocumentSerial = 0;
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
@@ -966,9 +968,9 @@ export class MktgAgentRunComponent {
   private restoreInputs(request: MktgGenerateRequest, prefix: string): void {
     this.intakeForm.patchValue(request.answers);
     this.documents.set(
-      (request.documents ?? []).map((document, index) => ({
+      (request.documents ?? []).map((document) => ({
         ...document,
-        id: `${prefix}-document-${index}`,
+        id: `${prefix}-document-${++this.restoredDocumentSerial}`,
         read: document.kind === 'file',
         words: (document.text ?? '').split(/\s+/).filter(Boolean).length,
         truncated: false,

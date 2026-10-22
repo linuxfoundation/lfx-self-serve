@@ -291,6 +291,49 @@ describe('MktgAgentRunComponent', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('uses fresh restored IDs so mounted tag controls match each project’s submitted document', async () => {
+    const intake = Object.values(MKTG_AGENT_INTAKES).find((entry) => (entry.documents?.tags?.length ?? 0) >= 2);
+    const tags = intake?.documents?.tags;
+    if (!intake || !tags) throw new Error('Missing catalog tagged-intake fixture');
+    await configure('browser', intake.agentId);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    for (const [context, tag] of [
+      [PROJECT_1, tags[0].value],
+      [PROJECT_2, tags[1].value],
+    ] as const) {
+      attempts.save({
+        request: {
+          agentId: intake.agentId,
+          projectUid: context.uid,
+          intake,
+          answers: {},
+          documents: [{ kind: 'link', title: 'Synthetic tagged source', url: 'https://example.org/synthetic-source', tag }],
+        },
+        state: 'draft',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    const seen = new Set<string>();
+    for (const [context, tag] of [
+      [PROJECT_1, tags[0].value],
+      [PROJECT_2, tags[1].value],
+      [PROJECT_1, tags[0].value],
+    ] as const) {
+      activeContext.set(context);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const document = component['documents']()[0];
+      const section = component['documentsSection']();
+      if (!document || !section) throw new Error('Missing restored tagged document');
+      expect(seen.has(document.id)).toBe(false);
+      seen.add(document.id);
+      expect(section['tagsForm'].controls[document.id].value).toBe(tag);
+      expect(document.tag).toBe(tag);
+      expect(component['submittedDocuments']()[0]?.tag).toBe(tag);
+    }
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   describe('intake-only asset handoff', () => {
     const target = Object.values(MKTG_AGENT_INTAKES).find((intake) => intake.regenerateViaGenerate && !intake.endpoints.answers);
     if (!target) {
