@@ -168,7 +168,8 @@ export class MktgAgentRunService {
     } else if (request.intake.regenerateViaGenerate) {
       attempt$ = this.resubmitRun(request, stored);
     } else if (request.newRun) {
-      attempt$ = this.startRun(request);
+      // No registered generic intake reaches this branch. Do not append a reset v1 after an existing vN.
+      return throwError(() => new Error('This agent does not support a fresh version from an existing run.'));
     } else {
       attempt$ = this.followUp(request, stored);
     }

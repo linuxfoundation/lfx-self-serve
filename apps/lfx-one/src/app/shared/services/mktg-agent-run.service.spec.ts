@@ -142,13 +142,15 @@ describe('MktgAgentRunService', () => {
     expect(error).toHaveBeenCalledWith(failure);
   });
 
-  it('starts a fresh session for explicit newRun even if the intake normally follows up', () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
-    const subscription = service.generate({ ...generateRequest(), newRun: true }).subscribe();
-    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, expect.objectContaining({ answers: ANSWERS }));
-    expect(httpPost.mock.calls.some(([url]) => url === '/api/mktg-agents/chat')).toBe(false);
-    expect(httpPost.mock.calls[0][1]).not.toHaveProperty('priorVersion');
-    subscription.unsubscribe();
+  it('rejects an unsupported newRun v0 path without a POST or corrupting existing history', () => {
+    const original = JSON.stringify(storedV1Run());
+    window.localStorage.setItem(STORAGE_KEY, original);
+    const error = vi.fn();
+    service.generate({ ...generateRequest(), newRun: true }).subscribe({ error });
+    expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'This agent does not support a fresh version from an existing run.' }));
+    expect(httpPost).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(original);
+    expect(TestBed.inject(MktgRunAttemptService).load('proj-1', 'brand-kit')).toBeNull();
   });
 
   it.each(['draft', 'failed'] as const)('restores a %s pending after reload without any POST', (state) => {
