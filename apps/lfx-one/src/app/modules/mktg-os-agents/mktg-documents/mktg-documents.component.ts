@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
+import { DatePipe, I18nPluralPipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -57,7 +57,17 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
   // Layout queries use the padded inner page's content width, not this routed host.
   // The 800px switch leaves headroom for classic scrollbars.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-documents-width' },
-  imports: [DatePipe, NgClass, RouterLink, MessageComponent, MktgBreadcrumbComponent, MktgKitTabsComponent, MktgKitHeaderComponent, ButtonComponent],
+  imports: [
+    DatePipe,
+    I18nPluralPipe,
+    NgClass,
+    RouterLink,
+    MessageComponent,
+    MktgBreadcrumbComponent,
+    MktgKitTabsComponent,
+    MktgKitHeaderComponent,
+    ButtonComponent,
+  ],
   templateUrl: './mktg-documents.component.html',
 })
 export class MktgDocumentsComponent {
@@ -131,6 +141,8 @@ export class MktgDocumentsComponent {
       : [];
   });
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions.find((revision) => revision.latest) ?? null);
+  /** "1 revision" / "N revisions", for the list rows and the history heading. */
+  protected readonly revisionPlural = { '=1': '# revision', other: '# revisions' };
   /** The current revision as the header describes it: how it was made and by whom. */
   protected readonly latestRow: Signal<MktgRevisionRow | null> = computed(() => this.revisionRows().find((row) => row.revision.latest) ?? null);
 
