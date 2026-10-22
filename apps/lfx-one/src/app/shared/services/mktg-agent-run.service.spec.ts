@@ -23,6 +23,7 @@ import {
   MktgRunQuestionsPending,
   MktgRunResultResponse,
   MktgStoredAgentRun,
+  MktgDocumentPersistLocation,
   User,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
@@ -562,6 +563,54 @@ describe('MktgAgentRunService', () => {
       expect(resultCalls()).toHaveLength(2);
       expect(events).toHaveLength(3);
       expect(events[2].type).toBe('persisted');
+    });
+
+    it('attaches an older replay’s late receipt only to its matched saved version, never the newest one', async () => {
+      resultResponses = [READY_NO_RECEIPT];
+      const first = service.generate(generateRequest()).subscribe();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      first.unsubscribe();
+      const oldLocation: MktgDocumentPersistLocation = { agent_key: 'brand-kit', document_id: 'living', revision_id: `000001-${'a'.repeat(64)}` };
+      const newLocation = { ...oldLocation, revision_id: `000002-${'b'.repeat(64)}` };
+      resultResponses = [
+        {
+          status: 'ready',
+          documentMarkdown: '# Newer saved version',
+          version: 2,
+          persistence: { project: 'proj-1', version: 2, s3_key: 'synthetic-new-key', content_sha256: 'b'.repeat(64), document_location: newLocation },
+        },
+      ];
+      service.generate(generateRequest('Synthetic newer feedback')).subscribe();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const newer = service.loadRun('proj-1', 'brand-kit')?.versions[1];
+      expect(newer?.documentLocation?.revisionId).toBe(newLocation.revision_id);
+      const generateCalls = httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate).length;
+      resultResponses = [
+        READY_NO_RECEIPT,
+        {
+          ...READY_NO_RECEIPT,
+          persistence: { project: 'proj-1', version: 1, s3_key: 'synthetic-old-key', content_sha256: 'a'.repeat(64), document_location: oldLocation },
+        },
+      ];
+      const events: MktgGenerateProgress[] = [];
+      service
+        .resume({
+          request: generateRequest(),
+          state: 'writing',
+          updatedAt: new Date().toISOString(),
+          attempt: { session: { agentId: 'brand-kit', sessionId: 'sess-1', ownerToken: 'token-1' }, priorVersion: 0 },
+        })
+        .subscribe((event) => events.push(event));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(service.loadRun('proj-1', 'brand-kit')?.versions).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      const versions = service.loadRun('proj-1', 'brand-kit')?.versions;
+      expect(versions).toHaveLength(2);
+      expect(versions?.[0]).toMatchObject({ version: 1, contentSha256: 'a'.repeat(64), documentLocation: { revisionId: oldLocation.revision_id } });
+      expect(versions?.[1]).toEqual(newer);
+      expect(versions?.[1]).toMatchObject({ version: 2, contentSha256: 'b'.repeat(64), documentLocation: { revisionId: newLocation.revision_id } });
+      expect(events.map((event) => event.type)).toEqual(['document', 'persisted']);
+      expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(generateCalls);
     });
 
     it('preserves the existing late content digest without treating it as revision identity', async () => {

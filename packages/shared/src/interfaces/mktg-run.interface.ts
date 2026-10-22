@@ -1111,6 +1111,12 @@ export interface MktgStoredAgentRun {
   savedAt: string;
 }
 
+/** Saved history and the exact version selected by append/deduplication, including an older replay. */
+export interface MktgRunAppendResult {
+  run: MktgStoredAgentRun;
+  version: number;
+}
+
 /**
  * Outcome of a generate submission — the Guild session the result poll must
  * query, paired with the version that poll must beat. Deriving them together

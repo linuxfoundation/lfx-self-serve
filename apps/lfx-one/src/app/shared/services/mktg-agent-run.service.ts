@@ -29,6 +29,7 @@ import {
   MktgRunResultResponse,
   MktgRunSessionResponse,
   MktgRunVersion,
+  MktgRunAppendResult,
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
@@ -414,13 +415,9 @@ export class MktgAgentRunService {
           // The agent did not run: nothing to store, nothing to retry.
           return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
         }
-        const run = this.appendVersion(request, attempt, result, answered);
+        const { run, version } = this.appendVersion(request, attempt, result, answered);
         this.attempts.clear(request.projectUid, request.agentId, subject);
-        return concat(
-          activity$,
-          of<MktgGenerateProgress>({ type: 'document', run }),
-          this.retryPersistence(request, attempt.session, result, run.versions.at(-1)?.version ?? 0)
-        );
+        return concat(activity$, of<MktgGenerateProgress>({ type: 'document', run }), this.retryPersistence(request, attempt.session, result, version));
       })
     );
   }
@@ -623,7 +620,7 @@ export class MktgAgentRunService {
     attempt: MktgRunAttempt,
     result: MktgRunResultResponse,
     answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[] }
-  ): MktgStoredAgentRun {
+  ): MktgRunAppendResult {
     const stored = this.loadRun(request.projectUid, request.agentId);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const sha = result.persistence?.content_sha256;
@@ -636,7 +633,7 @@ export class MktgAgentRunService {
         (entry.source.payloadDigest === payloadDigest || (!entry.source.payloadDigest && entry.source.identity === identity))
     );
     if (stored && duplicate) {
-      return this.recordReceipt(request, duplicate.version, result.persistence) ?? stored;
+      return { run: this.recordReceipt(request, duplicate.version, result.persistence) ?? stored, version: duplicate.version };
     }
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
@@ -675,7 +672,7 @@ export class MktgAgentRunService {
       savedAt: new Date().toISOString(),
     };
     this.saveRun(run);
-    return run;
+    return { run, version: version.version };
   }
 
   private assertSubject(subject: string): void {
