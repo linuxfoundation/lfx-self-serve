@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Provider, signal } from '@angular/core';
-import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentComment, MktgDocumentCommentDraft, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { EMPTY } from 'rxjs';
 
@@ -28,11 +28,22 @@ export function mktgCommentScopeFixture(): MktgDocumentCommentScope {
 
 /** Presentational hosts do not own comment HTTP. Individual comment specs supply the state they exercise. */
 export function provideMktgCommentsStub(overrides: Partial<MktgDocumentCommentsService> = {}): Provider {
+  const scope = overrides.selectedScope ?? signal<MktgDocumentCommentScope | null>(null);
+  const drafts = new Map<string, MktgDocumentCommentDraft>();
   return {
     provide: MktgDocumentCommentsService,
     useValue: {
       threads: signal<MktgDocumentComment[]>([]),
-      selectedScope: signal<MktgDocumentCommentScope | null>(null),
+      selectedScope: scope,
+      fieldDraft: (field: string, create: () => MktgDocumentCommentDraft) => {
+        const key = JSON.stringify([scope(), field]);
+        let draft = drafts.get(key);
+        if (!draft) {
+          draft = create();
+          drafts.set(key, draft);
+        }
+        return draft;
+      },
       labelContent: signal<unknown>(null),
       setLabelContent: () => undefined,
       loaded: signal(false),

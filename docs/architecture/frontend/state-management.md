@@ -475,7 +475,9 @@ and cancel outstanding requests. Scope generations reject a deferred old action
 even after navigating away and back to the same revision. A successful add
 cancels a pre-save GET so it cannot overwrite the acknowledged snapshot.
 
-The composer owns its text and opaque request ID, retaining both for an explicit
-save retry. The client never automatically retries a POST or invents an ID.
+The client retains each field's browser-memory form and opaque request ID across
+tab-host destruction, keyed by effective viewer and document revision; changing
+that scope discards old drafts. The composer handles explicit save retries. The
+client never automatically retries a POST or invents an ID.
 State is memory-only and all HTTP is browser-gated; no local storage, sources,
 sessions, attribution IDs or agent handles are added to the request contract.
