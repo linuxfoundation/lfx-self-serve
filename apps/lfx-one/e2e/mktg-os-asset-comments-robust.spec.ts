@@ -15,6 +15,9 @@ test.describe('asset comments structure', () => {
     const fixture = await setupComments(page);
     await fixture.open();
     await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
+    const asset = await page.getByTestId('mktg-framework-view').boundingBox();
+    const panel = await page.getByTestId('mktg-comments-panel').boundingBox();
+    expect(asset && panel && panel.y >= asset.y + asset.height).toBe(true);
     const field = page.getByTestId('mktg-field-comments-mf.vision');
     const button = field.getByRole('button', { name: 'Comment on Vision', exact: true });
     await button.focus();
@@ -32,10 +35,13 @@ test.describe('asset comments structure', () => {
       await fixture.open();
       await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
       const asset = await page.getByTestId('mktg-framework-view').boundingBox();
-      const panel = await page.getByTestId('mktg-comments-panel').boundingBox();
       expect(asset).not.toBeNull();
-      expect(panel).not.toBeNull();
-      if (asset && panel) expect(panel.x).toBeGreaterThanOrEqual(asset.x + asset.width);
+      for (const id of ['mktg-comments-panel', 'mktg-document-view-revisions', 'mktg-document-view-about']) {
+        const card = await page.getByTestId(id).boundingBox();
+        expect(card).not.toBeNull();
+        if (asset && card) expect(card.x).toBeGreaterThanOrEqual(asset.x + asset.width);
+      }
+      await expect(page.getByTestId('mktg-framework-view')).toHaveClass(/\[@media_screen\]:@container\/asset/);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`comments-sidebar-${width}.png`), fullPage: true });
     });
