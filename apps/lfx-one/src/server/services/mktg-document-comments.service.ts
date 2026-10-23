@@ -16,6 +16,7 @@ import {
   MKTG_DOCUMENT_WRITE_ATTEMPTS,
   MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
+  MKTG_REDRAFT_SUBMISSION_KEYS,
 } from '@lfx-one/shared/constants';
 import type {
   MktgAddDocumentCommentRequest,
@@ -30,10 +31,19 @@ import type {
   MktgDocumentCommentsMutation,
   MktgRedraftReservation,
   MktgDocumentCommentSubmission,
+  MktgDocumentRedraftContext,
+  MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_REDRAFT_SUBMISSION_KEYS } from '@lfx-one/shared/constants/mktg-document-redraft.constants';
-import { readMktgRedraftRequest } from '@lfx-one/shared/utils/mktg-document-redraft.utils';
-import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField, validateMktgDocumentCommentBatch } from '@lfx-one/shared/utils';
+import {
+  readMktgRedraftRequest,
+  validateMktgRedraftResult,
+  isMktgRedraftSubmissionBusy,
+  findMktgDocumentType,
+  mktgDocumentLocationOfReceipt,
+  isMktgDocumentCommentAnchor,
+  readMktgDocumentCommentField,
+  validateMktgDocumentCommentBatch,
+} from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -50,8 +60,28 @@ export class MktgDocumentCommentsService {
 
   public async list(req: Request, project: string, type: MktgDocumentType, documentId: string, revisionId: string): Promise<MktgDocumentCommentsResponse> {
     const agentKey = this.commentAgent(type);
-    await this.requireRevision(req, project, type, documentId, revisionId);
+    const view = await this.requireRevision(req, project, type, documentId, revisionId);
     const snapshot = await this.read(req, project, agentKey, documentId);
+    const context = await this.documents.redraftForRevision(req, view);
+    if (context) {
+      const echo = validateMktgRedraftResult(context, view.sidecar);
+      if (!echo.valid) throw this.corrupt();
+      const history = context.comments.map((frozen, index) => {
+        const original = snapshot.record.threads.find((row) => row.id === frozen.id);
+        if (!original) throw this.corrupt();
+        return {
+          ...original,
+          ...frozen,
+          revisionId: context.basedOnId,
+          status: 'resolved' as const,
+          sentInRun: context.runId,
+          resultRevisionId: revisionId,
+          resolution: echo.resolutions[index] ?? null,
+        };
+      });
+      const ids = new Set(history.map((row) => row.id));
+      return this.project(req, { ...snapshot.record, threads: [...snapshot.record.threads.filter((row) => !ids.has(row.id)), ...history] }, revisionId);
+    }
     return this.project(req, snapshot.record, revisionId);
   }
 
@@ -119,7 +149,10 @@ export class MktgDocumentCommentsService {
     const view = await this.requireRevision(req, project, type, documentId, input.revisionId);
     const source = this.source(view, agent);
     const now = new Date().toISOString();
-    return this.change<MktgRedraftReservation>(req, project, agent, documentId, async (record) => {
+    let rejected = false;
+    let rejection: unknown;
+    const reservation = await this.change<MktgRedraftReservation>(req, project, agent, documentId, async (record) => {
+      rejected = false;
       const existing = record.submissions.find((entry) => entry.id === input.clientRequestId);
       if (existing) {
         if (
@@ -131,11 +164,7 @@ export class MktgDocumentCommentsService {
         }
         return { record: null, result: { submission: existing, comments: this.frozen(record, existing), fresh: false } };
       }
-      if (
-        record.submissions.some(
-          (entry) => entry.state !== 'failed' && entry.state !== 'completed' && entry.commentIds.some((id) => input.commentIds.includes(id))
-        )
-      ) {
+      if (record.submissions.some((entry) => this.busy(entry) && entry.commentIds.some((id) => input.commentIds.includes(id)))) {
         throw new ConflictError('Some comments are already reserved for another send.', 'MKTG_REDRAFT_COMMENTS_BUSY');
       }
       const selected = input.commentIds.map((id) => record.threads.find((entry) => entry.id === id));
@@ -162,11 +191,170 @@ export class MktgDocumentCommentsService {
       // Reservation is not proof of external acceptance. Threads become sent only when a returned run hash is bound.
       const next: MktgDocumentCommentsRecord = { ...record, submissions: [...record.submissions, submission] };
       const frozen = this.frozen(next, submission);
-      await preflight?.(frozen);
+      try {
+        await preflight?.(frozen);
+      } catch (error) {
+        rejected = true;
+        rejection = error;
+        const failed: MktgDocumentCommentSubmission = { ...submission, state: 'failed' };
+        return {
+          record: {
+            ...next,
+            submissions: [...record.submissions, failed],
+            threads: record.threads.map((row) =>
+              input.commentIds.includes(row.id) ? { ...row, status: 'open', sentInRun: null, resultRevisionId: null, resolution: null } : row
+            ),
+          },
+          result: { submission: failed, comments: frozen, fresh: false },
+        };
+      }
       return { record: next, result: { submission, comments: frozen, fresh: true } };
+    });
+    if (rejected) throw rejection;
+    return reservation;
+  }
+
+  /** Bind only the opaque run hash. Raw sessions remain exclusively in existing private document-runs. */
+  public async bindRun(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    requestId: string,
+    runId: string,
+    started = false
+  ): Promise<MktgDocumentCommentSubmission> {
+    const actor = this.creator(req);
+    const agent = this.commentAgent(type);
+    if (!MKTG_DOCUMENT_COMMENT_ID_REGEX.test(requestId) || !MKTG_STARTED_RUN_ID_REGEX.test(runId)) throw this.invalid('runId', 'Invalid redraft binding.');
+    return this.change(req, project, agent, documentId, (record) => {
+      const submission = record.submissions.find((entry) => entry.id === requestId);
+      if (!submission || submission.requestedBy !== actor || (submission.runId && submission.runId !== runId)) {
+        throw new ConflictError('The send request cannot be bound by this creator.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
+      }
+      if (submission.state === 'failed') throw this.failedRequest();
+      if (submission.state === 'reserved' && !this.busy(submission)) throw new ConflictError('The start reservation expired.', 'MKTG_REDRAFT_REQUEST_EXPIRED');
+      if (submission.state !== 'reserved' && submission.state !== 'uncertain') return { record: null, result: submission };
+      const updated: MktgDocumentCommentSubmission = { ...submission, runId, state: submission.state };
+      if (started) updated.state = 'started';
+      const ids = new Set(submission.commentIds);
+      const next: MktgDocumentCommentsRecord = {
+        ...record,
+        submissions: record.submissions.map((entry) => (entry.id === requestId ? updated : entry)),
+        threads: record.threads.map((entry) =>
+          ids.has(entry.id) &&
+          this.owns(record, submission, entry) &&
+          (entry.status === 'open' || (entry.status === 'sent' && entry.sentInRun === null)) &&
+          entry.revisionId === submission.baseRevisionId
+            ? { ...entry, status: 'sent', sentInRun: runId, resultRevisionId: null, resolution: null }
+            : entry
+        ),
+      };
+      return { record: next, result: updated };
     });
   }
 
+  /** Creator-only state change after a committed start; retained hash can NEVER bind a different session. */
+  public async endStart(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    requestId: string,
+    uncertain: boolean,
+    releaseOnly = false
+  ): Promise<MktgDocumentCommentSubmission> {
+    const actor = this.creator(req);
+    const agent = this.commentAgent(type);
+    return this.change(req, project, agent, documentId, (record) => {
+      const submission = record.submissions.find((row) => row.id === requestId);
+      if (!submission || submission.requestedBy !== actor)
+        throw new ConflictError('Only the send creator may change its reservation.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
+      if (releaseOnly && submission.state !== 'uncertain' && submission.state !== 'failed' && !(submission.state === 'reserved' && !this.busy(submission)))
+        throw new ConflictError('This send is still active.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+      if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: submission };
+      const updated: MktgDocumentCommentSubmission = { ...submission, state: uncertain ? 'uncertain' : 'failed' };
+      return {
+        record: {
+          ...record,
+          submissions: record.submissions.map((row) => (row.id === requestId ? updated : row)),
+          threads: record.threads.map((row) => {
+            if (!submission.commentIds.includes(row.id) || !this.owns(record, submission, row)) return row;
+            return { ...row, status: uncertain ? 'sent' : 'open', sentInRun: uncertain ? submission.runId : null, resultRevisionId: null, resolution: null };
+          }),
+        },
+        result: updated,
+      };
+    });
+  }
+  public async release(req: Request, project: string, type: MktgDocumentType, documentId: string, requestId: string): Promise<void> {
+    await this.endStart(req, project, type, documentId, requestId, false, true);
+  }
+  public failedRequest(): ConflictError {
+    return new ConflictError('This send failed or was released. Send explicitly with a NEW request ID.', 'MKTG_REDRAFT_REQUEST_FAILED');
+  }
+  /** Called only with authoritative run context and a conclusive result, never a timeout/budget marker. */
+  public async settle(req: Request, context: MktgDocumentRedraftContext, result: MktgRunResultResponse): Promise<void> {
+    const type = findMktgDocumentType(context.agentKey);
+    if (!type) throw this.corrupt();
+    const location = mktgDocumentLocationOfReceipt(result.persistence);
+    let resolutions: string[] = [];
+    if (result.status === 'ready') {
+      if (
+        !location ||
+        result.persistence?.project !== context.project ||
+        location.agentKey !== context.agentKey ||
+        location.documentId !== context.documentId ||
+        location.revisionId === context.basedOnId
+      )
+        return;
+      const view = await this.requireRevision(req, context.project, type, context.documentId, location.revisionId);
+      const echo = validateMktgRedraftResult(context, view.sidecar);
+      if (!echo.valid) throw this.corrupt();
+      resolutions = echo.resolutions;
+    } else if (result.status !== 'failed' && result.status !== 'refused') return;
+    await this.change(req, context.project, context.agentKey, context.documentId, (record) => {
+      const submission = record.submissions.find((row) => row.id === context.requestId);
+      if (
+        !submission ||
+        submission.runId !== context.runId ||
+        submission.baseRevisionId !== context.basedOnId ||
+        JSON.stringify(submission.commentIds) !== JSON.stringify(context.comments.map((row) => row.id))
+      )
+        throw this.corrupt();
+      if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: undefined };
+      const completed = result.status === 'ready';
+      const id = completed ? (location?.revisionId ?? null) : null;
+      const updated: MktgDocumentCommentsRecord = {
+        ...record,
+        submissions: record.submissions.map((row) =>
+          row.id === submission.id ? { ...row, state: completed ? 'completed' : 'failed', resultRevisionId: id } : row
+        ),
+        threads: record.threads.map((row) => {
+          const index = context.comments.findIndex((input) => input.id === row.id);
+          if (index < 0 || row.sentInRun !== context.runId) return row;
+          return {
+            ...row,
+            status: completed ? 'resolved' : 'open',
+            sentInRun: completed ? row.sentInRun : null,
+            resultRevisionId: id,
+            resolution: completed ? (resolutions[index] ?? null) : null,
+          };
+        }),
+      };
+      return { record: updated, result: undefined };
+    });
+  }
+
+  private busy(submission: MktgDocumentCommentSubmission): boolean {
+    return isMktgRedraftSubmissionBusy(submission);
+  }
+  private owns(record: MktgDocumentCommentsRecord, submission: MktgDocumentCommentSubmission, row: MktgStoredDocumentComment): boolean {
+    const index = record.submissions.findIndex((entry) => entry.id === submission.id);
+    return (
+      !record.submissions.slice(index + 1).some((entry) => entry.commentIds.includes(row.id)) && (row.sentInRun === submission.runId || row.sentInRun === null)
+    );
+  }
   private creator(req: Request): string {
     const actor = this.authors.captureAuthorId(req);
     if (!actor) throw new AuthenticationError('A signed-in subject is required to own a redraft session.');

@@ -54,6 +54,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-session-event.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-activity.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
@@ -170,6 +171,7 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
+import { guardBrandKitText } from '@lfx-one/shared/utils/brand-kit.utils';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
@@ -800,13 +802,60 @@ describe('MktgDocumentStoreService', () => {
       const again = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
       expect(again?.document_location).toEqual(receipt.document_location);
     });
+    it.each([false, true])('keeps the Brand Kit pre-compatibility gate and degrades echo refusal to null (invalid=%s)', async (invalid) => {
+      const base = await service.persistGeneration(req, SPEC, envelope('# Base kit'), PROJECT, 'base-kit');
+      if (!base?.document_location) throw new Error('Missing synthetic kit');
+      const context = await new MktgDocumentRedraftContextService().create(req, 'kit-redraft', {
+        ...redraftContextFixture('brand-kit'),
+        project: PROJECT,
+        basedOnId: base.document_location.revision_id,
+        priorVersion: 1,
+      });
+      const generated = {
+        ...envelope('# Revised kit', 2),
+        mode: 'redraft',
+        project_name: context.projectName,
+        revision: {
+          prior_version: 1,
+          comments: [
+            {
+              number: 1,
+              passage: guardBrandKitText(context.comments[0].anchor.passage ?? ''),
+              comment: invalid ? 'wrong' : guardBrandKitText(context.comments[0].text),
+              resolution: 'Applied.',
+            },
+          ],
+        },
+      };
+      const before = [...store.objects.keys()];
+      const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'kit-redraft');
+      if (invalid) {
+        expect(receipt).toBeNull();
+        expect([...store.objects.keys()]).toEqual(before);
+        expect(loggerMocks.warning).toHaveBeenCalled();
+      } else {
+        expect(receipt?.document_location?.revision_id).not.toBe(base.document_location.revision_id);
+        expect(storedRecord(receipt?.s3_key ?? '')).toMatchObject({ origin: 'revised', basedOnId: base.document_location.revision_id });
+      }
+    });
+    it('joins history by the immutable session hash and refuses another registered agent before output reads', async () => {
+      const { generated, context } = await prepare(false);
+      await expect(service.assertRedraftScope(req, FRAMEWORK_SPEC, 'redraft-session', PROJECT)).resolves.toEqual(context);
+      await expect(service.assertRedraftScope(req, SPEC, 'redraft-session', PROJECT)).rejects.toMatchObject({ statusCode: 403 });
+      const receipt = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      const view = await service.getRevision(req, PROJECT, FRAMEWORK, 'living', receipt?.document_location?.revision_id ?? '');
+      if (!view) throw new Error('Missing synthetic redraft revision');
+      expect(await service.redraftForRevision(req, view)).toEqual(context);
+      store.objects.delete(`document-redrafts/${context.runId}.json`);
+      await expect(service.redraftForRevision(req, view)).rejects.toMatchObject({ statusCode: 503 });
+    });
     it('never falls back to Generate when a redraft descriptor is missing', async () => {
       const { context, generated } = await prepare(false);
       store.objects.delete(`document-redrafts/${context.runId}.json`);
       const before = [...store.objects];
       expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session')).toBeNull();
       const unbound = { ...envelope('# Unbound'), mode: 'redraft' };
-      await expect(service.persistGeneration(req, SPEC, unbound, PROJECT, 'redraft-session')).rejects.toMatchObject({ statusCode: 503 });
+      await expect(service.persistGeneration(req, SPEC, unbound, PROJECT, 'redraft-session')).resolves.toBeNull();
       expect([...store.objects]).toEqual(before);
     });
     it('refuses wrong realm or result provenance before a revision/pointer write', async () => {
@@ -818,9 +867,7 @@ describe('MktgDocumentStoreService', () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'other-project', writer: true });
       expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, 'other-project', 'redraft-session')).toBeNull();
       const objects = [...store.objects.keys()];
-      await expect(service.persistGeneration(req, SPEC, envelope('# Must not persist'), 'other-project', 'redraft-session')).rejects.toMatchObject({
-        statusCode: 403,
-      });
+      await expect(service.persistGeneration(req, SPEC, envelope('# Must not persist'), 'other-project', 'redraft-session')).resolves.toBeNull();
       expect([...store.objects.keys()]).toEqual(objects);
       expect(revisionKeys()).toEqual(before);
       expect([...store.objects].filter(([key]) => key.endsWith('/current.json')).map(([key, value]) => [key, value.body])).toEqual(pointers);

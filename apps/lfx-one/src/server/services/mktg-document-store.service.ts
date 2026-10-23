@@ -72,9 +72,9 @@ import {
   readLinkedinDocumentContent,
   readMktgFrameworkRef,
   projectMktgRebuildStaleness,
+  validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
 import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
-import { validateMktgRedraftResult } from '@lfx-one/shared/utils/mktg-document-redraft.utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -117,13 +117,18 @@ export class MktgDocumentStoreService {
     projectUid: string | undefined,
     sessionId: string
   ): Promise<MktgArtifactPersistReceipt | null> {
-    const context = await this.redrafts.forSession(req, sessionId);
-    if (context || (envelope as MktgArtifactEnvelope & Record<string, unknown>)['mode'] === 'redraft') {
-      const project = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
-      this.assertRedraftSource(context, project ?? undefined, spec.agentKey, envelope);
+    try {
+      const context = await this.redrafts.forSession(req, sessionId);
+      if (context || (envelope as MktgArtifactEnvelope & Record<string, unknown>)['mode'] === 'redraft') {
+        const project = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
+        this.assertRedraftSource(context, project ?? undefined, spec.agentKey, envelope);
+      }
+      const receipt = await this.artifactService.persist(req, spec, envelope, projectUid, { revisionManaged: true });
+      return receipt ? await this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
+    } catch (error) {
+      logger.warning(req, 'mktg_document_store_persist', 'Asset was not persisted; returning no receipt', { err: error });
+      return null;
     }
-    const receipt = await this.artifactService.persist(req, spec, envelope, projectUid, { revisionManaged: true });
-    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
   }
 
   /** Persist structured content through the same CAS writer; JSON has no pre-revision Markdown twin. */
@@ -556,6 +561,28 @@ export class MktgDocumentStoreService {
     );
     const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
     return revision ? { ...updated, revision, approval: revision.approval, markdown: view.markdown, sidecar: view.sidecar } : null;
+  }
+
+  /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
+  public async assertRedraftScope(req: Request, spec: MktgArtifactSpec, sessionId: string, projectUid?: string): Promise<MktgDocumentRedraftContext | null> {
+    const context = await this.redrafts.forSession(req, sessionId);
+    if (!context) return null;
+    const project = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
+    this.redrafts.assertScope(context, project ?? undefined, spec.agentKey);
+    return context;
+  }
+
+  /** Private history join from already-authorized immutable revision bytes, never a public descriptor DTO. */
+  public async redraftForRevision(req: Request, view: MktgRevisionResponse): Promise<MktgDocumentRedraftContext | null> {
+    const key = `${buildMktgDocumentPrefix(view.project, view.type.agentKey, view.documentId)}${view.revision.id}.json`;
+    const parsed = parseMktgRevisionKey(key, buildMktgDocumentProjectPrefix(view.project));
+    const stored = parsed ? await this.loadRevision(req, { ...parsed, key }, view.project) : null;
+    if (!stored || stored.record.origin !== 'revised' || !stored.record.source.sessionId) return null;
+    const context = await this.redrafts.forSession(req, stored.record.source.sessionId);
+    if (!context) throw new MicroserviceError('The redraft history context is unavailable.', 503, 'MKTG_REDRAFT_CONTEXT_UNAVAILABLE');
+    this.redrafts.assertScope(context, view.project, view.type.agentKey);
+    if (context.documentId !== view.documentId) throw this.corruptDocument('Invalid redraft history context.');
+    return context;
   }
 
   /** Plain and sidecar attachments consume approved current; only true pre-revision plain fallback remains. */
