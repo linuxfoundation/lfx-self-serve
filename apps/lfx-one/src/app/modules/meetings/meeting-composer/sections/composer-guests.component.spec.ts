@@ -467,6 +467,42 @@ describe('ComposerGuestsComponent', () => {
       expect(component['undoableRemoval']()).toBeNull();
     });
 
+    it('offers undo for a guest with no email', () => {
+      const emailless = { ...savedGroupGuest, uid: 'no-email', email: '', type: 'direct' as const };
+      formService.setGuests([emailless]);
+
+      component['onRemoveGuest'](emailless);
+
+      expect(component['undoableRemoval']()).not.toBeNull();
+    });
+
+    it('withdraws undo for a group guest once a voting-status filter narrows', () => {
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep', 'observer'] }]);
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+      expect(component['undoableRemoval']()).not.toBeNull();
+
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep'] }]);
+
+      expect(component['undoableRemoval']()).toBeNull();
+    });
+
+    it('moves keyboard focus back to the restored row', () => {
+      const focus = vi.spyOn(component as unknown as { focusRestoredGuest: (trackId: string | null) => void }, 'focusRestoredGuest');
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['onUndoRemove']();
+
+      expect(focus).toHaveBeenCalledWith('registrant-1');
+    });
+
     it('stops offering undo once another guest is added', () => {
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);

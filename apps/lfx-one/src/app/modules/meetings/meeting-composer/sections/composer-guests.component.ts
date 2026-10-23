@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LiveAnnouncer } from '@angular/cdk/a11y';
-import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -60,6 +60,8 @@ export class ComposerGuestsComponent {
   private readonly confirmationService = inject(ConfirmationService);
   /** Adds and removes are otherwise silent rows changing below; it re-announces a repeated message, which a bound region would not. */
   private readonly liveAnnouncer = inject(LiveAnnouncer);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly injector = inject(Injector);
   protected readonly formService = inject(MeetingComposerFormService);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
@@ -240,9 +242,10 @@ export class ComposerGuestsComponent {
     return removal;
   });
 
+  /** Each selected group with its voting-status filter: narrowing a filter can drop a group guest as surely as deselecting the group. */
   private readonly committeeKey: Signal<string> = computed(() =>
     this.selectedCommittees()
-      .map((committee) => committee.uid)
+      .map((committee) => `${committee.uid}:${[...(committee.allowed_voting_statuses ?? [])].sort().join('|')}`)
       .sort()
       .join(',')
   );
@@ -303,6 +306,7 @@ export class ComposerGuestsComponent {
     });
 
     void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
+    this.focusRestoredGuest(key);
   }
 
   protected onDismissUndo(): void {
@@ -341,7 +345,8 @@ export class ComposerGuestsComponent {
         guest: original,
         index: Math.max(index, 0),
         label,
-        liveSameEmail: this.liveEmailCount(original.email) - (original.state === 'deleted' ? 0 : 1),
+        // Counted without the removed row itself, so a guest with no email starts from 0 rather than -1.
+        liveSameEmail: this.liveEmailCount(original.email, original),
         committeeKey: this.committeeKey(),
       });
     }
@@ -508,10 +513,26 @@ export class ComposerGuestsComponent {
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
   }
 
-  private liveEmailCount(email: string | null | undefined): number {
+  private liveEmailCount(email: string | null | undefined, excluding?: MeetingRegistrantWithState): number {
     const target = email?.toLowerCase();
     if (!target) return 0;
-    return this.formService.guests().filter((guest) => guest.state !== 'deleted' && guest.email?.toLowerCase() === target).length;
+    return this.formService.guests().filter((guest) => guest !== excluding && guest.state !== 'deleted' && guest.email?.toLowerCase() === target).length;
+  }
+
+  /**
+   * Moves focus to the restored row's remove button, or the guest search when the row can't be found.
+   * @description The Undo button that held focus is gone once Undo runs, which would drop keyboard users
+   * back to the top of the document. `afterNextRender` only runs in the browser, so this is SSR-safe.
+   */
+  private focusRestoredGuest(trackId: string | null): void {
+    afterNextRender(
+      () => {
+        const root = this.host.nativeElement;
+        const removeButton = trackId ? root.querySelector<HTMLElement>(`[data-testid="composer-guest-remove-${CSS.escape(trackId)}"]`) : null;
+        (removeButton ?? root.querySelector<HTMLElement>('#composer-guest-search'))?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   private guestLabel(guest: MeetingRegistrantWithState): string {
