@@ -376,6 +376,56 @@ describe('ComposerGuestsComponent', () => {
     });
   });
 
+  describe('undoing a removal', () => {
+    beforeEach(() => formService.mode.set('edit'));
+
+    it('is not offered on a create, where nothing is invited yet', () => {
+      formService.mode.set('create');
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+
+      expect(component['lastRemoval']()).toBeNull();
+    });
+
+    it('puts a never-saved guest back where it sat', () => {
+      const first = { ...savedGroupGuest, uid: '', tempId: 'temp_1', email: 'a@example.com', type: 'direct' as const, state: 'new' as const };
+      const second = { ...first, tempId: 'temp_2', email: 'b@example.com' };
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](first);
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['b@example.com']);
+
+      component['onUndoRemove']();
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['a@example.com', 'b@example.com']);
+      expect(component['lastRemoval']()).toBeNull();
+      expect(announce).toHaveBeenLastCalledWith('Member One restored to the guest list.', 'polite');
+    });
+
+    it('restores a saved group guest to its saved state and lifts the email suppression', () => {
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+      expect(formService.guests()[0].state).toBe('deleted');
+      expect(formService.suppressedGuestEmails().has('member@example.com')).toBe(true);
+
+      component['onUndoRemove']();
+
+      expect(formService.guests()).toEqual([savedGroupGuest]);
+      expect(formService.suppressedGuestEmails().has('member@example.com')).toBe(false);
+    });
+
+    it('stops offering undo once another guest is added', () => {
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['addDirectGuest']({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+
+      expect(component['lastRemoval']()).toBeNull();
+    });
+  });
+
   describe('adding and removing without a confirm step', () => {
     it('puts a valid search pick straight onto the list, resets the search and announces it', () => {
       component['quickAddForm'].setValue({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });

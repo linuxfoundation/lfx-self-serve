@@ -147,6 +147,22 @@
           </div>
         }
 
+        @if (lastRemoval(); as removal) {
+          <!-- Removal has no confirm step; this is the way back from a misclick until the next add or remove. -->
+          <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2" data-testid="composer-guest-undo">
+            <p class="min-w-0 flex-1 truncate text-sm text-gray-700" data-testid="composer-guest-undo-message">{{ removal.label }} removed.</p>
+            <lfx-button label="Undo" size="small" severity="secondary" [text]="true" data-testid="composer-guest-undo-button" (onClick)="onUndoRemove()" />
+            <button
+              type="button"
+              class="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Dismiss undo"
+              (click)="onDismissUndo()"
+              data-testid="composer-guest-undo-dismiss">
+              <i class="fa-light fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+        }
+
         @if (guestCount() === 0) {
           <div class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center" data-testid="composer-guests-empty">
             <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>

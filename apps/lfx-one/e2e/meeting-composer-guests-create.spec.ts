@@ -82,8 +82,9 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
 
     // The row is brand new, so it has no uid — hence the testid prefix rather than a known id.
     await expect(removeButtons(page)).toHaveCount(1);
-    // No confirm step: the composer's Next / Save changes is the commit point.
+    // No confirm step: the composer's Next / Save changes is the commit point. On a create there is no Undo either.
     await removeButtons(page).first().click();
+    await expect(page.getByTestId('composer-guest-undo')).toHaveCount(0);
 
     await expect(guestList(page)).toHaveCount(0);
     await expect(emptyState(page)).toBeVisible();

@@ -875,6 +875,19 @@ export interface ComposerGuestRow {
 }
 
 /**
+ * The composer's last guest removal, kept so it can be undone
+ * @description Removal has no confirm step, so this is the way back from a misclick. `guest` is the row
+ * exactly as it was, saved `state` included, and `index` is where it sat, for a never-saved guest whose
+ * row was dropped rather than marked deleted.
+ */
+export interface ComposerGuestRemoval {
+  guest: MeetingRegistrantWithState;
+  index: number;
+  /** The name read back in the undo notice and its announcement. */
+  label: string;
+}
+
+/**
  * A resource-link row, with the strings the list renders already read off the control
  * @description Links live in an `important_links` FormArray of FormGroups, and the row template read
  * four values off each control on every change-detection pass. Projecting the array into these once

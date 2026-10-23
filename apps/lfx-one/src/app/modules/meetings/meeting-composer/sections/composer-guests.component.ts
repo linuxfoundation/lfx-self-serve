@@ -10,7 +10,14 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type {
+  ComposerGuestRemoval,
+  ComposerGuestRow,
+  CommitteeMember,
+  ManualGuestDialogResult,
+  MeetingCommittee,
+  MeetingRegistrantWithState,
+} from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
   getSavedAttendeeVisibility,
@@ -63,6 +70,8 @@ export class ComposerGuestsComponent {
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
+  /** The last removal when editing, offered back as Undo until the next add or remove replaces it. */
+  protected readonly lastRemoval = signal<ComposerGuestRemoval | null>(null);
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
@@ -237,6 +246,45 @@ export class ComposerGuestsComponent {
     this.openManualDialog(null);
   }
 
+  /**
+   * Puts the last removed guest back exactly as they were.
+   * @description A saved guest is still in the list marked deleted, so its row is swapped back for the
+   * original; a never-saved one was dropped, so it goes back where it sat. A group guest's email was
+   * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
+   */
+  protected onUndoRemove(): void {
+    const removal = this.lastRemoval();
+    if (!removal) return;
+
+    const { guest, index, label } = removal;
+    const key = guest.uid || guest.tempId || null;
+    const email = guest.email?.toLowerCase() ?? '';
+
+    if (guest.type === 'committee') {
+      this.formService.unsuppressGuestEmail(guest.email);
+    }
+
+    this.formService.updateGuests((current) => {
+      // A keyless saved row was replaced by a deleted copy, so the reference is gone; its email is what is left.
+      const at = current.findIndex((candidate) =>
+        key === null ? candidate.state === 'deleted' && candidate.email?.toLowerCase() === email : (candidate.uid || candidate.tempId) === key
+      );
+
+      if (at !== -1) {
+        return current.map((candidate, i) => (i === at ? guest : candidate));
+      }
+
+      return [...current.slice(0, index), guest, ...current.slice(index)];
+    });
+
+    this.lastRemoval.set(null);
+    void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
+  }
+
+  protected onDismissUndo(): void {
+    this.lastRemoval.set(null);
+  }
+
   /** Resend is only offered once the meeting exists upstream (edit mode) and the guest is saved. */
   protected canResendInvite(guest: MeetingRegistrantWithState): boolean {
     return this.formService.isEditMode() && !!this.formService.meetingId() && this.inviteResend.canResend(guest);
@@ -250,12 +298,21 @@ export class ComposerGuestsComponent {
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
-    void this.liveAnnouncer.announce(`${this.guestLabel(guest)} removed from the guest list.`, 'polite');
+    const label = this.guestLabel(guest);
+    void this.liveAnnouncer.announce(`${label} removed from the guest list.`, 'polite');
 
     // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
     // happens to be missing on the candidate: `undefined === undefined` matched every other
     // keyless row, and removing one such guest dropped all of them.
     const key = guest.uid || guest.tempId || null;
+
+    // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
+    // nobody is invited yet, and picking the person again is the whole way back.
+    if (this.formService.isEditMode()) {
+      const index = this.formService.guests().findIndex((candidate) => (key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key));
+      const original = index === -1 ? guest : this.formService.guests()[index];
+      this.lastRemoval.set({ guest: original, index: Math.max(index, 0), label });
+    }
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
     // un-deleting a saved one who is still a member of a selected group. Only group guests are
@@ -414,6 +471,8 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
+    // Undo restores a row by position and identity, so it is only offered while nothing else has moved.
+    this.lastRemoval.set(null);
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
   }
 
