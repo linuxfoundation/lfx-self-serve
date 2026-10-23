@@ -9,7 +9,11 @@ import { suppressCookieBanner } from './account-settings-email.helper';
 export async function setupComments(page: Page, hold = false) {
   await suppressCookieBanner(page);
   const asset = await setupAsset(page, { mode: 'ready' });
-  const state = { rows: [] as MktgDocumentComment[], failRead: false, deny: false, failSave: false, posts: [] as Record<string, unknown>[] };
+  const state = { rows: [] as MktgDocumentComment[], failRead: false, deny: false, failSave: false, holdSave: false, posts: [] as Record<string, unknown>[] };
+  let releaseSave: () => void = () => undefined;
+  const savePending = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
   let release: () => void = () => undefined;
   const pending = hold
     ? new Promise<void>((resolve) => {
@@ -20,6 +24,7 @@ export async function setupComments(page: Page, hold = false) {
     const post = route.request().method() === 'POST';
     const body = post ? (route.request().postDataJSON() as Record<string, unknown>) : {};
     if (post) state.posts.push(body);
+    if (post && state.holdSave) await savePending;
     let status = 200;
     if (state.deny) status = 403;
     else if ((post && state.failSave) || (!post && state.failRead)) status = 503;
@@ -43,5 +48,5 @@ export async function setupComments(page: Page, hold = false) {
       body: JSON.stringify(status === 200 ? { revisionId: ASSET_REVISION, threads: state.rows } : { error: 'Synthetic comments unavailable' }),
     });
   });
-  return { ...asset, state, release };
+  return { ...asset, state, release, releaseSave };
 }
