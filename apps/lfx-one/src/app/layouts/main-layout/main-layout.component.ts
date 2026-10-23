@@ -117,7 +117,10 @@ export class MainLayoutComponent {
     this.appService.closeMobileSidebar();
   }
 
-  /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */
+  /**
+   * Safety net: with the drawer's mask, Escape and close icon off, PrimeNG no longer closes it by itself — the
+   * backdrop and Escape go through {@link closeMobileSidebar}. Kept so a PrimeNG-initiated close still resets the state.
+   */
   public onDrawerVisibilityChange(visible: boolean): void {
     if (!visible) {
       this.appService.closeMobileSidebar();
