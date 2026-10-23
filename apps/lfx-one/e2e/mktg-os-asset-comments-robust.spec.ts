@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { setupComments } from './helpers/mktg-os-comments.helper';
 import { setupAsset } from './helpers/mktg-os-assets.helper';
+import { redraftFixture } from './helpers/mktg-os-redraft.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 test.describe('asset comments structure', () => {
@@ -46,6 +47,34 @@ test.describe('asset comments structure', () => {
       await page.screenshot({ path: test.info().outputPath(`comments-sidebar-${width}.png`), fullPage: true });
     });
   }
+
+  test('mobile redraft controls keep a persistent live region, gated Release and keyboard re-observe Retry', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { fixture, state } = await redraftFixture(page);
+    state.fail = true;
+    await fixture.open();
+    const panel = page.getByTestId('mktg-comments-panel');
+    const message = panel.getByTestId('mktg-comments-run-message');
+    await expect(message).toHaveAttribute('role', 'status');
+    await expect(message).toHaveAttribute('aria-live', 'polite');
+    await expect(message).toBeEmpty();
+    await panel.getByTestId('mktg-comments-send').getByRole('button').click();
+    const release = panel.getByTestId('mktg-comments-release').getByRole('button');
+    await expect(release).toBeVisible();
+    await release.focus();
+    await expect(release).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(message).toContainText('Still starting — retry shortly.');
+    await page.screenshot({ path: test.info().outputPath('mobile-release-live-region.png'), fullPage: true });
+    state.fail = false;
+    const retry = panel.getByTestId('mktg-comments-send').getByRole('button', { name: 'Retry the same redraft' });
+    await retry.focus();
+    await page.keyboard.press('Enter');
+    await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
+    await expect(panel.getByTestId('mktg-comments-release')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('mobile-accepted-feed-no-release.png'), fullPage: true });
+  });
 
   test('a denied save shows access Retry and restores the same viewer draft after a successful read', async ({ page }) => {
     const fixture = await setupComments(page);

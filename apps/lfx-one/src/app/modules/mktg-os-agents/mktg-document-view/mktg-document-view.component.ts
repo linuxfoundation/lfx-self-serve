@@ -48,6 +48,7 @@ import {
   MktgGenerateProgress,
   MktgPendingGeneration,
   MktgDocumentCommentScope,
+  MktgDocumentLocation,
   MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -714,6 +715,26 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgDocumentLocation): void {
+    const view = this.view();
+    if (
+      !this.writer() ||
+      !view ||
+      view.project !== scope.projectUid ||
+      view.revision.id !== scope.revisionId ||
+      this.projectContext.activeContextUid() !== scope.projectUid ||
+      this.params().agentKey !== location.agentKey ||
+      this.params().documentId !== location.documentId
+    ) {
+      this.notice.set('A new Draft was stored; open it from Revisions');
+      return;
+    }
+    this.dependencyService.notifyDocumentsChanged(scope.projectUid);
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
+      queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+    });
+  }
+
   protected onRetryRun(): void {
     const run = this.selectedRun();
     const project = this.projectContext.activeContextUid();

@@ -19,7 +19,7 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
   selector: 'lfx-mktg-field-comments',
   imports: [ButtonComponent, TextareaComponent, MktgCommentThreadComponent],
   host: {
-    class: 'block min-w-0 text-left font-normal not-italic',
+    class: 'block min-w-0 font-sans text-left font-normal not-italic text-gray-900',
     '[class.hidden]': '!comments.loaded()',
     '[attr.data-mktg-comment-field]': 'field()',
     '[attr.data-testid]': "'mktg-field-comments-' + field()",

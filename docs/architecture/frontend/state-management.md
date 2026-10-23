@@ -495,5 +495,23 @@ selection/lifetime and lists the same server threads beside revision history.
 A shared thread component renders author/date/field/status as text only. Form
 validation uses the shared text cap; failed saves retain text and the opaque
 request ID, while changed text or a revision change starts a different draft.
-No source report fields or print surfaces are made editable. Sending comments
-to a redraft run is a subsequent layer; this surface adds only comments.
+No source report fields or print surfaces are made editable. Send freezes the
+selected open IDs/nonce in subject-and-revision-bound private TTL recovery before
+POST. Unknown ACK restoration never auto-submits; retry reuses that exact intent.
+Only primary BFF allow-listed answers clear unaccepted intent: 400 VALIDATION_ERROR,
+404 NOT_FOUND, or 409 MKTG_REDRAFT_COMMENTS_BUSY / MKTG_REDRAFT_REQUEST_FAILED.
+Other 4xx, code-less 5xx and transport failures retain the nonce and permit creator
+release. Post-session server failures are always uncertain, not definitive 4xx. The ACK supplies the authoritative stored
+prior version for polling and exact version comparison, not legacy display metadata.
+Known ACKs use the existing run observer and bounded receipt retry, without fake
+intake answers, another poller, or a Generate fallback. Only the exact scoped new
+Draft receipt lands; approved current is not inferred or changed. A 409 on an explicit
+release means the start is still active. Release is offered only for an unaccepted
+intent whose response proved uncertainty, transport failure or expiry; accepted
+attempts offer re-observe Retry instead. An unknown release is idempotent success
+with no ledger write. Identity/navigation cancellation hides stale feeds. Disabled
+Send controls explain missing source, empty/over-cap comments or unread state; counts
+appear only after successful reads, and run messages use a persistent live region.
+Description idrefs bind declaratively through the shared button wrapper, with a
+CDK-generated per-instance reason id. The feed starts only after an accepted
+attempt or nonempty activity, never merely because a primary POST is pending.

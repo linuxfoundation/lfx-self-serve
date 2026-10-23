@@ -5,6 +5,8 @@ import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
@@ -1372,6 +1374,35 @@ describe('MktgDocumentViewComponent', () => {
     for (const token of ['sticky', 'h-[34px]', 'text-[13px]', 'bg-gray-50']) expect(bar?.classList.contains(token)).toBe(true);
     expect(query('mktg-document-view-hash')?.classList.contains('relative')).toBe(true);
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
+  });
+
+  it('lands on the exact redraft receipt without approving or selecting whichever revision is current', async () => {
+    useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const id = `000003-${'c'.repeat(64)}`;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    panel.ready.emit({ agentKey: 'foundation-message', documentId: 'living', revisionId: id });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', 'foundation-message', 'living'], {
+      queryParams: expect.objectContaining({ revision: id }),
+    });
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+  });
+
+  it('reports a stored Draft whose landing is rejected instead of silently losing the result', async () => {
+    useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    panel.ready.emit({ agentKey: 'boilerplates', documentId: 'living', revisionId: `000003-${'c'.repeat(64)}` });
+    await settle();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-notice')?.textContent).toContain('A new Draft was stored; open it from Revisions');
+    expect(store.approveRevision).not.toHaveBeenCalled();
   });
 
   it('clears comments while a different historical revision is still loading', async () => {
