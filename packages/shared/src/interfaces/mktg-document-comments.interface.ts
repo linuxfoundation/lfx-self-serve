@@ -41,6 +41,9 @@ export interface MktgStoredDocumentComment {
 /** Private reserved send snapshot. An uncertain external POST is NEVER retried automatically. */
 export interface MktgDocumentCommentSubmission {
   id: string;
+  /** Opaque effective subject for creator-only ACK replay; never a session or token. */
+  requestedBy: string;
+  createdAt: string;
   baseRevisionId: string;
   commentIds: string[];
   state: MktgDocumentCommentSubmissionState;

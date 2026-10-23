@@ -61,6 +61,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/boilerplates.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
@@ -165,6 +167,9 @@ import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
+import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
@@ -735,6 +740,90 @@ describe('MktgDocumentStoreService', () => {
         validationErrors: [expect.objectContaining({ field: 'documentId', message: 'Approve is not available for one-off run documents.' })],
       });
       expect(store.conditionalWrites).toEqual([]);
+    });
+  });
+
+  describe('redraft through the existing main Draft writer', () => {
+    async function prepare(approved: boolean) {
+      const a = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Base'), PROJECT, 'base');
+      const b = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Current'), PROJECT, 'current');
+      const first = a?.document_location?.revision_id;
+      const second = b?.document_location?.revision_id;
+      if (!first || !second) throw new Error('Missing synthetic bases');
+      if (approved) await service.approveRevision(req, PROJECT, FRAMEWORK, 'living', second);
+      const context = await new MktgDocumentRedraftContextService().create(req, 'redraft-session', {
+        ...redraftContextFixture(),
+        project: PROJECT,
+        basedOnId: first,
+        priorVersion: 1,
+      });
+      const generated = {
+        ...jsonEnvelope('Revised', 2),
+        mode: 'redraft',
+        project_name: context.projectName,
+        revision: {
+          mode: 'redraft',
+          prior_version: 1,
+          comments: [
+            { number: 1, field: context.comments[0].anchor.key, comment: guardFoundationMessageText(context.comments[0].text), resolution: 'Applied.' },
+          ],
+        },
+      } as MktgArtifactJsonEnvelope;
+      return { first, second, context, generated };
+    }
+    it.each([false, true])('inherits main selection unchanged (approved current=%s), records actual base and metadata only', async (approved) => {
+      const { first, second, context, generated } = await prepare(approved);
+      const pointer = `documents/${PROJECT}/foundation-message/living/current.json`;
+      const before = JSON.parse(storedObject(pointer).body);
+      const creatorSubject = approved ? 'synthetic-creator' : null;
+      const receipt = await new MktgDocumentStoreService({ creatorSubject }).persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      if (!receipt?.document_location) throw new Error('Missing synthetic receipt');
+      const stored = storedObject(receipt.s3_key);
+      const record = storedRecord(receipt.s3_key);
+      expect(record).toMatchObject({ origin: 'revised', basedOnId: first, comments: [] });
+      expect(stored.metadata['author-id']).toBe(creatorSubject ?? undefined);
+      expect(record.bundle.sidecar).not.toHaveProperty('redraftRunId');
+      expect(record).not.toHaveProperty('redraftRunId');
+      expect(stored.metadata).toMatchObject({ 'redraft-run-id': context.runId, 'comment-count': '1' });
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      const after = JSON.parse(storedObject(pointer).body);
+      expect(detail?.revisions[0]).toMatchObject({ id: receipt.document_location.revision_id, approval: null, commentCount: 1 });
+      if (approved) {
+        expect(after).toEqual({ ...before, revisionIds: [...before.revisionIds, receipt.document_location.revision_id] });
+        expect(detail?.approvedCurrent?.revisionId).toBe(second);
+      } else {
+        expect(after.revisionId).toBe(receipt.document_location.revision_id);
+        expect(detail?.approvedCurrent).toBeNull();
+      }
+      delete stored.metadata['comment-count'];
+      expect((await service.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.revisions[0].commentCount).toBe(1);
+      const again = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      expect(again?.document_location).toEqual(receipt.document_location);
+    });
+    it('never falls back to Generate when a redraft descriptor is missing', async () => {
+      const { context, generated } = await prepare(false);
+      store.objects.delete(`document-redrafts/${context.runId}.json`);
+      const before = [...store.objects];
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session')).toBeNull();
+      const unbound = { ...envelope('# Unbound'), mode: 'redraft' };
+      await expect(service.persistGeneration(req, SPEC, unbound, PROJECT, 'redraft-session')).rejects.toMatchObject({ statusCode: 503 });
+      expect([...store.objects]).toEqual(before);
+    });
+    it('refuses wrong realm or result provenance before a revision/pointer write', async () => {
+      const { generated } = await prepare(true);
+      const before = revisionKeys();
+      const pointers = [...store.objects].filter(([key]) => key.endsWith('/current.json')).map(([key, value]) => [key, value.body]);
+      const bad = { ...generated, version: 3 };
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, bad, PROJECT, 'redraft-session')).toBeNull();
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'other-project', writer: true });
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, 'other-project', 'redraft-session')).toBeNull();
+      const objects = [...store.objects.keys()];
+      await expect(service.persistGeneration(req, SPEC, envelope('# Must not persist'), 'other-project', 'redraft-session')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect([...store.objects.keys()]).toEqual(objects);
+      expect(revisionKeys()).toEqual(before);
+      expect([...store.objects].filter(([key]) => key.endsWith('/current.json')).map(([key, value]) => [key, value.body])).toEqual(pointers);
     });
   });
 
