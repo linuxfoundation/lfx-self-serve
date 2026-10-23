@@ -462,3 +462,20 @@ location (or `null` until its receipt arrives) and accepted attempt. Cached hist
 order never selects a handoff revision; receipt-less recovery retains that attempt's
 session, capability and prior-version hint, not a newer cached run's. The asset-store item's single approved-current pointer and its chip/state
 are the authority for current status, never a separate run/list-derived flag.
+
+## Asset comment client
+
+`MktgDocumentCommentsService` owns one selected document revision's comment list.
+The view selects its project/agent/document/revision scope and clears selection
+on departure. Instantiating the client or reopening a stored view never POSTs.
+Readonly signals distinguish loading, measured empty, load failure and save
+failure. A transient same-scope refresh retains the last measured list; access
+denials clear it. Effective-subject/project changes immediately hide old data
+and cancel outstanding requests. Scope generations reject a deferred old action
+even after navigating away and back to the same revision. A successful add
+cancels a pre-save GET so it cannot overwrite the acknowledged snapshot.
+
+The composer owns its text and opaque request ID, retaining both for an explicit
+save retry. The client never automatically retries a POST or invents an ID.
+State is memory-only and all HTTP is browser-gated; no local storage, sources,
+sessions, attribution IDs or agent handles are added to the request contract.

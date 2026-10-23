@@ -7,6 +7,13 @@ export const MKTG_DOCUMENT_COMMENTS_SCHEMA = 'mktg-document-comments/v1';
 /** Agent form-schema limits, not a new agent catalog or ordering. */
 export const MKTG_DOCUMENT_COMMENT_LIMITS = { 'foundation-message': 30, 'brand-kit': 30, boilerplates: 20 } as const;
 export const MKTG_DOCUMENT_COMMENT_MAX_CHARS = 4000;
+export const MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES = {
+  load: 'Comments could not be loaded. Try again.',
+  save: 'Your comment could not be saved. Keep your text and try again.',
+  scope: 'Select an asset revision before adding a comment.',
+  access: 'You need write access to this project to read or add comments.',
+  unexpected: 'The comments response did not match the selected revision.',
+} as const;
 export const MKTG_DOCUMENT_COMMENT_STATUSES = ['open', 'sent', 'resolved'] as const;
 export const MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES = ['reserved', 'started', 'completed', 'failed', 'uncertain'] as const;
 export const MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS = ['field', 'passage'] as const;

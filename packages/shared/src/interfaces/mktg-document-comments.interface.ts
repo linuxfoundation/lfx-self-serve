@@ -89,6 +89,14 @@ export interface MktgReviseDocumentRequest {
   clientRequestId: string;
 }
 
+/** One browser view's revision selection; identity comes from UserService, never a request body. */
+export interface MktgDocumentCommentScope {
+  projectUid: string;
+  agentKey: MktgCommentAgentKey;
+  documentId: string;
+  revisionId: string;
+}
+
 /** Distinguishes a valid nullable field from a missing/unsafe path. */
 export interface MktgDocumentCommentField {
   value: unknown;
