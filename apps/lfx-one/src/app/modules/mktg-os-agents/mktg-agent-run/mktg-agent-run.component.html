@@ -10,7 +10,7 @@
 }
 @if (agent && intake && !intake.oneOffDocument) {
   <div [ngClass]="pageClass" data-testid="mktg-agent-run-page">
-    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent?.id ?? '' }" class="mb-4 block" />
+    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id }" class="mb-4 block" />
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-gray-200">

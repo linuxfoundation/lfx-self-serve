@@ -75,7 +75,7 @@ describe('Marketing family page', () => {
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-writer' }), impersonating: signal(false) } },
         {
           provide: ProjectContextService,
-          useValue: { activeContext: signal({ uid: 'synthetic', name: 'Synthetic project', slug: 'synthetic' }), canWrite: writer },
+          useValue: { activeContext: computed(() => ({ uid: 'synthetic', name: 'Synthetic project', slug: projectSlug() })), canWrite: writer },
         },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
