@@ -3,7 +3,15 @@
 
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, Router } from '@angular/router';
+import {
+  NavigationCancel,
+  NavigationCancellationCode,
+  NavigationEnd,
+  NavigationSkipped,
+  NavigationSkippedCode,
+  NavigationStart,
+  Router,
+} from '@angular/router';
 import type { Event as RouterEvent } from '@angular/router';
 import { LENS_COOKIE_KEY, NAV_LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { Lens, NavLens } from '@lfx-one/shared/interfaces';
@@ -174,6 +182,32 @@ describe('LensService — menu lens preview', () => {
       expect(lens.activeLens()).toBe('me');
       expect(lens.menuLens()).toBe('project');
       expect(lens.previewingMenuLens()).toBe(true);
+    });
+
+    it('puts them back when the pick is skipped as the current address', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+
+      events.next(new NavigationSkipped(7, '/meetings', 'same url', NavigationSkippedCode.IgnoredSameUrlNavigation));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.menuLens()).toBe('project');
+    });
+
+    it("commits the picked lens when it isn't the previewed one, and puts the previewed one back if the pick fails", () => {
+      // A hybrid's merged Projects tab previews the project lens; a foundation row picked from it commits foundation.
+      const { lens, events } = setup('me', { hasBoardRole: true });
+      lens.previewMenuLens('project');
+
+      lens.commitMenuLens('foundation');
+      expect(lens.activeLens()).toBe('foundation');
+      expect(lens.previewingMenuLens()).toBe(false);
+
+      events.next(new NavigationStart(7, '/foundation/overview'));
+      events.next(cancel(7));
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.menuLens()).toBe('project');
     });
 
     it('keeps the committed lens once the pick lands', () => {

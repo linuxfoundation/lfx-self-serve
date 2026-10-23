@@ -15,7 +15,7 @@ import {
 import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { filter, switchMap, take } from 'rxjs';
+import { filter, of, switchMap, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -120,23 +120,25 @@ export class LensService {
   }
 
   /**
-   * Commit a previewed menu lens as the active lens, for a pick from that menu that is about to navigate. A no-op without
-   * a preview.
+   * Commit a pick from the previewed menu, which is about to navigate: `lens` (by default the previewed one — a hybrid's
+   * foundation row picked in the merged Projects menu commits `foundation`) becomes the active lens. A no-op without a
+   * preview.
    *
-   * The lens is committed before the navigation starts, because guards read `activeLens`. If that navigation is then
-   * cancelled or fails (a `canDeactivate` the viewer declines, a guard that refuses), the page never left, so its lens
-   * and the drawer's preview are put back — unless something else has moved the lens since, which then owns it.
+   * The lens is committed before the navigation starts, because guards read `activeLens`. If that navigation then never
+   * leaves the page — cancelled or failed (a `canDeactivate` the viewer declines, a guard that refuses), or skipped as
+   * the current address — the page's lens and the drawer's preview are put back, unless something else has moved the
+   * lens since, which then owns it.
    */
-  public commitMenuLens(): void {
+  public commitMenuLens(lens: Lens = this.menuLens()): void {
     if (!this.previewingMenuLens()) {
       this.menuLensPreview.set(null);
       return;
     }
     const previous = this.activeLens();
-    const committed = this.menuLens();
-    this.setLens(committed);
+    const previewed = this.menuLens();
+    this.setLens(lens);
     this.menuLensPreview.set(null);
-    this.restoreLensIfPickFails(previous, committed);
+    this.restoreLensIfPickFails(previous, this.activeLens(), previewed);
   }
 
   /** Drop the drawer's preview, leaving the page's lens exactly as it is (the drawer closed without a pick). */
@@ -217,22 +219,25 @@ export class LensService {
 
   /**
    * Follows the navigation a {@link commitMenuLens} pick starts — the first one to start or be skipped after it, by id,
-   * so a cancellation of an earlier navigation that the pick superseded is not mistaken for the pick's own.
+   * so a cancellation of an earlier navigation that the pick superseded is not mistaken for the pick's own. A skipped
+   * pick (its link is the current address) counts as one that never left: no `NavigationEnd` follows it for the route
+   * to re-assert its own lens.
    */
-  private restoreLensIfPickFails(previous: Lens, committed: Lens): void {
+  private restoreLensIfPickFails(previous: Lens, committed: Lens, previewed: Lens): void {
     this.router.events
       .pipe(
         filter((event): event is NavigationStart | NavigationSkipped => event instanceof NavigationStart || event instanceof NavigationSkipped),
         take(1),
-        filter((event) => event instanceof NavigationStart),
-        switchMap((start) =>
-          this.router.events.pipe(
-            filter(
-              (event): event is NavigationEnd | NavigationCancel | NavigationError =>
-                (event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError) && event.id === start.id
-            ),
-            take(1)
-          )
+        switchMap((first) =>
+          first instanceof NavigationSkipped
+            ? of(first)
+            : this.router.events.pipe(
+                filter(
+                  (event): event is NavigationEnd | NavigationCancel | NavigationError =>
+                    (event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError) && event.id === first.id
+                ),
+                take(1)
+              )
         )
       )
       .subscribe((event) => {
@@ -240,7 +245,7 @@ export class LensService {
           return;
         }
         this.setLens(previous);
-        this.menuLensPreview.set(committed);
+        this.menuLensPreview.set(previewed);
       });
   }
 

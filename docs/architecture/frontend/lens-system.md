@@ -31,7 +31,7 @@ class LensService {
   menuLens: Signal<Lens>; // the previewed lens while one stands, otherwise activeLens
   previewingMenuLens: Signal<boolean>; // menuLens !== activeLens
   previewMenuLens(lens: Lens): void; // a drawer lens tab: show that lens's menu, no navigation
-  commitMenuLens(): void; // a pick from the previewed menu: setLens(menuLens) before it navigates; undone if that navigation is cancelled
+  commitMenuLens(lens?: Lens): void; // a pick from the previewed menu: setLens before it navigates; undone if it never leaves the page
   clearMenuLensPreview(): void; // the drawer closed without a pick
 }
 ```
@@ -52,8 +52,8 @@ The preview is dropped when the drawer closes and when the drawer's navbar is de
 
 A pick from the previewed menu commits it:
 
-- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`. If that navigation is cancelled or errors (a declined `canDeactivate`, a refusing guard), the page lens and the preview are put back, unless the lens has moved since;
-- a project or foundation pick lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page. Previewed menu links carry `?project=` by the previewed lens: the selector's slug for a foundation or project menu, none for a Me or Org menu;
+- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`. If that navigation never leaves the page — cancelled or failed (a declined `canDeactivate`, a refusing guard), or skipped as the current address — the page lens and the preview are put back, unless the lens has moved since;
+- a project or foundation pick commits through `commitMenuLens` too, and lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page. Previewed menu links carry `?project=` by the previewed lens: the selector's slug for a foundation or project menu, none for a Me or Org menu;
 - an organization pick lands on that organization's Org Lens overview.
 
 ### Route wiring

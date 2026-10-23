@@ -140,6 +140,10 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
         activeLens.set(lens);
         return true;
       }),
+      commitMenuLens: vi.fn((lens: Lens) => {
+        activeLens.set(lens);
+        menuLensPreview.set(null);
+      }),
     };
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -177,8 +181,9 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
 
     selectItem(navMenu, betaItem);
 
-    expect(lensService.setLens).toHaveBeenCalledWith('project');
-    expect(lensService.clearMenuLensPreview).toHaveBeenCalled();
+    // Committed like any pick from the previewed menu, so a navigation that never leaves the page is undone.
+    expect(lensService.commitMenuLens).toHaveBeenCalledWith('project');
+    expect(lensService.setLens).not.toHaveBeenCalled();
     expect(lensService.previewingMenuLens()).toBe(false);
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), false);
     expect(navigate).toHaveBeenCalledWith(['/project', 'overview'], { queryParams: { project: 'beta' } });
@@ -189,6 +194,7 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
 
     selectItem(navMenu, cncfItem);
 
+    expect(lensService.commitMenuLens).toHaveBeenCalledWith('foundation');
     expect(lensService.activeLens()).toBe('foundation');
     expect(setFoundation).toHaveBeenCalledWith(expect.objectContaining({ slug: 'cncf' }), false);
     expect(setProject).not.toHaveBeenCalled();

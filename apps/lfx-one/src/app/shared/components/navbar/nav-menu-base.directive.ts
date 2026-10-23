@@ -161,10 +161,14 @@ export abstract class NavMenuBase {
     // for those users — setLens('foundation') would be a no-op and the selection would silently fail.
     const foundationAllowed = this.lensService.availableLenses().some((option) => option.id === 'foundation');
     const asFoundation = item.isFoundation && foundationAllowed;
-    // A pick from a lens the mobile drawer previews has no page of that lens under it to re-target (#4208).
+    // A pick from a lens the mobile drawer previews has no page of that lens under it to re-target (#4208). It commits
+    // like any pick from that menu, so a navigation that never leaves the page puts the page's lens back.
     const fromPreview = this.lensService.previewingMenuLens();
-    this.lensService.clearMenuLensPreview();
-    this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    if (fromPreview) {
+      this.lensService.commitMenuLens(asFoundation ? 'foundation' : 'project');
+    } else {
+      this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    }
     // Decide the navigation before the context syncs the URL: a navigation owns the destination, so
     // the switch must not also `replaceState` the current history entry — that rewrote the page the
     // user came from to the new slug, and Back then landed on a URL the landing-page guards bounce
