@@ -2589,9 +2589,9 @@ describe('VoteService', () => {
       );
     });
 
-    // #4192 (PRRT @greptile-apps, PRRT @copilot-pull-request-reviewer): emailService.sendEmail
-    // resolves without throwing when sending is disabled or the recipient is filtered — it only omits
-    // `email_id`. A recipient whose send was accepted-but-not-sent must count as failed, not sent.
+    // #3662: emailService.sendEmail resolves without throwing when sending is disabled or the
+    // recipient is filtered — it only omits `email_id`. A recipient whose send was
+    // accepted-but-not-sent must count as failed, not sent.
     it('counts a fulfilled-but-unsent reply (no email_id) as a failure, not a send', async () => {
       sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockResolvedValueOnce({});
 

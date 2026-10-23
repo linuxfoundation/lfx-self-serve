@@ -49,7 +49,7 @@ import {
   sortCommentResponsesByRecency,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { VOTE_SUMMARY_EMAIL_CONCURRENCY, VOTE_SUMMARY_EMAIL_SEND_BUDGET_MS } from '../constants';
+import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
 
 import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
@@ -810,16 +810,13 @@ export class VoteService {
 
     let sentCount = 0;
     let failedCount = 0;
-    const outcomes = await settleInBatches(
-      uniqueRecipients,
-      VOTE_SUMMARY_EMAIL_CONCURRENCY,
-      (recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered }),
-      { deadlineAt: Date.now() + VOTE_SUMMARY_EMAIL_SEND_BUDGET_MS }
+    const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
+      this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
     );
     outcomes.forEach((outcome, index) => {
       // `email_id` absent on a fulfilled reply means the email service accepted but did not actually
       // send (disabled, or the recipient was filtered) — that voter got nothing, so it counts as a
-      // failure, not a send (per @greptile-apps, @copilot-pull-request-reviewer).
+      // failure, not a send.
       if (outcome.status === 'fulfilled' && outcome.value.email_id) {
         sentCount += 1;
         return;

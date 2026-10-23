@@ -1444,8 +1444,7 @@ describe('VotesTableComponent — Extend deadline', () => {
   });
 });
 
-// #3662 (GH-4192 review: PRRT @dealako, PRRT @lfx-one — the menu-gating and confirm→send flow had no
-// component coverage at all).
+// #3662: the menu-gating and confirm→send flow had no component coverage at all.
 describe('VotesTableComponent — Send summary (#3662)', () => {
   let fixture: ComponentFixture<VotesTableComponent>;
   let table: VotesTableComponent;
