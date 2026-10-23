@@ -142,12 +142,14 @@ describe('MktgAgentRunService', () => {
     expect(error).toHaveBeenCalledWith(failure);
   });
 
-  it('starts a fresh session for explicit newRun even if the intake normally follows up', () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+  it('starts a new session without changing previous history before any result arrives', () => {
+    const original = JSON.stringify(storedV1Run());
+    window.localStorage.setItem(STORAGE_KEY, original);
     const subscription = service.generate({ ...generateRequest(), newRun: true }).subscribe();
     expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, expect.objectContaining({ answers: ANSWERS }));
     expect(httpPost.mock.calls.some(([url]) => url === '/api/mktg-agents/chat')).toBe(false);
-    expect(httpPost.mock.calls[0][1]).not.toHaveProperty('priorVersion');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(original);
+    expect(TestBed.inject(MktgRunAttemptService).load('proj-1', 'brand-kit')?.state).toBe('writing');
     subscription.unsubscribe();
   });
 

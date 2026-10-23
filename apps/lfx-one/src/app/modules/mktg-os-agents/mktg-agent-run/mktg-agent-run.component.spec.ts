@@ -405,6 +405,22 @@ describe('MktgAgentRunComponent', () => {
       expect(component['sourceFields']().find((field) => field.key === 'github_url')?.value).toBe('');
     });
 
+    it('toggles Edit back to the labelled summary when the disclosure is activated again', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const edit = query('mktg-run-sources-edit')?.querySelector('button');
+      edit?.click();
+      await fixture.whenStable();
+      expect(edit?.getAttribute('aria-expanded')).toBe('true');
+      edit?.click();
+      await fixture.whenStable();
+      expect(edit?.getAttribute('aria-expanded')).toBe('false');
+      expect(query('mktg-run-source-website_url')?.textContent).toContain('From the last run');
+      expect(document.activeElement).toBe(edit);
+    });
+
     it('blocks missing uploads until reattachment or an explicit choice to omit them', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of({ ...history, documentCount: 2 }));
@@ -610,7 +626,7 @@ describe('MktgAgentRunComponent', () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
       try {
         await configure('browser', agentId);
-        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParamsHandling: 'preserve', replaceUrl: true }));
+        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true }));
       } finally {
         navigate.mockRestore();
       }

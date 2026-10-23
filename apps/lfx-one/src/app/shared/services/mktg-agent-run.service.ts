@@ -170,6 +170,7 @@ export class MktgAgentRunService {
       // These intakes must still send priorVersion (without old feedback for newRun).
       attempt$ = this.resubmitRun(request, stored);
     } else if (request.newRun) {
+      // appendVersion keeps the new session's v1 distinct from existing history.
       attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);

@@ -27,6 +27,8 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_RUN_NEW_MODE,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -214,6 +216,7 @@ export class MktgDocumentViewComponent {
     { initialValue: { agentKey: '', documentId: '' } }
   );
   private readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
+  private readonly routeProject = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('project'))), { initialValue: null });
 
   // === Computed ===
   protected readonly writePending = computed(() => this.submittingGeneration() || this.approvingId() !== null || this.restoringId() !== null);
@@ -301,7 +304,11 @@ export class MktgDocumentViewComponent {
     const key = this.view()?.type.agentKey ?? this.runDetail()?.type.agentKey ?? this.params().agentKey;
     return key ? mktgRunRouteFor(key, mktgKitRootPath(this.router.url)) : undefined;
   });
-  protected readonly runAgainParams = computed(() => ({ project: this.projectContext.activeContext()?.slug ?? null }));
+  protected readonly runAgainParams = computed(() => ({
+    project: this.projectContext.activeContext()?.slug || this.routeProject(),
+    mode: MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === this.runAgentId()) ? MKTG_RUN_NEW_MODE : null,
+    ...MKTG_RUN_RESUME_QUERY_CLEAR,
+  }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
   protected readonly approvedFramework = computed(() => {
@@ -748,7 +755,7 @@ export class MktgDocumentViewComponent {
     const pending = project ? this.attempts.load(project, agentId) : null;
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
-      queryParams: { ...this.runAgainParams(), questions: token },
+      queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
     });
   }
 
@@ -1126,7 +1133,7 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);
       void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
-        queryParams: { ...this.runAgainParams(), questions: token },
+        queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
       });
     }
   }

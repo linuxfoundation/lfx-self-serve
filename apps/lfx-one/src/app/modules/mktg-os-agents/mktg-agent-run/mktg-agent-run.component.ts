@@ -469,7 +469,7 @@ export class MktgAgentRunComponent {
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -631,10 +631,14 @@ export class MktgAgentRunComponent {
       .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
   }
 
-  protected onEditSources(section = '#mktg-run-intake-form'): void {
+  protected onEditSources(section?: string): void {
     if (this.phase() !== 'form' || this.sourcesLoading() || this.sourcesDenied()) return;
+    if (!section && this.sourcesEditing()) {
+      this.onDoneSources();
+      return;
+    }
     this.sourcesEditing.set(true);
-    this.focusSourceControl(section);
+    this.focusSourceControl(section ?? '#mktg-run-intake-form');
   }
 
   protected onDoneSources(): void {

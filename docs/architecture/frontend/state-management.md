@@ -381,7 +381,8 @@ An explicit blank wins over lower-priority values; each field labels its actual 
 An unavailable history read is distinct from no history; denied access suppresses
 private fallback and Start. Recorded blank fields remain blank. Project, effective
 subject and mode changes cancel the previous reads and reset the form; SSR never
-reads private browser history or starts a history request.
+reads private browser history or starts a history request. Back, catalog tiles and
+dependency links clear this entry-only mode instead of transferring it to another agent.
 
 Edit exposes the registered intake controls in place. Start alone prepares or
 submits a fresh run, resolving dependency documents again, and removes fresh mode

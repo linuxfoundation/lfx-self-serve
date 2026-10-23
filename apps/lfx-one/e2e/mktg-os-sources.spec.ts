@@ -2,12 +2,44 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 
 test.describe('Marketing OS new run Sources', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  for (const mount of ['project', 'foundation'] as const) {
+    test(`${mount}: asset header Run again opens prefilled Sources, then edit and Start land the revision`, async ({ page }) => {
+      const sources = await setupFreshSources(page);
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+      if (!type) throw new Error('Missing synthetic asset type');
+      sources.handoff.finish();
+      await page.evaluate((destination) => {
+        history.pushState({}, '', destination);
+        dispatchEvent(new PopStateEvent('popstate'));
+      }, `/${mount}/mktg-os-agents/documents/${type.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`);
+      const again = page.getByTestId('mktg-document-view-run-again');
+      await expect(again).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await again.click();
+      await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+      const opened = new URL(page.url());
+      expect(opened.searchParams.get('mode')).toBe('new');
+      for (const selector of Object.keys(MKTG_RUN_RESUME_QUERY_CLEAR)) expect(opened.searchParams.has(selector)).toBe(false);
+      await expect(page.getByTestId('mktg-run-source-website_url')).toContainText(sources.answers.website_url);
+      expect(sources.generated).toHaveLength(0);
+      expect(sources.polls()).toBe(0);
+      await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+      await page.locator('[data-test="mktg-intake-website_url"]').fill('https://rerun.example');
+      await page.getByTestId('mktg-run-start').getByRole('button').click();
+      await expect(page).toHaveURL(new RegExp('revision=' + sources.handoff.revision.id), { timeout: DATA_LOAD_TIMEOUT });
+      expect(sources.generated).toHaveLength(1);
+      expect(sources.generated[0]).toMatchObject({ answers: { website_url: 'https://rerun.example' } });
+      await page.screenshot({ path: test.info().outputPath(`asset-run-again-explicit-start-${mount}.png`), fullPage: true });
+    });
+  }
+
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: prefill, edit and explicit Start land the exact new asset`, async ({ page }) => {
       const deviceViewport = page.viewportSize();

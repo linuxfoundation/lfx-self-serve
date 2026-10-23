@@ -46,21 +46,21 @@
               }
               <span class="text-xs text-gray-500" data-testid="mktg-family-run-next">Next: {{ next.label }}</span>
             </div>
-          } @else if (firstAgent()?.name ?? definition.pendingAgentName; as name) {
+          } @else if (firstRunName(); as name) {
             <span
-              [pTooltip]="firstAgent()?.status === 'active' ? '' : pendingReason()"
+              [pTooltip]="firstRunEnabled() ? '' : pendingReason()"
               tooltipPosition="bottom"
               tooltipEvent="both"
-              [attr.aria-label]="(firstAgent()?.status === 'active' ? '' : pendingReason()) || null"
-              [attr.tabindex]="firstAgent()?.status === 'active' ? null : 0">
+              [attr.aria-label]="(firstRunEnabled() ? '' : pendingReason()) || null"
+              [attr.tabindex]="firstRunEnabled() ? null : 0">
               <lfx-button
                 [label]="'Run ' + name"
                 icon="fa-light fa-play"
-                [ariaLabel]="firstAgent()?.status === 'active' ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
-                [disabled]="firstAgent()?.status !== 'active'"
+                [ariaLabel]="firstRunEnabled() ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
+                [disabled]="!firstRunEnabled()"
                 (onClick)="runFirstAgent()"
                 data-testid="mktg-family-run" />
-              @if (firstAgent()?.status !== 'active') {
+              @if (!firstRunEnabled()) {
                 <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ pendingReason() }}</span>
               }
             </span>
@@ -133,7 +133,7 @@
                             [attr.aria-label]="reason"
                             tabindex="0">
                             <lfx-button
-                              [label]="'Run ' + agent.name"
+                              [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
                               [text]="true"
                               size="small"
                               styleClass="p-0 text-sm"
@@ -142,7 +142,7 @@
                           </span>
                         } @else {
                           <lfx-button
-                            [label]="'Run ' + agent.name"
+                            [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
                             [text]="true"
                             size="small"
                             styleClass="p-0 text-sm"

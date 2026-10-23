@@ -16,6 +16,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
   MktgGenerateRequest,
@@ -147,6 +148,41 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     http?.verify();
     vi.useRealTimers();
     window.localStorage.clear();
+  });
+
+  it.each(['project', 'foundation'])('fixed parent breadcrumbs do not carry fresh mode on the %s mount', async (lens) => {
+    const target = FOUNDATION_MESSAGE_INTAKE;
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/${target.agentId}?project=${project.slug}&mode=new`, MktgAgentRunComponent);
+    await settle();
+    http.expectOne((candidate) => candidate.url.endsWith('/intakes/foundation-message/last')).flush({ intake: null });
+    await settle();
+    for (const index of [0, 1]) {
+      const href = query('mktg-breadcrumb-link-' + index)?.getAttribute('href');
+      expect(href).toBeTruthy();
+      const url = new URL(href ?? '', 'https://synthetic.example');
+      expect(url.pathname).toContain(`/${lens}/mktg-os-agents`);
+      expect(url.searchParams.has('mode')).toBe(false);
+      expect(url.searchParams.get('project')).toBe(project.slug);
+    }
+    http.expectNone((candidate) => candidate.url.includes('/intakes/'));
+    http.expectNone((candidate) => candidate.method === 'POST');
+  });
+
+  it.each(['project', 'foundation'])('a dependency link clears fresh mode on the %s mount', async (lens) => {
+    const source = await harness.navigateByUrl(`/${lens}/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}?project=${project.slug}&mode=new`, MktgAgentRunComponent);
+    await settle();
+    http.expectOne((candidate) => candidate.url.endsWith('/intakes/brand-kit/last')).flush({ intake: null });
+    await settle();
+    const landed = navigation();
+    source['onOpenAgent'](FOUNDATION_MESSAGE_INTAKE.agentId);
+    await landed;
+    await settle();
+    const url = new URL(router.url, 'https://synthetic.example');
+    expect(url.pathname).toBe(`/${lens}/mktg-os-agents/${FOUNDATION_MESSAGE_INTAKE.agentId}`);
+    expect(url.searchParams.has('mode')).toBe(false);
+    expect(url.searchParams.get('project')).toBe(project.slug);
+    http.expectNone((candidate) => candidate.url.includes('/intakes/'));
+    http.expectNone((candidate) => candidate.method === 'POST');
   });
 
   it.each(MKTG_DOCUMENT_TYPES.filter((candidate) => !!findMktgRunIntake(candidate.agentKey)?.endpoints.result))(
@@ -454,8 +490,14 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     query('mktg-document-view-run-again')?.click();
     await returned;
     await settle();
-    expect(query('mktg-agent-run-form')).not.toBeNull();
-    expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach');
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/intakes/${type.agentKey}/last`))
+      .flush({
+        intake: { answers: Object.fromEntries(intake.fields.map((field) => [field.key, request.answers[field.key] ?? ''])), documentCount: 0, logoCount: 0 },
+      });
+    await settle();
+    expect(query('mktg-run-sources')).not.toBeNull();
+    expect(query('mktg-run-sources')?.textContent).toContain('From the last run');
     expect(attempts.load(project.uid, intake.agentId)?.request.answers).toEqual(request.answers);
     http.expectNone(intake.endpoints.generate);
     http.expectNone(intake.endpoints.result);
@@ -473,6 +515,16 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     await returned;
     await settle();
     expect(router.url.split('?')[0]).toBe(`/${lens}/mktg-os-agents/${intake.agentId}`);
+    expect(new URL(router.url, 'https://synthetic.example').searchParams.get('mode')).toBe('new');
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/intakes/${type.agentKey}/last`))
+      .flush({
+        intake: { answers: Object.fromEntries(intake.fields.map((field) => [field.key, request.answers[field.key] ?? ''])), documentCount: 0, logoCount: 0 },
+      });
+    await settle();
+    expect(query('mktg-run-sources')).not.toBeNull();
+    http.expectNone(intake.endpoints.generate);
+    http.expectNone(intake.endpoints.result);
     expect(query('mktg-agent-run-page')).not.toBeNull();
   });
 
@@ -715,7 +767,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       pendingQuestions: pending,
       updatedAt: new Date().toISOString(),
     });
-    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?run=${'b'.repeat(64)}`, MktgDocumentViewComponent);
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?run=${'b'.repeat(64)}&mode=new`, MktgDocumentViewComponent);
     await settle();
     http
       .expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))
@@ -743,6 +795,11 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     await settle();
     expect(navigate).toHaveBeenCalledTimes(1);
     expect(router.url).toContain('questions=');
+    expect(new URL(router.url, 'https://synthetic.example').searchParams.has('mode')).toBe(false);
+    expect(navigate).toHaveBeenCalledWith(
+      [`/${lens}/mktg-os-agents`, req.agentId],
+      expect.objectContaining({ queryParams: { project: project.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: expect.any(String), mode: null } })
+    );
     expect(query('mktg-agent-run-questions')?.textContent).toContain('Which synthetic goal?');
     http.expectNone((candidate) => candidate.method === 'POST');
   });
@@ -766,12 +823,13 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       updatedAt: new Date().toISOString(),
     });
     const token = attempts.prepare(req, true);
-    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${target.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${target.agentKey}/living?generation=${token}&mode=new`, MktgDocumentViewComponent);
     await settle();
     http
       .expectOne((candidate) => candidate.url.endsWith(`/documents/${target.agentKey}/living`))
       .flush({ project: project.uid, type: target, documentId: 'living', revisions: [], approvedCurrent: null, runs: [] });
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    const navigate = vi.spyOn(router, 'navigate');
     const returned = navigation();
     http.expectOne(req.intake.endpoints.result).flush({
       status: 'questions',
@@ -782,6 +840,11 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     await settle();
     expect(router.url).toContain(`/${lens}/mktg-os-agents/${req.agentId}?`);
     expect(router.url).toContain('questions=');
+    expect(new URL(router.url, 'https://synthetic.example').searchParams.has('mode')).toBe(false);
+    expect(navigate).toHaveBeenCalledWith(
+      [`/${lens}/mktg-os-agents`, req.agentId],
+      expect.objectContaining({ queryParams: { project: project.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: expect.any(String), mode: null } })
+    );
     expect(query('mktg-agent-run-questions')?.textContent).toContain('Which goal?');
     http.expectNone(req.intake.endpoints.answers ?? 'no-answers-endpoint');
     http.expectNone(req.intake.endpoints.generate);

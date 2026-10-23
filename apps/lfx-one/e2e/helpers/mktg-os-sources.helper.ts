@@ -26,6 +26,15 @@ export async function withDesktopSourcesSetup<T>(page: Page, setup: () => Promis
 export async function setupFreshSources(page: Page, options: { state?: 'loaded' | 'empty' | 'error' | 'denied' | 'loading'; logoCount?: number } = {}) {
   await suppressCookieBanner(page);
   const handoff = await withDesktopSourcesSetup(page, () => setupNoQuestionsHandoff(page));
+  await page.route('**/api/nav/lens-items*', (route) => {
+    const lens = new URL(route.request().url()).searchParams.get('lens');
+    return fulfillDocumentJson(route, {
+      items: lens === 'project' || lens === 'foundation' ? [{ ...DOCUMENT_PROJECT, logoUrl: null, isFoundation: lens === 'foundation' }] : [],
+      next_page_token: null,
+      upstream_failed: false,
+      lens,
+    });
+  });
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId && entry.kind === 'living');
   if (!type) throw new Error('Missing registered synthetic source type');
   if (options.state === 'denied') await ApiMockHelper.setupProjectSlugMock(page, { writer: false });
