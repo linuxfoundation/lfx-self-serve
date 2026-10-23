@@ -10,6 +10,7 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Attendance trend unavailable"
       subtitle="We could not load the attendance trend for this foundation. Refresh the page to try again."
@@ -18,12 +19,14 @@
     <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="engagement-attendance-trend-loading" aria-hidden="true" />
   } @else if (summary().state === 'empty') {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-chart-line"
       title="No meeting attendance in the last 12 months"
       [subtitle]="'A month appears here once it holds ' + minMeetings + ' or more meetings with invited attendees.'"
       data-testid="engagement-attendance-trend-empty" />
   } @else if (summary().state === 'insufficient') {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-chart-line"
       title="Not enough data to chart a trend"
       [subtitle]="'Only one of the last 12 months has attendance from ' + minMeetings + ' or more meetings.'"
@@ -33,7 +36,9 @@
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
       <div class="flex flex-col gap-2" data-testid="engagement-attendance-trend-hero">
         <div class="flex items-baseline gap-2">
-          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-latest">{{ summary().latestLabel }}</span>
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-attendance-trend-latest">{{
+            summary().latestLabel
+          }}</span>
           <span
             class="text-[13px] font-medium tabular-nums"
             [class.text-emerald-600]="summary().deltaDirection === 'up'"
@@ -43,23 +48,27 @@
             >{{ summary().deltaLabel }}<span class="sr-only"> vs previous month</span></span
           >
         </div>
-        <span class="text-[12.5px] text-gray-500" data-testid="engagement-attendance-trend-caption">{{ summary().latestCaption }}</span>
+        <span class="text-[12px] text-gray-500" data-testid="engagement-attendance-trend-caption">{{ summary().latestCaption }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="engagement-attendance-trend-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Change over range</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-change">
+          <dt class="text-[12px] text-gray-500">Change over range</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-attendance-trend-change">
             {{ summary().rangeChangeLabel }}
           </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Range high</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-high">{{ summary().rangeHighLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Range high</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-attendance-trend-high">
+            {{ summary().rangeHighLabel }}
+          </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Range low</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-attendance-trend-low">{{ summary().rangeLowLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Range low</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-attendance-trend-low">
+            {{ summary().rangeLowLabel }}
+          </dd>
         </div>
       </dl>
     </div>

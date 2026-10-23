@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Route, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { LINKEDIN_API } from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
@@ -9,6 +10,43 @@ import { json, LINKEDIN_RUN_TIMEOUT, openLinkedin, setupLinkedin } from './helpe
 
 // openLinkedin calls suppressCookieBanner(page) before every navigation.
 test.describe('Marketing OS LinkedIn structure and states', () => {
+  test('a slow healthy session remains pending without a failure or Retry control', async ({ page }, info) => {
+    await suppressCookieBanner(page);
+    await setupLinkedin(page, { saved: true });
+    let polls = 0;
+    await page.route(`**${LINKEDIN_API}/result`, (route) => {
+      polls++;
+      return json(route, { status: 'pending', activity: [] });
+    });
+    await openLinkedin(page);
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic slow healthy source.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect.poll(() => polls, { timeout: LINKEDIN_RUN_TIMEOUT }).toBeGreaterThanOrEqual(2);
+    await expect(page.getByTestId('mktg-linkedin-generating')).toBeVisible();
+    await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-retry-run')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath('healthy-pending-session.png'), fullPage: true });
+  });
+
+  test('terminal failure is an accessible alert with a real Retry button at mobile width', async ({ page }, info) => {
+    await suppressCookieBanner(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setupLinkedin(page, { saved: true });
+    await page.route(`**${LINKEDIN_API}/result`, (route) =>
+      json(route, { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry with a new run.' } })
+    );
+    await openLinkedin(page);
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic mobile source.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    const alert = page.getByTestId('mktg-linkedin-error');
+    await expect(alert).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(alert).toHaveAttribute('role', 'alert');
+    await expect(alert.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+    await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath('failed-session-mobile.png'), fullPage: true });
+  });
   test('recorded public feed and standalone questions expose main component test ids, never reasoning', async ({ page }, info) => {
     const recorded = LINKEDIN_RECORDED_CASES.find((value) => value.name.endsWith('/first-run-setup'));
     if (!recorded) throw new Error('Missing recorded gap fixture');

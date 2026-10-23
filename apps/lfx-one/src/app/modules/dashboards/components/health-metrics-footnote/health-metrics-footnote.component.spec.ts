@@ -48,15 +48,18 @@ describe('HealthMetricsFootnoteComponent', () => {
     expect(fixture.nativeElement.textContent.trim()).toBe(PARTS.map((part) => part.text).join(''));
   });
 
-  it('leads with an info icon and swaps it for a warning icon on a caution note', async () => {
-    expect(icon().classList).toContain('fa-circle-info');
-    expect(icon().classList).not.toContain('fa-triangle-exclamation');
+  // The design's two note forms: plain grey text, or a warning icon on an amber panel.
+  it('is plain grey text without an icon, and an amber panel with a warning icon on a caution note', async () => {
+    const note = fixture.nativeElement.querySelector('p') as HTMLElement;
+    expect(icon()).toBeNull();
+    for (const cls of ['text-[12px]', 'text-gray-400']) expect(note.classList).toContain(cls);
 
     fixture.componentRef.setInput('caution', true);
     await fixture.whenStable();
 
     expect(icon().classList).toContain('fa-triangle-exclamation');
-    expect(icon().classList).not.toContain('fa-circle-info');
+    for (const cls of ['bg-amber-50', 'text-amber-800']) expect(note.classList).toContain(cls);
+    expect(note.classList).not.toContain('text-gray-400');
   });
 
   it('renders a bold run in bold and a routed run as a link to that tab', () => {
@@ -66,7 +69,7 @@ describe('HealthMetricsFootnoteComponent', () => {
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members');
   });
 
-  it('renders projected content after the icon, as the in-page link footnotes use it', async () => {
+  it('renders projected content after the parts, as the in-page link footnotes use it', async () => {
     const host = TestBed.createComponent(ProjectingHostComponent);
     await host.whenStable();
 

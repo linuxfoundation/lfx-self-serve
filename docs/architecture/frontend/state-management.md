@@ -380,8 +380,11 @@ inputs, choosing the first present value per field before honestly labelled defa
 An explicit blank wins over lower-priority values; each field labels its actual origin.
 An unavailable history read is distinct from no history; denied access suppresses
 private fallback and Start. Recorded blank fields remain blank. Project, effective
-subject and mode changes cancel the previous reads and reset the form; SSR never
-reads private browser history or starts a history request. Back, catalog tiles and
+subject and explicit entry-mode changes cancel the previous reads and reset the form; SSR never
+reads private browser history or starts a history request. Once Generate is accepted, its
+entry-only mode is consumed with replaceUrl. Sources state stays latched for that visit;
+the scoped internal URL clear does not reset or cancel the attempt. Reload restores saved
+questions or polls the accepted writing attempt, never issuing another Generate. Back, catalog tiles and
 dependency links clear this entry-only mode instead of transferring it to another agent.
 
 Edit exposes the registered intake controls in place. Start alone prepares or

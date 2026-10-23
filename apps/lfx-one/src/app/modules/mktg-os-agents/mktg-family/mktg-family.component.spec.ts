@@ -131,7 +131,7 @@ describe('Marketing family page', () => {
 
   it('contains each stretched link and raised Run control in a positioned list card', async () => {
     const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic&unrelated=drop&profile=drop', MktgFamilyComponent);
     const root = harness.routeNativeElement;
     const list = root?.querySelector('[data-testid="mktg-family-assets"]');
     expect(list?.tagName).toBe('UL');

@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   FOUNDATION_MESSAGE_INTAKE,
   ICP_INTAKE,
+  MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -86,6 +87,33 @@ describe('MktgAgentRunService', () => {
     versions: [{ version: 1, document: '# v1', createdAt: '2026-08-19T00:00:00.000Z' }],
     // Freshly saved — well inside the storage TTL (fake timers pin Date.now to real time).
     savedAt: new Date().toISOString(),
+  });
+
+  it.each(['provider', 'idle'] as const)('stops on %s failure without losing history and retries with a fresh session', (kind) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const failure =
+      kind === 'provider'
+        ? { eventType: 'runtime_error', reason: 'The agent could not complete this run. Retry.' }
+        : { eventType: 'session_failed', reason: MKTG_RUN_FAILURE_REASON };
+    resultResponses = [kind === 'provider' ? { status: 'failed', failure } : { status: 'failed', failureText: 'Synthetic idle-runtime reply.' }];
+    const events: MktgGenerateProgress[] = [];
+    service.generate(generateRequest()).subscribe((event) => events.push(event));
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    expect(events).toEqual([{ type: 'submitted' }, { type: 'failed', failureText: kind === 'provider' ? '' : 'Synthetic idle-runtime reply.', failure }]);
+    expect(service.loadRun('proj-1', 'brand-kit')).toMatchObject({ sessionFailed: true, versions: storedV1Run().versions });
+    httpPost.mockClear();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs * 2);
+    expect(httpPost).not.toHaveBeenCalled();
+    resultResponses = [{ status: 'ready', version: 2, documentMarkdown: '# v2' }];
+    service.generate(generateRequest('Keep this feedback.')).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      CHAT_INTAKE.endpoints.generate,
+      expect.objectContaining({ answers: ANSWERS, priorVersion: 1, feedback: 'Keep this feedback.' })
+    );
+    expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2]);
+    expect(service.loadRun('proj-1', 'brand-kit')?.sessionFailed).toBeUndefined();
   });
 
   beforeEach(() => {
@@ -188,6 +216,30 @@ describe('MktgAgentRunService', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4, 5]);
     next.unsubscribe();
+  });
+
+  it('retries a failed fresh-mode session through Generate with continuous history, never the failed chat session', async () => {
+    const prior = storedV1Run();
+    prior.versions = [1, 2, 3].map((version) => ({ version, document: '# prior ' + version, createdAt: new Date().toISOString() }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prior));
+    const request = { ...generateRequest('Old feedback must not be replayed'), newRun: true };
+    resultResponses = [{ status: 'failed', failure: { eventType: 'runtime_error', reason: 'Synthetic terminal failure. Retry.' } }];
+    const first = service.generate(request).subscribe();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    first.unsubscribe();
+    expect(service.loadRun('proj-1', 'brand-kit')).toMatchObject({ sessionFailed: true });
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2, 3]);
+    httpPost.mockClear();
+    resultResponses = [{ status: 'ready', version: 4, documentMarkdown: '# Retried fresh output' }];
+    const retry = service.generate(request).subscribe();
+    const submitted = httpPost.mock.calls.find(([url]) => url === CHAT_INTAKE.endpoints.generate)?.[1];
+    expect(submitted).toMatchObject({ answers: ANSWERS, project: 'proj-1', priorVersion: 3 });
+    expect(submitted).not.toHaveProperty('feedback');
+    expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4]);
+    expect(service.loadRun('proj-1', 'brand-kit')?.sessionFailed).toBeUndefined();
+    retry.unsubscribe();
   });
 
   it.each(['draft', 'failed'] as const)('restores a %s pending after reload without any POST', (state) => {

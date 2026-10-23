@@ -52,7 +52,7 @@ export class CommitteeBasicInfoComponent {
 
     return computed(() => {
       const options = committees().map((committee) => ({
-        label: committee.display_name || committee.name,
+        label: committee.name,
         value: committee.uid,
       }));
 

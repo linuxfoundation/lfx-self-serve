@@ -297,6 +297,10 @@ export enum ServerFeatureFlag {
    * foundations' spend. Say so when enabling it, because a reader who is not told will file the
    * drop as a bug.
    *
+   * The legacy arm is ROOT-only (writer or `global_marketing_ops`, lfx-self-serve-ops#54),
+   * independently of the monitor cutover. Non-root callers receive the shared-account restriction
+   * instead of keywords or demographics; enabling this flag retains their project-scoped reads.
+   *
    * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
    * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
    * this flag exists to close — so an empty table is the honest answer for a project whose
@@ -424,7 +428,17 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) is NOT gated by this flag.
+   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm.
+   *
+   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
+   * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either
+   * arm returns every foundation's campaigns. Those monitors (`/monitor`, `/meta/monitor`,
+   * `/reddit/monitor`, `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT
+   * writer or ROOT `global_marketing_ops` holder; everyone else gets a 403
+   * `MONITOR_SHARED_ACCOUNT_RESTRICTED` before any upstream call (lfx-self-serve-ops#54). LinkedIn
+   * runs one account per foundation, so only its campaign-service arm is project-isolated: its legacy
+   * (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and HubSpot
+   * are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
    * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
