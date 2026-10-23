@@ -1,0 +1,105 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? false"
+  [emptyCopy]="emptyCopy"
+  testId="overview-board">
+  @if (addPastMeetingUrl() && read.status() === 'ready' && !view()?.isEmpty) {
+    <span overviewCardAction class="inline-flex items-center gap-[6px] text-[13px] text-gray-700" data-testid="overview-board-add-meeting">
+      <i class="fa-light fa-face-thinking text-[14px] text-gray-500" aria-hidden="true"></i>Missing a meeting?
+      <a class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" [href]="addPastMeetingUrl()"
+        >Add Past Meeting<span class="sr-only"> (opens in a new tab)</span></a
+      >
+    </span>
+  }
+
+  @if (addPastMeetingUrl()) {
+    <div overviewEmptyAction class="mt-[4px]">
+      <a
+        class="inline-flex h-[30px] items-center gap-[6px] rounded-full border border-blue-400 bg-white px-[13px] text-[12px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
+        target="_blank"
+        rel="noopener noreferrer"
+        [href]="addPastMeetingUrl()"
+        data-testid="overview-board-empty-add-meeting"
+        >Add Past Meeting<i class="fa-light fa-plus text-[12px]" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></a
+      >
+    </div>
+  }
+
+  @if (view(); as view) {
+    <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-board-kpis" />
+
+    <div class="flex flex-col overflow-x-auto" role="table" aria-label="Board members' meeting attendance" data-testid="overview-board-table">
+      <div
+        class="grid min-w-[760px] grid-cols-[minmax(220px,2fr)_minmax(180px,1.5fr)_minmax(200px,1.4fr)_minmax(110px,0.9fr)] gap-[16px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
+        role="row">
+        <span role="columnheader" [attr.aria-sort]="ariaSort('name')">
+          <button
+            type="button"
+            class="inline-flex items-center gap-[6px] border-0 bg-transparent p-0 text-[12px] text-gray-500"
+            (click)="toggleSort('name')"
+            data-testid="overview-board-sort-name">
+            Name<i class="text-[10px]" [class]="nameSortIcon()" aria-hidden="true"></i>
+          </button>
+        </span>
+        <span role="columnheader">Organization</span>
+        <span role="columnheader" [attr.aria-sort]="ariaSort('att')">
+          <button
+            type="button"
+            class="inline-flex items-center gap-[6px] border-0 bg-transparent p-0 text-[12px] text-gray-500"
+            (click)="toggleSort('att')"
+            data-testid="overview-board-sort-attended">
+            Attended<i class="text-[10px]" [class]="attendanceSortIcon()" aria-hidden="true"></i>
+          </button>
+        </span>
+        <span role="columnheader">Last attended</span>
+      </div>
+      @for (row of rows(); track row.key) {
+        <div
+          class="grid min-w-[760px] grid-cols-[minmax(220px,2fr)_minmax(180px,1.5fr)_minmax(200px,1.4fr)_minmax(110px,0.9fr)] items-center gap-[16px] border-b border-gray-100 py-[12px]"
+          role="row"
+          [attr.data-testid]="'overview-board-row-' + row.key">
+          <div class="flex min-w-0 items-center gap-[10px]" role="cell">
+            <span
+              class="inline-flex h-[32px] w-[32px] flex-none items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-600"
+              aria-hidden="true"
+              >{{ row.initials }}</span
+            >
+            <div class="flex min-w-0 flex-col gap-[2px]">
+              <span class="text-[13px] font-semibold text-gray-900" data-testid="overview-board-name">{{ row.name }}</span>
+              @if (row.title) {
+                <span class="truncate text-[12px] text-gray-400">{{ row.title }}</span>
+              }
+            </div>
+          </div>
+          <div class="flex min-w-0 items-center gap-[8px]" role="cell">
+            <span
+              class="inline-flex h-[24px] w-[24px] flex-none items-center justify-center rounded-[6px] border border-gray-200 bg-white p-[4px]"
+              aria-hidden="true">
+              @if (row.logoUrl) {
+                <img class="block h-full w-full object-contain" alt="" [src]="row.logoUrl" />
+              } @else {
+                <span class="text-[10px] font-semibold text-gray-600">{{ row.organizationInitial }}</span>
+              }
+            </span>
+            <span class="truncate text-[13px] text-gray-700">{{ row.organization }}</span>
+          </div>
+          <div class="flex min-w-0 items-center gap-[12px]" role="cell">
+            <span class="h-[8px] w-[56px] flex-none overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+              ><span class="block h-full rounded-full" [class]="row.barClass" [style.width.%]="row.widthPct"></span
+            ></span>
+            <span class="whitespace-nowrap text-[13px] text-gray-900"
+              >{{ row.attendedLabel }} <span class="text-gray-400">· {{ row.pctLabel }}</span></span
+            >
+          </div>
+          <span class="text-[13px] text-gray-700" role="cell">{{ row.lastAttendedLabel }}</span>
+        </div>
+      }
+    </div>
+  }
+</lfx-overview-card>

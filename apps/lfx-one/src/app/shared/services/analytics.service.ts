@@ -28,9 +28,6 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
-  HealthMetricsOverviewFindingsByRange,
-  HealthMetricsOverviewKpisByRange,
-  HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
   OrgContributorsMonthlyResponse,
   OrgContributorsProjectDistributionResponse,
@@ -56,7 +53,6 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   FlywheelConversionResponse,
-  HealthMetricsOverviewFoundationSummary,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
@@ -154,11 +150,7 @@ import {
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewQuery,
 } from '@lfx-one/shared/interfaces';
-import {
-  DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
-  HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-} from '@lfx-one/shared/constants';
+import { DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
@@ -1552,21 +1544,6 @@ export class AnalyticsService {
   }
 
   /**
-   * Get the health-metrics-overview "Foundation" rail summary
-   * @param foundationSlug - Foundation slug for Snowflake filter
-   * @returns Observable of the foundation profile summary
-   */
-  public getFoundationProfileSummary(foundationSlug: string): Observable<HealthMetricsOverviewFoundationSummary> {
-    const params: Record<string, string> = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] foundation-profile-summary failed', { foundationSlug, error });
-        return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
-      })
-    );
-  }
-
-  /**
    * Get participating organizations summary (membership counts + engagement breakdown)
    * @param foundationSlug - Foundation slug for Snowflake project_slug filter
    * @returns Observable of participating orgs summary response
@@ -1772,51 +1749,6 @@ export class AnalyticsService {
           avgMeetingAttendanceChange: null,
           invitees: [],
         });
-      })
-    );
-  }
-
-  /**
-   * Fetches every selectable period's revenue summary in one call — `HEALTH_OVERVIEW_REVENUE` carries
-   * the period as a column suffix, so the period selector projects this map instead of refetching.
-   */
-  public getHealthOverviewRevenue(foundationSlug: string): Observable<HealthMetricsOverviewRevenueByRange> {
-    const params = { foundationSlug };
-    // Empty map on failure: callers index by the selected range and fall back to the zero-filled
-    // default for a missing key, so an absent entry already means "no data for this period".
-    return this.http.get<HealthMetricsOverviewRevenueByRange>('/api/analytics/health-overview-revenue', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-revenue failed', { foundationSlug, error });
-        return of({});
-      })
-    );
-  }
-
-  /**
-   * Fetches the live area-state rows for every tile, for every selectable period in one call. Engagement
-   * is read from `ENGAGEMENT_GROUP_ATTENDANCE`, the other five from `HEALTH_OVERVIEW_KPIS`. Degrades to an
-   * empty map on failure — the caller then renders a neutral no-data placeholder, never fixture numbers.
-   */
-  public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
-    const params = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
-        return of({});
-      })
-    );
-  }
-
-  /**
-   * Fetches the Overview findings for every selectable period in one call. Degrades to an empty map on
-   * failure, which the list renders as "not available yet" rather than an all-clear.
-   */
-  public getHealthOverviewSignals(foundationSlug: string): Observable<HealthMetricsOverviewFindingsByRange> {
-    const params = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewFindingsByRange>('/api/analytics/health-overview-signals', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-signals failed', { foundationSlug, error });
-        return of({});
       })
     );
   }

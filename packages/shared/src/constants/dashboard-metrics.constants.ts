@@ -16,8 +16,6 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
-  HealthMetricsOverviewFoundationSummary,
-  HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
   HealthMetricsYearOption,
@@ -602,19 +600,6 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
   periodLabel: '',
 };
 
-/**
- * Unavailable default for the Health Metrics Overview "Foundation" rail — the frontend's initial and
- * HTTP-error value, and the server's response when `HEALTH_OVERVIEW_PROFILE` is missing or has no row.
- */
-export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
-  dataAvailable: false,
-  size: '—',
-  projects: '—',
-  tiers: '—',
-  board: '—',
-  nextRenewals: '—',
-};
-
 export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {
   projectId: '',
   totalOutstandingBalance: 0,
@@ -641,12 +626,6 @@ export const HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY: TrainingCert
   range: 'YTD',
   enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
   revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
-};
-
-export const HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY: HealthMetricsOverviewRevenue = {
-  dataAvailable: false,
-  total: 0,
-  streams: [],
 };
 
 // ============================================
