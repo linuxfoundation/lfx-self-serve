@@ -104,6 +104,8 @@ export * from './mentorship-mentor.constants';
 export * from './mentorship-program-detail.constants';
 export * from './mktg-artifact.constants';
 export * from './mktg-document-store.constants';
+export * from './mktg-document-comments.constants';
+export * from './mktg-document-redraft.constants';
 export * from './mktg-os-agents.constants';
 export * from './mktg-intake.constants';
 export * from './mktg-run.constants';

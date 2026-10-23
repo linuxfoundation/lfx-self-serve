@@ -359,6 +359,38 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(label).toContain('Reason: left the company');
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged')).toBeNull();
     });
+
+    it('names the invalidator by the resolved display instead of the username', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page([
+            ack({
+              approved: false,
+              invalidatedBy: 'cla-manager',
+              invalidatedByDisplay: 'Casey Nguyen',
+              invalidationReason: 'left the company',
+            }),
+          ])
+        )
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by Casey Nguyen');
+      expect(label).not.toContain('cla-manager');
+      expect(label).toContain('Reason: left the company');
+    });
+
+    it('uses a resolved email when that is the display value', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ approved: false, invalidatedBy: 'cla-manager', invalidatedByDisplay: 'manager@example.org' })]))
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by manager@example.org');
+      expect(label).not.toContain('cla-manager');
+    });
   });
 
   describe('the prototype layout', () => {
@@ -1055,6 +1087,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
                 // The approval-list removal left these stamps behind; they are not this invalidation's.
                 invalidatedAt: '2026-03-11T09:20:00Z',
                 invalidatedBy: 'former-manager',
+                invalidatedByDisplay: 'Morgan Ellis',
                 invalidationReason: 'approved list removal (Email Criteria)',
               }),
             ],
@@ -1079,6 +1112,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       // Invalidated, but with no stale date carried over from the approval-list removal.
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
       expect(allByTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toEqual([]);
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).not.toContain('Morgan Ellis');
     });
 
     it('drops a Load-more response that arrives after the invalidate refresh starts', async () => {

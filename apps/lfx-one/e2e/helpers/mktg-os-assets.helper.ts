@@ -7,6 +7,7 @@ import {
   LENS_COOKIE_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_OS_AGENTS_ENABLED_FLAG,
+  MKTG_SLIDES_EXPORT_API_PATH,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
@@ -105,7 +106,7 @@ const json = (route: Route, body: unknown, status = 200) => route.fulfill({ stat
 /** Every Marketing OS request is synthetic, including exports/dependencies: no Guild or project edit needed. */
 export async function setupAsset(
   page: Page,
-  options: { writer?: boolean; mode?: 'writing' | 'questions' | 'failed' | 'ready' | 'empty' | 'error'; hold?: boolean } = {}
+  options: { writer?: boolean; mode?: 'writing' | 'questions' | 'failed' | 'ready' | 'empty' | 'error'; hold?: boolean; asset?: MktgRevisionResponse } = {}
 ) {
   await suppressCookieBanner(page);
   const writer = options.writer ?? true;
@@ -138,7 +139,7 @@ export async function setupAsset(
   await page.route('**/api/nav/lens-items*', (route) =>
     json(route, { items: [{ ...ASSET_PROJECT, isFoundation: false, logoUrl: null }], next_page_token: null, upstream_failed: false, lens: 'project' })
   );
-  const state = { mode: options.mode ?? 'writing', retries: [] as string[], posts: [] as string[] };
+  const state = { mode: options.mode ?? 'writing', retries: [] as string[], posts: [] as string[], exportChecks: 0 };
   let release: () => void = () => undefined;
   const gate = options.hold
     ? new Promise<void>((resolve) => {
@@ -172,7 +173,8 @@ export async function setupAsset(
       state.mode = 'ready';
       return json(route, { ...assetRevision(), runs: [] });
     }
-    if (path.includes('exports')) {
+    if (path === `${MKTG_SLIDES_EXPORT_API_PATH}/last` || path.includes('exports')) {
+      state.exportChecks++;
       return json(route, { last: null, latestRevision: null });
     }
     if (path.includes('/stored')) {
@@ -184,8 +186,9 @@ export async function setupAsset(
     if (state.mode === 'error') {
       return json(route, { error: 'Synthetic unavailable' }, 503);
     }
+    if (path.endsWith('/comments')) return json(route, { revisionId: ASSET_REVISION, threads: [] });
     await gate;
-    const loaded = assetRevision();
+    const loaded = options.asset ?? assetRevision();
     const response = { ...loaded, revisions: state.mode === 'ready' ? loaded.revisions : [], runs: runs() };
     if (path.endsWith('/documents')) {
       return json(route, { project: ASSET_PROJECT.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: runs() });
@@ -209,7 +212,7 @@ export async function setupAsset(
       await expect(page).not.toHaveURL(/auth0\.com/);
       await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
       await seed();
-      const url = `/project/mktg-os-agents/documents/${ASSET_TYPE?.agentKey}/living?project=${ASSET_PROJECT.slug}${suffix}`;
+      const url = `/project/mktg-os-agents/documents/${options.asset?.type.agentKey ?? ASSET_TYPE?.agentKey}/living?project=${ASSET_PROJECT.slug}${suffix}`;
       await page.evaluate((url) => {
         window.history.pushState({}, '', url);
         window.dispatchEvent(new PopStateEvent('popstate'));
