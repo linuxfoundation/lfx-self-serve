@@ -34,6 +34,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
   const resultPayloads: (string | null)[] = [];
   await page.route('**/api/mktg-agents/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/comments')) return fulfillDocumentJson(route, { revisionId: fixture.revision.revision.id, threads: [] });
     if (path.endsWith('/stored'))
       return fulfillDocumentJson(route, {
         receipt: { project: DOCUMENT_PROJECT.uid, s3_key: 'synthetic-framework.json', version: 1, content_sha256: 'a'.repeat(64) },

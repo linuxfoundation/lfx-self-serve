@@ -44,9 +44,11 @@ import {
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
+import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 
 // The Messaging Framework asset view (design: Agent run, Asset view): the
 // framework's own page inside the mktg-os-agents module, with one tab per
@@ -75,6 +77,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
     MarkdownRendererComponent,
     MktgFrameworkPrintComponent,
     MktgSlidesExportComponent,
+    MktgFieldCommentsComponent,
   ],
   templateUrl: './mktg-framework-view.component.html',
 })
@@ -85,6 +88,7 @@ export class MktgFrameworkViewComponent {
   private readonly printService = inject(MktgPrintService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly comments = inject(MktgDocumentCommentsService);
 
   // === Inputs ===
   /** The project the framework is for. */
