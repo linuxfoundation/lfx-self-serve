@@ -25,7 +25,6 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 export class VoteDetailHeaderComponent {
   // === Services ===
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -41,6 +40,9 @@ export class VoteDetailHeaderComponent {
   public readonly castVote = output<void>();
   public readonly viewResults = output<void>();
   public readonly back = output<void>();
+
+  // === View Children ===
+  private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
