@@ -505,7 +505,10 @@ release. Post-session server failures are always uncertain, not definitive 4xx. 
 prior version for polling and exact version comparison, not legacy display metadata.
 Known ACKs use the existing run observer and bounded receipt retry, without fake
 intake answers, another poller, or a Generate fallback. Only the exact scoped new
-Draft receipt lands; approved current is not inferred or changed. A 409 on an explicit
+Draft receipt lands; approved current is not inferred or changed. Landing preserves
+the reader's tab, with the submitted kit passage's registered chapter taking
+precedence when it differs. That chapter is UI-only context, frozen for the send;
+it is not added to revise requests or persistence receipts. A 409 on an explicit
 release means the start is still active. Release is offered only for an unaccepted
 intent whose response proved uncertainty, transport failure or expiry; accepted
 attempts offer re-observe Retry instead. An unknown release is idempotent success

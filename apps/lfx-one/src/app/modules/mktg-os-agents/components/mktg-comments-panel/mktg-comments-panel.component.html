@@ -29,7 +29,12 @@
     {{ disabledReason() }}
   </p>
   @if (accepted() || activity().length) {
-    <lfx-mktg-run-activity [activity]="activity()" [startedAt]="startedAt()" title="Agent redraft" [showQuestions]="false" data-testid="mktg-comments-feed" />
+    <lfx-mktg-run-activity
+      [activity]="activity()"
+      [startedAt]="startedAt()"
+      [title]="'Agent redraft'"
+      [showQuestions]="false"
+      data-testid="mktg-comments-feed" />
   }
   <p role="status" aria-live="polite" class="text-sm text-gray-700" [class.sr-only]="!message()" data-testid="mktg-comments-run-message">{{ message() }}</p>
   @if (releaseAvailable() && comments.loaded() && !comments.loadError()) {

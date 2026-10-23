@@ -50,6 +50,11 @@ export interface MktgPreparedRedraft {
 }
 export type MktgRedraftStartResponse = Extract<MktgChatResponse, { sessionId: string }> & { runId: string; priorVersion: number };
 
+/** UI-only landing context; not part of the persistence receipt or revise request. */
+export interface MktgRedraftLanding extends MktgDocumentLocation {
+  tab?: string;
+}
+
 /** Existing poller output, without manufacturing intake answers for accepted redrafts. */
 export interface MktgObservedRunResult {
   result: MktgRunResultResponse;

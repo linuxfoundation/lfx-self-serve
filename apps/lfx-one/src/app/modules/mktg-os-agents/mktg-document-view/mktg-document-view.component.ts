@@ -48,7 +48,7 @@ import {
   MktgGenerateProgress,
   MktgPendingGeneration,
   MktgDocumentCommentScope,
-  MktgDocumentLocation,
+  MktgRedraftLanding,
   MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -715,7 +715,7 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
-  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgDocumentLocation): void {
+  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgRedraftLanding): void {
     const view = this.view();
     if (
       !this.writer() ||
@@ -730,8 +730,9 @@ export class MktgDocumentViewComponent {
       return;
     }
     this.dependencyService.notifyDocumentsChanged(scope.projectUid);
+    const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-      queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
     });
   }
 

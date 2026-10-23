@@ -145,6 +145,27 @@ describe('MktgCommentsPanelComponent', () => {
     expect(runner.release).not.toHaveBeenCalled();
   });
 
+  it('freezes the selected pinned chapter for landing even if comments change while the agent works', async () => {
+    const rows = signal([mktgCommentFixture({ anchor: { kind: 'passage', key: 'chapters.voice.line' } })]);
+    const stream = new Subject<MktgRedraftProgress>();
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads: rows })] });
+    TestBed.overrideProvider(MktgDocumentRedraftClientService, {
+      useValue: { hasIntent: () => false, hasAcceptedAttempt: () => false, canRelease: () => false, resume: () => EMPTY, send: () => stream },
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', { ...mktgCommentScopeFixture(), agentKey: 'brand-kit' });
+    fixture.componentRef.setInput('priorVersion', 1);
+    const ready = vi.fn();
+    fixture.componentInstance.ready.subscribe(ready);
+    await fixture.whenStable();
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button')?.click();
+    rows.set([mktgCommentFixture({ anchor: { kind: 'passage', key: 'chapters.color.summary' } })]);
+    const location = { agentKey: 'brand-kit' as const, documentId: 'living', revisionId: `000002-${'b'.repeat(64)}` };
+    stream.next({ type: 'ready', location });
+    expect(ready).toHaveBeenCalledExactlyOnceWith({ ...location, tab: 'voice' });
+    stream.complete();
+  });
+
   it('gives concurrent panels distinct declaratively-bound description idrefs without DOM effects', async () => {
     TestBed.configureTestingModule({ providers: [provideMktgCommentsStub()] });
     const first = TestBed.createComponent(MktgCommentsPanelComponent);

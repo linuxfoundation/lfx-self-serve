@@ -6,7 +6,8 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_DOCUMENT_COMMENT_LIMITS } from '@lfx-one/shared/constants';
-import type { MktgDocumentCommentScope, MktgDocumentLocation, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { MktgDocumentRedraftClientService } from '@services/mktg-document-redraft-client.service';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
@@ -28,11 +29,12 @@ export class MktgCommentsPanelComponent {
   // Private lifecycle state, separate from reactive UI signals.
   private work?: Subscription;
   private storing = false;
+  private landingTab?: string;
 
   public readonly scope = input.required<MktgDocumentCommentScope>();
   public readonly content = input<unknown>(null);
   public readonly priorVersion = input<number | null>(null);
-  public readonly ready = output<MktgDocumentLocation>();
+  public readonly ready = output<MktgRedraftLanding>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
 
   protected readonly accepted = signal(false);
@@ -65,6 +67,7 @@ export class MktgCommentsPanelComponent {
         this.message.set('');
         this.activity.set([]);
         this.runPending.set(false);
+        this.landingTab = undefined;
         this.syncRecovery();
         if (this.redrafts.hasAcceptedAttempt(this.scope())) this.observe(this.redrafts.resume(this.scope())); // Read-only: never auto-resubmit an unknown ACK.
       });
@@ -77,7 +80,15 @@ export class MktgCommentsPanelComponent {
     this.comments.refresh();
   }
   protected send(): void {
-    if (this.maySend()) this.observe(this.redrafts.send(this.scope(), this.priorVersion() ?? 0));
+    if (!this.maySend()) return;
+    if (!this.retrySend()) {
+      const pinned = this.comments
+        .threads()
+        .filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId)
+        .at(-1);
+      this.landingTab = pinned ? mktgDocumentCommentTab(this.scope().agentKey, pinned.anchor.key) : undefined;
+    }
+    this.observe(this.redrafts.send(this.scope(), this.priorVersion() ?? 0));
   }
   protected release(): void {
     if (!this.releaseAvailable()) return;
@@ -162,7 +173,7 @@ export class MktgCommentsPanelComponent {
           }
           if (progress.type === 'ready') {
             this.storing = false;
-            this.ready.emit(progress.location);
+            this.ready.emit(this.landingTab ? { ...progress.location, tab: this.landingTab } : progress.location);
           }
         },
         error: (error: unknown) => {

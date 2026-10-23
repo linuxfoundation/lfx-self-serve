@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BRAND_KIT_CHAPTERS } from '../constants/brand-kit.constants';
 import {
   MKTG_BOILERPLATES_COMMENT_FIELD_REGEX,
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
@@ -37,6 +38,13 @@ export function isMktgDocumentCommentAnchor(agentKey: MktgCommentAgentKey, sourc
   if (!(MKTG_DOCUMENT_COMMENT_ROOTS[agentKey] as readonly string[]).includes(root)) return false;
   if (agentKey === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor.key)) return false;
   return readMktgDocumentCommentField(source, anchor.key) !== null;
+}
+
+/** A pinned kit passage lands back in its registered chapter, never a report/sample or arbitrary URL tab. */
+export function mktgDocumentCommentTab(agentKey: MktgCommentAgentKey, key: string): string | undefined {
+  if (agentKey !== 'brand-kit') return undefined;
+  const chapter = /^chapters\.([a-z]+)\./.exec(key)?.[1];
+  return BRAND_KIT_CHAPTERS.find((tab) => tab.id === chapter)?.id;
 }
 
 /** Same human field caption for inline pins, controls and the panel; no UI agent list. */
