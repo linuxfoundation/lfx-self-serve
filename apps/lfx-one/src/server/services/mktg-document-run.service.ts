@@ -118,6 +118,17 @@ export class MktgDocumentRunService {
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
+  /** Private completion context only, after the caller checked its owner token and project writer grant. */
+  public async ownedOneOffContext(req: Request, project: string, agentId: string, sessionId: string): Promise<MktgOneOffRunContext | null> {
+    const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
+    if (!stored) return null; // Legacy untracked sessions keep their existing result contract.
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId);
+    if (!type || stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== getEffectiveSub(req)) {
+      throw new AuthorizationError('This run does not belong to this requester and project.');
+    }
+    return stored.record.oneOff ?? null;
+  }
+
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
   public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));

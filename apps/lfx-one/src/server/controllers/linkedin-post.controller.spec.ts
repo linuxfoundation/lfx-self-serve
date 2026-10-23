@@ -17,6 +17,8 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
+  context: vi.fn(),
+  attribution: vi.fn(),
   track: vi.fn(),
   record: vi.fn(),
   resume: vi.fn(),
@@ -33,6 +35,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
+    public ownedOneOffContext = mocks.context;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public resumeAfterQuestions = mocks.resume;
@@ -48,6 +51,9 @@ vi.mock('../services/linkedin-post.service', () => ({
     public start = mocks.start;
     public result = mocks.result;
     public sendAnswers = mocks.answer;
+    public constructor(...args: unknown[]) {
+      mocks.attribution(...args);
+    }
   },
 }));
 vi.mock('../services/linkedin-profile.service', () => ({
@@ -86,10 +92,32 @@ describe('LinkedIn endpoint boundaries', () => {
       if (!resolved.writer) throw Object.assign(new Error('No access'), { statusCode: 403 });
       return resolved.uid;
     });
+    mocks.context.mockResolvedValue(null);
     mocks.track.mockResolvedValue('a'.repeat(64));
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
+  it('uses captured link/source/profile policy on a minimal owned poll, matching plain document reconciliation', async () => {
+    const body = { sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one'), project: 'project-one' };
+    const captured = { answers: { share_link: 'https://synthetic.example/original' }, sourceWords: 43, initializeProfile: false };
+    mocks.context.mockResolvedValue(captured);
+    const next = vi.fn();
+    const controller = new LinkedinPostController();
+    await controller.result(request(body), response(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.context).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one');
+    expect(mocks.result).toHaveBeenLastCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', captured.answers, 43);
+    expect(mocks.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'subject-one' }, false);
+    await controller.result(request({ ...body, answers: { share_link: 'https://synthetic.example/changed' }, sourceWords: 1 }), response(), next);
+    expect(mocks.result).toHaveBeenLastCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', captured.answers, 43);
+    mocks.context.mockClear();
+    await controller.result(request({ ...body, ownerToken: 'forged' }), response(), next);
+    expect(mocks.context).not.toHaveBeenCalled();
+    mocks.project.mockResolvedValue({ uid: 'project-one', writer: false });
+    await controller.result(request(body), response(), next);
+    expect(mocks.context).not.toHaveBeenCalled();
+  });
+
   it('binds gap answers to the owner and writer grant, validates ids, and continues the same session', async () => {
     const body = {
       sessionId: 'session-one',

@@ -127,7 +127,13 @@ export class LinkedinPostController {
       if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
         throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
       const project = await this.writableProject(req, body['project']);
-      const result = await this.guild.resolveRunOutcome(req, sessionId, await this.posts.result(req, user, sessionId, project.uid, answers, sourceWords));
+      const captured = await this.runs.ownedOneOffContext(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
+      const posts = captured ? new LinkedinPostService({ creatorSubject: user }, captured.initializeProfile === true) : this.posts;
+      const result = await this.guild.resolveRunOutcome(
+        req,
+        sessionId,
+        await posts.result(req, user, sessionId, project.uid, captured ? captured.answers : answers, captured ? captured.sourceWords : sourceWords)
+      );
       await this.runs.recordResultBestEffort(req, sessionId, result, project.uid);
       logger.success(req, operation, start, { status: result.status });
       res.set('Cache-Control', 'private, no-store').json(result);

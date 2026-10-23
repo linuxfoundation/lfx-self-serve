@@ -235,6 +235,19 @@ describe('MktgDocumentRunService core', () => {
     expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
   });
 
+  it('reads captured completion context only for the matching one-off creator/project/agent/session', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    const context = { answers: { share_link: 'https://post.example/original' }, sourceWords: 32 };
+    await service.startForOneOff(creator, 'linkedin-post', project, session, context);
+    expect(await service.ownedOneOffContext(creator, project, 'linkedin-post', session)).toEqual({ ...context, initializeProfile: true });
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-other' } } });
+    await expect(service.ownedOneOffContext(visitor, project, 'linkedin-post', session)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.ownedOneOffContext(creator, project, 'member-360', session)).rejects.toBeInstanceOf(AuthorizationError);
+    expect(await service.ownedOneOffContext(creator, project, 'linkedin-post', 'untracked-session')).toBeNull();
+    expect(await service.ownedOneOffContext(creator, 'other-project', 'linkedin-post', session)).toBeNull();
+    expect(flows.linkedin).not.toHaveBeenCalled(); // Context lookup does not poll or start a run.
+  });
+
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
     await service.startForOneOff(req, 'member-360', project, 'second-session');
