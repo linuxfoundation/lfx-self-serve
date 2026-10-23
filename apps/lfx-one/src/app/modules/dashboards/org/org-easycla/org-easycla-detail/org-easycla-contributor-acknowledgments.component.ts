@@ -537,6 +537,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
               // shown as this invalidation's date/reason. The producer's refresh supplies the real ones.
               invalidatedAt: undefined,
               invalidatedBy: undefined,
+              invalidatedByDisplay: undefined,
               invalidationReason: undefined,
             }
           : ack
