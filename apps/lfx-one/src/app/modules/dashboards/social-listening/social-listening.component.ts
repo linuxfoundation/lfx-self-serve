@@ -111,7 +111,7 @@ import { ViewsDropdownComponent } from './components/views-dropdown/views-dropdo
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
+ * Social Listening — Foundation Lens page (ED, LF Staff, members of opted-in foundation groups), LFXV2-3016: PCC's mentions feed on the 3015 endpoints —
  * windowed pagination (100-row windows, ±2 cached), query-param sync, and reset effects on scope/filter/foundation change.
  */
 @Component({
