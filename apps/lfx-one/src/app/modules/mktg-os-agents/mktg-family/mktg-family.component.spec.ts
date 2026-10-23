@@ -126,6 +126,32 @@ describe('Marketing family page', () => {
     expect(run).toHaveBeenCalledTimes(scenario === 'matching state' ? 1 : 0);
   });
 
+  it('contains each stretched link and raised Run control in a positioned list card', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const list = root?.querySelector('[data-testid="mktg-family-assets"]');
+    expect(list?.tagName).toBe('UL');
+    expect(list?.getAttribute('role')).toBe('list');
+    expect(root?.querySelector('table')).toBeNull();
+    const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === 'positioning-brand');
+    expect(family).toBeDefined();
+    for (const asset of family?.assets ?? []) {
+      const row = list?.querySelector(`[data-testid="mktg-family-asset-${asset.id}"]`);
+      expect(row?.tagName).toBe('LI');
+      expect(row?.classList.contains('relative')).toBe(true);
+      expect(row?.querySelector(`[data-testid="mktg-family-state-${asset.id}"]`)).not.toBeNull();
+      expect(row?.querySelector(`[data-testid="mktg-family-current-${asset.id}"]`)).not.toBeNull();
+    }
+    expect(list?.querySelector('[data-testid="mktg-family-open-messaging-framework"]')?.classList.contains('after:inset-0')).toBe(true);
+    const activeRun = list?.querySelector('[data-testid="mktg-family-run-messaging-framework"]');
+    expect(activeRun?.classList.contains('relative')).toBe(true);
+    expect(activeRun?.classList.contains('z-10')).toBe(true);
+    const blockedRun = list?.querySelector('[data-testid="mktg-family-run-boilerplates"]')?.parentElement;
+    expect(blockedRun?.classList.contains('relative')).toBe(true);
+    expect(blockedRun?.classList.contains('z-10')).toBe(true);
+  });
+
   it('links existing assets and the first available agent; exports/rebuild remain disabled', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic&unrelated=drop&profile=drop', MktgFamilyComponent);
@@ -285,7 +311,7 @@ describe('Marketing family page', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/events', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-coming-soon"]')).not.toBeNull();
-    expect(harness.routeNativeElement?.querySelector('table')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
     await harness.fixture.whenStable();
     expect(TestBed.inject(Title).getTitle()).toBe('Events · LFX');
     await harness.navigateByUrl('/project/mktg-os-agents/families/unknown', MktgFamilyComponent);
@@ -351,7 +377,7 @@ describe('Marketing family page', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-no-project"]')).not.toBeNull();
-    expect(harness.routeNativeElement?.querySelector('table')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
   });
   it('looks up the last export before the family document list finishes', async () => {
     writer.set(true);
@@ -374,6 +400,6 @@ describe('Marketing family page', () => {
     error.set('You need write access.');
     harness.detectChanges();
     expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent).toContain('write access');
-    expect(harness.routeNativeElement?.querySelector('table')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
   });
 });
