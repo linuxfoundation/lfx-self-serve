@@ -1128,6 +1128,7 @@ export interface OrgClaContributorAcknowledgment {
   invalidatedAt?: string;
   /** Username of the acting CLA manager or admin who invalidated the acknowledgment. */
   invalidatedBy?: string;
+  invalidatedByDisplay?: string;
   /** Reason recorded with the invalidation. Free text from the invalidator. */
   invalidationReason?: string;
   /**

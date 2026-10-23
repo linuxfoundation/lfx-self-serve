@@ -12,6 +12,7 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
+  SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
   classifyOrgClaDesigneeRefusal,
@@ -79,6 +80,7 @@ import type {
   EasyClaSignedDocument,
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -1412,6 +1414,8 @@ export class OrgClaService {
       });
     }
 
+    await attachInvalidatorDisplays(req, mapped);
+
     return {
       signatureId,
       list: mapped,
@@ -2220,6 +2224,129 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
     actor,
     summary,
   };
+}
+
+interface UserDirectoryEmail {
+  Active?: unknown;
+  EmailAddress?: unknown;
+  IsDeleted?: unknown;
+  IsPrimary?: unknown;
+  IsVerified?: unknown;
+}
+
+interface UserDirectoryPerson {
+  ID?: unknown;
+  Username?: unknown;
+  Name?: unknown;
+  FirstName?: unknown;
+  LastName?: unknown;
+  Emails?: unknown;
+}
+
+interface UserDirectoryPage {
+  Data?: UserDirectoryPerson[];
+  Metadata?: { TotalSize?: unknown };
+}
+
+const INVALIDATOR_LOOKUP_BATCH = 8;
+
+async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAcknowledgment[]): Promise<void> {
+  const usernames = [...new Set(rows.flatMap((row) => (row.invalidatedBy ? [row.invalidatedBy] : [])))];
+  if (usernames.length === 0) return;
+
+  let baseUrl: string;
+  try {
+    baseUrl = getUserServiceBaseUrl('org_cla_resolve_invalidator', SERVICE);
+  } catch {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup skipped', { count: usernames.length });
+    return;
+  }
+
+  const displays = new Map<string, string>();
+  let failed = 0;
+  for (let index = 0; index < usernames.length; index += INVALIDATOR_LOOKUP_BATCH) {
+    const batch = usernames.slice(index, index + INVALIDATOR_LOOKUP_BATCH);
+    await Promise.all(
+      batch.map(async (username) => {
+        try {
+          const display = await lookupInvalidatorDisplay(req, baseUrl, username);
+          if (display) displays.set(username, display);
+        } catch {
+          failed += 1;
+        }
+      })
+    );
+  }
+  if (failed > 0) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup failed', {
+      failed,
+      looked_up: usernames.length,
+    });
+  }
+
+  for (const row of rows) {
+    const username = row.invalidatedBy;
+    if (!username) continue;
+    const display = displays.get(username);
+    if (display) row.invalidatedByDisplay = display;
+  }
+}
+
+async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string): Promise<string | undefined> {
+  const query = new URLSearchParams({ username, pageSize: '2', offset: '0' });
+  const page = await gatewayFetch<UserDirectoryPage>(req, `${baseUrl}/users?${query}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+  });
+
+  const rows = page?.Data;
+  if (!Array.isArray(rows) || rows.length !== 1 || page?.Metadata?.TotalSize !== 1) return undefined;
+  const row = rows[0];
+  if (!row || directoryText(row.Username) !== username) return undefined;
+
+  const fromList = invalidatorDisplayFromPerson(row);
+  if (fromList) return fromList;
+
+  const id = directoryText(row.ID);
+  if (!SALESFORCE_ID_PATTERN.test(id)) return undefined;
+
+  const profile = await gatewayFetch<UserDirectoryPerson>(req, `${baseUrl}/users/${encodeURIComponent(id)}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator profile lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+  });
+  const profileUsername = directoryText(profile?.Username);
+  if (profileUsername && profileUsername !== username) return undefined;
+  return invalidatorDisplayFromPerson(profile);
+}
+
+function invalidatorDisplayFromPerson(person: UserDirectoryPerson | null | undefined): string | undefined {
+  const name = directoryText(person?.Name);
+  if (name) return name;
+  const combined = [directoryText(person?.FirstName), directoryText(person?.LastName)].filter((part) => part.length > 0).join(' ');
+  if (combined) return combined;
+  return primaryVerifiedEmail(person?.Emails);
+}
+
+function primaryVerifiedEmail(emails: unknown): string | undefined {
+  if (!Array.isArray(emails)) return undefined;
+  for (const entry of emails) {
+    if (!entry || typeof entry !== 'object') continue;
+    const email = entry as UserDirectoryEmail;
+    if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted === true) continue;
+    const address = directoryText(email.EmailAddress);
+    if (address) return address;
+  }
+  return undefined;
+}
+
+function directoryText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 /**

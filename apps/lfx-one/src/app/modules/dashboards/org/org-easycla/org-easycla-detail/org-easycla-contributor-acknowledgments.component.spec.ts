@@ -359,6 +359,38 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(label).toContain('Reason: left the company');
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged')).toBeNull();
     });
+
+    it('names the invalidator by the resolved display instead of the username', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page([
+            ack({
+              approved: false,
+              invalidatedBy: 'cla-manager',
+              invalidatedByDisplay: 'Casey Nguyen',
+              invalidationReason: 'left the company',
+            }),
+          ])
+        )
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by Casey Nguyen');
+      expect(label).not.toContain('cla-manager');
+      expect(label).toContain('Reason: left the company');
+    });
+
+    it('uses a resolved email when that is the display value', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ approved: false, invalidatedBy: 'cla-manager', invalidatedByDisplay: 'manager@example.org' })]))
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by manager@example.org');
+      expect(label).not.toContain('cla-manager');
+    });
   });
 
   describe('the prototype layout', () => {
