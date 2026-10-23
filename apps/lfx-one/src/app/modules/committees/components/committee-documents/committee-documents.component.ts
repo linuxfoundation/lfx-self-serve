@@ -12,8 +12,9 @@ import { SelectComponent } from '@components/select/select.component';
 import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { DocumentService } from '@services/document.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, startWith, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
@@ -30,6 +31,7 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
 export class CommitteeDocumentsComponent {
   // === Services ===
   private readonly committeeService = inject(CommitteeService);
+  private readonly documentService = inject(DocumentService);
   private readonly dialogService = inject(DialogService);
 
   // === Inputs ===
@@ -64,6 +66,8 @@ export class CommitteeDocumentsComponent {
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
+  /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
+  protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly folderOptions: Signal<{ label: string; value: string }[]> = this.initFolderOptions();
@@ -237,6 +241,8 @@ export class CommitteeDocumentsComponent {
         ordered.push(this.toDisplayItem(orphan, committeeUid, groupName, false));
       }
 
+      ordered.push(...this.relatedDocuments());
+
       return ordered;
     });
   }
@@ -263,11 +269,14 @@ export class CommitteeDocumentsComponent {
             childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
           }
         }
-        docs = allDocs.map((d) => ({
-          ...this.toDisplayItem(d, committeeUid, groupName, false),
-          isFolder: d.type === 'folder',
-          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
-        }));
+        docs = [
+          ...allDocs.map((d) => ({
+            ...this.toDisplayItem(d, committeeUid, groupName, false),
+            isFolder: d.type === 'folder',
+            ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+          })),
+          ...this.relatedDocuments(),
+        ];
       } else {
         docs = this.documents();
       }
@@ -294,6 +303,21 @@ export class CommitteeDocumentsComponent {
         })
       ),
       { initialValue: [] as CommitteeDocument[] }
+    );
+  }
+
+  private initRelatedDocuments(): Signal<MyDocumentItem[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger)]).pipe(
+        filter(([committee]) => !!committee?.uid),
+        switchMap(([committee]) =>
+          this.documentService.getMyDocuments(null, committee.uid).pipe(
+            map((items) => items.filter((item) => !item.id.startsWith('committee_link:'))),
+            catchError(() => of([] as MyDocumentItem[]))
+          )
+        )
+      ),
+      { initialValue: [] as MyDocumentItem[] }
     );
   }
 

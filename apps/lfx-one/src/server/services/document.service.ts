@@ -80,12 +80,9 @@ export class DocumentService {
     // When scoped to a specific committee, filter memberships to that committee only.
     const scopedCommittees = committeeUid ? myCommittees.filter((c) => c.uid === committeeUid) : myCommittees;
 
-    // If a committeeUid was requested but the user isn't a member, return early.
-    // No further fetches are needed — access control is enforced by membership.
-    if (committeeUid && scopedCommittees.length === 0) {
-      logger.info(req, 'get_my_documents', 'Committee UID provided but user is not a member — returning empty', { committee_uid: committeeUid });
-      return [];
-    }
+    // A committee-scoped request is not gated on membership: committee links come from the
+    // user's memberships (empty for non-members), while meeting and mailing list artifacts are
+    // queried by committee ref and the query service enforces per-resource access.
 
     // Stage 2 — Fetch all raw items in parallel (no meeting enrichment yet).
     // When committeeUid is set, each fetcher queries directly by committee parent ref
