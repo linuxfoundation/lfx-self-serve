@@ -26,13 +26,13 @@ test.describe('Marketing kit home content', () => {
     await page.clock.setFixedTime(new Date('2026-10-23T12:00:00Z'));
     await setupKit(page, { listing });
     await openKit(page);
-    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sept');
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sep');
     for (const state of ['missing', 'draft', 'approved', 'needs-rebuild']) {
       await page.getByTestId(`filter-pill-${state}`).click();
       await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toHaveCount(0);
     }
     await page.getByTestId('filter-pill-all').click();
-    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sept');
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sep');
     await page.screenshot({ path: test.info().outputPath('kit-prior-one-off.png'), fullPage: true });
   });
   test('loads real drafts and run counts, filters rows without hiding any family', async ({ page }) => {

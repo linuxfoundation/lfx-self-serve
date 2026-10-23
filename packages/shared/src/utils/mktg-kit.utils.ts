@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatInTimeZone } from 'date-fns-tz';
+import { enGB } from 'date-fns/locale';
 import type { FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
@@ -19,7 +21,7 @@ import { isMktgFamilyAgentAvailable } from './mktg-family-actions.utils';
 /** Stable UTC day/month for one-off history; invalid or absent timestamps remain unknown. */
 export function mktgKitRunDate(createdAt: string | null | undefined): string {
   const date = new Date(createdAt ?? '');
-  return Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—';
+  return Number.isFinite(date.getTime()) ? formatInTimeZone(date, 'UTC', 'd MMM', { locale: enGB }) : '—';
 }
 
 /** Render workflow states independently of their provenance (including future producer states). */

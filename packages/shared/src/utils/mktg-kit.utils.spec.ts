@@ -151,10 +151,10 @@ describe('Marketing kit plan of record', () => {
     const now = new Date('2026-10-23T12:00:00Z');
     expect(resolveMktgKitAsset(asset, listing(), now)).toMatchObject({ state: 'missing', badge: 'Not run yet', monthlyCount: 0 });
     const data = listing([document('linkedin-post', '2026-08-01T12:00:00Z'), document('linkedin-post', '2026-09-10T12:00:00Z')]);
-    expect(resolveMktgKitAsset(asset, data, now)).toMatchObject({ state: null, badge: 'Last run 10 Sept', monthlyCount: 0 });
+    expect(resolveMktgKitAsset(asset, data, now)).toMatchObject({ state: null, badge: 'Last run 10 Sep', monthlyCount: 0 });
     expect(data.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].createdAt).toBe('2026-08-01T12:00:00Z');
     expect(resolveMktgKitAsset(asset, listing([document('linkedin-post', null)]), now).badge).toBe('Last run —');
-    expect(mktgKitRunDate('2026-10-01T00:30:00+02:00')).toBe('30 Sept');
+    expect(mktgKitRunDate('2026-10-01T00:30:00+02:00')).toBe('30 Sep');
     expect(mktgKitRunDate('invalid')).toBe('—');
     expect(mktgKitRunDate(null)).toBe('—');
   });
