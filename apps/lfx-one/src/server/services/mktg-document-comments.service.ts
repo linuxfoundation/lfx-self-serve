@@ -289,6 +289,7 @@ export class MktgDocumentCommentsService {
         throw new ConflictError('Only the send creator may change its reservation.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
       if (releaseOnly && submission.state !== 'uncertain' && submission.state !== 'failed' && !(submission.state === 'reserved' && !this.busy(submission)))
         throw new ConflictError('This send is still active.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+      if (uncertain && submission.state === 'started') return { record: null, result: submission };
       if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: submission };
       const updated: MktgDocumentCommentSubmission = { ...submission, state: uncertain ? 'uncertain' : 'failed' };
       return {
