@@ -263,6 +263,89 @@ describe('MktgAgentRunComponent', () => {
       expect(component['showIntakeForm']()).toBe(false);
     });
 
+    it.each([agentId, 'brand-kit'])('labels answer-cache fallback from %s before Start without claiming no prior inputs', async (sourceAgent) => {
+      await configure('browser', agentId, { mode: 'new' });
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId: sourceAgent, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/remembered',
+        origin: sourceAgent === agentId ? 'Remembered on this device' : 'From your Brand Kit run',
+      });
+      expect(component['sourceNote']()).toBe('');
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('keeps project-default priority and the unavailable-history warning with remembered fallbacks', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId, savedAt: new Date().toISOString() },
+        website_url: { value: 'https://remembered.example', agentId, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/default',
+        origin: 'Suggested default',
+      });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({
+        value: 'https://remembered.example',
+        origin: 'Remembered on this device',
+      });
+      expect(component['sourceNote']()).toContain('could not be loaded');
+    });
+
+    it.each([false, true])('merges partial durable fields with visit/device fields without replacing explicit blanks (visit=%s)', async (visit) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const device = { project_name: 'Device name', website_url: 'https://device.example', github_url: 'https://github.com/synthetic/device' };
+      storedRuns[PROJECT_1.uid] = storedRun(PROJECT_1.uid, 'Synthetic completed run', device);
+      if (visit)
+        TestBed.inject(MktgRunAttemptService).reserve({
+          agentId,
+          intake: MKTG_AGENT_INTAKES[agentId],
+          projectUid: PROJECT_1.uid,
+          answers: { github_url: 'https://github.com/synthetic/visit' },
+        });
+      lastIntake.mockReturnValue(of({ ...history, answers: { project_name: 'Durable name', website_url: '' } }));
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'project_name')).toMatchObject({ value: 'Durable name', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({ value: '', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: visit ? 'https://github.com/synthetic/visit' : device.github_url,
+        origin: visit ? 'Saved in this visit' : 'Saved on this device',
+      });
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'failed'])('shows the %s dependency blocker and recovery before opening Edit', async (state) => {
+      await configure('browser', 'brand-kit', { mode: 'new' });
+      if (state === 'failed') resolveDependencies.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['showIntakeForm']()).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency'))).toBe(true);
+      if (state === 'failed') {
+        expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-dependency-retry'))).toBe(true);
+        resolveDependencies.mockReturnValue(of({}));
+        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
+        await fixture.whenStable();
+        expect(component['dependencyCheckFailed']()).toBe(false);
+      }
+      expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency-link'))).toBe(true);
+      component['onEditSources']();
+      await fixture.whenStable();
+      expect(host().querySelectorAll('[data-testid="mktg-agent-run-missing-dependency"]')).toHaveLength(1);
+      expect(query('mktg-agent-run-form')?.contains(query('mktg-agent-run-missing-dependency'))).toBe(true);
+      expect(generate).not.toHaveBeenCalled();
+    });
+
     it('edits on this page then starts exactly one fresh run, retaining Sources above the feed', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of(history));
@@ -355,7 +438,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it.each([true, false])('reuses reserved same-visit inputs without changing the pending attempt (history exists=%s)', async (accepted) => {
+    it.each([true, false])('never infers upload identity from equal scalars/counts (shared history exists=%s)', async (accepted) => {
       await configure('browser', agentId, { mode: 'new' });
       const intake = MKTG_AGENT_INTAKES[agentId];
       const request = {
@@ -372,13 +455,34 @@ describe('MktgAgentRunComponent', () => {
       lastIntake.mockReturnValue(of(accepted ? { ...history, documentCount: 1 } : null));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(component['documents']()[0]?.title).toBe('synthetic.txt');
-      expect(component['missingDocuments']()).toBe(0);
+      // The shared snapshot may belong to another writer/run with equal scalars/counts.
+      // It has no run-binding identifier; local synthetic.txt cannot be treated as that run's file.
+      expect(component['documents']()).toHaveLength(accepted ? 0 : 1);
+      if (!accepted) expect(component['documents']()[0]?.title).toBe('synthetic.txt');
+      expect(component['missingDocuments']()).toBe(accepted ? 1 : 0);
       expect(component['priorDocumentCount']()).toBe(1);
       expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
-      if (!accepted) expect(loadRun).not.toHaveBeenCalled();
+      expect(loadRun).toHaveBeenCalledWith(PROJECT_1.uid, agentId);
       expect(generate).not.toHaveBeenCalled();
       expect(attempts.load(PROJECT_1.uid, agentId)).toBe(before);
+    });
+
+    it('requires logo reattachment when a shared snapshot cannot be bound to this visit', async () => {
+      await configure('browser', 'brand-kit', { mode: 'new' });
+      const answers = { project_name: 'Synthetic brand', website_url: 'https://brand.example' };
+      TestBed.inject(MktgRunAttemptService).reserve({
+        agentId: 'brand-kit',
+        intake: MKTG_AGENT_INTAKES['brand-kit'],
+        projectUid: PROJECT_1.uid,
+        answers,
+        logoFiles: [{ name: 'local.svg', text: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }],
+      });
+      lastIntake.mockReturnValue(of({ answers, documentCount: 0, logoCount: 1 }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['logoFiles']()).toEqual([]);
+      expect(component['missingLogos']()).toBe(1);
+      expect(generate).not.toHaveBeenCalled();
     });
 
     it.each([null, 503, 403])('labels fallback/defaults honestly and fails closed on denied history (%s)', async (status) => {

@@ -166,10 +166,12 @@ export class MktgAgentRunService {
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
     } else if (request.intake.regenerateViaGenerate) {
+      // Fresh Sources start a new session, not a new document numbering scheme.
+      // These intakes must still send priorVersion (without old feedback for newRun).
       attempt$ = this.resubmitRun(request, stored);
     } else if (request.newRun) {
-      // No registered generic intake reaches this branch. Do not append a reset v1 after an existing vN.
-      return throwError(() => new Error('This agent does not support a fresh version from an existing run.'));
+      // appendVersion keeps the new session's v1 distinct from existing history.
+      attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);
     }
@@ -674,12 +676,11 @@ export class MktgAgentRunService {
     const version: MktgRunVersion = {
       source,
       documentLocation: result.persistence?.project === request.projectUid ? mktgDocumentLocationOfReceipt(result.persistence) : undefined,
-      // The envelope's own version is authoritative. awaitOutcome reaches this
-      // only for a result that is not `questions`, which pollForOutcome's
-      // isDocument gate let through with its document and version present, so
-      // the fallbacks only narrow the type. A fresh-run intake's envelope
-      // always says version 1, so the run numbers its own history instead.
-      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
+      // source.version retains the envelope version. Local history must remain
+      // unique across fresh sessions, including a resumed request without newRun.
+      // Dedicated fresh-run intakes always number locally; other intakes also
+      // retain a higher authoritative envelope version when one is supplied.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : Math.max(lastVersion + 1, result.version ?? 0),
       document: result.documentMarkdown ?? '',
       // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
