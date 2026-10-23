@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { WritableSignal } from '@angular/core';
+import type { FormControl, FormGroup } from '@angular/forms';
 import type {
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_STATUSES,
@@ -95,6 +97,14 @@ export interface MktgDocumentCommentScope {
   agentKey: MktgCommentAgentKey;
   documentId: string;
   revisionId: string;
+}
+
+/** Browser-memory form state only; never persisted or included in an HTTP request. */
+export interface MktgDocumentCommentDraft {
+  form: FormGroup<{ text: FormControl<string> }>;
+  clientRequestId: string | null;
+  submittedText: string;
+  opened: WritableSignal<boolean>;
 }
 
 /** Distinguishes a valid nullable field from a missing/unsafe path. */
