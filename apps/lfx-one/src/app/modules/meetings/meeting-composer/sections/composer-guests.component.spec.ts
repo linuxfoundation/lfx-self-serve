@@ -439,6 +439,34 @@ describe('ComposerGuestsComponent', () => {
       expect(live).toHaveLength(1);
     });
 
+    it('keeps undo when another row already shared the email, such as a registration for another occurrence', () => {
+      const thisOccurrence = { ...savedGroupGuest, uid: 'occ-a', type: 'direct' as const, occurrence_id: '1893456000' };
+      const otherOccurrence = { ...thisOccurrence, uid: 'occ-b', occurrence_id: '1894060800' };
+      formService.setGuests([thisOccurrence, otherOccurrence]);
+
+      component['onRemoveGuest'](thisOccurrence);
+
+      expect(component['undoableRemoval']()).not.toBeNull();
+    });
+
+    it('withdraws undo for a group guest once the selected groups change', () => {
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a' }]);
+      const groupGuest = { ...savedGroupGuest, uid: '', tempId: 'temp_1', state: 'new' as const };
+      formService.setGuests([groupGuest]);
+      component['onRemoveGuest'](groupGuest);
+      expect(component['undoableRemoval']()).not.toBeNull();
+
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-b' }]);
+
+      expect(component['undoableRemoval']()).toBeNull();
+    });
+
     it('stops offering undo once another guest is added', () => {
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);

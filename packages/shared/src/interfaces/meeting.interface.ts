@@ -885,6 +885,13 @@ export interface ComposerGuestRemoval {
   index: number;
   /** The name read back in the undo notice and its announcement. */
   label: string;
+  /**
+   * Live rows already sharing the email when it was removed — a registration for another occurrence,
+   * say. Only rows beyond these are a re-add that Undo would duplicate.
+   */
+  liveSameEmail: number;
+  /** The selected group uids at removal, sorted and joined; a group guest's row is stale once they change. */
+  committeeKey: string;
 }
 
 /**

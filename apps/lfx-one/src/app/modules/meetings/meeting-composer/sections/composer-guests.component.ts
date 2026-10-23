@@ -224,15 +224,28 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * The removal Undo can still put back; `null` once its email is live on the list again.
+   * The removal Undo can still put back; `null` once putting it back would be wrong.
    * @description A removed direct guest isn't suppressed, so a group picked afterwards can re-add the
-   * same person. Restoring the removed row on top of that would queue a duplicate invite on save.
+   * same person; restoring the row on top would queue a duplicate invite. Rows that already shared the
+   * email at removal don't count. A group guest's row also carries the group it came through, which a
+   * change of selected groups can make stale, so Undo is withdrawn for them on any group change.
    */
   protected readonly undoableRemoval: Signal<ComposerGuestRemoval | null> = computed(() => {
     const removal = this.lastRemoval();
-    const email = removal?.guest.email?.toLowerCase();
-    return removal && !(email && this.invitedEmails().has(email)) ? removal : null;
+    if (!removal) return null;
+
+    if (this.liveEmailCount(removal.guest.email) > removal.liveSameEmail) return null;
+    if (removal.guest.type === 'committee' && this.committeeKey() !== removal.committeeKey) return null;
+
+    return removal;
   });
+
+  private readonly committeeKey: Signal<string> = computed(() =>
+    this.selectedCommittees()
+      .map((committee) => committee.uid)
+      .sort()
+      .join(',')
+  );
 
   /**
    * Adds the person picked from search straight to the invited list.
@@ -324,7 +337,13 @@ export class ComposerGuestsComponent {
     if (this.formService.isEditMode()) {
       const index = this.formService.guests().findIndex((candidate) => (key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key));
       const original = index === -1 ? guest : this.formService.guests()[index];
-      this.lastRemoval.set({ guest: original, index: Math.max(index, 0), label });
+      this.lastRemoval.set({
+        guest: original,
+        index: Math.max(index, 0),
+        label,
+        liveSameEmail: this.liveEmailCount(original.email) - (original.state === 'deleted' ? 0 : 1),
+        committeeKey: this.committeeKey(),
+      });
     }
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
@@ -487,6 +506,12 @@ export class ComposerGuestsComponent {
     // Undo restores a row by position and identity, so it is only offered while nothing else has moved.
     this.lastRemoval.set(null);
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
+  }
+
+  private liveEmailCount(email: string | null | undefined): number {
+    const target = email?.toLowerCase();
+    if (!target) return 0;
+    return this.formService.guests().filter((guest) => guest.state !== 'deleted' && guest.email?.toLowerCase() === target).length;
   }
 
   private guestLabel(guest: MeetingRegistrantWithState): string {
