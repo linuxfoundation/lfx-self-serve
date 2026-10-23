@@ -125,7 +125,7 @@ test('unsupported family shows one line without export buttons or Positioning no
   await openFamilyExports(page, { familyId: 'website-web' });
   await expect(page.getByTestId('family-export-unsupported')).toContainText('no assets supported by the exporter');
   for (const action of ['pdf', 'slides', 'pdf-note']) await expect(page.getByTestId(`family-export-${action}`)).toHaveCount(0);
-  await expect(page.getByTestId('family-export-actions').locator('p')).toHaveCount(1);
+  for (const state of ['access', 'loading', 'empty', 'pdf-note', 'skipped']) await expect(page.getByTestId(`family-export-${state}`)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 

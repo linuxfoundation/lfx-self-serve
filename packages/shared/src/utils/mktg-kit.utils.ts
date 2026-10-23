@@ -89,7 +89,7 @@ export function resolveMktgKitAsset(asset: MktgKitAsset, listing: MktgDocumentsR
     row.monthlyCount = documents.filter((entry) => {
       if (!entry.createdAt) return false;
       const date = new Date(entry.createdAt);
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+      return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
     }).length;
   } else {
     const living = resolveMktgKitLivingState(document);
