@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MktgRevisionRef } from './mktg-rebuild.interface';
+import type { MktgChatResponse } from './mktg-chat.interface';
 import type {
   MktgCommentAgentKey,
   MktgStoredDocumentComment,
@@ -36,6 +38,14 @@ export interface MktgDocumentCommentsMutation<T> {
   record: MktgDocumentCommentsRecord | null;
   result: T;
 }
+
+/** Server-prepared send; never deserialize this shape from a request. */
+export interface MktgPreparedRedraft {
+  context: Omit<MktgDocumentRedraftContext, 'schema' | 'runId'>;
+  message: string;
+  framework: MktgRevisionRef | null;
+}
+export type MktgRedraftStartResponse = Extract<MktgChatResponse, { sessionId: string }> & { runId: string };
 
 /** Optional object metadata only: do not put these annotations in hashed revision/agent bytes. */
 export interface MktgRedraftRevisionMetadata {

@@ -187,6 +187,10 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
 router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.listComments(req, res, next));
 // POST a field comment; requires project writer access and a stored revision.
 router.post('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.addComment(req, res, next));
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revise - ID-only comments redraft; project writer access; creator-bound ACK.
+router.post('/documents/:agentKey/:documentId/revise', (req, res, next) => mktgDocumentsController.revise(req, res, next));
+// POST release an uncertain/expired reservation; requires project writer access AND the original send creator.
+router.post('/documents/:agentKey/:documentId/revise/:requestId/release', (req, res, next) => mktgDocumentsController.releaseRedraft(req, res, next));
 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));

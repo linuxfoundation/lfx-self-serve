@@ -34,6 +34,7 @@ export const BRAND_KIT_INSPECT_LOGOS_TOOL = 'inspect_logo_files';
 
 /** Payload discriminator of the agent's draft form (`src/form.ts` DRAFT_FORM_TYPE). */
 export const BRAND_KIT_FORM_TYPE = 'brand_kit_intake_form';
+export const BRAND_KIT_REVISE_FORM_TYPE = 'brand_kit_revise_form';
 
 /** What produced a revision. */
 export const BRAND_KIT_MODES = ['draft', 'redraft', 'check'] as const;

@@ -19,6 +19,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
 }));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-comments.utils')),
@@ -398,6 +399,39 @@ describe('private field comment store', () => {
     });
   });
 
+  it.each(['ready', 'failed'] as const)('adopts owned sent/null-hash rows so a %s result settles them', async (status) => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' };
+    const frozen = await store.reserve(req, project, type, 'living', body);
+    await store.endStart(req, project, type, 'living', 'send-a', true);
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: null });
+    const context = { ...redraftContextFixture(), project, basedOnId: revisionId, requestId: 'send-a', comments: frozen.comments };
+    await store.bindRun(req, project, type, 'living', 'send-a', context.runId, true);
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: context.runId });
+    const sidecar = {
+      mode: 'redraft',
+      version: 3,
+      project_name: context.projectName,
+      revision: {
+        mode: 'redraft',
+        prior_version: 2,
+        comments: [{ number: 1, field: 'mf.tagline', comment: guardFoundationMessageText(frozen.comments[0].text), resolution: 'Synthetic resolved.' }],
+      },
+    };
+    flows.revision.mockResolvedValue({ revision: { id: resultId, format: 'json' }, sidecar, markdown: '{}' });
+    const persistence = {
+      project,
+      version: 3,
+      s3_key: 'synthetic',
+      content_sha256: 'a'.repeat(64),
+      document_location: { agent_key: type.agentKey, document_id: 'living', revision_id: resultId },
+    };
+    await store.settle(req, context, { status, persistence });
+    expect(record().threads[0].status).toBe(status === 'ready' ? 'resolved' : 'open');
+    expect(record().submissions[0].state).toBe(status === 'ready' ? 'completed' : 'failed');
+  });
+
   it('records uncertainty, permits only creator release, and preserves the old hash without touching a newer send', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
@@ -420,6 +454,18 @@ describe('private field comment store', () => {
     await store.release(req, project, type, 'living', 'send-a');
     expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: 'd'.repeat(64) });
     await expect(store.bindRun(req, project, type, 'living', 'send-a', 'e'.repeat(64))).rejects.toBeInstanceOf(ConflictError);
+  });
+  it('permits creator release of an expired bound reservation even when tracking never produced a record', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    await store.reserve(req, project, type, 'living', { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' });
+    await store.bindRun(req, project, type, 'living', 'send-a', 'c'.repeat(64));
+    const expired = record();
+    expired.submissions[0].createdAt = '2000-01-01T00:00:00Z';
+    replace(expired);
+    await store.release(req, project, type, 'living', 'send-a');
+    expect(record().submissions[0]).toMatchObject({ state: 'failed', runId: 'c'.repeat(64) });
+    expect(record().threads[0]).toMatchObject({ status: 'open', sentInRun: null });
   });
   it('fails conclusive non-acceptance and allows only an explicit new nonce', async () => {
     const store = service();

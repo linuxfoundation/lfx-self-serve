@@ -1,9 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_ID_REGEX } from '@lfx-one/shared/constants';
+import {
+  MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_ID_REGEX,
+  MKTG_REVISION_ID_REGEX,
+  MKTG_STARTED_RUN_ID_REGEX,
+  MKTG_DOCUMENT_COMMENT_ID_REGEX,
+} from '@lfx-one/shared/constants';
 import { MktgDocumentType, MktgRestoreRevisionRequest, MktgRestoreRevisionResponse, MktgRetryDocumentRunRequest } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentType } from '@lfx-one/shared/utils';
+import { findMktgDocumentType, readMktgRedraftRequest } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -12,6 +18,7 @@ import { MktgDocumentStoreService } from '../services/mktg-document-store.servic
 import { MktgDocumentCommentsService } from '../services/mktg-document-comments.service';
 import { ProjectService } from '../services/project.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgDocumentRedraftService } from '../services/mktg-document-redraft.service';
 
 /**
  * The Marketing OS Documents area: every stored agent output of a project as
@@ -29,6 +36,51 @@ export class MktgDocumentsController {
   private readonly projectService = new ProjectService();
   private readonly documentRuns = new MktgDocumentRunService();
   private readonly comments = new MktgDocumentCommentsService();
+  private readonly redrafts = new MktgDocumentRedraftService();
+
+  /** POST a writer-authorized comments-only redraft; no caller previous JSON or agent routing. */
+  public async revise(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_document_revise';
+    const input = readMktgRedraftRequest(req.body);
+    const params = this.readDocumentParams(req, input?.project, operation);
+    if (!input || params instanceof Error) {
+      next(params instanceof Error ? params : this.invalidField(req, operation, 'body', 'A valid ID-only send is required.'));
+      return;
+    }
+    const started = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.documentRuns.resolveProject(req, params.projectUid);
+      const response = await this.redrafts.send(req, project, params.type, params.documentId, input, this.documentRuns);
+      logger.success(req, operation, started, { agent: params.type.agentKey });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Writer + original creator explicitly release an uncertain/expired send; never start or rebind it. */
+  public async releaseRedraft(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_document_redraft_release';
+    const params = this.readDocumentParams(req, req.body?.project, operation);
+    const requestId = req.params['requestId'];
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    if (typeof requestId !== 'string' || !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(requestId)) {
+      next(this.invalidField(req, operation, 'requestId', 'A bounded request ID is required.'));
+      return;
+    }
+    const started = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      await this.comments.release(req, project, params.type, params.documentId, requestId);
+      logger.success(req, operation, started, { agent: params.type.agentKey });
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
 
   /** GET /api/mktg-agents/documents?project=<uid> — the project's documents, grouped by type. */
   public async listDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
