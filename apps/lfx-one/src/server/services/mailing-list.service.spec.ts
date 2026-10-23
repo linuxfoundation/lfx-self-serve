@@ -36,9 +36,10 @@ import { MailingListService } from './mailing-list.service';
 
 const req = { log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } } as unknown as Request;
 
-const existingMember: MailingListMember = {
-  uid: 'member-1',
-  mailing_list_uid: 'list-1',
+// Mirrors the upstream single-GET `GroupsioMember` response, which carries `id` but no `uid` or
+// `mailing_list_uid` — the shared interface describes the index document, hence the cast.
+const existingMember = {
+  id: 'member-1',
   email: 'self@example.com',
   member_type: MailingListMemberType.DIRECT,
   delivery_mode: MailingListMemberDeliveryMode.NORMAL,
@@ -46,7 +47,35 @@ const existingMember: MailingListMember = {
   status: 'active',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
-};
+} as unknown as MailingListMember;
+
+// The query-service index document for the same member, tagged with its mailing list.
+const indexedMember: MailingListMember = { ...existingMember, uid: 'member-1', mailing_list_uid: 'list-1' };
+
+/**
+ * Routes proxied calls for update/delete: the membership lookup (`tags_all` with `member_uid:`)
+ * answers from the index, any other query-service call (the delete removal poll) finds nothing,
+ * the member GET returns `member`, and PUT/DELETE return `mutation`.
+ */
+function routeProxy({ member = existingMember, indexed = true, mutation }: { member?: MailingListMember; indexed?: boolean; mutation?: unknown } = {}): void {
+  proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string, method: string, params?: Record<string, unknown>) => {
+    if (path === '/query/resources') {
+      const tagsAll = params?.['tags_all'];
+      if (Array.isArray(tagsAll) && tagsAll.some((tag) => String(tag).startsWith('member_uid:'))) {
+        return { resources: indexed ? [{ data: indexedMember }] : [] };
+      }
+      return { resources: [] };
+    }
+    if (method === 'GET') {
+      return member;
+    }
+    return mutation;
+  });
+}
+
+function proxiedMethods(): string[] {
+  return proxyRequest.mock.calls.map(([, , , method]) => method as string);
+}
 
 describe('MailingListService member authorization', () => {
   let service: MailingListService;
@@ -124,12 +153,7 @@ describe('MailingListService member authorization', () => {
   describe('updateMember', () => {
     it('allows a self-service caller to update their own already-plain record without escalation', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
-      proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, _path: string, method: string) => {
-        if (method === 'GET') {
-          return existingMember;
-        }
-        return { ...existingMember, name: 'Updated Name' };
-      });
+      routeProxy({ mutation: { ...existingMember, name: 'Updated Name' } });
 
       await expect(service.updateMember(req, 'list-1', 'member-1', { name: 'Updated Name' })).resolves.toBeDefined();
       expect(checkSingleAccessStrict).not.toHaveBeenCalled();
@@ -138,7 +162,7 @@ describe('MailingListService member authorization', () => {
     it('rejects a self-service caller attempting to escalate their own mod_status', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
       checkSingleAccessStrict.mockResolvedValue(false);
-      proxyRequest.mockResolvedValue(existingMember);
+      routeProxy();
 
       await expect(service.updateMember(req, 'list-1', 'member-1', { mod_status: MailingListMemberModStatus.MODERATOR })).rejects.toMatchObject({
         statusCode: 403,
@@ -148,69 +172,84 @@ describe('MailingListService member authorization', () => {
     it('rejects a self-service caller updating a record that is already privileged', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
       checkSingleAccessStrict.mockResolvedValue(false);
-      proxyRequest.mockResolvedValue({ ...existingMember, mod_status: MailingListMemberModStatus.MODERATOR });
+      routeProxy({ member: { ...existingMember, mod_status: MailingListMemberModStatus.MODERATOR } });
 
       await expect(service.updateMember(req, 'list-1', 'member-1', { name: 'New Name' })).rejects.toMatchObject({ statusCode: 403 });
     });
 
     it('rejects a confused-deputy update where the member belongs to a different mailing list', async () => {
-      getEffectiveEmail.mockReturnValue('self@example.com');
-      proxyRequest.mockResolvedValue({ ...existingMember, mailing_list_uid: 'other-list' });
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      routeProxy({ indexed: false });
 
       await expect(service.updateMember(req, 'list-1', 'member-1', { name: 'New Name' })).rejects.toMatchObject({ statusCode: 404 });
+      expect(proxiedMethods()).not.toContain('PUT');
     });
 
     it('allows a writer to update any member including mod_status', async () => {
       getEffectiveEmail.mockReturnValue('writer@example.com');
       checkSingleAccessStrict.mockResolvedValue(true);
-      proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, _path: string, method: string) => {
-        if (method === 'GET') {
-          return existingMember;
-        }
-        return { ...existingMember, mod_status: MailingListMemberModStatus.MODERATOR };
-      });
+      routeProxy({ mutation: { ...existingMember, mod_status: MailingListMemberModStatus.MODERATOR } });
 
       await expect(service.updateMember(req, 'list-1', 'member-1', { mod_status: MailingListMemberModStatus.MODERATOR })).resolves.toBeDefined();
+    });
+
+    it('updates a member when the upstream GET carries no mailing_list_uid', async () => {
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      routeProxy({ mutation: { ...existingMember, mod_status: MailingListMemberModStatus.MODERATOR } });
+      expect(existingMember).not.toHaveProperty('mailing_list_uid');
+
+      await expect(service.updateMember(req, 'list-1', 'member-1', { mod_status: MailingListMemberModStatus.MODERATOR })).resolves.toBeDefined();
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/groupsio/mailing-lists/list-1/members/member-1',
+        'PUT',
+        undefined,
+        expect.objectContaining({ mod_status: MailingListMemberModStatus.MODERATOR })
+      );
+    });
+
+    it('scopes the membership lookup to the member and mailing list', async () => {
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      routeProxy({ mutation: existingMember });
+
+      await service.updateMember(req, 'list-1', 'member-1', { name: 'New Name' });
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'groupsio_member',
+        tags_all: ['member_uid:member-1', 'mailing_list_uid:list-1'],
+      });
     });
   });
 
   describe('deleteMember', () => {
     it('allows a self-service caller to remove their own membership', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
-      proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string) => {
-        if (path === '/query/resources') {
-          return { resources: [] };
-        }
-        return existingMember;
-      });
+      routeProxy();
 
       await expect(service.deleteMember(req, 'list-1', 'member-1')).resolves.toBeUndefined();
       expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect(proxiedMethods()).toContain('DELETE');
     });
 
     it('rejects a caller deleting someone else without writer access', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
       checkSingleAccessStrict.mockResolvedValue(false);
-      proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string) => {
-        if (path === '/query/resources') {
-          return { resources: [] };
-        }
-        return { ...existingMember, email: 'other@example.com' };
-      });
+      routeProxy({ member: { ...existingMember, email: 'other@example.com' } });
 
       await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toMatchObject({ statusCode: 403 });
     });
 
     it('rejects a confused-deputy delete where the member belongs to a different mailing list', async () => {
-      getEffectiveEmail.mockReturnValue('self@example.com');
-      proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string) => {
-        if (path === '/query/resources') {
-          return { resources: [] };
-        }
-        return { ...existingMember, mailing_list_uid: 'other-list' };
-      });
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      routeProxy({ indexed: false });
 
       await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toMatchObject({ statusCode: 404 });
+      expect(proxiedMethods()).not.toContain('DELETE');
     });
   });
 });
