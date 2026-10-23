@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
-import { resolveProjectDocumentKind } from '@lfx-one/shared/utils';
+import { compareDocumentsByRecency, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -534,7 +534,7 @@ export class DocumentsDashboardComponent {
         return true;
       });
       // Apply the same order to root, folder, search, and legacy results before pagination.
-      return filtered.sort(this.compareDocuments);
+      return filtered.sort(compareDocumentsByRecency);
     });
   }
 
@@ -619,23 +619,6 @@ export class DocumentsDashboardComponent {
       }
       return options;
     });
-  }
-
-  /** Folders stay alphabetical and first; documents use their displayed date, newest first. */
-  private compareDocuments(a: MyDocumentItem, b: MyDocumentItem): number {
-    if (!!a.isFolder !== !!b.isFolder) return a.isFolder ? -1 : 1;
-
-    if (!a.isFolder) {
-      const aTime = Date.parse(a.date);
-      const bTime = Date.parse(b.date);
-      const aValid = Number.isFinite(aTime);
-      const bValid = Number.isFinite(bTime);
-      // Undated documents follow every dated document, including dates before the Unix epoch.
-      if (aValid !== bValid) return aValid ? -1 : 1;
-      if (aValid && bValid && aTime !== bTime) return bTime - aTime;
-    }
-
-    return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
   }
 
   /**

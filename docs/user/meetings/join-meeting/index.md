@@ -42,7 +42,7 @@ For a recurring meeting, **This date or all dates?** asks which dates your respo
 - **All dates** — the entire series.
 - **This date and all following dates** — this date and future dates; earlier dates keep their responses.
 
-The saved confirmation and current response show the date scope. Choosing No leaves the meeting findable in My Meetings under **All meetings** and, for the applicable date, **Not going**.
+The saved confirmation and current response show the date scope. Choosing No leaves the meeting findable in Meetings under **All meetings** and, for the applicable date, **Not going**.
 
 ## Meeting materials
 

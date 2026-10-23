@@ -1,25 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
-import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { DocumentService } from '@services/document.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, startWith, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
 @Component({
   selector: 'lfx-committee-documents',
-  imports: [ButtonComponent, CardComponent, InputTextComponent, SelectComponent, DocumentsTableComponent, ReactiveFormsModule],
+  imports: [ButtonComponent, CardComponent, FilterPillsComponent, InputTextComponent, DocumentsTableComponent, ReactiveFormsModule],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
   // creates a fresh instance whose messages never reach the root toast outlet.
@@ -30,16 +31,20 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
 export class CommitteeDocumentsComponent {
   // === Services ===
   private readonly committeeService = inject(CommitteeService);
+  private readonly documentService = inject(DocumentService);
   private readonly dialogService = inject(DialogService);
 
   // === Inputs ===
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
 
+  // === Outputs ===
+  /** Emits after a document is added so the parent can refresh the tab badge count. */
+  public readonly documentsChanged = output<void>();
+
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    source: new FormControl<MyDocumentSource | null>(null),
   });
 
   // === Subjects ===
@@ -49,28 +54,46 @@ export class CommitteeDocumentsComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
+  protected readonly relatedLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
+  /** Selected source pill: 'all' or a source bucket (link, file, meeting, mailing_list). */
+  protected readonly sourceTab = signal<string>('all');
   /** UID of the folder the user has drilled into; null means the root view. */
   protected readonly currentFolderUid = signal<string | null>(null);
 
   // === Static Options ===
-  protected readonly sourceOptions: { label: string; value: MyDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'File', value: 'file' },
+  private readonly baseSourceTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'link', label: 'Links' },
+    { id: 'file', label: 'Files' },
+    { id: 'meeting', label: 'Meetings' },
+    { id: 'mailing_list', label: 'Mailing Lists' },
   ];
 
   // === Computed Signals ===
+  protected readonly isLoading: Signal<boolean> = computed(() => this.loading() || this.relatedLoading());
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
+  /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
+  protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
+  private readonly flattenedDocuments: Signal<MyDocumentItem[]> = this.initFlattenedDocuments();
+  protected readonly sourceTabOptions: Signal<FilterPillOption[]> = this.initSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly folderOptions: Signal<{ label: string; value: string }[]> = this.initFolderOptions();
   /** The folder the user has drilled into, used by the breadcrumb. Null when at root. */
   protected readonly currentFolder: Signal<CommitteeDocument | null> = this.initCurrentFolder();
 
   // === Public Methods ===
+  public onDocumentsChanged(): void {
+    this.refreshTrigger.update((v) => v + 1);
+    this.documentsChanged.emit();
+  }
+
+  public onSourceTabChange(tab: string): void {
+    this.sourceTab.set(tab);
+  }
+
   public openAddLinkDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
       header: 'Add Link',
@@ -90,7 +113,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -129,7 +152,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -157,7 +180,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -177,10 +200,6 @@ export class CommitteeDocumentsComponent {
     );
   }
 
-  private initSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.source.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
-  }
-
   /**
    * Derives the displayed `MyDocumentItem[]` from `committeeDocuments()` (the canonical
    * committee-scoped fetch backed by upstream `/folders`, `/links`, and indexed
@@ -189,7 +208,7 @@ export class CommitteeDocumentsComponent {
    * a URL — that silently dropped folders and never included uploaded files.
    *
    * The list is scoped by `currentFolderUid()` for drill-down navigation:
-   * - **Root view (currentFolderUid === null):** show folders (alphabetically) and any orphan
+   * - **Root view (currentFolderUid === null):** show folders and any orphan
    *   items (no parent or parent deleted). Folders display a child count and are clickable.
    * - **Inside a folder (currentFolderUid set):** show only items whose `parent_uid` matches.
    */
@@ -207,10 +226,7 @@ export class CommitteeDocumentsComponent {
 
       // Folder view — show only direct children of the selected folder.
       if (currentFolderUid) {
-        return nonFolders
-          .filter((d) => d.parent_uid === currentFolderUid)
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((d) => this.toDisplayItem(d, committeeUid, groupName, false));
+        return nonFolders.filter((d) => d.parent_uid === currentFolderUid).map((d) => this.toDisplayItem(d, committeeUid, groupName, false));
       }
 
       // Root view — folders (with child counts) followed by orphan items.
@@ -222,8 +238,7 @@ export class CommitteeDocumentsComponent {
       }
 
       const ordered: MyDocumentItem[] = [];
-      const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
-      for (const folder of sortedFolders) {
+      for (const folder of folders) {
         ordered.push({
           ...this.toDisplayItem(folder, committeeUid, groupName, false),
           isFolder: true,
@@ -231,57 +246,96 @@ export class CommitteeDocumentsComponent {
         });
       }
 
-      // Orphans appear at the bottom of the root view so newly uploaded files don't disappear.
-      const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid)).sort((a, b) => a.name.localeCompare(b.name));
+      // Orphans are listed after the folders so newly uploaded files don't disappear.
+      const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid));
       for (const orphan of orphans) {
         ordered.push(this.toDisplayItem(orphan, committeeUid, groupName, false));
       }
 
+      ordered.push(...this.relatedDocuments());
+
       return ordered;
+    });
+  }
+
+  /** Every group document and related document as a flat list — folders included, folder contents not nested. */
+  private initFlattenedDocuments(): Signal<MyDocumentItem[]> {
+    return computed(() => {
+      const committee = this.committee();
+      const committeeUid = committee?.uid;
+      const groupName = committee?.name ?? '';
+      const allDocs = this.committeeDocuments();
+      const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
+      const childCountByFolder = new Map<string, number>();
+      for (const item of allDocs) {
+        if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+          childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+        }
+      }
+      return [
+        ...allDocs.map((d) => ({
+          ...this.toDisplayItem(d, committeeUid, groupName, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        })),
+        ...this.relatedDocuments(),
+      ];
+    });
+  }
+
+  private initSourceTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      // Don't show counts while either list is still loading; zero counts keep the plain label.
+      if (this.isLoading()) return this.baseSourceTabOptions;
+      const query = this.searchQuery().toLowerCase().trim();
+      // At the root the counts cover every document in the group, including those inside folders,
+      // since choosing a pill lists them flat; inside a folder they cover that folder's contents.
+      // Folders are structural navigation, not content, so they are not counted.
+      const base = this.currentFolderUid() ? this.documents() : this.flattenedDocuments();
+      const rows = base.filter((doc) => !doc.isFolder && this.matchesSearch(doc, query));
+      const counts = new Map<string, number>();
+      for (const doc of rows) {
+        const bucket = this.sourceBucket(doc);
+        counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+      }
+      return this.baseSourceTabOptions.map((option) => {
+        const count = option.id === 'all' ? rows.length : (counts.get(option.id) ?? 0);
+        return count > 0 ? { ...option, label: `${option.label} (${count})` } : option;
+      });
     });
   }
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
       const query = this.searchQuery().toLowerCase().trim();
-      const source = this.sourceFilter();
-
-      // When a search query is active at root (no folder drilled into), flatten all
-      // documents so users can find items without knowing which folder they live in.
-      // Inside a folder the folder-scoped view is used, so the empty-state message
-      // and breadcrumb context stay accurate.
-      let docs: MyDocumentItem[];
-      if (query && !this.currentFolderUid()) {
-        const committee = this.committee();
-        const committeeUid = committee?.uid;
-        const groupName = committee?.name ?? '';
-        const allDocs = this.committeeDocuments();
-        const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
-        const childCountByFolder = new Map<string, number>();
-        for (const item of allDocs) {
-          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
-            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
-          }
-        }
-        docs = allDocs.map((d) => ({
-          ...this.toDisplayItem(d, committeeUid, groupName, false),
-          isFolder: d.type === 'folder',
-          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
-        }));
-      } else {
-        docs = this.documents();
-      }
-      return docs.filter((doc) => {
-        if (query && !doc.name.toLowerCase().includes(query) && !(doc.groupOrMeetingName ?? '').toLowerCase().includes(query)) {
-          return false;
-        }
-        // Folder rows are structural navigation, not content — never filter them out by source.
-        if (source && !doc.isFolder && doc.source !== source && !(source === 'meeting' && MEETING_GROUP_SOURCES.includes(doc.source))) {
-          return false;
-        }
-        return true;
+      const tab = this.sourceTab();
+      // At the root, a search or a source pill lists every matching document flat so items
+      // inside folders can be found without knowing where they live. Inside a folder the
+      // folder-scoped view is used, so the empty-state message and breadcrumb stay accurate.
+      const flatten = !this.currentFolderUid() && (!!query || tab !== 'all');
+      const base = flatten ? this.flattenedDocuments() : this.documents();
+      // Folders first (alphabetical), then documents newest first — the same order as the project documents page.
+      return [...base].sort(compareDocumentsByRecency).filter((doc) => {
+        if (!this.matchesSearch(doc, query)) return false;
+        if (tab === 'all') return true;
+        // Folder rows are structural navigation: kept in the folder-scoped view, hidden once a pill lists documents flat.
+        return doc.isFolder ? !flatten : this.sourceBucket(doc) === tab;
       });
     });
+  }
+
+  private matchesSearch(doc: MyDocumentItem, query: string): boolean {
+    return !query || doc.name.toLowerCase().includes(query) || (doc.groupOrMeetingName ?? '').toLowerCase().includes(query);
+  }
+
+  /**
+   * Buckets a row by where it came from. The group's own documents keep their link/file kind;
+   * everything else comes from the related fetch — mailing list artifacts, or meeting
+   * attachments, recordings, transcripts and summaries (the "Meetings" bucket).
+   */
+  private sourceBucket(doc: MyDocumentItem): string {
+    if (doc.id.startsWith('committee_')) return doc.source;
+    return doc.source === 'mailing_list' ? 'mailing_list' : 'meeting';
   }
 
   private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
@@ -294,6 +348,29 @@ export class CommitteeDocumentsComponent {
         })
       ),
       { initialValue: [] as CommitteeDocument[] }
+    );
+  }
+
+  private initRelatedDocuments(): Signal<MyDocumentItem[]> {
+    return toSignal(
+      // Keyed on the committee uid only: adding a link, folder or file can't change meeting or mailing list items.
+      toObservable(this.committee).pipe(
+        map((committee) => committee?.uid),
+        filter((uid): uid is string => !!uid),
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          this.relatedLoading.set(true);
+          return this.documentService.getMyDocuments(null, uid).pipe(
+            map((items) => items.filter((item) => !item.id.startsWith('committee_link:'))),
+            catchError((err: { status?: number }) => {
+              console.warn('Failed to load related committee documents', err?.status);
+              return of([] as MyDocumentItem[]);
+            }),
+            finalize(() => this.relatedLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as MyDocumentItem[] }
     );
   }
 

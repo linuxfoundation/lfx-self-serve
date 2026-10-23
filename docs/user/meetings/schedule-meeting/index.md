@@ -16,7 +16,7 @@ Confirm you have the correct project selected. Meetings are associated with a sp
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. (Your personal **My Meetings** view doesn't have a Create Meeting option — you need to be in a Project or Foundation lens.)
+2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. (Your personal **Meetings** view doesn't have a Create Meeting option — you need to be in a Project or Foundation lens.)
 3. Select **Create Meeting**.
 4. Work through the meeting form:
    - **Meeting Type**
@@ -30,7 +30,7 @@ You can also use AI assistance to draft a starting agenda once you've filled in 
 
 ## After scheduling
 
-The meeting appears on the **Upcoming** tab of the project's **Meetings** dashboard, and in your own **My Meetings** view. Invited participants will see it in their meetings list.
+The meeting appears on the **Upcoming** tab of the project's **Meetings** dashboard, and in your own **Meetings** view. Invited participants will see it in their meetings list.
 
 ## Add the meeting to your calendar
 
