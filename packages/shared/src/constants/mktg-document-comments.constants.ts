@@ -10,6 +10,9 @@ export const MKTG_DOCUMENT_COMMENT_MAX_CHARS = 4000;
 export const MKTG_DOCUMENT_COMMENT_STATUSES = ['open', 'sent', 'resolved'] as const;
 export const MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES = ['reserved', 'started', 'completed', 'failed', 'uncertain'] as const;
 export const MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS = ['field', 'passage'] as const;
+/** Bound whole-object reads/writes without discarding revision history. */
+export const MKTG_DOCUMENT_COMMENT_MAX_THREADS = 500;
+export const MKTG_DOCUMENT_COMMENT_STORE_MAX_BYTES = 2_000_000;
 export const MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS = 512;
 export const MKTG_DOCUMENT_COMMENT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 /** Only dotted properties and canonical nonnegative array indexes; never arbitrary JS. */

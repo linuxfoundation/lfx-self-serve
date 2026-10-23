@@ -371,3 +371,40 @@ ACKs. Shipping intake submissions use fresh sessions and serialize their UI
 handoff; arbitrary concurrent chat callers can still reorder start ACKs. A
 monotonic admission token for that uncommon API path is a follow-up, not an
 ordering guarantee supplied by this metadata refresh predicate.
+
+## Field comments
+
+Field comments use the existing private `marketing-os-artifacts` purpose at
+`document-comments/{project}/{agentKey}/{documentId}.json`. Including the agent
+prevents the living-document ID from colliding across asset types. Both reads
+and writes use the existing Documents project's writer authorization and
+server-resolved partition; this is not a broader reader entitlement.
+
+`GET …/documents/:agentKey/:documentId/comments?project=<uid>&revision=<id>`
+lists one revision's comments, including comments whose redraft result names
+that revision. `POST` to the same path takes `project`, `revisionId`,
+`anchor: { kind, key }`, `text` and an opaque `clientRequestId`. It verifies
+revision membership and the source JSON's own field paths. The Brand Kit uses
+a stable JSON field key internally and captures its verbatim stored string as
+the agent's passage; caller-supplied passages, authors and timestamps are
+rejected. Framework and Boilerplates use their contract's field paths.
+
+Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
+same request preserves the original comment ID/time; reusing it for different
+content or an effective author conflicts. Concurrent adds preserve both entries.
+Missing objects mean known-empty; unreadable, wrong-scope, oversized, missing-ETag
+or malformed records fail closed and are never overwritten. The whole-object
+store is bounded to 500 comments and 2 MB without deleting history; exceeding
+a write bound requires operator follow-up rather than silently losing comments.
+
+Only the effective opaque subject is stored for authorship; an impersonated
+target without a subject remains unattributed. Display names are resolved on
+reads through `MktgDocumentAuthorService`, which also owns revision attribution.
+The comments service shares that helper instance with its revision reader, so
+both use one per-request name cache, with bounded fan-out. Lookup failures resolve
+to `{ name: null }` without failing the comments read; thrown errors retain
+structured `err` metadata, and unsuccessful directory responses warn without
+inventing an error. Explicit public projection excludes subjects, request IDs
+and the private send ledger. Bodies
+and attribution are not logged. This API adds no asset editing, generation,
+resolution transitions, revision overwrite or current-pointer changes.

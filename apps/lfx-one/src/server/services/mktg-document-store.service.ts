@@ -43,7 +43,6 @@ import {
   MktgGenerationAttribution,
   MktgLegacyDocument,
   MktgListedRevision,
-  MktgRevisionAuthor,
   MktgRevisionRef,
   MktgRevisionContentSource,
   MktgRevisionFormat,
@@ -76,14 +75,14 @@ import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
-import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { getEffectiveSub } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
-import type { UserService } from './user.service';
+import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
 /**
  * Immutable revision bundles, mutable current pointer. The pointer is also the
@@ -97,11 +96,12 @@ export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly artifactService = new MktgArtifactService();
   private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
-  private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
-  private userService?: Promise<UserService>;
 
   /** A per-generation context only; never change the visiting Request or share an override across runs. */
-  public constructor(private readonly generationAttribution?: MktgGenerationAttribution) {}
+  public constructor(
+    private readonly generationAttribution?: MktgGenerationAttribution,
+    private readonly authors = new MktgDocumentAuthorService()
+  ) {}
 
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
@@ -719,7 +719,7 @@ export class MktgDocumentStoreService {
           ...(await Promise.all(
             entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
               ...this.summary(entry, offset + index + 1),
-              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
+              author: await this.authors.resolveAuthor(req, entry.metadata?.['author-id']),
             }))
           ))
         );
@@ -842,7 +842,9 @@ export class MktgDocumentStoreService {
         ...(await Promise.all(
           detail.revisions.slice(offset, offset + concurrency).map(async (revision) => {
             const annotation = Object.hasOwn(approvals, revision.id) ? approvals[revision.id] : null;
-            const approval = annotation ? { approvedAt: annotation.approvedAt, approvedBy: await this.resolveAuthor(req, annotation.approvedBy) } : null;
+            const approval = annotation
+              ? { approvedAt: annotation.approvedAt, approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy) }
+              : null;
             return { ...revision, approval };
           })
         ))
@@ -892,7 +894,7 @@ export class MktgDocumentStoreService {
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
   private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.authors.resolveAuthor(req, record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
@@ -1143,49 +1145,6 @@ export class MktgDocumentStoreService {
     return value === 'json' ? 'json' : 'markdown';
   }
 
-  /** Store only the effective opaque subject; an unidentified impersonation target is unattributed. */
-  private author(req: Request): string | null {
-    // #3773 rejects stored names/usernames; a missing target sub stays null, never the operator's sub.
-    // getEffectiveSub's deprecation concerns upstream API arguments, not a stored opaque key.
-    const userId = getEffectiveSub(req);
-    if (!userId && !isImpersonating(req)) throw new AuthenticationError('A signed-in writer subject is required when not impersonating.');
-    return userId;
-  }
-
-  /** Request-scoped promise memoization prevents repeat lookups/warnings, including failed directory reads. */
-  private async resolveAuthor(req: Request, userId: string | null | undefined): Promise<MktgRevisionAuthor | null> {
-    if (!userId) return null;
-    let authors = this.authors.get(req);
-    if (!authors) {
-      authors = new Map();
-      this.authors.set(req, authors);
-    }
-    let author = authors.get(userId);
-    if (!author) {
-      author = (async () => {
-        try {
-          this.userService ??= import('./user.service')
-            .then(({ UserService }) => new UserService())
-            .catch((error: unknown) => {
-              this.userService = undefined;
-              throw error;
-            });
-          const response = await (await this.userService).getUserInfo(req, userId);
-          if (!response.success) {
-            logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
-            return { name: null };
-          }
-          return { name: response.data?.name || null };
-        } catch (err) {
-          logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name', { err });
-          return { name: null };
-        }
-      })();
-      authors.set(userId, author);
-    }
-    return author;
-  }
-
   private corruptDocument(message: string): MicroserviceError {
     return new MicroserviceError(message, 500, 'MKTG_DOCUMENT_CORRUPT', { service: 'mktg_document_store' });
   }
@@ -1198,6 +1157,10 @@ export class MktgDocumentStoreService {
   /** Supply the legacy artifact receipt's required default when intake metadata is unknown. */
   private intakeMode(value: unknown): MktgArtifactIntakeMode {
     return this.recordedIntakeMode(value) ?? 'form';
+  }
+
+  private author(req: Request): string | null {
+    return this.authors.captureAuthorId(req);
   }
 
   private sha256(value: string): string {

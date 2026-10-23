@@ -9,6 +9,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '../services/mktg-document-comments.service';
 import { ProjectService } from '../services/project.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
 
@@ -27,6 +28,7 @@ export class MktgDocumentsController {
   private readonly documentStore = new MktgDocumentStoreService();
   private readonly projectService = new ProjectService();
   private readonly documentRuns = new MktgDocumentRunService();
+  private readonly comments = new MktgDocumentCommentsService();
 
   /** GET /api/mktg-agents/documents?project=<uid> — the project's documents, grouped by type. */
   public async listDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -219,6 +221,54 @@ export class MktgDocumentsController {
           code: 'MKTG_DOCUMENT_NOT_FOUND',
         });
       logger.success(req, operation, startTime, { project });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET .../comments?project=<uid>&revision=<id>; reads require the same writer grant as runs. */
+  public async listComments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_document_comments_list';
+    const params = this.readDocumentParams(req, req.query['project'], operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    const revisionId = this.readRevisionId(req.query['revision']);
+    if (!revisionId) {
+      next(this.invalidField(req, operation, 'revision', 'A revision id is required.'));
+      return;
+    }
+    const started = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const response = await this.comments.list(req, project, params.type, params.documentId, revisionId);
+      logger.success(req, operation, started, { count: response.threads.length });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST .../comments; identity/time/passage are resolved by the server, never from the body. */
+  public async addComment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_document_comment_add';
+    const body = req.body as Record<string, unknown> | null | undefined;
+    const params = this.readDocumentParams(req, body?.['project'], operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    if (!this.readRevisionId(body?.['revisionId'])) {
+      next(this.invalidField(req, operation, 'revisionId', 'A revision id is required.'));
+      return;
+    }
+    const started = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const response = await this.comments.add(req, project, params.type, params.documentId, body);
+      logger.success(req, operation, started, { count: response.threads.length });
       res.json(response);
     } catch (error) {
       next(error);

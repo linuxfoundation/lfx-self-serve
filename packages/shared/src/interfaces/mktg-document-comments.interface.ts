@@ -57,6 +57,12 @@ export interface MktgDocumentCommentsRecord {
   submissions: MktgDocumentCommentSubmission[];
 }
 
+/** Private conditional-write snapshot; no version token is exposed through HTTP. */
+export interface MktgDocumentCommentsSnapshot {
+  record: MktgDocumentCommentsRecord;
+  etag?: string;
+}
+
 /** Public explicit projection: directory-resolved name, no stored subject or private ledger. */
 export interface MktgDocumentComment extends Omit<MktgStoredDocumentComment, 'authorId' | 'clientRequestId'> {
   author: MktgRevisionAuthor | null;
