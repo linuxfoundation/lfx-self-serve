@@ -442,3 +442,4 @@ export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
 export * from './mktg-last-intake.interface';
+export * from './mktg-sign-off.interface';

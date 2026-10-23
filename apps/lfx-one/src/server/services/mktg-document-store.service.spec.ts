@@ -533,6 +533,251 @@ describe('MktgDocumentStoreService', () => {
     await service.approveRevision(req, PROJECT, type, 'living', revision.id);
   }
 
+  describe('two-role sign-off on the same current record', () => {
+    const key = `documents/${PROJECT}/brand-kit/living/current.json`;
+    const settingsKey = `project-settings/${PROJECT}/sign-off.json`;
+    const roles = { ed: 'auth0|executive-director', tocChair: 'auth0|toc-chair' };
+    const asRole = (sub: string) => ({ ...req, oidc: { user: { sub } } }) as unknown as Request;
+    function mode(mode = 'two-role') {
+      store.objects.set(settingsKey, {
+        body: JSON.stringify({ schema: 'mktg-project-sign-off/v1', mode, changedAt: '2026-10-23T12:00:00Z', changedBy: null }),
+        metadata: {},
+        lastModified: new Date(),
+      });
+    }
+    async function pending() {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Approved'), 'first');
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const draft = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Draft'), 'draft');
+      mode();
+      const sent = await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', draft.id, { roles });
+      return { first, draft, sent };
+    }
+    const read = () => JSON.parse(storedObject(key).body);
+    const decide = (id: string, role: 'ed' | 'tocChair', sub = roles[role]) =>
+      service.transitionSignOff(asRole(sub), PROJECT, BRAND_KIT, 'living', id, { role, decision: 'approved' });
+
+    it('sends without moving approved current or modifying immutable revision bytes; projects names only', async () => {
+      const { first, draft, sent } = await pending();
+      const record = read();
+      expect(record.revisionId).toBe(first.id);
+      expect(record.signOff[draft.id]).toMatchObject({ state: 'pending', roles, requestedBy: 'auth0|not-the-lfid', decisions: {} });
+      expect(sent?.revision.signOff).toMatchObject({ state: 'pending', roles: { ed: { name: 'The writer' }, tocChair: { name: 'The writer' } } });
+      expect(sent?.approval).toBeNull();
+      expect(sent?.approvedCurrent?.revisionId).toBe(first.id);
+      expect(JSON.stringify(sent)).not.toContain('auth0|');
+      expect(storedObject(draft.key).body).not.toContain('signOff');
+      expect((await service.readLatest(req, SPEC, PROJECT))?.documentMarkdown).toBe('# Approved');
+    });
+
+    it('writes the second decision, both approval annotations and selection in one CAS', async () => {
+      const { first, draft } = await pending();
+      const original = read();
+      const bytes = revisionKeys().map((key) => storedObject(key).body);
+      await decide(draft.id, 'ed');
+      expect(read().revisionId).toBe(first.id);
+      expect(read().approvals[draft.id]).toBeUndefined();
+      expect(read().changedAt).toBe(original.changedAt);
+      store.conditionalWrites = [];
+      store.reads = [];
+      const approved = await decide(draft.id, 'tocChair');
+      const record = read();
+      expect(store.conditionalWrites).toEqual([key]);
+      expect(store.reads.filter((read) => read === key)).toHaveLength(1);
+      expect(record.revisionId).toBe(draft.id);
+      expect(record.signOff[draft.id].state).toBe('approved');
+      expect(record.approvals[draft.id]).toEqual({
+        approvedAt: record.signOff[draft.id].approvedAt,
+        approvedBy: roles.tocChair,
+        signOff: {
+          ed: { at: record.signOff[draft.id].decisions.ed.at, by: roles.ed },
+          tocChair: { at: record.signOff[draft.id].decisions.tocChair.at, by: roles.tocChair },
+        },
+      });
+      expect(record.approvals[first.id]).toEqual(original.approvals[first.id]);
+      expect(approved?.approvedCurrent).toEqual({ revisionId: draft.id, number: 2 });
+      expect(approved?.approval?.signOff?.ed.by).toEqual({ name: 'The writer' });
+      expect(JSON.stringify(approved)).not.toContain('auth0|');
+      expect(revisionKeys().map((key) => storedObject(key).body)).toEqual(bytes);
+      expect((await service.readLatest(req, SPEC, PROJECT))?.documentMarkdown).toBe('# Draft');
+      expect((await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {}))?.revision.id).toBe(draft.id);
+    });
+
+    it('refuses another pending request on this or another revision', async () => {
+      const { draft } = await pending();
+      const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Newer draft'), 'newer');
+      for (const id of [draft.id, newer.id]) {
+        await expect(service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', id, { roles })).rejects.toMatchObject({
+          statusCode: 409,
+          code: 'MKTG_SIGN_OFF_PENDING',
+        });
+      }
+    });
+
+    it('refuses a non-frozen subject, null subject, impersonation and a repeated decision without writes', async () => {
+      const { draft } = await pending();
+      store.conditionalWrites = [];
+      await expect(decide(draft.id, 'ed', 'auth0|other')).rejects.toMatchObject({ statusCode: 403 });
+      await expect(decide(draft.id, 'ed', '')).rejects.toMatchObject({ statusCode: 401 });
+      const impersonated = { ...asRole(roles.ed), impersonationActive: true } as Request;
+      await expect(service.transitionSignOff(impersonated, PROJECT, BRAND_KIT, 'living', draft.id, { role: 'ed', decision: 'approved' })).rejects.toMatchObject(
+        { statusCode: 403 }
+      );
+      expect(store.conditionalWrites).toEqual([]);
+      await decide(draft.id, 'ed');
+      store.conditionalWrites = [];
+      await expect(decide(draft.id, 'ed')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_SIGN_OFF_ALREADY_DECIDED' });
+      expect(store.conditionalWrites).toEqual([]);
+    });
+
+    it('requires two explicit role decisions when one person holds both roles', async () => {
+      const revision = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Dual role'), 'dual');
+      mode();
+      await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', revision.id, { roles: { ed: roles.ed, tocChair: roles.ed } });
+      await decide(revision.id, 'ed');
+      expect(read().approvals).toBeUndefined();
+      await decide(revision.id, 'tocChair', roles.ed);
+      expect(read().approvals[revision.id]).toBeDefined();
+    });
+
+    it('never treats an approved sign-off state alone as Approved', async () => {
+      const { draft } = await pending();
+      await decide(draft.id, 'ed');
+      await decide(draft.id, 'tocChair');
+      const record = read();
+      delete record.approvals[draft.id];
+      store.objects.set(key, { ...storedObject(key), body: JSON.stringify(record) });
+      const view = await service.getRevision(req, PROJECT, BRAND_KIT, 'living', draft.id);
+      expect(view?.revision.signOff?.state).toBe('approved');
+      expect(view?.approval).toBeNull();
+      expect(view?.approvedCurrent).toBeNull();
+      expect(await service.readLatest(req, SPEC, PROJECT)).toBeNull();
+    });
+
+    it('preserves annotations through generation, Make current and single-writer approval after switching off', async () => {
+      const { first, draft } = await pending();
+      await decide(draft.id, 'ed');
+      const annotation = read().signOff[draft.id];
+      const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# New'), 'new');
+      await service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', newer.id);
+      expect(read().signOff[draft.id]).toEqual(annotation);
+      mode('single-writer');
+      await expect(decide(draft.id, 'tocChair')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_SIGN_OFF_DISABLED' });
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', draft.id);
+      expect(read().signOff[draft.id]).toEqual(annotation);
+      expect(read().approvals[first.id]).toBeDefined();
+      expect(read().approvals[draft.id]).toBeDefined();
+    });
+
+    it('requires a prepared comment before terminal changes-requested; never reopens that revision', async () => {
+      const { draft } = await pending();
+      await expect(
+        service.transitionSignOff(asRole(roles.ed), PROJECT, BRAND_KIT, 'living', draft.id, { role: 'ed', decision: 'changes-requested' })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      const changeRequest = { commentId: 'synthetic-comment', submissionId: null };
+      const result = await service.transitionSignOff(asRole(roles.ed), PROJECT, BRAND_KIT, 'living', draft.id, {
+        role: 'ed',
+        decision: 'changes-requested',
+        changeRequest,
+      });
+      expect(result?.revision.signOff?.state).toBe('changes-requested');
+      expect(read().signOff[draft.id].changeRequest).toEqual(changeRequest);
+      expect(read().approvals[draft.id]).toBeUndefined();
+      await expect(decide(draft.id, 'tocChair')).rejects.toMatchObject({ statusCode: 409 });
+      await expect(service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', draft.id, { roles })).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_TERMINAL' });
+      const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Redraft'), 'redraft');
+      expect((await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', newer.id, { roles }))?.revision.signOff?.state).toBe('pending');
+    });
+
+    it('does not move a historical selection when sending an older revision without a pointer', async () => {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# First'), 'first');
+      const second = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Second'), 'second');
+      store.objects.delete(key);
+      for (const revision of [first, second]) store.objects.set(revision.key, { ...storedObject(revision.key), metadata: {} });
+      mode();
+      await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', first.id, { roles });
+      expect(read().revisionId).toBe(second.id);
+      expect(read().signOff[first.id].state).toBe('pending');
+      expect(read().approvals).toBeUndefined();
+    });
+
+    it('requires a reload after simultaneous role decisions rather than losing one or inventing both', async () => {
+      const { draft } = await pending();
+      const results = await Promise.allSettled([decide(draft.id, 'ed'), decide(draft.id, 'tocChair')]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(read().signOff[draft.id].state).toBe('pending');
+      expect(read().approvals[draft.id]).toBeUndefined();
+      const remaining = read().signOff[draft.id].decisions.ed ? 'tocChair' : 'ed';
+      await decide(draft.id, remaining);
+      expect(read().signOff[draft.id].state).toBe('approved');
+    });
+
+    it('leaves both approvals and pointer untouched on a losing final CAS', async () => {
+      const { draft } = await pending();
+      await decide(draft.id, 'ed');
+      const before = storedObject(key).body;
+      store.rejectComparisons = true;
+      store.conditionalWrites = [];
+      await expect(decide(draft.id, 'tocChair')).rejects.toMatchObject({ statusCode: 412 });
+      expect(store.conditionalWrites).toEqual([key]);
+      expect(storedObject(key).body).toBe(before);
+    });
+
+    it('permits only one of two simultaneous pending requests to win', async () => {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# First'), 'first');
+      const second = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Second'), 'second');
+      mode();
+      const results = await Promise.allSettled(
+        [first, second].map((revision) => service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', revision.id, { roles }))
+      );
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(Object.values(read().signOff)).toHaveLength(1);
+      expect(read().approvals).toBeUndefined();
+    });
+
+    it.each([null, [], 'unknown', { bad: {} }, { bad: { state: 'pending', requestedAt: 'invalid' } }])(
+      'ignores an unknown optional signOff shape %j on old pointers',
+      async (signOff) => {
+        const revision = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Old'), 'old');
+        store.objects.set(key, { ...storedObject(key), body: JSON.stringify({ ...read(), signOff }) });
+        const view = await service.getRevision(req, PROJECT, BRAND_KIT, 'living', revision.id);
+        expect(view?.revision.signOff).toBeUndefined();
+        expect(view?.markdown).toBe('# Old');
+        expect(view?.approval).toBeNull();
+      }
+    );
+
+    it('does not reject a valid pointer when a nested optional decision is corrupt', async () => {
+      const { draft } = await pending();
+      const record = read();
+      record.signOff[draft.id].decisions.ed = { at: 'bad', by: roles.ed, decision: 'approved' };
+      store.objects.set(key, { ...storedObject(key), body: JSON.stringify(record) });
+      expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', draft.id))?.revision.signOff).toBeUndefined();
+    });
+
+    it('blocks existing single-approve from the persisted setting even on an approved no-op', async () => {
+      const { first } = await pending();
+      store.conditionalWrites = [];
+      await expect(service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'MKTG_SIGN_OFF_REQUIRED',
+      });
+      expect(store.conditionalWrites).toEqual([]);
+      store.objects.set(settingsKey, { ...storedObject(settingsKey), body: 'broken' });
+      await expect(service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_SETTINGS_UNREADABLE' });
+    });
+
+    it('rejects run and legacy-only sign-off without writes', async () => {
+      mode();
+      await expect(service.transitionSignOff(req, PROJECT, LINKEDIN, 'living', 'unknown', { roles })).rejects.toMatchObject({ statusCode: 400 });
+      seedLegacy('# Legacy');
+      await expect(service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', `legacy-${sha('# Legacy')}`, { roles })).rejects.toMatchObject({
+        statusCode: 400,
+      });
+      expect(store.conditionalWrites).toEqual([]);
+    });
+  });
+
   describe('approval on the single current record', () => {
     const key = `documents/${PROJECT}/brand-kit/living/current.json`;
 

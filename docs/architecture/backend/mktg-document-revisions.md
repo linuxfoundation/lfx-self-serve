@@ -128,6 +128,29 @@ The existing `latestRevision` response field carries that approved identity, or
 null when none is approved (no stale badge). Selecting older approved content can
 also mark a deck out of date; revision number alone never determines freshness.
 
+### Internal two-role sign-off
+
+The optional `signOff` map on `current.json` freezes opaque directory subjects
+for the ED and TOC chair per revision. Names are resolved at read time. Unknown
+optional shapes are ignored without invalidating the critical pointer. Generation
+and Make current preserve these annotations; sign-off state never substitutes for
+an `approvals` entry when deciding whether content is Approved.
+
+`transitionSignOff` is an internal store seam, not an HTTP endpoint. A future
+writer-entitled orchestrator must supply directory-resolved roles and pre-send
+checks. Send and the first role decision preserve selection and its attribution.
+The second explicit approval writes both role decisions, the `approvals` entry
+and current selection in one `writeCurrent` CAS. Contention returns 412 without
+retry. A second pending request returns 409; terminal requests cannot be resent
+on the same revision. Changes requested requires an already-prepared comment
+receipt; this seam does not itself create comments or submit agent redrafts.
+
+A read-only policy reader checks `project-settings/{project}/sign-off.json`.
+Confirmed absence means `single-writer`; malformed or failed policy reads fail
+closed. Existing Approve refuses with 409 when persisted mode is `two-role`,
+including an otherwise approved/current no-op. No settings-write API or sign-off
+UI is introduced by this storage layer. There is no separate publish operation.
+
 ### Family exports
 
 Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
