@@ -371,6 +371,25 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.guests().map((entry) => entry.email)).toEqual(['second@example.com']);
     });
   });
+
+  describe('screen-reader announcement', () => {
+    it('announces a guest picked from search, which is added with no confirm step', () => {
+      component['addDirectGuest']({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['ada@example.com']);
+      expect(component['guestAnnouncement']()).toBe('Ada Byron added to the guest list.');
+    });
+
+    it('announces a removal, falling back to the email when the guest has no name', () => {
+      const guest = { ...savedGroupGuest, uid: 'registrant-2', first_name: '', last_name: '', type: 'direct' as const };
+      formService.setGuests([guest]);
+
+      component['onRemoveGuest'](guest);
+
+      expect(component['guestAnnouncement']()).toBe('member@example.com removed from the guest list.');
+    });
+  });
+
   /**
    * Covers what this section hands the group picker as the organizer's saved sharing decision.
    * @description The picker mounts after the load has settled, so it never sees the hydration

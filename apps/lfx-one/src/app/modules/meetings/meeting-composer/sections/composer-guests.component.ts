@@ -60,6 +60,8 @@ export class ComposerGuestsComponent {
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
+  /** Screen-reader status for the last add or remove; adds and removes are otherwise silent rows changing below. */
+  protected readonly guestAnnouncement = signal('');
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
@@ -247,6 +249,8 @@ export class ComposerGuestsComponent {
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
+    this.guestAnnouncement.set(`${this.guestLabel(guest)} removed from the guest list.`);
+
     // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
     // happens to be missing on the candidate: `undefined === undefined` matched every other
     // keyless row, and removing one such guest dropped all of them.
@@ -409,5 +413,10 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
+    this.guestAnnouncement.set(`${this.guestLabel(guest)} added to the guest list.`);
+  }
+
+  private guestLabel(guest: MeetingRegistrantWithState): string {
+    return [guest.first_name, guest.last_name].filter(Boolean).join(' ') || guest.email || 'Guest';
   }
 }

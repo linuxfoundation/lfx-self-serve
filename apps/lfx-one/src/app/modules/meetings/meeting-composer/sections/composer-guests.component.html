@@ -44,6 +44,8 @@
       [waitForSearchableQuery]="true"
       (onUserSelect)="onUserSelected()"
       (onManualEntry)="onOpenManualDialog()" />
+    <!-- Persistent so screen readers announce each change; a pick or remove otherwise only changes rows further down. -->
+    <p class="sr-only" role="status" data-testid="composer-guest-announcement">{{ guestAnnouncement() }}</p>
   </div>
 
   <!-- Groups: the right rail from `lg` up; below it, right after the search, in a light grey panel that sets
