@@ -31,12 +31,19 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
       {
         id: 'messaging-framework',
         label: 'Messaging framework',
+        runName: 'messaging framework',
         agentKey: 'foundation-message',
         description: 'Vision, mission, positioning, tagline, goals, say and avoid · with ICPs, message house and key numbers',
       },
-      { id: 'boilerplates', label: 'Boilerplates', agentKey: 'boilerplates', description: 'One-liner, 25, 50 and 100 words' },
-      { id: 'faq', label: 'FAQ', agentKey: 'faq', description: 'Questions answered from the sources; unanswered questions flagged' },
-      { id: 'brand-kit', label: 'Brand kit', agentKey: 'brand-kit', description: 'Colours, typeface, logo system, voice · the book as a print page' },
+      { id: 'boilerplates', label: 'Boilerplates', runName: 'boilerplates', agentKey: 'boilerplates', description: 'One-liner, 25, 50 and 100 words' },
+      { id: 'faq', label: 'FAQ', runName: 'FAQ', agentKey: 'faq', description: 'Questions answered from the sources; unanswered questions flagged' },
+      {
+        id: 'brand-kit',
+        label: 'Brand kit',
+        runName: 'brand kit',
+        agentKey: 'brand-kit',
+        description: 'Colours, typeface, logo system, voice · the book as a print page',
+      },
       { id: 'one-pager', label: 'One pager', description: 'Message house and the 50-word boilerplate on one page' },
     ],
     agentIds: ['foundation-setup', 'boilerplates', 'faq', 'brand-kit'],
@@ -113,18 +120,17 @@ export const MKTG_KIT_FILTERS = [
   { id: 'approved', label: 'Approved' },
   { id: 'draft', label: 'Draft' },
   { id: 'needs-rebuild', label: 'Needs rebuild' },
-  { id: 'missing', label: 'Missing' },
+  { id: 'missing', label: 'Not run yet' },
 ] satisfies (FilterPillOption & { id: MktgKitFilter })[];
 export const MKTG_KIT_STATE_LABELS = {
   approved: 'Approved',
   draft: 'Draft',
   'needs-rebuild': 'Needs rebuild',
-  missing: 'Missing',
+  missing: 'Not run yet',
   'coming-soon': 'Coming soon',
 } as const;
 export const MKTG_KIT_TABS = [
   { path: '', label: 'Kit' },
-  { path: 'agents', label: 'Agents' },
   { path: 'requests', label: 'Requests' },
   { path: 'access', label: 'Access' },
   { path: 'documents', label: 'Documents' },

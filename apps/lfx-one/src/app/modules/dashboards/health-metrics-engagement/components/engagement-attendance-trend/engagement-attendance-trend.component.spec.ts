@@ -95,7 +95,7 @@ describe('EngagementAttendanceTrendComponent', () => {
   it('reads the foundation roll-up and reports the read starting and settling', async () => {
     await render();
 
-    expect(getEngagementAttendanceTrend).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
+    expect(getEngagementAttendanceTrend).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(text('engagement-attendance-trend-window')).toBe('Last 12 months');
   });
@@ -155,19 +155,14 @@ describe('EngagementAttendanceTrendComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  // The trend follows the project selector, but its window is fixed, so the period pill costs no request.
-  it('re-reads for a project but not for a period change', async () => {
+  // The trend's window is fixed, so the period pill costs no request.
+  it('does not re-read for a period change', async () => {
     await render();
     getEngagementAttendanceTrend.mockClear();
-    const chrome = TestBed.inject(HealthMetricsChromeService);
 
-    chrome.selectedRange.set('COMPLETED_YEAR');
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
     expect(getEngagementAttendanceTrend).not.toHaveBeenCalled();
-
-    chrome.selectedProjectSlug.set('acme-core');
-    await settle();
-    expect(getEngagementAttendanceTrend).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   // A tab left open across a month boundary must not headline the new month's partial attendance.
@@ -179,7 +174,7 @@ describe('EngagementAttendanceTrendComponent', () => {
     // A stale date treats the current month (51%) as complete, so it headlines.
     expect(text('engagement-attendance-trend-latest')).toBe('51%');
 
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    selectedFoundation.set({ slug: 'acme-two' });
     await settle();
 
     expect(text('engagement-attendance-trend-latest')).toBe('50%');

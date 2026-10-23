@@ -14,16 +14,73 @@ test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
 });
 
-test('catalog tile opens the Member 360 form', async ({ page }, info) => {
+test('Kit → Member family → run has fixed linked parents and browser Back', async ({ page }, info) => {
+  // setupMember360 calls suppressCookieBanner and stubs project rights and all domain APIs.
   await setupMember360(page);
-  await openMember360(page, 'agents');
-  const family = page.getByTestId('mktg-os-agents-family-member-sponsor');
-  const tile = family.getByTestId('mktg-os-agents-tile-member-360');
-  await tile.scrollIntoViewIfNeeded();
-  await expect(tile).toBeEnabled();
-  await tile.click();
+  await openMember360(page);
+  await page.getByTestId('mktg-breadcrumb-link-0').click();
+  await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
+  await page.getByTestId('mktg-kit-family-link-member-sponsor').click();
+  await page.getByTestId('mktg-family-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-run-page')).toBeVisible();
-  await page.screenshot({ path: info.outputPath('catalog-to-form.png'), fullPage: true });
+  await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/member-sponsor\?project=sample-foundation$/);
+  await page.goBack();
+  await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('member-family-back.png'), fullPage: true });
+});
+
+test('shared Member document has linked parents and New run drops asset-only URL state', async ({ page }, info) => {
+  await setupMember360(page, { stored: true });
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-result')).toBeVisible();
+  await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/member-sponsor\?project=sample-foundation$/);
+  await expect(page.getByTestId('member-360-new-run')).toHaveAttribute('href', '/project/mktg-os-agents/member-360?project=sample-foundation');
+  await page.getByTestId('member-360-new-run').click();
+  await expect(page.getByTestId('member-360-run-page')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('member-360-result')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('member-document-back.png'), fullPage: true });
+});
+
+test('ranking filters push shareable URLs and Back restores each preceding view', async ({ page }, info) => {
+  await setupMember360(page, { stored: true });
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(2);
+  const entries = await page.evaluate(() => history.length);
+  await selectMember360Option(page, 'member-360-tier', 'At Risk');
+  await expect(page).toHaveURL(/tier=At%20Risk/);
+  expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+  await selectMember360Option(page, 'member-360-owner', 'Sales');
+  await expect(page).toHaveURL(/owner=Sales/);
+  await expect(page.getByTestId('member-360-no-matches')).toBeVisible();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/owner=Sales/);
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(1);
+  await page.goBack();
+  await expect(page).not.toHaveURL(/[?&]tier=/);
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(2);
+  await page.screenshot({ path: info.outputPath('ranking-filter-history.png'), fullPage: true });
+});
+
+test('one settled search term pushes once and Back restores the unfiltered list', async ({ page }, info) => {
+  await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(2);
+  const entries = await page.evaluate(() => history.length);
+  const input = page.getByTestId('member-360-search').locator('input');
+  await input.pressSequentially(SYNTHETIC_SECOND_ORG_LEGAL_NAME, { delay: 10 });
+  await expect.poll(() => new URL(page.url()).searchParams.get('search')).toBe(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
+  expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(1);
+  await page.goBack();
+  await expect(page).not.toHaveURL(/[?&]search=/);
+  await expect(input).toHaveValue('');
+  await expect(page.getByTestId('member-360-ranking-row')).toHaveCount(2);
+  await page.screenshot({ path: info.outputPath('search-history.png'), fullPage: true });
 });
 
 test('form-only intake fixes the project, parses/removes CSV, and has an empty history', async ({ page, isMobile }, info) => {

@@ -40,6 +40,7 @@ import {
   MktgDocumentsResponse,
   MktgDocumentType,
   MktgGenerationProvenance,
+  MktgGenerationAttribution,
   MktgLegacyDocument,
   MktgListedRevision,
   MktgRevisionAuthor,
@@ -99,6 +100,9 @@ export class MktgDocumentStoreService {
   private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
   private userService?: Promise<UserService>;
 
+  /** A per-generation context only; never change the visiting Request or share an override across runs. */
+  public constructor(private readonly generationAttribution?: MktgGenerationAttribution) {}
+
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
     req: Request,
@@ -130,6 +134,7 @@ export class MktgDocumentStoreService {
         project: partition,
         version: envelope.version,
         intake_mode: envelope.intake.mode,
+        document_location: { agent_key: type.agentKey, document_id: revision.record.documentId, revision_id: revision.id },
       };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the asset without a receipt; retried on next poll', {
@@ -153,7 +158,11 @@ export class MktgDocumentStoreService {
     if (!type) return receipt;
     try {
       const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
-      return { ...receipt, s3_key: revision.key };
+      return {
+        ...receipt,
+        s3_key: revision.key,
+        document_location: { agent_key: agentKey, document_id: revision.record.documentId, revision_id: revision.id },
+      };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,
@@ -631,31 +640,6 @@ export class MktgDocumentStoreService {
     return detail ? ((await this.readRevision(req, detail, revisionId))?.revision ?? null) : null;
   }
 
-  /** Explicit newest-identity lookup for export comparison; never returns a pre-revision artifact. */
-  public async readNewestRevisionRef(
-    req: Request,
-    project: string,
-    type: MktgDocumentType,
-    documentId: string
-  ): Promise<{ id: string; number: number; contentSha256: string } | null> {
-    const detail = await this.readDocument(
-      req,
-      project,
-      type,
-      documentId,
-      await this.readCurrent(req, project, type, documentId),
-      MKTG_DOCUMENT_READ_CONCURRENCY,
-      false,
-      false
-    );
-    if (!detail) return null;
-    for (const summary of detail.revisions) {
-      const revision = await this.loadSummaryRevision(req, detail, summary);
-      if (revision) return { id: revision.id, number: summary.number, contentSha256: revision.record.bundle.contentSha256 };
-    }
-    return null;
-  }
-
   private generationProvenanceKey(project: string, agentKey: MktgDocumentAgentKey, sessionId: string): string {
     return `${MKTG_GENERATION_PROVENANCE_KEY_PREFIX}/${project}/${agentKey}/${this.sha256(sessionId)}.json`;
   }
@@ -721,9 +705,7 @@ export class MktgDocumentStoreService {
     type: MktgDocumentType,
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
-    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
-    allowLegacy = true,
-    hydrateNames = true
+    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse | null> {
     let eligibleCount = 0;
     const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency, true, () => {
@@ -737,7 +719,7 @@ export class MktgDocumentStoreService {
           ...(await Promise.all(
             entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
               ...this.summary(entry, offset + index + 1),
-              author: hydrateNames ? await this.resolveAuthor(req, entry.metadata?.['author-id']) : null,
+              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
             }))
           ))
         );
@@ -754,11 +736,10 @@ export class MktgDocumentStoreService {
         type,
         documentId,
         revisions: summaries.reverse(),
-        current: await this.currentSelection(req, snapshot.record, hydrateNames),
+        current: await this.currentSelection(req, snapshot.record),
         approvedCurrent: null,
       };
-      // Identity-only freshness reads never hydrate names; public reads keep all attribution.
-      return hydrateNames ? this.withApprovals(req, detail, snapshot.record, readConcurrency) : detail;
+      return this.withApprovals(req, detail, snapshot.record, readConcurrency);
     }
     // Unreadable revision history must never serve an older pre-revision copy.
     if (snapshot.record) return null;
@@ -770,7 +751,6 @@ export class MktgDocumentStoreService {
       });
       return null;
     }
-    if (!allowLegacy) return null;
     const legacy = documentId === MKTG_LIVING_DOCUMENT_ID ? await this.findLegacyDocument(req, type, project) : null;
     return legacy ? { project, type, documentId, revisions: [this.legacySummary(legacy)], current: null, approvedCurrent: null } : null;
   }
@@ -910,9 +890,9 @@ export class MktgDocumentStoreService {
   }
 
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
-  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null, hydrateNames = true): Promise<MktgDocumentCurrentSelection | null> {
+  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: hydrateNames ? await this.resolveAuthor(req, record.changedBy) : null };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
@@ -1013,7 +993,10 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    const authorId = record.origin === 'legacy' ? null : this.author(req);
+    let authorId = record.origin === 'legacy' ? null : this.author(req);
+    if (record.origin === 'generated' && this.generationAttribution) {
+      authorId = this.generationAttribution.creatorSubject;
+    }
     const status = this.recordStatus(record);
     const boundedStatus = status.length > MKTG_REVISION_STATUS_METADATA_MAX_CHARS ? `${status.slice(0, MKTG_REVISION_STATUS_METADATA_MAX_CHARS - 1)}…` : status;
     const metadata: Record<string, string> = {

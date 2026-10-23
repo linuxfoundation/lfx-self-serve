@@ -135,7 +135,8 @@ export const ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS: readonly OrgContributorTimeRang
   { label: 'Last 30 Days', value: '30d' },
   { label: 'Last 90 Days', value: '90d' },
   { label: 'Last 12 Months', value: '12mo' },
-  { label: 'All Time', value: 'all' },
+  // `all` is not all-time: the ORG_PEOPLE_CONTRIBUTORS_DAILY dbt model is capped at a 3-year rolling window.
+  { label: 'Past 3 Years', value: 'all' },
 ] as const;
 
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */

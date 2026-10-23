@@ -121,7 +121,7 @@ export function renderLinkedinFormText(form: LinkedinForm, renderVersion: Linked
   ];
   if (renderVersion === 2) {
     lines.push(
-      `PROJECT SCOPE: ${quoteValue(JSON.stringify({ name: '', uid: null }))}`,
+      `PROJECT SCOPE: ${quoteValue(JSON.stringify({ name: form.project_name ?? '', uid: form.project_uid ?? null }))}`,
       renderLinkedinProfileGaps(form),
       'Read the content yourself. Ask one round only for the profile gaps listed above; no questions on feedback.',
       'A draft with non-empty PROFILE GAPS MUST return the questions before any options; the defaults below are provisional until the requester replies.'

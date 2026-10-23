@@ -33,6 +33,10 @@ describe('Member 360 terminal session facts', () => {
       ])
     ).toBeNull();
   });
+  it('uses the shared tool-task exclusion for runtime errors', () => {
+    expect(member360TerminalResult([JSON.stringify({ type: 'runtime_error', task: { entity_type: 'EntTaskTool' } })])).toBeNull();
+    expect(member360TerminalResult([JSON.stringify({ type: 'runtime_error' })])?.status).toBe('failed');
+  });
   it.each(['DONE', 'FAILED', 'ABORTED', 'CANCELLED'])('recognizes a %s session status without reading arbitrary content', (status) => {
     expect(member360TerminalResult([JSON.stringify({ type: 'session_status', session: { status }, content: { text: 'not-final-text' } })])).toEqual({
       status: 'failed',

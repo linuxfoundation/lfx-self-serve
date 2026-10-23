@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 
@@ -48,6 +49,10 @@ vi.mock('./user.service', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/foundation-message.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-envelope.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-session-event.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-activity.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
@@ -79,12 +84,14 @@ vi.mock('./object-store.service', () => ({
       body: Buffer,
       _contentType: string,
       _cacheControl: string,
-      metadata?: Record<string, string>
+      metadata?: Record<string, string>,
+      options: { refreshMetadataWhen?: (metadata: Record<string, string>) => boolean } = {}
     ): Promise<boolean> {
       if (store.failPutsMatching?.test(key)) {
         throw new Error('store unavailable');
       }
-      if (store.objects.has(key)) {
+      const previous = store.objects.get(key);
+      if (previous && !options.refreshMetadataWhen?.(previous.metadata)) {
         return false;
       }
       store.clock += 1000;
@@ -146,7 +153,7 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, BOILERPLATES_FINALIZE_TOOL } from '@lfx-one/shared/constants';
 import type {
   MktgArtifactEnvelope,
   MktgArtifactJsonEnvelope,
@@ -154,13 +161,14 @@ import type {
   MktgRevisionRecord,
   MktgRevisionRecordFields,
 } from '@lfx-one/shared/interfaces';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
-import { ObjectStoreService } from './object-store.service';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
+import { MktgDocumentRunService } from './mktg-document-run.service';
+import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 
 const req = {
   path: '/api/mktg-agents/documents',
@@ -279,6 +287,91 @@ describe('MktgDocumentStoreService', () => {
     });
     await expect(service.listDocuments(req, PROJECT, 'member-360')).rejects.toMatchObject({ statusCode: 503 });
     read.mockRestore();
+  });
+
+  it.each(['synthetic-creator', null])('keeps generated attribution %s separate from the visiting writer authorization', async (creatorSubject) => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const attributed = new MktgDocumentStoreService({ creatorSubject });
+    const receipt = await attributed.persistGeneration(visitor, SPEC, envelope('# Synthetic attributed asset'), PROJECT, 'attributed-session');
+    if (!receipt) throw new Error('Expected a synthetic revision receipt');
+    expect(storedObject(receipt.s3_key).metadata['author-id']).toBe(creatorSubject ?? undefined);
+    expect(projectMocks.getProjectById).toHaveBeenCalledWith(visitor, PROJECT, true);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
+  it('does not cross attribution between concurrent generations under the same visiting request', async () => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const receipts = await Promise.all(
+      ['synthetic-creator-a', 'synthetic-creator-b'].map((creatorSubject) =>
+        new MktgDocumentStoreService({ creatorSubject }).persistGeneration(visitor, SPEC, envelope(`# ${creatorSubject}`), PROJECT, creatorSubject)
+      )
+    );
+    const authors = receipts.map((receipt) => {
+      if (!receipt) throw new Error('Expected both synthetic revision receipts');
+      return storedObject(receipt.s3_key).metadata['author-id'];
+    });
+    expect(authors.sort()).toEqual(['synthetic-creator-a', 'synthetic-creator-b']);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
+  it.each([false, true])('reconciles through Documents HTTP with creator attribution, never the visiting writer (legacy=%s)', async (legacy) => {
+    MktgDocumentRunService['terminalCache'].clear();
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-creator' } } });
+    const visitor = Object.assign({}, req, {
+      oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } },
+      params: { agentKey: 'boilerplates', documentId: 'living' },
+      query: { project: PROJECT },
+    });
+    const runs = new MktgDocumentRunService();
+    const runId = await runs.start(creator, PROJECT, 'boilerplates', 'synthetic-transport-session');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const runKey = `document-runs/${PROJECT}/${runId}.json`;
+    if (legacy) {
+      const object = storedObject(runKey);
+      const record: Record<string, unknown> = JSON.parse(object.body);
+      delete record['creatorSubject'];
+      object.body = JSON.stringify(record);
+    }
+    const native = JSON.parse(
+      readFileSync(new URL('../../../../../packages/shared/src/utils/__fixtures__/boilerplates.envelope.json', import.meta.url), 'utf8')
+    );
+    const events = [
+      JSON.stringify({
+        type: 'llm_start',
+        payload: JSON.stringify({
+          messages: [
+            { role: 'assistant', content: [{ type: 'tool_use', id: 'synthetic-finalize', name: BOILERPLATES_FINALIZE_TOOL, input: {} }] },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'synthetic-finalize',
+                  content: [{ type: 'text', text: JSON.stringify({ envelope_json: JSON.stringify(native) }) }],
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    ];
+    const read = vi.spyOn(GuildService.prototype, 'getRawEventPayloads').mockResolvedValue(events);
+    const jsonResponse = vi.fn();
+    const response = { json: jsonResponse } as unknown as Response;
+    const next = vi.fn();
+    try {
+      await new MktgDocumentsController().getDocument(visitor, response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(revisionKeys()).toHaveLength(1);
+      expect(storedObject(revisionKeys()[0]).metadata['author-id']).toBe(legacy ? undefined : 'synthetic-creator');
+      expect(projectMocks.getProjectById).toHaveBeenCalledWith(visitor, PROJECT, true);
+      expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+      expect(jsonResponse).toHaveBeenCalledWith(expect.objectContaining({ project: PROJECT, runs: [], revisions: [expect.anything()] }));
+      expect(JSON.stringify(jsonResponse.mock.calls)).not.toContain('creatorSubject');
+    } finally {
+      read.mockRestore();
+      MktgDocumentRunService['terminalCache'].clear();
+    }
   });
 
   describe('captured framework provenance', () => {
@@ -477,8 +570,8 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject({ code: 'MKTG_ASSET_NOT_APPROVED' });
     });
 
-    it('keeps approved current as the read/export/listing selection but retains newest identity for export comparison', async () => {
-      const { first, second } = await twoRevisions();
+    it('keeps approved current as the read/export/listing selection', async () => {
+      const { first } = await twoRevisions();
       await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
       expect((await service.readLatest(req, SPEC, PROJECT))?.documentMarkdown).toBe('# First');
       expect((await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {}))?.revision.id).toBe(first.id);
@@ -487,7 +580,6 @@ describe('MktgDocumentStoreService', () => {
         latestRevisionId: first.id,
         approvedCurrent: { revisionId: first.id, number: 1 },
       });
-      expect(await service.readNewestRevisionRef(req, PROJECT, BRAND_KIT, 'living')).toMatchObject({ id: second.id, number: 2 });
     });
 
     it.each(['missing', 'historical-corrupt'])('distinguishes %s approved current from absent approval with other revisions still readable', async (fault) => {
@@ -653,12 +745,19 @@ describe('MktgDocumentStoreService', () => {
       const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(store.objects.has(`brand-kit/${PROJECT}/${generated.content_sha256}.md`)).toBe(true);
+      expect(receipt?.document_location).toMatchObject({ agent_key: 'brand-kit', document_id: 'living' });
       const keys = revisionKeys();
       expect(keys).toHaveLength(1);
       expect(receipt?.s3_key).toBe(keys[0]);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/brand-kit/living/000001-[0-9a-f]{64}\\.json$`));
       // Content-addressed by the record's own bytes.
       expect(keys[0]).toContain(sha(store.objects.get(keys[0])?.body ?? ''));
+      expect(receipt?.document_location?.revision_id).toBe(
+        keys[0]
+          .split('/')
+          .at(-1)
+          ?.replace(/\.json$/, '')
+      );
 
       const record = storedRecord(keys[0]);
       expect(record).toMatchObject({
@@ -686,11 +785,13 @@ describe('MktgDocumentStoreService', () => {
     it('records a generation once, however often the result is polled', async () => {
       const generated = envelope('# Brand Kit\n');
 
-      await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
-      await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
+      const first = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
+      const repeated = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
       await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(revisionKeys()).toHaveLength(1);
+      expect(first?.document_location).toBeDefined();
+      expect(repeated?.document_location).toEqual(first?.document_location);
     });
 
     it('adds a new latest revision for each new generation of a living document', async () => {
@@ -740,7 +841,21 @@ describe('MktgDocumentStoreService', () => {
       expect(keys).toHaveLength(1);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/foundation-message/living/000001-[0-9a-f]{64}\\.json$`));
       // The revision IS the stored copy: the receipt names its key, and nothing lands in the pre-revision `.md` partition.
-      expect(receipt).toEqual({ s3_key: keys[0], content_sha256: generated.content_sha256, project: PROJECT, version: 1, intake_mode: 'form' });
+      expect(receipt).toEqual({
+        s3_key: keys[0],
+        content_sha256: generated.content_sha256,
+        project: PROJECT,
+        version: 1,
+        intake_mode: 'form',
+        document_location: {
+          agent_key: 'foundation-message',
+          document_id: 'living',
+          revision_id: keys[0]
+            .split('/')
+            .at(-1)
+            ?.replace(/\.json$/, ''),
+        },
+      });
       expect([...store.objects.keys()].filter((key) => key.endsWith('.md'))).toEqual([]);
 
       const record = storedRecord(keys[0]);
@@ -749,6 +864,22 @@ describe('MktgDocumentStoreService', () => {
       expect(record.bundle.contentSha256).toBe(generated.content_sha256);
       expect(record.bundle.sidecar).toMatchObject({ contract: 'messaging-framework-output/v1', report: { gaps: ['No member count.'] }, mode: 'draft' });
       expect(record.bundle.sidecar).not.toHaveProperty('content');
+    });
+
+    it('returns the exact recorded location on repeated JSON polls, not a newer session’s revision', async () => {
+      const first = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      const second = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second.'), PROJECT, 'session-2');
+      const repeated = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      expect(first?.document_location).toBeDefined();
+      expect(repeated?.document_location).toEqual(first?.document_location);
+      expect(repeated?.document_location).not.toEqual(second?.document_location);
+      const location = repeated?.document_location;
+      expect(location).toBeDefined();
+      if (location) {
+        const stored = await service.getRevision(req, PROJECT, FRAMEWORK, location.document_id, location.revision_id);
+        expect(stored?.markdown).toBe(JSON.stringify(jsonEnvelope('First.').content));
+        expect(stored?.sidecar).toMatchObject({ report: { gaps: ['No member count.'] } });
+      }
     });
 
     it('serves the JSON revision to the Documents area with its format and sidecar, and to dependent agents as its text', async () => {
@@ -1561,60 +1692,6 @@ describe('MktgDocumentStoreService', () => {
       });
       seedLegacy('# Brand Kit\n');
       await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject({ code: 'MKTG_ASSET_NOT_APPROVED' });
-    });
-  });
-
-  describe('readNewestRevisionRef — the last-export lookup’s latest revision', () => {
-    it('reads the listing and the newest revision’s body alone', async () => {
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
-      const second = jsonEnvelope('Third');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, second, PROJECT, 'session-3');
-      const getObject = vi.spyOn(ObjectStoreService.prototype, 'getObject');
-
-      const newest = await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living');
-
-      expect(newest).toMatchObject({ number: 3, contentSha256: second.content_sha256 });
-      expect(newest?.id).toBe(revisionKeys()[2].split('/').pop()?.replace('.json', ''));
-      expect(getObject).toHaveBeenCalledTimes(2); // Current pointer plus one revision body.
-      expect(getObject.mock.calls.filter(([, , key]) => /\/[0-9]{6}-[a-f0-9]{64}\.json$/.test(key))).toHaveLength(1);
-      getObject.mockRestore();
-    });
-
-    it('skips every name lookup for freshness when author, selector and approver are the same actor', async () => {
-      const envelope = jsonEnvelope('Approved content');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, envelope, PROJECT, 'session-1');
-      await approveStored(FRAMEWORK, 1);
-      const current = JSON.parse(storedObject(`documents/${PROJECT}/foundation-message/living/current.json`).body);
-      expect(current.approvals[current.revisionId].approvedBy).toBe(current.changedBy);
-      expect(storedObject(revisionKeys()[0]).metadata['author-id']).toBe(current.changedBy);
-      // A new HTTP request must not reuse the names cached during generation/approval.
-      const lookupRequest = Object.create(req) as Request;
-      directoryMocks.getUserInfo.mockClear();
-      directoryMocks.getUserInfo.mockImplementation(() => new Promise<never>(() => undefined));
-      expect(await service.readNewestRevisionRef(lookupRequest, PROJECT, FRAMEWORK, 'living')).toMatchObject({
-        number: 1,
-        contentSha256: envelope.content_sha256,
-      });
-      expect(directoryMocks.getUserInfo).not.toHaveBeenCalled();
-      directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
-      const detail = await service.getDocument(lookupRequest, PROJECT, FRAMEWORK, 'living');
-      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
-      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
-      expect(detail?.revisions[0].approval?.approvedBy).toEqual({ name: 'The writer' });
-      expect(directoryMocks.getUserInfo).toHaveBeenCalledExactlyOnceWith(lookupRequest, current.changedBy);
-    });
-
-    it('walks back past a newest revision that fails its integrity checks, and is null with nothing stored', async () => {
-      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toBeNull();
-      const first = jsonEnvelope('First');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
-      const tamperedKey = revisionKeys()[1];
-      const tampered = store.objects.get(tamperedKey);
-      store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
-
-      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toMatchObject({ number: 1, contentSha256: first.content_sha256 });
     });
   });
 

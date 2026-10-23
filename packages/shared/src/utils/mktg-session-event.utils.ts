@@ -30,7 +30,11 @@ import {
   MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH,
   MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES,
   MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES,
+  MKTG_SESSION_EVENTS_TRUNCATED,
+  MKTG_SESSION_TURN_STARTED,
+  MKTG_SESSION_REASONING_CONTENT_TYPE,
 } from '../constants/mktg-run.constants';
+import type { MktgSessionOutcome } from '../interfaces/mktg-document-run.interface';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -51,14 +55,20 @@ function parseEmbeddedJson(value: string): unknown {
   }
 }
 
-/**
- * One raw event, parsed and worth reading: undefined for a payload that is
- * not JSON, and for a platform tool's own event, whose content is the tool's
- * input or output and not the agent's.
- */
+/** Root task metadata only: tool errors must not become session/agent failures. */
+export function isMktgToolTaskEvent(event: unknown): boolean {
+  return isRecord(event) && isRecord(event['task']) && event['task']['entity_type'] === 'EntTaskTool';
+}
+
+/** Ignore reasoning before walking any content, including embedded transcript-shaped JSON. */
+export function isMktgReasoningEvent(event: unknown): boolean {
+  return isRecord(event) && isRecord(event['content']) && event['content']['type'] === MKTG_SESSION_REASONING_CONTENT_TYPE;
+}
+
+/** Only agent events worth reading, never a platform tool's input/output or model reasoning. */
 function readableEvent(payload: string): unknown {
   const event = parseEmbeddedJson(payload);
-  if (isRecord(event) && (MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES as readonly unknown[]).includes(event['type'])) {
+  if (isMktgReasoningEvent(event) || (isRecord(event) && (MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES as readonly unknown[]).includes(event['type']))) {
     return undefined;
   }
   return event;
@@ -193,6 +203,77 @@ export function extractMktgAgentTexts(payload: string): string[] {
  * call-and-result pair it spells out is not the finalize tool's result.
  */
 export function extractMktgToolResults(payload: string, toolName: string): string[] {
+  return extractToolResultEntries(payload, toolName).map((result) => result.text);
+}
+
+/** Agent text from the current queued turn only; old assistant text echoed by a transcript is not a new question or refusal. */
+export function extractMktgCurrentTurnAgentTexts(payloads: string[]): string[] {
+  const previous = new Set<string>();
+  const previousEvents = new Set<string>();
+  const currentEvents = new Set<string>();
+  let current: string[] = [];
+  for (const payload of payloads) {
+    const event = parseEmbeddedJson(payload);
+    if (isRecord(event) && event['type'] === MKTG_SESSION_TURN_STARTED) {
+      current.forEach((text) => previous.add(text));
+      currentEvents.forEach((identity) => previousEvents.add(identity));
+      currentEvents.clear();
+      current = [];
+    } else {
+      const texts = extractMktgAgentTexts(payload);
+      let identity: string | undefined;
+      if (isRecord(event) && event['type'] === 'agent_notification_message') {
+        if (typeof event['id'] === 'string' && event['id']) {
+          identity = `id:${event['id']}`;
+        } else if (typeof event['created_at'] === 'string' && event['created_at']) {
+          identity = JSON.stringify([event['created_at'], texts]);
+        }
+      }
+      if (identity) {
+        if (!previousEvents.has(identity)) {
+          current.push(...texts);
+          currentEvents.add(identity);
+        }
+      } else {
+        // Transcript snapshots echo old text; their outer id/time is not a new assistant reply.
+        current.push(...texts.filter((text) => !previous.has(text)));
+      }
+    }
+  }
+  return current;
+}
+
+/** An idle runtime fails only when a real final reply follows its latest unanswered questions (or no questions exist). */
+export function mktgFailureAfterQuestions(payloads: string[], isQuestions: (text: string) => boolean): MktgSessionOutcome | null {
+  const outcome = getMktgSessionOutcome(payloads);
+  if (!outcome.ended || isQuestions(outcome.replyText)) {
+    return null;
+  }
+  const texts = extractMktgCurrentTurnAgentTexts(payloads).map((text) => text.trim());
+  const questionsIndex = texts.reduce((latest, text, index) => (isQuestions(text) ? index : latest), -1);
+  if (!outcome.replyText) {
+    return questionsIndex < 0 ? outcome : null;
+  }
+  return questionsIndex < 0 || texts.lastIndexOf(outcome.replyText) > questionsIndex ? outcome : null;
+}
+
+/** Latest queued turn only: transcript replays of earlier finalize call ids cannot finish a follow-up. */
+export function extractMktgCurrentTurnToolResults(payloads: string[], toolName: string): string[] {
+  const priorCallIds = new Set<string>();
+  let current: { id: string; text: string }[] = [];
+  for (const payload of payloads) {
+    const event = parseEmbeddedJson(payload);
+    if (isRecord(event) && event['type'] === MKTG_SESSION_TURN_STARTED) {
+      current.forEach((result) => priorCallIds.add(result.id));
+      current = [];
+    } else {
+      current.push(...extractToolResultEntries(payload, toolName).filter((result) => !priorCallIds.has(result.id)));
+    }
+  }
+  return current.map((result) => result.text);
+}
+
+function extractToolResultEntries(payload: string, toolName: string): { id: string; text: string }[] {
   const event = readableEvent(payload);
   if (event === undefined) {
     return [];
@@ -224,5 +305,59 @@ export function extractMktgToolResults(payload: string, toolName: string): strin
     }
     return true;
   });
-  return results.filter((result) => callIds.has(result.id)).map((result) => result.text);
+  return results.filter((result) => callIds.has(result.id));
+}
+
+/**
+ * Only an agent runtime completion with no pending task ends a turn. Queued
+ * turns, newer runtime/LLM work and capped pages cannot prove completion.
+ * Reads root event metadata only; tool/user bodies cannot forge completion.
+ */
+export function getMktgSessionOutcome(payloads: string[]): MktgSessionOutcome {
+  const active = new Set<string>();
+  let ended = false;
+  let awaitingRuntime = false;
+  let replyText = '';
+  for (const payload of payloads) {
+    const event = parseEmbeddedJson(payload);
+    if (!isRecord(event) || isMktgReasoningEvent(event)) {
+      continue;
+    }
+    if (event['type'] === MKTG_SESSION_EVENTS_TRUNCATED) {
+      return { ended: false, replyText };
+    }
+    if (event['type'] === MKTG_SESSION_TURN_STARTED) {
+      ended = false;
+      awaitingRuntime = true;
+      replyText = '';
+      continue;
+    }
+    const task = isRecord(event['task']) ? event['task'] : null;
+    const id = task?.['id'];
+    const agent = task?.['entity_type'] === 'EntTaskAgent';
+    if (event['type'] === 'runtime_start' && typeof id === 'string') {
+      active.add(id);
+      ended = false;
+      if (agent) {
+        awaitingRuntime = false;
+        replyText = '';
+      }
+    } else if (event['type'] === 'runtime_done' && typeof id === 'string') {
+      active.delete(id);
+      if (agent && !awaitingRuntime) {
+        ended = true;
+      }
+    } else if (event['type'] === 'llm_start') {
+      ended = false;
+    }
+    if (event['type'] === 'agent_notification_message') {
+      const content = event['content'];
+      if (typeof content === 'string') {
+        replyText = content.trim();
+      } else if (isRecord(content) && content['type'] === 'text' && typeof content['data'] === 'string') {
+        replyText = content['data'].trim();
+      }
+    }
+  }
+  return { ended: ended && !awaitingRuntime && active.size === 0, replyText };
 }

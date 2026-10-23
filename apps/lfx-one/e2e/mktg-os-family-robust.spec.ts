@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENTS,
+  MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_AGENT_INTAKES,
+} from '../../../packages/shared/src/constants';
 import { expect } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, openKit, setupKit } from './helpers/mktg-kit.helper';
@@ -14,11 +20,25 @@ test.describe('Marketing family responsive structure', () => {
     for (const familyId of ['positioning-brand', 'member-sponsor']) {
       test(`${familyId} structure and export placement at ${width}px`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 1000 });
-        await setupKit(page, { loaded: true });
+        await setupKit(page, { loaded: true, approvedFramework: true });
         await openKit(page, `/families/${familyId}`);
         await expect(page.getByTestId('mktg-family-assets').locator('tbody tr')).toHaveCount(
           MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.length ?? 0
         );
+        const eligible = (MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets ?? []).filter((asset) => {
+          const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === asset.agentKey && entry.kind === 'living');
+          return (
+            !!type?.catalogAgentId &&
+            !!MKTG_AGENT_INTAKES[type.catalogAgentId] &&
+            MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
+          );
+        });
+        await expect(page.getByTestId('mktg-family-assets').locator('[data-testid^="mktg-family-run-"]')).toHaveCount(eligible.length);
+        for (const asset of eligible) {
+          const action = page.getByTestId(`mktg-family-asset-${asset.id}`).getByTestId(`mktg-family-run-${asset.id}`).getByRole('link');
+          await expect(action).toBeVisible();
+          await expect(action).toHaveAttribute('href', /mode=new/);
+        }
         const title = await page.getByTestId('mktg-family-title').boundingBox();
         const intro = await page.getByTestId('mktg-family-intro').boundingBox();
         const actions = await page.getByTestId('mktg-family-actions').boundingBox();
@@ -34,21 +54,12 @@ test.describe('Marketing family responsive structure', () => {
         for (const cell of await page.getByTestId(/^mktg-family-(state|current)-/).all()) {
           await expect(cell).toHaveCSS('white-space', 'nowrap');
         }
-        const rebuildButton = page.getByTestId('mktg-family-rebuild').getByRole('button');
-        const rebuild = await rebuildButton.boundingBox();
-        expect(rebuild).not.toBeNull();
-        await expect(rebuildButton).toBeDisabled();
+        // This fixture has nothing stale: the header carries no rebuild, only the run action.
+        await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
         if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
-          // The real producer is present; this fixture has no stale downstream assets.
           await expect(page.locator('lfx-mktg-rebuild')).toBeAttached();
           await expect(page.getByTestId('mktg-rebuild-progress')).toHaveCount(0);
-          await expect(page.getByTestId('mktg-family-rebuild-unavailable')).toHaveCount(0);
-        } else {
-          await expect(page.locator('lfx-mktg-rebuild')).toHaveCount(0);
-          const caption = await page.getByTestId('mktg-family-rebuild-unavailable').boundingBox();
-          expect(caption).not.toBeNull();
-          if (rebuild && caption) expect(caption.y).toBeGreaterThanOrEqual(rebuild.y + rebuild.height);
-        }
+        } else await expect(page.locator('lfx-mktg-rebuild')).toHaveCount(0);
         await expect(page.getByTestId('mktg-breadcrumb-link-0')).toContainText('Synthetic Kit Project kit');
         if (familyId === 'positioning-brand') await expect(page.getByTestId('mktg-family-sources')).toBeVisible();
         else {
@@ -59,8 +70,11 @@ test.describe('Marketing family responsive structure', () => {
           const run = await page.getByTestId('mktg-family-run').boundingBox();
           expect(run).not.toBeNull();
           if (runnable) {
-            await expect(runButton).toBeEnabled();
-            await expect(runButton).toHaveAccessibleName(`Run ${runnable.name}`);
+            await expect(runButton).toBeVisible();
+            const asset = family?.assets.find((row) =>
+              MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === runnable.id)
+            );
+            await expect(runButton).toHaveAccessibleName('Run ' + (asset?.runName ?? asset?.label ?? runnable.name));
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {
             await expect(runButton).toBeDisabled();

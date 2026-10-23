@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import { MktgFamilyExportResultResponse, MktgFamilyPrintView, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '@shared/testing/mktg-family-export-test-data';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyExportService } from './mktg-family-export.service';

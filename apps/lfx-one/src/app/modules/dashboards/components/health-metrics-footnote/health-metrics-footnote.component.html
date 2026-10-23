@@ -1,15 +1,15 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design (the 14px root undershoots the rem scale); gray-500, not its gray-400, meets WCAG AA.
-     Each run is its own element, so template whitespace never adds a space the text does not carry. -->
-<p class="flex items-start gap-2 border-t border-gray-100 pt-3 text-[12px] leading-[1.55] text-gray-500">
-  <i
-    class="mt-[3px] shrink-0 fa-light"
-    [class.fa-circle-info]="!caution()"
-    [class.fa-triangle-exclamation]="caution()"
-    aria-hidden="true"
-    data-testid="health-metrics-footnote-icon"></i>
+<!-- The design's section notes: a plain grey line, or, for a caution, a warning icon on an amber panel. Pixel sizes
+     follow it (the 14px root undershoots the rem scale). Each run is its own element, so template whitespace never adds
+     a space the text does not carry. -->
+<p
+  class="m-0 flex items-start gap-[8px] rounded-[10px] px-[12px] py-[10px] text-[12px] leading-normal"
+  [class]="caution() ? 'bg-amber-50 text-amber-800' : 'text-gray-400'">
+  @if (caution()) {
+    <i class="fa-light fa-triangle-exclamation mt-[2px] shrink-0 text-[12px]" aria-hidden="true" data-testid="health-metrics-footnote-icon"></i>
+  }
   <span>
     @for (part of parts(); track $index) {
       @if (part.route) {

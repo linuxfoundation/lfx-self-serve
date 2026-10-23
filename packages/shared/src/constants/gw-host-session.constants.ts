@@ -24,9 +24,10 @@ export const GW_HOST_SESSION_SID_HKDF_INFO = 'lfx-one gatewaze host-session v1 s
 
 /**
  * Fields of `@gatewaze/host-session`'s warn metadata that may be logged. Everything else, notably the
- * GoTrue `user_id`, is dropped. `path` is the upstream path of a redirect the proxy dropped.
+ * GoTrue `user_id`, is dropped. `path` is the upstream path of a redirect the proxy dropped. `reason`
+ * is `getAdminContext`'s fixed description of why it gave up, e.g. more than one active row.
  */
-export const GW_HOST_SESSION_STORE_LOG_FIELDS = ['err', 'status', 'path'] as const;
+export const GW_HOST_SESSION_STORE_LOG_FIELDS = ['err', 'status', 'path', 'reason'] as const;
 
 /** Label HMAC'd with the LFX session id to form the Gatewaze session id, domain-separating the input. */
 export const GW_HOST_SESSION_SID_LABEL = 'sid:';

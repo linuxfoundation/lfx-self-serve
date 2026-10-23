@@ -53,7 +53,7 @@ describe('Marketing kit home', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelectorAll('article')).toHaveLength(9);
-    expect(root.textContent).toContain('Missing');
+    expect(root.textContent).toContain('Not run yet');
     expect(root.textContent).toContain('Coming soon');
     expect(root.textContent).toContain('Lead: HUB lifecycle');
     expect(root.textContent).toContain('Messaging Framework, Boilerplates, FAQ, Brand Kit');

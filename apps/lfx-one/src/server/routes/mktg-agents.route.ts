@@ -104,6 +104,9 @@ router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
 router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
 router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
 
+// GET /api/mktg-agents/intakes/:agentKey/last - private scalar history; the service resolves writer access.
+router.get('/intakes/:agentKey/last', (req, res, next) => mktgAgentsController.getLastIntake(req, res, next));
+
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
 
@@ -183,6 +186,9 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
+// POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/retry - recheck a recorded session, not a generation
+router.post('/documents/:agentKey/:documentId/runs/:runId/retry', (req, res, next) => mktgDocumentsController.retryRun(req, res, next));
+
 // Family exports: the document writer boundary, with every family operation blocked while impersonating.
 router.post('/slides-export/family/start', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'start'));
 router.post('/slides-export/family/result', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'result'));
@@ -194,7 +200,7 @@ router.post('/slides-export/start', (req, res, next) => mktgSlidesExportControll
 // POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
 router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
 
-// GET /api/mktg-agents/slides-export/last - last export plus newest identity for freshness, not byte selection.
+// GET /api/mktg-agents/slides-export/last - last export plus approved-current identity for freshness (null when none approved), not byte selection.
 router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

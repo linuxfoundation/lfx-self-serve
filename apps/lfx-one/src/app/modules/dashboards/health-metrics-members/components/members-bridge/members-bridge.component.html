@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-3 border-t border-gray-100 pt-5" data-testid="members-bridge">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Membership bridge unavailable"
       subtitle="We could not load how the member base changed. Refresh the page to try again."
@@ -13,6 +14,7 @@
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="members-bridge-loading" aria-hidden="true" />
   } @else if (!view().measured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-chart-waterfall"
       title="No membership movement recorded yet"
       subtitle="Once this foundation has members, how the base changed each year appears here."
@@ -66,10 +68,10 @@
       </ul>
 
       @if (view().reconcileNote; as note) {
-        <p class="rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" role="note" data-testid="members-bridge-reconcile-note">{{ note }}</p>
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-[12px] text-amber-800" role="note" data-testid="members-bridge-reconcile-note">{{ note }}</p>
       }
     } @else {
-      <p class="text-sm text-gray-500" data-testid="members-bridge-year-unmeasured">
+      <p class="text-[13px] text-gray-500" data-testid="members-bridge-year-unmeasured">
         No membership movement is recorded for the selected period. Pick another period to see it.
       </p>
     }
