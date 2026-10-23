@@ -75,8 +75,10 @@ export abstract class NavMenuBase {
   // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
   // A lens the mobile drawer previews (#4208) has no route yet: its own lens decides instead, so a Me or Org menu
   // previewed over a foundation page carries no slug, and a previewed foundation / project menu carries its selector's.
+  // The same holds while a pick from it is still navigating: the route is still the page being left.
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
-    const kind = this.lensService.previewingMenuLens() ? this.navLens() : this.projectContextService.activeRouteLensKind();
+    const lensDecides = this.lensService.previewingMenuLens() || this.lensService.menuPickPending();
+    const kind = lensDecides ? this.navLens() : this.projectContextService.activeRouteLensKind();
     if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};
@@ -220,7 +222,8 @@ export abstract class NavMenuBase {
 
   /**
    * Puts the selector slot a previewed pick is about to overwrite back to its current value — for a pick whose navigation
-   * never leaves the page — unless something has selected another context since.
+   * never leaves the page — unless something has selected another context since. Never touches the address: the page
+   * the viewer stayed on keeps its own `?project=`.
    */
   private contextRestorer(asFoundation: boolean, picked: ProjectContext): () => void {
     const slot = asFoundation ? this.projectContextService.selectedFoundation : this.projectContextService.selectedProject;
@@ -231,9 +234,9 @@ export abstract class NavMenuBase {
         if (asFoundation) this.projectContextService.setFoundation(previous, false);
         else this.projectContextService.setProject(previous, false);
       } else if (asFoundation) {
-        this.projectContextService.clearFoundation();
+        this.projectContextService.clearFoundation(false);
       } else {
-        this.projectContextService.clearProject();
+        this.projectContextService.clearProject(false);
       }
     };
   }

@@ -31,7 +31,8 @@ class LensService {
   menuLens: Signal<Lens>; // the previewed lens while one stands, otherwise activeLens
   previewingMenuLens: Signal<boolean>; // menuLens !== activeLens
   previewMenuLens(lens: Lens): void; // a drawer lens tab: show that lens's menu, no navigation
-  commitMenuLens(lens?: Lens): void; // a pick from the previewed menu: setLens before it navigates; undone if it never leaves the page
+  commitMenuLens(lens?: Lens, onRestore?: () => void): void; // a pick from the previewed menu: setLens before it navigates; undone if it never leaves the page
+  menuPickPending: Signal<boolean>; // a pick from the previewed menu is still navigating
   clearMenuLensPreview(): void; // the drawer closed without a pick
 }
 ```
@@ -52,8 +53,8 @@ The preview is dropped when the drawer closes and when the drawer's navbar is de
 
 A pick from the previewed menu commits it:
 
-- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`. If that navigation never leaves the page — cancelled or failed (a declined `canDeactivate`, a refusing guard), or skipped as the current address — the page lens, the selector context a project or foundation pick set, and the preview (if the drawer is still showing it) are put back, unless the lens has moved since. A pick a guard redirects, or the viewer's next tap supersedes, hands over to the navigation that replaces it;
-- a project or foundation pick commits through `commitMenuLens` too, and lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page. Previewed menu links carry `?project=` by the previewed lens: the selector's slug for a foundation or project menu, none for a Me or Org menu;
+- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`. If that navigation never leaves the page — cancelled or failed (a declined `canDeactivate`, a refusing guard), or skipped as the current address — the page lens, the selector context a project or foundation pick set, the last viewed nav lens, and the preview (unless the drawer has since closed or moved to another lens tab) are put back, unless the lens has moved since. A pick a guard redirects, or the viewer's next tap supersedes, hands over to the navigation that replaces it, and a pick made while an earlier one is still pending undoes both if it fails;
+- a project or foundation pick commits through `commitMenuLens` too, and lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page. Previewed menu links — and the menu's links while a pick from it is still navigating (`menuPickPending`) — carry `?project=` by that lens: the selector's slug for a foundation or project menu, none for a Me or Org menu;
 - an organization pick lands on that organization's Org Lens overview.
 
 ### Route wiring
