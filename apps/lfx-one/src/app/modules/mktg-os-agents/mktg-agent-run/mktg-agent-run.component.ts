@@ -475,7 +475,7 @@ export class MktgAgentRunComponent {
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { project: this.projectSlug() }, replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -595,13 +595,12 @@ export class MktgAgentRunComponent {
       .navigate(['..', 'documents', destination.agentKey, destination.documentId ?? MKTG_LIVING_DOCUMENT_ID], {
         relativeTo: this.route,
         queryParams: {
+          project: this.projectSlug(),
           generation: destination.generation ?? null,
           revision: destination.revisionId ?? null,
           run: destination.runId ?? null,
-          questions: null,
-          mode: null,
         },
-        queryParamsHandling: 'merge',
+        replaceUrl: true,
       })
       .then((opened) => {
         if (!current()) {
@@ -628,7 +627,7 @@ export class MktgAgentRunComponent {
   // === Protected methods ===
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
-    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge' });
+    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { project: this.projectSlug() } });
   }
 
   /** Re-runs the dependency check that failed, for the active project. */
