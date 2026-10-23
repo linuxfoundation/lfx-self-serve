@@ -35,6 +35,7 @@ import {
   MktgDependencyDocument,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgPendingGeneration,
   MktgRunNavigation,
   MktgIntakeAttachment,
   MktgIntakeDocument,
@@ -122,7 +123,10 @@ export class MktgAgentRunComponent {
     map((params) => params.get('mode') === MKTG_RUN_NEW_MODE),
     distinctUntilChanged()
   );
-  protected readonly freshMode = toSignal(this.freshMode$, { initialValue: false });
+  /** Per-visit Sources/submission state, independent of the consumed entry URL. */
+  protected readonly freshMode = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
+  private consumedFreshProject: string | null = null;
+  private consumedFreshSubject: string | null = null;
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
   /**
@@ -497,6 +501,12 @@ export class MktgAgentRunComponent {
               previousContext?.uid === context?.uid && previousUser?.sub === user?.sub && previousMode === mode
           ),
           switchMap(([context, user, fresh]) => {
+            if (!fresh && context?.uid === this.consumedFreshProject && user?.sub === this.consumedFreshSubject) {
+              // Our accepted-attempt URL replacement is not a new intake/context.
+              this.consumedFreshProject = null;
+              this.consumedFreshSubject = null;
+              return EMPTY;
+            }
             this.resetForContext(context, fresh);
             if (!context) return EMPTY;
             const history =
@@ -1161,6 +1171,9 @@ export class MktgAgentRunComponent {
       return;
     }
 
+    this.consumedFreshProject = null;
+    this.consumedFreshSubject = null;
+    this.freshMode.set(fresh);
     this.generationSub?.unsubscribe();
     this.generationSub = null;
     this.discardPendingNavigation();
@@ -1219,7 +1232,7 @@ export class MktgAgentRunComponent {
       if (draft.pendingQuestions) {
         this.activeRequest = draft.request;
         this.showQuestions(draft.pendingQuestions);
-      } else if (draft.requiresReattachment) {
+      } else if (draft.requiresReattachment && draft.state !== 'writing') {
         this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
       }
     }
@@ -1235,28 +1248,10 @@ export class MktgAgentRunComponent {
       this.restoreInputs(returned.pending.request, 'returned');
       this.showQuestions(returned.pending.pendingQuestions);
     } else if (returned?.pending.attempt) {
-      this.activeRequest = returned.pending.request;
-      this.restoreInputs(returned.pending.request, 'returned');
-      this.phase.set('running');
-      this.recheckingAttempt.set(true);
-      this.writingStretch.set(!!returned.pending.answered);
-      this.activityStartedAt.set(Date.now());
-      this.generationSub = this.runService
-        .resume(returned.pending)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (progress) => this.onProgress(progress, context.uid),
-          error: (error: unknown) => {
-            const errorType = error instanceof Error ? error.name : typeof error;
-            console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
-            this.discardPendingNavigation();
-            this.navigating.set(false);
-            this.writingStretch.set(false);
-            this.recheckingAttempt.set(false);
-            this.phase.set('form');
-            this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
-          },
-        });
+      this.resumeAcceptedAttempt(returned.pending, context.uid);
+    } else if (draft?.state === 'writing' && draft.attempt) {
+      // Consumed entry URLs also restore an accepted run before its first questions.
+      this.resumeAcceptedAttempt(draft, context.uid);
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
@@ -1265,6 +1260,31 @@ export class MktgAgentRunComponent {
     this.applyPrefill('project-name', context.name);
     // The reset and a restored run both wrote the list fields' controls; the rows follow them.
     this.seedLinkRows();
+  }
+
+  private resumeAcceptedAttempt(pending: MktgPendingGeneration, projectUid: string): void {
+    this.activeRequest = pending.request;
+    this.restoreInputs(pending.request, 'returned');
+    this.phase.set('running');
+    this.recheckingAttempt.set(true);
+    this.writingStretch.set(!!pending.answered);
+    this.activityStartedAt.set(Date.now());
+    this.generationSub = this.runService
+      .resume(pending)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (progress) => this.onProgress(progress, projectUid),
+        error: (error: unknown) => {
+          const errorType = error instanceof Error ? error.name : typeof error;
+          console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.writingStretch.set(false);
+          this.recheckingAttempt.set(false);
+          this.phase.set('form');
+          this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
+        },
+      });
   }
 
   /**
@@ -1438,8 +1458,28 @@ export class MktgAgentRunComponent {
       });
   }
 
+  /** Consume entry intent only after acceptance, without changing this visit's Sources state. */
+  private consumeFreshEntry(projectUid: string): void {
+    const subject = this.userService.user()?.sub;
+    if (
+      !this.freshMode() ||
+      !subject ||
+      this.activeRequest?.projectUid !== projectUid ||
+      this.projectContext.activeContextUid() !== projectUid ||
+      this.route.snapshot.queryParamMap.get('mode') !== MKTG_RUN_NEW_MODE
+    )
+      return;
+    this.consumedFreshProject = projectUid;
+    this.consumedFreshSubject = subject;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
+    if (progress.type === 'submitted') {
+      this.consumeFreshEntry(projectUid);
+      return;
+    }
     if (progress.type === 'restored') {
       if (
         this.projectContext.activeContextUid() !== projectUid ||
