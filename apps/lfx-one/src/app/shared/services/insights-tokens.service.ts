@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE } from '@lfx-one/shared/constants';
-import { CreateInsightsTokenResponse, InsightsToken, InsightsTokenEligibility } from '@lfx-one/shared/interfaces';
+import { CreateInsightsTokenResponse, InsightsToken, InsightsTokenEligibility, InsightsTokenExpiration } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 /** LFX Insights API tokens (IN-1233) — thin client over `/api/profile/insights-tokens`. */
@@ -36,8 +36,8 @@ export class InsightsTokensService {
     );
   }
 
-  public createToken(name: string): Observable<CreateInsightsTokenResponse> {
-    return this.http.post<CreateInsightsTokenResponse>('/api/profile/insights-tokens', { name }).pipe(take(1));
+  public createToken(name: string, expiration: InsightsTokenExpiration): Observable<CreateInsightsTokenResponse> {
+    return this.http.post<CreateInsightsTokenResponse>('/api/profile/insights-tokens', { name, expiration }).pipe(take(1));
   }
 
   public revokeToken(uid: string): Observable<void> {
