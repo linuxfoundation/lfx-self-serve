@@ -11,6 +11,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_STARTED_RUN_ID_REGEX,
+  MKTG_RUN_STORAGE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import type {
   MktgDocumentCommentScope,
@@ -20,6 +21,7 @@ import type {
   MktgReviseDocumentRequest,
   MktgRunAttempt,
   MktgReleaseRedraftResponse,
+  MktgRedraftRecoveryResponse,
 } from '@lfx-one/shared/interfaces';
 import { mktgDocumentLocationOfReceipt } from '@lfx-one/shared/utils';
 import { catchError, concat, concatMap, defer, EMPTY, filter, finalize, map, Observable, of, take, takeUntil, tap, throwError } from 'rxjs';
@@ -85,7 +87,12 @@ export class MktgDocumentRedraftClientService {
       if (this.active.has(key)) return EMPTY;
       this.active.add(key);
       const frozen = intent;
-      return this.accept(frozen, owner).pipe(
+      return this.reconcile(frozen, owner).pipe(
+        concatMap((current) =>
+          current
+            ? this.accept(current, owner)
+            : of<MktgRedraftProgress>({ type: 'failed', message: 'The earlier send finished. Comments were refreshed; send remaining feedback explicitly.' })
+        ),
         takeUntil(this.identity$.pipe(filter((value) => value !== owner))),
         finalize(() => this.active.delete(key))
       );
@@ -123,9 +130,34 @@ export class MktgDocumentRedraftClientService {
       const owner = this.identity();
       this.assertOwner(owner, scope);
       const intent = this.attempts.loadRedraft(scope);
-      if (!intent?.attempt) return EMPTY;
-      return this.observe(intent, intent.attempt, owner).pipe(takeUntil(this.identity$.pipe(filter((value) => value !== owner))));
+      if (!intent) return EMPTY;
+      return this.reconcile(intent, owner).pipe(
+        concatMap((current) => (current?.attempt ? this.observe(current, current.attempt, owner) : EMPTY)),
+        takeUntil(this.identity$.pipe(filter((value) => value !== owner)))
+      );
     });
+  }
+  /** TTL expires capabilities, never an unresolved ID-only nonce without authoritative terminal state. */
+  private reconcile(intent: MktgPendingRedraftIntent, owner: string): Observable<MktgPendingRedraftIntent | null> {
+    const age = Date.now() - Date.parse(intent.updatedAt);
+    if (Number.isFinite(age) && age >= 0 && age <= MKTG_RUN_STORAGE_TTL_MS) return of(intent);
+    const scope = intent.scope;
+    const path = `${MKTG_DOCUMENTS_API_PATH}/${encodeURIComponent(scope.agentKey)}/${encodeURIComponent(scope.documentId)}/revise/${encodeURIComponent(intent.clientRequestId)}/state`;
+    return this.http.get<MktgRedraftRecoveryResponse>(path, { params: { project: scope.projectUid, revision: scope.revisionId }, transferCache: false }).pipe(
+      take(1),
+      map((response) => {
+        this.assertOwner(owner, scope);
+        if (!response || typeof response.terminal !== 'boolean') throw new Error('The earlier send could not be reconciled. Its recovery ID is retained.');
+        if (response.terminal) {
+          this.attempts.clearRedraft(scope);
+          this.comments.refresh();
+          return null;
+        }
+        const retained = { ...intent, updatedAt: new Date().toISOString() };
+        this.attempts.saveRedraft(retained);
+        return retained;
+      })
+    );
   }
   private accept(intent: MktgPendingRedraftIntent, owner: string): Observable<MktgRedraftProgress> {
     if (intent.attempt) return this.observe(intent, intent.attempt, owner);

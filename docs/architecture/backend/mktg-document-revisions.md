@@ -438,8 +438,11 @@ States are `reserved`, `started`, `uncertain`, `failed`, and `completed`.
 Conclusive non-acceptance before a session exists marks the reservation failed
 and reopens its threads in one CAS. Same-ID replay reports that recorded failure;
 only an explicit new send uses a new ID. Unknown transport or a partial start
-records uncertain and leaves threads sent. Once a session may exist, fresh and
-replayed starts convert context/tracking/bind validation, conflict and authorization
+records uncertain and leaves threads sent. A successful but unusable Guild ACK,
+HTTP 408, and HTTP 429 are also unknown acceptance, never proof of rejection.
+An already-confirmed `started` row remains started on replay failure (including
+concurrent confirmation); a 503 does not make that live run releasable.
+Once a session may exist, fresh and replayed starts convert context/tracking/bind validation, conflict and authorization
 failures to `503 MKTG_REDRAFT_START_UNCERTAIN`, never a definitive primary 4xx.
 A failed uncertainty write is logged and still returns 503 to preserve recovery.
 The creator can explicitly release

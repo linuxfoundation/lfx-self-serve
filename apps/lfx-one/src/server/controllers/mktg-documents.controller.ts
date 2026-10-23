@@ -82,6 +82,32 @@ export class MktgDocumentsController {
     }
   }
 
+  /** Read-only recovery proof; identity and canonical writer partition are server-owned. */
+  public async redraftState(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_document_redraft_state';
+    const params = this.readDocumentParams(req, req.query['project'], operation);
+    const requestId = req.params['requestId'];
+    const revisionId = this.readRevisionId(req.query['revision']);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    if (typeof requestId !== 'string' || !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(requestId) || !revisionId) {
+      next(this.invalidField(req, operation, 'recovery', 'A bounded request and revision ID are required.'));
+      return;
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    const started = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const terminal = await this.comments.isRedraftTerminal(req, project, params.type, params.documentId, requestId, revisionId);
+      logger.success(req, operation, started, { terminal });
+      res.json({ terminal });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/mktg-agents/documents?project=<uid> — the project's documents, grouped by type. */
   public async listDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_documents_list';

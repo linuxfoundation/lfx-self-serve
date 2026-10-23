@@ -70,6 +70,7 @@ export class MktgDocumentRedraftService {
         return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId, priorVersion: context.priorVersion };
       } catch (error) {
         logger.warning(req, 'mktg_document_redraft', 'Redraft replay could not be confirmed', { agent: agent.id, err: error });
+        if (reservation.submission.state === 'started') throw this.uncertain();
         return this.failUncertain(req, project, type, documentId, input.clientRequestId);
       }
     }

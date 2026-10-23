@@ -5,7 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { mktgCommentFixture, mktgCommentScopeFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
-import { of, throwError } from 'rxjs';
+import type { MktgDocumentCommentsResponse } from '@lfx-one/shared/interfaces';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from './mktg-field-comments.component';
 
@@ -31,6 +32,12 @@ describe('MktgFieldCommentsComponent', () => {
     control.dispatchEvent(new Event('input'));
     fixture.detectChanges();
   }
+  async function mount(): Promise<void> {
+    fixture = TestBed.createComponent(MktgFieldCommentsComponent);
+    fixture.componentRef.setInput('field', 'mf.positioning');
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
   beforeEach(async () => {
     scope.set(mktgCommentScopeFixture());
     subject.set('opaque-viewer');
@@ -40,10 +47,7 @@ describe('MktgFieldCommentsComponent', () => {
     TestBed.configureTestingModule({
       providers: [provideMktgCommentsStub({ selectedScope: scope, draftScopeKey: computed(() => JSON.stringify([subject(), scope()])), threads, loaded, add })],
     });
-    fixture = TestBed.createComponent(MktgFieldCommentsComponent);
-    fixture.componentRef.setInput('field', 'mf.positioning');
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await mount();
   });
   it('pins only matching threads and pairs the keyboard-reachable Comment button and composer label', () => {
     expect(element().getAttribute('data-mktg-comment-field')).toBe('mf.positioning');
@@ -68,7 +72,7 @@ describe('MktgFieldCommentsComponent', () => {
     expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(button?.hasAttribute('aria-controls')).toBe(false);
   });
-  it('keeps failed text and request ID for explicit retry, then clears the composer only on success', () => {
+  it('keeps failed/pending drafts across tab hosts and never resets newer edits on ACK', async () => {
     add.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     click('mktg-field-comment-open');
     fill('Make it one clause.');
@@ -76,9 +80,24 @@ describe('MktgFieldCommentsComponent', () => {
     expect(element().querySelector('textarea')?.value).toBe('Make it one clause.');
     expect(element().querySelector('[role="alert"]')).not.toBeNull();
     const id = add.mock.calls[0][2];
-    add.mockReturnValue(of({ revisionId: scope().revisionId, threads: threads() }));
+    fixture.destroy();
+    await mount();
+    const pending = new Subject<MktgDocumentCommentsResponse>();
+    add.mockReturnValue(pending);
     click('mktg-field-comment-add');
     expect(add.mock.calls[1]).toEqual([{ kind: 'field', key: 'mf.positioning' }, 'Make it one clause.', id]);
+    fixture.destroy();
+    await mount();
+    expect(pending.observed).toBe(true);
+    expect(element().querySelector('textarea')?.value).toBe('Make it one clause.');
+    fill('Typed while the save was pending.');
+    pending.next({ revisionId: scope().revisionId, threads: threads() });
+    pending.complete();
+    fixture.detectChanges();
+    expect(element().querySelector('textarea')?.value).toBe('Typed while the save was pending.');
+    add.mockReturnValue(of({ revisionId: scope().revisionId, threads: threads() }));
+    click('mktg-field-comment-add');
+    expect(add.mock.calls[2][2]).not.toBe(id);
     expect(element().querySelector('textarea')).toBeNull();
     expect(element().querySelector('[role="status"]')?.textContent).toBe('Comment added');
     expect(document.activeElement).toBe(element().querySelector('button'));

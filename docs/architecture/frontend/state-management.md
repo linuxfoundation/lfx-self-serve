@@ -475,10 +475,17 @@ and cancel outstanding requests. Scope generations reject a deferred old action
 even after navigating away and back to the same revision. A successful add
 cancels a pre-save GET so it cannot overwrite the acknowledged snapshot.
 
-The composer owns its text and opaque request ID, retaining both for an explicit
-save retry. The client never automatically retries a POST or invents an ID.
-State is memory-only and all HTTP is browser-gated; no local storage, sources,
-sessions, attribution IDs or agent handles are added to the request contract.
+The client retains each field's browser-memory form and opaque request ID across
+tab-host destruction, keyed by effective viewer and document revision; changing
+that scope discards old drafts. The composer handles explicit save retries. The
+client never automatically retries a POST or invents an ID.
+Comment forms are memory-only and all HTTP is browser-gated; no sources,
+sessions, attribution IDs or agent handles are added to the comment request.
+Redraft recovery separately retains its opaque send nonce after the 24-hour
+capability TTL. Expired session capabilities are removed; a read-only, creator-bound
+ledger check is required before automatic cleanup, which is allowed only for a
+completed/failed (including released) send. Unknown/non-terminal state and failed
+reconciliation retain the frozen IDs; restoring a view never POSTs.
 
 The framework document view adds data-keyed comment controls inside the existing
 field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
@@ -500,6 +507,9 @@ Framework and Kit containment is screen-only to preserve print positioning.
 The shared contract-specific label util gives pins and the panel the same human
 field caption, including original array position and goal/audience title. Closing
 a composer restores its Comment button's focus; successful adds announce politely.
+An in-flight comment save outlives its field/tab host; the retained per-field form
+and nonce survive that host's replacement. A matching ACK clears only its submitted
+text, never newer edits made while that response was pending.
 The Comments panel shows only read errors; save errors belong to the composer.
 The Comments panel owns
 selection/lifetime and lists the same server threads beside revision history.
