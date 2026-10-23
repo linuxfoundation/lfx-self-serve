@@ -1264,6 +1264,8 @@ export interface MktgGenerateRequest {
   projectUid: string;
   /** Registered intake definition for the agent. */
   intake: MktgAgentIntake;
+  /** Explicit Start from a fresh intake: never continue an older session. */
+  newRun?: boolean;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
   /** Existing documents, for intakes with a documents section. */

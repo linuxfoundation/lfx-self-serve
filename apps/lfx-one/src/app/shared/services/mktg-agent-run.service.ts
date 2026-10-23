@@ -11,9 +11,13 @@ import {
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_LAST_INTAKE_API,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
+  MktgLastIntake,
+  MktgLastIntakeResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgGenerateProgress,
@@ -106,6 +110,26 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+
+  /** Writer-gated history read only; callers distinguish unavailable history from absence. */
+  public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.catalogAgentId === agentId);
+    if (!type) return of(null);
+    return this.http
+      .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {
+        params: { project: projectUid },
+        transferCache: false,
+      })
+      .pipe(
+        map((response) => response.intake),
+        take(1),
+        catchError((error: unknown) => {
+          console.error('Failed to load Marketing OS intake history', error instanceof HttpErrorResponse ? { status: error.status } : {});
+          return throwError(() => error);
+        })
+      );
+  }
+
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
@@ -143,7 +167,13 @@ export class MktgAgentRunService {
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
     } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
+      // Failed-session Retry must never chat on that failed session. Like an
+      // intake's Generate resubmit, it starts a new session with priorVersion.
+      // Fresh Sources preserve that history contract, but omit old feedback.
       attempt$ = this.resubmitRun(request, stored);
+    } else if (request.newRun) {
+      // appendVersion keeps the new session's v1 distinct from existing history.
+      attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);
     }
@@ -317,7 +347,7 @@ export class MktgAgentRunService {
       return this.startRun(request);
     }
     const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
-    if (request.feedback?.trim()) {
+    if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
     return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
@@ -661,16 +691,15 @@ export class MktgAgentRunService {
     const version: MktgRunVersion = {
       source,
       documentLocation: result.persistence?.project === request.projectUid ? mktgDocumentLocationOfReceipt(result.persistence) : undefined,
-      // The envelope's own version is authoritative. awaitOutcome reaches this
-      // only for a result that is not `questions`, which pollForOutcome's
-      // isDocument gate let through with its document and version present, so
-      // the fallbacks only narrow the type. A fresh-run intake's envelope
-      // always says version 1, so the run numbers its own history instead.
-      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
+      // source.version retains the envelope version. Local history must remain
+      // unique across fresh sessions, including a resumed request without newRun.
+      // Dedicated fresh-run intakes always number locally; other intakes also
+      // retain a higher authoritative envelope version when one is supplied.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : Math.max(lastVersion + 1, result.version ?? 0),
       document: result.documentMarkdown ?? '',
       // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
-      feedback: request.feedback,
+      feedback: request.newRun ? undefined : request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is
       // the one whose README fetch matters, and it is what the result note

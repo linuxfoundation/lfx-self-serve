@@ -104,6 +104,9 @@ router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
 router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
 router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
 
+// GET /api/mktg-agents/intakes/:agentKey/last - private scalar history; the service resolves writer access.
+router.get('/intakes/:agentKey/last', (req, res, next) => mktgAgentsController.getLastIntake(req, res, next));
+
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
 

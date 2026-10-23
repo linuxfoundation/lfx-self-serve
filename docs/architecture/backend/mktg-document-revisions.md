@@ -247,6 +247,31 @@ The pre-revision artifact compatibility write carries `revision-managed`
 metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
 their leftover artifact.
 
+## Last scalar intake
+
+A separate private snapshot at
+`document-last-intake/{project}/{agentKey}.json` remembers the registered scalar
+fields of the latest accepted Generate for an active living agent. It uses the
+existing `marketing-os-artifacts` purpose and server-resolved writer partition.
+The BFF starts this best-effort write only after sending the Generate acknowledgement;
+a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
+blank fields are retained; absent fields are not invented as last-run answers.
+Dependency attachment answer keys are excluded and dependencies must be resolved afresh,
+not replayed from this snapshot.
+
+This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
+conflict resolution. It holds run ID and start time, scalar answers, and document/logo
+counts only; it does not retain an author identifier because there is no audit consumer.
+Existing snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response. It never stores uploaded bytes,
+extracted source text, source filenames, Guild sessions or capability tokens.
+`GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
+`private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
+absence returns `{ intake: null }`; failed or malformed reads return an error,
+not absence. A failed post-start snapshot write warns without rejecting the
+already accepted Generate, avoiding a retry that could create a second session.
+There is no historical backfill, new source-file store or attachment-reuse claim.
+
 ## Durable started runs
 
 Starts use the same private purpose, at
