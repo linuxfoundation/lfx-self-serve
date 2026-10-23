@@ -263,6 +263,42 @@ describe('MktgAgentRunComponent', () => {
       expect(component['showIntakeForm']()).toBe(false);
     });
 
+    it.each([agentId, 'brand-kit'])('labels answer-cache fallback from %s before Start without claiming no prior inputs', async (sourceAgent) => {
+      await configure('browser', agentId, { mode: 'new' });
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId: sourceAgent, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/remembered',
+        origin: sourceAgent === agentId ? 'Remembered on this device' : 'From your Brand Kit run',
+      });
+      expect(component['sourceNote']()).toBe('');
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('keeps project-default priority and the unavailable-history warning with remembered fallbacks', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId, savedAt: new Date().toISOString() },
+        website_url: { value: 'https://remembered.example', agentId, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/default',
+        origin: 'Suggested default',
+      });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({
+        value: 'https://remembered.example',
+        origin: 'Remembered on this device',
+      });
+      expect(component['sourceNote']()).toContain('could not be loaded');
+    });
+
     it.each([false, true])('merges partial durable fields with visit/device fields without replacing explicit blanks (visit=%s)', async (visit) => {
       await configure('browser', agentId, { mode: 'new' });
       const device = { project_name: 'Device name', website_url: 'https://device.example', github_url: 'https://github.com/synthetic/device' };

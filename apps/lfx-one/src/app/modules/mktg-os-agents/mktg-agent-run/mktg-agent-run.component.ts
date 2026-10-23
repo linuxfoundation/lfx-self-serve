@@ -541,6 +541,16 @@ export class MktgAgentRunComponent {
           // Order is the precedence — LFX project data > an answer given to
           // another agent > empty.
           this.applyRememberedAnswers(context.uid);
+          if (
+            fresh &&
+            !this.sourceNote() &&
+            !Object.keys(this.lastSourceValues()).length &&
+            !Object.keys(this.filledFromMemoryApplied()).length &&
+            !this.priorDocumentCount() &&
+            !this.priorLogoCount()
+          ) {
+            this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
+          }
           // A remembered list answer lands in the field's control; the rows follow it.
           this.seedLinkRows();
         });
@@ -712,6 +722,9 @@ export class MktgAgentRunComponent {
       return (this.intake?.fields ?? []).map((field) => {
         const value = values[field.key] ?? '';
         let origin = 'Suggested default';
+        if (this.filledFromMemoryApplied()[field.key] && this.prefillIntact()[field.key]) {
+          origin = this.fromPriorRun()[field.key] ?? 'Remembered on this device';
+        }
         if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceOrigins()[field.key] ?? origin;
         if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed for this run';
         return { key: field.key, label: field.question, value, origin };
@@ -1082,10 +1095,6 @@ export class MktgAgentRunComponent {
         answers[field.key] = local.answers[field.key];
         origins[field.key] = 'Saved on this device';
       }
-    }
-    if (!Object.keys(answers).length && !history && !memory) {
-      if (!this.sourceNote()) this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
-      return;
     }
     this.lastSourceValues.set(answers);
     this.lastSourceOrigins.set(origins);
