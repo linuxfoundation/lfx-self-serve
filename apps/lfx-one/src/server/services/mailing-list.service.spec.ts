@@ -54,14 +54,22 @@ const indexedMember: MailingListMember = { ...existingMember, uid: 'member-1', m
 
 /**
  * Routes proxied calls for update/delete: the membership lookup (`tags_all` with `member_uid:`)
- * answers from the index, any other query-service call (the delete removal poll) finds nothing,
- * the member GET returns `member`, and PUT/DELETE return `mutation`.
+ * answers from the index (or rejects with `lookupError`), any other query-service call (the delete
+ * removal poll) finds nothing, the member GET returns `member`, and PUT/DELETE return `mutation`.
  */
-function routeProxy({ member = existingMember, indexed = true, mutation }: { member?: MailingListMember; indexed?: boolean; mutation?: unknown } = {}): void {
+function routeProxy({
+  member = existingMember,
+  indexed = true,
+  lookupError,
+  mutation,
+}: { member?: MailingListMember; indexed?: boolean; lookupError?: Error; mutation?: unknown } = {}): void {
   proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string, method: string, params?: Record<string, unknown>) => {
     if (path === '/query/resources') {
       const tagsAll = params?.['tags_all'];
       if (Array.isArray(tagsAll) && tagsAll.some((tag) => String(tag).startsWith('member_uid:'))) {
+        if (lookupError) {
+          throw lookupError;
+        }
         return { resources: indexed ? [{ data: indexedMember }] : [] };
       }
       return { resources: [] };
@@ -186,6 +194,16 @@ describe('MailingListService member authorization', () => {
       expect(proxiedMethods()).not.toContain('PUT');
     });
 
+    it('fails closed without updating when the membership lookup errors', async () => {
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      const lookupError = new Error('query service unavailable');
+      routeProxy({ lookupError });
+
+      await expect(service.updateMember(req, 'list-1', 'member-1', { name: 'New Name' })).rejects.toBe(lookupError);
+      expect(proxiedMethods()).not.toContain('PUT');
+    });
+
     it('allows a writer to update any member including mod_status', async () => {
       getEffectiveEmail.mockReturnValue('writer@example.com');
       checkSingleAccessStrict.mockResolvedValue(true);
@@ -249,6 +267,16 @@ describe('MailingListService member authorization', () => {
       routeProxy({ indexed: false });
 
       await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toMatchObject({ statusCode: 404 });
+      expect(proxiedMethods()).not.toContain('DELETE');
+    });
+
+    it('fails closed without deleting when the membership lookup errors', async () => {
+      getEffectiveEmail.mockReturnValue('writer@example.com');
+      checkSingleAccessStrict.mockResolvedValue(true);
+      const lookupError = new Error('query service unavailable');
+      routeProxy({ lookupError });
+
+      await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toBe(lookupError);
       expect(proxiedMethods()).not.toContain('DELETE');
     });
   });
