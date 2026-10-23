@@ -66,10 +66,26 @@ export class LensService {
    */
   public readonly isHybridPersona: Signal<boolean> = computed(() => isHybridLensUser(this.lensGrantInputs()));
   /** Lens to highlight in the switcher UI. Hybrid personas merge foundation + project into the 'project' entry, so a foundation-scoped active lens highlights 'project'. */
-  public readonly displayActiveLens: Signal<Lens> = computed(() => {
-    const active = this.activeLens();
-    return this.isHybridPersona() && active === 'foundation' ? 'project' : active;
+  public readonly displayActiveLens: Signal<Lens> = computed(() => this.toDisplayLens(this.activeLens()));
+
+  /**
+   * The lens the mobile nav drawer's lens tabs are previewing, or `null` when they show the page's own lens. Held apart
+   * from {@link activeLens} on purpose: the page underneath, and everything that renders from `activeLens`, must not
+   * change while the viewer only looks at another lens's menu (#4208).
+   */
+  private readonly menuLensPreview: WritableSignal<Lens | null> = signal(null);
+  /**
+   * The lens the nav menu is built for: the drawer's preview while one stands (and the persona still holds it), otherwise
+   * {@link activeLens}. Only the menu stack reads this — the sidebar items, the context selectors and the lens tabs.
+   */
+  public readonly menuLens: Signal<Lens> = computed(() => {
+    const preview = this.menuLensPreview();
+    return preview && this.getAllowedLensIds().includes(preview) ? preview : this.activeLens();
   });
+  /** True while the menu shows another lens than the page's: a pick from it must commit the lens, and land on that lens's page. */
+  public readonly previewingMenuLens: Signal<boolean> = computed(() => this.menuLens() !== this.activeLens());
+  /** {@link menuLens} as the lens tabs highlight it, merged like {@link displayActiveLens}. */
+  public readonly displayMenuLens: Signal<Lens> = computed(() => this.toDisplayLens(this.menuLens()));
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -84,10 +100,36 @@ export class LensService {
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
    */
   public switchLens(lens: Lens): void {
-    const target = this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
+    const target = this.switchTarget(lens);
     if (this.setLens(target)) {
       this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
     }
+  }
+
+  /**
+   * Show a lens's menu in the mobile drawer without switching the page's lens or navigating. Resolves the hybrid
+   * 'Projects' entry like {@link switchLens}; choosing the page's own lens ends the preview. A lens the persona may not
+   * use is ignored.
+   */
+  public previewMenuLens(lens: Lens): void {
+    const target = this.switchTarget(lens);
+    if (!this.getAllowedLensIds().includes(target)) {
+      return;
+    }
+    this.menuLensPreview.set(target === this.activeLens() ? null : target);
+  }
+
+  /** Commit a previewed menu lens as the active lens, for a pick from that menu that is about to navigate. A no-op without a preview. */
+  public commitMenuLens(): void {
+    if (this.previewingMenuLens()) {
+      this.setLens(this.menuLens());
+    }
+    this.menuLensPreview.set(null);
+  }
+
+  /** Drop the drawer's preview, leaving the page's lens exactly as it is (the drawer closed without a pick). */
+  public clearMenuLensPreview(): void {
+    this.menuLensPreview.set(null);
   }
 
   /** Applies the lens if the current persona is allowed it. Returns whether the lens was allowed (callers gate navigation on this). */
@@ -159,6 +201,16 @@ export class LensService {
    */
   public clearContextLens(): void {
     this.contextLensOverride.set(null);
+  }
+
+  /** The lens a lens-tab click lands on: hybrid personas' merged 'Projects' entry returns to the last viewed nav lens. */
+  private switchTarget(lens: Lens): Lens {
+    return this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
+  }
+
+  /** Hybrid personas merge foundation + project into the 'project' tab, so a foundation lens highlights 'project'. */
+  private toDisplayLens(lens: Lens): Lens {
+    return this.isHybridPersona() && lens === 'foundation' ? 'project' : lens;
   }
 
   private applyLensSelection(lens: Lens): void {

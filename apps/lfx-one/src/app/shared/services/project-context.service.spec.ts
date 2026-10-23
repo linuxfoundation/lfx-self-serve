@@ -70,7 +70,7 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -400,7 +400,7 @@ describe('ProjectContextService — canWriteMeetings', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -534,7 +534,7 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -577,5 +577,62 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
     answerFor(OTHER.slug, true).next({ writer: false });
     TestBed.inject(ApplicationRef).tick();
     expect(service.meetingWriteAccess()).toEqual({ contextUid: OTHER.uid, canWrite: false });
+  });
+});
+
+/**
+ * The selector of a lens the mobile drawer only previews (#4208) shows that lens's slot, while `activeContext` — what
+ * the page underneath acts on — stays on the slot its route and lens resolve to.
+ */
+describe('ProjectContextService — menuContext', () => {
+  const FOUNDATION: ProjectContext = { uid: 'found-1', name: 'Foundation One', slug: 'foundation-one' };
+
+  const setup = (activeLens: 'me' | 'foundation' | 'project' | 'org', menuLens: 'me' | 'foundation' | 'project' | 'org') => {
+    const active = signal(activeLens);
+    const menu = signal(menuLens);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
+        { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: LensService, useValue: { activeLens: active, menuLens: menu, previewingMenuLens: signal(activeLens !== menuLens) } },
+        {
+          provide: PersonaService,
+          useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
+        },
+        { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
+        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    const service = TestBed.inject(ProjectContextService);
+    service.setProject(CONTEXT, false);
+    service.setFoundation(FOUNDATION, false);
+    return service;
+  };
+
+  it('follows activeContext when nothing is previewed', () => {
+    const service = setup('foundation', 'foundation');
+    service.setRouteLensKind('foundation');
+
+    expect(service.menuContext()).toEqual(FOUNDATION);
+    expect(service.activeContext()).toEqual(FOUNDATION);
+  });
+
+  it("shows the previewed lens's slot while the page's route keeps its own", () => {
+    const service = setup('foundation', 'project');
+    service.setRouteLensKind('foundation');
+
+    expect(service.menuContext()).toEqual(CONTEXT);
+    expect(service.activeContext()).toEqual(FOUNDATION);
+  });
+
+  it("shows the previewed Foundation lens's slot from a Me page", () => {
+    const service = setup('me', 'foundation');
+
+    expect(service.menuContext()).toEqual(FOUNDATION);
+    expect(service.activeContext()).toEqual(CONTEXT);
   });
 });

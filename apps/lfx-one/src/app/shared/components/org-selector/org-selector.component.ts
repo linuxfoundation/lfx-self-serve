@@ -89,7 +89,7 @@ export class OrgSelectorComponent {
   public readonly enabled = input<boolean>(true);
   /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
   public readonly variant = input<ContextSelectorVariant>('default');
-  /** The viewer picked an organization that re-addresses the page (a switch, or leaving the not-found dead end). */
+  /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
   public readonly itemSelected = output<OrgItem>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
@@ -332,8 +332,8 @@ export class OrgSelectorComponent {
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
-        this.itemSelected.emit(item);
       }
+      this.itemSelected.emit(item);
       this.popoverRef()?.hide();
       return;
     }

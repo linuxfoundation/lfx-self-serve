@@ -99,8 +99,9 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(selected).toHaveBeenCalledWith(rowB);
   });
 
-  // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.
-  it('does nothing for the organization already selected', () => {
+  // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on. The pick is still
+  // reported: one made while the mobile drawer previews Org Lens lands on that organization's overview (#4208).
+  it('changes nothing for the organization already selected, but still reports the pick', () => {
     const selected = vi.fn();
     fixture.componentInstance.itemSelected.subscribe(selected);
 
@@ -109,7 +110,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
-    expect(selected).not.toHaveBeenCalled();
+    expect(selected).toHaveBeenCalledWith(rowA);
   });
 
   // On the dead end the selection is the cookie's or a bootstrap default that never made it into the

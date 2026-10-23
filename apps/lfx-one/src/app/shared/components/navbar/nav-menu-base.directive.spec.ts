@@ -6,7 +6,7 @@ import type { Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
 import type { IsActiveMatchOptions } from '@angular/router';
-import { LensItem, User } from '@lfx-one/shared/interfaces';
+import { Lens, LensItem, User } from '@lfx-one/shared/interfaces';
 import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
@@ -26,7 +26,15 @@ class NavMenuTestHostComponent extends NavMenuBase {}
 const navMenuServiceStubs = (setProject = vi.fn()): Provider[] => [
   {
     provide: LensService,
-    useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
+    useValue: {
+      activeLens: signal('project'),
+      menuLens: signal('project'),
+      previewingMenuLens: signal(false),
+      clearMenuLensPreview: vi.fn(),
+      isHybridPersona: signal(false),
+      availableLenses: signal([{ id: 'project' }]),
+      setLens: vi.fn(),
+    },
   },
   {
     provide: UserService,
@@ -34,7 +42,7 @@ const navMenuServiceStubs = (setProject = vi.fn()): Provider[] => [
   },
   {
     provide: ProjectContextService,
-    useValue: { activeContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
+    useValue: { activeContext: signal(null), menuContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
   },
   {
     provide: PersonaService,
@@ -98,6 +106,107 @@ describe('NavMenuBase — same-lens project switch re-enters the lens landing pa
 
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A pick in the selector of a lens the mobile drawer only previews (#4208): the page underneath belongs to another lens,
+ * so the pick commits the picked lens and lands on its overview — it must never re-target the page in place, which would
+ * write `?project=` onto a Me or Org page.
+ */
+describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
+  const navigate = vi.fn();
+  const setProject = vi.fn();
+  const setFoundation = vi.fn();
+  const betaItem: LensItem = { uid: 'uid-beta', slug: 'beta', name: 'Beta', logoUrl: null, isFoundation: false, formationSubStage: null };
+  const cncfItem: LensItem = { uid: 'uid-cncf', slug: 'cncf', name: 'CNCF', logoUrl: null, isFoundation: true, formationSubStage: null };
+
+  const selectItem = (c: NavMenuTestHostComponent, item: LensItem): void => (c as unknown as { onItemSelected: (i: LensItem) => void }).onItemSelected(item);
+  const queryParamsOf = (c: NavMenuTestHostComponent): { project?: string } =>
+    (c as unknown as { projectQueryParams: () => { project?: string } }).projectQueryParams();
+
+  const createNavMenu = async (url: string, pageLens: Lens, preview: Lens | null, routeKind: 'foundation' | 'project' | null = null) => {
+    const activeLens = signal<Lens>(pageLens);
+    const menuLensPreview = signal<Lens | null>(preview);
+    const menuLens = computed(() => menuLensPreview() ?? activeLens());
+    const lensService = {
+      activeLens,
+      menuLens,
+      previewingMenuLens: computed(() => menuLens() !== activeLens()),
+      clearMenuLensPreview: vi.fn(() => menuLensPreview.set(null)),
+      isHybridPersona: signal(false),
+      availableLenses: signal([{ id: 'me' }, { id: 'foundation' }, { id: 'project' }, { id: 'org' }]),
+      setLens: vi.fn((lens: Lens) => {
+        activeLens.set(lens);
+        return true;
+      }),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [NavMenuTestHostComponent],
+      providers: [
+        { provide: Router, useValue: { url, events: EMPTY, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+        ...navMenuServiceStubs(setProject),
+        { provide: LensService, useValue: lensService },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            activeContext: signal({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' }),
+            menuContext: signal({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' }),
+            activeRouteLensKind: signal(routeKind),
+            setFoundation,
+            setProject,
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(NavMenuTestHostComponent);
+    fixture.componentRef.setInput('items', []);
+    await fixture.whenStable();
+    return { navMenu: fixture.componentInstance, lensService };
+  };
+
+  beforeEach(() => {
+    navigate.mockClear();
+    setProject.mockClear();
+    setFoundation.mockClear();
+  });
+
+  it("lands a project picked in the previewed Projects lens on its overview from a Me page, without touching the Me page's address", async () => {
+    const { navMenu, lensService } = await createNavMenu('/meetings', 'me', 'project');
+
+    selectItem(navMenu, betaItem);
+
+    expect(lensService.setLens).toHaveBeenCalledWith('project');
+    expect(lensService.clearMenuLensPreview).toHaveBeenCalled();
+    expect(lensService.previewingMenuLens()).toBe(false);
+    expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), false);
+    expect(navigate).toHaveBeenCalledWith(['/project', 'overview'], { queryParams: { project: 'beta' } });
+  });
+
+  it('lands a foundation picked in the previewed Foundation lens on its overview from an Org page', async () => {
+    const { navMenu, lensService } = await createNavMenu('/org/acme/overview', 'org', 'foundation');
+
+    selectItem(navMenu, cncfItem);
+
+    expect(lensService.activeLens()).toBe('foundation');
+    expect(setFoundation).toHaveBeenCalledWith(expect.objectContaining({ slug: 'cncf' }), false);
+    expect(setProject).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith(['/foundation', 'overview'], { queryParams: { project: 'cncf' } });
+  });
+
+  it('keeps re-targeting a flat page in place for a pick made without a preview, as before', async () => {
+    const { navMenu } = await createNavMenu('/meetings', 'project', null);
+
+    selectItem(navMenu, betaItem);
+
+    expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("carries no ?project= on a previewed lens's links, though the page underneath declares a project kind", async () => {
+    expect(queryParamsOf((await createNavMenu('/foundation/meetings', 'foundation', null, 'foundation')).navMenu)).toEqual({ project: 'alpha' });
+    expect(queryParamsOf((await createNavMenu('/foundation/meetings', 'foundation', 'me', 'foundation')).navMenu)).toEqual({});
   });
 });
 

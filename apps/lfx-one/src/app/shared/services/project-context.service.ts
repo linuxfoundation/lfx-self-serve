@@ -8,7 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { MeetingWriteAccess, Project, ProjectContext, ProjectSettingsAccess } from '@lfx-one/shared/interfaces';
+import { Lens, MeetingWriteAccess, Project, ProjectContext, ProjectSettingsAccess } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
@@ -88,6 +88,11 @@ export class ProjectContextService {
   public readonly activeContext: Signal<ProjectContext | null> = this.initActiveContext();
   public readonly isFoundationContext: Signal<boolean> = this.initIsFoundationContext();
   public readonly activeContextUid: Signal<string> = computed(() => this.activeContext()?.uid || '');
+  /**
+   * The context the nav menu's selector shows: {@link activeContext}, except while the mobile drawer previews another
+   * lens (`LensService.menuLens`, #4208) — then that lens's slot, so the page's own context stays untouched.
+   */
+  public readonly menuContext: Signal<ProjectContext | null> = this.initMenuContext();
 
   public readonly selectedFoundation: Signal<ProjectContext | null> = computed(() => this.foundationSelection());
   public readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectSelection());
@@ -363,20 +368,33 @@ export class ProjectContextService {
         return routeKind === 'foundation' ? this.foundationSelection() : this.projectSelection();
       }
 
-      const lens = this.lensService.activeLens();
-
-      switch (lens) {
-        case 'foundation':
-          return this.foundationSelection();
-        case 'project':
-          return this.projectSelection();
-        case 'me':
-        case 'org':
-          return isBoardScopedPersona(this.personaService.currentPersona()) ? this.foundationSelection() : this.projectSelection();
-        default:
-          return null;
-      }
+      return this.contextForLens(this.lensService.activeLens());
     });
+  }
+
+  private initMenuContext(): Signal<ProjectContext | null> {
+    return computed(() => {
+      // A previewed lens has no route behind it yet, so its slot is resolved by the lens alone.
+      if (!this.lensService.previewingMenuLens()) {
+        return this.activeContext();
+      }
+      return this.contextForLens(this.lensService.menuLens());
+    });
+  }
+
+  /** The selection slot a lens reads when no route declares a kind. */
+  private contextForLens(lens: Lens): ProjectContext | null {
+    switch (lens) {
+      case 'foundation':
+        return this.foundationSelection();
+      case 'project':
+        return this.projectSelection();
+      case 'me':
+      case 'org':
+        return isBoardScopedPersona(this.personaService.currentPersona()) ? this.foundationSelection() : this.projectSelection();
+      default:
+        return null;
+    }
   }
 
   private initIsFoundationContext(): Signal<boolean> {
