@@ -306,13 +306,13 @@ export class ComposerGuestsComponent {
     });
 
     void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
-    this.focusRestoredGuest(key);
+    this.focusGuestRemoveButton(key);
   }
 
   protected onDismissUndo(): void {
     this.lastRemoval.set(null);
     // The dismiss button held focus and is gone with the notice; no row to return to, so the search takes it.
-    this.focusRestoredGuest(null);
+    this.focusGuestRemoveButton(null);
   }
 
   /** Resend is only offered once the meeting exists upstream (edit mode) and the guest is saved. */
@@ -329,7 +329,7 @@ export class ComposerGuestsComponent {
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
     const label = this.guestLabel(guest);
-    // When editing, Undo appears above the list while focus is lost with the removed row, so say it is there.
+    // When editing, Undo appears above the list; focus goes to a neighbouring row, so say Undo is there.
     const undoHint = this.formService.isEditMode() ? ' Undo is available above the list.' : '';
     void this.liveAnnouncer.announce(`${label} removed from the guest list.${undoHint}`, 'polite');
 
@@ -337,6 +337,14 @@ export class ComposerGuestsComponent {
     // happens to be missing on the candidate: `undefined === undefined` matched every other
     // keyless row, and removing one such guest dropped all of them.
     const key = guest.uid || guest.tempId || null;
+
+    // The focused remove button goes with its row, so hand focus to the next row (or the previous one),
+    // keeping the place for removing several in a row. A keyless neighbour's track id is its index, which
+    // shifts with the removal, so it falls back to the search like an emptied list does.
+    const rows = this.filteredGuestRows();
+    const at = rows.findIndex((row) => row.guest === guest);
+    const neighbour = at === -1 ? undefined : (rows[at + 1] ?? rows[at - 1]);
+    this.focusGuestRemoveButton(neighbour?.guest.uid || neighbour?.guest.tempId || null);
 
     // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
     // nobody is invited yet, and picking the person again is the whole way back.
@@ -522,11 +530,12 @@ export class ComposerGuestsComponent {
   }
 
   /**
-   * Moves focus to the restored row's remove button, or the guest search when the row can't be found.
-   * @description The Undo button that held focus is gone once Undo runs, which would drop keyboard users
-   * back to the top of the document. `afterNextRender` only runs in the browser, so this is SSR-safe.
+   * Moves focus to a row's remove button, or the guest search when there is no row to give it to.
+   * @description Remove, Undo and dismiss each destroy the button that held focus, which would drop
+   * keyboard users back to the top of the document. `afterNextRender` only runs in the browser, so this
+   * is SSR-safe.
    */
-  private focusRestoredGuest(trackId: string | null): void {
+  private focusGuestRemoveButton(trackId: string | null): void {
     afterNextRender(
       () => {
         const root = this.host.nativeElement;

@@ -494,7 +494,7 @@ describe('ComposerGuestsComponent', () => {
     });
 
     it('moves keyboard focus back to the restored row', () => {
-      const focus = vi.spyOn(component as unknown as { focusRestoredGuest: (trackId: string | null) => void }, 'focusRestoredGuest');
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);
 
@@ -504,7 +504,7 @@ describe('ComposerGuestsComponent', () => {
     });
 
     it('hands keyboard focus to the guest search when the undo notice is dismissed', () => {
-      const focus = vi.spyOn(component as unknown as { focusRestoredGuest: (trackId: string | null) => void }, 'focusRestoredGuest');
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);
 
@@ -512,6 +512,20 @@ describe('ComposerGuestsComponent', () => {
 
       expect(component['undoableRemoval']()).toBeNull();
       expect(focus).toHaveBeenCalledWith(null);
+    });
+
+    it('hands focus to the next row after a removal, then the previous one, then the search', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      const first = { ...savedGroupGuest, uid: 'g-1', email: 'one@example.com', type: 'direct' as const };
+      const second = { ...first, uid: 'g-2', email: 'two@example.com' };
+      formService.setGuests([first, second]);
+      const live = (uid: string) => formService.guests().find((entry) => entry.uid === uid) as MeetingRegistrantWithState;
+
+      component['onRemoveGuest'](live('g-1'));
+      expect(focus).toHaveBeenLastCalledWith('g-2');
+
+      component['onRemoveGuest'](live('g-2'));
+      expect(focus).toHaveBeenLastCalledWith(null);
     });
 
     it('stops offering undo once another guest is added', () => {
