@@ -178,7 +178,7 @@
       }
     </div>
 
-    <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted()" />
+    <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted($event)" />
 
     <!-- Generic option bars or ranked distributions, plus the vote-level abstain row — shared by Overview and Results. -->
     <ng-template #resultsBody>

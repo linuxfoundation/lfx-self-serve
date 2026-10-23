@@ -209,8 +209,10 @@ export class VoteDetailComponent {
     this.castDrawerVisible.set(true);
   }
 
-  protected onVoteSubmitted(): void {
-    this.submittedBallotFor.set(this.vote()?.uid ?? null);
+  protected onVoteSubmitted(voteId: string): void {
+    // A delayed completion belongs to the ballot it submitted, not a vote reached since then.
+    if (voteId !== this.voteId() || voteId !== this.vote()?.uid) return;
+    this.submittedBallotFor.set(voteId);
     this.refreshTick.update((tick) => tick + 1);
     this.reload$.next('refresh');
   }
@@ -260,6 +262,8 @@ export class VoteDetailComponent {
       combineLatest([toObservable(this.voteId), this.reload$]).pipe(
         filter((args): args is [string, 'retry' | 'refresh'] => !!args[0]),
         switchMap(([id, reason]) => {
+          // Cached route changes can reuse the mounted drawer; the next vote must earn its own auto-open.
+          if (lastLoaded?.vote?.uid !== id) this.castDrawerVisible.set(false);
           const inPlace = reason === 'refresh' && lastLoaded?.vote?.uid === id;
           const load$ = this.voteService.fetchVote(id, { skipCache: inPlace }).pipe(
             // Only the vote fetch decides not-found: 400/403/404 means "no such vote, or not yours to see" — never
@@ -373,7 +377,9 @@ export class VoteDetailComponent {
               this.voteResultsError.set(true);
               return of(null);
             }),
-            finalize(() => this.loadingVoteResults.set(false))
+            finalize(() => this.loadingVoteResults.set(false)),
+            // Never retain another vote's totals or comments while the new request is in flight.
+            startWith(null)
           );
         })
       ),

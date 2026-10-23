@@ -5,6 +5,7 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
@@ -454,7 +455,7 @@ describe('VoteDetailComponent', () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       const fixture = await setup();
 
-      call(fixture, 'onVoteSubmitted');
+      call(fixture, 'onVoteSubmitted', 'vote-1');
       TestBed.tick();
 
       expect(voteService.getMyVoteResponse).toHaveBeenCalledTimes(2);
@@ -471,7 +472,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
       expect(testId(fixture, 'vote-detail-voter-not-voted')).not.toBeNull();
 
-      call(fixture, 'onVoteSubmitted');
+      call(fixture, 'onVoteSubmitted', 'vote-1');
       TestBed.tick();
       expect(read(fixture, 'myResponseLoading')).toBe(true);
       expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
@@ -492,7 +493,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
       expect(read(fixture, 'canCastVote')).toBe(true);
 
-      call(fixture, 'onVoteSubmitted');
+      call(fixture, 'onVoteSubmitted', 'vote-1');
       TestBed.tick();
 
       expect(read(fixture, 'myResponseLoading')).toBe(false);
@@ -506,7 +507,7 @@ describe('VoteDetailComponent', () => {
       try {
         const fixture = await setup();
 
-        call(fixture, 'onVoteSubmitted');
+        call(fixture, 'onVoteSubmitted', 'vote-1');
         TestBed.tick();
 
         expect(voteService.fetchVote).toHaveBeenCalledTimes(2);
@@ -538,6 +539,123 @@ describe('VoteDetailComponent', () => {
       TestBed.tick();
       expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
       expect(testId(fixture, 'vote-detail-voter-not-voted')).not.toBeNull();
+    });
+  });
+
+  describe('cached vote transitions', () => {
+    it('uses the emitted ballot ID and ignores a late submission from the previous vote', async () => {
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      voteService.getMyVoteResponse.mockImplementation((id: string) => of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: id })));
+      const fixture = await setup();
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      const drawer = fixture.debugElement.query(By.css('lfx-vote-cast-drawer'));
+      voteService.fetchVote.mockClear();
+      voteService.getMyVoteResponse.mockClear();
+
+      drawer.triggerEventHandler('voteSubmitted', 'vote-1');
+      TestBed.tick();
+
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-not-voted')).not.toBeNull();
+      expect(read(fixture, 'canCastVote')).toBe(true);
+      expect(voteService.fetchVote).not.toHaveBeenCalled();
+      expect(voteService.getMyVoteResponse).not.toHaveBeenCalled();
+
+      drawer.triggerEventHandler('voteSubmitted', 'vote-2');
+      TestBed.tick();
+
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+      expect(read(fixture, 'canCastVote')).toBe(false);
+      expect(voteService.fetchVote).toHaveBeenLastCalledWith('vote-2', { skipCache: true });
+    });
+
+    it.each([
+      {
+        label: 'closed',
+        vote: makeVote({ uid: 'vote-2', status: PollStatus.ENDED }),
+        response: makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2' }),
+      },
+      {
+        label: 'already answered',
+        vote: makeVote({ uid: 'vote-2' }),
+        response: makeResponse(IndexedVoteResponseStatus.RESPONDED, { vote_uid: 'vote-2' }),
+      },
+      { label: 'uninvited', vote: makeVote({ uid: 'vote-2' }), response: null },
+      {
+        label: 'removed',
+        vote: makeVote({ uid: 'vote-2' }),
+        response: makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2', voter_removed: true }),
+      },
+    ])('closes the previous ballot drawer when the cached next vote is $label', async ({ vote, response }) => {
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValueOnce(of(vote));
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE))).mockReturnValueOnce(of(response));
+      const fixture = await setup();
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+      expect(read(fixture, 'canCastVote')).toBe(false);
+    });
+
+    it('reopens the drawer for the next vote only after its eligibility check settles', async () => {
+      const nextResponse = new Subject<MyVoteResponse>();
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE))).mockReturnValueOnce(nextResponse);
+      const fixture = await setup();
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+
+      nextResponse.next(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2' }));
+      nextResponse.complete();
+      TestBed.tick();
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+    });
+
+    it('clears another vote’s totals and comments while cached next-vote results are loading', async () => {
+      const nextResults = new Subject<VoteResultsResponse>();
+      const previousResults: VoteResultsResponse = {
+        ...makeResults(),
+        comment_results: [
+          {
+            prompt: { prompt_id: 'prompt-1', prompt: 'Any concerns?' },
+            responses: [
+              { vote_id: 'response-1', comment_text: 'Synthetic comment for the previous vote', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false },
+            ],
+          },
+        ],
+      };
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockImplementation((id: string) =>
+        of(makeVote({ uid: id, poll_comment_prompts: id === 'vote-1' ? makeVote().poll_comment_prompts : [] }))
+      );
+      voteService.getVoteResults.mockImplementation((id: string) => (id === 'vote-1' ? of(previousResults) : nextResults));
+      const fixture = await setup();
+      expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Synthetic comment for the previous vote');
+      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('1 invited voter');
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+
+      expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-2');
+      expect(read(fixture, 'loadingVoteResults')).toBe(true);
+      expect(read(fixture, 'voteResults')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').every((card) => card.value === '—')).toBe(true);
+
+      nextResults.next({ ...makeResults(), num_recipients: 8, num_votes_cast: 2 });
+      nextResults.complete();
+      TestBed.tick();
+
+      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('6 invited voters');
+      expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
     });
   });
 

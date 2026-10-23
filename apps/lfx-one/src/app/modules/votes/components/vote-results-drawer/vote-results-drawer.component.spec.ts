@@ -536,35 +536,38 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
     expect(byTestId('vote-results-participation')?.querySelector<HTMLElement>('.bg-blue-500')?.style.width).toBe('50%');
   });
 
-  it('marks the winner on an ended generic vote and keeps the white bar track', async () => {
+  it.each([PollStatus.ENDED, 'Ended', 'ENDED'])(
+    'marks the winner on a %s generic vote below full participation and keeps the white bar track',
+    async (status) => {
+      await setupResultsDrawer(
+        makeResultsVote({ status: status as PollStatus }),
+        makeResults({
+          num_abstained: 2,
+          poll_results: [
+            makeGenericQuestion('q1', [
+              ['c1', 3, 60],
+              ['c2', 0, 0],
+            ]),
+          ],
+        })
+      );
+
+      expect(textOf('vote-results-option-c1')).toContain(squash('Winner'));
+      expect(textOf('vote-results-option-c1')).toContain(squash('3 votes (60%)'));
+      expect(byTestId('vote-results-option-c1')?.classList).toContain('border-green-300');
+      expect(byTestId('vote-results-option-c1')?.querySelector('.bg-white')).toBeTruthy();
+      expect(textOf('vote-results-option-c2')).not.toContain(squash('Winner'));
+      expect(textOf('vote-results-option-c2')).toContain(squash('0 votes (0%)'));
+
+      expect(textOf('vote-results-option-abstain')).toContain(squash('2 abstentions (40%)'));
+      expect(byTestId('vote-results-option-abstain')?.querySelector('.bg-white')).toBeTruthy();
+      expect(byTestId('vote-results-participation')).toBeTruthy();
+    }
+  );
+
+  it.each([PollStatus.ENDED, 'Ended', 'ENDED'])('marks tied options on a %s generic vote below full participation', async (status) => {
     await setupResultsDrawer(
-      makeResultsVote({ status: PollStatus.ENDED }),
-      makeResults({
-        num_abstained: 2,
-        poll_results: [
-          makeGenericQuestion('q1', [
-            ['c1', 3, 60],
-            ['c2', 0, 0],
-          ]),
-        ],
-      })
-    );
-
-    expect(textOf('vote-results-option-c1')).toContain(squash('Winner'));
-    expect(textOf('vote-results-option-c1')).toContain(squash('3 votes (60%)'));
-    expect(byTestId('vote-results-option-c1')?.classList).toContain('border-green-300');
-    expect(byTestId('vote-results-option-c1')?.querySelector('.bg-white')).toBeTruthy();
-    expect(textOf('vote-results-option-c2')).not.toContain(squash('Winner'));
-    expect(textOf('vote-results-option-c2')).toContain(squash('0 votes (0%)'));
-
-    expect(textOf('vote-results-option-abstain')).toContain(squash('2 abstentions (40%)'));
-    expect(byTestId('vote-results-option-abstain')?.querySelector('.bg-white')).toBeTruthy();
-    expect(byTestId('vote-results-participation')).toBeTruthy();
-  });
-
-  it('marks tied options on an ended generic vote', async () => {
-    await setupResultsDrawer(
-      makeResultsVote({ status: PollStatus.ENDED }),
+      makeResultsVote({ status: status as PollStatus }),
       makeResults({
         poll_results: [
           makeGenericQuestion('q1', [

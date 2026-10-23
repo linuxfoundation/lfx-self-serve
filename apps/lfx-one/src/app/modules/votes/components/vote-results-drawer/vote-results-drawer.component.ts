@@ -30,6 +30,7 @@ import {
   isRankedPollType,
   isVoteEndedEarly,
   mergeCommentResults,
+  normalizePollStatus,
   resolveVoterResultsState,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
@@ -301,7 +302,7 @@ export class VoteResultsDrawerComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
-      if (v?.status === PollStatus.ENDED) return true;
+      if (normalizePollStatus(v?.status) === PollStatus.ENDED) return true;
 
       // Treat 100% participation as finalized even if the vote hasn't formally ended
       const stats = this.participationStats();
