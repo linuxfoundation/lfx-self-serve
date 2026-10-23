@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { RenderedEmail, VoteSummaryEmailContext } from '@lfx-one/shared/interfaces';
-import { escapeHtml } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml } from '@lfx-one/shared/utils';
 
 /**
  * The on-demand vote-close summary email (#3662), in the shared LFX transactional email layout

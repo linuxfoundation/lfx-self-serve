@@ -71,6 +71,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const { countVotesByStatus, normalizePollStatus } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
   const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
+  const { escapeHtml } = await vi.importActual<typeof import('@lfx-one/shared/utils/html-utils')>('@lfx-one/shared/utils/html-utils');
   return {
     computeIsFoundation,
     compareVotesByRecency,
@@ -79,6 +80,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     isVoteClosingSoon,
     normalizePollStatus,
     maskIdentifierForLogs,
+    escapeHtml,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
   };
 });

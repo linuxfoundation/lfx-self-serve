@@ -689,6 +689,18 @@ describe('VoteService', () => {
     });
   });
 
+  describe('vote summary (#3662)', () => {
+    it('sendVoteSummary POSTs an empty body to the encoded summary URL and passes through the response', () => {
+      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+      const next = vi.fn();
+
+      service.sendVoteSummary('vote/1').subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
+      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0 });
+    });
+  });
+
   it('extendVote posts the new end_time/end_time_timezone to the dedicated extend endpoint', () => {
     const data: ExtendVoteRequest = { end_time: '2026-09-01T23:59:00.000Z', end_time_timezone: 'America/New_York' };
     http.post.mockReturnValue(of(buildVote({ end_time: data.end_time })));

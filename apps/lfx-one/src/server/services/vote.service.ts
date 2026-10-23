@@ -55,6 +55,7 @@ import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, Res
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
@@ -809,22 +810,21 @@ export class VoteService {
 
     let sentCount = 0;
     let failedCount = 0;
-    for (let start = 0; start < uniqueRecipients.length; start += VOTE_SUMMARY_EMAIL_CONCURRENCY) {
-      const batch = uniqueRecipients.slice(start, start + VOTE_SUMMARY_EMAIL_CONCURRENCY);
-      const outcomes = await Promise.allSettled(batch.map((recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })));
-      outcomes.forEach((outcome, index) => {
-        if (outcome.status === 'fulfilled') {
-          sentCount += 1;
-          return;
-        }
-        failedCount += 1;
-        logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
-          vote_uid: voteUid,
-          recipient_uid: batch[index].uid,
-          err: outcome.reason,
-        });
+    const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
+      this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
+    );
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        sentCount += 1;
+        return;
+      }
+      failedCount += 1;
+      logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
+        vote_uid: voteUid,
+        recipient_uid: uniqueRecipients[index].uid,
+        err: outcome.reason,
       });
-    }
+    });
 
     if (sentCount === 0 && uniqueRecipients.length > 0) {
       throw new MicroserviceError('The summary could not be sent to any recipients. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
