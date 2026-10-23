@@ -361,10 +361,10 @@ describe('tryParseLocalDateString', () => {
 // DATE may pass; every timestamp shape, including Snowflake's own output format, must not.
 describe('isLocalDateOnlyString', () => {
   it.each([
-    ['2026-01-02', true],
-    ['2026-01-02T00:00:00.000Z', false],
+    ['2030-03-04', true],
+    ['2030-03-04T00:00:00.000Z', false],
     ['2026-10-21 16:12:33.000 -0700', false],
-    ['2026-1-2', false],
+    ['2030-3-4', false],
     ['', false],
     [null, false],
     [undefined, false],

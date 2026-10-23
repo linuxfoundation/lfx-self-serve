@@ -17,28 +17,28 @@ async function buildMetrics(training: OrgTrainingEnrollmentsResponse): Promise<D
   const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const analytics = {
     getFoundationCoverage: () => of({ accountId: ACCOUNT_ID, foundationCount: 1, foundations: [] }),
-    getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 11, monthlyData: [3], monthlyLabels: ['Oct 2026'] }),
+    getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 100, monthlyData: [10], monthlyLabels: ['Jan 2030'] }),
     getMaintainersMonthly: () =>
       of({
         accountId: ACCOUNT_ID,
         accountName: 'Acme Motors',
-        totalMaintainersYearly: 5,
-        totalProjectsYearly: 6,
-        monthlyData: [5],
-        monthlyLabels: ['Oct 2026'],
+        totalMaintainersYearly: 20,
+        totalProjectsYearly: 30,
+        monthlyData: [20],
+        monthlyLabels: ['Jan 2030'],
       }),
     getEventAttendanceMonthly: () =>
       of({
         accountId: ACCOUNT_ID,
         accountName: 'Acme Motors',
-        totalAttended: 85,
-        totalSpeakers: 1,
-        attendeesMonthlyData: [8],
-        speakersMonthlyData: [0],
-        monthlyLabels: ['Oct 2026'],
+        totalAttended: 200,
+        totalSpeakers: 40,
+        attendeesMonthlyData: [50],
+        speakersMonthlyData: [10],
+        monthlyLabels: ['Jan 2030'],
       }),
     getCertifiedEmployeesMonthly: () =>
-      of({ accountId: ACCOUNT_ID, totalCertifications: 19, totalCertifiedEmployees: 13, monthlyData: [1], monthlyLabels: ['Oct 2026'] }),
+      of({ accountId: ACCOUNT_ID, totalCertifications: 60, totalCertifiedEmployees: 50, monthlyData: [10], monthlyLabels: ['Jan 2030'] }),
     getTrainingEnrollments: () => of(training),
   };
 
@@ -68,9 +68,9 @@ function trainingCard(metrics: DashboardMetricCard[]): DashboardMetricCard {
 
 describe('OrgOverviewInvolvementComponent training enrollments', () => {
   it('formats YYYY-MM-DD enrollment dates as chart labels', async () => {
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 1, dailyData: [{ date: '2026-01-02', count: 1, cumulativeCount: 1 }] });
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
 
-    expect(trainingCard(metrics).chartData?.labels).toEqual(['Jan 2, 2026']);
+    expect(trainingCard(metrics).chartData?.labels).toEqual(['Mar 4, 2030']);
   });
 
   // #4223: a cache entry written before the date-only fix carries an ISO timestamp. Throwing here froze
@@ -78,12 +78,12 @@ describe('OrgOverviewInvolvementComponent training enrollments', () => {
   it('keeps every card building when an enrollment date is not YYYY-MM-DD', async () => {
     const metrics = await buildMetrics({
       accountId: ACCOUNT_ID,
-      totalEnrollments: 1,
-      dailyData: [{ date: '2026-01-02T00:00:00.000Z', count: 1, cumulativeCount: 1 }],
+      totalEnrollments: 7,
+      dailyData: [{ date: '2030-03-04T00:00:00.000Z', count: 7, cumulativeCount: 7 }],
     });
 
-    expect(trainingCard(metrics).chartData?.labels).toEqual(['2026-01-02T00:00:00.000Z']);
+    expect(trainingCard(metrics).chartData?.labels).toEqual(['2030-03-04T00:00:00.000Z']);
     expect(metrics.map((metric) => metric.loading)).toEqual([false, false, false, false, false, false]);
-    expect(trainingCard(metrics).value).toBe('1');
+    expect(trainingCard(metrics).value).toBe('7');
   });
 });
