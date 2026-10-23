@@ -262,71 +262,90 @@ describe('HealthMetricsOverviewService.getOutstandingBalance', () => {
 });
 
 describe('HealthMetricsOverviewService.getEvents', () => {
-  function event(overrides: Record<string, unknown>): Record<string, unknown> {
+  function upcoming(overrides: Record<string, unknown>): Record<string, unknown> {
     return {
       EVENT_ID: 'e1',
       EVENT_NAME: 'Acme Summit',
       EVENT_START_DATE: '2026-11-19',
       EVENT_END_DATE: '2026-11-20',
       EVENT_CITY: 'Springfield',
-      EVENT_IS_PAST: false,
       REGISTRATIONS: 313,
       REGISTRATIONS_GOAL: 700,
       COMP_SCORE: 'High',
       ACCEPTED_TALKS: 0,
       TOTAL_PROPOSALS: 185,
       CFP_STATUS: 'Review Complete',
-      PAST_REGISTRATIONS: null,
-      PAST_GOAL: null,
-      PAST_HAS_GOAL: null,
-      PAST_GOAL_MET: null,
-      PAST_PACE_STATUS: null,
-      IS_IN_PERIOD_YTD: null,
-      IS_IN_PERIOD_COMPLETED_YEAR: null,
-      IS_IN_PERIOD_COMPLETED_YEAR_2: null,
-      IS_IN_PERIOD_COMPLETED_YEAR_3: null,
       ...overrides,
     };
   }
 
-  it('resolves the foundation id from the slug and joins the past-events view, binding the slug for each', async () => {
-    execute.mockResolvedValue({ rows: [] });
+  function past(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      EVENT_ID: 'p1',
+      EVENT_NAME: 'Acme Forum',
+      EVENT_START_DATE: '2025-05-02',
+      EVENT_END_DATE: null,
+      EVENT_CITY: null,
+      REGISTRATIONS: 900,
+      REGISTRATIONS_GOAL: 800,
+      HAS_GOAL: true,
+      GOAL_MET: true,
+      PACE_STATUS: 'healthy',
+      ACCEPTED_TALKS: null,
+      TOTAL_PROPOSALS: null,
+      CFP_STATUS: null,
+      IS_IN_PERIOD_YTD: false,
+      IS_IN_PERIOD_COMPLETED_YEAR: true,
+      IS_IN_PERIOD_COMPLETED_YEAR_2: false,
+      IS_IN_PERIOD_COMPLETED_YEAR_3: false,
+      ...overrides,
+    };
+  }
+
+  function mockReads(upcomingRows: unknown[], pastRows: unknown[]): void {
+    execute.mockImplementation(async (statement: string) => ({
+      rows: statement.includes('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS') ? pastRows : upcomingRows,
+    }));
+  }
+
+  function readIndex(view: 'upcoming' | 'past'): number {
+    return execute.mock.calls.findIndex(
+      ([statement]) => (statement as string).includes('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS') === (view === 'past')
+    );
+  }
+
+  it('reads upcoming events soonest first, resolving the foundation id from the slug', async () => {
+    mockReads([], []);
 
     await new HealthMetricsOverviewService().getEvents(req, query);
 
-    expect(sql()).toContain('INNER JOIN foundation f ON r.project_id = f.foundation_id');
-    expect(sql()).toContain('LEFT JOIN past p ON p.event_id = r.event_id');
-    for (const [range, suffix] of SUFFIXES) expect(sql()).toContain(`p.is_in_period_${suffix} AS is_in_period_${range}`);
-    expect(sql()).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}`);
-    expectBinds(0, ['acme', 'acme']);
+    const index = readIndex('upcoming');
+    expect(sql(index)).toContain('INNER JOIN foundation f ON r.project_id = f.foundation_id');
+    expect(sql(index)).toContain('AND r.event_is_past = FALSE');
+    expect(sql(index)).toContain('ORDER BY r.event_start_date ASC NULLS LAST');
+    expect(sql(index)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}`);
+    expectBinds(index, ['acme']);
   });
 
-  it('splits upcoming events soonest first from past events newest first', async () => {
-    execute.mockResolvedValue({
-      rows: [
-        event({ EVENT_ID: 'p1', EVENT_IS_PAST: true, IS_IN_PERIOD_COMPLETED_YEAR: true }),
-        event({ EVENT_ID: 'p2', EVENT_IS_PAST: true, IS_IN_PERIOD_YTD: true }),
-        event({ EVENT_ID: 'u1' }),
-        event({ EVENT_ID: 'u2' }),
-      ],
-    });
+  it('reads past events newest first from the past-events view, joining the registrations view on event and foundation', async () => {
+    mockReads([], []);
 
-    const events = await new HealthMetricsOverviewService().getEvents(req, query);
+    await new HealthMetricsOverviewService().getEvents(req, query);
 
-    expect(events.upcoming.map((row) => row.eventId)).toEqual(['u1', 'u2']);
-    expect(events.past.map((row) => [row.eventId, row.ranges])).toEqual([
-      ['p2', ['YTD']],
-      ['p1', ['COMPLETED_YEAR']],
-    ]);
-    expect(events.truncated).toBe(false);
+    const index = readIndex('past');
+    expect(sql(index)).toContain('ON r.event_id = p.event_id\n        AND r.project_id = p.foundation_id');
+    for (const [range, suffix] of SUFFIXES) expect(sql(index)).toContain(`p.is_in_period_${suffix} AS is_in_period_${range}`);
+    expect(sql(index)).toContain('ORDER BY p.event_start_date DESC NULLS LAST, p.event_name ASC NULLS LAST');
+    expect(sql(index)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}`);
+    expectBinds(index, ['acme']);
   });
 
   it("maps an upcoming event's goal and pace, treating a zero goal as none", async () => {
-    execute.mockResolvedValue({ rows: [event({}), event({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, EVENT_CITY: null })] });
+    mockReads([upcoming({}), upcoming({ EVENT_ID: 'e2', EVENT_NAME: null, REGISTRATIONS_GOAL: 0, COMP_SCORE: null, EVENT_CITY: null })], []);
 
-    const { upcoming } = await new HealthMetricsOverviewService().getEvents(req, query);
+    const events = await new HealthMetricsOverviewService().getEvents(req, query);
 
-    expect(upcoming[0]).toEqual({
+    expect(events.upcoming[0]).toEqual({
       eventId: 'e1',
       eventName: 'Acme Summit',
       startDate: '2026-11-19',
@@ -342,46 +361,39 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       cfpStatus: 'Review Complete',
       ranges: [],
     });
-    expect(upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, city: null });
+    expect(events.upcoming[1]).toMatchObject({ eventName: 'e2', registrationsGoal: null, compScore: null, city: null });
+    expect(events.truncated).toBe(false);
   });
 
-  it("maps a past event's outcome from the past-events view, which alone decides whether it had a goal", async () => {
-    execute.mockResolvedValue({
-      rows: [
-        event({
-          EVENT_ID: 'hit',
-          EVENT_IS_PAST: true,
-          PAST_REGISTRATIONS: 900,
-          PAST_GOAL: 800,
-          PAST_HAS_GOAL: true,
-          PAST_GOAL_MET: true,
-          PAST_PACE_STATUS: 'healthy',
-        }),
-        event({
-          EVENT_ID: 'no-goal',
-          EVENT_IS_PAST: true,
-          PAST_REGISTRATIONS: 50,
-          PAST_GOAL: 800,
-          PAST_HAS_GOAL: false,
-          PAST_GOAL_MET: false,
-          PAST_PACE_STATUS: 'needs_action',
-        }),
-      ],
+  it("maps a past event's outcome and periods, letting the view's own flag decide whether it had a goal", async () => {
+    mockReads([], [past({}), past({ EVENT_ID: 'p2', HAS_GOAL: false, GOAL_MET: false, PACE_STATUS: 'needs_action', IS_IN_PERIOD_YTD: true })]);
+
+    const { past: rows } = await new HealthMetricsOverviewService().getEvents(req, query);
+
+    expect(rows[0]).toMatchObject({
+      eventId: 'p1',
+      registrations: 900,
+      registrationsGoal: 800,
+      goalMet: true,
+      paceStatus: 'healthy',
+      compScore: null,
+      ranges: ['COMPLETED_YEAR'],
     });
-
-    const { past } = await new HealthMetricsOverviewService().getEvents(req, query);
-
-    expect(past[1]).toMatchObject({ eventId: 'hit', registrations: 900, registrationsGoal: 800, goalMet: true, paceStatus: 'healthy', compScore: null });
-    expect(past[0]).toMatchObject({ eventId: 'no-goal', registrations: 50, registrationsGoal: null, goalMet: null, paceStatus: null });
+    expect(rows[1]).toMatchObject({ eventId: 'p2', registrationsGoal: null, goalMet: null, paceStatus: null, ranges: ['COMPLETED_YEAR', 'YTD'] });
   });
 
-  it('flags and warns on a read that hits the row cap', async () => {
-    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1 }, (_, index) => event({ EVENT_ID: `e${index}` })) });
+  it('caps each list on its own, so a full past list never crowds out upcoming events', async () => {
+    mockReads(
+      [upcoming({ EVENT_ID: 'u1' })],
+      Array.from({ length: HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1 }, (_, index) => past({ EVENT_ID: `p${index}` }))
+    );
 
     const events = await new HealthMetricsOverviewService().getEvents(req, query);
 
     expect(events.truncated).toBe(true);
-    expect(events.upcoming).toHaveLength(HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP);
+    expect(events.upcoming.map((row) => row.eventId)).toEqual(['u1']);
+    expect(events.past).toHaveLength(HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP);
+    expect(events.past[0].eventId).toBe('p0');
     expect(logger.warning).toHaveBeenCalledWith(req, 'get_overview_events', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 });

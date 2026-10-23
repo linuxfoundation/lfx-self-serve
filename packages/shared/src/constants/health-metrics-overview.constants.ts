@@ -4,6 +4,7 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsRange, HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsOverviewArea,
   HealthMetricsOverviewClassification,
@@ -267,7 +268,10 @@ export const HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE = 'Board';
 /** The board attendance cohort the Overview card reports. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_COHORT = 'board';
 
-/** Events read for the Overview list across every period; one past it flags a truncated read. */
+/** The periods the participating orgs view splits by engagement; the others read `null`. */
+export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
+
+/** Events read per Overview list (upcoming, past); one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
 
 /** Board members read for the Overview table; one past it flags a truncated read. */

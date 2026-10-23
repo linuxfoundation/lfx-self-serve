@@ -151,10 +151,10 @@ export class HealthMetricsTrainingService {
       measured: true,
       periods,
       trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
-      // Goals ride on the `All` row only; a goal of zero is no goal.
+      // Goals ride on the `All` row only; a goal of zero or less is no goal.
       goals: {
-        enrollments: toNullableNumber(all['ENROLLMENT_GOAL']) || null,
-        revenueUsd: toNullableNumber(all['REVENUE_GOAL_USD']) || null,
+        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
+        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
         enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
         revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
       },
@@ -280,6 +280,11 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toPositiveOrNull(value: unknown): number | null {
+  const number = toNullableNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function toNullableNumber(value: unknown): number | null {

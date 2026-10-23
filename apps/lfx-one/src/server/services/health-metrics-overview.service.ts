@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_OVERVIEW_BOARD_COHORT,
   HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES,
   HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
 } from '@lfx-one/shared/constants';
@@ -48,30 +49,31 @@ const BOARD_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTEN
 const BOARD_MEMBERS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE_MEMBERS';
 const OVERVIEW_KPIS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS';
 
-/** The view models the engagement split for these periods only. */
-const ENGAGEMENT_SPLIT_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
-
 /** Upper-cased Snowflake keys; period columns are aliased `<COLUMN>_<RANGE>`. */
 type WideRow = Record<string, unknown>;
 
-interface EventRow {
+/** The fields both event reads select, under the same aliases. */
+interface EventRowBase {
   EVENT_ID: string | null;
   EVENT_NAME: string | null;
   EVENT_START_DATE: Date | string | null;
   EVENT_END_DATE: Date | string | null;
   EVENT_CITY: string | null;
-  EVENT_IS_PAST: boolean | null;
   REGISTRATIONS: number | null;
   REGISTRATIONS_GOAL: number | null;
-  COMP_SCORE: string | null;
   ACCEPTED_TALKS: number | null;
   TOTAL_PROPOSALS: number | null;
   CFP_STATUS: string | null;
-  PAST_REGISTRATIONS: number | null;
-  PAST_GOAL: number | null;
-  PAST_HAS_GOAL: boolean | null;
-  PAST_GOAL_MET: boolean | null;
-  PAST_PACE_STATUS: string | null;
+}
+
+interface UpcomingEventRow extends EventRowBase {
+  COMP_SCORE: string | null;
+}
+
+interface PastEventRow extends EventRowBase {
+  HAS_GOAL: boolean | null;
+  GOAL_MET: boolean | null;
+  PACE_STATUS: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -96,7 +98,7 @@ export class HealthMetricsOverviewService {
     ];
     const columns = [
       ...HEALTH_METRICS_L2_RANGES.flatMap((range) => counts.map((column) => periodSelect(column, range))),
-      ...ENGAGEMENT_SPLIT_RANGES.flatMap((range) =>
+      ...HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES.flatMap((range) =>
         ['member', 'non_member'].flatMap((cohort) => split.map((column) => periodSelect(`${cohort}_${column}`, range)))
       ),
     ];
@@ -105,6 +107,7 @@ export class HealthMetricsOverviewService {
       SELECT ${columns.join(',\n        ')}
       FROM ${PARTICIPATING_ORGS_VIEW}
       WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
       LIMIT 1
     `;
 
@@ -122,8 +125,8 @@ export class HealthMetricsOverviewService {
         newMembers: periodNumber(row, 'NEW_MEMBERS_COUNT', range),
         nonRenewals: periodNumber(row, 'NON_RENEWALS_COUNT', range),
         nonMembers: periodNumber(row, 'NON_MEMBERS_COUNT', range),
-        memberEngagement: row && ENGAGEMENT_SPLIT_RANGES.includes(range) ? mapEngagementSplit(row, 'MEMBER', range) : null,
-        nonMemberEngagement: row && ENGAGEMENT_SPLIT_RANGES.includes(range) ? mapEngagementSplit(row, 'NON_MEMBER', range) : null,
+        memberEngagement: row && HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES.includes(range) ? mapEngagementSplit(row, 'MEMBER', range) : null,
+        nonMemberEngagement: row && HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES.includes(range) ? mapEngagementSplit(row, 'NON_MEMBER', range) : null,
       })),
     };
   }
@@ -151,6 +154,7 @@ export class HealthMetricsOverviewService {
       FROM ${NPS_BY_AUDIENCE_VIEW}
       WHERE foundation_slug = ?
         AND TRIM(audience_type) = ?
+      -- One row per foundation_slug and audience, so LIMIT 1 has nothing to pick between.
       LIMIT 1
     `;
 
@@ -224,6 +228,7 @@ export class HealthMetricsOverviewService {
         medium_risk_balance_share_pct
       FROM ${OUTSTANDING_BALANCE_VIEW}
       WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
       LIMIT 1
     `;
 
@@ -248,62 +253,12 @@ export class HealthMetricsOverviewService {
   }
 
   /**
-   * Upcoming events plus every past event in a period, with the closed event's goal outcome joined from the
-   * past-events view so its status matches the Events tab.
+   * Upcoming events soonest first, and every past event in a period newest first. Each list is its own read, so
+   * a cap drops the furthest-out upcoming and the oldest past events, never the other list.
    */
   public async getEvents(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewEvents> {
-    const inPeriodColumns = HEALTH_METRICS_L2_RANGES.map((range) => `p.is_in_period_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} AS is_in_period_${range}`);
-    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `p.is_in_period_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} = TRUE`).join(' OR ');
-
-    // The registrations view keys events by foundation id, so the slug resolves through the at-a-glance rollup.
-    const sql = `
-      WITH foundation AS (
-        SELECT DISTINCT foundation_id
-        FROM ${AT_A_GLANCE_VIEW}
-        WHERE foundation_slug = ?
-          AND is_all_projects = TRUE
-      ),
-      past AS (
-        SELECT *
-        FROM ${PAST_EVENTS_VIEW}
-        WHERE foundation_slug = ?
-          AND is_all_projects = TRUE
-      )
-      SELECT
-        r.event_id,
-        r.event_name,
-        r.event_start_date,
-        r.event_end_date,
-        NULLIF(TRIM(r.event_city), '') AS event_city,
-        r.event_is_past,
-        r.count_registrations_all_time AS registrations,
-        r.event_registrations_goal AS registrations_goal,
-        NULLIF(TRIM(r.comp_score), '') AS comp_score,
-        r.accepted_speaker_proposals_all_time AS accepted_talks,
-        r.total_speaker_proposals_all_time AS total_proposals,
-        NULLIF(TRIM(r.cfp_status), '') AS cfp_status,
-        p.registrations_count AS past_registrations,
-        p.event_registrations_goal AS past_goal,
-        p.has_registrations_goal AS past_has_goal,
-        p.is_registrations_goal_met AS past_goal_met,
-        p.pace_status AS past_pace_status,
-        ${inPeriodColumns.join(',\n        ')}
-      FROM ${EVENT_REGISTRATIONS_VIEW} r
-      INNER JOIN foundation f ON r.project_id = f.foundation_id
-      LEFT JOIN past p ON p.event_id = r.event_id
-      WHERE NULLIF(TRIM(r.event_id), '') IS NOT NULL
-        AND (r.event_is_past = FALSE OR ${inAnyPeriod})
-      ORDER BY r.event_start_date ASC NULLS LAST, r.event_name ASC NULLS LAST, r.event_id ASC
-      LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}
-    `;
-
-    const result = await executeSnowflakeViewRead<EventRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
-      view: EVENT_REGISTRATIONS_VIEW,
-      operation: 'get_overview_events',
-      clientMessage: 'Events are unavailable right now.',
-    });
-
-    const truncated = result.rows.length > HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP;
+    const [upcoming, past] = await Promise.all([this.getUpcomingEvents(req, query), this.getPastEvents(req, query)]);
+    const truncated = upcoming.length > HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP || past.length > HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP;
     if (truncated) {
       logger.warning(req, 'get_overview_events', 'Overview events hit the read cap', {
         foundation_slug: query.foundationSlug,
@@ -311,14 +266,9 @@ export class HealthMetricsOverviewService {
       });
     }
 
-    const rows = result.rows.slice(0, HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP);
     return {
-      upcoming: rows.filter((row) => row.EVENT_IS_PAST === false).map(mapUpcomingEvent),
-      // Read soonest first, so the past list reverses to newest first.
-      past: rows
-        .filter((row) => row.EVENT_IS_PAST !== false)
-        .map(mapPastEvent)
-        .reverse(),
+      upcoming: upcoming.slice(0, HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP).map(mapUpcomingEvent),
+      past: past.slice(0, HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP).map(mapPastEvent),
       truncated,
     };
   }
@@ -342,6 +292,7 @@ export class HealthMetricsOverviewService {
       FROM ${BOARD_ATTENDANCE_VIEW}
       WHERE foundation_slug = ?
         AND attendance_cohort = ?
+      -- One row per foundation_slug and cohort, so LIMIT 1 has nothing to pick between.
       LIMIT 1
     `;
     const membersSql = `
@@ -396,6 +347,7 @@ export class HealthMetricsOverviewService {
         reviewers_count_all_time
       FROM ${OVERVIEW_KPIS_VIEW}
       WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
       LIMIT 1
     `;
 
@@ -416,6 +368,84 @@ export class HealthMetricsOverviewService {
       maintainers: toNullableNumber(row?.['MAINTAINERS_COUNT_ALL_TIME']),
       reviewers: toNullableNumber(row?.['REVIEWERS_COUNT_ALL_TIME']),
     };
+  }
+
+  /** The registrations view keys events by foundation id, so the slug resolves through the at-a-glance rollup. */
+  private async getUpcomingEvents(req: Request, query: HealthMetricsOverviewQuery): Promise<UpcomingEventRow[]> {
+    const sql = `
+      WITH foundation AS (
+        SELECT DISTINCT foundation_id
+        FROM ${AT_A_GLANCE_VIEW}
+        WHERE foundation_slug = ?
+          AND is_all_projects = TRUE
+      )
+      SELECT
+        r.event_id,
+        r.event_name,
+        r.event_start_date,
+        r.event_end_date,
+        NULLIF(TRIM(r.event_city), '') AS event_city,
+        r.count_registrations_all_time AS registrations,
+        r.event_registrations_goal AS registrations_goal,
+        NULLIF(TRIM(r.comp_score), '') AS comp_score,
+        r.accepted_speaker_proposals_all_time AS accepted_talks,
+        r.total_speaker_proposals_all_time AS total_proposals,
+        NULLIF(TRIM(r.cfp_status), '') AS cfp_status
+      FROM ${EVENT_REGISTRATIONS_VIEW} r
+      INNER JOIN foundation f ON r.project_id = f.foundation_id
+      WHERE NULLIF(TRIM(r.event_id), '') IS NOT NULL
+        AND r.event_is_past = FALSE
+      ORDER BY r.event_start_date ASC NULLS LAST, r.event_name ASC NULLS LAST, r.event_id ASC
+      LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<UpcomingEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: EVENT_REGISTRATIONS_VIEW,
+      operation: 'get_overview_events',
+      clientMessage: 'Events are unavailable right now.',
+    });
+    return result.rows;
+  }
+
+  /** Driven by the past-events view, as the Events tab reads it; the registrations view only adds city, dates and talks. */
+  private async getPastEvents(req: Request, query: HealthMetricsOverviewQuery): Promise<PastEventRow[]> {
+    const inPeriodColumns = HEALTH_METRICS_L2_RANGES.map((range) => `p.is_in_period_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} AS is_in_period_${range}`);
+    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `p.is_in_period_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} = TRUE`).join(' OR ');
+
+    const sql = `
+      SELECT
+        p.event_id,
+        p.event_name,
+        p.event_start_date,
+        r.event_end_date,
+        NULLIF(TRIM(r.event_city), '') AS event_city,
+        p.registrations_count AS registrations,
+        p.event_registrations_goal AS registrations_goal,
+        p.has_registrations_goal AS has_goal,
+        p.is_registrations_goal_met AS goal_met,
+        p.pace_status,
+        r.accepted_speaker_proposals_all_time AS accepted_talks,
+        r.total_speaker_proposals_all_time AS total_proposals,
+        NULLIF(TRIM(r.cfp_status), '') AS cfp_status,
+        ${inPeriodColumns.join(',\n        ')}
+      FROM ${PAST_EVENTS_VIEW} p
+      LEFT JOIN ${EVENT_REGISTRATIONS_VIEW} r
+        ON r.event_id = p.event_id
+        AND r.project_id = p.foundation_id
+      WHERE p.foundation_slug = ?
+        AND p.is_all_projects = TRUE
+        AND NULLIF(TRIM(p.event_id), '') IS NOT NULL
+        AND (${inAnyPeriod})
+      ORDER BY p.event_start_date DESC NULLS LAST, p.event_name ASC NULLS LAST, p.event_id ASC
+      LIMIT ${HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: PAST_EVENTS_VIEW,
+      operation: 'get_overview_events',
+      clientMessage: 'Events are unavailable right now.',
+    });
+    return result.rows;
   }
 }
 
@@ -493,10 +523,8 @@ function mapChurnTier(row: WideRow, range: HealthMetricsL2Range): HealthMetricsO
   };
 }
 
-/** The fields both lists share; a goal of zero or less is no goal. */
-function mapEventBase(
-  row: EventRow
-): Omit<HealthMetricsOverviewEvent, 'registrations' | 'registrationsGoal' | 'compScore' | 'goalMet' | 'paceStatus' | 'ranges'> {
+/** The fields both lists share. */
+function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'goalMet' | 'paceStatus' | 'ranges'> {
   const eventId = String(row.EVENT_ID);
   return {
     eventId,
@@ -504,18 +532,18 @@ function mapEventBase(
     startDate: toIsoDate(row.EVENT_START_DATE),
     endDate: toIsoDate(row.EVENT_END_DATE),
     city: row.EVENT_CITY,
+    registrations: toNullableNumber(row.REGISTRATIONS),
     acceptedTalks: toNullableNumber(row.ACCEPTED_TALKS),
     totalProposals: toNullableNumber(row.TOTAL_PROPOSALS),
     cfpStatus: row.CFP_STATUS,
   };
 }
 
-function mapUpcomingEvent(row: EventRow): HealthMetricsOverviewEvent {
-  const goal = toNullableNumber(row.REGISTRATIONS_GOAL);
+/** A goal of zero or less is no goal. */
+function mapUpcomingEvent(row: UpcomingEventRow): HealthMetricsOverviewEvent {
   return {
     ...mapEventBase(row),
-    registrations: toNullableNumber(row.REGISTRATIONS),
-    registrationsGoal: goal !== null && goal > 0 ? goal : null,
+    registrationsGoal: positiveOrNull(toNullableNumber(row.REGISTRATIONS_GOAL)),
     compScore: row.COMP_SCORE?.toLowerCase() ?? null,
     goalMet: null,
     paceStatus: null,
@@ -523,16 +551,15 @@ function mapUpcomingEvent(row: EventRow): HealthMetricsOverviewEvent {
   };
 }
 
-/** Past figures come from the past-events view, as the Events tab reads them; its own flag decides "no goal". */
-function mapPastEvent(row: EventRow): HealthMetricsOverviewEvent {
-  const hasGoal = row.PAST_HAS_GOAL === true;
+/** The past-events view's own flag decides "no goal", as on the Events tab. */
+function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
+  const hasGoal = row.HAS_GOAL === true;
   return {
     ...mapEventBase(row),
-    registrations: toNullableNumber(row.PAST_REGISTRATIONS) ?? toNullableNumber(row.REGISTRATIONS),
-    registrationsGoal: hasGoal ? toNullableNumber(row.PAST_GOAL) : null,
+    registrationsGoal: hasGoal ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
-    goalMet: hasGoal && row.PAST_GOAL_MET !== null ? row.PAST_GOAL_MET === true : null,
-    paceStatus: hasGoal ? row.PAST_PACE_STATUS : null,
+    goalMet: hasGoal && row.GOAL_MET !== null ? row.GOAL_MET === true : null,
+    paceStatus: hasGoal ? row.PACE_STATUS : null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
   };
 }
@@ -566,6 +593,10 @@ function mapBoardMember(row: WideRow): HealthMetricsOverviewBoardMember {
     lastAttendedDate: toIsoDate(row['LAST_ATTENDED_DATE'] as Date | string | null),
     attendance,
   };
+}
+
+function positiveOrNull(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
 }
 
 function toNullableNumber(value: unknown): number | null {
