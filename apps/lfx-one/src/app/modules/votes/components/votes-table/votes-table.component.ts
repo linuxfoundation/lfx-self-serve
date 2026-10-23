@@ -313,6 +313,7 @@ export class VotesTableComponent {
       items.push({
         label: 'Send summary',
         icon: 'fa-light fa-chart-simple',
+        disabled: this.isSendingSummary(),
         tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });

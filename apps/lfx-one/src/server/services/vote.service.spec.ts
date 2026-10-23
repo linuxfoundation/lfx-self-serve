@@ -66,7 +66,7 @@ const {
 vi.mock('@lfx-one/shared/utils', async () => {
   // The real GH-1558 comparator — the ordering specs must exercise the service's actual sort, not
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
-  const { compareVotesByRecency, isVoteClosingSoon } =
+  const { compareVotesByRecency, isVoteClosingSoon, computeResultPercentage } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
   const { countVotesByStatus, normalizePollStatus } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
@@ -74,6 +74,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     computeIsFoundation,
     compareVotesByRecency,
+    computeResultPercentage,
     countVotesByStatus,
     isVoteClosingSoon,
     normalizePollStatus,
@@ -2602,6 +2603,44 @@ describe('VoteService', () => {
 
       expect(sendEmail).not.toHaveBeenCalled();
       expect(result).toEqual({ recipient_count: 0, failed_count: 0 });
+    });
+
+    it('renders first-choice vote counts and percentages for a ranked-choice question', async () => {
+      vi.mocked(service.getVoteResults).mockResolvedValue({
+        ...resultsFixture,
+        poll_results: [
+          {
+            question: { question_id: 'q-2', prompt: 'Rank the candidates', type: 'single_choice', choices: [{ choice_id: 'c-a', choice_text: 'Alex' }] },
+            generic_choice_votes: [],
+            ranked_choice_votes: [{ choice_id: 'c-a', rank_counts: [{ rank: 1, count: 2 }], condorcet_matrix: [] }],
+          },
+        ],
+      });
+
+      await service.sendVoteSummary(req, CANONICAL_UID);
+
+      const { html, text } = sendEmail.mock.calls[0][1];
+      expect(html).toContain('Alex (first-choice votes)');
+      expect(html).toContain('2 (100%)');
+      expect(text).toContain('Alex (first-choice votes): 2 (100%)');
+    });
+
+    it('reports 0% for a ranked-choice question with no first-choice votes at all', async () => {
+      vi.mocked(service.getVoteResults).mockResolvedValue({
+        ...resultsFixture,
+        poll_results: [
+          {
+            question: { question_id: 'q-2', prompt: 'Rank the candidates', type: 'single_choice', choices: [{ choice_id: 'c-a', choice_text: 'Alex' }] },
+            generic_choice_votes: [],
+            ranked_choice_votes: [{ choice_id: 'c-a', rank_counts: [], condorcet_matrix: [] }],
+          },
+        ],
+      });
+
+      await service.sendVoteSummary(req, CANONICAL_UID);
+
+      const { html } = sendEmail.mock.calls[0][1];
+      expect(html).toContain('0 (0%)');
     });
   });
 });

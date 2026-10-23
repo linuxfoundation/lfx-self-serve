@@ -42,12 +42,14 @@ import {
 import {
   compareVotesByRecency,
   computeIsFoundation,
+  computeResultPercentage,
   countVotesByStatus,
   isVoteClosingSoon,
   normalizePollStatus,
   sortCommentResponsesByRecency,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
 
 import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
@@ -778,7 +780,8 @@ export class VoteService {
    * carries are final. The email body is built once from the aggregate results and sent unchanged
    * to each recipient — it never varies per voter, so it cannot disclose how any specific person
    * voted. A send failure for one recipient does not block the rest; failures are counted and
-   * logged, not thrown, so a partial send still reports what it delivered.
+   * logged, not thrown, so a partial send still reports what it delivered — only a total failure
+   * (every recipient rejected) throws, since there would otherwise be nothing to report as sent.
    */
   public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
     await assertVoteWrite(req, voteUid, 'send_vote_summary');
@@ -806,19 +809,22 @@ export class VoteService {
 
     let sentCount = 0;
     let failedCount = 0;
-    const outcomes = await Promise.allSettled(uniqueRecipients.map((recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })));
-    outcomes.forEach((outcome, index) => {
-      if (outcome.status === 'fulfilled') {
-        sentCount += 1;
-        return;
-      }
-      failedCount += 1;
-      logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
-        vote_uid: voteUid,
-        recipient_uid: uniqueRecipients[index].uid,
-        err: outcome.reason,
+    for (let start = 0; start < uniqueRecipients.length; start += VOTE_SUMMARY_EMAIL_CONCURRENCY) {
+      const batch = uniqueRecipients.slice(start, start + VOTE_SUMMARY_EMAIL_CONCURRENCY);
+      const outcomes = await Promise.allSettled(batch.map((recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })));
+      outcomes.forEach((outcome, index) => {
+        if (outcome.status === 'fulfilled') {
+          sentCount += 1;
+          return;
+        }
+        failedCount += 1;
+        logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
+          vote_uid: voteUid,
+          recipient_uid: batch[index].uid,
+          err: outcome.reason,
+        });
       });
-    });
+    }
 
     if (sentCount === 0 && uniqueRecipients.length > 0) {
       throw new MicroserviceError('The summary could not be sent to any recipients. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
@@ -965,7 +971,7 @@ export class VoteService {
           choices: pollResult.generic_choice_votes.map((choice) => ({
             text: choiceTextById.get(choice.choice_id) ?? choice.choice_id,
             vote_count: choice.vote_count,
-            percentage: `${Math.round(choice.percentage)}%`,
+            percentage: `${Math.round(computeResultPercentage(choice.percentage, choice.vote_count, results.num_votes_cast || 0))}%`,
           })),
         };
       }

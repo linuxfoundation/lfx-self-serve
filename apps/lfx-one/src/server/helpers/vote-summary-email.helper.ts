@@ -10,8 +10,8 @@ import { escapeHtml } from '@lfx-one/shared/utils/html-utils';
  * `newsletter-invite-email.helper.ts` and the invite-/committee-/member-service templates.
  * Carries only aggregate results (participation counts, per-choice counts and percentages) — never
  * an individual recipient's ballot, so the same rendered body is sent to every recipient. Every
- * interpolated value is escaped — the vote title and question/choice text are free text set by the
- * vote's creator.
+ * interpolated string is escaped — the vote title and question/choice text are free text set by the
+ * vote's creator, and `percentage` is a pre-formatted string rather than a number.
  */
 export function renderVoteSummaryEmail(context: VoteSummaryEmailContext, now: Date = new Date()): RenderedEmail {
   const title = escapeHtml(context.vote_title);
@@ -23,7 +23,7 @@ export function renderVoteSummaryEmail(context: VoteSummaryEmailContext, now: Da
       const choiceRows = question.choices
         .map(
           (choice) =>
-            `<tr><td style="padding:4px 0;color:#374151;font-size:15px;">${escapeHtml(choice.text)}</td><td style="padding:4px 0 4px 16px;color:#374151;font-size:15px;white-space:nowrap;">${choice.vote_count} (${choice.percentage})</td></tr>`
+            `<tr><td style="padding:4px 0;color:#374151;font-size:15px;">${escapeHtml(choice.text)}</td><td style="padding:4px 0 4px 16px;color:#374151;font-size:15px;white-space:nowrap;">${choice.vote_count} (${escapeHtml(choice.percentage)})</td></tr>`
         )
         .join('');
       return `<p style="font-size:16px;color:#111827;font-weight:600;margin:0 0 8px 0;">${escapeHtml(question.prompt)}</p>
