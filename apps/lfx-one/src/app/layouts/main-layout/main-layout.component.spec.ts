@@ -20,6 +20,8 @@ interface LayoutHarness {
   fixture: ComponentFixture<MainLayoutComponent>;
   appService: AppService;
   routerEvents: Subject<unknown>;
+  /** Ends a navigation as the router reports it: `currentNavigation()` still names it while `NavigationEnd` is emitted. */
+  endNavigation: (extras?: { replaceUrl?: boolean }, trigger?: 'imperative' | 'popstate') => void;
   menuButton: () => HTMLButtonElement;
   backdrop: () => HTMLElement | null;
   panel: () => HTMLElement;
@@ -28,12 +30,13 @@ interface LayoutHarness {
 /** Renders the real layout template with its child components stubbed out (NO_ERRORS_SCHEMA), so the hamburger and backdrop bindings are exercised. */
 const createLayout = async (): Promise<LayoutHarness> => {
   const routerEvents = new Subject<unknown>();
+  const currentNavigation = signal<{ extras: { replaceUrl?: boolean }; trigger: 'imperative' | 'popstate' } | null>(null);
   const route = { snapshot: { data: {}, queryParamMap: new Map() }, firstChild: null };
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [MainLayoutComponent],
     providers: [
-      { provide: Router, useValue: { url: '/org/acme/overview', events: routerEvents } },
+      { provide: Router, useValue: { url: '/org/acme/overview', events: routerEvents, currentNavigation } },
       { provide: ActivatedRoute, useValue: route },
       {
         provide: LensService,
@@ -52,6 +55,11 @@ const createLayout = async (): Promise<LayoutHarness> => {
     fixture,
     appService: TestBed.inject(AppService),
     routerEvents,
+    endNavigation: (extras = {}, trigger = 'imperative') => {
+      currentNavigation.set({ extras, trigger });
+      routerEvents.next(new NavigationEnd(1, '/org/overview', '/org/acme/overview'));
+      currentNavigation.set(null);
+    },
     menuButton: () => element.querySelector<HTMLButtonElement>('[data-testid="mobile-menu-button"]')!,
     backdrop: () => element.querySelector<HTMLElement>('[data-testid="mobile-sidebar-backdrop"]'),
     panel: () => element.querySelector<HTMLElement>('[data-testid="mobile-sidebar-drawer"]')!,
@@ -166,5 +174,42 @@ describe('MainLayoutComponent mobile drawer', () => {
     menuButton().click();
     await fixture.whenStable();
     expect(appService.showMobileSidebar()).toBe(true);
+  });
+
+  // #4172 on iPhone in Org Lens: the default organization written into the address, or a page syncing its query params,
+  // must not close a drawer the viewer just opened.
+  it('stays open through a navigation that rewrites the address in place', async () => {
+    const { fixture, appService, endNavigation } = await createLayout();
+    appService.openMobileSidebar();
+
+    endNavigation({ replaceUrl: true });
+    await fixture.whenStable();
+
+    expect(appService.showMobileSidebar()).toBe(true);
+  });
+
+  it('closes on back/forward even though it lands with replaceUrl', async () => {
+    const { fixture, appService, endNavigation } = await createLayout();
+    appService.openMobileSidebar();
+
+    endNavigation({ replaceUrl: true }, 'popstate');
+    await fixture.whenStable();
+
+    expect(appService.showMobileSidebar()).toBe(false);
+  });
+
+  it('moves focus into the drawer when it opens and back to the menu button when it closes', async () => {
+    const { fixture, appService, menuButton, panel } = await createLayout();
+    document.body.appendChild(fixture.nativeElement);
+
+    menuButton().click();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(panel());
+
+    appService.closeMobileSidebar();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(menuButton());
+
+    fixture.nativeElement.remove();
   });
 });

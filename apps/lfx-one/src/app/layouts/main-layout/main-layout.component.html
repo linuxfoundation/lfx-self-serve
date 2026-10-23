@@ -34,12 +34,14 @@
       data-testid="mobile-sidebar-backdrop"></div>
   }
   <div
-    class="lg:hidden fixed top-0 left-0 z-[999] flex h-full w-[296px] flex-col mobile-navbar-drawer"
+    #mobileDrawer
+    class="lg:hidden fixed top-0 left-0 z-[999] flex h-full w-[296px] flex-col outline-none mobile-navbar-drawer"
     [class.is-open]="showMobileSidebar()"
     [attr.inert]="showMobileSidebar() ? null : ''"
     role="dialog"
     aria-modal="true"
     aria-label="Navigation"
+    tabindex="-1"
     pFocusTrap
     [pFocusTrapDisabled]="!showMobileSidebar()"
     data-testid="mobile-sidebar-drawer">
@@ -74,6 +76,7 @@
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
       [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating() }">
       <button
+        #mobileMenuButton
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
         (click)="openMobileSidebar()"

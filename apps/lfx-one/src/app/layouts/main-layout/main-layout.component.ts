@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, NgClass } from '@angular/common';
-import { Component, HostListener, inject, linkedSignal, model, signal } from '@angular/core';
+import { afterNextRender, Component, ElementRef, HostListener, inject, Injector, linkedSignal, model, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -17,7 +17,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { FocusTrap } from 'primeng/focustrap';
-import { distinctUntilChanged, filter, map } from 'rxjs';
+import { distinctUntilChanged, filter, map, skip } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
@@ -33,7 +33,11 @@ export class MainLayoutComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly document = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
   protected readonly userService = inject(UserService);
+
+  private readonly mobileDrawer = viewChild<ElementRef<HTMLElement>>('mobileDrawer');
+  private readonly mobileMenuButton = viewChild<ElementRef<HTMLButtonElement>>('mobileMenuButton');
 
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -75,6 +79,8 @@ export class MainLayoutComponent {
     // paint / hard load, before the first NavigationEnd fires.
     this.isProfileHub.set(isProfileHubPath(this.router.url));
 
+    this.initDrawerFocus();
+
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
       .pipe(
@@ -82,7 +88,14 @@ export class MainLayoutComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => {
-        this.appService.closeMobileSidebar();
+        // Only a navigation the viewer made closes the mobile drawer. A page rewriting its own address in place —
+        // Org Lens writing the default organization into `/org/{page}`, a page syncing its query params — lands with
+        // `replaceUrl` and would snap a just-opened drawer shut, which on a phone reads as the menu not opening at
+        // all. Back/forward (popstate) also lands with `replaceUrl`, and does close it.
+        const navigation = this.router.currentNavigation();
+        if (!navigation?.extras.replaceUrl || navigation.trigger === 'popstate') {
+          this.appService.closeMobileSidebar();
+        }
         this.selectorPanelOpen.set(false);
         this.isProfileHub.set(isProfileHubPath(this.router.url));
         this.syncLensFromRoute();
@@ -136,6 +149,26 @@ export class MainLayoutComponent {
       return;
     }
     this.closeMobileSidebar();
+  }
+
+  /**
+   * Focus follows the mobile drawer, as a modal dialog's should: into the panel once it has rendered open, and back to
+   * the menu button when it closes with focus inside it — or already dropped to <body> by the panel turning inert.
+   * The initial closed state is skipped so a page load never moves focus.
+   */
+  private initDrawerFocus(): void {
+    toObservable(this.showMobileSidebar)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe((open) => {
+        if (open) {
+          afterNextRender(() => this.mobileDrawer()?.nativeElement.focus({ preventScroll: true }), { injector: this.injector });
+          return;
+        }
+        const active = this.document.activeElement;
+        if (active === this.document.body || this.mobileDrawer()?.nativeElement.contains(active)) {
+          this.mobileMenuButton()?.nativeElement.focus({ preventScroll: true });
+        }
+      });
   }
 
   /**
