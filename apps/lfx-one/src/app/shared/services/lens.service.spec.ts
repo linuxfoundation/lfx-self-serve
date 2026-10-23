@@ -288,6 +288,25 @@ describe('LensService — menu lens preview', () => {
       expect(secondRestore.mock.invocationCallOrder[0]).toBeLessThan(firstRestore.mock.invocationCallOrder[0]);
     });
 
+    it('does not chain onto a pending pick the route has since moved past', () => {
+      const { lens, events } = setup('me', { hasBoardRole: true });
+      const firstRestore = vi.fn();
+      lens.previewMenuLens('project');
+      lens.commitMenuLens('project', firstRestore);
+      events.next(new NavigationStart(7, '/project/overview'));
+
+      // A route-driven lens change lands while the first pick is pending; then the viewer previews and picks again.
+      lens.setLens('foundation');
+      lens.previewMenuLens('org');
+      lens.commitMenuLens('org');
+      events.next(cancel(7, NavigationCancellationCode.SupersededByNewNavigation));
+      events.next(new NavigationStart(8, '/org/acme/overview'));
+      events.next(cancel(8));
+
+      expect(lens.activeLens()).toBe('foundation');
+      expect(firstRestore).not.toHaveBeenCalled();
+    });
+
     it("keeps the tab the viewer chose last when it matches the pending pick's lens and the pick then fails", () => {
       const { lens, events } = setup('me');
       lens.previewMenuLens('project');

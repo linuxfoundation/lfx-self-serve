@@ -399,8 +399,9 @@ export class ProjectContextService {
 
   private initMenuContext(): Signal<ProjectContext | null> {
     return computed(() => {
-      // A previewed lens has no route behind it yet, so its slot is resolved by the lens alone.
-      if (!this.lensService.previewingMenuLens()) {
+      // A previewed lens has no route behind it yet, so its slot is resolved by the lens alone — as it is while a pick
+      // from it is still navigating, when the route still describes the page being left.
+      if (!this.lensService.previewingMenuLens() && !this.lensService.menuPickPending()) {
         return this.activeContext();
       }
       return this.contextForLens(this.lensService.menuLens());

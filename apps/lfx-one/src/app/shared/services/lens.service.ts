@@ -153,8 +153,10 @@ export class LensService {
       return;
     }
     // A pick made while an earlier one's navigation is still pending (it re-previewed and picked again) supersedes it:
-    // neither left the page, so a rollback must return to what the page had before the first, undoing both.
-    const pending = this.pendingMenuPickState();
+    // neither left the page, so a rollback must return to what the page had before the first, undoing both. Only while
+    // the earlier pick still owns the lens: if the route has moved it since, that pick is obsolete and so is its snapshot.
+    const earlier = this.pendingMenuPickState();
+    const pending = earlier?.committed === this.activeLens() ? earlier : null;
     const pick: MenuLensPick = {
       previous: pending?.previous ?? this.activeLens(),
       previousNavLens: pending?.previousNavLens ?? this.navLensSelection(),

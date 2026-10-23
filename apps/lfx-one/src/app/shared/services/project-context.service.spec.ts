@@ -70,7 +70,10 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
+        {
+          provide: LensService,
+          useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false), menuPickPending: signal(false) },
+        },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -400,7 +403,10 @@ describe('ProjectContextService — canWriteMeetings', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
+        {
+          provide: LensService,
+          useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false), menuPickPending: signal(false) },
+        },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -534,7 +540,10 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
+        {
+          provide: LensService,
+          useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false), menuPickPending: signal(false) },
+        },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -586,17 +595,19 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
  */
 describe('ProjectContextService — menuContext', () => {
   const FOUNDATION: ProjectContext = { uid: 'found-1', name: 'Foundation One', slug: 'foundation-one' };
+  const menuPickPending = signal(false);
 
   const setup = (activeLens: 'me' | 'foundation' | 'project' | 'org', menuLens: 'me' | 'foundation' | 'project' | 'org') => {
     const active = signal(activeLens);
     const menu = signal(menuLens);
+    menuPickPending.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: active, menuLens: menu, previewingMenuLens: signal(activeLens !== menuLens) } },
+        { provide: LensService, useValue: { activeLens: active, menuLens: menu, previewingMenuLens: signal(activeLens !== menuLens), menuPickPending } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
@@ -644,6 +655,16 @@ describe('ProjectContextService — menuContext', () => {
     expect(service.menuCanWrite()).toBe(true);
     expect(service.activeProjectStage()).toBe('Active');
     expect(service.canWrite()).toBe(false);
+  });
+
+  it("follows a pending pick's lens over the route it is leaving", () => {
+    // A Project pick committed over a Foundation route, still navigating.
+    const service = setup('project', 'project');
+    service.setRouteLensKind('foundation');
+    menuPickPending.set(true);
+
+    expect(service.menuContext()).toEqual(CONTEXT);
+    expect(service.activeContext()).toEqual(FOUNDATION);
   });
 
   it("shows the previewed Foundation lens's slot from a Me page", () => {
