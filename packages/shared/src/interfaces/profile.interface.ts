@@ -607,8 +607,9 @@ export interface EnrichedIdentity extends CdpIdentity {
 
 /**
  * The account's primary email as reconciled into the identities list.
- * `verified` reflects the IdP `email_verified` assertion only — being the primary address or
- * appearing in CDP never grants verified status on its own.
+ * `verified` reflects the IdP `email_verified` assertion only (while impersonating, a match with the
+ * stored target email) — being the primary address or appearing in CDP never grants verified status
+ * on its own.
  */
 export interface IdentitiesPrimaryEmail {
   email: string;

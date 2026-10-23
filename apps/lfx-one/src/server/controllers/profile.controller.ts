@@ -2773,10 +2773,11 @@ export class ProfileController {
 
   /**
    * The account's primary email for the identities list: auth-service `primary_email` (keyed on
-   * the LFID username), falling back to the session email. Verified only when it equals the
-   * session email that passed the IdP `email_verified` check — same rule as
-   * `resolveVerifiedUserEmails`. A failed auth-service read falls back rather than failing the
-   * endpoint; returns null when neither source resolves an address.
+   * the LFID username), falling back to the session email. Verified only when it equals
+   * `getEffectiveEmail(req)` — the session email that passed the IdP `email_verified` check, or
+   * the stored target email while impersonating. Stricter than `resolveVerifiedUserEmails`, which
+   * trusts `primary_email` whenever any verified session email exists. A failed auth-service read
+   * falls back rather than failing the endpoint; returns null when neither source resolves an address.
    */
   private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string): Promise<IdentitiesPrimaryEmail | null> {
     const sessionEmail = getEffectiveEmail(req);
