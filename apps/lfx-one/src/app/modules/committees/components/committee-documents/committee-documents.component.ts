@@ -7,10 +7,9 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
-import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -20,7 +19,7 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
 
 @Component({
   selector: 'lfx-committee-documents',
-  imports: [ButtonComponent, CardComponent, InputTextComponent, SelectComponent, DocumentsTableComponent, ReactiveFormsModule],
+  imports: [ButtonComponent, CardComponent, FilterPillsComponent, InputTextComponent, DocumentsTableComponent, ReactiveFormsModule],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
   // creates a fresh instance whose messages never reach the root toast outlet.
@@ -41,7 +40,6 @@ export class CommitteeDocumentsComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    source: new FormControl<MyDocumentSource | null>(null),
   });
 
   // === Subjects ===
@@ -53,32 +51,39 @@ export class CommitteeDocumentsComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly relatedLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
+  /** Selected source pill: 'all' or a source bucket (link, file, meeting, mailing_list). */
+  protected readonly sourceTab = signal<string>('all');
   /** UID of the folder the user has drilled into; null means the root view. */
   protected readonly currentFolderUid = signal<string | null>(null);
 
   // === Static Options ===
-  protected readonly sourceOptions: { label: string; value: MyDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'File', value: 'file' },
-    { label: 'Meeting', value: 'meeting' },
-    { label: 'Mailing List', value: 'mailing_list' },
+  private readonly baseSourceTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'link', label: 'Links' },
+    { id: 'file', label: 'Files' },
+    { id: 'meeting', label: 'Meetings' },
+    { id: 'mailing_list', label: 'Mailing Lists' },
   ];
 
   // === Computed Signals ===
   protected readonly isLoading: Signal<boolean> = computed(() => this.loading() || this.relatedLoading());
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
   /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
   protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
+  protected readonly searchedDocuments: Signal<MyDocumentItem[]> = this.initSearchedDocuments();
+  protected readonly sourceTabOptions: Signal<FilterPillOption[]> = this.initSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly folderOptions: Signal<{ label: string; value: string }[]> = this.initFolderOptions();
   /** The folder the user has drilled into, used by the breadcrumb. Null when at root. */
   protected readonly currentFolder: Signal<CommitteeDocument | null> = this.initCurrentFolder();
 
   // === Public Methods ===
+  public onSourceTabChange(tab: string): void {
+    this.sourceTab.set(tab);
+  }
+
   public openAddLinkDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
       header: 'Add Link',
@@ -185,10 +190,6 @@ export class CommitteeDocumentsComponent {
     );
   }
 
-  private initSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.source.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
-  }
-
   /**
    * Derives the displayed `MyDocumentItem[]` from `committeeDocuments()` (the canonical
    * committee-scoped fetch backed by upstream `/folders`, `/links`, and indexed
@@ -251,15 +252,11 @@ export class CommitteeDocumentsComponent {
     });
   }
 
-  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+  /** Documents after the search is applied but before the source pill, so pill counts show what each would list. */
+  private initSearchedDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
       const query = this.searchQuery().toLowerCase().trim();
-      const source = this.sourceFilter();
 
-      // When a search query is active at root (no folder drilled into), flatten all
-      // documents so users can find items without knowing which folder they live in.
-      // Inside a folder the folder-scoped view is used, so the empty-state message
-      // and breadcrumb context stay accurate.
       let docs: MyDocumentItem[];
       if (query && !this.currentFolderUid()) {
         const committee = this.committee();
@@ -284,17 +281,44 @@ export class CommitteeDocumentsComponent {
       } else {
         docs = this.documents();
       }
-      return docs.filter((doc) => {
-        if (query && !doc.name.toLowerCase().includes(query) && !(doc.groupOrMeetingName ?? '').toLowerCase().includes(query)) {
-          return false;
-        }
-        // Folder rows are structural navigation, not content — never filter them out by source.
-        if (source && !doc.isFolder && doc.source !== source && !(source === 'meeting' && MEETING_GROUP_SOURCES.includes(doc.source))) {
-          return false;
-        }
-        return true;
+      return docs.filter((doc) => !query || doc.name.toLowerCase().includes(query) || (doc.groupOrMeetingName ?? '').toLowerCase().includes(query));
+    });
+  }
+
+  private initSourceTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      // Don't show counts while either list is still loading; zero counts keep the plain label.
+      if (this.isLoading()) return this.baseSourceTabOptions;
+      // Folders are structural navigation, not content, so they are not counted.
+      const rows = this.searchedDocuments().filter((doc) => !doc.isFolder);
+      const counts = new Map<string, number>();
+      for (const doc of rows) {
+        const bucket = this.sourceBucket(doc);
+        counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+      }
+      return this.baseSourceTabOptions.map((option) => {
+        const count = option.id === 'all' ? rows.length : (counts.get(option.id) ?? 0);
+        return count > 0 ? { ...option, label: `${option.label} (${count})` } : option;
       });
     });
+  }
+
+  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+    return computed(() => {
+      const tab = this.sourceTab();
+      // Folder rows are structural navigation, not content — never filter them out by source.
+      return this.searchedDocuments().filter((doc) => tab === 'all' || doc.isFolder || this.sourceBucket(doc) === tab);
+    });
+  }
+
+  /**
+   * Buckets a row by where it came from. The group's own documents keep their link/file kind;
+   * everything else comes from the related fetch — mailing list artifacts, or meeting
+   * attachments, recordings, transcripts and summaries (the "Meetings" bucket).
+   */
+  private sourceBucket(doc: MyDocumentItem): string {
+    if (doc.id.startsWith('committee_')) return doc.source;
+    return doc.source === 'mailing_list' ? 'mailing_list' : 'meeting';
   }
 
   private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
