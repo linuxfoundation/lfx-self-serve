@@ -156,3 +156,41 @@ describe('DocumentService.getCommitteeDocumentCount', () => {
     await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(0);
   });
 });
+
+describe('DocumentService.getMyDocuments — meeting summaries', () => {
+  const req = { bearerToken: 'user-token' } as unknown as Request;
+  const baseSummary = { meeting_id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-occ-1', created_at: '2026-10-14T12:00:00Z' };
+
+  const summariesFetch = (rows: Record<string, unknown>[]) =>
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<unknown>) => {
+      // fetchPage issues its proxy call synchronously, so read it before yielding to the other parallel fetchers.
+      const pending = fetchPage();
+      const type = (proxyRequestMock.mock.calls.at(-1)?.[4] as Record<string, unknown>)['type'];
+      await pending;
+      return type === 'v1_past_meeting_summary' ? rows : [];
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyCommitteesMock.mockResolvedValue([]);
+    getPastMeetingOccurrenceIdsMock.mockResolvedValue([]);
+    proxyRequestMock.mockResolvedValue({ resources: [] });
+  });
+
+  it('falls back to content when edited_content is an empty string (an unedited summary)', async () => {
+    summariesFetch([{ ...baseSummary, id: 'unedited', content: '# Notes', edited_content: '' }]);
+
+    const [summary] = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(summary.source).toBe('summary');
+    expect(summary.summaryContent).toBe('# Notes');
+  });
+
+  it('prefers edited_content when the summary was edited', async () => {
+    summariesFetch([{ ...baseSummary, id: 'edited', content: '# Notes', edited_content: '# Edited notes' }]);
+
+    const [summary] = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(summary.summaryContent).toBe('# Edited notes');
+  });
+});
