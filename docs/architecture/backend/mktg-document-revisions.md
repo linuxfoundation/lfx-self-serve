@@ -280,15 +280,17 @@ project, registered agent, document, private Guild session and opaque `creatorSu
 Owner tokens are never written; legacy missing subjects mean unattributed writes.
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
-`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+`failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
+`revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
 The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
-Started, state, optional filtered public activity and plain-text failure text (agent reply or server-authored deadline /
-storage-exhaustion reason); no session capability, starter identity or private completion context is exposed.
+Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
+and plain-text failure text (agent reply or server-authored deadline / storage-exhaustion reason);
+no session capability, starter identity or private completion context is exposed.
 Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning,
 and is projected only when the effective reader is the stored original creator. Other project writers
 see the same progress card without activity. Member 360 also applies its stored-envelope contact/email

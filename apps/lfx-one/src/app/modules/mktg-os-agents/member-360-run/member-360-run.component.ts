@@ -172,7 +172,7 @@ export class Member360RunComponent {
           if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
           this.router.navigate(['../documents/member-360', session.documentId], {
             relativeTo: this.route,
-            queryParams: { revision: null },
+            queryParams: { revision: null, generation: null, run: session.runId ?? null },
             queryParamsHandling: 'merge',
           });
         },

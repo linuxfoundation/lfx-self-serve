@@ -47,26 +47,41 @@ sidecar, independently of the summary's Markdown hash.
 
 ## One Document component
 
-Generate navigates to `documents/member-360/:documentId`. The existing Document
-component waits for a successful storage result before fetching the revision, then
-renders its Member 360 type: summary, ranking, expanded member evidence, team actions,
-Evidence, Method, and history. There is no second document viewer. While the run is
-pending, its result endpoint reports the shared web/LFX activity feed, rendered by
-`lfx-mktg-run-activity` in the Document's generating state. Its title comes from the
-registered document type; phases and an expandable step list show progress, with no
-questions phase for the 1.0 form-only intake. A 2.0 text turn headed by the questions
-marker returns only `needs_input` and activity (no question text) without persisting a document. The generating view retains
-the feed and states that this page cannot answer yet and the run stays open; polling
-stops without discarding the pending session. There is no question parser or answer UI.
-Entity document-title
-binding is limited to Member 360, leaving other document title behavior unchanged. Pending capabilities
-are stored only in tab-scoped session storage, keyed by effective user, project and
-document, and expire after the shared run-storage TTL. Owner tokens never enter URLs.
-The BFF domain-separates them from chat and binds them to the user, project and session.
-Polling uses `exhaustMap` so slow result requests cannot overlap or be cancelled by a
-tick. Activity updates do not release the storage gate. Transient failures become
-pending ticks without erasing the last successful feed; authorization errors fail
-fast and the overall deadline remains bounded.
+Generate navigates to `documents/member-360/:documentId?run=<opaqueRunId>` after the
+server records the start. The existing Document component uses its shared document
+metadata polling cycle, not a Member-specific result receiver or browser pending cache.
+It waits for a committed revision before rendering the existing Member 360 type:
+summary, ranking, expanded member evidence, team actions, Evidence, Method, and history.
+A plain document URL in another browser works without the run selector, owner token,
+session storage or the initiating tab: authorized reads reconcile the saved session.
+Owner tokens never enter URLs. The creator-bound result endpoint remains compatible
+for existing callers, but the page does not poll it directly.
+
+The shared generating card renders optional server-filtered activity through the
+existing `lfx-mktg-run-activity` below its existing lines, for any tracked document
+whose progress carries activity (including living assets). Only the original creator receives
+activity; another project writer sees the same generating card without a feed or extra placeholder.
+Member activity also uses the stored-envelope contact/email redactor. Cached activity is bound to
+the viewer identity at its read: an identity change hides it immediately, without re-reading the
+subject-independent Member document. A response begun for another viewer cannot re-expose its feed. Its title and breadcrumbs
+come from the registered type. No questions text or reasoning reaches this feed.
+Member's 2.0 `needs_input` maps to a bounded questions pause, retains any creator-visible feed and
+the existing unsupported-answer notice, and offers Refresh to recheck the same run.
+It never invents an answer endpoint or redirects to an unusable form. Because this intake has no
+answers endpoint, its original writing deadline keeps running: an authorized read after expiry
+marks it failed with a fixed server-authored instruction to run again, never private question text. A classified
+failure keeps the short reason, collapsed Details and host-scoped Run again; the
+server-projected `failureReason` preserves that classification independently of prose on failed runs only.
+The `MktgRunFailureReason` union currently contains `Member360FailureReason`; the dedicated
+`isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
+not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
+its guard's explicit allow-list together, with their own safe message presentation; no prose matching.
+The expired unsupported-input failure offers Run again, not Retry or paused Refresh: the existing
+Member failure view hides the shared retry card, so it cannot reopen that unanswerable session
+for another window. The BFF retry API is unchanged; this is a document-page action policy.
+Entity document-title binding remains limited to Member 360. Transient reads retain
+last-known content/progress within the shared bounded backoff policy; access errors
+clear inaccessible data. The Member-specific browser pending transport is removed.
 
 The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes parsed files into the tracker FormControl, with synthetic stable IDs independent of filenames. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
 
