@@ -96,29 +96,38 @@
                       <i [class]="identity.icon + ' text-sm text-slate-600'"></i>
                     </div>
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
+                    @if (identity.isPrimary) {
+                      <span class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">Primary</span>
+                    }
                   </div>
-                  <div class="flex items-center gap-3">
-                    <lfx-button
-                      severity="primary"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="impersonating()"
-                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                      (onClick)="onVerify(identity)"
-                      [attr.data-testid]="'verify-btn-' + identity.id">
-                      Verify
-                    </lfx-button>
-                    <lfx-button
-                      severity="secondary"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="impersonating()"
-                      [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                      (onClick)="onRemove(identity)"
-                      data-testid="reject-identity-btn">
-                      This is not me
-                    </lfx-button>
-                  </div>
+                  @if (!identity.isPrimary) {
+                    <div class="flex items-center gap-3">
+                      <lfx-button
+                        severity="primary"
+                        [outlined]="true"
+                        size="small"
+                        [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                        (onClick)="onVerify(identity)"
+                        [attr.data-testid]="'verify-btn-' + identity.id">
+                        Verify
+                      </lfx-button>
+                      <lfx-button
+                        severity="secondary"
+                        [outlined]="true"
+                        size="small"
+                        [disabled]="impersonating()"
+                        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+                        (onClick)="onRemove(identity)"
+                        data-testid="reject-identity-btn">
+                        This is not me
+                      </lfx-button>
+                    </div>
+                  } @else {
+                    <p class="text-xs text-slate-500" data-testid="primary-email-hint">
+                      This is your primary email. It can't be verified or removed here — contact support if it should show as verified.
+                    </p>
+                  }
                 </div>
               }
             </div>
@@ -149,7 +158,7 @@
                       <span class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">Primary</span>
                     }
                   </div>
-                  @if (!identity.isPrimary) {
+                  @if (!identity.isPrimary || identity.auth0UserId) {
                     <div class="relative inline-block">
                       <lfx-button
                         icon="fa-solid fa-ellipsis-vertical"
