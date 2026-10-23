@@ -12,11 +12,13 @@ import {
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
+  events: vi.fn(),
   linkedin: vi.fn(),
   member: vi.fn(),
   attribution: vi.fn(),
@@ -29,6 +31,14 @@ const flows = vi.hoisted(() => ({
   active: 0,
   max: 0,
 }));
+vi.mock('./guild.service', async (original) => {
+  const actual = await original<typeof import('./guild.service')>();
+  return {
+    GuildService: class extends actual.GuildService {
+      public override getRawEventPayloads = flows.events;
+    },
+  };
+});
 vi.mock('./brand-kit.service', () => ({
   BrandKitService: class {
     public getResult = flows.result;
@@ -166,6 +176,7 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     flows.beforePut.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.events.mockReset().mockResolvedValue([]);
     flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
     flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
@@ -209,6 +220,19 @@ describe('MktgDocumentRunService core', () => {
     privateBody.documentId = 'living';
     objects.set(key(), { ...stored(), body: JSON.stringify(privateBody), metadata: { ...stored().metadata, state: 'writing' } });
     expect((await reader.readProgress(req, project, agent, id)).runs).toEqual([]);
+  });
+
+  it.each(['linkedin-post', 'member-360'])('classifies a settled %s runtime failure on a Documents read before its writing deadline', async (agent) => {
+    await service.startForOneOff(req, agent, project, session);
+    const startedAt = new Date().toISOString();
+    vi.advanceTimersByTime(61_000);
+    flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
+    const visitor = { originalUrl: '/api/mktg-agents/documents/' + agent } as Request;
+    const progress = await service.readProgress(visitor, project, agent);
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+    expect(Date.now() - Date.parse(startedAt)).toBeLessThan(MKTG_RUN_POLL.timeoutMs);
+    expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
+    expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
   });
 
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {

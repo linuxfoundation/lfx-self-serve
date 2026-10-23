@@ -69,6 +69,7 @@ import { BoilerplatesService } from './boilerplates.service';
 import { FoundationMessageService } from './foundation-message.service';
 import { FaqService } from './faq.service';
 import { IcpService } from './icp.service';
+import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
@@ -78,6 +79,7 @@ export class MktgDocumentRunService {
   private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
+  private readonly guild = new GuildService();
 
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     const uid = typeof raw === 'string' ? raw.trim() : '';
@@ -538,6 +540,13 @@ export class MktgDocumentRunService {
   }
 
   private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
+    const result = await this.agentResult(req, record);
+    const endpoint = findMktgRunIntake(record.agentKey, true)?.endpoints.result;
+    const outcome = await this.guild.resolveRunOutcome(req, record.sessionId, result, endpoint);
+    return outcome.status === 'failed' && outcome.failure ? { ...outcome, failureText: outcome.failure.reason } : outcome;
+  }
+
+  private async agentResult(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
     const attribution: MktgGenerationAttribution = { creatorSubject: record.creatorSubject ?? null };
     switch (findMktgRunIntake(record.agentKey, true)?.endpoints.result) {
       case BRAND_KIT_INTAKE.endpoints.result:

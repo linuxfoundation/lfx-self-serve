@@ -53,6 +53,23 @@ describe('shared Guild outcome service (synthetic event replay, no session metad
     expect(await new GuildService().resolveRunOutcome(request(), 'session', body)).toBe(body);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it('uses a trusted registered result endpoint for Documents reads without mutating the request', async () => {
+    const req = request('/api/mktg-agents/documents/linkedin-post/run-0123456789abcdef01234567');
+    const endpoint = MKTG_AGENT_INTAKES['linkedin-post']?.endpoints.result;
+    expect(endpoint).toBeTypeOf('string');
+    const pending = { status: 'pending' };
+    expect(await new GuildService().resolveRunOutcome(req, 'session', pending)).toBe(pending);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce(ok([error]));
+    expect(await new GuildService().resolveRunOutcome(req, 'session', pending, endpoint)).toMatchObject({ status: 'failed' });
+    expect(req.originalUrl).toBe('/api/mktg-agents/documents/linkedin-post/run-0123456789abcdef01234567');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('refuses an unregistered internal endpoint override', async () => {
+    const pending = { status: 'pending' };
+    expect(await new GuildService().resolveRunOutcome(request(), 'session', pending, '/api/not-a-result')).toBe(pending);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it('distinguishes main idle completion from an error before any runtime/model turn', () => {
     expect(getMktgSessionOutcome([JSON.stringify(error)]).ended).toBe(false);
     const task = { id: 'synthetic-agent-task', entity_type: 'EntTaskAgent' };

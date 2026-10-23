@@ -327,7 +327,11 @@ matching late receipt can finish a failed attempt on a creator poll or explicit
 detail refresh. Effective start/run-id order retires older same-document runs.
 Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
 Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
-creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+creator attribution (legacy unknown), never the visitor. It also uses the shared Guild outcome
+resolver with an internal catalog-resolved result endpoint; the visiting Documents Request is
+not mutated. A settled runtime failure becomes failed before the writing deadline, projecting
+only the classifier's fixed safe reason as failureText, never provider payloads. Controller calls
+without that optional endpoint keep their existing registered-route behaviour. Retry checks the exact stored session;
 it creates no generation and does not change the document's current pointer.
 
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
