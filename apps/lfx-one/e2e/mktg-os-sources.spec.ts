@@ -67,6 +67,29 @@ test.describe('Marketing OS new run Sources', () => {
     });
   }
 
+  for (const status of [404, 503]) {
+    test(`collapsed Sources explains and recovers a dependency failure (${status})`, async ({ page }) => {
+      const sources = await setupFreshSources(page);
+      await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+        route.fulfill({ status, json: { error: 'Synthetic dependency unavailable' } })
+      );
+      await sources.open();
+      const card = page.getByTestId('mktg-run-sources');
+      await expect(page.getByTestId('mktg-agent-run-form')).not.toBeVisible();
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
+      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+      if (status === 503) {
+        await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+          route.fulfill({ status: 404, json: { error: 'No approved synthetic framework' } })
+        );
+        await card.getByTestId('mktg-agent-run-dependency-retry').getByRole('button').click();
+      }
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency-link').getByRole('button')).toBeVisible();
+      expect(sources.generated).toHaveLength(0);
+      await page.screenshot({ path: test.info().outputPath(`collapsed-dependency-${status}.png`), fullPage: true });
+    });
+  }
+
   test('reload restores durable scalar values but requires an explicit decision about previous logos', async ({ page }) => {
     const sources = await setupFreshSources(page, { logoCount: 1 });
     await sources.open();

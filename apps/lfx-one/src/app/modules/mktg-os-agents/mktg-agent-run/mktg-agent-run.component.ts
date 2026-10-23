@@ -191,7 +191,7 @@ export class MktgAgentRunComponent {
   protected readonly sourcesDenied = signal(false);
   protected readonly sourceNote = signal('');
   private readonly lastSourceValues = signal<Record<string, string>>({});
-  private readonly lastSourceLabel = signal('');
+  private readonly lastSourceOrigins = signal<Record<string, string>>({});
   private readonly priorDocumentCount = signal(0);
   private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
@@ -716,7 +716,7 @@ export class MktgAgentRunComponent {
       return (this.intake?.fields ?? []).map((field) => {
         const value = values[field.key] ?? '';
         let origin = 'Suggested default';
-        if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceLabel();
+        if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceOrigins()[field.key] ?? origin;
         if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed for this run';
         return { key: field.key, label: field.question, value, origin };
       });
@@ -1072,24 +1072,34 @@ export class MktgAgentRunComponent {
   private restoreFreshInputs(project: string, history: MktgLastIntake | null): void {
     if (!this.agent || !this.intake) return;
     const memory = this.runAttempts.lastInputs(project, this.agent.id);
-    const local = history || memory ? null : this.runService.loadRun(project, this.agent.id);
-    const prior = history?.answers ?? memory?.answers ?? local?.answers;
-    this.lastSourceLabel.set(history ? 'From the last run' : 'Saved on this device');
-    if (!prior) {
+    const local = this.runService.loadRun(project, this.agent.id);
+    const answers: Record<string, string> = {};
+    const origins: Record<string, string> = {};
+    for (const field of this.intake.fields) {
+      if (history && Object.hasOwn(history.answers, field.key)) {
+        answers[field.key] = history.answers[field.key];
+        origins[field.key] = 'From the last run';
+      } else if (memory && Object.hasOwn(memory.answers, field.key)) {
+        answers[field.key] = memory.answers[field.key];
+        origins[field.key] = 'Saved in this visit';
+      } else if (local && Object.hasOwn(local.answers, field.key)) {
+        answers[field.key] = local.answers[field.key];
+        origins[field.key] = 'Saved on this device';
+      }
+    }
+    if (!Object.keys(answers).length && !history && !memory) {
       if (!this.sourceNote()) this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
       return;
     }
-    const answers = Object.fromEntries(this.intake.fields.filter((field) => Object.hasOwn(prior, field.key)).map((field) => [field.key, prior[field.key]]));
     this.lastSourceValues.set(answers);
+    this.lastSourceOrigins.set(origins);
     this.intakeForm.patchValue(answers);
-    // Only reuse same-visit payloads whose scalar inputs and attachment counts still match.
-    const matches =
-      memory &&
-      Object.keys(answers).every((key) => (memory.answers[key] ?? '').trim() === answers[key]) &&
-      (!history || ((memory.documents?.length ?? 0) === history.documentCount && (memory.logoFiles?.length ?? 0) === history.logoCount));
-    if (matches && memory) this.restoreInputs({ ...memory, answers }, 'last-visit');
-    const memoryDocuments = matches ? (memory?.documents?.length ?? 0) : 0;
-    const memoryLogos = matches ? (memory?.logoFiles?.length ?? 0) : 0;
+    // Shared history has no run binding for local bytes. Equal scalars/counts
+    // cannot prove ownership, so never reuse uploads alongside a durable snapshot.
+    // A same-visit draft with no shared snapshot can still retain its own inputs.
+    if (!history && memory) this.restoreInputs({ ...memory, answers }, 'last-visit');
+    const memoryDocuments = !history ? (memory?.documents?.length ?? 0) : 0;
+    const memoryLogos = !history ? (memory?.logoFiles?.length ?? 0) : 0;
     this.priorDocumentCount.set(history?.documentCount ?? memoryDocuments);
     this.priorLogoCount.set(history?.logoCount ?? memoryLogos);
     this.seedLinkRows();
@@ -1172,6 +1182,7 @@ export class MktgAgentRunComponent {
     this.sourcesDenied.set(false);
     this.sourceNote.set('');
     this.lastSourceValues.set({});
+    this.lastSourceOrigins.set({});
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
     if (!context) return;
