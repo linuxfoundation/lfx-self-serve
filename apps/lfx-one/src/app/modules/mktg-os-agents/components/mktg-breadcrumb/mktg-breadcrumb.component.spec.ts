@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_KIT_TABS } from '@lfx-one/shared/constants';
 import { MktgBreadcrumbPage, ProjectContext } from '@lfx-one/shared/interfaces';
 import { buildMktgBreadcrumbs } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,7 +22,7 @@ describe('Marketing kit breadcrumb', () => {
 
   const pages: MktgBreadcrumbPage[] = [
     { kind: 'kit' },
-    ...(['documents', 'requests', 'access'] as const).map((tab) => ({ kind: 'kit-tab' as const, tab })),
+    ...MKTG_KIT_TABS.flatMap(({ path: tab }) => (tab ? [{ kind: 'kit-tab' as const, tab }] : [])),
     ...MKTG_KIT_FAMILIES.map((family) => ({ kind: 'family' as const, familyId: family.id })),
     { kind: 'family', familyId: 'not-found' },
     ...MKTG_DOCUMENT_TYPES.map((type) => ({ kind: 'asset' as const, agentKey: type.agentKey })),

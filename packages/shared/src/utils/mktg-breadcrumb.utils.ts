@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
-import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
+import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_KIT_TABS } from '../constants/mktg-kit.constants';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import type { MktgBreadcrumbItem, MktgBreadcrumbPage } from '../interfaces/mktg-breadcrumb.interface';
 
@@ -11,7 +11,7 @@ export function buildMktgBreadcrumbs(page: MktgBreadcrumbPage, kitRootPath: stri
   if (page.kind === 'kit') return [];
   const root: MktgBreadcrumbItem = { label: projectName ? `${projectName} kit` : 'Marketing kit', route: [kitRootPath] };
   if (page.kind === 'kit-tab') {
-    return [root, { label: page.tab.charAt(0).toUpperCase() + page.tab.slice(1) }];
+    return [root, { label: MKTG_KIT_TABS.find((tab) => tab.path === page.tab)?.label ?? '' }];
   }
   if (page.kind === 'family') {
     return [root, { label: MKTG_KIT_FAMILIES.find((family) => family.id === page.familyId)?.name ?? 'Family not found' }];

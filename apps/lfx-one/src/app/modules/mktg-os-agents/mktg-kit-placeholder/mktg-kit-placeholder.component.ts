@@ -3,6 +3,7 @@
 
 import { Component, computed, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import type { MktgKitTabPath } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
@@ -17,5 +18,6 @@ export class MktgKitPlaceholderComponent {
   private readonly context = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   protected readonly title = this.route.snapshot.data['title'] as string;
+  protected readonly tab = this.route.snapshot.data['tab'] as MktgKitTabPath;
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? 'Project');
 }

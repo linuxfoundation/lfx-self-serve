@@ -3,18 +3,25 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
+import { MKTG_KIT_TABS } from '../constants/mktg-kit.constants';
 import type { MktgBreadcrumbPage } from '../interfaces/mktg-breadcrumb.interface';
 import { buildMktgBreadcrumbs } from './mktg-breadcrumb.utils';
 
 describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadcrumb table at %s', (root) => {
   const cases: { route: string; page: MktgBreadcrumbPage; labels: string[]; parents: string[][] }[] = [
     { route: '', page: { kind: 'kit' }, labels: [], parents: [] },
-    ...(['documents', 'requests', 'access'] as const).map((tab) => ({
-      route: `/${tab}`,
-      page: { kind: 'kit-tab' as const, tab },
-      labels: ['Synthetic kit', tab.charAt(0).toUpperCase() + tab.slice(1)],
-      parents: [[root]],
-    })),
+    ...MKTG_KIT_TABS.flatMap(({ path: tab, label }) =>
+      tab
+        ? [
+            {
+              route: `/${tab}`,
+              page: { kind: 'kit-tab' as const, tab },
+              labels: ['Synthetic kit', label],
+              parents: [[root]],
+            },
+          ]
+        : []
+    ),
     {
       route: '/families/positioning-brand',
       page: { kind: 'family', familyId: 'positioning-brand' },
@@ -22,12 +29,13 @@ describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadc
       parents: [[root]],
     },
     { route: '/families/missing', page: { kind: 'family', familyId: 'missing' }, labels: ['Synthetic kit', 'Family not found'], parents: [[root]] },
-    ...['family entry', 'Documents entry'].map((entry) => ({
-      route: `/documents/foundation-message/living (${entry})`,
-      page: { kind: 'asset' as const, agentKey: 'foundation-message' },
+    // Page identity carries no entry route: family and Documents entry share this row.
+    {
+      route: '/documents/foundation-message/living',
+      page: { kind: 'asset', agentKey: 'foundation-message' },
       labels: ['Synthetic kit', 'Positioning & brand', 'Messaging framework'],
       parents: [[root], [root, 'families', 'positioning-brand']],
-    })),
+    },
     {
       route: '/documents/icp/living',
       page: { kind: 'asset', agentKey: 'icp' },

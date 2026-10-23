@@ -5,11 +5,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+// Deliberate shared-to-app filesystem guard, like constants/index.spec.ts:
+// only this Node CI spec reads app files; production shared code never depends on them.
 describe('Marketing OS breadcrumb ownership', () => {
   const root = fileURLToPath(new URL('../../../../apps/lfx-one/src/app/modules/mktg-os-agents/', import.meta.url));
   const allowed = 'components/mktg-breadcrumb/mktg-breadcrumb.component.html';
   // Catch labels on any element, including bound attributes, plus unlabeled breadcrumb nav testids.
-  const breadcrumbNav = /<[^>]+\baria-label\]?\s*=\s*["'][^>]*breadcrumb|<nav\b[^>]*\bdata-testid\s*=\s*["'][^>]*breadcrumb/i;
+  const breadcrumbNav = /<[^>]+\baria-?label\]?\s*=\s*["'][^>]*breadcrumb|<nav\b[^>]*\bdata-testid\s*=\s*["'][^>]*breadcrumb/i;
 
   it(`allows breadcrumb navigation only in ${allowed}`, () => {
     const templates = readdirSync(root, { recursive: true })
@@ -24,6 +26,7 @@ describe('Marketing OS breadcrumb ownership', () => {
     '<nav aria-label="Breadcrumb"><ol /></nav>',
     "<nav aria-label = 'breadcrumb'><ol /></nav>",
     '<nav [attr.aria-label]="\'Breadcrumb\'"><ol /></nav>',
+    '<nav [ariaLabel]="\'Breadcrumb\'"><ol /></nav>',
     '<div role="navigation" aria-label="Breadcrumb"><ol /></div>',
     '<div aria-label="Breadcrumb" role="navigation"><ol /></div>',
     '<nav data-testid="mktg-breadcrumb"><ol /></nav>',
