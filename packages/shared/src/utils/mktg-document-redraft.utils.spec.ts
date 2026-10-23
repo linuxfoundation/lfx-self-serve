@@ -2,10 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { MKTG_RUN_POLL } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_COMMENT_LIMITS } from '../constants/mktg-document-comments.constants';
 import type { MktgCommentAgentKey } from '../interfaces/mktg-document-comments.interface';
 import { redraftContextFixture } from './__fixtures__/mktg-redraft-context.fixture';
-import { readMktgRedraftContext, readMktgRedraftRequest, validateMktgRedraftResult } from './mktg-document-redraft.utils';
+import {
+  readMktgRedraftContext,
+  readMktgRedraftRequest,
+  validateMktgRedraftResult,
+  isMktgRedraftContext,
+  isMktgRedraftSubmissionBusy,
+} from './mktg-document-redraft.utils';
 
 function result(agent: MktgCommentAgentKey = 'foundation-message') {
   const input = redraftContextFixture(agent).comments[0];
@@ -19,6 +26,27 @@ function result(agent: MktgCommentAgentKey = 'foundation-message') {
   if (agent !== 'brand-kit') Object.assign(revision, { mode: 'redraft' });
   return { mode: 'redraft', version: 3, project_name: 'Synthetic Orbit', revision };
 }
+
+describe('reservation busy/deadline matrix', () => {
+  it.each([
+    ['reserved', null, 0, true],
+    ['reserved', null, MKTG_RUN_POLL.timeoutMs + 1, false],
+    ['reserved', 'c'.repeat(64), MKTG_RUN_POLL.timeoutMs + 1, true],
+    ['started', 'c'.repeat(64), 0, true],
+    ['uncertain', 'c'.repeat(64), 0, false],
+    ['failed', null, 0, false],
+    ['completed', 'c'.repeat(64), 0, false],
+  ] as const)('%s hash=%s age=%s is busy=%s', (state, runId, age, expected) => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    expect(isMktgRedraftSubmissionBusy({ state, runId, createdAt: new Date(now - age).toISOString() }, now)).toBe(expected);
+  });
+  it('narrows validated unknown context without a double assertion', () => {
+    const unknown: unknown = redraftContextFixture();
+    if (!isMktgRedraftContext(unknown)) throw new Error('Expected synthetic valid context');
+    expect(unknown.comments[0].anchor.key).toBe('mf.tagline');
+    expect(isMktgRedraftContext({ ...unknown, ownerToken: 'forbidden' })).toBe(false);
+  });
+});
 
 describe('ID-only redraft request', () => {
   const request = () => ({

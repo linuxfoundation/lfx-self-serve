@@ -60,9 +60,12 @@ only `current.json`. It does not copy a bundle or add history. One-off run
 documents refuse this action. New runs append through `recordRevision`, which
 records their current base. When current is approved, a new Draft extends the
 manifest without moving the pointer or its selection attribution. Otherwise the
-newest generation becomes current. The future comment-and-revise
-writer uses that same method with its actual `basedOnId` and comments; this
-change does not introduce a Revise endpoint or UI.
+newest generation becomes the preview selection. A comment redraft uses that
+same writer with its actual selected `basedOnId`, origin `revised`, and no automatic
+approval. Host revision `comments` stays `[]`: frozen comment IDs and resolutions
+are joined through the private descriptor and the validated agent sidecar, not
+copied into new hashed host fields. Optional `redraft-run-id` and `comment-count`
+object metadata do not change the revision's content hash.
 
 ## Conditional publication
 
@@ -406,5 +409,47 @@ to `{ name: null }` without failing the comments read; thrown errors retain
 structured `err` metadata, and unsuccessful directory responses warn without
 inventing an error. Explicit public projection excludes subjects, request IDs
 and the private send ledger. Bodies
-and attribution are not logged. This API adds no asset editing, generation,
-resolution transitions, revision overwrite or current-pointer changes.
+and attribution are not logged. Direct asset editing and revision overwrite are
+never allowed; redrafts append ordinary Drafts through the existing writer.
+
+## Reserved comment sends and release
+
+The lifecycle support alone registers no route. The additive producer registers
+writer-gated `POST /documents/:agentKey/:documentId/revise` with ID-only
+`project`, `revisionId`, ordered `commentIds`, and `clientRequestId`, plus a
+writer-and-creator-gated release action. No caller previous JSON or routing is
+accepted. The existing private comment ledger holds opaque `requestedBy`,
+creation time, base/selected IDs, state, and an optional run hash; never a raw
+session ID or owner token. Only a fresh committed reservation can call Guild.
+
+States are `reserved`, `started`, `uncertain`, `failed`, and `completed`.
+Conclusive non-acceptance before a session exists marks the reservation failed
+and reopens its threads in one CAS. Same-ID replay reports that recorded failure;
+only an explicit new send uses a new ID. Unknown transport or a partial start
+records uncertain and leaves threads sent. The creator can explicitly release
+uncertainty to failed/open, retaining the old hash without rebinding it.
+Uncertain/failed and unbound reserved sends older than the existing Run timeout
+are not busy. Late bind/release/result work cannot touch a newer reservation.
+No recovery path automatically resubmits to Guild.
+
+The bounded immutable per-send descriptor is
+`document-redrafts/{sha256(sessionId)}.json` in the same private artifact purpose.
+It contains scope, base/version and frozen ID/anchor/text/time snapshots only;
+no identity, capability, lifecycle index, LIST or worker. The descriptor precedes
+public run tracking; raw session recovery comes only from the existing private
+`document-runs` record after creator/scope/nonce checks.
+
+Existing Run deadlines/retries remain authoritative. Conclusive refusal/failure,
+invalid redraft echo, supersession, and an expired recorded run settle their own
+send to failed/open. Bound questions (including an existing pause) and exhausted
+persistence budgets also fail/reopen; a failed send stays failed on a late ready.
+Ready settlement requires a scoped new revision receipt and
+the exact guarded, ordered prior-version/comment echoes with resolutions.
+History reads join each result's immutable descriptor and sidecar, so later sends
+never overwrite an earlier result's resolutions. Names still resolve at read time.
+
+Producer refusal guards keep redraft-bound sessions out of ICP result persistence,
+generic chat and typed free-text answer turns. Ordinary sessions are unchanged.
+Descriptor reads fail closed; result polls currently perform up to three bounded
+private descriptor GETs (scope, persistence, settlement), an intentional cost rather
+than a second cache or lifecycle authority.

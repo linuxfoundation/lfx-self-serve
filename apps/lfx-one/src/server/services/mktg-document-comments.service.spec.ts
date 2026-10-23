@@ -4,13 +4,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import type { MktgAddDocumentCommentRequest, MktgDocumentCommentsRecord, MktgDocumentType, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
-const flows = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), revision: vi.fn(), user: vi.fn(), subject: vi.fn(), impersonating: vi.fn(), document: vi.fn() }));
+const flows = vi.hoisted(() => ({
+  get: vi.fn(),
+  put: vi.fn(),
+  revision: vi.fn(),
+  user: vi.fn(),
+  subject: vi.fn(),
+  impersonating: vi.fn(),
+  document: vi.fn(),
+  history: vi.fn(),
+}));
 const objects = vi.hoisted(() => new Map<string, { body: string; etag: string; metadata: Record<string, string> }>());
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
 }));
-vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-comments.utils'));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-comments.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+}));
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
     public getObject = flows.get;
@@ -20,6 +34,7 @@ vi.mock('./object-store.service', () => ({
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public getRevision = flows.revision;
+    public redraftForRevision = flows.history;
     public constructor(generationAttribution: unknown, authors: unknown) {
       flows.document(generationAttribution, authors);
     }
@@ -34,6 +49,8 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: flows.subject, isImper
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() } }));
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
+import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 
@@ -67,6 +84,7 @@ describe('private field comment store', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     objects.clear();
+    flows.history.mockResolvedValue(null);
     flows.subject.mockReturnValue('opaque-user-one');
     flows.impersonating.mockReturnValue(false);
     flows.user.mockResolvedValue({ success: true, data: { name: 'Project writer' } });
@@ -286,6 +304,22 @@ describe('private field comment store', () => {
     await expect(service().add(req, project, type, 'living', request())).rejects.toMatchObject({ statusCode: 503 });
   });
 
+  it.each(['reserved', 'started', 'uncertain', 'completed', 'failed'] as const)('reports creator-only recovery for %s without writing', async (state) => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    await store.reserve(req, project, type, 'living', { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-one' });
+    const saved = record();
+    saved.submissions[0].state = state;
+    replace(saved);
+    const writes = flows.put.mock.calls.length;
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', revisionId)).toBe(state === 'completed' || state === 'failed');
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'missing-send', revisionId)).toBe(false);
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', resultId)).toBe(false);
+    flows.subject.mockReturnValue('other-opaque-writer');
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', revisionId)).toBe(false);
+    expect(flows.put).toHaveBeenCalledTimes(writes);
+  });
+
   it('reserves an ordered send once and freezes only the selected input, not concurrent new comments', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
@@ -318,7 +352,12 @@ describe('private field comment store', () => {
         throw new Error('Synthetic preflight rejection');
       })
     ).rejects.toThrow('Synthetic preflight rejection');
-    expect(record()).toEqual(before);
+    expect(record().threads).toEqual(before.threads);
+    expect(record().submissions[0].state).toBe('failed');
+    const preflight = vi.fn();
+    const replay = await store.reserve(req, project, type, 'living', body, preflight);
+    expect(replay).toMatchObject({ fresh: false, submission: { state: 'failed' } });
+    expect(preflight).not.toHaveBeenCalled();
   });
 
   it('lets only one competing handler acquire permission to create a session', async () => {
@@ -330,6 +369,115 @@ describe('private field comment store', () => {
     expect(record().submissions).toHaveLength(1);
     flows.subject.mockReturnValue('other-creator');
     await expect(store.reserve(req, project, type, 'living', body)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('does not reopen on pending, reopens on conclusive failure and preserves an earlier result across a later send', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' };
+    const frozen = await store.reserve(req, project, type, 'living', body);
+    const context = { ...redraftContextFixture(), project, basedOnId: revisionId, requestId: 'send-a', comments: frozen.comments };
+    await store.bindRun(req, project, type, 'living', 'send-a', context.runId);
+    await store.settle(req, context, { status: 'pending' });
+    expect(record().threads[0].status).toBe('sent');
+    await store.settle(req, context, { status: 'failed', failureText: 'Synthetic agent failure' });
+    expect(record().threads[0].status).toBe('open');
+    await store.reserve(req, project, type, 'living', { ...body, clientRequestId: 'send-b' });
+    await store.bindRun(req, project, type, 'living', 'send-b', 'd'.repeat(64));
+    const sidecar = {
+      mode: 'redraft',
+      version: 3,
+      project_name: context.projectName,
+      revision: {
+        mode: 'redraft',
+        prior_version: 2,
+        comments: [{ number: 1, field: 'mf.tagline', comment: guardFoundationMessageText(frozen.comments[0].text), resolution: 'Earlier result resolution.' }],
+      },
+    };
+    flows.revision.mockResolvedValue({ revision: { id: resultId, format: 'json' }, markdown: '{}', sidecar });
+    const persistence = {
+      project,
+      version: 3,
+      s3_key: 'synthetic-result',
+      content_sha256: 'a'.repeat(64),
+      document_location: { agent_key: type.agentKey, document_id: 'living', revision_id: resultId },
+    };
+    await store.settle(req, context, { status: 'ready', persistence });
+    expect(record().submissions[0].state).toBe('failed');
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: 'd'.repeat(64), resultRevisionId: null });
+    flows.history.mockResolvedValue(context);
+    expect((await store.list(req, project, type, 'living', resultId)).threads[0]).toMatchObject({
+      text: frozen.comments[0].text,
+      status: 'resolved',
+      resolution: 'Earlier result resolution.',
+      sentInRun: context.runId,
+    });
+  });
+
+  it('records uncertainty, permits only creator release, and preserves the old hash without touching a newer send', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' };
+    await store.reserve(req, project, type, 'living', body);
+    const hash = 'c'.repeat(64);
+    await store.bindRun(req, project, type, 'living', 'send-a', hash);
+    await store.endStart(req, project, type, 'living', 'send-a', true);
+    expect(record().submissions[0].state).toBe('uncertain');
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: hash });
+    flows.subject.mockReturnValue('other-creator');
+    await expect(store.release(req, project, type, 'living', 'send-a')).rejects.toBeInstanceOf(ConflictError);
+    flows.subject.mockReturnValue('opaque-user-one');
+    await store.release(req, project, type, 'living', 'send-a');
+    expect(record().submissions[0]).toMatchObject({ state: 'failed', runId: hash });
+    expect(record().threads[0]).toMatchObject({ status: 'open', sentInRun: null });
+    expect((await store.reserve(req, project, type, 'living', body)).submission.state).toBe('failed');
+    await store.reserve(req, project, type, 'living', { ...body, clientRequestId: 'send-b' });
+    await store.bindRun(req, project, type, 'living', 'send-b', 'd'.repeat(64));
+    await store.release(req, project, type, 'living', 'send-a');
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: 'd'.repeat(64) });
+    await expect(store.bindRun(req, project, type, 'living', 'send-a', 'e'.repeat(64))).rejects.toBeInstanceOf(ConflictError);
+  });
+  it('fails conclusive non-acceptance and allows only an explicit new nonce', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' };
+    await store.reserve(req, project, type, 'living', body);
+    await store.endStart(req, project, type, 'living', 'send-a', false);
+    expect(record().threads[0]).toMatchObject({ status: 'open', sentInRun: null });
+    const replay = await store.reserve(req, project, type, 'living', body);
+    expect(replay).toMatchObject({ fresh: false, submission: { state: 'failed' } });
+    expect((await store.reserve(req, project, type, 'living', { ...body, clientRequestId: 'send-b' })).fresh).toBe(true);
+  });
+  it('unblocks an expired unbound reservation and rejects its late bind without clobbering the new lease', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-a' };
+    await store.reserve(req, project, type, 'living', body);
+    const old = record();
+    old.submissions[0].createdAt = '2000-01-01T00:00:00Z';
+    replace(old);
+    expect((await store.reserve(req, project, type, 'living', { ...body, clientRequestId: 'send-b' })).fresh).toBe(true);
+    await expect(store.bindRun(req, project, type, 'living', 'send-a', 'c'.repeat(64))).rejects.toMatchObject({ code: 'MKTG_REDRAFT_REQUEST_EXPIRED' });
+    await store.endStart(req, project, type, 'living', 'send-a', true);
+    expect(record().threads[0]).toMatchObject({ status: 'open', sentInRun: null });
+  });
+
+  it('binds only an opaque run hash and cannot rebind to a different run or creator', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    await store.reserve(req, project, type, 'living', { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-one' });
+    const runId = 'd'.repeat(64);
+    await store.endStart(req, project, type, 'living', 'send-one', true);
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: null });
+    await store.bindRun(req, project, type, 'living', 'send-one', runId);
+    expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: runId });
+    expect((await store.bindRun(req, project, type, 'living', 'send-one', runId, true)).state).toBe('started');
+    await store.endStart(req, project, type, 'living', 'send-one', true);
+    expect(record().submissions[0].state).toBe('started');
+    await expect(store.release(req, project, type, 'living', 'send-one')).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
+    await expect(store.bindRun(req, project, type, 'living', 'send-one', 'e'.repeat(64))).rejects.toBeInstanceOf(ConflictError);
+    flows.subject.mockReturnValue('other-creator');
+    await expect(store.bindRun(req, project, type, 'living', 'send-one', runId)).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('rejects foreign, busy, duplicate or over-cap input IDs without another reservation', async () => {

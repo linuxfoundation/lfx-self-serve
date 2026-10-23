@@ -21,11 +21,15 @@ import {
   MKTG_REDRAFT_SNAPSHOT_KEYS,
   MKTG_REDRAFT_REQUEST_KEYS,
 } from '../constants/mktg-document-redraft.constants';
-import type { MktgCommentAgentKey, MktgReviseDocumentRequest } from '../interfaces/mktg-document-comments.interface';
+import { MKTG_RUN_POLL } from '../constants/mktg-run.constants';
+import type { MktgCommentAgentKey, MktgReviseDocumentRequest, MktgDocumentCommentSubmission } from '../interfaces/mktg-document-comments.interface';
 import type { MktgDocumentRedraftContext, MktgRedraftResultValidation } from '../interfaces/mktg-document-redraft.interface';
-import { guardBrandKitText } from './brand-kit.utils';
-import { guardBoilerplatesText } from './boilerplates.utils';
-import { guardFoundationMessageText } from './foundation-message.utils';
+import type { BrandKitEnvelope } from '../interfaces/brand-kit.interface';
+import type { FoundationMessageEnvelope } from '../interfaces/foundation-message.interface';
+import type { BoilerplatesEnvelope } from '../interfaces/boilerplates.interface';
+import { guardBrandKitText, validateBrandKitEnvelope } from './brand-kit.utils';
+import { guardBoilerplatesText, validateBoilerplatesEnvelope } from './boilerplates.utils';
+import { guardFoundationMessageText, validateFoundationMessageEnvelope } from './foundation-message.utils';
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -59,6 +63,12 @@ export function readMktgRedraftRequest(value: unknown): MktgReviseDocumentReques
 
 /** Fail closed on unknown fields, including accidental raw session/token/starter attribution fields. */
 export function readMktgRedraftContext(value: unknown): MktgDocumentRedraftContext | null {
+  return isMktgRedraftContext(value) ? value : null;
+}
+export function isMktgRedraftContext(value: unknown): value is MktgDocumentRedraftContext {
+  return checkedContext(value) !== null;
+}
+function checkedContext(value: unknown): Record<string, unknown> | null {
   if (
     !record(value) ||
     !onlyKeys(value, MKTG_REDRAFT_CONTEXT_KEYS) ||
@@ -121,7 +131,24 @@ export function readMktgRedraftContext(value: unknown): MktgDocumentRedraftConte
       if (typeof anchor['passage'] !== 'string' || !anchor['passage'].trim()) return null;
     } else if (anchor['passage'] !== undefined) return null;
   }
-  return value as unknown as MktgDocumentRedraftContext;
+  return value;
+}
+
+export function isMktgRedraftSubmissionBusy(submission: Pick<MktgDocumentCommentSubmission, 'state' | 'runId' | 'createdAt'>, now = Date.now()): boolean {
+  return (
+    submission.state === 'started' ||
+    (submission.state === 'reserved' && (!!submission.runId || now - Date.parse(submission.createdAt) <= MKTG_RUN_POLL.timeoutMs))
+  );
+}
+
+export function isFoundationMessageEnvelope(value: unknown): value is FoundationMessageEnvelope {
+  return validateFoundationMessageEnvelope(value).valid;
+}
+export function isBrandKitEnvelope(value: unknown): value is BrandKitEnvelope {
+  return validateBrandKitEnvelope(value).valid;
+}
+export function isBoilerplatesEnvelope(value: unknown): value is BoilerplatesEnvelope {
+  return validateBoilerplatesEnvelope(value).valid;
 }
 
 /** Domain envelope/hash/current-turn-finalize validation runs BEFORE this request-specific gate. */
