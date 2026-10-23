@@ -224,6 +224,17 @@ export class ComposerGuestsComponent {
   );
 
   /**
+   * The removal Undo can still put back; `null` once its email is live on the list again.
+   * @description A removed direct guest isn't suppressed, so a group picked afterwards can re-add the
+   * same person. Restoring the removed row on top of that would queue a duplicate invite on save.
+   */
+  protected readonly undoableRemoval: Signal<ComposerGuestRemoval | null> = computed(() => {
+    const removal = this.lastRemoval();
+    const email = removal?.guest.email?.toLowerCase();
+    return removal && !(email && this.invitedEmails().has(email)) ? removal : null;
+  });
+
+  /**
    * Adds the person picked from search straight to the invited list.
    * @description The directory can return a person without a usable first/last name, which the add
    * payload requires. Handing those to the dialog prefilled beats dropping the pick silently.
@@ -253,7 +264,8 @@ export class ComposerGuestsComponent {
    * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
    */
   protected onUndoRemove(): void {
-    const removal = this.lastRemoval();
+    const removal = this.undoableRemoval();
+    this.lastRemoval.set(null);
     if (!removal) return;
 
     const { guest, index, label } = removal;
@@ -277,7 +289,6 @@ export class ComposerGuestsComponent {
       return [...current.slice(0, index), guest, ...current.slice(index)];
     });
 
-    this.lastRemoval.set(null);
     void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
   }
 
@@ -299,7 +310,9 @@ export class ComposerGuestsComponent {
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
     const label = this.guestLabel(guest);
-    void this.liveAnnouncer.announce(`${label} removed from the guest list.`, 'polite');
+    // When editing, Undo appears above the list while focus is lost with the removed row, so say it is there.
+    const undoHint = this.formService.isEditMode() ? ' Undo is available above the list.' : '';
+    void this.liveAnnouncer.announce(`${label} removed from the guest list.${undoHint}`, 'polite');
 
     // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
     // happens to be missing on the candidate: `undefined === undefined` matched every other

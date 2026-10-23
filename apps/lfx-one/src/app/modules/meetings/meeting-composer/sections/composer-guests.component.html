@@ -147,7 +147,7 @@
           </div>
         }
 
-        @if (lastRemoval(); as removal) {
+        @if (undoableRemoval(); as removal) {
           <!-- Removal has no confirm step; this is the way back from a misclick until the next add or remove. -->
           <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2" data-testid="composer-guest-undo">
             <p class="min-w-0 flex-1 truncate text-sm text-gray-700" data-testid="composer-guest-undo-message">{{ removal.label }} removed.</p>

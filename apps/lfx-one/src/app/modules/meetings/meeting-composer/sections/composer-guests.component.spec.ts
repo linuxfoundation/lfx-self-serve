@@ -416,6 +416,29 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.suppressedGuestEmails().has('member@example.com')).toBe(false);
     });
 
+    it('tells screen readers that Undo is available', () => {
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+
+      expect(announce).toHaveBeenCalledWith('Member One removed from the guest list. Undo is available above the list.', 'polite');
+    });
+
+    it('withdraws undo once a group puts the same email back, instead of duplicating it', () => {
+      const direct = { ...savedGroupGuest, type: 'direct' as const };
+      formService.setGuests([direct]);
+      component['onRemoveGuest'](direct);
+
+      // A group picked afterwards re-adds the person: removed direct guests are not suppressed.
+      reconcile([member]);
+      expect(component['undoableRemoval']()).toBeNull();
+
+      component['onUndoRemove']();
+
+      const live = formService.guests().filter((entry) => entry.state !== 'deleted' && entry.email === 'member@example.com');
+      expect(live).toHaveLength(1);
+    });
+
     it('stops offering undo once another guest is added', () => {
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);
