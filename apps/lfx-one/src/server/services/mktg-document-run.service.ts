@@ -38,6 +38,8 @@ import {
   MktgStoredDocumentRunState,
   MktgStoredStartedRun,
   MktgGenerationAttribution,
+  MktgOneOffRunContext,
+  MktgRunActivity,
   ObjectStoreListEntry,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -54,7 +56,14 @@ import {
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { LINKEDIN_POST_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils/linkedin-post-presentation.utils';
+import { MEMBER_360_API } from '@lfx-one/shared/constants/member-360.constants';
+import { LINKEDIN_SOURCE_MAX_WORDS } from '@lfx-one/shared/constants/linkedin-post.constants';
+import { LinkedinPostService } from './linkedin-post.service';
+import { Member360Service } from './member-360.service';
 import { BrandKitService } from './brand-kit.service';
 import { BoilerplatesService } from './boilerplates.service';
 import { FoundationMessageService } from './foundation-message.service';
@@ -106,6 +115,13 @@ export class MktgDocumentRunService {
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
+  /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
+  public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
+    const type = this.catalogDocumentType(agentId);
+    if (type?.kind !== 'run') throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
+    return this.start(req, project, type.agentKey, sessionId, 0, 'initial', context ?? {});
+  }
+
   /**
    * Retain accepted turn IDs across sequential replay; a full ledger rejects a new turn, never evicts history.
    * Concurrent ACKs and state transitions still use HEAD/check/PUT, not cross-writer CAS. A stale update can
@@ -117,9 +133,17 @@ export class MktgDocumentRunService {
     agentKey: MktgDocumentAgentKey,
     sessionId: string,
     priorVersion = 0,
-    attemptId = 'initial'
+    attemptId = 'initial',
+    oneOff?: MktgOneOffRunContext
   ): Promise<string> {
-    if (!findMktgRunIntake(agentKey) || !sessionId || !Number.isInteger(priorVersion) || priorVersion < 0 || !isMktgRunAttemptId(attemptId)) {
+    if (
+      !findMktgRunIntake(agentKey, true) ||
+      !sessionId ||
+      !Number.isInteger(priorVersion) ||
+      priorVersion < 0 ||
+      !isMktgRunAttemptId(attemptId) ||
+      (oneOff !== undefined && !this.validContext(oneOff))
+    ) {
       throw ServiceValidationError.forField('run', 'Invalid document run.');
     }
     const runId = this.hash(sessionId);
@@ -139,10 +163,11 @@ export class MktgDocumentRunService {
       schema: MKTG_STARTED_RUN_SCHEMA,
       project,
       agentKey,
-      documentId: MKTG_LIVING_DOCUMENT_ID,
+      documentId: this.documentId(agentKey, sessionId),
       runId,
       sessionId,
       creatorSubject: getEffectiveSub(req) ?? null,
+      ...(oneOff && { oneOff: { ...oneOff, initializeProfile: !isImpersonating(req) } }),
       startedAt: now,
       priorVersion,
       attemptId,
@@ -261,16 +286,18 @@ export class MktgDocumentRunService {
             }
             let record = stored.record;
             let fullReply: string | undefined;
+            let activity: MktgRunActivity[] | undefined;
             // Failed is terminal for automatic reconciliation. Only an explicit detail refresh or creator poll rechecks it.
             if (record.state !== 'failed') {
               const result = await this.result(req, record);
               record = await this.advanceResult(req, stored, result);
               fullReply = result.failureText ?? result.reply;
+              activity = result.activity;
             }
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
             }
-            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined);
+            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
@@ -400,7 +427,7 @@ export class MktgDocumentRunService {
     }
     try {
       const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
-      if (stored && !isMktgRunTerminal(stored.record.state) && findMktgRunIntake(stored.record.agentKey)?.endpoints.answers) {
+      if (stored && !isMktgRunTerminal(stored.record.state) && findMktgRunIntake(stored.record.agentKey, true)?.endpoints.answers) {
         await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, questionsId, 0);
       }
     } catch (error) {
@@ -483,7 +510,7 @@ export class MktgDocumentRunService {
     if (result.status === 'failed' || result.status === 'refused') {
       return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, run.persistRetries, result.failureText ?? result.reply ?? '');
     }
-    if (result.status === 'questions' && result.questionsId !== run.answeredQuestionsId) {
+    if (result.status === 'questions' && (!result.questionsId || result.questionsId !== run.answeredQuestionsId)) {
       return run.state === 'questions' ? run : this.mark(req, stored, 'questions');
     }
     if (run.state === 'questions' || (run.state === 'storing' && !staleReceipt)) {
@@ -497,9 +524,9 @@ export class MktgDocumentRunService {
       : run;
   }
 
-  private result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
+  private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
     const attribution: MktgGenerationAttribution = { creatorSubject: record.creatorSubject ?? null };
-    switch (findMktgRunIntake(record.agentKey)?.endpoints.result) {
+    switch (findMktgRunIntake(record.agentKey, true)?.endpoints.result) {
       case BRAND_KIT_INTAKE.endpoints.result:
         return new BrandKitService(attribution).getResult(req, record.sessionId, record.project);
       case FOUNDATION_MESSAGE_INTAKE.endpoints.result:
@@ -510,6 +537,24 @@ export class MktgDocumentRunService {
         return new FaqService(attribution).getResult(req, record.sessionId, record.project);
       case ICP_INTAKE.endpoints.result:
         return new IcpService(attribution).getResult(req, record.sessionId, record.project);
+      case LINKEDIN_POST_INTAKE.endpoints.result:
+        return new LinkedinPostService(attribution, !!record.creatorSubject && record.oneOff?.initializeProfile === true).result(
+          req,
+          record.creatorSubject ?? '',
+          record.sessionId,
+          record.project,
+          record.oneOff?.answers,
+          record.oneOff?.sourceWords
+        );
+      case `${MEMBER_360_API}/result`: {
+        const result = await new Member360Service(attribution).result(req, record.sessionId, record.project);
+        return {
+          status: result.status === 'needs_input' ? 'questions' : result.status,
+          activity: result.activity,
+          persistence: result.persistence,
+          failureText: result.message,
+        };
+      }
       default:
         throw ServiceValidationError.forField('agentKey', 'No registered result endpoint for this run.');
     }
@@ -682,8 +727,9 @@ export class MktgDocumentRunService {
       if (
         record.schema !== MKTG_STARTED_RUN_SCHEMA ||
         record.project !== project ||
-        !findMktgRunIntake(record.agentKey) ||
-        record.documentId !== MKTG_LIVING_DOCUMENT_ID ||
+        !findMktgRunIntake(record.agentKey, true) ||
+        record.documentId !== this.documentId(record.agentKey, record.sessionId) ||
+        (record.oneOff !== undefined && !this.validContext(record.oneOff)) ||
         typeof record.sessionId !== 'string' ||
         !record.sessionId ||
         record.runId !== this.hash(record.sessionId) ||
@@ -730,8 +776,25 @@ export class MktgDocumentRunService {
       return null;
     }
   }
+  private validContext(context: MktgOneOffRunContext): boolean {
+    return (
+      !!context &&
+      typeof context === 'object' &&
+      !Array.isArray(context) &&
+      (context.initializeProfile === undefined || typeof context.initializeProfile === 'boolean') &&
+      (context.sourceWords === undefined ||
+        (Number.isInteger(context.sourceWords) && context.sourceWords >= 0 && context.sourceWords <= LINKEDIN_SOURCE_MAX_WORDS)) &&
+      (context.answers === undefined || normalizeLinkedinShareAnswers(context.answers) !== null)
+    );
+  }
+
+  private documentId(agentKey: string, sessionId: string): string {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    return type?.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
+  }
+
   private catalogDocumentType(agentId: string): MktgDocumentType | undefined {
-    return MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey));
+    return MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey, true));
   }
 
   private hash(value: string): string {

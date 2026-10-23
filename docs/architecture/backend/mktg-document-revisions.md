@@ -247,8 +247,28 @@ conditional across writers” is a separate storage-contract WorkItem, not an at
 The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
-Started, state and plain-text failure text (agent reply or server-authored deadline /
-storage-exhaustion reason); no session capability or starter identity is exposed.
+Started, state, optional filtered public activity and plain-text failure text (agent reply or server-authored deadline /
+storage-exhaustion reason); no session capability, starter identity or private completion context is exposed.
+Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning.
+
+Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
+LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
+then call `startForOneOff` before returning an opaque `runId` alongside their existing response.
+The destination is the exact session-derived `run-…` document ID, never `living`;
+separate one-off sessions cannot supersede each other's progress. Plain writer-entitled
+Documents reads dispatch to the existing domain result service and persist the same revision
+without any browser cache or owner token. Completion checks the exact receipt's project,
+agent and document. The domain writer receives the original opaque creator attribution,
+not the reading visitor's identity.
+
+LinkedIn's immutable private start also retains validated link answers, source word count and
+whether profile initialization was allowed at Generate. Reconciliation initializes only the
+original creator's profile, never a visitor's; impersonation still disables initialization.
+No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
+tracked session. Member 360 maps `needs_input` to a nonterminal questions pause: its question
+text is never exposed, it has no answers endpoint, and explicit refresh/reopen rechecks the
+session. Its ready result now carries the shared exact persistence receipt as well as the
+existing `stored` flag; existing clients remain compatible.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed` and
 `superseded`. Questions pause the writing deadline until accepted answers renew

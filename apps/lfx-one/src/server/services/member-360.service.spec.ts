@@ -77,7 +77,11 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getProjectById.mockResolvedValue({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation', writer: true });
     mocks.listDocuments.mockResolvedValue({ groups: [] });
     mocks.createSession.mockResolvedValue('session-1');
-    mocks.recordGeneration.mockResolvedValue({ record: { documentId: 'run-0123456789abcdef01234567' } });
+    mocks.recordGeneration.mockResolvedValue({
+      key: 'synthetic-revision-key',
+      id: `000001-${'a'.repeat(64)}`,
+      record: { documentId: 'run-0123456789abcdef01234567' },
+    });
   });
   afterEach(() => vi.useRealTimers());
   it.each(['schema', 'hash', 'project', 'raw', 'other-tool', 'unpaired', 'failed'])('never stores a rejected %s candidate', async (mode) => {
@@ -179,7 +183,15 @@ describe('Member 360 entitlement and generation', () => {
     const valid = member360Fixture();
     const tampered = { ...valid, version: 2, content_sha256: '0'.repeat(64) };
     mocks.getRawEventPayloads.mockResolvedValue([finalized(valid), finalized(tampered)]);
-    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({
+      status: 'ready',
+      stored: true,
+      persistence: {
+        project: 'sample-project',
+        s3_key: 'synthetic-revision-key',
+        document_location: { agent_key: 'member-360', document_id: 'run-0123456789abcdef01234567', revision_id: `000001-${'a'.repeat(64)}` },
+      },
+    });
     const stored = mocks.recordGeneration.mock.calls[0][3];
     expect(stored.member360.version).toBe(1);
     expect(stored).not.toHaveProperty('tabs');

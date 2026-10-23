@@ -16,6 +16,9 @@ import {
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
+  linkedin: vi.fn(),
+  member: vi.fn(),
+  attribution: vi.fn(),
   project: vi.fn(),
   ensure: vi.fn(),
   readiness: vi.fn(),
@@ -55,6 +58,22 @@ vi.mock('./faq.service', () => ({
 vi.mock('./icp.service', () => ({
   IcpService: class {
     public getResult = flows.result;
+  },
+}));
+vi.mock('./linkedin-post.service', () => ({
+  LinkedinPostService: class {
+    public result = flows.linkedin;
+    public constructor(...args: unknown[]) {
+      flows.attribution(...args);
+    }
+  },
+}));
+vi.mock('./member-360.service', () => ({
+  Member360Service: class {
+    public result = flows.member;
+    public constructor(...args: unknown[]) {
+      flows.attribution(...args);
+    }
   },
 }));
 vi.mock('./project.service', () => ({
@@ -149,6 +168,8 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     flows.beforePut.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
     flows.ensure.mockResolvedValue(undefined);
     flows.readiness.mockResolvedValue(true);
@@ -157,6 +178,66 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    const id = `run-${hash(session).slice(0, 24)}`;
+    await service.startForOneOff(creator, agent, project, session, { answers: { share_link: 'https://post.example/' }, sourceWords: 32 });
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agent);
+    expect(type).toBeDefined();
+    const reader = new MktgDocumentRunService();
+    const activity = [{ id: 'public-step', kind: 'checking', label: 'Checking the document', status: 'running' }];
+    const result = agent === 'linkedin-post' ? flows.linkedin : flows.member;
+    result.mockResolvedValue({ status: 'pending', activity });
+    expect(await reader.readProgress(req, project, agent, id)).toMatchObject({ runs: [{ documentId: id, state: 'writing', activity }] });
+    expect(flows.attribution).toHaveBeenCalledWith({ creatorSubject: 'synthetic-creator' }, ...(agent === 'linkedin-post' ? [true] : []));
+    if (agent === 'linkedin-post') {
+      expect(flows.linkedin).toHaveBeenCalledWith(req, 'synthetic-creator', session, project, { share_link: 'https://post.example/' }, 32);
+    }
+    const receipt = { ...ready().persistence, document_location: { agent_key: agent, document_id: id, revision_id: location().revision_id } };
+    result.mockResolvedValue({ status: 'ready', stored: true, persistence: receipt });
+    expect(await reader.readProgress(req, project, agent, id)).toEqual({ runs: [] });
+    expect(stored().metadata['state']).toBe('completed');
+    const privateBody = JSON.parse(stored().body);
+    expect(privateBody.documentId).toBe(id);
+    privateBody.documentId = 'living';
+    objects.set(key(), { ...stored(), body: JSON.stringify(privateBody), metadata: { ...stored().metadata, state: 'writing' } });
+    expect((await reader.readProgress(req, project, agent, id)).runs).toEqual([]);
+  });
+
+  it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    await service.startForOneOff(req, 'member-360', project, 'second-session');
+    flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
+    const progress = await service.readProgress(req, project, 'member-360');
+    expect(progress.runs).toHaveLength(2);
+    expect(progress.runs.every((run) => run.state === 'questions')).toBe(true);
+    expect(JSON.stringify(progress)).not.toContain('private question text');
+    expect(JSON.stringify(progress)).not.toContain('sessionId');
+    expect(JSON.stringify(progress)).not.toContain('creatorSubject');
+    expect(stored().metadata['state']).toBe('questions');
+    flows.member.mockResolvedValue({ status: 'pending' });
+    expect((await new MktgDocumentRunService().readProgress(req, project, 'member-360')).runs.every((run) => run.state === 'questions')).toBe(true);
+    expect(flows.member).toHaveBeenCalledTimes(4);
+  });
+
+  it('renews LinkedIn after answers ACK, and ignores the already-answered questions block', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
+    const questionsId = 'a'.repeat(64);
+    flows.linkedin.mockResolvedValue({ status: 'questions', questionsId });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+    await service.resumeAfterQuestions(req, project, session, questionsId);
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('writing');
+    flows.linkedin.mockResolvedValue({ status: 'questions', questionsId: 'b'.repeat(64) });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+  });
+
+  it('does not attribute or initialize a LinkedIn profile as the visiting reader when the creator is unknown', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
+    await new MktgDocumentRunService().readProgress(req, project);
+    expect(flows.linkedin).toHaveBeenCalledWith(req, '', session, project, undefined, undefined);
+    expect(flows.attribution).toHaveBeenCalledWith({ creatorSubject: null }, false);
   });
 
   it('captures only the initiating subject and preserves it across ACKs and renewal', async () => {

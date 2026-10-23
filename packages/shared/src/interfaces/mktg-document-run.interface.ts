@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
+import type { MktgRunActivity } from './mktg-run.interface';
+
+/** Private completion context, captured by the validated one-off generate path, never a public projection. */
+export interface MktgOneOffRunContext {
+  answers?: Record<string, string>;
+  sourceWords?: number;
+  /** An impersonated start must never initialize a profile on a later non-impersonated read. */
+  initializeProfile?: boolean;
+}
 
 /** Terminal runtime evidence, without treating arbitrary agent text as a document. */
 export interface MktgSessionOutcome {
@@ -29,6 +38,8 @@ export interface MktgDocumentRunProgress {
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
   state: MktgDocumentRunState;
+  /** Ephemeral, server-filtered public steps; never raw events or reasoning. */
+  activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
   failureText?: string;
 }
@@ -58,6 +69,8 @@ export interface MktgStartedRunRecord {
   sessionId: string;
   /** Private initiating subject; absent legacy records are unknown, never the reconciling visitor. */
   creatorSubject?: string | null;
+  /** Private one-off metadata needed to complete without the initiating browser. */
+  oneOff?: MktgOneOffRunContext;
   startedAt: string;
   /** Generate-path prior-draft hint (chat records 0); completion uses current-turn finalization and receipts. */
   priorVersion: number;

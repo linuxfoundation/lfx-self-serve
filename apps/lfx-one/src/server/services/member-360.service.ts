@@ -11,7 +11,15 @@ import {
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { Member360Envelope, Member360GenerateRequest, Member360GenerationStart, Member360PriorRun, Member360Result, Project } from '@lfx-one/shared/interfaces';
+import {
+  Member360Envelope,
+  Member360GenerateRequest,
+  Member360GenerationStart,
+  Member360PriorRun,
+  Member360Result,
+  MktgGenerationAttribution,
+  Project,
+} from '@lfx-one/shared/interfaces';
 import {
   findMktgDocumentType,
   extractMktgEnvelopeCandidates,
@@ -40,7 +48,11 @@ import { ProjectService } from './project.service';
 export class Member360Service {
   private readonly guild = new GuildService();
   private readonly projects = new ProjectService();
-  private readonly documents = new MktgDocumentStoreService();
+  private readonly documents: MktgDocumentStoreService;
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documents = new MktgDocumentStoreService(attribution);
+  }
 
   public async start(req: Request, body: Member360GenerateRequest): Promise<Member360GenerationStart> {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
@@ -138,7 +150,18 @@ export class Member360Service {
         content_sha256: this.sha(summary),
       };
       const stored = await this.documents.recordGeneration(req, type, project.uid, bundle, sessionId);
-      return { status: 'ready', stored: true, documentId: stored.record.documentId };
+      return {
+        status: 'ready',
+        stored: true,
+        documentId: stored.record.documentId,
+        persistence: {
+          project: project.uid,
+          version: best.version,
+          s3_key: stored.key,
+          content_sha256: bundle.content_sha256,
+          document_location: { agent_key: type.agentKey, document_id: stored.record.documentId, revision_id: stored.id },
+        },
+      };
     } catch (err) {
       if (err instanceof InvalidRequestError && err.code === MEMBER_360_INVALID_RESULT) throw err;
       logger.warning(req, 'member_360_result', 'Run ready but document write failed; next poll retries the same one-off document', {
