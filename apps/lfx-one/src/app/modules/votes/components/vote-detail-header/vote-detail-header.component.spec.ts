@@ -156,4 +156,18 @@ describe('VoteDetailHeaderComponent', () => {
     const keys = VOTE_DETAIL_TABS.map((option) => option.key);
     expect(tabs).toEqual([keys[1], keys[keys.length - 1], keys[keys.length - 1], keys[0]]);
   });
+
+  it('moves from the focused tab when a second arrow lands before the selection catches up', () => {
+    render();
+    const tabs: string[] = [];
+    fixture.componentInstance.tabChange.subscribe((tab) => tabs.push(tab));
+    const keys = VOTE_DETAIL_TABS.map((option) => option.key);
+    const tab = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-tab-${key}"]`);
+
+    // `activeTab` is still the first tab: the parent hasn't written `?tab=` yet.
+    tab(keys[0]).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    tab(keys[1]).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+
+    expect(tabs).toEqual([keys[1], keys[2]]);
+  });
 });

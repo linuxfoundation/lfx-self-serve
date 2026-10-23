@@ -115,6 +115,8 @@ export class VoteDetailComponent {
   protected readonly voteResultsError = signal<boolean>(false);
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
+  /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
+  private readonly submittedBallotFor = signal<string | null>(null);
   /** Comment paginator state owned here so a page survives switching tabs (bound two-way into lfx-vote-comment-results). */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
 
@@ -133,9 +135,12 @@ export class VoteDetailComponent {
   protected readonly audience: Signal<'voter' | 'creator'> = computed(() => (this.canManage() ? 'creator' : 'voter'));
   /**
    * The body waits for both access inputs, so a manager never flashes the voter panel (or the reverse). A post-ballot
-   * refresh keeps the previous response until the new one lands, so only the first load shows the skeleton.
+   * refresh keeps the previous response until the new one lands, so only the first load shows the skeleton — but only a
+   * response for this same vote, never one left over from the previously opened vote.
    */
-  protected readonly accessLoading: Signal<boolean> = computed(() => this.canManage() === null || (this.myResponseLoading() && !this.myResponse()));
+  protected readonly accessLoading: Signal<boolean> = computed(
+    () => this.canManage() === null || (this.myResponseLoading() && this.myResponse()?.vote_uid !== this.vote()?.uid)
+  );
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
@@ -143,14 +148,13 @@ export class VoteDetailComponent {
   // === Computed Signals ===
   protected readonly tabs: Signal<readonly VoteDetailTabOption[]> = this.initTabs();
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
-  protected readonly voterState: Signal<VoterResultsState> = computed(() =>
-    resolveVoterResultsState(this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError(), this.vote()?.response_status)
-  );
+  private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
+  protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
   /** Results (and comments) render for a manager, or for a voter once the vote closed; every other voter gets a state panel. */
   protected readonly showsResults: Signal<boolean> = computed(
     () => this.audience() === 'creator' || (this.voterState() === 'closed' && !this.myResponseError())
   );
-  protected readonly canCastVote: Signal<boolean> = computed(() => this.isAwaitingBallot(this.vote(), this.myResponse()));
+  protected readonly canCastVote: Signal<boolean> = computed(() => !this.hasSubmittedBallot() && this.isAwaitingBallot(this.vote(), this.myResponse()));
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE);
   /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
@@ -206,6 +210,7 @@ export class VoteDetailComponent {
   }
 
   protected onVoteSubmitted(): void {
+    this.submittedBallotFor.set(this.vote()?.uid ?? null);
     this.refreshTick.update((tick) => tick + 1);
     this.reload$.next('refresh');
   }
@@ -248,14 +253,14 @@ export class VoteDetailComponent {
     const loadingState: VoteDetailState = { loading: true, notFound: false, error: false, vote: null };
     const notFoundState: VoteDetailState = { loading: false, notFound: true, error: false, vote: null };
     const errorState: VoteDetailState = { loading: false, notFound: false, error: true, vote: null };
-    // The vote the page last showed — a `refresh` for the same vote reloads in place instead of flashing the skeleton.
-    let shownVoteId: string | null = null;
+    // The state the page last showed a vote in — a `refresh` for the same vote reloads in place instead of flashing the skeleton.
+    let lastLoaded: VoteDetailState | null = null;
 
     return toSignal(
       combineLatest([toObservable(this.voteId), this.reload$]).pipe(
         filter((args): args is [string, 'retry' | 'refresh'] => !!args[0]),
         switchMap(([id, reason]) => {
-          const inPlace = reason === 'refresh' && shownVoteId === id;
+          const inPlace = reason === 'refresh' && lastLoaded?.vote?.uid === id;
           const load$ = this.voteService.fetchVote(id, { skipCache: inPlace }).pipe(
             // Only the vote fetch decides not-found: 400/403/404 means "no such vote, or not yours to see" — never
             // confirm which. Anything else (gateway 5xx, network) is transient and must not masquerade as a 404.
@@ -268,10 +273,11 @@ export class VoteDetailComponent {
             }),
             catchError((err) => {
               console.error('Failed to load vote for detail page', err);
-              return of(errorState);
+              // A failed in-place refresh keeps the page it already shows: the ballot was recorded, only the reload failed.
+              return of(inPlace && lastLoaded ? lastLoaded : errorState);
             }),
             tap((state) => {
-              shownVoteId = state.vote?.uid ?? null;
+              lastLoaded = state.vote ? state : null;
               // Real HTTP 404 during SSR for the not-found branch only; the error state intentionally stays HTTP 200.
               if (state.notFound && isPlatformServer(this.platformId) && this.reqContext) {
                 this.reqContext.notFound = true;
@@ -329,6 +335,14 @@ export class VoteDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /** A ballot cast from this page reads as submitted even while the refreshed response is in flight or still lags behind. */
+  private initVoterState(): Signal<VoterResultsState> {
+    return computed(() => {
+      const state = resolveVoterResultsState(this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError(), this.vote()?.response_status);
+      return state === 'not_voted' && this.hasSubmittedBallot() ? 'submitted' : state;
+    });
   }
 
   /** Managers always load results; voters only after close with a settled, matching, non-removed response (same gate as the drawer). */

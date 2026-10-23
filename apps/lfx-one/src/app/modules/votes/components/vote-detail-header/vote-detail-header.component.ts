@@ -60,10 +60,14 @@ export class VoteDetailHeaderComponent {
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
 
   // === Protected Methods ===
-  /** WAI-ARIA tabs keyboard model: arrows wrap, Home/End jump to the ends, and focus follows the selected tab. */
+  /**
+   * WAI-ARIA tabs keyboard model: arrows wrap, Home/End jump to the ends, and focus follows the selected tab. Arrows move
+   * from the focused pill, since `activeTab` only updates once the parent's `?tab=` navigation settles.
+   */
   protected onTabKeydown(event: KeyboardEvent): void {
     const keys = this.tabs().map((tab) => tab.key);
-    const idx = keys.indexOf(this.activeTab());
+    const focusedIdx = this.tabBtns().findIndex((btn) => btn.nativeElement === event.target);
+    const idx = focusedIdx >= 0 ? focusedIdx : keys.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (idx + 1) % keys.length;
     else if (event.key === 'ArrowLeft') next = (idx - 1 + keys.length) % keys.length;

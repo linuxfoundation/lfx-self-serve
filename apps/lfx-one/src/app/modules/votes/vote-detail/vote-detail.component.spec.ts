@@ -89,6 +89,7 @@ describe('VoteDetailComponent', () => {
   let committeeService: { fetchCommittee: ReturnType<typeof vi.fn> };
   let dialogService: { open: ReturnType<typeof vi.fn> };
   let router: { navigate: ReturnType<typeof vi.fn> };
+  let paramMap: BehaviorSubject<ParamMap>;
   let queryParamMap: BehaviorSubject<ParamMap>;
   let reqContext: ServerRequestContext;
 
@@ -100,7 +101,7 @@ describe('VoteDetailComponent', () => {
         { provide: ProjectService, useValue: projectService },
         { provide: CommitteeService, useValue: committeeService },
         { provide: Router, useValue: router },
-        { provide: ActivatedRoute, useValue: { paramMap: new BehaviorSubject(convertToParamMap({ id: 'vote-1' })), queryParamMap } },
+        { provide: ActivatedRoute, useValue: { paramMap, queryParamMap } },
         // The page never reads the lens — a Me lens must not demote a writer to the voter view.
         { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: PLATFORM_ID, useValue: platform },
@@ -135,6 +136,7 @@ describe('VoteDetailComponent', () => {
     committeeService = { fetchCommittee: vi.fn().mockReturnValue(of({ writer: false })) };
     dialogService = { open: vi.fn() };
     router = { navigate: vi.fn() };
+    paramMap = new BehaviorSubject(convertToParamMap({ id: 'vote-1' }));
     queryParamMap = new BehaviorSubject(convertToParamMap({}));
     reqContext = {} as ServerRequestContext;
   });
@@ -474,11 +476,68 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'myResponseLoading')).toBe(true);
       expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
       expect(testId(fixture, 'vote-detail-voter-locked')).not.toBeNull();
+      // The old row still says awaiting, but the ballot went in: no "haven't responded" and no second Cast vote.
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-not-voted')).toBeNull();
+      expect(read(fixture, 'canCastVote')).toBe(false);
 
       refreshed.next(makeResponse(IndexedVoteResponseStatus.RESPONDED));
       refreshed.complete();
       TestBed.tick();
       expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+    });
+
+    it('keeps the ballot submitted when the refreshed response still lags behind', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+      expect(read(fixture, 'canCastVote')).toBe(true);
+
+      call(fixture, 'onVoteSubmitted');
+      TestBed.tick();
+
+      expect(read(fixture, 'myResponseLoading')).toBe(false);
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+      expect(read(fixture, 'canCastVote')).toBe(false);
+    });
+
+    it('keeps the page when the post-ballot refresh fails, instead of the retry card', async () => {
+      const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValueOnce(httpError(503));
+      try {
+        const fixture = await setup();
+
+        call(fixture, 'onVoteSubmitted');
+        TestBed.tick();
+
+        expect(voteService.fetchVote).toHaveBeenCalledTimes(2);
+        expect(logError).toHaveBeenCalled();
+        expect(read<VoteDetailState>(fixture, 'state')).toEqual({ loading: false, notFound: false, error: false, vote: makeVote() });
+        expect(testId(fixture, 'vote-detail-error')).toBeNull();
+        expect(testId(fixture, 'vote-detail-page')).not.toBeNull();
+      } finally {
+        logError.mockRestore();
+      }
+    });
+
+    it("never shows the previous vote's response while a cached next vote's response is loading", async () => {
+      const nextResponse = new Subject<MyVoteResponse>();
+      // A cached vote replays synchronously, so the page never passes through an empty vote between the two.
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.RESPONDED))).mockReturnValueOnce(nextResponse);
+      const fixture = await setup();
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      expect(read(fixture, 'myResponseLoading')).toBe(true);
+      expect(testId(fixture, 'vote-detail-access-loading')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).toBeNull();
+
+      nextResponse.next(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2' }));
+      nextResponse.complete();
+      TestBed.tick();
+      expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-not-voted')).not.toBeNull();
     });
   });
 
