@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn() }));
+const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const storeMocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
@@ -47,6 +48,12 @@ vi.mock('../services/mktg-document-run.service', async () => {
     },
   };
 });
+vi.mock('../services/mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public list = commentMocks.list;
+    public add = commentMocks.add;
+  },
+}));
 vi.mock('../services/project.service', () => ({
   ProjectService: class {
     public getProjectById = projectMocks.getProjectById;
@@ -96,6 +103,68 @@ describe('MktgDocumentsController', () => {
     runMocks.refreshFailure.mockResolvedValue(null);
     controller = new MktgDocumentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it('lists comments only after writer authorization, using the server project uid', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer: true });
+    commentMocks.list.mockResolvedValue({ revisionId: REVISION_ID, threads: [] });
+    const res = buildRes();
+    await controller.listComments(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: REVISION_ID }), res, next);
+    expect(commentMocks.list).toHaveBeenCalledWith(
+      expect.anything(),
+      'resolved-project',
+      expect.objectContaining({ agentKey: 'brand-kit' }),
+      'living',
+      REVISION_ID
+    );
+    expect(res.json).toHaveBeenCalledWith({ revisionId: REVISION_ID, threads: [] });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('adds a comment for a writer without logging the body', async () => {
+    commentMocks.add.mockResolvedValue({ revisionId: REVISION_ID, threads: [] });
+    const body = {
+      project: PROJECT,
+      revisionId: REVISION_ID,
+      anchor: { kind: 'field', key: 'mf.tagline' },
+      text: 'Synthetic private comment',
+      clientRequestId: 'opaque-request',
+    };
+    const res = buildRes();
+    await controller.addComment(buildReq({ agentKey: 'foundation-message', documentId: 'living' }, {}, body), res, next);
+    expect(commentMocks.add).toHaveBeenCalledWith(expect.anything(), PROJECT, expect.objectContaining({ agentKey: 'foundation-message' }), 'living', body);
+    expect(JSON.stringify(loggerMocks.startOperation.mock.calls.map((call) => call.slice(1)))).not.toContain(body.text);
+    expect(JSON.stringify(loggerMocks.success.mock.calls.map((call) => call.slice(1)))).not.toContain(body.text);
+  });
+
+  it.each(['list', 'add'])('denies comment %s without a writer grant before storage', async (action) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    const req = buildReq(
+      { agentKey: 'brand-kit', documentId: 'living' },
+      { project: PROJECT, revision: REVISION_ID },
+      { project: PROJECT, revisionId: REVISION_ID }
+    );
+    if (action === 'list') await controller.listComments(req, buildRes(), next);
+    else await controller.addComment(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(commentMocks.list).not.toHaveBeenCalled();
+    expect(commentMocks.add).not.toHaveBeenCalled();
+  });
+
+  it.each(['list', 'add'])('rejects malformed comment scope before authorization (%s)', async (action) => {
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: 'latest' }, { project: PROJECT, revisionId: 'latest' });
+    if (action === 'list') await controller.listComments(req, buildRes(), next);
+    else await controller.addComment(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+  });
+
+  it('forwards comment storage failures without a controller error log', async () => {
+    const error = new MicroserviceError('Store unavailable', 503, 'STORE_UNAVAILABLE');
+    commentMocks.list.mockRejectedValueOnce(error);
+    await controller.listComments(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: REVISION_ID }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
   it('lists the documents of the SERVER-resolved project for a writer', async () => {

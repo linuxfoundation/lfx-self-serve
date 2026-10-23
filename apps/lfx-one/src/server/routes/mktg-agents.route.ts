@@ -183,6 +183,11 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
   mktgDocumentsController.approveRevision(req, res, next)
 );
 
+// GET revision-scoped field comments; requires project writer access.
+router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.listComments(req, res, next));
+// POST a field comment; requires project writer access and a stored revision.
+router.post('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.addComment(req, res, next));
+
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
