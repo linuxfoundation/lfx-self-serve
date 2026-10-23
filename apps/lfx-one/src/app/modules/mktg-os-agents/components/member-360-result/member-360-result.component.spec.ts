@@ -295,6 +295,22 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-ranking').textContent).toContain('Unknown');
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
   });
+  it.each([
+    { days: null, classes: 'text-gray-500' },
+    { days: 120, classes: 'font-bold text-red-700' },
+    { days: 121, classes: 'font-semibold text-amber-700' },
+    { days: 240, classes: 'font-semibold text-amber-700' },
+    { days: 241, classes: 'text-gray-700' },
+  ])('uses the workbook renewal colours for $days days', ({ days, classes }) => {
+    const envelope = member360Fixture();
+    envelope.tabs.member_ranking = [{ ...envelope.tabs.member_ranking[0], days_to_renewal: days }];
+    const view = render(envelope);
+    const cell = Array.from(view.query('member-360-ranking-row').querySelectorAll('td')).find(
+      (entry) => entry.textContent?.trim() === (days === null ? 'Unknown' : `${days} days`)
+    );
+    expect(cell).toBeDefined();
+    for (const name of classes.split(' ')) expect(cell?.classList.contains(name)).toBe(true);
+  });
   it('copies team actions and reports clipboard denial', async () => {
     const view = render();
     const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard');

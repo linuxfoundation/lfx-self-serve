@@ -232,8 +232,9 @@ export class Member360ResultComponent {
   }
   private renewalClass(days: number | null): string {
     if (days === null) return 'text-gray-500';
-    if (days < 60) return 'font-bold text-red-700';
-    if (days < 120) return 'font-semibold text-amber-700';
+    // Renewal colours follow the workbook spec of record, including boundary days.
+    if (days <= 120) return 'font-bold text-red-700';
+    if (days <= 240) return 'font-semibold text-amber-700';
     return 'text-gray-700';
   }
   private tierClass(tier: string): string {
