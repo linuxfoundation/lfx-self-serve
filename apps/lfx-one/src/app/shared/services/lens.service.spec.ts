@@ -223,6 +223,51 @@ describe('LensService — menu lens preview', () => {
       expect(lens.previewingMenuLens()).toBe(false);
     });
 
+    it('puts the page lens back without bringing back a preview the drawer has since dropped', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+      events.next(new NavigationStart(7, '/project/meetings'));
+
+      // The drawer closes while the pick's guard is still pending.
+      lens.clearMenuLensPreview();
+      events.next(cancel(7));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.previewingMenuLens()).toBe(false);
+    });
+
+    it("follows a pick superseded by the viewer's next tap, and keeps the lens if that navigation lands", () => {
+      const { lens, events } = setup('foundation', { hasBoardRole: true });
+      lens.previewMenuLens('me');
+      lens.commitMenuLens();
+      events.next(new NavigationStart(7, '/meetings'));
+
+      // A second tap (Groups, in the now committed Home menu) supersedes the first before it lands.
+      events.next(cancel(7, NavigationCancellationCode.SupersededByNewNavigation));
+      expect(lens.activeLens()).toBe('me');
+      events.next(new NavigationStart(8, '/groups'));
+      events.next(new NavigationEnd(8, '/groups', '/groups'));
+
+      expect(lens.activeLens()).toBe('me');
+    });
+
+    it('follows a pick a guard redirects, and undoes it if the redirected navigation is cancelled', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      const onRestore = vi.fn();
+      lens.commitMenuLens('project', onRestore);
+      events.next(new NavigationStart(7, '/project/overview'));
+
+      events.next(cancel(7, NavigationCancellationCode.Redirect));
+      expect(onRestore).not.toHaveBeenCalled();
+      events.next(new NavigationStart(8, '/project/formation'));
+      events.next(cancel(8));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(onRestore).toHaveBeenCalledTimes(1);
+    });
+
     it('ignores the cancellation of an earlier navigation the pick superseded, and one the lens has since moved past', () => {
       const { lens, events } = setup('me', { hasBoardRole: true });
       lens.previewMenuLens('project');

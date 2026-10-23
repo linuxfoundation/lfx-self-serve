@@ -175,6 +175,7 @@ describe('NavigationService — menu lens preview', () => {
     const menuLens = signal('me');
     const setFoundation = vi.fn();
     const setLens = vi.fn();
+    const isHybridPersona = signal(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: HttpClient, useValue: http },
@@ -185,7 +186,7 @@ describe('NavigationService — menu lens preview', () => {
             menuLens,
             previewingMenuLens: computed(() => menuLens() !== activeLens()),
             availableLenses: signal([]),
-            isHybridPersona: signal(false),
+            isHybridPersona,
             setLens,
           },
         },
@@ -217,6 +218,16 @@ describe('NavigationService — menu lens preview', () => {
     expect(service.loaded('foundation')()).toBe(true);
     expect(setFoundation).not.toHaveBeenCalled();
     expect(setLens).not.toHaveBeenCalled();
+
+    // A hybrid's merged selector reads both lists: previewing loads the sibling too, still without a default.
+    isHybridPersona.set(true);
+    menuLens.set('me');
+    TestBed.inject(ApplicationRef).tick();
+    menuLens.set('foundation');
+    TestBed.inject(ApplicationRef).tick();
+    await Promise.resolve();
+    expect(service.loaded('project')()).toBe(true);
+    expect(setFoundation).not.toHaveBeenCalled();
     TestBed.resetTestingModule();
   });
 });

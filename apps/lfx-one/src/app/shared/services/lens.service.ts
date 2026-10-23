@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, NavigationStart, Router } from '@angular/router';
+import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationError, NavigationSkipped, NavigationStart, Router } from '@angular/router';
 import {
   ALL_LENSES,
   DEFAULT_LENS,
@@ -12,7 +12,7 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
   NAV_LENS_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
+import { Lens, LensGrantInputs, LensOption, MenuLensPick, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { filter, of, switchMap, take } from 'rxjs';
@@ -74,6 +74,8 @@ export class LensService {
    * change while the viewer only looks at another lens's menu (#4208).
    */
   private readonly menuLensPreview: WritableSignal<Lens | null> = signal(null);
+  /** Bumped whenever the drawer drops its preview, so a failed pick never re-arms a preview the drawer has since closed. */
+  private menuLensPreviewEpoch = 0;
   /**
    * The lens the nav menu is built for: the drawer's preview while one stands (and the persona still holds it), otherwise
    * {@link activeLens}. Only the menu stack reads this — the sidebar items, the context selectors and the lens tabs.
@@ -127,22 +129,24 @@ export class LensService {
    * The lens is committed before the navigation starts, because guards read `activeLens`. If that navigation then never
    * leaves the page — cancelled or failed (a `canDeactivate` the viewer declines, a guard that refuses), or skipped as
    * the current address — the page's lens and the drawer's preview are put back, unless something else has moved the
-   * lens since, which then owns it.
+   * lens since, which then owns it. The preview comes back only if the drawer is still showing it, and `onRestore` lets
+   * the caller put back anything else the pick changed (a selector pick's context).
    */
-  public commitMenuLens(lens: Lens = this.menuLens()): void {
+  public commitMenuLens(lens: Lens = this.menuLens(), onRestore?: () => void): void {
     if (!this.previewingMenuLens()) {
       this.menuLensPreview.set(null);
       return;
     }
-    const previous = this.activeLens();
-    const previewed = this.menuLens();
+    const pick: MenuLensPick = { previous: this.activeLens(), committed: lens, previewed: this.menuLens(), epoch: this.menuLensPreviewEpoch, onRestore };
     this.setLens(lens);
+    pick.committed = this.activeLens();
     this.menuLensPreview.set(null);
-    this.restoreLensIfPickFails(previous, this.activeLens(), previewed);
+    this.restoreLensIfPickFails(pick);
   }
 
   /** Drop the drawer's preview, leaving the page's lens exactly as it is (the drawer closed without a pick). */
   public clearMenuLensPreview(): void {
+    this.menuLensPreviewEpoch += 1;
     this.menuLensPreview.set(null);
   }
 
@@ -221,9 +225,10 @@ export class LensService {
    * Follows the navigation a {@link commitMenuLens} pick starts — the first one to start or be skipped after it, by id,
    * so a cancellation of an earlier navigation that the pick superseded is not mistaken for the pick's own. A skipped
    * pick (its link is the current address) counts as one that never left: no `NavigationEnd` follows it for the route
-   * to re-assert its own lens.
+   * to re-assert its own lens. A pick redirected by a guard, or superseded by the viewer's next tap, hands over to the
+   * navigation that replaces it, which is followed in turn.
    */
-  private restoreLensIfPickFails(previous: Lens, committed: Lens, previewed: Lens): void {
+  private restoreLensIfPickFails(pick: MenuLensPick): void {
     this.router.events
       .pipe(
         filter((event): event is NavigationStart | NavigationSkipped => event instanceof NavigationStart || event instanceof NavigationSkipped),
@@ -241,12 +246,27 @@ export class LensService {
         )
       )
       .subscribe((event) => {
-        if (event instanceof NavigationEnd || this.activeLens() !== committed) {
+        if (event instanceof NavigationEnd || this.activeLens() !== pick.committed) {
           return;
         }
-        this.setLens(previous);
-        this.menuLensPreview.set(previewed);
+        if (this.isHandedOver(event)) {
+          this.restoreLensIfPickFails(pick);
+          return;
+        }
+        this.setLens(pick.previous);
+        if (pick.epoch === this.menuLensPreviewEpoch) {
+          this.menuLensPreview.set(pick.previewed);
+        }
+        pick.onRestore?.();
       });
+  }
+
+  /** A navigation cancelled only to make way for the next one — a guard's redirect, or a newer navigation superseding it. */
+  private isHandedOver(event: NavigationCancel | NavigationError | NavigationSkipped): boolean {
+    return (
+      event instanceof NavigationCancel &&
+      (event.code === NavigationCancellationCode.Redirect || event.code === NavigationCancellationCode.SupersededByNewNavigation)
+    );
   }
 
   /** The lens a lens-tab click lands on: hybrid personas' merged 'Projects' entry returns to the last viewed nav lens. */

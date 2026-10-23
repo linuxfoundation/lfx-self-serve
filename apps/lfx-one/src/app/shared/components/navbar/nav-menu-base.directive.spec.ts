@@ -6,7 +6,7 @@ import type { Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
 import type { IsActiveMatchOptions } from '@angular/router';
-import { Lens, LensItem, User } from '@lfx-one/shared/interfaces';
+import { Lens, LensItem, ProjectContext, User } from '@lfx-one/shared/interfaces';
 import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
@@ -125,6 +125,10 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
   const queryParamsOf = (c: NavMenuTestHostComponent): { project?: string } =>
     (c as unknown as { projectQueryParams: () => { project?: string } }).projectQueryParams();
 
+  // The rollback a previewed pick hands to commitMenuLens, run by a test as a failed navigation would.
+  let restorePick: (() => void) | null = null;
+  const selectedProject = signal<ProjectContext | null>({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' });
+
   const createNavMenu = async (url: string, pageLens: Lens, preview: Lens | null, routeKind: 'foundation' | 'project' | null = null) => {
     const activeLens = signal<Lens>(pageLens);
     const menuLensPreview = signal<Lens | null>(preview);
@@ -140,9 +144,10 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
         activeLens.set(lens);
         return true;
       }),
-      commitMenuLens: vi.fn((lens: Lens) => {
+      commitMenuLens: vi.fn((lens: Lens, onRestore?: () => void) => {
         activeLens.set(lens);
         menuLensPreview.set(null);
+        restorePick = onRestore ?? null;
       }),
     };
     TestBed.resetTestingModule();
@@ -158,8 +163,15 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
             activeContext: signal({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' }),
             menuContext: signal({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' }),
             activeRouteLensKind: signal(routeKind),
+            selectedFoundation: signal(null),
+            selectedProject,
             setFoundation,
-            setProject,
+            setProject: vi.fn((ctx: ProjectContext, syncUrl: boolean) => {
+              setProject(ctx, syncUrl);
+              selectedProject.set(ctx);
+            }),
+            clearFoundation: vi.fn(),
+            clearProject: vi.fn(),
           },
         },
       ],
@@ -174,6 +186,23 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     navigate.mockClear();
     setProject.mockClear();
     setFoundation.mockClear();
+    restorePick = null;
+    selectedProject.set({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' });
+  });
+
+  it('puts the selected project back when the pick never leaves the page, unless another one was selected since', async () => {
+    const { navMenu } = await createNavMenu('/meetings', 'me', 'project');
+    selectItem(navMenu, betaItem);
+    expect(selectedProject()?.slug).toBe('beta');
+
+    restorePick?.();
+    expect(selectedProject()?.slug).toBe('alpha');
+
+    const again = await createNavMenu('/meetings', 'me', 'project');
+    selectItem(again.navMenu, betaItem);
+    selectedProject.set({ uid: 'uid-gamma', slug: 'gamma', name: 'Gamma' });
+    restorePick?.();
+    expect(selectedProject()?.slug).toBe('gamma');
   });
 
   it("lands a project picked in the previewed Projects lens on its overview from a Me page, without touching the Me page's address", async () => {
@@ -182,7 +211,7 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     selectItem(navMenu, betaItem);
 
     // Committed like any pick from the previewed menu, so a navigation that never leaves the page is undone.
-    expect(lensService.commitMenuLens).toHaveBeenCalledWith('project');
+    expect(lensService.commitMenuLens).toHaveBeenCalledWith('project', expect.any(Function));
     expect(lensService.setLens).not.toHaveBeenCalled();
     expect(lensService.previewingMenuLens()).toBe(false);
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), false);
@@ -194,7 +223,7 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
 
     selectItem(navMenu, cncfItem);
 
-    expect(lensService.commitMenuLens).toHaveBeenCalledWith('foundation');
+    expect(lensService.commitMenuLens).toHaveBeenCalledWith('foundation', expect.any(Function));
     expect(lensService.activeLens()).toBe('foundation');
     expect(setFoundation).toHaveBeenCalledWith(expect.objectContaining({ slug: 'cncf' }), false);
     expect(setProject).not.toHaveBeenCalled();

@@ -58,7 +58,13 @@ export class NavigationService {
   private readonly menuLensPreloader = toSignal(
     toObservable(this.lensService.menuLens).pipe(
       filter((lens): lens is NavLens => (lens === 'foundation' || lens === 'project') && this.lensService.previewingMenuLens()),
-      tap((lens) => this.preloadSibling(lens))
+      tap((lens) => {
+        this.preloadSibling(lens);
+        // A hybrid's merged selector reads both lists, and off a nav lens neither preloader above has loaded the other.
+        if (this.lensService.isHybridPersona()) {
+          this.preloadSibling(lens === 'foundation' ? 'project' : 'foundation');
+        }
+      })
     ),
     { initialValue: null }
   );

@@ -165,7 +165,7 @@ export abstract class NavMenuBase {
     // like any pick from that menu, so a navigation that never leaves the page puts the page's lens back.
     const fromPreview = this.lensService.previewingMenuLens();
     if (fromPreview) {
-      this.lensService.commitMenuLens(asFoundation ? 'foundation' : 'project');
+      this.lensService.commitMenuLens(asFoundation ? 'foundation' : 'project', this.contextRestorer(asFoundation, context));
     } else {
       this.lensService.setLens(asFoundation ? 'foundation' : 'project');
     }
@@ -216,6 +216,26 @@ export abstract class NavMenuBase {
     const currentPath = `/${segments.join('/')}`;
     const onLandingDecisionPage = targetLens === 'project' && (currentPath === LENS_DEFAULT_ROUTES.project || currentPath === FORMATION_CHECKLIST_PATH);
     return lensTypeChanged || onEntityPage || onLandingDecisionPage ? targetLens : null;
+  }
+
+  /**
+   * Puts the selector slot a previewed pick is about to overwrite back to its current value — for a pick whose navigation
+   * never leaves the page — unless something has selected another context since.
+   */
+  private contextRestorer(asFoundation: boolean, picked: ProjectContext): () => void {
+    const slot = asFoundation ? this.projectContextService.selectedFoundation : this.projectContextService.selectedProject;
+    const previous = slot();
+    return () => {
+      if (slot()?.uid !== picked.uid) return;
+      if (previous) {
+        if (asFoundation) this.projectContextService.setFoundation(previous, false);
+        else this.projectContextService.setProject(previous, false);
+      } else if (asFoundation) {
+        this.projectContextService.clearFoundation();
+      } else {
+        this.projectContextService.clearProject();
+      }
+    };
   }
 
   private initEffectiveShowOrgSelector(): Signal<boolean> {

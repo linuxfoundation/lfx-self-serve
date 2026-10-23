@@ -71,3 +71,20 @@ export interface DisplayLensItem {
   /** Favorited items float to the top of the list, ahead of the role-tier sort (GH-2995). */
   isFavorited: boolean;
 }
+
+/**
+ * A pick from the mobile nav drawer's previewed menu (#4208), followed until its navigation lands so it can be undone if
+ * the navigation never leaves the page.
+ */
+export interface MenuLensPick {
+  /** The page's lens before the pick. */
+  previous: Lens;
+  /** The lens the pick made active. */
+  committed: Lens;
+  /** The lens the drawer was previewing. */
+  previewed: Lens;
+  /** The preview epoch at the pick; a preview dropped since (the drawer closed) is not brought back. */
+  epoch: number;
+  /** Puts back anything else the pick changed, such as a selector pick's context. */
+  onRestore?: () => void;
+}
