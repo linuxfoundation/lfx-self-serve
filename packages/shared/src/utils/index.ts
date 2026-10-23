@@ -93,6 +93,7 @@ export * from './icp.utils';
 export * from './mktg-artifact.utils';
 export * from './mktg-document-store.utils';
 export * from './mktg-document-comments.utils';
+export * from './mktg-document-redraft.utils';
 export * from './mktg-document.utils';
 export * from './mktg-envelope.utils';
 export * from './mktg-print.utils';

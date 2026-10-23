@@ -286,6 +286,72 @@ describe('private field comment store', () => {
     await expect(service().add(req, project, type, 'living', request())).rejects.toMatchObject({ statusCode: 503 });
   });
 
+  it('reserves an ordered send once and freezes only the selected input, not concurrent new comments', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const id = record().threads[0].id;
+    const body = { project, revisionId, commentIds: [id], clientRequestId: 'send-one' };
+    const preflight = vi.fn().mockResolvedValue(undefined);
+    const first = await store.reserve(req, project, type, 'living', body, preflight);
+    expect(first.fresh).toBe(true);
+    expect(first.submission).toMatchObject({ requestedBy: 'opaque-user-one', state: 'reserved', runId: null });
+    expect(record().threads[0].status).toBe('open');
+    expect(first.comments[0]).toMatchObject({ id, text: request().text });
+    expect(first.comments[0]).not.toHaveProperty('authorId');
+    await store.add(req, project, type, 'living', request({ clientRequestId: 'new-comment', text: 'Concurrent new input.' }));
+    const replay = await store.reserve(req, project, type, 'living', body, preflight);
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(replay.fresh).toBe(false);
+    expect(replay.comments).toEqual(first.comments);
+    expect(record().threads.find((entry) => entry.id !== id)?.status).toBe('open');
+    expect(JSON.stringify(record().submissions)).not.toContain('sessionId');
+    expect(JSON.stringify(record().submissions)).not.toContain('ownerToken');
+  });
+
+  it('does not lease comments when source/dependency/form preflight fails before commitment', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const before = record();
+    const body = { project, revisionId, commentIds: [before.threads[0].id], clientRequestId: 'send-one' };
+    await expect(
+      store.reserve(req, project, type, 'living', body, () => {
+        throw new Error('Synthetic preflight rejection');
+      })
+    ).rejects.toThrow('Synthetic preflight rejection');
+    expect(record()).toEqual(before);
+  });
+
+  it('lets only one competing handler acquire permission to create a session', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const body = { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-one' };
+    const replies = await Promise.all([store.reserve(req, project, type, 'living', body), store.reserve(req, project, type, 'living', body)]);
+    expect(replies.filter((reply) => reply.fresh)).toHaveLength(1);
+    expect(record().submissions).toHaveLength(1);
+    flows.subject.mockReturnValue('other-creator');
+    await expect(store.reserve(req, project, type, 'living', body)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('rejects foreign, busy, duplicate or over-cap input IDs without another reservation', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const id = record().threads[0].id;
+    const body = { project, revisionId, commentIds: [id], clientRequestId: 'send-one' };
+    for (const commentIds of [[id, id], ['foreign-comment']])
+      await expect(store.reserve(req, project, type, 'living', { ...body, commentIds })).rejects.toBeInstanceOf(ServiceValidationError);
+    const value = record();
+    value.threads = Array.from({ length: 31 }, (_, index) => ({ ...value.threads[0], id: `comment-${index}`, clientRequestId: `input-${index}` }));
+    replace(value);
+    await expect(store.reserve(req, project, type, 'living', { ...body, commentIds: value.threads.map((entry) => entry.id) })).rejects.toBeInstanceOf(
+      ServiceValidationError
+    );
+    expect(record().submissions).toEqual([]);
+    await store.reserve(req, project, type, 'living', { ...body, commentIds: ['comment-0'] });
+    await expect(store.reserve(req, project, type, 'living', { ...body, commentIds: ['comment-0'], clientRequestId: 'different-send' })).rejects.toBeInstanceOf(
+      ConflictError
+    );
+  });
+
   it('bounds comparison retries instead of spinning indefinitely', async () => {
     flows.put.mockResolvedValue(false);
     await expect(service().add(req, project, type, 'living', request())).rejects.toBeInstanceOf(PreconditionFailedError);

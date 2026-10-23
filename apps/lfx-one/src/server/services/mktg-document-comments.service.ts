@@ -27,11 +27,16 @@ import type {
   MktgDocumentType,
   MktgRevisionResponse,
   MktgStoredDocumentComment,
+  MktgDocumentCommentsMutation,
+  MktgRedraftReservation,
+  MktgDocumentCommentSubmission,
 } from '@lfx-one/shared/interfaces';
-import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
+import { MKTG_REDRAFT_SUBMISSION_KEYS } from '@lfx-one/shared/constants/mktg-document-redraft.constants';
+import { readMktgRedraftRequest } from '@lfx-one/shared/utils/mktg-document-redraft.utils';
+import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField, validateMktgDocumentCommentBatch } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
-import { ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
@@ -77,9 +82,8 @@ export class MktgDocumentCommentsService {
       resultRevisionId: null,
       resolution: null,
     };
-    for (let attempt = 0; attempt < MKTG_DOCUMENT_WRITE_ATTEMPTS; attempt++) {
-      const snapshot = await this.read(req, project, agentKey, documentId);
-      const duplicate = snapshot.record.threads.find((entry) => entry.clientRequestId === input.clientRequestId);
+    const stored = await this.change(req, project, agentKey, documentId, (record) => {
+      const duplicate = record.threads.find((entry) => entry.clientRequestId === input.clientRequestId);
       if (duplicate) {
         if (
           duplicate.authorId !== authorId ||
@@ -89,24 +93,114 @@ export class MktgDocumentCommentsService {
         ) {
           throw new ConflictError('This comment request was already used for a different comment.', 'MKTG_COMMENT_REQUEST_CONFLICT');
         }
-        return this.project(req, snapshot.record, input.revisionId);
+        return { record: null, result: record };
       }
-      if (snapshot.record.threads.length >= MKTG_DOCUMENT_COMMENT_MAX_THREADS)
-        throw this.invalid('comments', 'The comment history is full; no comments were removed.');
-      const record = { ...snapshot.record, threads: [...snapshot.record.threads, thread] };
-      const body = Buffer.from(JSON.stringify(record));
+      if (record.threads.length >= MKTG_DOCUMENT_COMMENT_MAX_THREADS) throw this.invalid('comments', 'The comment history is full; no comments were removed.');
+      const next = { ...record, threads: [...record.threads, thread] };
+      return { record: next, result: next };
+    });
+    logger.debug(req, 'mktg_document_comment_add', 'Stored a field comment', { agent: agentKey });
+    return this.project(req, stored, input.revisionId);
+  }
+
+  /** Only a fresh committed reservation may invoke Guild. Preflight may read/render, NEVER mutate or send; CAS can repeat it. */
+  public async reserve(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    raw: unknown,
+    preflight?: (comments: MktgRedraftReservation['comments']) => void | Promise<void>
+  ): Promise<MktgRedraftReservation> {
+    const agent = this.commentAgent(type);
+    const actor = this.creator(req);
+    const input = readMktgRedraftRequest(raw);
+    if (!input) throw this.invalid('redraft', 'A revision, unique comment IDs and opaque request ID are required.');
+    const view = await this.requireRevision(req, project, type, documentId, input.revisionId);
+    const source = this.source(view, agent);
+    const now = new Date().toISOString();
+    return this.change<MktgRedraftReservation>(req, project, agent, documentId, async (record) => {
+      const existing = record.submissions.find((entry) => entry.id === input.clientRequestId);
+      if (existing) {
+        if (
+          existing.requestedBy !== actor ||
+          existing.baseRevisionId !== input.revisionId ||
+          JSON.stringify(existing.commentIds) !== JSON.stringify(input.commentIds)
+        ) {
+          throw new ConflictError('This send request is already bound to different inputs or a different creator.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
+        }
+        return { record: null, result: { submission: existing, comments: this.frozen(record, existing), fresh: false } };
+      }
+      if (
+        record.submissions.some(
+          (entry) => entry.state !== 'failed' && entry.state !== 'completed' && entry.commentIds.some((id) => input.commentIds.includes(id))
+        )
+      ) {
+        throw new ConflictError('Some comments are already reserved for another send.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+      }
+      const selected = input.commentIds.map((id) => record.threads.find((entry) => entry.id === id));
+      if (
+        selected.some(
+          (entry) => !entry || entry.status !== 'open' || entry.revisionId !== input.revisionId || !isMktgDocumentCommentAnchor(agent, source, entry.anchor)
+        )
+      ) {
+        throw this.invalid('commentIds', 'Every comment must be open and anchored to the selected stored revision.');
+      }
+      const comments = selected.filter((entry): entry is MktgStoredDocumentComment => !!entry);
+      if (validateMktgDocumentCommentBatch(agent, comments).length)
+        throw this.invalid('commentIds', `This agent accepts 1–${MKTG_DOCUMENT_COMMENT_LIMITS[agent]} comments.`);
+      const submission: MktgDocumentCommentSubmission = {
+        id: input.clientRequestId,
+        requestedBy: actor,
+        createdAt: now,
+        baseRevisionId: input.revisionId,
+        commentIds: [...input.commentIds],
+        state: 'reserved',
+        runId: null,
+        resultRevisionId: null,
+      };
+      // Reservation is not proof of external acceptance. Threads become sent only when a returned run hash is bound.
+      const next: MktgDocumentCommentsRecord = { ...record, submissions: [...record.submissions, submission] };
+      const frozen = this.frozen(next, submission);
+      await preflight?.(frozen);
+      return { record: next, result: { submission, comments: frozen, fresh: true } };
+    });
+  }
+
+  private creator(req: Request): string {
+    const actor = this.authors.captureAuthorId(req);
+    if (!actor) throw new AuthenticationError('A signed-in subject is required to own a redraft session.');
+    return actor;
+  }
+  private frozen(record: MktgDocumentCommentsRecord, submission: MktgDocumentCommentSubmission): MktgRedraftReservation['comments'] {
+    return submission.commentIds.map((id) => {
+      const entry = record.threads.find((thread) => thread.id === id && thread.revisionId === submission.baseRevisionId);
+      if (!entry) throw this.corrupt();
+      return { id: entry.id, anchor: { ...entry.anchor }, text: entry.text, createdAt: entry.createdAt };
+    });
+  }
+  private async change<T>(
+    req: Request,
+    project: string,
+    agent: MktgCommentAgentKey,
+    documentId: string,
+    apply: (record: MktgDocumentCommentsRecord) => MktgDocumentCommentsMutation<T> | Promise<MktgDocumentCommentsMutation<T>>
+  ): Promise<T> {
+    for (let attempt = 0; attempt < MKTG_DOCUMENT_WRITE_ATTEMPTS; attempt++) {
+      const snapshot = await this.read(req, project, agent, documentId);
+      const mutation = await apply(snapshot.record);
+      if (!mutation.record) return mutation.result;
+      const body = Buffer.from(JSON.stringify(mutation.record));
       if (body.byteLength > MKTG_DOCUMENT_COMMENT_STORE_MAX_BYTES) throw this.invalid('comments', 'The comment history is full; no comments were removed.');
       if (
-        await this.store.putConditionalObject(req, 'marketing-os-artifacts', this.key(project, agentKey, documentId), {
+        await this.store.putConditionalObject(req, 'marketing-os-artifacts', this.key(project, agent, documentId), {
           body,
           contentType: 'application/json; charset=utf-8',
           cacheControl: 'private, no-store',
           ...(snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' as const }),
         })
-      ) {
-        logger.debug(req, 'mktg_document_comment_add', 'Stored a field comment', { agent: agentKey });
-        return this.project(req, record, input.revisionId);
-      }
+      )
+        return mutation.result;
     }
     throw new PreconditionFailedError('The comments changed while saving. Try again.');
   }
@@ -189,16 +283,33 @@ export class MktgDocumentCommentsService {
       new Set(value.threads.map((entry) => entry.id)).size !== value.threads.length ||
       new Set(value.threads.map((entry) => entry.clientRequestId)).size !== value.threads.length ||
       !Array.isArray(value.submissions) ||
-      !value.submissions.every(
-        (entry) =>
-          entry &&
-          typeof entry.id === 'string' &&
-          Array.isArray(entry.commentIds) &&
-          (MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES as readonly string[]).includes(entry.state)
-      )
+      !value.submissions.every((entry) => this.validSubmission(entry, agentKey))
     )
       throw this.corrupt();
     return { record: value, etag: object.etag };
+  }
+
+  private validSubmission(value: MktgDocumentCommentSubmission, agent: MktgCommentAgentKey): boolean {
+    return (
+      !!value &&
+      Object.keys(value).every((key) => (MKTG_REDRAFT_SUBMISSION_KEYS as readonly string[]).includes(key)) &&
+      typeof value.id === 'string' &&
+      MKTG_DOCUMENT_COMMENT_ID_REGEX.test(value.id) &&
+      typeof value.requestedBy === 'string' &&
+      !!value.requestedBy.trim() &&
+      typeof value.createdAt === 'string' &&
+      Number.isFinite(Date.parse(value.createdAt)) &&
+      typeof value.baseRevisionId === 'string' &&
+      MKTG_REVISION_ID_REGEX.test(value.baseRevisionId) &&
+      Array.isArray(value.commentIds) &&
+      value.commentIds.length > 0 &&
+      value.commentIds.length <= MKTG_DOCUMENT_COMMENT_LIMITS[agent] &&
+      value.commentIds.every((id) => typeof id === 'string' && MKTG_DOCUMENT_COMMENT_ID_REGEX.test(id)) &&
+      new Set(value.commentIds).size === value.commentIds.length &&
+      (MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES as readonly string[]).includes(value.state) &&
+      (value.runId === null || (typeof value.runId === 'string' && MKTG_STARTED_RUN_ID_REGEX.test(value.runId))) &&
+      (value.resultRevisionId === null || (typeof value.resultRevisionId === 'string' && MKTG_REVISION_ID_REGEX.test(value.resultRevisionId)))
+    );
   }
 
   private validThread(value: MktgStoredDocumentComment): boolean {
