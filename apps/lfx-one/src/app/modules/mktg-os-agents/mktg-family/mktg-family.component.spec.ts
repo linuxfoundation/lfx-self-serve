@@ -411,17 +411,21 @@ describe('Marketing family page', () => {
     expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(action()?.getAttribute('href'));
     expect(root?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
   });
-  it('a real denied listing still resolves the disabled reader header without exposing document state', async () => {
+  it.each([
+    { familyId: 'positioning-brand', label: 'Run messaging framework' },
+    { familyId: 'social-community', label: 'Run LinkedIn posts' },
+  ])('a denied $familyId listing keeps the board header label without exposing document state', async ({ familyId, label }) => {
     writer.set(false);
     error.set('You need write access to this project to see its Marketing kit.');
     accessDenied.set(true);
     families.set([]);
     const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/project/mktg-os-agents/families/social-community?project=synthetic', MktgFamilyComponent);
+    await harness.navigateByUrl('/project/mktg-os-agents/families/' + familyId + '?project=synthetic', MktgFamilyComponent);
     const root = harness.routeNativeElement;
     const reason = 'You need write access to this project to run its agents';
     expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(true);
-    expect(root?.querySelector('[data-testid="mktg-family-run"] button')?.getAttribute('aria-label')).toContain(reason);
+    expect(root?.querySelector('[data-testid="mktg-family-run"] button')?.textContent).toContain(label);
+    expect(root?.querySelector('[data-testid="mktg-family-run"] button')?.getAttribute('aria-label')).toBe(`${label} (${reason})`);
     expect(root?.querySelector('[data-testid="mktg-family-run-blocked"]')?.getAttribute('role')).toBe('note');
     expect(root?.querySelector('[data-testid="mktg-family-run-blocked"]')?.getAttribute('tabindex')).toBe('0');
     expect(root?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();

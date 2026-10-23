@@ -56,8 +56,8 @@ type with an unavailable agent reads **Coming soon**, not Not run yet.
 
 State filters read `?state=` (All by default), retaining all family cards. A user filter click
 pushes a history entry, so browser Back restores the previous filter. Never-run one-offs join
-Not run yet. Already-run one-offs appear under All only (provisional: they have no approval
-workflow), never Approved/Draft/Needs rebuild. Kit cards consume the shared Family rule's
+Not run yet. Already-run one-offs appear under All only (decided by the operator, 23 Oct:
+they have no approval workflow), never Approved/Draft/Needs rebuild. Kit cards consume the shared Family rule's
 row states and labels without adding buttons or changing the board's card layout. `summarizeMktgKit` centralizes provisional
 formulas: In the kit counts **Approved only**, Core floor counts families with at least one
 approved asset out of the catalog length, and Kit level is Core only once every store-backed

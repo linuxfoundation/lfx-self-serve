@@ -281,21 +281,27 @@ test.describe('Marketing family content', () => {
     }
     await page.screenshot({ path: test.info().outputPath('family-header-native-link.png'), fullPage: true });
   });
-  test('a denied reader listing still shows its disabled header and keyboard-accessible write reason', async ({ page }) => {
-    await setupKit(page, { writer: false });
-    await openKit(page, '/families/social-community');
-    const action = page.getByTestId('mktg-family-run');
-    await expect(action.getByRole('button')).toBeDisabled();
-    await expect(action.getByRole('button')).toHaveAccessibleName(/You need write access to this project to run its agents/);
-    const reason = page.getByTestId('mktg-family-run-blocked');
-    await expect(reason).toHaveRole('note');
-    await expect(reason).toHaveAttribute('aria-label', 'You need write access to this project to run its agents');
-    await expect(page.getByTestId('mktg-family-error')).toContainText('write access');
-    await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
-    await reason.focus();
-    await expect(page.getByRole('tooltip')).toContainText('You need write access to this project to run its agents');
-    await page.screenshot({ path: test.info().outputPath('family-reader-run.png'), fullPage: true });
-  });
+  for (const [familyId, label] of [
+    ['positioning-brand', 'Run messaging framework'],
+    ['social-community', 'Run LinkedIn posts'],
+  ]) {
+    test(`a denied ${familyId} listing keeps board Run copy and keyboard-accessible write reason`, async ({ page }) => {
+      await setupKit(page, { writer: false });
+      await openKit(page, '/families/' + familyId);
+      const action = page.getByTestId('mktg-family-run');
+      await expect(action.getByRole('button')).toBeDisabled();
+      await expect(action.getByRole('button')).toHaveText(label);
+      await expect(action.getByRole('button')).toHaveAccessibleName(`${label} (You need write access to this project to run its agents)`);
+      const reason = page.getByTestId('mktg-family-run-blocked');
+      await expect(reason).toHaveRole('note');
+      await expect(reason).toHaveAttribute('aria-label', 'You need write access to this project to run its agents');
+      await expect(page.getByTestId('mktg-family-error')).toContainText('write access');
+      await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
+      await reason.focus();
+      await expect(page.getByRole('tooltip')).toContainText('You need write access to this project to run its agents');
+      await page.screenshot({ path: test.info().outputPath(`family-reader-run-${familyId}.png`), fullPage: true });
+    });
+  }
   test('no access does not disclose asset states', async ({ page }) => {
     await setupKit(page, { writer: false });
     await openKit(page, '/families/positioning-brand');
