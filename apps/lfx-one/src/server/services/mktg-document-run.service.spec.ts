@@ -13,7 +13,6 @@ import {
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
   MKTG_RUN_FAILURE_REASON,
-  LINKEDIN_SOURCE_MAX_WORDS,
 } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
@@ -262,23 +261,9 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.ownedOneOffResult(creator, project, 'member-360', session, {})).rejects.toBeInstanceOf(AuthorizationError);
     flows.linkedin.mockResolvedValue({ status: 'pending' });
     await service.ownedOneOffResult(creator, project, 'linkedin-post', 'untracked-session', {});
-    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', 'untracked-session', project, undefined, 0);
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', 'untracked-session', project, undefined, undefined);
     await service.ownedOneOffResult(creator, 'other-project', 'linkedin-post', session, {});
-    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, 'other-project', undefined, 0);
-  });
-
-  it('validates the legacy link and word-count contract in the completion service', async () => {
-    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
-    await service.ownedOneOffResult(creator, project, 'linkedin-post', session, { sourceWords: LINKEDIN_SOURCE_MAX_WORDS });
-    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, project, undefined, LINKEDIN_SOURCE_MAX_WORDS);
-    flows.linkedin.mockClear();
-    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, { sourceWords: LINKEDIN_SOURCE_MAX_WORDS + 1 })).rejects.toBeInstanceOf(
-      ServiceValidationError
-    );
-    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, { answers: { share_link: 'javascript:bad' } })).rejects.toBeInstanceOf(
-      ServiceValidationError
-    );
-    expect(flows.linkedin).not.toHaveBeenCalled();
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, 'other-project', undefined, undefined);
   });
 
   it.each(['service', 'provider', 'network'])('falls back on a transient %s read and logs no private body/error details', async (kind) => {
@@ -292,7 +277,11 @@ describe('MktgDocumentRunService core', () => {
     const body = { answers: { share_link: 'https://post.example/fallback' }, sourceWords: 12 };
     expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).toMatchObject({ status: 'pending' });
     expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, project, body.answers, 12);
-    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_owned_run_read', expect.any(String), { project });
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_owned_run_read', expect.any(String), {
+      project,
+      status: kind === 'network' ? 0 : 503,
+      code: kind === 'network' ? 'network' : 'http',
+    });
     expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private provider message');
     flows.linkedin.mockClear();
     flows.get.mockImplementationOnce(() => {
@@ -304,6 +293,20 @@ describe('MktgDocumentRunService core', () => {
     });
     await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).rejects.toMatchObject({ code: 'EACCES' });
     expect(flows.linkedin).not.toHaveBeenCalled();
+  });
+
+  it('retains the tracking-write error for operators without changing the successful result', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
+    const result = {
+      ...ready(),
+      persistence: { ...ready().persistence, document_location: { ...location('linkedin-post'), document_id: `run-${hash(session).slice(0, 24)}` } },
+    };
+    flows.linkedin.mockResolvedValue(result);
+    const err = new MicroserviceError('Synthetic metadata write failed', 503, 'STORE_UNAVAILABLE');
+    flows.beforePut.mockRejectedValueOnce(err);
+    expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, {})).toBe(result);
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_run_record_result', expect.any(String), { project, err });
   });
 
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {

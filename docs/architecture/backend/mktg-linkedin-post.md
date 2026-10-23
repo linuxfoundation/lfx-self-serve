@@ -60,17 +60,20 @@ Successful receipt cleanup removes only that document's pending proof. Neither t
 optional cache nor a URL token is the authoritative pending record: a plain document
 URL in another browser still uses server `detail.runs[]` reconciliation.
 
-After HMAC validation and writer entitlement, the owned result controller reads
-`MktgDocumentRunService.ownedOneOffResult` for that exact project/agent/session and
-creator. Its shared `agentResult` dispatcher owns the captured link answers, source word
+The owned result controller validates the HMAC and LinkedIn body shape before the
+writer lookup, then delegates to `MktgDocumentRunService.ownedOneOffResult` with a
+validated typed `MktgOneOffRunContext`, never the raw HTTP body, for that exact
+project/agent/session and creator. Its shared `agentResult` dispatcher owns the captured link answers, source word
 count and original profile-initialization permission for BOTH owned polls and Documents
 reconciliation; the controller applies no completion policy. It reuses the fetched record
 and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
 The existing post-write metadata winner confirmation remains unchanged.
 Browser omissions or later source context cannot replace captured values. Legacy untracked
-sessions retain the result-body contract. A transient tracking read failure logs a fixed
-service warning and uses that same legacy creator contract for this poll; authorization
-failures are never softened. This service method is not a new endpoint or public progress
+sessions retain the result-body contract. One server utility classifies repository,
+Smithy timeout and network errors (including status0,408,429 and5xx). A transient tracking
+read failure logs fixed diagnostic categories and numeric status, never provider text,
+and uses that same legacy creator contract for this poll; authorization failures are
+never softened. Tracking-write failures retain the error under the logger's `err` field. This service method is not a new endpoint or public progress
 projection. `profileSaved: false` remains distinct from
 a successful document receipt in the shared progress event, for the cutover's existing
 profile-persistence warning.

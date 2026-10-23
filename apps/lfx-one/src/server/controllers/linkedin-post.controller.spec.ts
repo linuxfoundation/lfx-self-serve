@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinStoredProfile } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
-import { MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import { LINKEDIN_SOURCE_MAX_WORDS, MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 vi.mock('@lfx-one/shared/constants', async (original) => {
   const actual = await original<typeof import('@lfx-one/shared/constants')>();
   return {
@@ -103,7 +103,7 @@ describe('LinkedIn endpoint boundaries', () => {
     const req = request(body);
     await controller.result(req, response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', body);
+    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', { answers: undefined, sourceWords: 0 });
     expect(mocks.result).not.toHaveBeenCalled();
     mocks.ownedResult.mockClear();
     await controller.result(request({ ...body, ownerToken: 'forged' }), response(), next);
@@ -225,31 +225,38 @@ describe('LinkedIn endpoint boundaries', () => {
   });
   it('logs and sends the resolved terminal outcome, never an earlier pending status', async () => {
     mocks.ownedResult.mockResolvedValue({ status: 'failed' });
-    {
-      const res = response();
-      const next = vi.fn();
-      await new LinkedinPostController().result(
-        request({ project: 'project-one', sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one') }),
-        res,
-        next
-      );
-      expect(next).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith({ status: 'failed' });
-      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'linkedin_result', 0, { status: 'failed' });
-    }
+    const res = response();
+    const next = vi.fn();
+    await new LinkedinPostController().result(
+      request({ project: 'project-one', sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one') }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'failed' });
+    expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'linkedin_result', 0, { status: 'failed' });
   });
-  it('passes legacy source inputs unchanged to the service boundary', async () => {
+  it('validates source word bounds before writer lookup and passes only typed fallback context', async () => {
     const controller = new LinkedinPostController();
     const body = {
       project: 'project-one',
       sessionId: 'session-one',
       ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
-      sourceWords: 43,
+      sourceWords: LINKEDIN_SOURCE_MAX_WORDS,
     };
     const next = vi.fn();
     await controller.result(request(body), response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.ownedResult).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one', body);
+    expect(mocks.ownedResult).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one', {
+      answers: undefined,
+      sourceWords: LINKEDIN_SOURCE_MAX_WORDS,
+    });
+    mocks.project.mockClear();
+    mocks.ownedResult.mockClear();
+    await controller.result(request({ ...body, sourceWords: LINKEDIN_SOURCE_MAX_WORDS + 1 }), response(), next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(mocks.project).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
 
   it('refuses another user’s token before reading events or saving profiles', async () => {
@@ -295,7 +302,7 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.saveFromInput).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0].statusCode).toBe(400);
   });
-  it('passes LFX share-link inputs to the owned result service for validation', async () => {
+  it('validates LFX share-link inputs before writer lookup and passes only typed fallback context', async () => {
     const body = {
       project: 'project-one',
       sessionId: 'session-one',
@@ -306,7 +313,13 @@ describe('LinkedIn endpoint boundaries', () => {
     const next = vi.fn();
     await new LinkedinPostController().result(req, response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', body);
+    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', { answers: body.answers, sourceWords: 0 });
+    mocks.project.mockClear();
+    mocks.ownedResult.mockClear();
+    await new LinkedinPostController().result(request({ ...body, answers: { share_link: 'javascript:bad' } }), response(), next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(mocks.project).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
   it('erases only the effective user and requires authentication for deletion', async () => {
     const controller = new LinkedinPostController();

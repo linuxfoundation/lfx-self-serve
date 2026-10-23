@@ -4,12 +4,13 @@
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
+  LINKEDIN_SOURCE_MAX_WORDS,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { LinkedinProfileInput, Project } from '@lfx-one/shared/interfaces';
-import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareLink, validLinkedinAnswers } from '@lfx-one/shared/utils';
+import { LinkedinProfileInput, MktgOneOffRunContext, Project } from '@lfx-one/shared/interfaces';
+import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareAnswers, normalizeLinkedinShareLink, validLinkedinAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
@@ -118,8 +119,14 @@ export class LinkedinPostController {
       const user = this.requireUser(req);
       const body = this.body(req);
       const sessionId = this.ownedSession(user, body);
+      const answers = body['answers'] === undefined ? undefined : normalizeLinkedinShareAnswers(body['answers']);
+      if (answers === null) throw ServiceValidationError.forField('answers', 'Only a valid link-to-share answer is accepted.');
+      const sourceWords = body['sourceWords'] ?? 0;
+      if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
+        throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
+      const fallback: MktgOneOffRunContext = { answers, sourceWords };
       const project = await this.writableProject(req, body['project']);
-      const result = await this.runs.ownedOneOffResult(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId, body);
+      const result = await this.runs.ownedOneOffResult(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId, fallback);
       logger.success(req, operation, start, { status: result.status });
       res.set('Cache-Control', 'private, no-store').json(result);
     } catch (error) {
