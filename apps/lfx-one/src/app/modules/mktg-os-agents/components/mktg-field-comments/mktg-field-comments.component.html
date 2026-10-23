@@ -24,17 +24,17 @@
         <lfx-textarea
           class="block min-w-0 w-full"
           styleClass="w-full min-w-0 max-w-full"
-          [form]="form"
+          [form]="form()"
           control="text"
           [inputId]="inputId()"
           [rows]="2"
           [maxlength]="maxChars"
           placeholder="What should change here"
           [required]="true"
-          [invalid]="form.controls.text.touched && form.controls.text.invalid"
-          [describedBy]="form.controls.text.touched && form.controls.text.invalid ? validationId() : undefined"
+          [invalid]="form().controls.text.touched && form().controls.text.invalid"
+          [describedBy]="form().controls.text.touched && form().controls.text.invalid ? validationId() : undefined"
           dataTest="mktg-field-comment-text" />
-        @if (form.controls.text.touched && form.controls.text.invalid) {
+        @if (form().controls.text.touched && form().controls.text.invalid) {
           <p class="text-xs text-red-700" role="alert" [id]="validationId()">Enter a comment of 1–{{ maxChars }} characters.</p>
         }
         @if (error()) {
@@ -48,7 +48,13 @@
             [disabled]="busy() || comments.saving()"
             (onClick)="save()"
             data-testid="mktg-field-comment-add" />
-          <lfx-button label="Cancel" size="small" [text]="true" [disabled]="busy()" (onClick)="close(true)" data-testid="mktg-field-comment-cancel" />
+          <lfx-button
+            label="Cancel"
+            size="small"
+            [text]="true"
+            [disabled]="busy() || comments.saving()"
+            (onClick)="close(true)"
+            data-testid="mktg-field-comment-cancel" />
         </div>
       </div>
     }

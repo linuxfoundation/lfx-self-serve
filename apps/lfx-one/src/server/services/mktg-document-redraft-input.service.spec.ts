@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import type { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
+import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
 const flows = vi.hoisted(() => ({ valid: vi.fn(), latest: vi.fn(), capture: vi.fn() }));
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
@@ -42,7 +43,7 @@ function view(agent: 'foundation-message' | 'brand-kit' | 'boilerplates'): MktgR
       content_sha256: createHash('sha256').update(markdown).digest('hex'),
       kit: { font: 'Stored font' },
       chapters: { logo: { provenance: 'Stored artwork' } },
-      inputs_record: { website: { url: 'https://example.test' }, website_url: 'https://example.test', links: [], documents: [] },
+      inputs_record: { website: { url: 'https://example.test', read: true }, links: [], documents: [] },
       inputs: { website_url: 'https://example.test', brand_page_url: null, logo_files: [{ name: 'stored.svg', bytes: 20 }] },
     },
   } as unknown as MktgRevisionResponse;
@@ -72,6 +73,17 @@ describe('server-only redraft forms', () => {
     }
     if (agent === 'foundation-message') expect(flows.latest).not.toHaveBeenCalled();
     else expect(flows.capture).toHaveBeenCalledWith(req, stored.project, { mf: {}, mh: {} });
+  });
+  it('forwards the nested website from a real boilerplates contract envelope', async () => {
+    const markdown = JSON.stringify(boilerplatesEnvelope.content);
+    const stored = {
+      ...view('boilerplates'),
+      markdown,
+      sidecar: { ...boilerplatesEnvelope, content_sha256: createHash('sha256').update(markdown).digest('hex') },
+    };
+    const prepared = await new MktgDocumentRedraftInputService().prepare(req, stored, 'send-one', redraftContextFixture('boilerplates').comments);
+    expect(prepared.message).toContain(`WEBSITE: ${boilerplatesEnvelope.inputs_record.website.url}`);
+    expect(prepared.message).not.toContain('WEBSITE: none');
   });
   it('rejects invalid schema/hash and unavailable approved input before reserving any external work', async () => {
     const service = new MktgDocumentRedraftInputService();

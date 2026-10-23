@@ -47,6 +47,32 @@ test.describe('asset comments structure', () => {
     });
   }
 
+  test('a pending field save survives a tab round-trip without erasing newer text on ACK', async ({ page }) => {
+    const fixture = await setupComments(page);
+    fixture.state.holdSave = true;
+    await fixture.open();
+    await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
+    const field = page.getByTestId('mktg-field-comments-mf.positioning');
+    await field.getByRole('button', { name: 'Comment on Positioning', exact: true }).click();
+    await field.getByRole('textbox').fill('First captured comment.');
+    await field.getByRole('button', { name: 'Add comment', exact: true }).click();
+    await expect.poll(() => fixture.state.posts.length).toBe(1);
+    await page.getByTestId('mktg-framework-view-tab-icps').click();
+    await page.getByTestId('mktg-framework-view-tab-framework').click();
+    await expect(field.getByRole('textbox')).toHaveValue('First captured comment.');
+    await field.getByRole('textbox').fill('Newer text typed while saving.');
+    fixture.releaseSave();
+    const panel = page.getByTestId('mktg-comments-panel');
+    await expect(panel.getByText('First captured comment.', { exact: true })).toBeVisible();
+    await expect(field.getByRole('textbox')).toHaveValue('Newer text typed while saving.');
+    fixture.state.holdSave = false;
+    await field.getByRole('button', { name: 'Add comment', exact: true }).click();
+    await expect(panel.getByText('Newer text typed while saving.', { exact: true })).toBeVisible();
+    expect(fixture.state.posts[0]['clientRequestId']).not.toBe(fixture.state.posts[1]['clientRequestId']);
+    await expect(field.getByRole('textbox')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('field-draft-survives-tab-and-ack.png'), fullPage: true });
+  });
+
   test('a denied save shows access Retry and restores the same viewer draft after a successful read', async ({ page }) => {
     const fixture = await setupComments(page);
     await fixture.open();
