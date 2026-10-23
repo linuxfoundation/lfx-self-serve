@@ -92,7 +92,7 @@ vi.mock('./mktg-document-redraft-context.service', () => ({
 vi.mock('../utils/mktg-session-token.util', () => ({ createSessionOwnerToken: (creator: string) => `synthetic-capability-${creator}` }));
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
 import { MktgDocumentRedraftService } from './mktg-document-redraft.service';
-import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 const req = {} as Request;
 const context = redraftContextFixture();
@@ -127,14 +127,18 @@ describe('reserved redraft delivery', () => {
       return { fresh, comments: context.comments, submission: { runId: f.hash, state: f.state, createdAt: new Date().toISOString() } };
     });
   });
-  it('reserves first, records descriptor before public progress, then only replays the creator ACK', async () => {
+  it('reserves first, ACKs the authoritative sidecar version, then only replays the creator ACK', async () => {
+    f.view.mockResolvedValue({ revision: { id: context.basedOnId, draftVersion: 1 } });
     const first = await send();
+    expect(first.priorVersion).toBe(context.priorVersion);
+    expect(first.priorVersion).not.toBe(1);
     expect(first.ownerToken).toBe('synthetic-capability-opaque-creator');
     expect(f.reserve.mock.invocationCallOrder[0]).toBeLessThan(f.guild.mock.invocationCallOrder[0]);
     expect(f.create.mock.invocationCallOrder[0]).toBeLessThan(f.start.mock.invocationCallOrder[0]);
     f.known.mockResolvedValue('synthetic-session');
     const replay = await send();
     expect(replay.sessionId).toBe(first.sessionId);
+    expect(replay.priorVersion).toBe(context.priorVersion);
     expect(f.guild).toHaveBeenCalledTimes(1);
     expect(f.prepare).toHaveBeenCalledTimes(1);
     expect(f.start).toHaveBeenLastCalledWith(
@@ -165,9 +169,81 @@ describe('reserved redraft delivery', () => {
     f.state = 'reserved';
     const error = new ConflictError('Synthetic context conflict', 'SYNTHETIC_CONTEXT_CONFLICT');
     f.create.mockRejectedValueOnce(error);
-    await expect(send()).rejects.toBe(error);
+    await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
     expect(f.state).toBe('uncertain');
   });
+  it.each(['create', 'start', 'bind'] as const)('keeps a real ledger uncertain after a session and %s validation/conflict failures', async (stage) => {
+    const { MktgDocumentCommentsService } = await vi.importActual<typeof import('./mktg-document-comments.service')>('./mktg-document-comments.service');
+    for (const error of [
+      new ConflictError('Synthetic conflict', 'MKTG_REDRAFT_CONTEXT_CONFLICT'),
+      ServiceValidationError.forField('context', 'Synthetic validation'),
+    ]) {
+      f.records.clear();
+      const ledger = new MktgDocumentCommentsService();
+      const key = `document-comments/${context.project}/${context.agentKey}/living.json`;
+      const initial: MktgDocumentCommentsRecord = {
+        schema: MKTG_DOCUMENT_COMMENTS_SCHEMA,
+        project: context.project,
+        agentKey: context.agentKey,
+        documentId: 'living',
+        submissions: [],
+        threads: context.comments.map((row) => ({
+          ...row,
+          clientRequestId: 'comment-one',
+          authorId: 'opaque-creator',
+          revisionId: context.basedOnId,
+          status: 'open',
+          sentInRun: null,
+          resultRevisionId: null,
+          resolution: null,
+        })),
+      };
+      f.records.set(key, { body: JSON.stringify(initial), metadata: {}, etag: 'seed' });
+      f.view.mockResolvedValue({
+        revision: { id: context.basedOnId, format: 'json' },
+        markdown: JSON.stringify({ mf: { tagline: 'Stored line' } }),
+        sidecar: null,
+      });
+      f.reserve.mockImplementation(ledger.reserve.bind(ledger));
+      f.bind.mockImplementation(ledger.bindRun.bind(ledger));
+      f.end.mockImplementation(ledger.endStart.bind(ledger));
+      f[stage].mockRejectedValueOnce(error);
+      await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+      const stored = JSON.parse(f.records.get(key)?.body ?? '{}') as MktgDocumentCommentsRecord;
+      expect(stored.submissions[0].state).toBe('uncertain');
+      expect(stored.threads.every((row) => row.status === 'sent')).toBe(true);
+      await ledger.release(req, context.project, type, 'living', context.requestId);
+      const released = JSON.parse(f.records.get(key)?.body ?? '{}') as MktgDocumentCommentsRecord;
+      expect(released.threads.every((row) => row.status === 'open')).toBe(true);
+    }
+    expect(f.guild).toHaveBeenCalledTimes(2);
+  });
+  it.each(['context', 'scope', 'start', 'bind'] as const)('keeps confirmed starts on replay %s failure without another Guild call', async (stage) => {
+    await send();
+    f.known.mockResolvedValue('synthetic-session');
+    const error = stage === 'scope' ? new AuthorizationError('Synthetic scope') : ServiceValidationError.forField('context', 'Synthetic rejection');
+    if (stage === 'scope')
+      f.scope.mockImplementationOnce(() => {
+        throw error;
+      });
+    else f[stage].mockRejectedValueOnce(error);
+    await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+    expect(f.state).toBe('started');
+    expect(f.end).not.toHaveBeenCalled();
+    expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+  it('never leaks a cleanup4xx after a session as a definitive primary rejection', async () => {
+    f.create.mockRejectedValueOnce(ServiceValidationError.forField('context', 'Synthetic invalid context'));
+    f.end.mockRejectedValueOnce(new AuthorizationError('Synthetic ledger outage'));
+    await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'mktg_document_redraft',
+      'Could not record redraft uncertainty',
+      expect.objectContaining({ err: expect.any(AuthorizationError) })
+    );
+  });
+
   it('fails post-reservation validation before any session request without making it uncertain', async () => {
     f.prepare.mockResolvedValueOnce(undefined);
     await expect(send()).rejects.toBeInstanceOf(ServiceValidationError);

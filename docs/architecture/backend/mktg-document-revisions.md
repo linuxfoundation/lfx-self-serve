@@ -422,12 +422,30 @@ both the writer grant and the original send creator; its body carries only proje
 accepted. The existing private comment ledger holds opaque `requestedBy`,
 creation time, base/selected IDs, state, and an optional run hash; never a raw
 session ID or owner token. Only a fresh committed reservation can call Guild.
+The start ACK includes `priorVersion` from the immutable sidecar/context used to
+start the Run, including on same-request replay; display revision metadata is
+not its version authority. Unknown requests and existing requests owned by someone
+else both release as `{ state: 'unknown' }` without creating or rewriting a ledger;
+the distinction is logged only at DEBUG. Writer and effective-subject checks still
+run, and only the creator may change an existing reservation.
+
+Known window (follow-up #47): unknown releases write no tombstone. After a transport
+failure, an original revise request still in flight can reserve after its unknown
+release returns and the browser clears recovery intent. A creator-owned failed
+tombstone would close that window; this round does not add one or auto-resubmit.
 
 States are `reserved`, `started`, `uncertain`, `failed`, and `completed`.
 Conclusive non-acceptance before a session exists marks the reservation failed
 and reopens its threads in one CAS. Same-ID replay reports that recorded failure;
 only an explicit new send uses a new ID. Unknown transport or a partial start
-records uncertain and leaves threads sent. The creator can explicitly release
+records uncertain and leaves threads sent. A successful but unusable Guild ACK,
+HTTP 408, and HTTP 429 are also unknown acceptance, never proof of rejection.
+An already-confirmed `started` row remains started on replay failure (including
+concurrent confirmation); a 503 does not make that live run releasable.
+Once a session may exist, fresh and replayed starts convert context/tracking/bind validation, conflict and authorization
+failures to `503 MKTG_REDRAFT_START_UNCERTAIN`, never a definitive primary 4xx.
+A failed uncertainty write is logged and still returns 503 to preserve recovery.
+The creator can explicitly release
 uncertainty to failed/open, retaining the old hash without rebinding it. Any expired
 reserved send can also be released by its creator.
 Uncertain/failed and unbound reserved sends older than the existing Run timeout

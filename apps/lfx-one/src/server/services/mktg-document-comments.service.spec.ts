@@ -448,6 +448,22 @@ describe('private field comment store', () => {
     expect(record().submissions[0].state).toBe(status === 'ready' ? 'completed' : 'failed');
   });
 
+  it('idempotently releases unknown sends without a ledger write, but still requires a creator identity', async () => {
+    const store = service();
+    expect(await store.release(req, project, type, 'living', 'unknown-send')).toEqual({ state: 'unknown' });
+    expect(await store.release(req, project, type, 'living', 'unknown-send')).toEqual({ state: 'unknown' });
+    expect(flows.put).not.toHaveBeenCalled();
+    expect(objects.size).toBe(0);
+    await store.add(req, project, type, 'living', request());
+    const before = JSON.stringify(record());
+    flows.put.mockClear();
+    expect(await store.release(req, project, type, 'living', 'another-unknown')).toEqual({ state: 'unknown' });
+    expect(JSON.stringify(record())).toBe(before);
+    expect(flows.put).not.toHaveBeenCalled();
+    flows.subject.mockReturnValue(null);
+    await expect(store.release(req, project, type, 'living', 'unknown-send')).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
   it('records uncertainty, permits only creator release, and preserves the old hash without touching a newer send', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
@@ -459,7 +475,18 @@ describe('private field comment store', () => {
     expect(record().submissions[0].state).toBe('uncertain');
     expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: hash });
     flows.subject.mockReturnValue('other-creator');
-    await expect(store.release(req, project, type, 'living', 'send-a')).rejects.toBeInstanceOf(ConflictError);
+    const before = JSON.stringify(record());
+    flows.put.mockClear();
+    expect(await store.release(req, project, type, 'living', 'send-a')).toEqual({ state: 'unknown' });
+    expect(await store.release(req, project, type, 'living', 'unknown-send')).toEqual({ state: 'unknown' });
+    expect(flows.put).not.toHaveBeenCalled();
+    expect(JSON.stringify(record())).toBe(before);
+    expect(logger.debug).toHaveBeenCalledWith(
+      req,
+      'mktg_document_redraft_release',
+      'No creator-owned reservation to release',
+      expect.objectContaining({ reservation_found: true })
+    );
     flows.subject.mockReturnValue('opaque-user-one');
     await store.release(req, project, type, 'living', 'send-a');
     expect(record().submissions[0]).toMatchObject({ state: 'failed', runId: hash });

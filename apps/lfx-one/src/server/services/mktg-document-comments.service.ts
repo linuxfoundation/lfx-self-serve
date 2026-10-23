@@ -34,6 +34,7 @@ import type {
   MktgDocumentCommentSubmission,
   MktgDocumentRedraftContext,
   MktgRunResultResponse,
+  MktgReleaseRedraftResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   readMktgRedraftRequest,
@@ -281,11 +282,15 @@ export class MktgDocumentCommentsService {
     requestId: string,
     uncertain: boolean,
     releaseOnly = false
-  ): Promise<MktgDocumentCommentSubmission> {
+  ): Promise<MktgDocumentCommentSubmission | null> {
     const actor = this.creator(req);
     const agent = this.commentAgent(type);
-    return this.change(req, project, agent, documentId, (record) => {
+    return this.change<MktgDocumentCommentSubmission | null>(req, project, agent, documentId, (record) => {
       const submission = record.submissions.find((row) => row.id === requestId);
+      if (releaseOnly && (!submission || submission.requestedBy !== actor)) {
+        logger.debug(req, 'mktg_document_redraft_release', 'No creator-owned reservation to release', { agent, reservation_found: !!submission });
+        return { record: null, result: null };
+      }
       if (!submission || submission.requestedBy !== actor)
         throw new ConflictError('Only the send creator may change its reservation.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
       if (
@@ -311,8 +316,9 @@ export class MktgDocumentCommentsService {
       };
     });
   }
-  public async release(req: Request, project: string, type: MktgDocumentType, documentId: string, requestId: string): Promise<void> {
-    await this.endStart(req, project, type, documentId, requestId, false, true);
+  public async release(req: Request, project: string, type: MktgDocumentType, documentId: string, requestId: string): Promise<MktgReleaseRedraftResponse> {
+    const submission = await this.endStart(req, project, type, documentId, requestId, false, true);
+    return submission ? { success: true } : { state: 'unknown' };
   }
   public failedRequest(): ConflictError {
     return new ConflictError('This send failed or was released. Send explicitly with a NEW request ID.', 'MKTG_REDRAFT_REQUEST_FAILED');

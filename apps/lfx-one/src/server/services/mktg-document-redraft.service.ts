@@ -4,7 +4,7 @@
 import { MKTG_AGENTS, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
 import type { MktgDocumentType, MktgPreparedRedraft, MktgRedraftStartResponse } from '@lfx-one/shared/interfaces';
 import { readMktgRedraftRequest, isMktgRedraftSubmissionBusy } from '@lfx-one/shared/utils';
-import { isDefinitiveRedraftError, redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
+import { redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
 import type { Request } from 'express';
 import { AuthenticationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -52,26 +52,27 @@ export class MktgDocumentRedraftService {
       if (reservation.submission.state === 'failed') throw this.comments.failedRequest();
       if (reservation.submission.state === 'reserved' && reservation.submission.runId === null && isMktgRedraftSubmissionBusy(reservation.submission))
         throw this.uncertain();
-      const runId = reservation.submission.runId;
-      const session = runId ? await runs.knownRedraftSession(req, project, type.agentKey, documentId, runId, input.clientRequestId, creator) : null;
-      if (!session) {
-        await this.comments.endStart(req, project, type, documentId, input.clientRequestId, true);
-        throw this.uncertain();
+      try {
+        const runId = reservation.submission.runId;
+        const session = runId ? await runs.knownRedraftSession(req, project, type.agentKey, documentId, runId, input.clientRequestId, creator) : null;
+        if (!session) throw this.uncertain();
+        const context = await this.contexts.forSession(req, session);
+        if (
+          !context ||
+          context.requestId !== input.clientRequestId ||
+          context.basedOnId !== input.revisionId ||
+          JSON.stringify(context.comments) !== JSON.stringify(reservation.comments)
+        )
+          throw this.uncertain();
+        this.contexts.assertScope(context, project, type.agentKey);
+        await runs.start(req, project, type.agentKey, session, context.priorVersion, input.clientRequestId, context.basedOnId);
+        await this.comments.bindRun(req, project, type, documentId, input.clientRequestId, context.runId, true);
+        return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId, priorVersion: context.priorVersion };
+      } catch (error) {
+        logger.warning(req, 'mktg_document_redraft', 'Redraft replay could not be confirmed', { agent: agent.id, err: error });
+        if (reservation.submission.state === 'started') throw this.uncertain();
+        return this.failUncertain(req, project, type, documentId, input.clientRequestId);
       }
-      const context = await this.contexts.forSession(req, session);
-      if (
-        !context ||
-        context.requestId !== input.clientRequestId ||
-        context.basedOnId !== input.revisionId ||
-        JSON.stringify(context.comments) !== JSON.stringify(reservation.comments)
-      ) {
-        await this.comments.endStart(req, project, type, documentId, input.clientRequestId, true);
-        throw this.uncertain();
-      }
-      this.contexts.assertScope(context, project, type.agentKey);
-      await runs.start(req, project, type.agentKey, session, context.priorVersion, input.clientRequestId, context.basedOnId);
-      await this.comments.bindRun(req, project, type, documentId, input.clientRequestId, context.runId, true);
-      return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId };
     }
     let sessionExists = false;
     try {
@@ -87,14 +88,25 @@ export class MktgDocumentRedraftService {
       await runs.start(req, project, type.agentKey, session, prepared.context.priorVersion, input.clientRequestId, prepared.context.basedOnId);
       await this.comments.bindRun(req, project, type, documentId, input.clientRequestId, runId, true);
       logger.debug(req, 'mktg_document_redraft', 'Recorded comment redraft start', { agent: agent.id });
-      return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId };
+      return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId, priorVersion: prepared.context.priorVersion };
     } catch (error) {
       logger.warning(req, 'mktg_document_redraft', 'Redraft start failed; no automatic resubmission', { agent: agent.id, err: error });
       const rejected = redraftWasNotAccepted(error, sessionExists);
-      await this.comments.endStart(req, project, type, documentId, input.clientRequestId, !rejected);
-      if (rejected || isDefinitiveRedraftError(error)) throw error;
-      throw this.uncertain();
+      if (rejected) {
+        await this.comments.endStart(req, project, type, documentId, input.clientRequestId, false);
+        throw error;
+      }
+      return this.failUncertain(req, project, type, documentId, input.clientRequestId);
     }
+  }
+  /** After a possible session, even a failed ledger update must never become a definitive HTTP rejection. */
+  private async failUncertain(req: Request, project: string, type: MktgDocumentType, documentId: string, requestId: string): Promise<never> {
+    try {
+      await this.comments.endStart(req, project, type, documentId, requestId, true);
+    } catch (error) {
+      logger.warning(req, 'mktg_document_redraft', 'Could not record redraft uncertainty', { agent: type.agentKey, err: error });
+    }
+    throw this.uncertain();
   }
   private uncertain(): MicroserviceError {
     return new MicroserviceError(

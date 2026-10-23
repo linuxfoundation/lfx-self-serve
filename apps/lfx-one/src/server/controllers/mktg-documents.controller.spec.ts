@@ -150,6 +150,7 @@ describe('MktgDocumentsController', () => {
   });
 
   it('releases only after writer authorization and keeps creator checks in the ledger', async () => {
+    commentMocks.release.mockResolvedValue({ success: true });
     projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer: true });
     const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'send-one' }, {}, { project: PROJECT });
     const res = buildRes();
@@ -161,6 +162,15 @@ describe('MktgDocumentsController', () => {
     await controller.releaseRedraft(req, buildRes(), next);
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
     expect(commentMocks.release).not.toHaveBeenCalled();
+  });
+
+  it('returns an unknown release without manufacturing a reservation', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    commentMocks.release.mockResolvedValue({ state: 'unknown' });
+    const res = buildRes();
+    await controller.releaseRedraft(buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'unknown-send' }, {}, { project: PROJECT }), res, next);
+    expect(res.json).toHaveBeenCalledWith({ state: 'unknown' });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('lists comments only after writer authorization, using the server project uid', async () => {
