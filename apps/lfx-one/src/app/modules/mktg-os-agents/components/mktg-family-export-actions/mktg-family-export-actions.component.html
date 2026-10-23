@@ -15,8 +15,9 @@
     <span
       role="note"
       [pTooltip]="pdfDisabledReason()"
+      lfxTooltipHostFocus
       tooltipPosition="bottom"
-      tooltipEvent="both"
+      tooltipEvent="hover"
       [attr.aria-label]="pdfDisabledReason() || null"
       [attr.tabindex]="pdfDisabledReason() ? 0 : null">
       <lfx-button
@@ -31,8 +32,9 @@
     <span
       role="note"
       [pTooltip]="exportDisabledReason()"
+      lfxTooltipHostFocus
       tooltipPosition="bottom"
-      tooltipEvent="both"
+      tooltipEvent="hover"
       [attr.aria-label]="exportDisabledReason() || null"
       [attr.tabindex]="exportDisabledReason() ? 0 : null">
       <lfx-button
