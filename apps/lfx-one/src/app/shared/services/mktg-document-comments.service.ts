@@ -15,6 +15,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { catchError, defer, distinctUntilChanged, EMPTY, finalize, Observable, Subject, Subscription, take, takeUntil, tap, throwError } from 'rxjs';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createMktgCommentDraft } from '@shared/utils/mktg-comment-draft.utils';
 import { ProjectContextService } from './project-context.service';
 import { UserService } from './user.service';
 
@@ -69,7 +70,7 @@ export class MktgDocumentCommentsService {
   }
 
   /** Same-view field hosts share memory across tab destruction, never across effective scopes. */
-  public fieldDraft(field: string, create: () => MktgDocumentCommentDraft): MktgDocumentCommentDraft {
+  public fieldDraft(field: string, create = createMktgCommentDraft): MktgDocumentCommentDraft {
     const owner = this.contextKey();
     if (!owner) return untracked(create);
     let fields = this.fieldDrafts.get(owner);
