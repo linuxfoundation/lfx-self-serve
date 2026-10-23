@@ -52,9 +52,9 @@ describe('cache round-trip (regression: blank Org Lens dates on cache hit)', () 
   });
 
   it('isoDateReplacer keeps Snowflake DATE columns date-only so cache hits match misses', () => {
-    const dateRow = { ENROLLMENT_DATE: snowflakeDate('2026-01-02T00:00:00.000Z', '2026-01-02') };
+    const dateRow = { ENROLLMENT_DATE: snowflakeDate('2030-03-04T00:00:00.000Z', '2030-03-04') };
     const stored = JSON.parse(JSON.stringify({ rows: [dateRow] }, isoDateReplacer)) as { rows: Record<string, unknown>[] };
-    expect(stored.rows[0]['ENROLLMENT_DATE']).toBe('2026-01-02');
+    expect(stored.rows[0]['ENROLLMENT_DATE']).toBe('2030-03-04');
   });
 
   it('a value cached before the fix (Snowflake format) still parses', () => {
