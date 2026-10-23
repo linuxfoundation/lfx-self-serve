@@ -105,6 +105,23 @@ describe('MainLayoutComponent mobile drawer', () => {
     expect(appService.showMobileSidebar()).toBe(false);
   });
 
+  it('leaves the drawer open on Escape while an overlay opened above it is still open', async () => {
+    const { fixture, appService } = await createLayout();
+    appService.openMobileSidebar();
+    const popover = document.createElement('div');
+    popover.className = 'p-popover';
+    document.body.appendChild(popover);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await fixture.whenStable();
+    expect(appService.showMobileSidebar()).toBe(true);
+
+    popover.remove();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await fixture.whenStable();
+    expect(appService.showMobileSidebar()).toBe(false);
+  });
+
   it('closes when the drawer reports itself hidden, and ignores a visible report', async () => {
     const { fixture, appService } = await createLayout();
     appService.openMobileSidebar();

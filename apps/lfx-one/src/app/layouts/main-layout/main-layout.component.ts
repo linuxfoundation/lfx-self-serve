@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
+import { DOCUMENT, NgClass } from '@angular/common';
 import { Component, HostListener, inject, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
@@ -32,6 +32,7 @@ export class MainLayoutComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  private readonly document = inject(DOCUMENT);
   protected readonly userService = inject(UserService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
@@ -111,10 +112,23 @@ export class MainLayoutComponent {
     this.appService.openMobileSidebar();
   }
 
-  /** Close the mobile drawer — the backdrop and Escape (PrimeNG's own mask and Escape handling are off). */
-  @HostListener('document:keydown.escape')
+  /** Close the mobile drawer from its backdrop (PrimeNG's own mask is off). */
   public closeMobileSidebar(): void {
     this.appService.closeMobileSidebar();
+  }
+
+  /**
+   * Escape closes the mobile drawer (PrimeNG's own Escape handling is off) — unless an overlay opened above it (a navbar
+   * popover or selector panel, a dialog, the What's New drawer, a nav tooltip) is still open: that overlay takes the key.
+   * PrimeNG overlays stay in the DOM through their leave animation, and this listener is bound before any tooltip's.
+   */
+  @HostListener('document:keydown.escape')
+  public onEscape(): void {
+    const overlayAbove = this.document.querySelector('.p-popover, .p-dialog-mask, .p-drawer:not(.mobile-navbar-drawer), .lfxn-tooltip.is-visible');
+    if (!this.showMobileSidebar() || overlayAbove) {
+      return;
+    }
+    this.closeMobileSidebar();
   }
 
   /**
