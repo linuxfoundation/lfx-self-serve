@@ -6,7 +6,13 @@ import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
+import {
+  MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_KIT_STATE_LABELS,
+  MKTG_REBUILD_NAVIGATION_STATE_KEY,
+  MKTG_RUN_NEW_MODE,
+} from '@lfx-one/shared/constants';
 import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
 import {
   isMktgKitFamilyLive,
@@ -64,6 +70,7 @@ export class MktgFamilyComponent {
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly actions = this.initActions();
+  protected readonly headerAriaLabel = this.initHeaderAriaLabel();
   protected readonly rows = computed(() => Object.values(this.actions()?.rows ?? {}));
   /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
   protected readonly runQueryParams = computed(
@@ -121,10 +128,23 @@ export class MktgFamilyComponent {
       const definition = this.definition();
       if (!definition) return null;
       return resolveMktgFamilyActions(this.family() ?? { family: definition, rows: [], agents: [], live: this.live() }, {
-        loaded: !this.kit.loading() && !this.kit.error(),
-        canWrite: this.context.canWrite(),
+        loaded: !this.kit.loading() && (!this.kit.error() || this.kit.accessDenied()),
+        canWrite: this.context.canWrite() && !this.kit.accessDenied(),
         approvedFramework: !!this.kit.documents()?.approvedFramework,
       });
+    });
+  }
+
+  private initHeaderAriaLabel() {
+    return computed(() => {
+      const header = this.actions()?.header;
+      if (!header) return '';
+      const label = header.kind === 'run-next' ? `${header.label}: ${header.nextAssetLabel}` : header.label;
+      if (!header.blockedReason) return label;
+      const reason = header.blockedReason.startsWith(MKTG_KIT_STATE_LABELS['coming-soon'])
+        ? MKTG_KIT_STATE_LABELS['coming-soon'].toLowerCase()
+        : header.blockedReason;
+      return `${label} (${reason})`;
     });
   }
 

@@ -76,7 +76,7 @@ test.describe('Marketing family responsive structure', () => {
             const asset = family?.assets.find((row) =>
               MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === runnable.id)
             );
-            await expect(runButton).toHaveAccessibleName('Run next agent');
+            await expect(runButton).toHaveAccessibleName('Run next agent: ' + (asset?.label ?? runnable.name));
             await expect(page.getByTestId('mktg-family-run-next')).toContainText('Next: ' + (asset?.label ?? runnable.name));
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {

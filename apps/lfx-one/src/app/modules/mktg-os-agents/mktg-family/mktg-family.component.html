@@ -11,6 +11,7 @@
         <div pageHeaderActions class="flex flex-wrap items-start gap-3" data-testid="mktg-family-actions">
           @if (header.kind === 'rebuild') {
             <span
+              role="note"
               [pTooltip]="rebuildBlockedReason()"
               tooltipPosition="bottom"
               tooltipEvent="both"
@@ -27,15 +28,22 @@
           } @else {
             <div class="flex flex-col gap-1">
               @if (header.blockedReason) {
-                <span [pTooltip]="header.blockedReason" tooltipPosition="bottom" tooltipEvent="both" [attr.aria-label]="header.blockedReason" tabindex="0">
-                  <lfx-button [label]="header.label" icon="fa-light fa-play" [ariaLabel]="header.label" [disabled]="true" data-testid="mktg-family-run" />
+                <span
+                  role="note"
+                  data-testid="mktg-family-run-blocked"
+                  [pTooltip]="header.blockedReason"
+                  tooltipPosition="bottom"
+                  tooltipEvent="both"
+                  [attr.aria-label]="header.blockedReason"
+                  tabindex="0">
+                  <lfx-button [label]="header.label" icon="fa-light fa-play" [ariaLabel]="headerAriaLabel()" [disabled]="true" data-testid="mktg-family-run" />
                 </span>
               } @else {
                 <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
                 <lfx-button
                   [label]="header.label"
                   icon="fa-light fa-play"
-                  [ariaLabel]="header.label"
+                  [ariaLabel]="headerAriaLabel()"
                   [routerLink]="['../../', header.agentId ?? '']"
                   [queryParams]="header.mode ? runQueryParams().fresh : runQueryParams().plain"
                   (onClick)="$event.stopPropagation()"
@@ -117,6 +125,7 @@
                           <!-- Above the row's stretched link so the tooltip gets the hover. -->
                           <span
                             class="relative z-10 inline-block"
+                            role="note"
                             [pTooltip]="reason"
                             tooltipPosition="bottom"
                             tooltipEvent="both"
@@ -151,7 +160,7 @@
                       <span class="block text-xs text-gray-500 @[600px]:sr-only">Current</span>
                       @if (row.document; as document) {
                         @if (row.monthlyCount !== null) {
-                          {{ (document.createdAt | date: 'd MMM') ?? '—' }}
+                          {{ (document.createdAt | date: 'd MMM' : 'UTC') ?? '—' }}
                         } @else {
                           @if (row.version !== null) {
                             v{{ row.version }}
