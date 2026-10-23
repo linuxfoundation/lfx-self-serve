@@ -154,8 +154,10 @@ export class MainLayoutComponent {
 
   /**
    * Focus follows the mobile drawer, as a modal dialog's should: into the panel once it has rendered open, and back to
-   * the menu button when it closes with focus inside it — or already dropped to <body> by the panel turning inert.
-   * The initial closed state is skipped so a page load never moves focus.
+   * the menu button when it closes with focus inside it, inside an overlay opened from it (a popover or selector panel,
+   * an interactive nav tooltip — appended to <body>, outside the panel), or already dropped to <body> by the panel
+   * turning inert. An overlay's own focus return then targets an inert trigger, which is a no-op. The initial closed
+   * state is skipped so a page load never moves focus.
    */
   private initDrawerFocus(): void {
     toObservable(this.showMobileSidebar)
@@ -166,7 +168,8 @@ export class MainLayoutComponent {
           return;
         }
         const active = this.document.activeElement;
-        if (active === this.document.body || this.mobileDrawer()?.nativeElement.contains(active)) {
+        const inDrawerOverlay = !!active?.closest('.p-popover, .lfxn-tooltip');
+        if (active === this.document.body || inDrawerOverlay || this.mobileDrawer()?.nativeElement.contains(active)) {
           this.mobileMenuButton()?.nativeElement.focus({ preventScroll: true });
         }
       });

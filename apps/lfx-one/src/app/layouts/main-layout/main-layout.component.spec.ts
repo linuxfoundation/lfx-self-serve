@@ -217,6 +217,27 @@ describe('MainLayoutComponent mobile drawer', () => {
     fixture.nativeElement.remove();
   });
 
+  // A company pick closes the drawer while focus is still in the selector panel, which PrimeNG appends to <body>.
+  it('returns focus to the menu button when the drawer closes from an overlay opened above it', async () => {
+    const { fixture, appService, menuButton } = await createLayout();
+    document.body.appendChild(fixture.nativeElement);
+    menuButton().click();
+    await fixture.whenStable();
+    const popover = document.createElement('div');
+    popover.className = 'p-popover';
+    const option = document.createElement('button');
+    popover.appendChild(option);
+    document.body.appendChild(popover);
+    option.focus();
+
+    appService.closeMobileSidebar();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(menuButton());
+
+    popover.remove();
+    fixture.nativeElement.remove();
+  });
+
   it('keeps keyboard focus inside the open drawer, and drops the trap once it closes', async () => {
     const { fixture, appService, menuButton, panel } = await createLayout();
     document.body.appendChild(fixture.nativeElement);
