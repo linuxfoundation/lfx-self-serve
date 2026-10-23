@@ -13,6 +13,8 @@ export class MktgRunAttemptService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly user = inject(UserService);
   private readonly memory = new Map<string, MktgPendingGeneration>();
+  /** Same-visit inputs survive successful recovery cleanup, never localStorage or a new session. */
+  private readonly inputMemory = new Map<string, MktgPendingGeneration>();
   private readonly prepared = new Map<string, MktgPreparedGeneration>();
   private readonly freshDrafts = new WeakMap<MktgPendingGeneration, string>();
 
@@ -77,6 +79,7 @@ export class MktgRunAttemptService {
     const key = this.key(pending.request.projectUid, pending.request.agentId, subject);
     const value = { ...pending, updatedAt: new Date().toISOString() };
     this.memory.set(key, value);
+    this.inputMemory.set(key, value);
     try {
       const stored: MktgStoredPendingGeneration = {
         request: {
@@ -96,6 +99,19 @@ export class MktgRunAttemptService {
     } catch {
       /* Memory remains authoritative for this visit. */
     }
+  }
+
+  /** Peek at source inputs without consuming a token, reserving, or changing a live attempt. */
+  public lastInputs(project: string, agentId: string): MktgGenerateRequest | null {
+    if (!this.subject() || !isPlatformBrowser(this.platformId)) return null;
+    const key = this.key(project, agentId, this.subject());
+    const value = this.inputMemory.get(key);
+    const elapsed = value ? Date.now() - Date.parse(value.updatedAt) : NaN;
+    if (!value || !Number.isFinite(elapsed) || elapsed > MKTG_RUN_STORAGE_TTL_MS) {
+      this.inputMemory.delete(key);
+      return null;
+    }
+    return value.request;
   }
 
   public load(project: string, agentId: string): MktgPendingGeneration | null {

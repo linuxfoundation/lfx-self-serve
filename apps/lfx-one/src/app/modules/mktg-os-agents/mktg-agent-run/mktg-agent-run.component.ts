@@ -3,7 +3,7 @@
 
 import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -21,6 +21,7 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_RUN_NEW_MODE,
   MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
@@ -28,6 +29,8 @@ import {
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
+  MktgLastIntake,
+  MktgRunSourceField,
   MktgAttachmentChip,
   MktgDependencyDocument,
   MktgGenerateProgress,
@@ -100,6 +103,8 @@ export class MktgAgentRunComponent {
   private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -113,6 +118,11 @@ export class MktgAgentRunComponent {
   // only) in the constructor.
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
   private readonly effectiveUser$ = toObservable(this.userService.user);
+  private readonly freshMode$ = this.route.queryParamMap.pipe(
+    map((params) => params.get('mode') === MKTG_RUN_NEW_MODE),
+    distinctUntilChanged()
+  );
+  protected readonly freshMode = toSignal(this.freshMode$, { initialValue: false });
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
   /**
@@ -177,6 +187,14 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly sourcesEditing = signal(false);
+  protected readonly sourcesLoading = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
+  protected readonly sourcesDenied = signal(false);
+  protected readonly sourceNote = signal('');
+  private readonly lastSourceValues = signal<Record<string, string>>({});
+  private readonly lastSourceOrigins = signal<Record<string, string>>({});
+  private readonly priorDocumentCount = signal(0);
+  private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
   protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
@@ -275,10 +293,20 @@ export class MktgAgentRunComponent {
     mktgKitCrumbsFor(this.agent?.id ?? '', this.projectName(), mktgKitRootPath(this.router.url), this.agent?.name ?? 'Agent')
   );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
-  protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
+  protected readonly showIntakeForm = computed(() => !this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()));
+  protected readonly submitLabel = computed(() => (this.freshMode() ? 'Start' : `Generate ${this.intake?.documentName}`));
+  protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
+  protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
+  protected readonly sourceFields: Signal<MktgRunSourceField[]> = this.initSourceFields();
   protected readonly submitDisabled = computed(
     () =>
-      !this.intakeValid() || this.phase() === 'running' || !!this.navigation() || this.documentsBusy() || this.logoFilesBusy() || !this.dependenciesSatisfied()
+      !this.intakeValid() ||
+      this.phase() === 'running' ||
+      !!this.navigation() ||
+      this.documentsBusy() ||
+      this.logoFilesBusy() ||
+      !this.dependenciesSatisfied() ||
+      (this.freshMode() && (this.sourcesLoading() || this.sourcesDenied() || !!this.missingDocuments() || !!this.missingLogos()))
   );
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
@@ -443,7 +471,7 @@ export class MktgAgentRunComponent {
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -462,25 +490,49 @@ export class MktgAgentRunComponent {
     // Browser-only so SSR output stays stable; the first emission lands
     // post-hydration.
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([this.activeContext$, this.effectiveUser$])
+      combineLatest([this.activeContext$, this.effectiveUser$, this.freshMode$])
         .pipe(
-          distinctUntilChanged(([previousContext, previousUser], [context, user]) => previousContext?.uid === context?.uid && previousUser?.sub === user?.sub),
-          switchMap(([context]) => {
-            this.resetForContext(context);
+          distinctUntilChanged(
+            ([previousContext, previousUser, previousMode], [context, user, mode]) =>
+              previousContext?.uid === context?.uid && previousUser?.sub === user?.sub && previousMode === mode
+          ),
+          switchMap(([context, user, fresh]) => {
+            this.resetForContext(context, fresh);
             if (!context) return EMPTY;
+            const history =
+              fresh && user?.sub
+                ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
+                    catchError((error: unknown) => {
+                      this.sourcesDenied.set(error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403));
+                      this.sourceNote.set(
+                        this.sourcesDenied()
+                          ? 'You need write access to run this project’s agents.'
+                          : 'Last run inputs could not be loaded. Available device inputs or suggested defaults are shown.'
+                      );
+                      return of(null);
+                    })
+                  )
+                : of(null);
+            if (fresh && !user?.sub) this.sourcesDenied.set(true);
             // getProject memoizes per slug and maps errors to null, and
             // switchMap drops stale in-flight lookups on project change. The
             // dependency resolution rides the same stream so the attachment
             // chips / gating always reflect the ACTIVE project's stored
             // documents (dec-agent-dependency-gating).
-            return combineLatest([this.projectService.getProject(context.slug, false), this.resolveDependenciesForGate(context.uid)]).pipe(
-              map(([project, dependencies]) => ({ context, project, dependencies }))
+            return combineLatest([this.projectService.getProject(context.slug, false), this.resolveDependenciesForGate(context.uid), history]).pipe(
+              map(([project, dependencies, lastIntake]) => ({ context, project, dependencies, lastIntake, fresh }))
             );
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(({ context, project, dependencies }) => {
+        .subscribe(({ context, project, dependencies, lastIntake, fresh }) => {
           this.dependencyDocs.set(dependencies);
+          if (fresh) {
+            this.sourcesLoading.set(false);
+            if (this.sourcesDenied()) return;
+            this.restoreFreshInputs(context.uid, lastIntake);
+            this.applyPrefill('project-name', context.name);
+          }
           if (project) {
             this.applyPrefill('repository-url', project.repository_url);
             this.applyPrefill('website-url', project.website_url);
@@ -491,6 +543,16 @@ export class MktgAgentRunComponent {
           // Order is the precedence — LFX project data > an answer given to
           // another agent > empty.
           this.applyRememberedAnswers(context.uid);
+          if (
+            fresh &&
+            !this.sourceNote() &&
+            !Object.keys(this.lastSourceValues()).length &&
+            !Object.keys(this.filledFromMemoryApplied()).length &&
+            !this.priorDocumentCount() &&
+            !this.priorLogoCount()
+          ) {
+            this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
+          }
           // A remembered list answer lands in the field's control; the rows follow it.
           this.seedLinkRows();
         });
@@ -522,7 +584,13 @@ export class MktgAgentRunComponent {
     void this.router
       .navigate(['..', 'documents', destination.agentKey, destination.documentId ?? MKTG_LIVING_DOCUMENT_ID], {
         relativeTo: this.route,
-        queryParams: { generation: destination.generation ?? null, revision: destination.revisionId ?? null, run: destination.runId ?? null, questions: null },
+        queryParams: {
+          generation: destination.generation ?? null,
+          revision: destination.revisionId ?? null,
+          run: destination.runId ?? null,
+          questions: null,
+          mode: null,
+        },
         queryParamsHandling: 'merge',
       })
       .then((opened) => {
@@ -548,13 +616,9 @@ export class MktgAgentRunComponent {
   }
 
   // === Protected methods ===
-  protected onBack(): void {
-    this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
-    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge' });
   }
 
   /** Re-runs the dependency check that failed, for the active project. */
@@ -567,6 +631,27 @@ export class MktgAgentRunComponent {
     this.dependencyRetrySub = this.resolveDependenciesForGate(projectUid)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
+  }
+
+  protected onEditSources(section?: string): void {
+    if (this.phase() !== 'form' || this.sourcesLoading() || this.sourcesDenied()) return;
+    if (!section && this.sourcesEditing()) {
+      this.onDoneSources();
+      return;
+    }
+    this.sourcesEditing.set(true);
+    this.focusSourceControl(section ?? '#mktg-run-intake-form');
+  }
+
+  protected onDoneSources(): void {
+    this.sourcesEditing.set(false);
+    this.focusSourceControl('[data-testid="mktg-run-sources-edit"]');
+  }
+
+  /** PROVISIONAL board-silent affordance: explicit omission instead of silently losing sources after reload. */
+  protected onDropPriorFiles(): void {
+    this.priorDocumentCount.set(0);
+    this.priorLogoCount.set(0);
   }
 
   protected onSubmit(): void {
@@ -641,6 +726,22 @@ export class MktgAgentRunComponent {
           this.phase.set('questions');
         },
       });
+  }
+
+  private initSourceFields(): Signal<MktgRunSourceField[]> {
+    return computed(() => {
+      const values = this.intakeValue();
+      return (this.intake?.fields ?? []).map((field) => {
+        const value = values[field.key] ?? '';
+        let origin = 'Suggested default';
+        if (this.filledFromMemoryApplied()[field.key] && this.prefillIntact()[field.key]) {
+          origin = this.fromPriorRun()[field.key] ?? 'Remembered on this device';
+        }
+        if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceOrigins()[field.key] ?? origin;
+        if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed for this run';
+        return { key: field.key, label: field.question, value, origin };
+      });
+    });
   }
 
   private initAttachmentChips(): Signal<MktgAttachmentChip[]> {
@@ -774,12 +875,12 @@ export class MktgAgentRunComponent {
     return new FormGroup(controls);
   }
 
-  /** Assembles the submitted answers from the form: blank optional fields are omitted. */
+  /** Fresh snapshots keep intentional blanks; ordinary submissions omit blank optionals. */
   private buildAnswers(): Record<string, string> {
     const answers: Record<string, string> = {};
     for (const field of this.intake?.fields ?? []) {
       const value = this.intakeForm.controls[field.key].value.trim();
-      if (field.optional && !value) {
+      if (field.optional && !value && !this.freshMode()) {
         continue;
       }
       answers[field.key] = value;
@@ -790,7 +891,7 @@ export class MktgAgentRunComponent {
   /**
    * Every intake field with its trimmed value, BLANKS INCLUDED — the answer
    * memory needs the full submitted state to erase a field the user cleared,
-   * which the submit payload (`buildAnswers`) deliberately omits. Without it
+   * which ordinary submit payloads omit (fresh snapshots retain them). Without it
    * the memory would keep re-offering an optional answer the user removed.
    */
   private buildIntakeState(): Record<string, string> {
@@ -973,6 +1074,54 @@ export class MktgAgentRunComponent {
     return doc?.document || null;
   }
 
+  private focusSourceControl(selector: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.runAttempts.subject();
+    afterNextRender(
+      () => {
+        if (this.phase() !== 'form' || project !== this.projectContext.activeContextUid() || subject !== this.runAttempts.subject()) return;
+        this.host.nativeElement
+          .querySelector<HTMLElement>(selector)
+          ?.querySelector<HTMLElement>('input:not([type="file"]):not([type="hidden"]):not([disabled]), textarea:not([disabled]), button:not([disabled])')
+          ?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  private restoreFreshInputs(project: string, history: MktgLastIntake | null): void {
+    if (!this.agent || !this.intake) return;
+    const memory = this.runAttempts.lastInputs(project, this.agent.id);
+    const local = this.runService.loadRun(project, this.agent.id);
+    const answers: Record<string, string> = {};
+    const origins: Record<string, string> = {};
+    for (const field of this.intake.fields) {
+      if (history && Object.hasOwn(history.answers, field.key)) {
+        answers[field.key] = history.answers[field.key];
+        origins[field.key] = 'From the last run';
+      } else if (memory && Object.hasOwn(memory.answers, field.key)) {
+        answers[field.key] = memory.answers[field.key];
+        origins[field.key] = 'Saved in this visit';
+      } else if (local && Object.hasOwn(local.answers, field.key)) {
+        answers[field.key] = local.answers[field.key];
+        origins[field.key] = 'Saved on this device';
+      }
+    }
+    this.lastSourceValues.set(answers);
+    this.lastSourceOrigins.set(origins);
+    this.intakeForm.patchValue(answers);
+    // Shared history has no run binding for local bytes. Equal scalars/counts
+    // cannot prove ownership, so never reuse uploads alongside a durable snapshot.
+    // A same-visit draft with no shared snapshot can still retain its own inputs.
+    if (!history && memory) this.restoreInputs({ ...memory, answers }, 'last-visit');
+    const memoryDocuments = !history ? (memory?.documents?.length ?? 0) : 0;
+    const memoryLogos = !history ? (memory?.logoFiles?.length ?? 0) : 0;
+    this.priorDocumentCount.set(history?.documentCount ?? memoryDocuments);
+    this.priorLogoCount.set(history?.logoCount ?? memoryLogos);
+    this.seedLinkRows();
+  }
+
   private restoreInputs(request: MktgGenerateRequest, prefix: string): void {
     this.intakeForm.patchValue(request.answers);
     this.documents.set(
@@ -1007,7 +1156,7 @@ export class MktgAgentRunComponent {
    * context change so one project's session, answers and versions can never
    * bleed into another's.
    */
-  private resetForContext(context: ProjectContext | null): void {
+  private resetForContext(context: ProjectContext | null, fresh: boolean): void {
     if (!this.agent || !this.intake) {
       return;
     }
@@ -1046,7 +1195,16 @@ export class MktgAgentRunComponent {
     // submission stays disabled meanwhile).
     this.dependencyDocs.set(null);
     this.dependencyCheckFailed.set(false);
+    this.sourcesEditing.set(false);
+    this.sourcesLoading.set(fresh);
+    this.sourcesDenied.set(false);
+    this.sourceNote.set('');
+    this.lastSourceValues.set({});
+    this.lastSourceOrigins.set({});
+    this.priorDocumentCount.set(0);
+    this.priorLogoCount.set(0);
     if (!context) return;
+    if (fresh) return; // No token consumption, attempt restore/resume or prepare on a fresh visit.
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
@@ -1130,6 +1288,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       const control = this.intakeForm.controls[field.key];
+      if (this.freshMode() && Object.hasOwn(this.lastSourceValues(), field.key)) continue;
       if (control && !control.value.trim()) {
         // A one-line field takes a one-line value: an LFX description with
         // paragraph breaks is collapsed to single spaces, since the input
@@ -1174,7 +1333,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       const control = this.intakeForm.controls[field.key];
-      if (!control || control.value.trim()) {
+      if (!control || control.value.trim() || (this.freshMode() && Object.hasOwn(this.lastSourceValues(), field.key))) {
         continue;
       }
       control.setValue(entry.value);
@@ -1251,6 +1410,7 @@ export class MktgAgentRunComponent {
             agentId: agent.id,
             projectUid,
             intake,
+            ...(this.freshMode() && { newRun: true }),
             answers: attached,
             documents: this.submittedDocuments(),
             logoFiles: this.submittedLogoFiles(),
