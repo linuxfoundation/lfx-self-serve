@@ -3363,6 +3363,49 @@ describe('OrgClaService.getContributorAcknowledgments — invalidator display', 
     expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
   });
 
+  it("sends the target user's token to both directory reads while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager' })] }));
+    gatewayFetch
+      .mockResolvedValueOnce({ Data: [{ ID: salesforceId, Username: 'cla-manager' }], Metadata: { TotalSize: 1 } })
+      .mockResolvedValueOnce({ ID: salesforceId, Username: 'cla-manager', Name: 'Casey Nguyen' });
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', {
+      search: '',
+      pageSize: 50,
+    });
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBe('Casey Nguyen');
+    const directoryCalls = gatewayFetch.mock.calls.filter((call) => String(call[1]).includes('/user-service/'));
+    expect(directoryCalls).toHaveLength(2);
+    for (const call of directoryCalls) {
+      expect(call[2]).toMatchObject({ bearerToken: 'target-user-token' });
+    }
+  });
+
+  it('returns the page with usernames when the directory does not answer within the budget', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager' })] }));
+      gatewayFetch.mockReturnValueOnce(new Promise(() => undefined));
+
+      const pending = new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const list = await pending;
+
+      expect(list?.list[0]?.invalidatedBy).toBe('cla-manager');
+      expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+      expect(loggerWarning).toHaveBeenCalledWith(
+        expect.anything(),
+        'org_cla_resolve_invalidator',
+        'invalidator display lookup ran out of time',
+        expect.objectContaining({ budget_ms: 3_000, resolved: 0, looked_up: 1 })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not call the directory when no row carries a username', async () => {
     stageAckRead(contributorPage({ list: [contributor()] }));
 

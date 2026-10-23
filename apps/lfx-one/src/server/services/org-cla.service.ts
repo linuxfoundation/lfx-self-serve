@@ -27,6 +27,9 @@ import {
   validateOrgClaApprovalValue,
 } from '@lfx-one/shared/utils';
 import type {
+  ApiGatewayUserEmail,
+  ApiGatewayUserProfile,
+  ApiGatewayUserSearchPage,
   ClaGroupOption,
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
@@ -2226,29 +2229,8 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
   };
 }
 
-interface UserDirectoryEmail {
-  Active?: unknown;
-  EmailAddress?: unknown;
-  IsDeleted?: unknown;
-  IsPrimary?: unknown;
-  IsVerified?: unknown;
-}
-
-interface UserDirectoryPerson {
-  ID?: unknown;
-  Username?: unknown;
-  Name?: unknown;
-  FirstName?: unknown;
-  LastName?: unknown;
-  Emails?: unknown;
-}
-
-interface UserDirectoryPage {
-  Data?: UserDirectoryPerson[];
-  Metadata?: { TotalSize?: unknown };
-}
-
 const INVALIDATOR_LOOKUP_BATCH = 8;
+const INVALIDATOR_LOOKUP_BUDGET_MS = 3_000;
 
 async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAcknowledgment[]): Promise<void> {
   const usernames = [...new Set(rows.flatMap((row) => (row.invalidatedBy ? [row.invalidatedBy] : [])))];
@@ -2262,20 +2244,41 @@ async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAc
     return;
   }
 
+  const bearerToken = isImpersonating(req) ? req.bearerToken : undefined;
   const displays = new Map<string, string>();
   let failed = 0;
-  for (let index = 0; index < usernames.length; index += INVALIDATOR_LOOKUP_BATCH) {
-    const batch = usernames.slice(index, index + INVALIDATOR_LOOKUP_BATCH);
-    await Promise.all(
-      batch.map(async (username) => {
-        try {
-          const display = await lookupInvalidatorDisplay(req, baseUrl, username);
-          if (display) displays.set(username, display);
-        } catch {
-          failed += 1;
-        }
-      })
-    );
+  let budgetSpent = false;
+  const lookups = (async () => {
+    for (let index = 0; index < usernames.length && !budgetSpent; index += INVALIDATOR_LOOKUP_BATCH) {
+      const batch = usernames.slice(index, index + INVALIDATOR_LOOKUP_BATCH);
+      await Promise.all(
+        batch.map(async (username) => {
+          try {
+            const display = await lookupInvalidatorDisplay(req, baseUrl, username, bearerToken);
+            if (display) displays.set(username, display);
+          } catch {
+            failed += 1;
+          }
+        })
+      );
+    }
+  })();
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<void>((resolve) => {
+    budgetTimer = setTimeout(() => {
+      budgetSpent = true;
+      resolve();
+    }, INVALIDATOR_LOOKUP_BUDGET_MS);
+  });
+  await Promise.race([lookups, budget]);
+  clearTimeout(budgetTimer);
+
+  if (budgetSpent) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup ran out of time', {
+      budget_ms: INVALIDATOR_LOOKUP_BUDGET_MS,
+      resolved: displays.size,
+      looked_up: usernames.length,
+    });
   }
   if (failed > 0) {
     logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup failed', {
@@ -2292,14 +2295,15 @@ async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAc
   }
 }
 
-async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string): Promise<string | undefined> {
+async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string, bearerToken: string | undefined): Promise<string | undefined> {
   const query = new URLSearchParams({ username, pageSize: '2', offset: '0' });
-  const page = await gatewayFetch<UserDirectoryPage>(req, `${baseUrl}/users?${query}`, {
+  const page = await gatewayFetch<ApiGatewayUserSearchPage>(req, `${baseUrl}/users?${query}`, {
     operation: 'org_cla_resolve_invalidator',
     service: SERVICE,
     errorMessage: 'Invalidator lookup failed',
     errorCode: 'UPSTREAM_ERROR',
     redactResponseBody: true,
+    bearerToken,
   });
 
   const rows = page?.Data;
@@ -2313,19 +2317,20 @@ async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username:
   const id = directoryText(row.ID);
   if (!SALESFORCE_ID_PATTERN.test(id)) return undefined;
 
-  const profile = await gatewayFetch<UserDirectoryPerson>(req, `${baseUrl}/users/${encodeURIComponent(id)}`, {
+  const profile = await gatewayFetch<Partial<ApiGatewayUserProfile>>(req, `${baseUrl}/users/${encodeURIComponent(id)}`, {
     operation: 'org_cla_resolve_invalidator',
     service: SERVICE,
     errorMessage: 'Invalidator profile lookup failed',
     errorCode: 'UPSTREAM_ERROR',
     redactResponseBody: true,
+    bearerToken,
   });
   const profileUsername = directoryText(profile?.Username);
   if (profileUsername && profileUsername !== username) return undefined;
   return invalidatorDisplayFromPerson(profile);
 }
 
-function invalidatorDisplayFromPerson(person: UserDirectoryPerson | null | undefined): string | undefined {
+function invalidatorDisplayFromPerson(person: Partial<ApiGatewayUserProfile> | null | undefined): string | undefined {
   const name = directoryText(person?.Name);
   if (name) return name;
   const combined = [directoryText(person?.FirstName), directoryText(person?.LastName)].filter((part) => part.length > 0).join(' ');
@@ -2337,7 +2342,7 @@ function primaryVerifiedEmail(emails: unknown): string | undefined {
   if (!Array.isArray(emails)) return undefined;
   for (const entry of emails) {
     if (!entry || typeof entry !== 'object') continue;
-    const email = entry as UserDirectoryEmail;
+    const email = entry as Partial<ApiGatewayUserEmail>;
     if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted === true) continue;
     const address = directoryText(email.EmailAddress);
     if (address) return address;
