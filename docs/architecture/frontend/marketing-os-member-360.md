@@ -61,7 +61,9 @@ The shared generating card renders optional server-filtered activity through the
 existing `lfx-mktg-run-activity` below its existing lines, for any tracked document
 whose progress carries activity (including living assets). Only the original creator receives
 activity; another project writer sees the same generating card without a feed or extra placeholder.
-Member activity also uses the stored-envelope contact/email redactor. Its title and breadcrumbs
+Member activity also uses the stored-envelope contact/email redactor. Cached activity is bound to
+the viewer identity at its read: an identity change hides it immediately, without re-reading the
+subject-independent Member document. A response begun for another viewer cannot re-expose its feed. Its title and breadcrumbs
 come from the registered type. No questions text or reasoning reaches this feed.
 Member's 2.0 `needs_input` maps to a bounded questions pause, retains any creator-visible feed and
 the existing unsupported-answer notice, and offers Refresh to recheck the same run.

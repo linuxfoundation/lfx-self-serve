@@ -101,7 +101,7 @@ import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-bo
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MEMBER_360_FAILURE_MESSAGES } from '@lfx-one/shared/constants';
-import { MktgDocumentListItem } from '@lfx-one/shared/interfaces';
+import { MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
@@ -191,6 +191,7 @@ export class MktgDocumentViewComponent {
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
   protected readonly runDetail = signal<MktgDocumentDetailResponse | null>(null);
+  private readonly activityContext = signal<[string, MktgRunActivity[] | undefined]>(['', undefined]);
   protected readonly localProgress = signal<MktgDocumentLocalProgress>(null);
   protected readonly failureText = signal('');
   private readonly unconfirmed = signal(false);
@@ -216,6 +217,10 @@ export class MktgDocumentViewComponent {
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
+  protected readonly visibleRunActivity = computed(() => {
+    const [subject, activity] = this.activityContext();
+    return subject && subject === this.userService.user()?.sub ? activity : undefined;
+  });
   protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
   protected readonly pausedWithoutAnswers = computed(() => {
     const run = this.selectedRun();
@@ -446,6 +451,7 @@ export class MktgDocumentViewComponent {
             this.historyError.set('');
             this.runFailed.set(false);
             this.failureDetails.set('');
+            this.activityContext.set(['', undefined]);
             this.refreshWarning.set('');
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
@@ -532,6 +538,7 @@ export class MktgDocumentViewComponent {
               this.refreshWarning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
             };
             const read = (poll: boolean) => {
+              const readerSubject = this.userService.user()?.sub ?? '';
               const metadata$ = defer(() => this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
                 switchMap((detail) => {
                   const id = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
@@ -586,6 +593,7 @@ export class MktgDocumentViewComponent {
                     this.refreshWarning.set('');
                   }
                   this.runDetail.set(cycle.detail);
+                  this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
                   if (request.agentKey === 'member-360' && failure?.state === 'failed') {
                     this.runFailed.set(true);

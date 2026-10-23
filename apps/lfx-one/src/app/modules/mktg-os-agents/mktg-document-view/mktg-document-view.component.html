@@ -102,7 +102,7 @@
             <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
           }
         }
-        @if (selectedRun()?.activity; as activity) {
+        @if (visibleRunActivity(); as activity) {
           <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
         }
         @if (runAgentId() && !pausedWithoutAnswers() && (state === 'failed' || state === 'questions')) {

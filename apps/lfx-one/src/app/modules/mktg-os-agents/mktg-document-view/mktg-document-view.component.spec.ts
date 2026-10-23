@@ -584,6 +584,29 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.listDocuments).toHaveBeenCalledWith(PROJECT.uid);
   });
 
+  it('hides cached creator activity immediately on a viewer change without re-reading the Member document', async () => {
+    store.getDocument.mockReturnValue(of(memberProgress('questions')));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-run-activity')).not.toBeNull();
+    const reads = store.getDocument.mock.calls.length;
+    viewer.set({ sub: 'synthetic-other-writer' });
+    await settle();
+    expect(query('mktg-run-activity')).toBeNull();
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(store.getDocument).toHaveBeenCalledTimes(reads);
+  });
+
+  it('never displays activity from an in-flight response begun for a previous viewer', async () => {
+    const response = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(response);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    viewer.set({ sub: 'synthetic-other-writer' });
+    response.next(memberProgress('questions'));
+    await settle();
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(query('mktg-run-activity')).toBeNull();
+  });
+
   it('shows non-creator progress without a feed or extra activity placeholder', async () => {
     const progress = memberProgress('writing');
     progress.runs?.forEach((run) => {
