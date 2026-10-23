@@ -230,6 +230,23 @@ describe('MainLayoutComponent mobile drawer', () => {
     fixture.nativeElement.remove();
   });
 
+  // Focus lands inside the trap's sentinels, so an immediate Shift+Tab wraps within the drawer rather than leaving it.
+  it("moves focus to the drawer's first visible control when it opens", async () => {
+    const { fixture, menuButton, panel } = await createLayout();
+    document.body.appendChild(fixture.nativeElement);
+    const hidden = document.createElement('button');
+    const first = document.createElement('button');
+    // jsdom lays nothing out, so stand in for a rendered control and a display:none one.
+    first.getClientRects = () => [{}] as unknown as DOMRectList;
+    panel().append(hidden, first);
+
+    menuButton().click();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(first);
+
+    fixture.nativeElement.remove();
+  });
+
   // A company pick closes the drawer while focus is still in the selector panel, which PrimeNG appends to <body>.
   it('returns focus to the menu button when the drawer closes from an overlay opened above it', async () => {
     const { fixture, appService, menuButton } = await createLayout();

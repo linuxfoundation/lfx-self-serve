@@ -163,7 +163,7 @@ export class MainLayoutComponent {
   }
 
   /**
-   * Focus follows the mobile drawer, as a modal dialog's should: into the panel once it has rendered open, and back to
+   * Focus follows the mobile drawer, as a modal dialog's should: into it once it has rendered open, and back to
    * the menu button when it closes with focus inside it, inside an overlay opened from it (a popover or selector panel,
    * an interactive nav tooltip — appended to <body>, outside the panel), or already dropped to <body> by the panel
    * turning inert. An overlay's own focus return then targets an inert trigger, which is a no-op. The initial closed
@@ -174,7 +174,7 @@ export class MainLayoutComponent {
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe((open) => {
         if (open) {
-          afterNextRender(() => this.mobileDrawer()?.nativeElement.focus({ preventScroll: true }), { injector: this.injector });
+          afterNextRender(() => this.focusDrawerStart(), { injector: this.injector });
           return;
         }
         const active = this.document.activeElement;
@@ -183,6 +183,22 @@ export class MainLayoutComponent {
           this.mobileMenuButton()?.nativeElement.focus({ preventScroll: true });
         }
       });
+  }
+
+  /**
+   * Focuses the drawer's first visible control — inside the focus trap's sentinels, so an immediate Shift+Tab wraps within
+   * the drawer instead of stepping back out of it. The panel itself takes focus only while nothing in it is focusable yet.
+   */
+  private focusDrawerStart(): void {
+    const panel = this.mobileDrawer()?.nativeElement;
+    if (!panel) {
+      return;
+    }
+    const focusable = panel.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not(.p-hidden-focusable)'
+    );
+    const first = Array.from(focusable).find((element) => element.getClientRects().length > 0);
+    (first ?? panel).focus({ preventScroll: true });
   }
 
   /**
