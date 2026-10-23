@@ -277,7 +277,15 @@ export class NavbarComponent extends NavMenuBase {
     this.failedPhotoUrl.set(url);
   }
 
+  /**
+   * Desktop lens tabs switch and land on the lens's default page. In the mobile drawer a tab only switches the lens, so
+   * the drawer stays open on that lens's menu for the viewer to pick a page (or close it, which restores the page's lens).
+   */
   protected switchLens(lens: Lens): void {
+    if (this.mobile()) {
+      this.lensService.selectLens(lens);
+      return;
+    }
     this.lensService.switchLens(lens);
   }
 
@@ -338,6 +346,18 @@ export class NavbarComponent extends NavMenuBase {
 
   protected closeMobileDrawer(): void {
     this.appService.closeMobileSidebar();
+  }
+
+  /**
+   * A company pick on an Org Lens page re-addresses it, possibly with `replaceUrl`, which the layout leaves alone, so the
+   * pick closes the drawer itself. Off an Org page — the drawer previewing Org Lens — the pick moves nothing, so the drawer
+   * stays open for the viewer to choose a page.
+   */
+  protected onOrgSelected(): void {
+    const firstSegment = this.router.parseUrl(this.router.url).root.children['primary']?.segments[0]?.path;
+    if (firstSegment === 'org') {
+      this.closeMobileDrawer();
+    }
   }
 
   protected openChangelogDrawer(): void {
