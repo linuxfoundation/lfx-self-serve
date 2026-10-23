@@ -60,8 +60,8 @@ export class SidebarNavService {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
 
-  /** The Me lens section My Formations (#2753) is appended to; matched by label because the tree is built inline. */
-  private readonly meEngagementSectionLabel = 'My Engagement';
+  /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
+  private readonly meEngagementSectionLabel = 'Engagement';
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
@@ -278,12 +278,12 @@ export class SidebarNavService {
   });
 
   // --- Me Lens Items ---
-  // Crowdfunding is a top-level section (peer of My Engagement / Education), with its
+  // Crowdfunding is a top-level section (peer of Engagement / Education), with its
   // sub-pages as section children. Security/Akrites is always the last section and is filtered out
   // reactively in visibleMeLensItems.
   private readonly meLensItems: SidebarMenuItem[] = [
     {
-      label: 'My Dashboard',
+      label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/',
     },
@@ -293,32 +293,32 @@ export class SidebarNavService {
       expanded: true,
       items: [
         {
-          label: 'My Meetings',
+          label: 'Meetings',
           icon: 'fa-light fa-calendar',
           routerLink: '/meetings',
         },
         {
-          label: 'My Events',
+          label: 'Events',
           icon: 'fa-light fa-ticket',
           routerLink: '/events',
         },
         {
-          label: 'My Meetups',
+          label: 'Meetups',
           icon: 'fa-light fa-handshake',
           routerLink: '/meetups',
         },
         {
-          label: 'My ' + COMMITTEE_LABEL.plural,
+          label: COMMITTEE_LABEL.plural,
           icon: 'fa-light fa-users-between-lines',
           routerLink: '/groups',
         },
         {
-          label: 'My ' + MAILING_LIST_LABEL.plural,
+          label: MAILING_LIST_LABEL.plural,
           icon: 'fa-light fa-envelope',
           routerLink: '/mailing-lists',
         },
         {
-          label: 'My Newsletters',
+          label: 'Newsletters',
           icon: 'fa-light fa-paper-plane',
           routerLink: '/newsletters/my',
           // Stay highlighted on a foundation drill-down (/newsletters/my/:foundationSlug).
@@ -326,12 +326,12 @@ export class SidebarNavService {
           testId: 'sidebar-my-newsletters',
         },
         {
-          label: 'My ' + VOTE_LABEL.plural,
+          label: VOTE_LABEL.plural,
           icon: 'fa-light fa-check-to-slot',
           routerLink: '/votes',
         },
         {
-          label: 'My ' + SURVEY_LABEL.plural,
+          label: SURVEY_LABEL.plural,
           icon: 'fa-light fa-clipboard-list',
           routerLink: '/surveys',
         },
@@ -360,12 +360,12 @@ export class SidebarNavService {
       expanded: true,
       items: [
         {
-          label: 'My Initiatives',
+          label: 'Initiatives',
           icon: 'fa-light fa-box-dollar',
           routerLink: '/crowdfunding/initiatives',
         },
         {
-          label: 'My Donations',
+          label: 'Donations',
           icon: 'fa-light fa-hand-heart',
           routerLink: '/crowdfunding/donations',
         },
@@ -816,7 +816,7 @@ export class SidebarNavService {
 
   // --- Me — My Formations page (#2753; dark-launched, appended to My Engagement) ---
   private readonly myFormationsNavItem: SidebarMenuItem = {
-    label: 'My Formations',
+    label: 'Formations',
     icon: 'fa-light fa-list-check',
     routerLink: '/formations',
     testId: 'sidebar-my-formations',

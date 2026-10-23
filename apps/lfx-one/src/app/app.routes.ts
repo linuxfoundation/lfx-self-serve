@@ -248,7 +248,7 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        title: 'My Dashboard',
+        title: 'Dashboard',
         data: { lens: 'me' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
@@ -670,26 +670,26 @@ export const routes: Routes = [
       },
       {
         path: 'meetings',
-        title: 'My Meetings',
+        title: 'Meetings',
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'meetups',
-        title: 'My Meetups',
+        title: 'Meetups',
         canActivate: [meetupsLensGuard],
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {
         path: 'groups',
-        title: `My ${COMMITTEE_LABEL.plural}`,
+        title: COMMITTEE_LABEL.plural,
         canMatch: [authenticatedMatchGuard],
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
-        title: `My ${MAILING_LIST_LABEL.plural}`,
+        title: MAILING_LIST_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
@@ -711,13 +711,13 @@ export const routes: Routes = [
       },
       {
         path: 'votes',
-        title: `My ${VOTE_LABEL.plural}`,
+        title: VOTE_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
-        title: `My ${SURVEY_LABEL.plural}`,
+        title: SURVEY_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
@@ -725,7 +725,7 @@ export const routes: Routes = [
         // Personal reader: route data restores Me on deep links from any lens.
         path: 'newsletters/my',
         pathMatch: 'full',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () =>
@@ -736,7 +736,7 @@ export const routes: Routes = [
         // (`?invite=<group uid>`). Must stay ahead of the `newsletters/:projectSlug/:id`
         // permalink, which would otherwise read `my` as a project slug.
         path: 'newsletters/my/:foundationSlug',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
@@ -802,7 +802,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        title: 'My Events',
+        title: 'Events',
         canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
@@ -828,7 +828,7 @@ export const routes: Routes = [
         // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
         // to My Dashboard).
         path: 'formations',
-        title: 'My Formations',
+        title: 'Formations',
         data: { lens: 'me' },
         canMatch: [formationMeEnabledGuard],
         loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),

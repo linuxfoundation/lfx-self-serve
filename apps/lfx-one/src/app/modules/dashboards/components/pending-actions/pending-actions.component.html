@@ -126,7 +126,7 @@
                           <a
                             [routerLink]="item.inviteViewCommands"
                             [queryParams]="item.inviteViewQueryParams"
-                            [state]="{ backLabel: 'My Dashboard' }"
+                            [state]="{ backLabel: 'Dashboard' }"
                             (click)="$event.stopPropagation()"
                             class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
                             [attr.aria-label]="'Open group ' + item.inviteGroupName"
@@ -199,7 +199,7 @@
                                 rel="noopener noreferrer"
                                 class="text-xs text-gray-500 hover:text-blue-600"
                                 data-testid="dashboard-pending-actions-vote-pcc-link">
-                                Open in My Votes →
+                                Open in Votes →
                               </a>
                             }
                           } @else if (item.isVoteLoading || !item.vote) {

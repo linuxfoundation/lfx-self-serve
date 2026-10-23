@@ -858,7 +858,7 @@ test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)
     });
 
     // The org lens tab and the resolved menu must be consistent: no Me-lens sections remain on screen.
-    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "My Engagement" must not leak into the org sidebar').toHaveCount(0);
+    await expect(page.getByTestId('sidebar-item-engagement'), 'Me-lens "Engagement" must not leak into the org sidebar').toHaveCount(0);
     await expect(page.getByTestId('sidebar-item-education'), 'Me-lens "Education" must not leak into the org sidebar').toHaveCount(0);
   });
 });

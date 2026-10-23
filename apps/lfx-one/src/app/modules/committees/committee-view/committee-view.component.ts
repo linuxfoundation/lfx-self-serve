@@ -377,7 +377,7 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
 

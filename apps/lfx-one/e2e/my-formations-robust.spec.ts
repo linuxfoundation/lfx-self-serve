@@ -77,7 +77,7 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
 
     // Every menu item inside a section carries a `sidebar-*` test id (navbar.component.html's
     // menuItem template), so the section's last such descendant is its last entry.
-    const engagement = page.getByTestId('sidebar-item-my-engagement');
+    const engagement = page.getByTestId('sidebar-item-engagement');
     await expect(engagement).toBeAttached();
     await expect(engagement.locator('[data-testid^="sidebar-"]').last()).toHaveAttribute('data-testid', 'sidebar-my-formations');
   });
