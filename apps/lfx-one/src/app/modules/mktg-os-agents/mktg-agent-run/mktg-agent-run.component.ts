@@ -52,7 +52,7 @@ import {
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitCrumbsFor, mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import { mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -293,9 +293,6 @@ export class MktgAgentRunComponent {
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.agent?.id ?? '', this.projectName(), mktgKitRootPath(this.router.url), this.agent?.name ?? 'Agent')
-  );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly showIntakeForm = computed(() => !this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()));
   protected readonly submitLabel = computed(() => (this.freshMode() ? 'Start' : `Generate ${this.intake?.documentName}`));

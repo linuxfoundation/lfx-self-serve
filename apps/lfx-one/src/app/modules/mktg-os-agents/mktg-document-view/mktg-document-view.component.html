@@ -4,7 +4,7 @@
 <div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
   <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
-    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="runAgainParams().project" />
+    <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
       <div class="flex min-w-0 flex-col gap-1">

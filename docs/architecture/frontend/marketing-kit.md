@@ -131,8 +131,12 @@ exact matching so it is not active everywhere; named tabs use subset matching wi
 Family titles follow the family name.
 
 Up is a fixed-parent `lfx-mktg-breadcrumb`, independent of the entry route. The pure shared
-`mktgKitRootCrumb` builds the `<Project> kit` label once; `mktgKitCrumbsFor` derives a document or
-agent's family from the shared catalog/family registries. Every crumb except the last is a link;
+`buildMktgBreadcrumbs(page, kitRootPath, projectName)` takes a typed kit/tab/family/asset/run page
+and derives labels and fixed parents from the shared catalog/family registries. Pages pass only
+that identity to the component, which reads name and slug from `ProjectContextService` and tracks
+`NavigationEnd` URLs for the absolute lens root (matched on a full path segment). Until the project
+resolves, every page uses the neutral `Marketing kit` label. The shared Node unit suite guards
+against breadcrumb nav markup outside `components/mktg-breadcrumb/mktg-breadcrumb.component.html`. Every crumb except the last is a link;
 the last has `aria-current="page"`. Kit home is the root and has no breadcrumb. Tab pages show
 `<Project> kit › <Tab>`; a family shows `<Project> kit › <Family>`; generic run and shared document
 views show `<Project> kit › <Family> › <Agent or asset>`. Unmapped legacy documents use Documents

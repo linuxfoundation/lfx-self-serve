@@ -127,6 +127,7 @@ export * from './mktg-asset.utils';
 export * from './mktg-kit.utils';
 export * from './mktg-rebuild.utils';
 export * from './mktg-navigation.utils';
+export * from './mktg-breadcrumb.utils';
 export * from './linkedin-post.utils';
 export * from './linkedin-post-envelope.utils';
 export * from './linkedin-post-presentation.utils';

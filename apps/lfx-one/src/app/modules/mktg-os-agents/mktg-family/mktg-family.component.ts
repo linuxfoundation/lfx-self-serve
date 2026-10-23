@@ -19,7 +19,7 @@ import {
   MKTG_RUN_NEW_MODE,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, mktgKitRootCrumb, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
+import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -68,7 +68,6 @@ export class MktgFamilyComponent {
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
   /** Why the family's lead agent cannot run yet: one copy for the tooltip and the note under the button. */
   protected readonly pendingReason = computed(() => this.definition()?.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon']);
-  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();

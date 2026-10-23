@@ -37,7 +37,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
-  MktgBreadcrumbItem,
+  MktgBreadcrumbPage,
   MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
@@ -58,7 +58,6 @@ import {
   findMktgRunIntake,
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
-  mktgKitCrumbsFor,
   mktgKitRootPath,
   mktgRunRouteFor,
   parseMktgLegacyRevisionId,
@@ -229,7 +228,7 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
-  protected readonly crumbs = this.initCrumbs();
+  protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -1024,14 +1023,14 @@ export class MktgDocumentViewComponent {
     });
   }
 
-  private initCrumbs(): Signal<MktgBreadcrumbItem[]> {
+  private initBreadcrumbPage(): Signal<MktgBreadcrumbPage> {
     return computed(() => {
       const view = this.view();
       let label = view?.type.itemLabel ?? 'Document';
       if (view?.type.agentKey === 'aeo-geo' && view.revision.createdAt) {
         label += ` · ${formatDate(view.revision.createdAt, 'd MMM y', 'en-US', 'UTC')}`;
       }
-      return mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), label);
+      return { kind: 'asset', agentKey: this.params().agentKey, label };
     });
   }
 

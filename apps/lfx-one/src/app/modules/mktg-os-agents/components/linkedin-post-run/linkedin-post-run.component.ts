@@ -41,7 +41,7 @@ import {
   MktgRunQuestion,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
+import { isLinkedinSetup, normalizeLinkedinShareLink } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -110,9 +110,6 @@ export class LinkedinPostRunComponent {
   protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
   protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
   protected readonly pageLabel = LINKEDIN_PAGE_LABEL;
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), this.agent()?.name ?? this.pageLabel)
-  );
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
