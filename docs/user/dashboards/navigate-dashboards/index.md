@@ -17,6 +17,8 @@ The LFX Self Serve dashboard adapts based on your persona and the lens you have 
 3. Select one of the available lenses: **Me**, **Foundation**, **Project**, or **Org**.
 4. The dashboard and left navigation update automatically to reflect the selected lens.
 
+On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
+
 Your lens selection is saved for 30 days. The next time you sign in, the app restores your last-used lens.
 
 ## Me lens

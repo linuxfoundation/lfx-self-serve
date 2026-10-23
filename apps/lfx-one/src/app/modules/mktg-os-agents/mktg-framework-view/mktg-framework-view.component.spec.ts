@@ -10,7 +10,9 @@ import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -156,6 +158,7 @@ describe('MktgFrameworkViewComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
         { provide: MktgPrintService, useValue: printer },
         provideMktgSlidesExportStub(slidesExport),
+        provideMktgCommentsStub(),
         { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
       ],
     }).compileComponents();
@@ -260,6 +263,54 @@ describe('MktgFrameworkViewComponent', () => {
 
     expect(query('mktg-framework-view-state')?.textContent).toContain('Waiting for your answers');
     expect(query('mktg-framework-view-generating')).not.toBeNull();
+  });
+
+  it('anchors each framework section to its original JSON index without adding comments to report fields', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view')?.className).toContain('[@media_screen]:@container/asset');
+    expect(query('mktg-framework-view')?.className).not.toContain('@container/framework');
+    expect(query('mktg-framework-view-panel-framework')?.firstElementChild?.className).toContain('@lg/asset:grid-cols-2');
+    const has = (field: string) => element().querySelector(`[data-mktg-comment-field="${field}"]`);
+    const keys = new Set<string>();
+    const collect = () =>
+      element()
+        .querySelectorAll('[data-mktg-comment-field]')
+        .forEach((node) => keys.add(node.getAttribute('data-mktg-comment-field') ?? ''));
+    collect();
+    for (const field of [
+      'mf.vision',
+      'mf.mission',
+      'mf.positioning',
+      'mf.tagline',
+      'mf.goals[0]',
+      'mf.goals[1]',
+      'mf.goals[1].bite',
+      'mf.goals[0].vp',
+      'mf.say',
+      'mf.avoid',
+      'mf.anchor',
+    ])
+      expect(has(field)).not.toBeNull();
+    await tab('icps');
+    collect();
+    expect(query('mktg-framework-view-panel-icps')?.className).toContain('@4xl/asset:grid-cols-2');
+    expect(has('icp[0]')).not.toBeNull();
+    expect(has('icp[1]')).not.toBeNull();
+    expect(has('icp[0].cta')).not.toBeNull();
+    await tab('message-house');
+    collect();
+    expect(query('mktg-framework-view-pillars')?.className).toContain('@2xl/asset:grid-cols-3');
+    for (const field of ['mh.umbrella', 'mh.line', 'mh.pillars[0]', 'mh.pillars[0].m', 'mh.found', 'mh.aud']) expect(has(field)).not.toBeNull();
+    await tab('numbers');
+    collect();
+    expect(query('mktg-framework-view-panel-numbers')?.className).toContain('@2xl/asset:grid-cols-4');
+    expect(has('nums[0]')).not.toBeNull();
+    await tab('sources');
+    expect(element().querySelector('[data-mktg-comment-field]')).toBeNull();
+    expect(keys.size).toBeGreaterThan(20);
+    for (const key of keys) expect(isMktgDocumentCommentAnchor('foundation-message', ASSET.content, { kind: 'field', key })).toBe(true);
   });
 
   it('renders the framework tab first once ready: the statements, the goal columns with their segments, say and avoid', async () => {

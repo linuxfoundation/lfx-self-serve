@@ -164,6 +164,7 @@ describe('Member 360 entitlement and generation', () => {
     const started = await new Member360Service().start(req, { project: 'sample-project' });
     expect(started).toEqual({ sessionId: 'session-1', documentId: buildMktgRunDocumentId('session-1') });
     expect(mocks.getProjectById).toHaveBeenCalledWith(req, 'sample-project', true);
+    expect(mocks.createSession.mock.calls[0][1]).toMatchObject({ mentionOnOwnLine: true });
     const message = mocks.createSession.mock.calls[0][1].message;
     expect(message).toContain('MEMBER 360 RUN REQUEST');
     expect(message).toContain('  LFX project UID: sample-project (authoritative');

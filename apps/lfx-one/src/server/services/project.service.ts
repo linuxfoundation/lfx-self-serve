@@ -8087,7 +8087,8 @@ export class ProjectService {
       document_source: 'summary' as const,
       document_source_name: s.zoom_meeting_topic || '',
       summary_uid: s.id,
-      summary_content: s.edited_content ?? s.content,
+      // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
+      summary_content: s.edited_content || s.content,
     }));
 
     logger.debug(req, 'get_project_documents', 'Fetched all project document types', {

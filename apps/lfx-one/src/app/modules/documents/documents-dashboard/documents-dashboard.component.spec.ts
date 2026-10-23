@@ -4,6 +4,7 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MyDocumentItem, Project, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -207,14 +208,6 @@ describe('DocumentsDashboardComponent', () => {
       legacyDocument('alpha', '2026-10-01T00:00:00Z', { name: 'Alpha' }),
       legacyDocument('missing-a', '', { name: 'A' }),
     ];
-    expect(documents.sort(fixture.componentInstance['compareDocuments']).map((doc) => doc.id)).toEqual([
-      'alpha',
-      'same-a',
-      'same-b',
-      'epoch',
-      'invalid',
-      'missing-a',
-      'missing-z',
-    ]);
+    expect(documents.sort(compareDocumentsByRecency).map((doc) => doc.id)).toEqual(['alpha', 'same-a', 'same-b', 'epoch', 'invalid', 'missing-a', 'missing-z']);
   });
 });

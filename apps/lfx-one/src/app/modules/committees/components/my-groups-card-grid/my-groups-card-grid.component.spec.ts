@@ -82,7 +82,7 @@ describe('MyGroupsCardGridComponent', () => {
     element<HTMLAnchorElement>('groups-card-grid-title-group-1').click();
     await fixture.whenStable();
     expect(router.url).toBe(`${prefix}/group-1?project=synthetic-owner`);
-    expect(TestBed.inject(Location).getState()).toMatchObject({ backLabel: 'My Groups', fromMeLens: true });
+    expect(TestBed.inject(Location).getState()).toMatchObject({ backLabel: 'Groups', fromMeLens: true });
   });
 
   it('omits the project query when the owner slug is unavailable', async () => {
