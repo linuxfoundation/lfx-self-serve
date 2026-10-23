@@ -102,6 +102,16 @@ describe('MktgFieldCommentsComponent', () => {
     expect(element().querySelector('[role="status"]')?.textContent).toBe('Comment added');
     expect(document.activeElement).toBe(element().querySelector('button'));
   });
+  it('submits a Brand Kit passage key without trusting or copying browser-rendered passage bytes', async () => {
+    scope.set({ ...scope(), agentKey: 'brand-kit' });
+    fixture.componentRef.setInput('field', 'chapters.voice.line');
+    await fixture.whenStable();
+    click('mktg-field-comment-open');
+    fill('Make this line shorter.');
+    click('mktg-field-comment-add');
+    expect(add).toHaveBeenCalledExactlyOnceWith({ kind: 'passage', key: 'chapters.voice.line' }, 'Make this line shorter.', expect.any(String));
+  });
+
   it('does not send blank or oversized text and creates a new request ID if failed text changes', () => {
     click('mktg-field-comment-open');
     fill('   ');

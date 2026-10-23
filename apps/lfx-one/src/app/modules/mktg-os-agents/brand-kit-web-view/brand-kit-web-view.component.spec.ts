@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { PLATFORM_ID } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -13,6 +13,8 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
+import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
+import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrandKitWebViewComponent } from './brand-kit-web-view.component';
@@ -55,6 +57,11 @@ describe('BrandKitWebViewComponent', () => {
         provideRouter([{ path: '**', children: [] }]),
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
         provideNoopAnimations(),
+        provideMktgCommentsStub({
+          loaded: signal(true),
+          selectedScope: signal({ ...mktgCommentScopeFixture(), agentKey: 'brand-kit' }),
+          labelContent: signal(kit),
+        }),
         { provide: PLATFORM_ID, useValue: platformId },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
@@ -78,6 +85,40 @@ describe('BrandKitWebViewComponent', () => {
     print.mockRestore();
     document.body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS);
     document.head.querySelectorAll('link[id^="brand-kit-font-"]').forEach((link) => link.remove());
+  });
+
+  it('opts stored kits into string-only passage pins in original chapter order without changing artwork or print', async () => {
+    const kit = brandKitTestRevision();
+    const before = JSON.stringify(kit);
+    await configure('browser', kit);
+    expect(host().querySelector('lfx-mktg-field-comments')).toBeNull();
+    fixture.componentRef.setInput('commentsEnabled', true);
+    for (const id of ['logo', 'color', 'type', 'visual', 'usage', 'voice']) {
+      await open(id);
+      const pins = Array.from(host().querySelectorAll<HTMLElement>('[data-mktg-comment-field]'));
+      expect(pins.length).toBeGreaterThan(0);
+      for (const pin of pins) {
+        const key = pin.getAttribute('data-mktg-comment-field') ?? '';
+        const field = readMktgDocumentCommentField(kit, key);
+        const group = pin.closest('[data-mktg-comment-group]');
+        expect(group?.querySelectorAll('[data-mktg-comment-field]')).toHaveLength(1);
+        expect(pin.classList.contains('font-sans')).toBe(true);
+        expect(pin.classList.contains('text-gray-900')).toBe(true);
+        expect(typeof field?.value).toBe('string');
+        expect(field?.value).not.toBe('');
+        expect(isMktgDocumentCommentAnchor('brand-kit', kit, { kind: 'passage', key })).toBe(true);
+      }
+      if (id === 'color') {
+        expect(pins.filter((pin) => pin.getAttribute('data-mktg-comment-field')?.endsWith('.hex')).map((pin) => pin.parentElement?.textContent)).toEqual(
+          kit.chapters.color.palette.map((entry) => expect.stringContaining(entry.hex))
+        );
+      }
+    }
+    expect(host().querySelector('[data-mktg-comment-field="chapters.voice.attributes[1].line"]')?.parentElement?.textContent).toContain('A number.');
+    expect(query('brand-kit-web-view-print')?.querySelector('lfx-mktg-field-comments')).toBeNull();
+    await open('sources');
+    expect(host().querySelector('lfx-mktg-field-comments')).toBeNull();
+    expect(JSON.stringify(kit)).toBe(before);
   });
 
   it('loads its URL tab and pushes one history entry per user switch', async () => {

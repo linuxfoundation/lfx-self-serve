@@ -6,7 +6,7 @@ import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject,
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MKTG_DOCUMENT_COMMENT_MAX_CHARS, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
-import { describeMktgDocumentCommentField } from '@lfx-one/shared/utils';
+import { describeMktgDocumentCommentField, mktgDocumentCommentAnchorKind } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { finalize, take } from 'rxjs';
@@ -71,6 +71,8 @@ export class MktgFieldCommentsComponent {
     if (focus) button?.focus();
   }
   protected save(): void {
+    const scope = this.comments.selectedScope();
+    if (!scope) return;
     const draft = this.draft();
     const text = draft.form.controls.text.value;
     if (!text.trim()) draft.form.controls.text.setErrors({ required: true });
@@ -85,7 +87,7 @@ export class MktgFieldCommentsComponent {
     this.busy.set(true);
     this.error.set('');
     this.comments
-      .add({ kind: 'field', key: this.field() }, text, draft.clientRequestId)
+      .add({ kind: mktgDocumentCommentAnchorKind(scope.agentKey), key: this.field() }, text, draft.clientRequestId)
       .pipe(
         take(1),
         finalize(() => this.busy.set(false))

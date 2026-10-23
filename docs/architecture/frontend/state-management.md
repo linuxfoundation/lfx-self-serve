@@ -489,10 +489,21 @@ reconciliation retain the frozen IDs; restoring a view never POSTs.
 
 The framework document view adds data-keyed comment controls inside the existing
 field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
+Stored Brand Kits opt into string passage pins in their screen chapters (never SVG
+bytes, generated sample text or the printed book). The BFF captures passage text
+from the immutable stored key for `brand_kit_revise_form`; the browser sends only
+that key and comment. Boilerplates pin each original `bp[index].t` length and send
+the selected asset's comments through the same redraft flow. Framework, Kit and
+Boilerplates keep Comments, Revisions and About together in the right-hand column
+at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
+800px host-container threshold and each asset's inner container grids remain intact.
+Run previews, legacy/unreadable assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
+and boilerplate lengths identically in pins and the panel.
 The controls appear on hover/focus, and stay visible on hover-less devices; threads
 and a wrapper-based composer pin beneath their field. Disabled hosts have no
 layout box; the extra hover groups use display:contents until controls are shown.
-Inner grids respond to the framework's own container rather than viewport width.
+Inner grids respond to each asset's own container rather than viewport width;
+Framework and Kit containment is screen-only to preserve print positioning.
 The shared contract-specific label util gives pins and the panel the same human
 field caption, including original array position and goal/audience title. Closing
 a composer restores its Comment button's focus; successful adds announce politely.
