@@ -74,21 +74,12 @@ export class MainLayoutComponent {
    */
   private readonly pendingRouteLens = signal<Lens | null>(null);
 
-  /**
-   * The lens when the mobile drawer opened. The drawer's lens tabs only preview a lens's menu, so a drawer that closes
-   * without a navigation restores it — the page underneath never stays on a lens its address doesn't match.
-   */
-  private lensAtDrawerOpen: Lens | null = null;
-  /** The drawer was closed by a navigation the viewer made from it, which owns the lens from then on. */
-  private drawerClosedByNavigation = false;
-
   public constructor() {
     // Seed the profile-hub flag from the current URL so the right gutter is correct on the first
     // paint / hard load, before the first NavigationEnd fires.
     this.isProfileHub.set(isProfileHubPath(this.router.url));
 
     this.initDrawerFocus();
-    this.initDrawerLensPreview();
 
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
@@ -104,7 +95,6 @@ export class MainLayoutComponent {
         // re-addresses with `replaceUrl` (an organization switch from the drawer) closes the drawer at its source.
         const navigation = this.router.currentNavigation();
         if (!navigation?.extras.replaceUrl || navigation.trigger === 'popstate') {
-          this.drawerClosedByNavigation = this.showMobileSidebar();
           this.appService.closeMobileSidebar();
         }
         this.selectorPanelOpen.set(false);
@@ -199,29 +189,6 @@ export class MainLayoutComponent {
     );
     const first = Array.from(focusable).find((element) => element.getClientRects().length > 0);
     (first ?? panel).focus({ preventScroll: true });
-  }
-
-  /**
-   * Records the lens when the mobile drawer opens, and restores it when the drawer closes without a navigation (X,
-   * backdrop, Escape) after a lens tab previewed another one. A navigation from the drawer leaves the lens to the route.
-   */
-  private initDrawerLensPreview(): void {
-    toObservable(this.showMobileSidebar)
-      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
-      .subscribe((open) => {
-        if (open) {
-          this.lensAtDrawerOpen = this.activeLens();
-          this.drawerClosedByNavigation = false;
-          return;
-        }
-        const lensAtOpen = this.lensAtDrawerOpen;
-        const navigated = this.drawerClosedByNavigation;
-        this.lensAtDrawerOpen = null;
-        this.drawerClosedByNavigation = false;
-        if (!navigated && lensAtOpen && lensAtOpen !== this.activeLens()) {
-          this.lensService.setLens(lensAtOpen);
-        }
-      });
   }
 
   /**

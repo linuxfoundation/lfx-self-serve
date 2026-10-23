@@ -84,19 +84,10 @@ export class LensService {
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
    */
   public switchLens(lens: Lens): void {
-    const target = this.switchTarget(lens);
+    const target = this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
     if (this.setLens(target)) {
       this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
     }
-  }
-
-  /**
-   * Switch the active lens from a UI control without navigating — the mobile drawer's lens tabs, where the viewer then
-   * picks a page from that lens's menu (the layout restores the page's lens if the drawer closes without one).
-   * Resolves the hybrid 'Projects' entry like {@link switchLens}. Returns whether the lens was allowed.
-   */
-  public selectLens(lens: Lens): boolean {
-    return this.setLens(this.switchTarget(lens));
   }
 
   /** Applies the lens if the current persona is allowed it. Returns whether the lens was allowed (callers gate navigation on this). */
@@ -168,11 +159,6 @@ export class LensService {
    */
   public clearContextLens(): void {
     this.contextLensOverride.set(null);
-  }
-
-  /** The lens a lens-tab click lands on: hybrid personas' merged 'Projects' entry returns to the last viewed nav lens. */
-  private switchTarget(lens: Lens): Lens {
-    return this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
   }
 
   private applyLensSelection(lens: Lens): void {

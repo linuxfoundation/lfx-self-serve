@@ -3,11 +3,9 @@
 
 import { NgClass } from '@angular/common';
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
-import type { WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
-import type { Lens } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,8 +20,6 @@ import { MainLayoutComponent } from './main-layout.component';
 interface LayoutHarness {
   fixture: ComponentFixture<MainLayoutComponent>;
   appService: AppService;
-  /** The active lens; the mocked `setLens` writes it, as the real one does for an allowed lens. */
-  activeLens: WritableSignal<Lens>;
   routerEvents: Subject<unknown>;
   /** Ends a navigation as the router reports it: `currentNavigation()` still names it while `NavigationEnd` is emitted. */
   endNavigation: (extras?: { replaceUrl?: boolean }, trigger?: 'imperative' | 'popstate') => void;
@@ -38,7 +34,6 @@ interface LayoutHarness {
  */
 const createLayout = async (): Promise<LayoutHarness> => {
   const routerEvents = new Subject<unknown>();
-  const activeLens = signal<Lens>('org');
   const currentNavigation = signal<{ extras: { replaceUrl?: boolean }; trigger: 'imperative' | 'popstate' } | null>(null);
   const route = { snapshot: { data: {}, queryParamMap: new Map() }, firstChild: null };
   TestBed.resetTestingModule();
@@ -49,14 +44,7 @@ const createLayout = async (): Promise<LayoutHarness> => {
       { provide: ActivatedRoute, useValue: route },
       {
         provide: LensService,
-        useValue: {
-          activeLens,
-          availableLenses: signal([ALL_LENSES.me, ALL_LENSES.org]),
-          setLens: vi.fn((lens: Lens) => {
-            activeLens.set(lens);
-            return true;
-          }),
-        },
+        useValue: { activeLens: signal('org'), availableLenses: signal([ALL_LENSES.me, ALL_LENSES.org]), setLens: vi.fn(() => true) },
       },
       { provide: ProjectContextService, useValue: { setRouteLensKind: vi.fn() } },
       { provide: SidebarNavService, useValue: { sidebarItems: signal([]) } },
@@ -70,7 +58,6 @@ const createLayout = async (): Promise<LayoutHarness> => {
   return {
     fixture,
     appService: TestBed.inject(AppService),
-    activeLens,
     routerEvents,
     endNavigation: (extras = {}, trigger = 'imperative') => {
       currentNavigation.set({ extras, trigger });
@@ -291,31 +278,5 @@ describe('MainLayoutComponent mobile drawer', () => {
     expect(sentinels()).toHaveLength(0);
 
     fixture.nativeElement.remove();
-  });
-
-  // Mobile lens tabs only preview a lens's menu: closing the drawer without picking a page keeps page and lens in step.
-  it('restores the lens it opened on when the drawer closes without a navigation', async () => {
-    const { fixture, appService, activeLens } = await createLayout();
-    appService.openMobileSidebar();
-    await fixture.whenStable();
-
-    activeLens.set('me');
-    appService.closeMobileSidebar();
-    await fixture.whenStable();
-
-    expect(activeLens()).toBe('org');
-  });
-
-  it('leaves the lens to the route when a navigation from the drawer closes it', async () => {
-    const { fixture, appService, activeLens, endNavigation } = await createLayout();
-    appService.openMobileSidebar();
-    await fixture.whenStable();
-
-    activeLens.set('me');
-    endNavigation();
-    await fixture.whenStable();
-
-    expect(appService.showMobileSidebar()).toBe(false);
-    expect(activeLens()).toBe('me');
   });
 });

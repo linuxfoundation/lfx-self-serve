@@ -172,15 +172,6 @@ export abstract class NavMenuBase {
   }
 
   /**
-   * Whether a context pick made off a `/project` or `/foundation` address must land on the picked lens's overview
-   * instead of re-targeting the current page in place. Off those addresses the in-place switch is right for the flat
-   * pages that take `?project=` (meetings, committees, …); a host overrides this where the page belongs to another lens.
-   */
-  protected contextPickLeavesPage(): boolean {
-    return false;
-  }
-
-  /**
    * The lens whose overview a context switch must navigate to, or `null` when the switch keeps the
    * current page and only re-targets it. Keeps the URL's lens prefix in sync with the selected
    * context so a hard refresh restores it (syncLensFromRoute + projectQueryParamGuard): navigate on a
@@ -192,11 +183,11 @@ export abstract class NavMenuBase {
     // approach as `MentorPageComponent.resolveActiveTab`).
     const segments = this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((segment) => segment.path) ?? [];
     const currentPrefix = segments[0];
+    if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
+      return null;
+    }
     // activeLens() reflects setLens() synchronously, clamped to what the persona may use.
     const targetLens: NavLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
-    if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
-      return this.contextPickLeavesPage() ? targetLens : null;
-    }
     const lensTypeChanged = currentPrefix !== targetLens;
     const onEntityPage = segments.length === 3;
     // The Project lens landing page is decided per project by `formationOverviewRedirectGuard`

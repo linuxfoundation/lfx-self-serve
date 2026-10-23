@@ -251,11 +251,6 @@ export class NavbarComponent extends NavMenuBase {
     },
   ];
   protected readonly brandSite = NAVBAR_BRAND_SITE;
-  /**
-   * The lens the mobile drawer showed before its first lens-tab tap since it opened — the page's lens, which the tabs
-   * only preview away from — or null while no tab was tapped. Cleared when the drawer closes.
-   */
-  private lensBeforePreview: Lens | null = null;
   /** The Documentation button reads as active anywhere under `/docs`, as the lens rail it replaced did. */
   protected readonly isDocsActive: Signal<boolean> = computed(() => isDocsPath(this.navigatedUrl()));
 
@@ -282,16 +277,7 @@ export class NavbarComponent extends NavMenuBase {
     this.failedPhotoUrl.set(url);
   }
 
-  /**
-   * Desktop lens tabs switch and land on the lens's default page. In the mobile drawer a tab only switches the lens, so
-   * the drawer stays open on that lens's menu for the viewer to pick a page (or close it, which restores the page's lens).
-   */
   protected switchLens(lens: Lens): void {
-    if (this.mobile()) {
-      this.lensBeforePreview ??= this.activeLens();
-      this.lensService.selectLens(lens);
-      return;
-    }
     this.lensService.switchLens(lens);
   }
 
@@ -350,28 +336,8 @@ export class NavbarComponent extends NavMenuBase {
     this.sidebarNavService.retryMenuLookups();
   }
 
-  /**
-   * A project or foundation picked while the mobile drawer previews another lens than the page's lands on the picked
-   * lens's overview, as a desktop lens switch would, instead of writing `?project=` onto a Me or Org page.
-   */
-  protected override contextPickLeavesPage(): boolean {
-    return this.mobile() && this.lensBeforePreview !== null && this.activeLens() !== this.lensBeforePreview;
-  }
-
   protected closeMobileDrawer(): void {
     this.appService.closeMobileSidebar();
-  }
-
-  /**
-   * A company pick on an Org Lens page re-addresses it, possibly with `replaceUrl`, which the layout leaves alone, so the
-   * pick closes the drawer itself. Off an Org page — the drawer previewing Org Lens — the pick moves nothing, so the drawer
-   * stays open for the viewer to choose a page.
-   */
-  protected onOrgSelected(): void {
-    const firstSegment = this.router.parseUrl(this.router.url).root.children['primary']?.segments[0]?.path;
-    if (firstSegment === 'org') {
-      this.closeMobileDrawer();
-    }
   }
 
   protected openChangelogDrawer(): void {
@@ -462,7 +428,6 @@ export class NavbarComponent extends NavMenuBase {
         takeUntilDestroyed()
       )
       .subscribe(() => {
-        this.lensBeforePreview = null;
         this.brandMenu()?.hide();
         this.createMenu()?.hide();
         this.userMenu()?.hide();
