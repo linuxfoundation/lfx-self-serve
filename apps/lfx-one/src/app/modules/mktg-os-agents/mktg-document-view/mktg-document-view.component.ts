@@ -210,6 +210,7 @@ export class MktgDocumentViewComponent {
   private readonly reloads = signal(0);
   private readonly handoffRunId = signal('');
   private readonly refreshedFailures = new Set<string>();
+  private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
 
@@ -462,6 +463,7 @@ export class MktgDocumentViewComponent {
               this.retrying.set(false);
               this.handoffRunId.set('');
               this.refreshedFailures.clear();
+              this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
               this.notice.set('');
               this.restoringId.set(null);
@@ -548,6 +550,7 @@ export class MktgDocumentViewComponent {
             if (prepared) {
               this.localProgress.set('writing');
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
+              if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
@@ -687,9 +690,17 @@ export class MktgDocumentViewComponent {
                     take(1),
                     switchMap(() => {
                       const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
-                      if (recorded?.state !== 'writing' && recorded?.state !== 'storing') return EMPTY;
-                      this.localProgress.set('writing');
-                      this.handoffRunId.set(recorded.runId);
+                      const active = recorded?.state === 'writing' || recorded?.state === 'storing';
+                      // The accepted run may have finished before this first metadata read. Confirm its
+                      // private result receipt instead of silently treating whichever revision is current as its output.
+                      const finishedBeforeRead =
+                        !recorded &&
+                        !this.preparedRunIds.has(request.runId) &&
+                        request.runId === recoverable.attempt?.runId &&
+                        !!this.runDetail()?.revisions.length;
+                      if (!active && !finishedBeforeRead) return EMPTY;
+                      if (active) this.localProgress.set('writing');
+                      this.handoffRunId.set(recoverable.attempt?.runId ?? '');
                       return resume({ ...recoverable, request: { ...recoverable.request, intake } });
                     })
                   )
@@ -1093,6 +1104,7 @@ export class MktgDocumentViewComponent {
       const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
+        this.preparedRunIds.add(runId);
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { run: runId, generation: null },

@@ -2831,6 +2831,26 @@ describe('MktgAgentRunComponent', () => {
         expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'documents', 'foundation-message', 'living'], expect.anything());
       });
 
+      it('replaces accepted questions with the recorded run selector, not a local generating token', async () => {
+        const request = component['activeRequest'];
+        if (!request) throw new Error('Missing questions request');
+        const attempts = TestBed.inject(MktgRunAttemptService);
+        const runId = 'b'.repeat(64);
+        attempts.save({ request, attempt: { ...pendingQuestions().attempt, runId }, state: 'writing', updatedAt: new Date().toISOString() });
+        const prepare = vi.spyOn(attempts, 'prepare');
+        answerQuestions.mockReturnValue(of<MktgGenerateProgress>({ type: 'submitted' }));
+
+        await sendWith('Avoid "synergy".');
+
+        expect(prepare).not.toHaveBeenCalled();
+        expect(TestBed.inject(Router).navigate).toHaveBeenLastCalledWith(['..', 'documents', 'foundation-message', 'living'], {
+          relativeTo: TestBed.inject(ActivatedRoute),
+          queryParams: { project: PROJECT_1.slug, generation: null, questions: null, revision: null, run: runId },
+          replaceUrl: true,
+        });
+        expect(answerQuestions).toHaveBeenCalledTimes(1);
+      });
+
       it('marks an edited suggestion as edited, goes back with Back, and shows the writing feed once sent', async () => {
         answerQuestions.mockReturnValue(concat(of<MktgGenerateProgress>({ type: 'submitted' }), NEVER));
 

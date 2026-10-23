@@ -1018,6 +1018,52 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['submittingGeneration']()).toBe(false);
   });
 
+  it.each(['b'.repeat(64), '', 'c'.repeat(64)])('confirms a fast completed receipt only for its explicit run selector (%s)', async (selector) => {
+    const pending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+      attempt: {
+        session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-fast-run', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+        runId: 'b'.repeat(64),
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const service = TestBed.inject(MktgAgentRunService);
+    vi.mocked(TestBed.inject(MktgRunAttemptService).load).mockReturnValue(pending);
+    const progress = new Subject<MktgGenerateProgress>();
+    vi.mocked(service.resume).mockReturnValue(progress);
+    await render('/documents/brand-kit/living' + (selector ? '?run=' + selector : ''));
+    if (selector !== pending.attempt?.runId) {
+      expect(service.resume).not.toHaveBeenCalled();
+      return;
+    }
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    const completed: MktgStoredAgentRun = {
+      agentId: BRAND_KIT_INTAKE.agentId,
+      projectUid: PROJECT.uid,
+      sessionId: 'synthetic-fast-run',
+      ownerToken: 'synthetic-proof',
+      answers: {},
+      savedAt: pending.updatedAt,
+      versions: [
+        {
+          version: 1,
+          document: '# Exact fast result',
+          createdAt: pending.updatedAt,
+          documentLocation: { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId: OLDER.id },
+        },
+      ],
+    };
+    progress.next(mktgRunProgressFixture('document', completed, 1));
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ revision: OLDER.id, mode: null }) })
+    );
+  });
+
   it.each((['document', 'persisted'] as const).flatMap((event) => ['agent', 'project', 'document', 'valid'].map((binding) => ({ event, binding }))))(
     'binds a $event receipt to the requested catalog/project/document ($binding)',
     async ({ event, binding }) => {

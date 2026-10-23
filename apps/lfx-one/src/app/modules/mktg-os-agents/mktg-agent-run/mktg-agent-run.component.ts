@@ -22,7 +22,9 @@ import {
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_RUN_NEW_MODE,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
@@ -596,6 +598,7 @@ export class MktgAgentRunComponent {
         relativeTo: this.route,
         queryParams: {
           project: this.projectSlug(),
+          ...MKTG_RUN_RESUME_QUERY_CLEAR,
           generation: destination.generation ?? null,
           revision: destination.revisionId ?? null,
           run: destination.runId ?? null,
@@ -724,8 +727,8 @@ export class MktgAgentRunComponent {
       .subscribe({
         next: () => {
           this.answersSending.set(false);
-          // The accepted answers were saved before this ACK. The asset resumes polling, not another POST.
-          this.openPrepared(request, true);
+          // The accepted answers were saved before this ACK. Select the recorded run's shared progress view.
+          this.openPrepared(request, true, true);
         },
         error: () => {
           // The answers come back on the questions step, as given: not square one.
@@ -1580,10 +1583,10 @@ export class MktgAgentRunComponent {
     // Terminal failure is tracked before the service emits its last activity.
     if (!pending?.attempt || pending.state === 'failed') return;
     this.writingStretch.set(true);
-    this.openPrepared(request, true);
+    this.openPrepared(request, true, true);
   }
 
-  private openPrepared(request: MktgGenerateRequest, resume = false): void {
+  private openPrepared(request: MktgGenerateRequest, resume = false, recordedProgress = false): void {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request.agentId);
     if (!type) {
       this.phase.set('form');
@@ -1596,8 +1599,10 @@ export class MktgAgentRunComponent {
       this.errorText.set('Sign in before opening this run. Your intake is kept.');
       return;
     }
-    const generation = this.runAttempts.prepare(request, resume);
     const runId = this.runAttempts.load(request.projectUid, request.agentId)?.attempt?.runId;
+    // Accepted work belongs to the recorded run's shared progress view, not a fresh local generating entry.
+    // Drafts, legacy attempts and receipt-less early results retain their private receiver token.
+    const generation = recordedProgress && runId && MKTG_STARTED_RUN_ID_REGEX.test(runId) ? undefined : this.runAttempts.prepare(request, resume);
     this.navigation.set({ projectUid: request.projectUid, subject, agentKey: type.agentKey, generation, runId });
     this.onRetryHandoff();
   }

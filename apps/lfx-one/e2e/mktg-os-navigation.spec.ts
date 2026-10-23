@@ -16,6 +16,7 @@ import {
 } from './helpers/mktg-os-documents.helper';
 import { ASSET_PROJECT, openAssetDocument, openUnapprovedAssetDocument } from './helpers/mktg-os-asset-views.helper';
 import { setupNoQuestionsHandoff } from './helpers/mktg-os-handoff.helper';
+import { setupQuestionsNavigation } from './helpers/mktg-os-questions-navigation.helper';
 
 test.describe('Marketing OS fixed-parent navigation', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
@@ -101,6 +102,36 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.goBack();
     await expect(page).toHaveURL(assetUrl);
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+  });
+
+  test('direct Boilerplates questions select recorded progress and Back skips the form and questions', async ({ page }, info) => {
+    test.setTimeout(60_000);
+    const fixture = await setupQuestionsNavigation(page);
+    try {
+      await openDocuments(page, DOCUMENT_VIEW_URL);
+      await page.getByTestId('mktg-breadcrumb-link-0').click();
+      await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-family.png'), fullPage: true });
+      await page.getByTestId('mktg-family-run-boilerplates').getByRole('link').click();
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-sources.png'), fullPage: true });
+      await page.getByTestId('mktg-run-start').getByRole('button').click();
+      await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
+      await expect(page).not.toHaveURL(/\/documents\//);
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-questions.png'), fullPage: true });
+      await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
+      await expect(page).toHaveURL(new RegExp('run=' + fixture.runId));
+      for (const key of ['generation', 'questions', 'revision', 'mode']) expect.soft(new URL(page.url()).searchParams.has(key), key).toBe(false);
+      await expect(page.getByTestId('mktg-document-view-run')).toContainText('Started');
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-recorded-progress.png'), fullPage: true });
+      fixture.finish();
+      await expect(page.getByTestId('mktg-document-view-boilerplates')).toBeVisible();
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-landed.png'), fullPage: true });
+      await page.goBack();
+      await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+      expect(fixture.posts).toEqual([fixture.intake.endpoints.generate, fixture.intake.endpoints.answers]);
+    } finally {
+      await info.attach('sanitized-history-trace.json', { body: '[' + fixture.historyTrace.join(',') + ']', contentType: 'application/json' });
+    }
   });
 
   test('an automatic questions round-trip leaves Back pointing before the questions', async ({ page }, info) => {
