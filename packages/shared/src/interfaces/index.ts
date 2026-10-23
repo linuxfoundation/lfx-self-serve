@@ -436,6 +436,7 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './mktg-family-actions.interface';
 export * from './mktg-rebuild.interface';
 export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
