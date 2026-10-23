@@ -67,7 +67,7 @@
                 class="lfxn__tab"
                 [class.is-active]="isActive"
                 [attr.aria-pressed]="isActive"
-                [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
+                [attr.aria-label]="mobile() ? 'Show the ' + lens.label + ' menu' : 'Switch to ' + lens.label + ' lens'"
                 [attr.data-testid]="lens.testId + '-tab'"
                 (click)="switchLens(lens.id)">
                 <i [ngClass]="isActive ? lens.activeIcon : lens.icon" aria-hidden="true"></i>

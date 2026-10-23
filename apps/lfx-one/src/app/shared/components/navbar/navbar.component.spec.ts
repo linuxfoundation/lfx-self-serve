@@ -423,6 +423,17 @@ describe('NavbarComponent', () => {
       expect(lensService.commitMenuLens).not.toHaveBeenCalled();
     });
 
+    it('drops the preview when the drawer navbar is destroyed before the drawer reports closing (a jump to another layout)', async () => {
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'me', mobile: true });
+      const lensService = lensServiceOf();
+      (fixture.componentInstance as unknown as NavbarView).switchLens('project');
+
+      fixture.destroy();
+
+      expect(lensService.previewingMenuLens()).toBe(false);
+      expect(lensService.activeLens()).toBe('me');
+    });
+
     it('commits the previewed lens when a page link in its menu is followed, before the router sees the click', async () => {
       const fixture = await createNavbarFixture([], [], {}, { lens: 'me', mobile: true, template: pickTemplate });
       const navbar = fixture.componentInstance as unknown as NavbarView;

@@ -160,9 +160,9 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            canWrite,
-            activeProjectStage,
-            activeProjectStageResolved,
+            menuCanWrite: canWrite,
+            menuProjectStage: activeProjectStage,
+            menuProjectStageResolved: activeProjectStageResolved,
             formationOverviewAllowedSlug,
           },
         },

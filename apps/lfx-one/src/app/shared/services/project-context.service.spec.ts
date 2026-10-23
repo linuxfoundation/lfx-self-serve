@@ -629,6 +629,23 @@ describe('ProjectContextService — menuContext', () => {
     expect(service.activeContext()).toEqual(FOUNDATION);
   });
 
+  it("shapes the previewed menu by the previewed context's project, not the page's", () => {
+    const service = setup('foundation', 'project');
+    service.setRouteLensKind('foundation');
+    const getProject = TestBed.inject(ProjectService).getProject as ReturnType<typeof vi.fn>;
+    getProject.mockImplementation((slug: string) =>
+      of(slug === CONTEXT.slug ? { ...project('Formation - Exploratory'), writer: true } : { ...project('Active'), writer: false })
+    );
+    TestBed.inject(UserService).authenticated.set(true);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.menuProjectStage()).toBe('Formation - Exploratory');
+    expect(service.menuProjectStageResolved()).toBe(true);
+    expect(service.menuCanWrite()).toBe(true);
+    expect(service.activeProjectStage()).toBe('Active');
+    expect(service.canWrite()).toBe(false);
+  });
+
   it("shows the previewed Foundation lens's slot from a Me page", () => {
     const service = setup('me', 'foundation');
 

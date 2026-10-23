@@ -31,7 +31,7 @@ class LensService {
   menuLens: Signal<Lens>; // the previewed lens while one stands, otherwise activeLens
   previewingMenuLens: Signal<boolean>; // menuLens !== activeLens
   previewMenuLens(lens: Lens): void; // a drawer lens tab: show that lens's menu, no navigation
-  commitMenuLens(): void; // a pick from the previewed menu: setLens(menuLens) before it navigates
+  commitMenuLens(): void; // a pick from the previewed menu: setLens(menuLens) before it navigates; undone if that navigation is cancelled
   clearMenuLensPreview(): void; // the drawer closed without a pick
 }
 ```
@@ -46,12 +46,14 @@ Key behaviors:
 
 In the mobile nav drawer a lens tab only previews that lens's menu: the drawer stays open, and the page underneath, its URL and `activeLens` do not change. Closing the drawer (X, backdrop, Escape) drops the preview; nothing is restored, because nothing the page reads ever moved. Desktop lens tabs still `switchLens`.
 
-The preview lives in `menuLens`, never in `activeLens`. Everything that renders the page reads `activeLens` (dashboards switch on it, the meetings dashboard clears lens-scoped filters on a change, guards redirect by it), so previewing through `activeLens` would change the page under the drawer and race route-driven lens updates on close. Only the menu stack reads `menuLens`: `SidebarNavService` (items and the lookups that shape them), `NavMenuBase` / `NavbarComponent` (lens tabs via `displayMenuLens`, the selector's lens), `ProjectContextService.menuContext` (the selector's slot — `activeContext` stays the page's), the drawer's selector flags in `MainLayoutComponent`, and `NavigationService`, which loads a previewed lens's list without default-selecting a context.
+The preview lives in `menuLens`, never in `activeLens`. Everything that renders the page reads `activeLens` (dashboards switch on it, the meetings dashboard clears lens-scoped filters on a change, guards redirect by it), so previewing through `activeLens` would change the page under the drawer and race route-driven lens updates on close. Only the menu stack reads `menuLens`: `SidebarNavService` (items and the lookups that shape them), `NavMenuBase` / `NavbarComponent` (lens tabs via `displayMenuLens`, the selector's lens), `ProjectContextService.menuContext` (the selector's slot — `activeContext` stays the page's) with `menuProjectStage` / `menuProjectStageResolved` / `menuCanWrite` (the formation-stage and writer gates of the previewed menu, read from the previewed context's project), the drawer's selector flags in `MainLayoutComponent`, and `NavigationService`, which loads a previewed lens's list without default-selecting a context.
+
+The preview is dropped when the drawer closes and when the drawer's navbar is destroyed (a jump to another layout, such as `/docs`), so it never outlives the drawer that showed it.
 
 A pick from the previewed menu commits it:
 
-- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`;
-- a project or foundation pick lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page — and previewed menu links carry no `?project=`;
+- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`. If that navigation is cancelled or errors (a declined `canDeactivate`, a refusing guard), the page lens and the preview are put back, unless the lens has moved since;
+- a project or foundation pick lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page. Previewed menu links carry `?project=` by the previewed lens: the selector's slug for a foundation or project menu, none for a Me or Org menu;
 - an organization pick lands on that organization's Org Lens overview.
 
 ### Route wiring

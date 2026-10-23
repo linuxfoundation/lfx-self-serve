@@ -178,6 +178,27 @@ export class ProjectContextService {
   /** `undefined` while a stage fetch is in flight for the current context; otherwise the resolved stage, or `null`. */
   private readonly activeProjectStageFetch: Signal<string | null | undefined> = this.initActiveProjectStageFetch();
 
+  /**
+   * The previewed lens's project (#4208) — `undefined` while its fetch is in flight, `null` without a preview, a context
+   * or a session. Rides the same per-slug `getProject` cache as `activeProject`, so a context already seen answers
+   * synchronously.
+   */
+  private readonly menuProjectFetch: Signal<Project | null | undefined> = this.initMenuProjectFetch();
+  /**
+   * {@link activeProjectStage}, {@link activeProjectStageResolved} and {@link canWrite} for the nav menu: the active
+   * context's, except while the mobile drawer previews another lens — then {@link menuContext}'s, so the previewed menu
+   * is shaped by the project it will land on rather than by the page underneath.
+   */
+  public readonly menuProjectStage: Signal<string | null> = computed(() =>
+    this.lensService.previewingMenuLens() ? (this.menuProjectFetch()?.stage ?? null) : this.activeProjectStage()
+  );
+  public readonly menuProjectStageResolved: Signal<boolean> = computed(() =>
+    this.lensService.previewingMenuLens() ? this.menuProjectFetch() !== undefined : this.activeProjectStageResolved()
+  );
+  public readonly menuCanWrite: Signal<boolean> = computed(() =>
+    this.lensService.previewingMenuLens() ? this.menuProjectFetch()?.writer === true : this.canWrite()
+  );
+
   private readonly formationOverviewAllowed = signal<string | null>(null);
   /**
    * The Formation-stage project whose `/project/overview` `formationOverviewRedirectGuard` let stand
@@ -535,6 +556,22 @@ export class ProjectContextService {
             // synchronously, so consumers never observe the marker for a project already seen.
             startWith(undefined)
           );
+        })
+      ),
+      { initialValue: undefined }
+    );
+  }
+
+  private initMenuProjectFetch(): Signal<Project | null | undefined> {
+    // Keyed on the previewed context only: without a preview the menu reads the active context's signals instead.
+    const previewedContext = computed(() => (this.lensService.previewingMenuLens() ? this.menuContext() : null));
+    return toSignal(
+      combineLatest([toObservable(previewedContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          if (!ctx?.slug || !authenticated) {
+            return of(null);
+          }
+          return this.projectService.getProject(ctx.slug, false).pipe(startWith(undefined));
         })
       ),
       { initialValue: undefined }

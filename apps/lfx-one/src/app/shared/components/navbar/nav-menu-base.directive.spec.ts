@@ -204,9 +204,12 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("carries no ?project= on a previewed lens's links, though the page underneath declares a project kind", async () => {
+  it("carries ?project= on a previewed lens's links by that lens, not by the page underneath", async () => {
     expect(queryParamsOf((await createNavMenu('/foundation/meetings', 'foundation', null, 'foundation')).navMenu)).toEqual({ project: 'alpha' });
+    // A Me menu previewed over a foundation page carries no slug…
     expect(queryParamsOf((await createNavMenu('/foundation/meetings', 'foundation', 'me', 'foundation')).navMenu)).toEqual({});
+    // …and a Projects menu previewed over a Me page carries its selector's.
+    expect(queryParamsOf((await createNavMenu('/meetings', 'me', 'project')).navMenu)).toEqual({ project: 'alpha' });
   });
 });
 

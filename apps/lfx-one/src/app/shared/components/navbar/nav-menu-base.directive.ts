@@ -73,10 +73,10 @@ export abstract class NavMenuBase {
   // declared lens rather than just checking selectedProject — activeContext() falls back to the
   // cookie-restored selection on Me/Org lenses too, which would otherwise leak a foundation/project
   // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
-  // A previewed lens's links never carry it either: the route's kind describes the page underneath, not that lens.
+  // A lens the mobile drawer previews (#4208) has no route yet: its own lens decides instead, so a Me or Org menu
+  // previewed over a foundation page carries no slug, and a previewed foundation / project menu carries its selector's.
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
-    if (this.lensService.previewingMenuLens()) return {};
-    const kind = this.projectContextService.activeRouteLensKind();
+    const kind = this.lensService.previewingMenuLens() ? this.navLens() : this.projectContextService.activeRouteLensKind();
     if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};

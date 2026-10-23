@@ -464,6 +464,11 @@ export class NavbarComponent extends NavMenuBase {
         // Closed without a pick (X, backdrop, Escape): the preview is dropped and the page keeps its lens (#4208).
         this.lensService.clearMenuLensPreview();
       });
+    // A navigation to another layout (the Docs link) destroys this navbar before the drawer reports closing, and the
+    // preview lives in a root service: drop it here too, so it cannot outlive the drawer that showed it.
+    this.destroyRef.onDestroy(() => {
+      if (this.mobile()) this.lensService.clearMenuLensPreview();
+    });
   }
 
   /**

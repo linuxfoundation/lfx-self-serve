@@ -3,10 +3,12 @@
 
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, Router } from '@angular/router';
+import type { Event as RouterEvent } from '@angular/router';
 import { LENS_COOKIE_KEY, NAV_LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { Lens, NavLens } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
+import { Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CookieRegistryService } from './cookie-registry.service';
@@ -31,13 +33,14 @@ describe('LensService — menu lens preview', () => {
       set: vi.fn(),
     };
     const navigate = vi.fn();
+    const events = new Subject<RouterEvent>();
     TestBed.configureTestingModule({
       providers: [
         LensService,
         { provide: SsrCookieService, useValue: cookies },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: Router, useValue: { navigate } },
+        { provide: Router, useValue: { navigate, events } },
         {
           provide: PersonaService,
           useValue: {
@@ -54,7 +57,7 @@ describe('LensService — menu lens preview', () => {
       ],
     });
     const lens = TestBed.inject(LensService);
-    return { lens, cookies, navigate, boardRole, projectRole };
+    return { lens, cookies, navigate, events, boardRole, projectRole };
   }
 
   it('previews a lens menu without moving the active lens, persisting it or navigating', () => {
@@ -154,5 +157,52 @@ describe('LensService — menu lens preview', () => {
 
     expect(lens.menuLens()).toBe('me');
     expect(lens.previewingMenuLens()).toBe(false);
+  });
+
+  describe("a pick whose navigation doesn't land", () => {
+    const cancel = (id: number, code = NavigationCancellationCode.GuardRejected) => new NavigationCancel(id, '/project/meetings', 'declined', code);
+
+    it('puts the page lens and the preview back when the pick is cancelled (a declined canDeactivate)', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+      expect(lens.activeLens()).toBe('project');
+
+      events.next(new NavigationStart(7, '/project/meetings'));
+      events.next(cancel(7));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.menuLens()).toBe('project');
+      expect(lens.previewingMenuLens()).toBe(true);
+    });
+
+    it('keeps the committed lens once the pick lands', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+
+      events.next(new NavigationStart(7, '/project/meetings'));
+      events.next(new NavigationEnd(7, '/project/meetings', '/project/meetings'));
+      events.next(cancel(7));
+
+      expect(lens.activeLens()).toBe('project');
+      expect(lens.previewingMenuLens()).toBe(false);
+    });
+
+    it('ignores the cancellation of an earlier navigation the pick superseded, and one the lens has since moved past', () => {
+      const { lens, events } = setup('me', { hasBoardRole: true });
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+
+      // The navigation in flight before the pick is cancelled as it starts.
+      events.next(cancel(6, NavigationCancellationCode.SupersededByNewNavigation));
+      events.next(new NavigationStart(7, '/project/meetings'));
+      expect(lens.activeLens()).toBe('project');
+
+      // Something else moved the lens before the pick's own navigation was cancelled: that owns it now.
+      lens.setLens('foundation');
+      events.next(cancel(7));
+      expect(lens.activeLens()).toBe('foundation');
+    });
   });
 });

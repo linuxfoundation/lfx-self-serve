@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, NavigationStart, Router } from '@angular/router';
 import {
   ALL_LENSES,
   DEFAULT_LENS,
@@ -15,7 +15,7 @@ import {
 import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { filter, take } from 'rxjs';
+import { filter, switchMap, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -119,12 +119,24 @@ export class LensService {
     this.menuLensPreview.set(target === this.activeLens() ? null : target);
   }
 
-  /** Commit a previewed menu lens as the active lens, for a pick from that menu that is about to navigate. A no-op without a preview. */
+  /**
+   * Commit a previewed menu lens as the active lens, for a pick from that menu that is about to navigate. A no-op without
+   * a preview.
+   *
+   * The lens is committed before the navigation starts, because guards read `activeLens`. If that navigation is then
+   * cancelled or fails (a `canDeactivate` the viewer declines, a guard that refuses), the page never left, so its lens
+   * and the drawer's preview are put back — unless something else has moved the lens since, which then owns it.
+   */
   public commitMenuLens(): void {
-    if (this.previewingMenuLens()) {
-      this.setLens(this.menuLens());
+    if (!this.previewingMenuLens()) {
+      this.menuLensPreview.set(null);
+      return;
     }
+    const previous = this.activeLens();
+    const committed = this.menuLens();
+    this.setLens(committed);
     this.menuLensPreview.set(null);
+    this.restoreLensIfPickFails(previous, committed);
   }
 
   /** Drop the drawer's preview, leaving the page's lens exactly as it is (the drawer closed without a pick). */
@@ -201,6 +213,35 @@ export class LensService {
    */
   public clearContextLens(): void {
     this.contextLensOverride.set(null);
+  }
+
+  /**
+   * Follows the navigation a {@link commitMenuLens} pick starts — the first one to start or be skipped after it, by id,
+   * so a cancellation of an earlier navigation that the pick superseded is not mistaken for the pick's own.
+   */
+  private restoreLensIfPickFails(previous: Lens, committed: Lens): void {
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationStart | NavigationSkipped => event instanceof NavigationStart || event instanceof NavigationSkipped),
+        take(1),
+        filter((event) => event instanceof NavigationStart),
+        switchMap((start) =>
+          this.router.events.pipe(
+            filter(
+              (event): event is NavigationEnd | NavigationCancel | NavigationError =>
+                (event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError) && event.id === start.id
+            ),
+            take(1)
+          )
+        )
+      )
+      .subscribe((event) => {
+        if (event instanceof NavigationEnd || this.activeLens() !== committed) {
+          return;
+        }
+        this.setLens(previous);
+        this.menuLensPreview.set(committed);
+      });
   }
 
   /** The lens a lens-tab click lands on: hybrid personas' merged 'Projects' entry returns to the last viewed nav lens. */

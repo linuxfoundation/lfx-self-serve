@@ -182,7 +182,7 @@ export class SidebarNavService {
     // The auditor / root-writer probe can surface the Formations item on its own.
     if (this.menuLens() === 'foundation' && this.foundationAuditorProbePending()) return true;
     return (
-      this.menuLens() === 'project' && this.isFormationEnabled() && !this.formationOverviewAllowed() && !this.projectContextService.activeProjectStageResolved()
+      this.menuLens() === 'project' && this.isFormationEnabled() && !this.formationOverviewAllowed() && !this.projectContextService.menuProjectStageResolved()
     );
   });
 
@@ -207,10 +207,10 @@ export class SidebarNavService {
         // as it is for a dashboard the redirect guard let stand (`formationOverviewAllowed`): the nav
         // stays in step with that page rather than collapsing under it once the flag arrives late.
         if (this.isFormationEnabled() && !this.formationOverviewAllowed()) {
-          if (!this.projectContextService.activeProjectStageResolved()) {
+          if (!this.projectContextService.menuProjectStageResolved()) {
             return [];
           }
-          if (isFormationStageGate(this.projectContextService.activeProjectStage())) {
+          if (isFormationStageGate(this.projectContextService.menuProjectStage())) {
             return this.formationStageNavItems;
           }
         }
@@ -222,7 +222,7 @@ export class SidebarNavService {
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
-        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite() ? [this.projectInitiativesNavItem] : [];
+        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
         // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
@@ -575,7 +575,7 @@ export class SidebarNavService {
       );
 
       // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347).
-      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite()) {
+      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite()) {
         items.push(this.foundationInitiativesNavItem);
       }
 
@@ -1107,7 +1107,7 @@ export class SidebarNavService {
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
+    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.menuCanWrite());
   }
 
   /**
