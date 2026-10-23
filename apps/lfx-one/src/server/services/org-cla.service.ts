@@ -82,6 +82,7 @@ import type {
   EasyClaSignatureApprovalLists,
   EasyClaSignedDocument,
 } from '../types/cla.types';
+import { ORG_CLA_INVALIDATOR_LOOKUP_BATCH, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS, ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE } from '../constants';
 import { MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
@@ -2229,9 +2230,6 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
   };
 }
 
-const INVALIDATOR_LOOKUP_BATCH = 8;
-const INVALIDATOR_LOOKUP_BUDGET_MS = 3_000;
-
 async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAcknowledgment[]): Promise<void> {
   const usernames = [...new Set(rows.flatMap((row) => (row.invalidatedBy ? [row.invalidatedBy] : [])))];
   if (usernames.length === 0) return;
@@ -2249,8 +2247,8 @@ async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAc
   let failed = 0;
   let budgetSpent = false;
   const lookups = (async () => {
-    for (let index = 0; index < usernames.length && !budgetSpent; index += INVALIDATOR_LOOKUP_BATCH) {
-      const batch = usernames.slice(index, index + INVALIDATOR_LOOKUP_BATCH);
+    for (let index = 0; index < usernames.length && !budgetSpent; index += ORG_CLA_INVALIDATOR_LOOKUP_BATCH) {
+      const batch = usernames.slice(index, index + ORG_CLA_INVALIDATOR_LOOKUP_BATCH);
       await Promise.all(
         batch.map(async (username) => {
           try {
@@ -2268,14 +2266,17 @@ async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAc
     budgetTimer = setTimeout(() => {
       budgetSpent = true;
       resolve();
-    }, INVALIDATOR_LOOKUP_BUDGET_MS);
+    }, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS);
   });
+  // gatewayFetch takes no caller abort signal, so a batch already in flight when the budget expires is
+  // left to settle on its own (at most one batch, each call capped by the gateway timeout). Late results
+  // are not used and late failures are not counted in the log below.
   await Promise.race([lookups, budget]);
   clearTimeout(budgetTimer);
 
   if (budgetSpent) {
     logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup ran out of time', {
-      budget_ms: INVALIDATOR_LOOKUP_BUDGET_MS,
+      budget_ms: ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS,
       resolved: displays.size,
       looked_up: usernames.length,
     });
@@ -2296,7 +2297,7 @@ async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAc
 }
 
 async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string, bearerToken: string | undefined): Promise<string | undefined> {
-  const query = new URLSearchParams({ username, pageSize: '2', offset: '0' });
+  const query = new URLSearchParams({ username, pageSize: ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE.toString(), offset: '0' });
   const page = await gatewayFetch<ApiGatewayUserSearchPage>(req, `${baseUrl}/users?${query}`, {
     operation: 'org_cla_resolve_invalidator',
     service: SERVICE,
