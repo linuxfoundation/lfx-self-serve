@@ -966,6 +966,8 @@ export interface MktgRunActivityPhaseDefinition {
 export interface MktgAgentIntake {
   /** Dedicated one-off intake; no generic feedback/regeneration UI. */
   oneOffDocument?: boolean;
+  /** Dedicated one-off endpoint participates in durable document run tracking. */
+  tracksDocumentRun?: boolean;
   /** Catalog agent id this intake belongs to. */
   agentId: string;
   /** Verb opening the form title, e.g. `Develop` → "Develop the Foo Brand Kit". */
