@@ -25,6 +25,14 @@ class LensService {
   activeLens: Signal<Lens>; // currently-active lens, clamped to the allowed set
   availableLenses: Signal<LensOption[]>; // lenses the user can switch to
   setLens(lens: Lens): void; // no-op if the lens isn't allowed
+  switchLens(lens: Lens): void; // desktop lens tabs: setLens + navigate to the lens's default route
+
+  // Mobile drawer preview (#4208) — the menu's lens, kept apart from activeLens
+  menuLens: Signal<Lens>; // the previewed lens while one stands, otherwise activeLens
+  previewingMenuLens: Signal<boolean>; // menuLens !== activeLens
+  previewMenuLens(lens: Lens): void; // a drawer lens tab: show that lens's menu, no navigation
+  commitMenuLens(): void; // a pick from the previewed menu: setLens(menuLens) before it navigates
+  clearMenuLensPreview(): void; // the drawer closed without a pick
 }
 ```
 
@@ -33,6 +41,18 @@ Key behaviors:
 - `activeLens` is a **computed signal** — it reads the user's selected lens from a 30-day cookie and clamps it to their allowed set (`me` and `org` always; `foundation`/`project` by role or grant). If the persisted lens is disallowed, it falls back to `DEFAULT_LENS`.
 - `setLens()` rejects disallowed lenses silently (no throw), so unprivileged callers can't escalate scope.
 - `availableLenses` is driven by role-based access rules (`deriveAllowedLenses` in `packages/shared/src/utils/lens.utils.ts`): `me` and `org` are available to every authenticated user; `foundation` is available when `hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant || isRootAuditor`; `project` is available when `hasProjectRole || isRootWriter || hasWriterProject` (a root writer holds both gated lenses, so still sees all four). `hasMarketingGrant` is true when the `marketing-ops-fga-enabled` flag is on and the user holds `marketing_auditor` or `campaign_manager` on any project — this grants foundation-lens access without a board/root role, scoped in practice to the Marketing Impact and Campaigns pages (see the [Route wiring](#route-wiring) guards below). A user can carry multiple grant sources and see the union of their lenses.
+
+### Mobile drawer lens preview (#4208)
+
+In the mobile nav drawer a lens tab only previews that lens's menu: the drawer stays open, and the page underneath, its URL and `activeLens` do not change. Closing the drawer (X, backdrop, Escape) drops the preview; nothing is restored, because nothing the page reads ever moved. Desktop lens tabs still `switchLens`.
+
+The preview lives in `menuLens`, never in `activeLens`. Everything that renders the page reads `activeLens` (dashboards switch on it, the meetings dashboard clears lens-scoped filters on a change, guards redirect by it), so previewing through `activeLens` would change the page under the drawer and race route-driven lens updates on close. Only the menu stack reads `menuLens`: `SidebarNavService` (items and the lookups that shape them), `NavMenuBase` / `NavbarComponent` (lens tabs via `displayMenuLens`, the selector's lens), `ProjectContextService.menuContext` (the selector's slot — `activeContext` stays the page's), the drawer's selector flags in `MainLayoutComponent`, and `NavigationService`, which loads a previewed lens's list without default-selecting a context.
+
+A pick from the previewed menu commits it:
+
+- a menu link calls `commitMenuLens()` from a capture-phase click listener on the navbar, so the lens is active before `RouterLink` starts the navigation and its guards read `activeLens`;
+- a project or foundation pick lands on the picked lens's overview (`/{lens}/overview?project=`), never re-targeting the page in place — that would write `?project=` onto a Me or Org page — and previewed menu links carry no `?project=`;
+- an organization pick lands on that organization's Org Lens overview.
 
 ### Route wiring
 
@@ -164,6 +184,7 @@ Carries the "what project/foundation am I currently scoped to?" state across fea
 ```typescript
 class ProjectContextService {
   activeContext: Signal<ProjectContext | null>; // foundation- or project-scoped, computed
+  menuContext: Signal<ProjectContext | null>; // the nav selector's context: activeContext, or the previewed lens's slot (#4208)
   isFoundationContext: Signal<boolean>; // true when the active context is a foundation
   canWrite: Signal<boolean>; // resolved via ProjectService.getProject()
 
