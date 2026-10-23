@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
@@ -18,6 +19,7 @@ describe('ComposerGuestsComponent', () => {
   let fixture: ComponentFixture<ComposerGuestsComponent>;
   let component: ComposerGuestsComponent;
   let formService: MeetingComposerFormService;
+  let announce: ReturnType<typeof vi.fn>;
 
   const savedGroupGuest: MeetingRegistrantWithState = {
     uid: 'registrant-1',
@@ -47,8 +49,10 @@ describe('ComposerGuestsComponent', () => {
   const reconcile = (members: CommitteeMember[]): void => component['onCommitteeMembersChange'](members);
 
   beforeEach(async () => {
+    announce = vi.fn().mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       providers: [
+        { provide: LiveAnnouncer, useValue: { announce } },
         MeetingComposerFormService,
         ConfirmationService,
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -58,7 +62,7 @@ describe('ComposerGuestsComponent', () => {
         {
           provide: MeetingService,
           useValue: {
-            createRegistrantFormGroup: () => new FormGroup({ email: new FormControl('') }),
+            createRegistrantFormGroup: () => new FormGroup({ email: new FormControl(''), first_name: new FormControl(''), last_name: new FormControl('') }),
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ ...guest, meeting_id: meetingUid }),
             getChangedFields: () => ({}),
           },
@@ -372,12 +376,15 @@ describe('ComposerGuestsComponent', () => {
     });
   });
 
-  describe('screen-reader announcement', () => {
-    it('announces a guest picked from search, which is added with no confirm step', () => {
-      component['addDirectGuest']({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+  describe('adding and removing without a confirm step', () => {
+    it('puts a valid search pick straight onto the list, resets the search and announces it', () => {
+      component['quickAddForm'].setValue({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+
+      component['onUserSelected']();
 
       expect(formService.guests().map((entry) => entry.email)).toEqual(['ada@example.com']);
-      expect(component['guestAnnouncement']()).toBe('Ada Byron added to the guest list.');
+      expect(component['quickAddForm'].value.email).toBeFalsy();
+      expect(announce).toHaveBeenCalledWith('Ada Byron added to the guest list.', 'polite');
     });
 
     it('announces a removal, falling back to the email when the guest has no name', () => {
@@ -386,7 +393,20 @@ describe('ComposerGuestsComponent', () => {
 
       component['onRemoveGuest'](guest);
 
-      expect(component['guestAnnouncement']()).toBe('member@example.com removed from the guest list.');
+      expect(announce).toHaveBeenCalledWith('member@example.com removed from the guest list.', 'polite');
+    });
+
+    it('announces every one of two consecutive changes that read the same', () => {
+      // Two guests sharing a name: a bound region would hold the same text and stay silent the second time.
+      const first = { ...savedGroupGuest, uid: 'registrant-2', email: 'a@example.com', type: 'direct' as const };
+      const second = { ...first, uid: 'registrant-3', email: 'b@example.com' };
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](first);
+      component['onRemoveGuest'](second);
+
+      expect(announce).toHaveBeenCalledTimes(2);
+      expect(announce).toHaveBeenNthCalledWith(2, 'Member One removed from the guest list.', 'polite');
     });
   });
 

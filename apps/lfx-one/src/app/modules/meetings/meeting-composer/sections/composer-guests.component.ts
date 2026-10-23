@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -50,6 +51,8 @@ export class ComposerGuestsComponent {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  /** Adds and removes are otherwise silent rows changing below; it re-announces a repeated message, which a bound region would not. */
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
   protected readonly formService = inject(MeetingComposerFormService);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
@@ -60,8 +63,6 @@ export class ComposerGuestsComponent {
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
-  /** Screen-reader status for the last add or remove; adds and removes are otherwise silent rows changing below. */
-  protected readonly guestAnnouncement = signal('');
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
@@ -249,7 +250,7 @@ export class ComposerGuestsComponent {
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
-    this.guestAnnouncement.set(`${this.guestLabel(guest)} removed from the guest list.`);
+    void this.liveAnnouncer.announce(`${this.guestLabel(guest)} removed from the guest list.`, 'polite');
 
     // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
     // happens to be missing on the candidate: `undefined === undefined` matched every other
@@ -413,7 +414,7 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
-    this.guestAnnouncement.set(`${this.guestLabel(guest)} added to the guest list.`);
+    void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
   }
 
   private guestLabel(guest: MeetingRegistrantWithState): string {
