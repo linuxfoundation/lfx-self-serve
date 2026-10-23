@@ -45,7 +45,9 @@ export interface MktgPreparedRedraft {
   message: string;
   framework: MktgRevisionRef | null;
 }
-export type MktgRedraftStartResponse = Extract<MktgChatResponse, { sessionId: string }> & { runId: string };
+export type MktgRedraftStartResponse = Extract<MktgChatResponse, { sessionId: string }> & { runId: string; priorVersion: number };
+
+export type MktgReleaseRedraftResponse = { success: true } | { state: 'unknown' };
 
 /** Optional object metadata only: do not put these annotations in hashed revision/agent bytes. */
 export interface MktgRedraftRevisionMetadata {

@@ -74,9 +74,9 @@ export class MktgDocumentsController {
     const started = logger.startOperation(req, operation, {});
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      await this.comments.release(req, project, params.type, params.documentId, requestId);
+      const response = await this.comments.release(req, project, params.type, params.documentId, requestId);
       logger.success(req, operation, started, { agent: params.type.agentKey });
-      res.json({ success: true });
+      res.json(response);
     } catch (error) {
       next(error);
     }
