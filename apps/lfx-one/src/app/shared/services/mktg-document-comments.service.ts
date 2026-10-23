@@ -3,12 +3,19 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MKTG_DOCUMENTS_API_PATH, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
-import type { MktgAddDocumentCommentRequest, MktgDocumentComment, MktgDocumentCommentScope, MktgDocumentCommentsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  MktgAddDocumentCommentRequest,
+  MktgDocumentComment,
+  MktgDocumentCommentDraft,
+  MktgDocumentCommentScope,
+  MktgDocumentCommentsResponse,
+} from '@lfx-one/shared/interfaces';
 import { catchError, defer, distinctUntilChanged, EMPTY, finalize, Observable, Subject, Subscription, take, takeUntil, tap, throwError } from 'rxjs';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createMktgCommentDraft } from '@shared/utils/mktg-comment-draft.utils';
 import { ProjectContextService } from './project-context.service';
 import { UserService } from './user.service';
 
@@ -31,6 +38,7 @@ export class MktgDocumentCommentsService {
   private readonly writeError = signal('');
   private readonly labelData = signal<unknown>(null);
   private readonly stopWrites = new Subject<void>();
+  private readonly fieldDrafts = new Map<string, Map<string, MktgDocumentCommentDraft>>();
   private reader?: Subscription;
   private readEpoch = 0;
   private contextEpoch = 0;
@@ -61,11 +69,29 @@ export class MktgDocumentCommentsService {
       this.cancelRead();
       this.stopWrites.next();
       this.stopWrites.complete();
+      this.fieldDrafts.clear();
     });
   }
 
   public setLabelContent(content: unknown): void {
     if (this.current()) this.labelData.set(content);
+  }
+
+  /** Same-view field hosts share memory across tab destruction, never across effective scopes. */
+  public fieldDraft(field: string, create = createMktgCommentDraft): MktgDocumentCommentDraft {
+    const owner = this.contextKey();
+    if (!owner) return untracked(create);
+    let fields = this.fieldDrafts.get(owner);
+    if (!fields) {
+      fields = new Map();
+      this.fieldDrafts.set(owner, fields);
+    }
+    let draft = fields.get(field);
+    if (!draft) {
+      draft = untracked(create);
+      fields.set(field, draft);
+    }
+    return draft;
   }
 
   /** Select on navigation and clear on departure. A restored view only GETs, never adds a comment. */
@@ -168,6 +194,8 @@ export class MktgDocumentCommentsService {
     const owner = this.contextKey();
     if (owner === this.owner()) return;
     this.contextEpoch++;
+    // A current-owner draft may have been requested before the identity observer flushed.
+    for (const key of this.fieldDrafts.keys()) if (key !== owner) this.fieldDrafts.delete(key);
     this.cancelRead();
     this.stopWrites.next();
     this.owner.set(owner);
