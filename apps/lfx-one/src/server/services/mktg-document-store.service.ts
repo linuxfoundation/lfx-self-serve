@@ -585,7 +585,7 @@ export class MktgDocumentStoreService {
     action: MktgSignOffAction
   ): Promise<MktgRevisionResponse | null> {
     if (isImpersonating(req)) throw new AuthorizationError('Sign-off is not available while impersonating a user');
-    const by = this.authors.captureAuthorId(req);
+    const by = this.author(req);
     if (type.kind !== 'living') throw ServiceValidationError.forField('documentId', 'Sign-off is only available for living documents.');
     if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role') {
       throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
@@ -1107,7 +1107,7 @@ export class MktgDocumentStoreService {
     const approvals = this.approvalsOf(snapshot.record?.approvals);
     const kept = keepSelection ? snapshot.record : null;
     const changedAt = kept ? kept.changedAt : new Date().toISOString();
-    const changedBy = kept ? kept.changedBy : this.authors.captureAuthorId(req);
+    const changedBy = kept ? kept.changedBy : this.author(req);
     const signOff = signOffWrite?.signOff ?? this.signOffOf(snapshot.record?.signOff);
     if (approve && !approvals[revisionId])
       approvals[revisionId] = {
@@ -1237,7 +1237,7 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    let authorId = record.origin === 'legacy' ? null : this.authors.captureAuthorId(req);
+    let authorId = record.origin === 'legacy' ? null : this.author(req);
     if ((record.origin === 'generated' || record.origin === 'revised') && this.generationAttribution) {
       authorId = this.generationAttribution.creatorSubject;
     }
