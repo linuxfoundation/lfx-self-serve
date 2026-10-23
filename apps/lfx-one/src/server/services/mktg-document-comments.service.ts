@@ -59,6 +59,23 @@ export class MktgDocumentCommentsService {
   private readonly authors = new MktgDocumentAuthorService();
   private readonly documents = new MktgDocumentStoreService(undefined, this.authors);
 
+  /** Read-only creator recovery: unknown and foreign nonces never imply terminal acceptance. */
+  public async isRedraftTerminal(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    requestId: string,
+    revisionId: string
+  ): Promise<boolean> {
+    if (!MKTG_DOCUMENT_COMMENT_ID_REGEX.test(requestId) || !MKTG_REVISION_ID_REGEX.test(revisionId))
+      throw this.invalid('redraft', 'Invalid recovery identifiers.');
+    const actor = this.creator(req);
+    const { record } = await this.read(req, project, this.commentAgent(type), documentId);
+    const row = record.submissions.find((entry) => entry.id === requestId && entry.requestedBy === actor && entry.baseRevisionId === revisionId);
+    return !!row && (row.state === 'completed' || row.state === 'failed');
+  }
+
   public async list(req: Request, project: string, type: MktgDocumentType, documentId: string, revisionId: string): Promise<MktgDocumentCommentsResponse> {
     const agentKey = this.commentAgent(type);
     const view = await this.requireRevision(req, project, type, documentId, revisionId);
