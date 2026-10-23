@@ -41,6 +41,45 @@ The frontend retains a TTL-bounded pending capability using the shared one-off v
 
 After the durable started-run record succeeds and Generate is acknowledged, a separate failure-isolated `MktgLastIntakeService` call records only registered re-enterable source scalars (source kind, selected pasted text or URL, normalized share link including blank). It reuses the private project/agent `MKTG_LAST_INTAKE_*` history contract, writer-gated GET and whole-record byte cap; no profile, author, upload bytes or fetched/extracted source text is recorded. History failure never fails or delays an accepted Generate. When the projected record is oversized, the service replaces older history with current metadata minus content_text; the page asks for pasted text again instead of silently restoring the prior run. `mode=new` reads source history only when no live owned pending run exists; otherwise it resumes that run. Entry mode is removed with replaceUrl after acceptance/recovery, so reload does not create a second Generate. File sources must be selected again. Member 360 stays null: its run page's window/compare/tracker inputs are not registered as a last-intake allowlist; its page and BFF belong to the Member 360 items, and restoring those inputs is a follow-up. Existing private start metadata, result ownership checks and document hand-off/query contracts remain independent.
 
+## Shared accepted-one-off resume core
+
+The shared receiver can resume a dedicated form's **already accepted** session without
+submitting another Generate. `MktgRunAttemptService.prepareAccepted(request, session)`
+projects only session id, owner proof, public run selector and document destination into
+the existing subject-bound, single-use `generation` handoff map. It does not copy the
+LinkedIn generation response, source summary, retry setup or personalized envelope.
+Requests and attempts carry the same `documentId`; consumption checks project, agent,
+subject and that exact destination. One-offs cannot use the generic fresh-Generate path.
+The existing dedicated LinkedIn UI remains functional until its separate cutover layer.
+
+Pending proof keys are scoped per subject/project/agent/**document**, not merely per
+agent. Reload storage contains no one-off intake answers, feedback, question text,
+answers text, source labels/bytes or personal setup: only the minimum session capability,
+public destination/run selector and the last acknowledged questions digest. The live
+registry restores endpoint configuration. Private Q&A/source/history remains same-visit
+memory only; one-off generated versions are not serialized by the generic history cache.
+Successful receipt cleanup removes only that document's pending proof. Neither this
+optional cache nor a URL token is the authoritative pending record: a plain document
+URL in another browser still uses server `detail.runs[]` reconciliation.
+
+The owned result controller validates the HMAC and LinkedIn body shape before the
+writer lookup, then delegates to `MktgDocumentRunService.ownedOneOffResult` with a
+validated typed `MktgOneOffRunContext`, never the raw HTTP body, for that exact
+project/agent/session and creator. Its shared `agentResult` dispatcher owns the captured link answers, source word
+count and original profile-initialization permission for BOTH owned polls and Documents
+reconciliation; the controller applies no completion policy. It reuses the fetched record
+and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
+The existing post-write metadata winner confirmation remains unchanged.
+Browser omissions or later source context cannot replace captured values. Legacy untracked
+sessions retain the result-body contract. One server utility classifies repository,
+Smithy timeout and network errors (including status0,408,429 and5xx). A transient tracking
+read failure logs fixed diagnostic categories and numeric status, never provider text,
+and uses that same legacy creator contract for this poll; authorization failures are
+never softened. Tracking-write failures retain the error under the logger's `err` field. This service method is not a new endpoint or public progress
+projection. `profileSaved: false` remains distinct from
+a successful document receipt in the shared progress event, for the cutover's existing
+profile-persistence warning.
+
 ## Terminal Guild failures
 
 The shared [`GuildService.resolveRunOutcome` step](./mktg-document-revisions.md#run-outcomes)
@@ -93,7 +132,7 @@ The document field has explicit Edit link, Save link and Cancel controls. While 
 
 ## Read-time document attribution
 
-Expert provisional ruling: a LinkedIn post is a one-off run, not an approvable kit asset. Draft/Approved belongs to the asset JSON views; post approval is out of scope until the later comment-and-revise item. LinkedIn retains its author by-line, option cards, source/share-link controls and Draft another post. It hides asset metadata, Approve, generic Run again, About/Revisions and the revision pill, including for readable legacy Markdown posts. Generic metadata, approval, export and Run again behavior remains unchanged for every other document type; no write-lifecycle unification is introduced.
+Decided by the operator, 23 Oct 2026: a LinkedIn post is a one-off run, not an approvable kit asset. Draft/Approved belongs to the asset JSON views; post approval is out of scope until the later comment-and-revise item. LinkedIn retains its author by-line, option cards, source/share-link controls and Draft another post. It hides asset metadata, Approve, generic Run again, About/Revisions and the revision pill, including for readable legacy Markdown posts. Generic metadata, approval, export and Run again behavior remains unchanged for every other document type; no write-lifecycle unification is introduced.
 
 **Binding operator decision:** `lfx/mktgos-ui-expert/decision-mktgos-ui-expert-revision-authors-are-stored-as-an-opaque-id-and-named-at-read-time@hb1.01M490BZHWCJX7NQWV4QS09CA2.11.01M52MCN7Z88FNFW4G40GV3PQJ`. As ruled in #3773, persisted attribution uses only the effective Auth0 sub. Persisting a username or display name was explicitly rejected. This is a deliberate privacy exception to backend-auth guidance that normally prefers username-based identity references, not an accidental use of the legacy subject helper. Names are resolved through `UserService.getUserInfo` at read time and memoized per request.
 

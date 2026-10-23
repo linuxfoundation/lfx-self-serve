@@ -801,6 +801,8 @@ export interface MktgRunFailure {
  * both end generation, but only `ready` can carry a persisted asset.
  */
 export interface MktgRunResultResponse {
+  /** Dedicated one-off profile initialization outcome; independent of document persistence. */
+  profileSaved?: boolean;
   /** Generation state. */
   status: 'pending' | 'ready' | 'questions' | 'refused' | 'failed';
   /** Final agent reply when its runtime ended without a valid asset; plain text only. */
@@ -1126,6 +1128,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
  * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
+  /** One-off history is memory-only and scoped to this public destination. */
+  documentId?: string;
   /** Exact public run selector, retained with private creator history. */
   runId?: string;
   /** A failed attempt invalidates session reuse, never the successful version history. */
@@ -1160,6 +1164,8 @@ export interface MktgRunAppendResult {
  * version the session will not produce.
  */
 export interface MktgRunAttempt {
+  /** Accepted one-off destination; absent for the default living document. */
+  documentId?: string;
   /** Exact public run selected by this accepted submission. */
   runId?: string;
   /** The Guild session whose result endpoint the document poll queries. */
@@ -1225,7 +1231,7 @@ export type MktgGenerateProgress =
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
   /** The selected outcome, not necessarily the newest cached version; null location keeps its accepted attempt recoverable. */
-  | { type: 'document'; run: MktgStoredAgentRun; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt }
+  | { type: 'document'; run: MktgStoredAgentRun; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt; profileSaved?: boolean }
   | { type: 'persisted'; run: MktgStoredAgentRun | null; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt | null };
 
 /** Subject/project/agent-bound client attempt, retained BEFORE the first POST and through accepted answers. */
@@ -1237,12 +1243,14 @@ export interface MktgPendingGeneration {
   attempt?: MktgRunAttempt;
   pendingQuestions?: MktgRunQuestionsPending;
   answered?: { questions: MktgRunQuestion[]; answers: MktgRunAnswer[]; questionsId: string };
+  /** One-offs retain only this digest across reload, never private questions or answers. */
+  answeredQuestionsId?: string;
   updatedAt: string;
 }
 
 /** Storage carries intake/context only, never uploaded document/logo bytes or serialized intake config. */
 export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration, 'request'> {
-  request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback'>;
+  request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback' | 'documentId'>;
 }
 
 /** A pending navigation can be retried without repeating generation or answers. */
@@ -1265,6 +1273,8 @@ export interface MktgPreparedGeneration {
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
+  /** Accepted one-off destination; never supplied for an unsubmitted intake. */
+  documentId?: string;
   /** Catalog agent id — must be an `active` agent. */
   agentId: string;
   /** LFX project uid the run is scoped to. */

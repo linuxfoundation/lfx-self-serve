@@ -215,7 +215,7 @@ export class MktgDocumentViewComponent {
   // === Computed ===
   protected readonly writePending = computed(() => this.submittingGeneration() || this.approvingId() !== null || this.restoringId() !== null);
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
-  protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
+  protected readonly isLinkedinDocument = computed(() => (this.view()?.type.agentKey ?? this.params().agentKey) === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
   protected readonly visibleRunActivity = computed(() => {
     const [subject, activity] = this.activityContext();
@@ -398,7 +398,12 @@ export class MktgDocumentViewComponent {
   protected readonly runAgentId = computed(() => {
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
     const id = type?.catalogAgentId;
-    return type?.kind === 'living' && id && MKTG_AGENT_INTAKES[id] && MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active') ? id : '';
+    return id &&
+      (type?.kind === 'living' || (MKTG_AGENT_INTAKES[id]?.tracksDocumentRun && MKTG_AGENT_INTAKES[id]?.endpoints.answers)) &&
+      MKTG_AGENT_INTAKES[id] &&
+      MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active')
+      ? id
+      : '';
   });
 
   private readonly assetViewKind = computed(() => {
@@ -482,10 +487,13 @@ export class MktgDocumentViewComponent {
           switchMap((request) => {
             if (!request.project || !request.agentKey || !request.documentId) return EMPTY;
             const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === request.agentKey);
-            const prepared =
-              type?.kind === 'living' && type.catalogAgentId && request.subject && request.generation
-                ? this.attempts.consume(request.generation, request.project, type.catalogAgentId)
-                : null;
+            let prepared = null;
+            if (type?.catalogAgentId && findMktgRunIntake(request.agentKey, true) && request.subject && request.generation) {
+              prepared =
+                type.kind === 'run'
+                  ? this.attempts.consume(request.generation, request.project, type.catalogAgentId, request.documentId)
+                  : this.attempts.consume(request.generation, request.project, type.catalogAgentId);
+            }
             this.submittingGeneration.set(!!prepared && !prepared.pending.attempt);
             if (!prepared) {
               this.localProgress.set(null);
@@ -500,10 +508,14 @@ export class MktgDocumentViewComponent {
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
             // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
-            const intake = findMktgRunIntake(request.agentKey);
+            const intake = findMktgRunIntake(request.agentKey, true);
             const saved =
-              request.subject && !request.generation && !request.revisionId && request.documentId === MKTG_LIVING_DOCUMENT_ID && intake?.endpoints.result
-                ? this.attempts.load(request.project, intake.agentId)
+              request.subject &&
+              !request.generation &&
+              !request.revisionId &&
+              (type?.kind === 'run' || request.documentId === MKTG_LIVING_DOCUMENT_ID) &&
+              intake?.endpoints.result
+                ? this.attempts.load(request.project, intake.agentId, type?.kind === 'run' ? request.documentId : undefined)
                 : null;
             const recoverable = saved?.state === 'writing' && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId) ? saved : null;
             const resume = (pending: MktgPendingGeneration) =>
@@ -719,7 +731,8 @@ export class MktgDocumentViewComponent {
     const agentId = this.runAgentId();
     if (!agentId) return;
     const project = this.projectContext.activeContextUid();
-    const pending = project ? this.attempts.load(project, agentId) : null;
+    const oneOff = MKTG_AGENT_INTAKES[agentId]?.oneOffDocument;
+    const pending = project ? this.attempts.load(project, agentId, oneOff ? this.params().documentId : undefined) : null;
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
       queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
@@ -1048,7 +1061,7 @@ export class MktgDocumentViewComponent {
       return;
     }
     if (progress.type === 'submitted') {
-      const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
+      const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId, pending.request.documentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
         void this.router.navigate([], {

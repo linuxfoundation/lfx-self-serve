@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   FOUNDATION_MESSAGE_INTAKE,
   ICP_INTAKE,
+  LINKEDIN_POST_INTAKE,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
@@ -150,6 +151,69 @@ describe('MktgAgentRunService', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('never POSTs a dedicated one-off Generate through the shared resume service', () => {
+    const error = vi.fn();
+    service.generate({ ...generateRequest(), agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE }).subscribe({ error });
+    expect(error).toHaveBeenCalled();
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('resumes an accepted one-off with only session proof, preserves its receipt/profile warning, and never persists personalized history', async () => {
+    const intake = LINKEDIN_POST_INTAKE;
+    const documentId = 'run-' + 'a'.repeat(24);
+    const request = { ...generateRequest(), agentId: intake.agentId, intake, documentId, answers: { content_text: 'private-source-marker' } };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.prepareAccepted(request, { documentId, runId: 'b'.repeat(64), sessionId: 'oneoff-session', ownerToken: 'oneoff-proof' });
+    const pending = attempts.load(request.projectUid, intake.agentId, documentId);
+    if (!pending) throw new Error('Missing synthetic accepted attempt');
+    const receipt = {
+      project: request.projectUid,
+      version: 1,
+      s3_key: 'synthetic-key',
+      content_sha256: 'c'.repeat(64),
+      document_location: { agent_key: 'linkedin-post' as const, document_id: documentId, revision_id: '000001-' + 'c'.repeat(64) },
+    };
+    httpPost.mockReturnValue(of({ status: 'ready', version: 1, documentMarkdown: '# private-personalized-marker', profileSaved: false, persistence: receipt }));
+    const events: MktgGenerateProgress[] = [];
+    service.resume(pending).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(httpPost).toHaveBeenCalledExactlyOnceWith(intake.endpoints.result, {
+      sessionId: 'oneoff-session',
+      ownerToken: 'oneoff-proof',
+      project: request.projectUid,
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'document', profileSaved: false, documentLocation: { agentKey: 'linkedin-post', documentId } });
+    expect(localStorage.length).toBe(0);
+    expect(service.loadRun(request.projectUid, intake.agentId)).toBeNull();
+    expect(service.loadRun(request.projectUid, intake.agentId, documentId)?.versions[0].document).toContain('private-personalized-marker');
+    expect(service.loadRun(request.projectUid, intake.agentId, 'run-' + 'd'.repeat(24))).toBeNull();
+    expect(TestBed.runInInjectionContext(() => new MktgAgentRunService()).loadRun(request.projectUid, intake.agentId, documentId)).toBeNull();
+  });
+
+  it('ignores a reloaded one-off answered digest without retaining private Q&A or posting answers again', async () => {
+    const intake = LINKEDIN_POST_INTAKE;
+    const documentId = 'run-' + 'a'.repeat(24);
+    const request = { ...generateRequest(), agentId: intake.agentId, intake, documentId, answers: {} };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.prepareAccepted(request, { documentId, runId: 'b'.repeat(64), sessionId: 'oneoff-session', ownerToken: 'oneoff-proof' });
+    const pending = attempts.load(request.projectUid, intake.agentId, documentId);
+    if (!pending) throw new Error('Missing synthetic accepted attempt');
+    attempts.save({ ...pending, answeredQuestionsId: 'c'.repeat(64) });
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load(request.projectUid, intake.agentId, documentId);
+    if (!restored) throw new Error('Missing synthetic reload proof');
+    httpPost
+      .mockReturnValueOnce(of({ status: 'questions', questionsId: 'c'.repeat(64), questions: [{ key: 'gap', question: 'private-question-marker' }] }))
+      .mockReturnValue(of({ status: 'failed', failureText: 'Synthetic stopped run' }));
+    const events: MktgGenerateProgress[] = [];
+    service.resume(restored).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+    expect(events.some((event) => event.type === 'questions')).toBe(false);
+    expect(events.at(-1)?.type).toBe('failed');
+    expect(httpPost.mock.calls.every(([url]) => url === intake.endpoints.result)).toBe(true);
+    const serialized = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index) ?? '')).join('');
+    expect(serialized).not.toContain('private-question-marker');
   });
 
   it.each([
