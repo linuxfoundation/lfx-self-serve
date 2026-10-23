@@ -2025,6 +2025,7 @@ export class UserService {
       buttonText: 'Set RSVP',
       buttonLink,
       date: formattedDate,
+      ...(Number.isNaN(startTime.getTime()) ? {} : { startTime: startTime.toISOString() }),
       meetingUid: meeting.id,
       ...(nextOccurrence?.occurrence_id ? { occurrenceId: nextOccurrence.occurrence_id } : {}),
     };

@@ -551,6 +551,7 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(rsvpActions[0].buttonText).toBe('Set RSVP');
     expect(rsvpActions[0].text).toBe(trackedMeeting.title);
     expect(rsvpActions[0].date).toBeTruthy();
+    expect(rsvpActions[0].startTime).toBe(new Date(tomorrow).toISOString());
     expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).toEqual(expect.arrayContaining(['v1_meeting', 'v1_meeting_registrant', 'v1_meeting_rsvp']));
   });

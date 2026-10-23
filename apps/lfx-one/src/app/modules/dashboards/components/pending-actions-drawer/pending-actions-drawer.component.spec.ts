@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { PENDING_ACTION_FADE_OUT_MS } from '@lfx-one/shared/constants';
 import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
@@ -348,15 +349,19 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
   });
 
-  it('renders the date under the title of a linked RSVP row only', async () => {
+  it('renders the start time under the title of a linked RSVP row only, formatted in the viewer timezone', async () => {
+    // The server-formatted `date` is deliberately different from what the browser must render from `startTime`.
+    const startTime = '2026-10-19T19:00:00.000Z';
+    const expected = new MeetingTimePipe().transform(startTime, null, 'compact');
     await render([
-      row('RSVP', 'Board', { buttonLink: '/meetings/m-1', date: 'Mon, Oct 19, 7:00 PM' }),
-      row('RSVP', 'No Date', { buttonLink: '/meetings/m-2' }),
-      row('Vote', 'Vote A', { buttonLink: '/votes', date: 'Closes Oct 30, 2026' }),
+      row('RSVP', 'Board', { buttonLink: '/meetings/m-1', date: 'Mon, Oct 19, server-local', startTime }),
+      row('RSVP', 'No Time', { buttonLink: '/meetings/m-2', date: 'Mon, Oct 19, server-local' }),
+      row('Vote', 'Vote A', { buttonLink: '/votes', date: 'Closes Oct 30, 2026', startTime }),
     ]);
 
     const dates = Array.from(document.body.querySelectorAll('[data-testid="pending-actions-drawer-meeting-date"]'));
-    expect(dates.map((el) => el.textContent?.trim())).toEqual(['Mon, Oct 19, 7:00 PM']);
+    expect(dates.map((el) => el.textContent?.trim())).toEqual([expected]);
+    expect(dates[0].textContent).not.toContain('server-local');
   });
 
   it('maps the remaining types to their sections', async () => {
