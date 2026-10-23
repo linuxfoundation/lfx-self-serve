@@ -84,7 +84,7 @@
                     <a
                       [routerLink]="committee.viewCommands"
                       [queryParams]="committee.linkQueryParams"
-                      [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+                      [state]="{ backLabel: 'Groups', fromMeLens: true }"
                       class="lfx-table-name-link text-sm font-medium">
                       {{ committee.name || '-' }}
                     </a>
@@ -135,7 +135,7 @@
                       <a
                         [routerLink]="mlLink.commands"
                         [queryParams]="mlLink.queryParams"
-                        [state]="mlLink.target === 'group' ? { backLabel: 'My Groups', fromMeLens: true } : undefined"
+                        [state]="mlLink.target === 'group' ? { backLabel: 'Groups', fromMeLens: true } : undefined"
                         class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 hover:text-blue-600 no-underline"
                         [pTooltip]="mlLink.label ?? undefined"
                         tooltipPosition="top"
@@ -212,7 +212,7 @@
                       <a
                         [routerLink]="committee.viewCommands"
                         [queryParams]="committee.linkQueryParams"
-                        [state]="{ backLabel: isMeLens() ? 'My Groups' : 'Groups', fromMeLens: isMeLens() }"
+                        [state]="{ backLabel: 'Groups', fromMeLens: isMeLens() }"
                         class="lfx-table-name-link text-sm">
                         {{ committee.name || '-' }}
                       </a>

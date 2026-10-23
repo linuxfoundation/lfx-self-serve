@@ -15,6 +15,12 @@ const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   getRawEventPayloads: vi.fn(),
 }));
+const redraftMocks = vi.hoisted(() => ({ forSession: vi.fn() }));
+vi.mock('./mktg-document-redraft-context.service', () => ({
+  MktgDocumentRedraftContextService: class {
+    public forSession = redraftMocks.forSession;
+  },
+}));
 const readmeMocks = vi.hoisted(() => ({
   fetchReadme: vi.fn(),
 }));
@@ -87,6 +93,8 @@ import type { Request } from 'express';
 import { ICP_REQUIRED_HEADINGS, ICP_REQUIRED_SUBHEADINGS, ICP_REVISED_INTAKE_FEEDBACK } from '@lfx-one/shared/constants';
 
 import { IcpService } from './icp.service';
+import { AuthorizationError } from '../errors';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 
 const req = { path: '/api/mktg-agents/icp/result' } as unknown as Request;
 
@@ -215,6 +223,7 @@ describe('IcpService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     documentStoreMocks.recordedSessions.length = 0;
+    redraftMocks.forSession.mockResolvedValue(null);
     delete process.env['GUILD_STRUCTURED_AGENT_INPUT'];
     readmeMocks.fetchReadme.mockResolvedValue({ readme: '# TestOrbit', outcome: { fetched: true, source: 'repository' } });
     objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
@@ -287,6 +296,15 @@ describe('IcpService', () => {
   });
 
   describe('getResult', () => {
+    it('refuses a redraft-bound session before either artifact write', async () => {
+      redraftMocks.forSession.mockResolvedValue(redraftContextFixture());
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+      await expect(service.getResult(req, 'synthetic-redraft', PROJECT_UID)).rejects.toBeInstanceOf(AuthorizationError);
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      expect(documentStoreMocks.recordedSessions).toEqual([]);
+      expect(guildMocks.getRawEventPayloads).not.toHaveBeenCalled();
+      expect(loggerMocks.debug).toHaveBeenCalledWith(req, 'icp_result', 'Refused ICP result for a redraft-bound session', {});
+    });
     const ended = JSON.stringify({ type: 'runtime_done', task: { id: 'agent-1', entity_type: 'EntTaskAgent' } });
 
     it('fails at agent completion without a valid document, carrying only the actual final reply', async () => {

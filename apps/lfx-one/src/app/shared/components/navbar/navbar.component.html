@@ -67,7 +67,7 @@
                 class="lfxn__tab"
                 [class.is-active]="isActive"
                 [attr.aria-pressed]="isActive"
-                [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
+                [attr.aria-label]="mobile() ? 'Show the ' + lens.label + ' menu' : 'Switch to ' + lens.label + ' lens'"
                 [attr.data-testid]="lens.testId + '-tab'"
                 (click)="switchLens(lens.id)">
                 <i [ngClass]="isActive ? lens.activeIcon : lens.icon" aria-hidden="true"></i>
@@ -105,7 +105,13 @@
           [class.hidden]="!effectiveShowOrgSelector()"
           data-testid="org-selector-slot"
           [attr.data-visible]="effectiveShowOrgSelector()">
-          <lfx-org-selector variant="navbar" [(isPanelOpen)]="selectorPanelOpen" [enabled]="effectiveShowOrgSelector()"></lfx-org-selector>
+          <!-- A switch can re-address the page with replaceUrl, which the layout leaves alone, so the pick closes the mobile drawer
+               itself; a pick while the drawer previews Org Lens lands on that organization's overview instead (#4208). -->
+          <lfx-org-selector
+            variant="navbar"
+            [(isPanelOpen)]="selectorPanelOpen"
+            [enabled]="effectiveShowOrgSelector()"
+            (itemSelected)="onOrgSelected()"></lfx-org-selector>
         </div>
 
         <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->
@@ -148,7 +154,7 @@
             <!-- Profile, account and settings live on one hub: active on every /profile/* page. -->
             <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action" data-testid="me-card-link">
               <i class="fa-light fa-square-user" aria-hidden="true"></i>
-              <span class="lfxn__me-action-label">My Profile &amp; Account</span>
+              <span class="lfxn__me-action-label">Profile &amp; Account</span>
               <i class="fa-light fa-arrow-up-right lfxn__me-action-trail" aria-hidden="true"></i>
             </a>
           </span>

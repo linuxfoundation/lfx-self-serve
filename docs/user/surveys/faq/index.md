@@ -30,7 +30,7 @@ Contact your project administrator to make changes to a published survey.
 
 ## How do I see which surveys are still open?
 
-Use the **Open** and **Closed** tabs on the My Surveys page to filter surveys by status.
+Use the **Open** and **Closed** tabs on the Surveys page to filter surveys by status.
 
 ## Why don't I see any surveys?
 

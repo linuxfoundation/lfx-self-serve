@@ -10,7 +10,7 @@
   } @else {
     <div class="flex flex-col gap-6">
       <!-- Page Header -->
-      <lfx-page-header [title]="isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural">
+      <lfx-page-header [title]="committeeLabel.plural">
         <ng-container pageHeaderActions>
           @if (!isMeLens() && canWrite()) {
             <lfx-button
@@ -101,7 +101,7 @@
         <lfx-committee-pending-applications class="contents" [myCommitteeUids]="myCommitteeUids()" data-testid="committees-me-pending-applications" />
 
         @if (myCommittees().length > 0 || myCommitteesLoading()) {
-          <section class="flex flex-col gap-4 bg-white rounded-lg border border-gray-200 p-4" aria-label="My Groups filters" data-testid="groups-filter-panel">
+          <section class="flex flex-col gap-4 bg-white rounded-lg border border-gray-200 p-4" aria-label="Groups filters" data-testid="groups-filter-panel">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
                 <ng-container [ngTemplateOutlet]="categoryControls" />

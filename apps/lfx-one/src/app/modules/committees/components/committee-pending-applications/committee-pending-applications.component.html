@@ -23,7 +23,7 @@
               <a
                 [routerLink]="application.viewCommands"
                 [queryParams]="application.viewQueryParams"
-                [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+                [state]="{ backLabel: 'Groups', fromMeLens: true }"
                 class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate"
                 [attr.title]="application.committee_name"
                 [attr.aria-label]="'Open group ' + application.committee_name"
@@ -41,7 +41,7 @@
             <a
               [routerLink]="application.viewCommands"
               [queryParams]="application.viewQueryParams"
-              [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+              [state]="{ backLabel: 'Groups', fromMeLens: true }"
               class="inline-flex items-center gap-1.5 rounded text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors px-2 py-1"
               [attr.aria-label]="'View group ' + application.committee_name"
               data-testid="committee-pending-applications-view">

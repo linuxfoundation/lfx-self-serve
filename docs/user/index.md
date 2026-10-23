@@ -11,31 +11,31 @@ hero:
       link: /dashboards/
 
 features:
-  - title: My Dashboard
+  - title: Dashboard
     details: Overview of your memberships, activity, and quick links across LFX.
     link: /dashboards/
-  - title: My Events
+  - title: Events
     details: Register for and manage events associated with your projects.
     link: /events/
-  - title: My Mailing Lists
+  - title: Mailing Lists
     details: Subscribe to and manage mailing lists for your communities.
     link: /mailing-lists/
-  - title: My Meetings
+  - title: Meetings
     details: Schedule, join, and review meetings for your working groups.
     link: /meetings/
-  - title: My Groups
+  - title: Groups
     details: View and manage committees and working groups you belong to.
     link: /committees/
   - title: Documents
     details: Browse folders, files, and links for a project or foundation.
     link: /documents/
-  - title: My Surveys
+  - title: Surveys
     details: Complete and review surveys from your projects and working groups.
     link: /surveys/
-  - title: My Votes
+  - title: Votes
     details: Participate in elections and votes for your governing boards.
     link: /votes/
-  - title: My Badges
+  - title: Badges
     details: View and share digital badges you have earned through LFX.
     link: /badges/
   - title: Profile

@@ -25,6 +25,8 @@ import {
   BRAND_KIT_CONTRAST_GRADES,
   BRAND_KIT_DEFAULT_WEIGHTS,
   BRAND_KIT_DRAFT_HEADER,
+  BRAND_KIT_REDRAFT_HEADER,
+  BRAND_KIT_REDRAFT_INSTRUCTIONS,
   BRAND_KIT_FIELD_KEYS,
   BRAND_KIT_FORM_LINES,
   BRAND_KIT_FORM_TYPE,
@@ -58,6 +60,7 @@ import {
 } from '../constants/brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_ANSWER_ORIGINS,
+  FOUNDATION_MESSAGE_CONTRACT_ID,
   FOUNDATION_MESSAGE_NONE_ANSWER,
   FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
 } from '../constants/foundation-message.constants';
@@ -68,6 +71,7 @@ import {
   BrandKitEnvelope,
   BrandKitFormInputs,
   BrandKitFormPayload,
+  BrandKitRedraftFormPayload,
   BrandKitLogoFile,
   BrandKitLogoFileKind,
   BrandKitLogoImage,
@@ -457,8 +461,8 @@ function renderBrandKitLogoFiles(files: BrandKitLogoFile[]): string[] {
 }
 
 /**
- * Render the draft form into the one text message the agent receives — a
- * mirror of the agent's own `renderDraft` (marketing-os-agents
+ * Render the draft or comments-only redraft into the one text message the agent receives — a
+ * mirror of the agent's own `renderDraft` / `renderRevise` (marketing-os-agents
  * `agents/brand-kit/src/form.ts`), byte-identical for the same payload;
  * brand-kit.utils.spec.ts pins renderings produced by that renderer. The
  * marker lines are load-bearing: the agent's finalize tool parses the
@@ -467,7 +471,8 @@ function renderBrandKitLogoFiles(files: BrandKitLogoFile[]): string[] {
  * fail. The BFF renders because Guild coerces a structured `agent_input` to
  * JSON text before the agent's preprocess runs.
  */
-export function renderBrandKitFormText(payload: BrandKitFormPayload, now: Date = new Date()): string {
+export function renderBrandKitFormText(payload: BrandKitFormPayload | BrandKitRedraftFormPayload, now: Date = new Date()): string {
+  if (payload.type === 'brand_kit_revise_form') return renderBrandKitRedraftText(payload, now);
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
   const lines: string[] = [
     BRAND_KIT_DRAFT_HEADER,
@@ -495,6 +500,58 @@ export function renderBrandKitFormText(payload: BrandKitFormPayload, now: Date =
   }
   lines.push('');
   lines.push(...renderBrandKitLogoFiles(payload.logo_files ?? []));
+  return lines.join('\n');
+}
+
+/** Mirror of the agent's renderRevise redraft branch; no manual-edit/check surface. */
+function renderBrandKitRedraftText(payload: BrandKitRedraftFormPayload, now: Date): string {
+  let framework = payload.messaging_framework;
+  if (
+    !isRecord(framework['mf']) &&
+    !isRecord(framework['mh']) &&
+    framework['contract'] === FOUNDATION_MESSAGE_CONTRACT_ID &&
+    isRecord(framework['content']) &&
+    (isRecord(framework['content']['mf']) || isRecord(framework['content']['mh']))
+  ) {
+    framework = framework['content'];
+  }
+  const lines: string[] = [
+    BRAND_KIT_REDRAFT_HEADER,
+    ...BRAND_KIT_REDRAFT_INSTRUCTIONS,
+    '',
+    `PROJECT NAME: ${payload.project_name}`,
+    `RUN DATE: ${payload.run_date ?? now.toISOString().slice(0, 10)}`,
+    `LFX PROJECT UID: ${payload.project_uid ?? BRAND_KIT_FORM_LINES.uidNotSupplied}`,
+    `STORED REVISION: version ${payload.prior_version}; finalize as version ${payload.prior_version + 1}`,
+    `WEBSITE: ${payload.website_url ?? BRAND_KIT_FORM_LINES.none}`,
+    `BRAND PAGE: ${payload.brand_page_url ?? BRAND_KIT_FORM_LINES.none}`,
+    '',
+    BRAND_KIT_FORM_LINES.frameworkSupplied,
+    BRAND_KIT_FORM_LINES.frameworkStart,
+    guardBrandKitText(JSON.stringify(framework, null, 2)),
+    BRAND_KIT_FORM_LINES.frameworkEnd,
+    '',
+    ...renderBrandKitLogoFiles(payload.logo_files ?? []),
+    '',
+    `REVIEW COMMENTS: ${payload.comments.length} — apply every one`,
+  ];
+  payload.comments.forEach((comment, index) => {
+    const number = index + 1;
+    lines.push(
+      `--- COMMENT ${number} ---`,
+      'PASSAGE:',
+      guardBrandKitText(comment.passage),
+      'COMMENT:',
+      guardBrandKitText(comment.comment),
+      `--- END COMMENT ${number} ---`
+    );
+  });
+  lines.push('', '--- STORED KIT (JSON) ---', guardBrandKitText(JSON.stringify(payload.kit, null, 2)), '--- END STORED KIT ---');
+  if (payload.chapters === undefined) {
+    lines.push('--- STORED CHAPTERS: none (the kit was stored as tokens only) ---');
+  } else {
+    lines.push('--- STORED CHAPTERS (JSON) ---', guardBrandKitText(JSON.stringify(payload.chapters, null, 2)), '--- END STORED CHAPTERS ---');
+  }
   return lines.join('\n');
 }
 

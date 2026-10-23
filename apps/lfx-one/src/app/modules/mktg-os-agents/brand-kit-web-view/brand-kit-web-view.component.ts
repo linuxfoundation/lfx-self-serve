@@ -30,6 +30,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
+import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -56,6 +57,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
     ButtonComponent,
     BrandKitViewComponent,
     MktgSlidesExportComponent,
+    MktgFieldCommentsComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })
@@ -75,6 +77,8 @@ export class BrandKitWebViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  /** Only the selected stored document hosts comments; run previews and the printed book remain read-only. */
+  public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
