@@ -159,8 +159,9 @@ export class DocumentService {
   /**
    * Counts every document a group's Documents tab can list — links, uploaded files, mailing list
    * artifacts and meeting attachments, recordings, transcripts and summaries — without fetching rows.
-   * Folders are structural and not counted. Each source is counted independently; one that fails
-   * contributes 0 so a transient outage degrades the badge instead of failing the page.
+   * Folders are not counted: they are indexed as their own `committee_link_folder` type, separate from
+   * `committee_link`. The total is all-or-nothing: if any source fails or reports `has_more`, this
+   * throws so the caller can hide the badge instead of presenting a partial total as exact.
    */
   public async getCommitteeDocumentCount(req: Request, committeeUid: string): Promise<number> {
     logger.debug(req, 'get_committee_document_count', 'Counting committee documents', { committee_uid: committeeUid });
@@ -175,19 +176,28 @@ export class DocumentService {
     ].map((type) => ({ type, parent: `committee:${committeeUid}` }));
 
     const counts = await Promise.all(
-      [...byTag, ...byParent].map((params) =>
-        this.microserviceProxy
-          .proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params)
-          .then(({ count }) => count)
-          .catch((err) => {
-            logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, counting it as 0', {
-              committee_uid: committeeUid,
-              type: params.type,
-              error: err instanceof Error ? err.message : 'Unknown error',
-            });
-            return 0;
-          })
-      )
+      [...byTag, ...byParent].map(async (params) => {
+        try {
+          const { count, has_more } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources/count',
+            'GET',
+            params
+          );
+          if (has_more) {
+            throw new Error('Count is incomplete (has_more)');
+          }
+          return count;
+        } catch (err) {
+          logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, the total is unavailable', {
+            committee_uid: committeeUid,
+            type: params.type,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+          throw err;
+        }
+      })
     );
 
     return counts.reduce((total, count) => total + count, 0);

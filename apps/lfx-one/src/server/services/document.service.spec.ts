@@ -111,7 +111,7 @@ describe('DocumentService.getCommitteeDocumentCount', () => {
   });
 
   it('sums the count of every document source for the committee', async () => {
-    proxyRequestMock.mockResolvedValue({ count: 2 });
+    proxyRequestMock.mockResolvedValue({ count: 2, has_more: false });
 
     const total = await new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID);
 
@@ -132,12 +132,27 @@ describe('DocumentService.getCommitteeDocumentCount', () => {
     expect(total).toBe(16);
   });
 
-  it('counts a failing source as 0 instead of failing the whole count', async () => {
+  it('throws when a source fails, so a partial total is never presented as exact', async () => {
     proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => {
       if (params['type'] === 'v1_past_meeting_recording') throw new Error('upstream unavailable');
-      return { count: 1 };
+      return { count: 1, has_more: false };
     });
 
-    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(7);
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).rejects.toThrow('upstream unavailable');
+  });
+
+  it('throws when a source reports an incomplete count', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => ({
+      count: 1,
+      has_more: params['type'] === 'groupsio_artifact',
+    }));
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).rejects.toThrow('incomplete');
+  });
+
+  it('returns a genuine zero when every source reports zero', async () => {
+    proxyRequestMock.mockResolvedValue({ count: 0, has_more: false });
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(0);
   });
 });
