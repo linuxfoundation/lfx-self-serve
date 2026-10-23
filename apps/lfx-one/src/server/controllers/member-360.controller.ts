@@ -10,11 +10,13 @@ import { AuthenticationError, AuthorizationError, ServiceValidationError } from 
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { Member360Service } from '../services/member-360.service';
+import { MktgDocumentRunService } from '../services/mktg-document-run.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
 export class Member360Controller {
   private readonly service = new Member360Service();
+  private readonly runs = new MktgDocumentRunService();
   private readonly guild = new GuildService();
 
   public async generate(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -27,13 +29,16 @@ export class Member360Controller {
       if (!parsed.success || Buffer.byteLength(JSON.stringify(req.body)) > MEMBER_360_MAX_BYTES) {
         throw this.invalid('body', `Use the Member 360 form with a project, window and at most ${MEMBER_360_MAX_TRACKERS} trackers.`);
       }
+      const project = await this.runs.resolveProject(req, parsed.data.project);
       const { sessionId, documentId } = await this.service.start(req, parsed.data);
+      const runId = await this.runs.startForOneOff(req, 'member-360', project, sessionId);
       // Domain-separate this token from chat AND bind it to the entitled
       // project, preventing a session from being replayed into another partition.
       const response: Member360Session = {
         sessionId,
         ownerToken: createSessionOwnerToken(user, `member-360:${parsed.data.project}:${sessionId}`),
         documentId,
+        runId,
       };
       logger.success(req, operation, start, {});
       res.json(response);
@@ -61,6 +66,7 @@ export class Member360Controller {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
       }
       const response = await this.guild.resolveRunOutcome(req, sessionId, await this.service.result(req, sessionId, project));
+      await this.runs.recordResultBestEffort(req, sessionId, Member360Service.toRunResult(response), project);
       logger.success(req, operation, start, { status: response.status });
       res.json(response);
     } catch (error) {

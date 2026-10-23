@@ -290,6 +290,23 @@ describe('LinkedIn generation', () => {
     for (const state of [pending, questions, ready]) expect(JSON.stringify(state)).not.toContain('PRIVATE');
   });
 
+  it('completes a saved run for its original creator without adopting the visiting reader identity', async () => {
+    mocks.events.mockResolvedValue([finalized(fixture())]);
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-visitor' } } });
+    await new LinkedinPostService({ creatorSubject: 'synthetic-creator' }, true).result(visitor, 'synthetic-creator', 'session-1', 'project-1');
+    expect(mocks.initialize).toHaveBeenCalledWith(visitor, 'synthetic-creator', 'session-1', expect.anything());
+    expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an impersonated start from initializing a profile on a later non-impersonated completion', async () => {
+    mocks.events.mockResolvedValue([finalized(fixture())]);
+    const result = await new LinkedinPostService({ creatorSubject: 'synthetic-target' }, false).result(req, 'synthetic-target', 'session-1', 'project-1');
+    expect(result.status).toBe('ready');
+    expect(result.profileSaved).toBe(false);
+    expect(mocks.initialize).not.toHaveBeenCalled();
+    expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+
   it('does not overwrite an intervening profile edit on a repeated result poll', async () => {
     mocks.events.mockResolvedValue([finalized(fixture())]);
     mocks.read.mockResolvedValue({ profile: 'newer voice' });

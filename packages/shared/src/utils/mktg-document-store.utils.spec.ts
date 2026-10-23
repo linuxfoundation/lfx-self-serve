@@ -63,8 +63,9 @@ describe('mktg-document-store utils', () => {
   });
 
   it('projects paused run state without private session fields', () => {
-    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject' });
+    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject', oneOff: { answers: { share_link: 'https://post.example/' } } });
     expect(mktgRunProgress(run)).toMatchObject({ runId: SHA, state: 'questions' });
+    expect(mktgRunProgress(run)).not.toHaveProperty('oneOff');
     expect(mktgRunProgress(run)).not.toHaveProperty('sessionId');
     expect(mktgRunProgress(run)).not.toHaveProperty('creatorSubject');
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
@@ -73,6 +74,15 @@ describe('mktg-document-store utils', () => {
   it('derives run membership from the active catalog and registered intake', () => {
     expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
     expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();
+    expect(findMktgRunIntake('linkedin-post')).toBeUndefined();
+    expect(findMktgRunIntake('member-360')).toBeUndefined();
+    expect(findMktgRunIntake('linkedin-post', true)?.tracksDocumentRun).toBe(true);
+    expect(findMktgRunIntake('member-360', true)?.tracksDocumentRun).toBe(true);
+  });
+  it('adds an optional public activity projection without private completion metadata', () => {
+    const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: '2026-10-19T00:00:00Z' }];
+    expect(mktgRunProgress(startedRun(), undefined, activity)).toMatchObject({ state: 'writing', activity });
+    expect(mktgRunProgress(startedRun())).not.toHaveProperty('activity');
   });
   it('normalizes only the exact snake-case receipt location for UI readers', () => {
     expect(
