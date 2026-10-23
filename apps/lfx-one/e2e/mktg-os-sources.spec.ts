@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -64,6 +64,29 @@ test.describe('Marketing OS new run Sources', () => {
       expect(sources.generated[0]).toMatchObject({ answers: { website_url: 'https://edited.example', notes: '' } });
       await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
       await page.screenshot({ path: test.info().outputPath('fresh-run-exact-asset.png'), fullPage: true });
+    });
+  }
+
+  for (const status of [404, 503]) {
+    test(`collapsed Sources explains and recovers a dependency failure (${status})`, async ({ page }) => {
+      const sources = await setupFreshSources(page);
+      await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+        route.fulfill({ status, json: { error: 'Synthetic dependency unavailable' } })
+      );
+      await sources.open();
+      const card = page.getByTestId('mktg-run-sources');
+      await expect(page.getByTestId('mktg-agent-run-form')).not.toBeVisible();
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
+      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+      if (status === 503) {
+        await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+          route.fulfill({ status: 404, json: { error: 'No approved synthetic framework' } })
+        );
+        await card.getByTestId('mktg-agent-run-dependency-retry').getByRole('button').click();
+      }
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency-link').getByRole('button')).toBeVisible();
+      expect(sources.generated).toHaveLength(0);
+      await page.screenshot({ path: test.info().outputPath(`collapsed-dependency-${status}.png`), fullPage: true });
     });
   }
 
