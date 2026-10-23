@@ -79,12 +79,32 @@ test.describe('asset comments structure', () => {
   });
 
   for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
+    for (const width of [1280, 1440]) {
+      test(`${agentKey}: Comments, Revisions and About stay in the right column at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 1000 });
+        const fixture = await setupStructuredComments(page, agentKey);
+        await fixture.open();
+        await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
+        const asset = await page.getByTestId(agentKey === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-boilerplates-view').boundingBox();
+        expect(asset).not.toBeNull();
+        for (const id of ['mktg-comments-panel', 'mktg-document-view-revisions', 'mktg-document-view-about']) {
+          const card = await page.getByTestId(id).boundingBox();
+          expect(card).not.toBeNull();
+          if (asset && card) expect(card.x).toBeGreaterThanOrEqual(asset.x + asset.width);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await page.screenshot({ path: test.info().outputPath(`${agentKey}-comments-sidebar-${width}.png`), fullPage: true });
+      });
+    }
     test(`${agentKey}: mobile field pins isolate hover and use app typography outside sample chips`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       const { base } = await structuredCommentAsset(page, agentKey);
       const fixture = await setupAsset(page, { mode: 'ready', asset: base });
       await fixture.open(agentKey === 'brand-kit' ? '&tab=visual' : '');
       await expect(page.getByTestId('mktg-comments-empty')).toBeVisible();
+      const asset = await page.getByTestId(agentKey === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-boilerplates-view').boundingBox();
+      const panel = await page.getByTestId('mktg-comments-panel').boundingBox();
+      expect(asset && panel && panel.y >= asset.y + asset.height).toBe(true);
       const key = agentKey === 'brand-kit' ? 'chapters.visual.imagery.avoid[0]' : 'bp[1].t';
       const field = page.getByTestId(`mktg-field-comments-${key}`);
       const button = field.getByRole('button', { name: /^Comment on/ });
