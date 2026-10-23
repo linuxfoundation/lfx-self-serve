@@ -7,6 +7,7 @@ import { member360GenerateSchema } from '@lfx-one/shared/server';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
+import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { Member360Service } from '../services/member-360.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
@@ -16,6 +17,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 export class Member360Controller {
   private readonly service = new Member360Service();
   private readonly runs = new MktgDocumentRunService();
+  private readonly guild = new GuildService();
 
   public async generate(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'member_360_generate';
@@ -63,7 +65,7 @@ export class Member360Controller {
       if (typeof ownerToken !== 'string' || !verifySessionOwnerToken(ownerToken, user, `member-360:${project}:${sessionId}`)) {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
       }
-      const response = await this.service.result(req, sessionId, project);
+      const response = await this.guild.resolveRunOutcome(req, sessionId, await this.service.result(req, sessionId, project));
       await this.runs.recordResultBestEffort(req, sessionId, Member360Service.toRunResult(response), project);
       logger.success(req, operation, start, { status: response.status });
       res.json(response);

@@ -6,6 +6,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   MKTG_ARTIFACT_SHA256_REGEX,
+  MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -165,9 +166,10 @@ export class MktgAgentRunService {
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
-    } else if (request.intake.regenerateViaGenerate) {
-      // Fresh Sources start a new session, not a new document numbering scheme.
-      // These intakes must still send priorVersion (without old feedback for newRun).
+    } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
+      // Failed-session Retry must never chat on that failed session. Like an
+      // intake's Generate resubmit, it starts a new session with priorVersion.
+      // Fresh Sources preserve that history contract, but omit old feedback.
       attempt$ = this.resubmitRun(request, stored);
     } else if (request.newRun) {
       // appendVersion keeps the new session's v1 distinct from existing history.
@@ -437,7 +439,20 @@ export class MktgAgentRunService {
         }
         if (result.status === 'failed') {
           this.track(request, { state: 'failed' });
-          return concat(activity$, of<MktgGenerateProgress>({ type: 'failed', failureText: result.failureText ?? '' }));
+          // Invalidate session reuse, not successful versions, answers or Q&A.
+          const stored = this.loadRun(request.projectUid, request.agentId);
+          if (stored) this.saveRun({ ...stored, sessionFailed: true });
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'failed',
+              failureText: result.failureText ?? '',
+              failure: result.failure ?? {
+                reason: MKTG_RUN_FAILURE_REASON,
+                eventType: 'session_failed',
+              },
+            })
+          );
         }
         if (result.status === 'refused') {
           this.track(request, { state: 'failed' });

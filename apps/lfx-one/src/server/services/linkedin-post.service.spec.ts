@@ -113,7 +113,10 @@ describe('LinkedIn generation', () => {
     mocks.persist.mockResolvedValue({ project: 'project-1' });
   });
   it('sends the first-run form with the UTC server date, not client today', async () => {
-    const result = await new LinkedinPostService().start(req, 'subject-1', { today: 'forged' }, setup, 'linkedin-post');
+    const result = await new LinkedinPostService().start(req, 'subject-1', { today: 'forged' }, setup, 'linkedin-post', {
+      uid: 'project-1',
+      name: 'Synthetic project',
+    });
     expect(result.documentId).toMatch(/^run-/);
     const request = mocks.createSession.mock.calls[0][1];
     expect(request.message).toContain(`TODAY: ${new Date().toISOString().slice(0, 10)}`);
@@ -121,24 +124,45 @@ describe('LinkedIn generation', () => {
     expect(request.message).not.toContain('Do NOT ask the user anything.');
     expect(request.message).toContain('PROFILE GAPS:');
     expect(request.message).toContain('PROJECT SCOPE:');
+    expect(request.message).toContain('Synthetic project');
+    expect(request.message).toContain('project-1');
     expect(request.message).not.toContain('forged');
   });
   it('returns the LFX share-link answer without adding it to the agent form', async () => {
-    const result = await new LinkedinPostService().start(req, 'subject-1', { share_link: 'https://public.example/shared-only' }, setup, 'linkedin-post');
+    const result = await new LinkedinPostService().start(req, 'subject-1', { share_link: 'https://public.example/shared-only' }, setup, 'linkedin-post', {
+      uid: 'project-1',
+      name: 'Synthetic project',
+    });
     expect(result.answers).toEqual({ share_link: 'https://public.example/shared-only' });
     expect(mocks.createSession.mock.calls[0][1].message).not.toContain('https://public.example/shared-only');
-    await expect(new LinkedinPostService().start(req, 'subject-1', { share_link: 'javascript:bad' }, setup, 'linkedin-post')).rejects.toMatchObject({
+    await expect(
+      new LinkedinPostService().start(req, 'subject-1', { share_link: 'javascript:bad' }, setup, 'linkedin-post', {
+        uid: 'project-1',
+        name: 'Synthetic project',
+      })
+    ).rejects.toMatchObject({
       statusCode: 400,
     });
   });
   it('uses the server-stored profile on later runs', async () => {
     const envelope = fixture();
     mocks.read.mockResolvedValue(envelope);
-    await new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post');
+    await new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post', { uid: 'project-1', name: 'Synthetic project' });
     expect(mocks.createSession.mock.calls[0][1].message).toContain('===== BEGIN SAVED PROFILE =====');
   });
+  it('refuses unresolved project scope before source ingestion or session creation', async () => {
+    await expect(new LinkedinPostService().start(req, 'subject-1', {}, setup, 'linkedin-post', { uid: 'project-1', name: ' ' })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(new LinkedinPostService().start(req, 'subject-1', {}, setup, 'linkedin-post', { uid: '', name: 'Synthetic project' })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
   it('rejects a first run without setup before spending a session', async () => {
-    await expect(new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post')).rejects.toThrow('Validation failed for setup');
+    await expect(
+      new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post', { uid: 'project-1', name: 'Synthetic project' })
+    ).rejects.toThrow('Validation failed for setup');
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
   it('never accepts raw/agent text or a page as the finalized output', async () => {

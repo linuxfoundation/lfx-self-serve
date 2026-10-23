@@ -16,11 +16,6 @@
     </div>
   </div>
 
-  <!-- Something always moving, even between steps -->
-  <div class="h-1 w-full overflow-hidden rounded-full bg-blue-50" aria-hidden="true">
-    <div class="h-full w-2/5 rounded-full bg-gradient-to-r from-blue-300 via-blue-500 to-blue-300 motion-safe:animate-indeterminate"></div>
-  </div>
-
   <!-- Phases: where the run is in the whole -->
   <ol class="flex flex-wrap items-center gap-1.5" aria-label="Progress" data-testid="mktg-run-activity-phases">
     @for (phase of phases(); track phase.id) {
@@ -105,14 +100,6 @@
       }
     </ol>
   </div>
-
-  <!-- A tip while you wait -->
-  @for (line of [tip()]; track line) {
-    <p class="flex items-start gap-2 text-sm text-gray-500 motion-safe:animate-step-in" data-testid="mktg-run-activity-tip">
-      <i class="fa-light fa-lightbulb mt-0.5 text-amber-500" aria-hidden="true"></i
-      ><span><span class="font-medium text-gray-700">While you wait:</span> {{ line }}</span>
-    </p>
-  }
 
   <!-- What a screen reader hears as the run moves on: only the step under way, not the whole list on every poll. -->
   <span class="sr-only" role="status" aria-live="polite" data-testid="mktg-run-activity-status">{{ currentLabel() }}</span>

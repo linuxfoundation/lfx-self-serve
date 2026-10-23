@@ -761,6 +761,30 @@ export interface MktgRunPersistReceipt {
   version: number;
 }
 
+/** Minimal server-side seam for catalog consumers with different output protocols. */
+export interface MktgRunOutcomeSource {
+  status: string;
+}
+export interface MktgFailedRunOutcome {
+  status: 'failed';
+  failure: MktgRunFailure;
+}
+
+/** Internal settled-error reader shared with Slides export; raw text stays server-side. */
+export interface MktgSettledSessionError {
+  eventType: string;
+  text: string;
+  /** Parsed event time; NaN when the provider omitted a readable timestamp. */
+  at: number;
+}
+
+/** Requester-safe terminal failure; never contains raw Guild payloads or credentials. */
+export interface MktgRunFailure {
+  reason: string;
+  /** Guild's non-tool error event type, or `session_failed` when none is safely nameable. */
+  eventType: string;
+}
+
 /**
  * Response of an agent's `result` endpoint for the latest queued turn only:
  * `pending` until its schema-valid, integrity-checked envelope, then `ready`
@@ -780,6 +804,8 @@ export interface MktgRunResultResponse {
   status: 'pending' | 'ready' | 'questions' | 'refused' | 'failed';
   /** Final agent reply when its runtime ended without a valid asset; plain text only. */
   failureText?: string;
+  /** Set when the session's own error events (runtime_error, llm_failed, …) ended the run before any output — this item's detection; `failureText` is main's idle-runtime-end reply. */
+  failure?: MktgRunFailure;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
   /** The agent's refusal reply, as the requester reads it. Present when `refused`. */
@@ -1097,6 +1123,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
 export interface MktgStoredAgentRun {
   /** Exact public run selector, retained with private creator history. */
   runId?: string;
+  /** A failed attempt invalidates session reuse, never the successful version history. */
+  sessionFailed?: boolean;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */
@@ -1187,7 +1215,7 @@ export interface MktgRunQuestionsPending {
 export type MktgGenerateProgress =
   | { type: 'submitted' }
   | { type: 'restored'; pending: MktgPendingGeneration; message: string }
-  | { type: 'failed'; failureText: string }
+  | { type: 'failed'; failureText?: string; failure?: MktgRunFailure }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }

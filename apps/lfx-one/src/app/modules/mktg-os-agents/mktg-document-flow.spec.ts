@@ -15,6 +15,7 @@ import {
   BRAND_KIT_CONTRACT_ID,
   MKTG_AGENT_INTAKES,
   MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_POLL,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
@@ -418,7 +419,8 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     expect(router.url).toContain(`/${lens}/mktg-os-agents/${req.agentId}?`);
     expect(router.url).not.toContain('/documents/');
     expect(query('mktg-agent-run-form')).not.toBeNull();
-    expect(query('mktg-agent-run-error')?.textContent).toContain(failure);
+    expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
+    expect(query('mktg-agent-run-error')?.textContent).not.toContain(failure);
     // A metadata refresh may already be in flight when the document route is left.
     for (const read of http.match((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))) {
       if (!read.cancelled) read.flush(failedDetail);

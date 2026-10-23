@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsNonMembersConversion,
   HealthMetricsNonMembersOrgs,
@@ -49,17 +48,6 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX = 'sec-non-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
 export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = ['orgs', 'people', 'conversion'] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
-
-/** Note under the sub-nav items, linking to Engagement's non-member participation. */
-export const HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Non-members attending meetings also appear in',
-  linkLabel: 'Engagement',
-  route: 'engagement',
-  fragment: 'nonmem',
-};
-
-/** The project selector does not narrow Non-Members, so the page says so above its sections. */
-export const HEALTH_METRICS_NON_MEMBERS_SCOPE_NOTE = 'Non-Members figures are foundation-wide. The project selector does not narrow them.';
 
 /** Each section's filter, search and page state in the URL; each key is namespaced to the tab. */
 export const HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS = {

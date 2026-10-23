@@ -46,6 +46,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-family-export.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/faq.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-failure.utils')),
   readFoundationMessageContent: (text: string): unknown => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>;
@@ -853,9 +854,21 @@ describe('MktgSlidesExportService', () => {
 
       guildMocks.getRawEventPayloads.mockResolvedValue([
         drop(minuteAgo.toISOString()),
-        JSON.stringify({ type: 'agent_notification_progress', created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(), content: {} }),
+        JSON.stringify({
+          type: 'agent_notification_progress',
+          created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(),
+          content: { type: 'text', data: 'Reading another source.' },
+        }),
       ]);
       expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
+
+      for (const type of ['llm_start', 'runtime_start', 'tool_start']) {
+        guildMocks.getRawEventPayloads.mockResolvedValue([
+          drop(minuteAgo.toISOString()),
+          JSON.stringify({ type, created_at: new Date(minuteAgo.getTime() + 1_000).toISOString(), content: {} }),
+        ]);
+        expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
+      }
 
       // Settled, with nothing after it but the run's teardown: a failed export.
       guildMocks.getRawEventPayloads.mockResolvedValue([
