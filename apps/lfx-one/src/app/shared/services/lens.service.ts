@@ -122,6 +122,10 @@ export class LensService {
    * Show a lens's menu in the mobile drawer without switching the page's lens or navigating. Resolves the hybrid
    * 'Projects' entry like {@link switchLens}; choosing the page's own lens ends the preview. A lens the persona may not
    * use is ignored.
+   *
+   * While a pick is still navigating, `activeLens` is that pick's provisional lens, not the page's, so a tab matching it
+   * is kept as an explicit choice: if the pick then fails and the page lens comes back, the drawer still shows the menu
+   * the viewer chose last.
    */
   public previewMenuLens(lens: Lens): void {
     const target = this.switchTarget(lens);
@@ -129,7 +133,7 @@ export class LensService {
       return;
     }
     this.menuLensPreviewEpoch += 1;
-    this.menuLensPreview.set(target === this.activeLens() ? null : target);
+    this.menuLensPreview.set(target === this.activeLens() && !this.menuPickPending() ? null : target);
   }
 
   /**

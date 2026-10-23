@@ -284,6 +284,23 @@ describe('LensService — menu lens preview', () => {
       expect(lens.activeLens()).toBe('me');
       expect(secondRestore).toHaveBeenCalledTimes(1);
       expect(firstRestore).toHaveBeenCalledTimes(1);
+      // Newest first: each restorer only undoes its own pick, so the second must put its slot back before the first runs.
+      expect(secondRestore.mock.invocationCallOrder[0]).toBeLessThan(firstRestore.mock.invocationCallOrder[0]);
+    });
+
+    it("keeps the tab the viewer chose last when it matches the pending pick's lens and the pick then fails", () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+      events.next(new NavigationStart(7, '/project/meetings'));
+
+      // Organization, then back to Projects, while the pick is pending.
+      lens.previewMenuLens('org');
+      lens.previewMenuLens('project');
+      events.next(cancel(7));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.menuLens()).toBe('project');
     });
 
     it("follows a pick superseded by the viewer's next tap, and keeps the lens if that navigation lands", () => {
