@@ -484,6 +484,51 @@ export interface SendVoteReminderResponse {
 }
 
 /**
+ * Identity-only vote recipient for the on-demand close summary (#3662). Same underlying
+ * `vote_response` row as `VoteVoter`, but not gated on `pseudo_anonymity` — the summary email
+ * carries only aggregate results, never an individual ballot, so a pseudo-anonymous vote can still
+ * send it.
+ */
+export interface VoteSummaryRecipient {
+  /** Vote response row identifier */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+}
+
+/** Response for POST /api/votes/:uid/summary (#3662) */
+export interface SendVoteSummaryResponse {
+  /** Number of distinct recipients the summary was sent to */
+  recipient_count: number;
+  /** Number of recipients the send failed for (e.g. a rejected address) — a partial send is not an error */
+  failed_count: number;
+}
+
+/** Data the on-demand vote-close summary email (#3662) is rendered from. */
+export interface VoteSummaryEmailContext {
+  /** Vote title */
+  vote_title: string;
+  /** Number of eligible recipients */
+  num_recipients: number;
+  /** Number of votes cast */
+  num_votes_cast: number;
+  /** Number of voters who abstained */
+  num_abstained: number;
+  /** Per-question results, pre-formatted for the email body */
+  questions: VoteSummaryEmailQuestion[];
+}
+
+/** One question's results as rendered in the summary email body. */
+export interface VoteSummaryEmailQuestion {
+  /** Question prompt */
+  prompt: string;
+  /** Per-choice results, pre-formatted for display (e.g. "62%") */
+  choices: { text: string; vote_count: number; percentage: string }[];
+}
+
+/**
  * Individual Vote entity from query service
  * @description Represents a user's participation record from lfx.index.individual_vote
  */

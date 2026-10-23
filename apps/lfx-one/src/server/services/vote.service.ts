@@ -8,6 +8,8 @@ import {
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
+  VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
   VOTE_VOTERS_PSEUDO_ANONYMOUS,
 } from '@lfx-one/shared/constants';
@@ -25,12 +27,15 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   SendVoteReminderResponse,
+  SendVoteSummaryResponse,
   UpdateVoteRequest,
   Vote,
   VoteListResponse,
   VoteReminderRecipient,
   VoteStatusCounts,
   VoteSummary,
+  VoteSummaryEmailContext,
+  VoteSummaryRecipient,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -49,8 +54,10 @@ import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-pro
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
+import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
 import { AccessCheckService } from './access-check.service';
+import { EmailService } from './email.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -164,10 +171,12 @@ export class VoteService {
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
   private readonly accessCheckService = new AccessCheckService();
+  private readonly emailService: EmailService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
+    this.emailService = new EmailService();
   }
 
   /**
@@ -731,6 +740,102 @@ export class VoteService {
     return { recipient_count: recipientIds.length };
   }
 
+  /**
+   * Lists every invited voter on a vote, for the on-demand close summary (#3662). Unlike
+   * `getVoteVoters`, not gated on `pseudo_anonymity` or ballot content — only identity fields are
+   * read, and the summary email carries aggregate results only, never a ballot.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteSummaryRecipients(req: Request, voteUid: string): Promise<VoteSummaryRecipient[]> {
+    logger.debug(req, 'get_vote_summary_recipients', 'Fetching vote_response rows for the summary recipient list', { vote_uid: voteUid });
+
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
+
+    const seen = new Set<string>();
+    const recipients = rows
+      .filter((row): row is IndexedVoteResponse & { uid: string } => getParentVoteId(row) === voteUid && row.voter_removed !== true && !!row.uid)
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      })
+      .map((row) => ({ uid: row.uid, user_name: row.user_name, user_email: row.user_email }))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_summary_recipients', 'Mapped vote summary recipients', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      recipient_count: recipients.length,
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Sends the on-demand results summary to every invited voter (#3662), on demand only —
+   * never scheduled or sent automatically on close (a future ticket). Only vote writers may send
+   * it (`assertVoteWrite`), and it can only be sent once the vote has ended, so the results it
+   * carries are final. The email body is built once from the aggregate results and sent unchanged
+   * to each recipient — it never varies per voter, so it cannot disclose how any specific person
+   * voted. A send failure for one recipient does not block the rest; failures are counted and
+   * logged, not thrown, so a partial send still reports what it delivered.
+   */
+  public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
+    await assertVoteWrite(req, voteUid, 'send_vote_summary');
+
+    const vote = await this.getVoteById(req, voteUid);
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+        operation: 'send_vote_summary',
+        service: 'vote_service',
+      });
+    }
+
+    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid), this.getVoteSummaryRecipients(req, voteUid)]);
+
+    const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
+
+    const emailRecipients = recipients.filter((recipient): recipient is VoteSummaryRecipient & { user_email: string } => !!recipient.user_email);
+    const seenEmails = new Set<string>();
+    const uniqueRecipients = emailRecipients.filter((recipient) => {
+      const email = recipient.user_email.toLowerCase();
+      if (seenEmails.has(email)) return false;
+      seenEmails.add(email);
+      return true;
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+    const outcomes = await Promise.allSettled(uniqueRecipients.map((recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })));
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        sentCount += 1;
+        return;
+      }
+      failedCount += 1;
+      logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
+        vote_uid: voteUid,
+        recipient_uid: uniqueRecipients[index].uid,
+        err: outcome.reason,
+      });
+    });
+
+    if (sentCount === 0 && uniqueRecipients.length > 0) {
+      throw new MicroserviceError('The summary could not be sent to any recipients. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
+        operation: 'send_vote_summary',
+        service: 'vote_service',
+      });
+    }
+
+    logger.info(req, 'send_vote_summary', 'Sent vote close summary', {
+      vote_uid: voteUid,
+      recipient_count: sentCount,
+      failed_count: failedCount,
+    });
+
+    return { recipient_count: sentCount, failed_count: failedCount };
+  }
+
   // ============================================
   // My Votes (Me Lens)
   // ============================================
@@ -848,6 +953,50 @@ export class VoteService {
   // ============================================
   // Private Helpers
   // ============================================
+
+  /** Builds the summary email's content from the aggregate results: question prompts, choice text, counts and percentages — never a per-voter breakdown. */
+  private buildSummaryEmailContext(voteTitle: string, results: VoteResultsResponse): VoteSummaryEmailContext {
+    const questions = results.poll_results.map((pollResult) => {
+      const choiceTextById = new Map(pollResult.question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
+
+      if (pollResult.generic_choice_votes.length > 0) {
+        return {
+          prompt: pollResult.question.prompt,
+          choices: pollResult.generic_choice_votes.map((choice) => ({
+            text: choiceTextById.get(choice.choice_id) ?? choice.choice_id,
+            vote_count: choice.vote_count,
+            percentage: `${Math.round(choice.percentage)}%`,
+          })),
+        };
+      }
+
+      // Ranked-choice question: no plurality tally exists, so first-choice (rank 1) counts stand
+      // in as the closest equivalent to a vote count in a plain-text summary.
+      const totalFirstChoice = pollResult.ranked_choice_votes.reduce(
+        (sum, choice) => sum + (choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0),
+        0
+      );
+      return {
+        prompt: pollResult.question.prompt,
+        choices: pollResult.ranked_choice_votes.map((choice) => {
+          const firstChoiceCount = choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0;
+          return {
+            text: `${choiceTextById.get(choice.choice_id) ?? choice.choice_id} (first-choice votes)`,
+            vote_count: firstChoiceCount,
+            percentage: totalFirstChoice > 0 ? `${Math.round((firstChoiceCount / totalFirstChoice) * 100)}%` : '0%',
+          };
+        }),
+      };
+    });
+
+    return {
+      vote_title: voteTitle,
+      num_recipients: results.num_recipients,
+      num_votes_cast: results.num_votes_cast,
+      num_abstained: results.num_abstained,
+      questions,
+    };
+  }
 
   /**
    * The enable PUT with its bounded 403-retry loop (GH-1637), shared by the standalone enable
