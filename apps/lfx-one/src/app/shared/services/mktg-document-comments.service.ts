@@ -44,6 +44,7 @@ export class MktgDocumentCommentsService {
     return JSON.stringify([subject, scope.projectUid, scope.agentKey, scope.documentId, scope.revisionId]);
   });
   public readonly selectedScope = this.selection.asReadonly();
+  public readonly draftScopeKey = this.contextKey;
   public readonly labelContent = computed(() => (this.current() ? this.labelData() : null));
   public readonly threads = computed(() => (this.current() ? this.data() : []));
   public readonly loading = computed(() => this.current() && this.reading());
@@ -149,6 +150,7 @@ export class MktgDocumentCommentsService {
               this.reading.set(false);
               this.data.set([]);
               this.measured.set(false);
+              this.readError.set(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
             }
             this.writeError.set(extractErrorMessage(error, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.save));
           }

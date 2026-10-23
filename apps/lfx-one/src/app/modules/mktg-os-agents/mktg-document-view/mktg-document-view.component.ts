@@ -27,6 +27,7 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
@@ -46,6 +47,8 @@ import {
   MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgPendingGeneration,
+  MktgDocumentCommentScope,
+  MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -98,6 +101,7 @@ import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-brea
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
+import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
@@ -124,7 +128,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  // Excluding layout gutters: 800px leaves classic-scrollbar headroom.
+  // Framework comments use 740px headroom; non-framework layout keeps its 800px threshold.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
@@ -141,6 +145,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
+    MktgCommentsPanelComponent,
     TooltipModule,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
@@ -265,6 +270,7 @@ export class MktgDocumentViewComponent {
     }
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
+  protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -955,6 +961,15 @@ export class MktgDocumentViewComponent {
       ),
       { initialValue: { loading: false, revision: null, error: '' } }
     );
+  }
+
+  private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
+    return computed(() => {
+      const view = this.view();
+      if (!view || !this.asset() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
+      if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
+      return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
+    });
   }
 
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {

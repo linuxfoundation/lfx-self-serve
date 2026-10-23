@@ -479,3 +479,21 @@ The composer owns its text and opaque request ID, retaining both for an explicit
 save retry. The client never automatically retries a POST or invents an ID.
 State is memory-only and all HTTP is browser-gated; no local storage, sources,
 sessions, attribution IDs or agent handles are added to the request contract.
+
+The framework document view adds data-keyed comment controls inside the existing
+field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
+The controls appear on hover/focus, and stay visible on hover-less devices; threads
+and a wrapper-based composer pin beneath their field. Disabled hosts have no
+layout box; the extra hover groups use display:contents until controls are shown.
+Inner grids respond to the framework's own container rather than viewport width.
+The shared contract-specific label util gives pins and the panel the same human
+field caption, including original array position and goal/audience title. Closing
+a composer restores its Comment button's focus; successful adds announce politely.
+The Comments panel shows only read errors; save errors belong to the composer.
+The Comments panel owns
+selection/lifetime and lists the same server threads beside revision history.
+A shared thread component renders author/date/field/status as text only. Form
+validation uses the shared text cap; failed saves retain text and the opaque
+request ID, while changed text or a revision change starts a different draft.
+No source report fields or print surfaces are made editable. Sending comments
+to a redraft run is a subsequent layer; this surface adds only comments.

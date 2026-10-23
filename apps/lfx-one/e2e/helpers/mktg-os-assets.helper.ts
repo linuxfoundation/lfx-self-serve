@@ -184,6 +184,7 @@ export async function setupAsset(
     if (state.mode === 'error') {
       return json(route, { error: 'Synthetic unavailable' }, 503);
     }
+    if (path.endsWith('/comments')) return json(route, { revisionId: ASSET_REVISION, threads: [] });
     await gate;
     const loaded = assetRevision();
     const response = { ...loaded, revisions: state.mode === 'ready' ? loaded.revisions : [], runs: runs() };

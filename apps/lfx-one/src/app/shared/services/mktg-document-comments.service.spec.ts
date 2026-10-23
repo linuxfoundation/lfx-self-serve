@@ -114,7 +114,9 @@ describe('MktgDocumentCommentsService', () => {
   it('hides the previous subject immediately and reloads only under the new effective subject', () => {
     service.select(SCOPE);
     finishRead([thread()]);
+    const previousKey = service.draftScopeKey();
     user.set({ sub: 'opaque-user-two' });
+    expect(service.draftScopeKey()).not.toBe(previousKey);
     expect(service.threads()).toEqual([]);
     expect(service.loaded()).toBe(false);
     TestBed.tick();
@@ -225,15 +227,20 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
   });
 
-  it('clears inaccessible comments on a denied write, with no automatic POST retry', () => {
+  it.each([401, 403])('shows a recoverable access-read failure after save status %s without an automatic POST retry', (status) => {
     service.select(SCOPE);
     finishRead([thread()]);
     service.add({ kind: 'field', key: 'mf.tagline' }, 'Change it.', 'request').subscribe({ error: vi.fn() });
-    http.expectOne(PATH).flush({ error: 'Writer access required.' }, { status: 403, statusText: 'Denied' });
+    http.expectOne(PATH).flush({ error: 'Writer access required.' }, { status, statusText: 'Denied' });
     expect(service.threads()).toEqual([]);
     expect(service.loaded()).toBe(false);
     expect(service.saveError()).toBe('Writer access required.');
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
     http.expectNone(() => true);
+    service.refresh();
+    finishRead([]);
+    expect(service.loadError()).toBe('');
+    expect(service.loaded()).toBe(true);
   });
 
   it('cancels a pending read after a denied save so stale data cannot reappear', () => {
@@ -245,6 +252,7 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.threads()).toEqual([]);
     expect(service.loaded()).toBe(false);
     expect(service.loading()).toBe(false);
+    expect(service.loadError()).toBe(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
   });
 
   it('cancels an old-scope save and never displays its result in the next revision', () => {

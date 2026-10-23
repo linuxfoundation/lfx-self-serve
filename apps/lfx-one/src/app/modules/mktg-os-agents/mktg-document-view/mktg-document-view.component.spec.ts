@@ -31,6 +31,7 @@ import {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -38,6 +39,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
@@ -306,6 +308,7 @@ describe('MktgDocumentViewComponent', () => {
 
     await TestBed.configureTestingModule({
       providers: [
+        provideMktgCommentsStub(),
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
         provideRouter([
           { path: 'documents/:agentKey/:documentId', component: MktgDocumentViewComponent },
@@ -1371,8 +1374,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
   });
 
-  it('renders a Messaging Framework revision with its report and a right-hand Revisions/Downstream column', async () => {
+  it('clears comments while a different historical revision is still loading', async () => {
     useFrameworkRevision();
+    const select = vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'select');
+    await render('/documents/foundation-message/living');
+    store.getRevision.mockReturnValue(NEVER);
+    await TestBed.inject(Router).navigateByUrl('/documents/foundation-message/living?revision=' + OLDER.id);
+    await settle();
+    expect(query('mktg-comments-panel')).toBeNull();
+    expect(select).toHaveBeenLastCalledWith(null);
+  });
+
+  it('renders the framework with its report and revision-scoped Comments sidebar', async () => {
+    useFrameworkRevision();
+    const selectComments = vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'select');
 
     await render('/documents/foundation-message/living');
 
@@ -1391,6 +1406,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
     expectContentColumn('mktg-framework-view');
     expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).not.toContain('@[740px]:col-span-2');
+    expect(query('mktg-comments-panel')).not.toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.parentElement?.className).toContain('@[800px]:grid-cols');
+    expect(selectComments).toHaveBeenLastCalledWith({ projectUid: PROJECT.uid, agentKey: 'foundation-message', documentId: 'living', revisionId: LATEST.id });
 
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-framework-view-tab-sources"]')?.click();
     await settle();
@@ -1884,6 +1903,7 @@ describe('MktgDocumentViewComponent', () => {
     expectContentColumn('brand-kit-web-view');
     expect(query('brand-kit-web-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('mktg-document-view-brand-kit')?.parentElement?.parentElement?.className).toContain('@[800px]:grid-cols');
     expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
     // Only a framework's print reads the project's kit: the kit is its own brand.
     expect(resolveBrandKit).not.toHaveBeenCalled();

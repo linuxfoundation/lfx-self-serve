@@ -33,6 +33,7 @@ export function provideMktgCommentsStub(overrides: Partial<MktgDocumentCommentsS
     useValue: {
       threads: signal<MktgDocumentComment[]>([]),
       selectedScope: signal<MktgDocumentCommentScope | null>(null),
+      draftScopeKey: signal(''),
       labelContent: signal<unknown>(null),
       setLabelContent: () => undefined,
       loaded: signal(false),
