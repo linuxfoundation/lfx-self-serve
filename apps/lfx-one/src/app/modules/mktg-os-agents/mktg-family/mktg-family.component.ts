@@ -26,6 +26,7 @@ import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
@@ -38,6 +39,7 @@ import { TooltipModule } from 'primeng/tooltip';
   selector: 'lfx-mktg-family',
   imports: [
     TooltipModule,
+    TooltipHostFocusDirective,
     DatePipe,
     RouterLink,
     ButtonComponent,

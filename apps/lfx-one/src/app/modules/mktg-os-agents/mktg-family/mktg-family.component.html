@@ -13,8 +13,9 @@
             <span
               role="note"
               [pTooltip]="rebuildBlockedReason()"
+              lfxTooltipHostFocus
               tooltipPosition="bottom"
-              tooltipEvent="both"
+              tooltipEvent="hover"
               [attr.aria-label]="rebuildBlockedReason() || null"
               [attr.tabindex]="rebuildBlockedReason() ? 0 : null">
               <lfx-button
@@ -32,8 +33,9 @@
                   role="note"
                   data-testid="mktg-family-run-blocked"
                   [pTooltip]="header.blockedReason"
+                  lfxTooltipHostFocus
                   tooltipPosition="bottom"
-                  tooltipEvent="both"
+                  tooltipEvent="hover"
                   [attr.aria-label]="header.blockedReason"
                   tabindex="0">
                   <lfx-button [label]="header.label" icon="fa-light fa-play" [ariaLabel]="headerAriaLabel()" [disabled]="true" data-testid="mktg-family-run" />
@@ -127,8 +129,9 @@
                             class="relative z-10 inline-block"
                             role="note"
                             [pTooltip]="reason"
+                            lfxTooltipHostFocus
                             tooltipPosition="bottom"
-                            tooltipEvent="both"
+                            tooltipEvent="hover"
                             [attr.aria-label]="reason"
                             tabindex="0">
                             <lfx-button

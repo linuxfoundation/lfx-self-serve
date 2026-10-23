@@ -102,7 +102,8 @@ A 403 resolves access, not document state: readers still see a disabled lead hea
 **You need write access to this project to run its agents**, but no private rows. The service
 tracks access denial separately from generic read errors. Loading status remains mounted.
 Accessible names include the next asset or the disabled reason; focusable tooltip notes
-announce the same reason on keyboard focus and hover.
+announce the same reason on keyboard focus and hover. `lfxTooltipHostFocus` keeps focus
+activation on the wrapper rather than PrimeNG's disabled descendant component.
 
 All enabled header and row Run actions are real anchors. Native Cmd/Ctrl-click opens a new
 tab without navigating the original family. Replacement query params preserve the selected
