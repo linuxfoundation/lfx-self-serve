@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
+import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1024,7 +1026,7 @@ describe('VotesTableComponent — row More menu', () => {
     { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
-    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Send summary', 'Clone'] },
   ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
@@ -1439,5 +1441,120 @@ describe('VotesTableComponent — Extend deadline', () => {
       expect.anything(),
       expect.objectContaining({ data: expect.objectContaining({ currentEndTime: '2026-12-01T23:59:00.000Z' }) })
     );
+  });
+});
+
+// #3662 (GH-4192 review: PRRT @dealako, PRRT @lfx-one — the menu-gating and confirm→send flow had no
+// component coverage at all).
+describe('VotesTableComponent — Send summary (#3662)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let sendVoteSummary: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let capturedConfirmation: Confirmation | null;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('ended-reader', { status: PollStatus.ENDED, writer: false }),
+  ];
+  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+  async function sendSummaryItem(uid: string) {
+    const button = moreButton(uid);
+    if (!button) return undefined;
+    button.click();
+    await settle();
+    return table['rowActionMenuItems']().find((item) => item.label === 'Send summary');
+  }
+
+  beforeEach(async () => {
+    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+    messageAdd = vi.fn();
+    capturedConfirmation = null;
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { sendVoteSummary, isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    })
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: vi.fn() } }] },
+      })
+      .compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+
+    // ConfirmationService is a component-level provider here (see the "deliberately not here"
+    // comment on VotesTableComponent) — fetch it from the component's own injector, not the root.
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+      capturedConfirmation = confirmation;
+      return confirmationService;
+    });
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('shows Send summary only for a writer on an ended vote', async () => {
+    await settle();
+    expect(await sendSummaryItem('ended')).toBeDefined();
+    expect(await sendSummaryItem('active')).toBeUndefined();
+    expect(await sendSummaryItem('ended-reader')).toBeUndefined();
+  });
+
+  it('asks for confirmation, then sends and shows a success toast', async () => {
+    await settle();
+    const item = await sendSummaryItem('ended');
+    item!.command!({});
+
+    expect(capturedConfirmation?.header).toBe('Send summary');
+    expect(sendVoteSummary).not.toHaveBeenCalled();
+
+    capturedConfirmation?.accept?.();
+
+    expect(sendVoteSummary).toHaveBeenCalledWith('ended');
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
+  });
+
+  it('shows a warn toast (not an error) when some sends fail', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1 }));
+    await settle();
+    const item = await sendSummaryItem('ended');
+    item!.command!({});
+    capturedConfirmation?.accept?.();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: 'Summary sent to 2 voter(s); 1 failed.' }));
+  });
+
+  it('maps a 409 VOTE_SUMMARY_NOT_ENDED error to a specific message', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_SUMMARY_NOT_ENDED } })));
+    await settle();
+    const item = await sendSummaryItem('ended');
+    item!.command!({});
+    capturedConfirmation?.accept?.();
+
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' })
+    );
+  });
+
+  it('falls back to a generic error message for any other failure', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    await settle();
+    const item = await sendSummaryItem('ended');
+    item!.command!({});
+    capturedConfirmation?.accept?.();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "We couldn't send the summary. Please try again." }));
   });
 });

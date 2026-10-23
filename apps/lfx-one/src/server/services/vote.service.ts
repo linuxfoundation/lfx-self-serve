@@ -49,7 +49,7 @@ import {
   sortCommentResponsesByRecency,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
+import { VOTE_SUMMARY_EMAIL_CONCURRENCY, VOTE_SUMMARY_EMAIL_SEND_BUDGET_MS } from '../constants';
 
 import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
@@ -810,11 +810,17 @@ export class VoteService {
 
     let sentCount = 0;
     let failedCount = 0;
-    const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
-      this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
+    const outcomes = await settleInBatches(
+      uniqueRecipients,
+      VOTE_SUMMARY_EMAIL_CONCURRENCY,
+      (recipient) => this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered }),
+      { deadlineAt: Date.now() + VOTE_SUMMARY_EMAIL_SEND_BUDGET_MS }
     );
     outcomes.forEach((outcome, index) => {
-      if (outcome.status === 'fulfilled') {
+      // `email_id` absent on a fulfilled reply means the email service accepted but did not actually
+      // send (disabled, or the recipient was filtered) — that voter got nothing, so it counts as a
+      // failure, not a send (per @greptile-apps, @copilot-pull-request-reviewer).
+      if (outcome.status === 'fulfilled' && outcome.value.email_id) {
         sentCount += 1;
         return;
       }
@@ -822,7 +828,7 @@ export class VoteService {
       logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
         vote_uid: voteUid,
         recipient_uid: uniqueRecipients[index].uid,
-        err: outcome.reason,
+        err: outcome.status === 'rejected' ? outcome.reason : 'Email service accepted the email without sending it',
       });
     });
 
@@ -965,10 +971,16 @@ export class VoteService {
     const questions = results.poll_results.map((pollResult) => {
       const choiceTextById = new Map(pollResult.question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
 
-      if (pollResult.generic_choice_votes.length > 0) {
+      // Upstream serializes both tally arrays with `omitempty` (gen/http/vote/server/types.go) — a
+      // ranked-choice question can omit `generic_choice_votes` entirely, and vice versa — so default
+      // both before reading `.length`/`.reduce`, matching the shared results builders in vote.utils.ts.
+      const genericChoiceVotes = pollResult.generic_choice_votes ?? [];
+      const rankedChoiceVotes = pollResult.ranked_choice_votes ?? [];
+
+      if (genericChoiceVotes.length > 0) {
         return {
           prompt: pollResult.question.prompt,
-          choices: pollResult.generic_choice_votes.map((choice) => ({
+          choices: genericChoiceVotes.map((choice) => ({
             text: choiceTextById.get(choice.choice_id) ?? choice.choice_id,
             vote_count: choice.vote_count,
             percentage: `${Math.round(computeResultPercentage(choice.percentage, choice.vote_count, results.num_votes_cast || 0))}%`,
@@ -978,13 +990,10 @@ export class VoteService {
 
       // Ranked-choice question: no plurality tally exists, so first-choice (rank 1) counts stand
       // in as the closest equivalent to a vote count in a plain-text summary.
-      const totalFirstChoice = pollResult.ranked_choice_votes.reduce(
-        (sum, choice) => sum + (choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0),
-        0
-      );
+      const totalFirstChoice = rankedChoiceVotes.reduce((sum, choice) => sum + (choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0), 0);
       return {
         prompt: pollResult.question.prompt,
-        choices: pollResult.ranked_choice_votes.map((choice) => {
+        choices: rankedChoiceVotes.map((choice) => {
           const firstChoiceCount = choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0;
           return {
             text: `${choiceTextById.get(choice.choice_id) ?? choice.choice_id} (first-choice votes)`,

@@ -806,10 +806,10 @@ export interface PollResultQuestion {
 export interface PollQuestionResult {
   /** Question definition */
   question: PollResultQuestion;
-  /** Generic/plurality vote counts per choice */
-  generic_choice_votes: VoteResultChoiceCount[];
-  /** Ranked-choice vote results per choice */
-  ranked_choice_votes: RankedChoiceVoteResult[];
+  /** Generic/plurality vote counts per choice — upstream omits this with `omitempty` for a ranked-choice question */
+  generic_choice_votes?: VoteResultChoiceCount[];
+  /** Ranked-choice vote results per choice — upstream omits this with `omitempty` for a generic-choice question */
+  ranked_choice_votes?: RankedChoiceVoteResult[];
   /** Winner information for ranked-choice voting */
   ranked_choice_winner_info?: RankedChoiceWinnerInfo;
   /** IRV round-by-round elimination summary */

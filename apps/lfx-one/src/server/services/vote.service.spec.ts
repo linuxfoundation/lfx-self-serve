@@ -157,7 +157,7 @@ describe('VoteService', () => {
     proxyRequestWithResponse.mockResolvedValue({ data: voteFixture, headers: {} });
     assertVoteWrite.mockResolvedValue(undefined);
     addAccessToResources.mockImplementation(async (_req: unknown, resources: unknown[]) => resources);
-    sendEmail.mockResolvedValue({ success: true });
+    sendEmail.mockResolvedValue({ email_id: 'email-sent' });
     service = new VoteService();
   });
 
@@ -2576,7 +2576,24 @@ describe('VoteService', () => {
     });
 
     it('counts a partial send failure without throwing, and logs a warning for the failed recipient', async () => {
-      sendEmail.mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error('smtp down'));
+      sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockRejectedValueOnce(new Error('smtp down'));
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 1, failed_count: 1 });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'send_vote_summary',
+        'Failed to send the summary email to one recipient',
+        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2' })
+      );
+    });
+
+    // #4192 (PRRT @greptile-apps, PRRT @copilot-pull-request-reviewer): emailService.sendEmail
+    // resolves without throwing when sending is disabled or the recipient is filtered — it only omits
+    // `email_id`. A recipient whose send was accepted-but-not-sent must count as failed, not sent.
+    it('counts a fulfilled-but-unsent reply (no email_id) as a failure, not a send', async () => {
+      sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockResolvedValueOnce({});
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
