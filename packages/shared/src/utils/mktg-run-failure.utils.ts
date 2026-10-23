@@ -10,13 +10,6 @@ import {
 } from '../constants/mktg-run.constants';
 import type { MktgRunFailure, MktgSettledSessionError } from '../interfaces/mktg-run.interface';
 import { extractMktgAgentTexts, isMktgToolTaskEvent } from './mktg-session-event.utils';
-import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
-import type { Member360FailureReason } from '../interfaces/member-360.interface';
-
-/** Host-classified codes only, never arbitrary metadata strings or agent prose. */
-export function isMktgRunFailureReason(value: unknown): value is Member360FailureReason {
-  return typeof value === 'string' && Object.hasOwn(MEMBER_360_FAILURE_MESSAGES, value);
-}
 
 /** Only explicit new work or agent-authored text proves recovery; passive metadata never does.
  * Dated unrecovered errors must settle. Undated errors are returned as-is (Slides policy);
