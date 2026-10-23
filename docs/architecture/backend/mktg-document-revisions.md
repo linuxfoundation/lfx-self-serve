@@ -249,7 +249,10 @@ rejects a new turn and requires a new session rather than allowing an old ACK to
 Public progress is an explicit projection: opaque run id, project/agent/document,
 Started, state, optional filtered public activity and plain-text failure text (agent reply or server-authored deadline /
 storage-exhaustion reason); no session capability, starter identity or private completion context is exposed.
-Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning.
+Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning,
+and is projected only when the effective reader is the stored original creator. Other project writers
+see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
+redactor to activity labels/details before returning them, including to the creator.
 
 Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
 LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
@@ -265,13 +268,16 @@ LinkedIn's immutable private start also retains validated link answers, source w
 whether profile initialization was allowed at Generate. Reconciliation initializes only the
 original creator's profile, never a visitor's; impersonation still disables initialization.
 No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
-tracked session. Member 360 maps `needs_input` to a nonterminal questions pause: its question
-text is never exposed, it has no answers endpoint, and explicit refresh/reopen rechecks the
-session. Its ready result now carries the shared exact persistence receipt as well as the
-existing `stored` flag; existing clients remain compatible.
+tracked session. Member 360 maps `needs_input` to a bounded questions pause: its question text is
+never exposed and it has no answers endpoint. Unlike answerable pauses, its original writing
+deadline keeps running. Refresh/reopen rechecks it until that deadline; after expiry it becomes
+terminal failed with the server-authored message “Member 360 needs more input than this version
+can give it; run it again.” Subsequent normal reads do not query Guild for that failed record.
+Its ready result carries the shared exact persistence receipt as well as the existing `stored`
+flag; existing clients remain compatible.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Questions pause the writing deadline until accepted answers renew
+`superseded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the

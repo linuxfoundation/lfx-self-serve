@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,13 +29,6 @@ const flows = vi.hoisted(() => ({
   active: 0,
   max: 0,
 }));
-vi.mock('@lfx-one/shared/constants', async () => ({
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
-}));
-vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
 vi.mock('./brand-kit.service', () => ({
   BrandKitService: class {
     public getResult = flows.result;
@@ -68,14 +62,18 @@ vi.mock('./linkedin-post.service', () => ({
     }
   },
 }));
-vi.mock('./member-360.service', () => ({
-  Member360Service: class {
-    public result = flows.member;
-    public constructor(...args: unknown[]) {
-      flows.attribution(...args);
-    }
-  },
-}));
+vi.mock('./member-360.service', async (original) => {
+  const actual = await original<typeof import('./member-360.service')>();
+  return {
+    Member360Service: class {
+      public static toRunResult = actual.Member360Service.toRunResult;
+      public result = flows.member;
+      public constructor(...args: unknown[]) {
+        flows.attribution(...args);
+      }
+    },
+  };
+});
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = flows.project;
@@ -190,10 +188,17 @@ describe('MktgDocumentRunService core', () => {
     const activity = [{ id: 'public-step', kind: 'checking', label: 'Checking the document', status: 'running' }];
     const result = agent === 'linkedin-post' ? flows.linkedin : flows.member;
     result.mockResolvedValue({ status: 'pending', activity });
-    expect(await reader.readProgress(req, project, agent, id)).toMatchObject({ runs: [{ documentId: id, state: 'writing', activity }] });
+    expect(await reader.readProgress(creator, project, agent, id)).toMatchObject({ runs: [{ documentId: id, state: 'writing', activity }] });
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-visitor' } } });
+    const listing = await reader.readProgress(visitor, project);
+    const document = await reader.readProgress(visitor, project, agent, id);
+    for (const snapshot of [listing, document]) {
+      expect(snapshot.runs[0]).not.toHaveProperty('activity');
+      expect(JSON.stringify(snapshot)).not.toContain('public-step');
+    }
     expect(flows.attribution).toHaveBeenCalledWith({ creatorSubject: 'synthetic-creator' }, ...(agent === 'linkedin-post' ? [true] : []));
     if (agent === 'linkedin-post') {
-      expect(flows.linkedin).toHaveBeenCalledWith(req, 'synthetic-creator', session, project, { share_link: 'https://post.example/' }, 32);
+      expect(flows.linkedin).toHaveBeenCalledWith(creator, 'synthetic-creator', session, project, { share_link: 'https://post.example/' }, 32);
     }
     const receipt = { ...ready().persistence, document_location: { agent_key: agent, document_id: id, revision_id: location().revision_id } };
     result.mockResolvedValue({ status: 'ready', stored: true, persistence: receipt });
@@ -220,6 +225,20 @@ describe('MktgDocumentRunService core', () => {
     flows.member.mockResolvedValue({ status: 'pending' });
     expect((await new MktgDocumentRunService().readProgress(req, project, 'member-360')).runs.every((run) => run.state === 'questions')).toBe(true);
     expect(flows.member).toHaveBeenCalledTimes(4);
+  });
+
+  it('bounds an unsupported Member questions pause by the original writing deadline and stops Guild reads after failure', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
+    const expired = await service.readProgress(req, project);
+    expect(expired.runs[0]).toMatchObject({ state: 'failed', failureText: 'Member 360 needs more input than this version can give it; run it again.' });
+    expect(JSON.stringify(expired)).not.toContain('private question text');
+    const reads = flows.member.mock.calls.length;
+    await new MktgDocumentRunService().readProgress(req, project);
+    await new MktgDocumentRunService().readProgress(req, project);
+    expect(flows.member).toHaveBeenCalledTimes(reads);
   });
 
   it('renews LinkedIn after answers ACK, and ignores the already-answered questions block', async () => {

@@ -39,6 +39,13 @@ Both `generate` and `result` enforce the selected project's writer grant. Result
 
 The frontend retains a TTL-bounded pending capability using the shared one-off vocabulary (`MktgPendingDocumentRun`, `documentId`, `oneOffDocument`, `MKTG_PENDING_DOCUMENT_STORAGE_PREFIX`). It is isolated by effective subject and project, contains no profile answers, resumes an unfinished result poll after navigation/reload, and is removed when storage succeeds. Local storage being disabled prevents reload recovery, not the current run. The UI waits for a persistence receipt before announcing completion and linking to Documents.
 
+The [durable started-run record](./mktg-document-revisions.md#durable-started-runs) also permits
+writer-entitled Documents reconciliation without a creator owner token. It completes the same
+session/document and initializes a first-run profile only for the ORIGINAL creator recorded at
+Generate, never the visiting writer. Initialization is disabled if Generate began during
+impersonation, and the existing read-time impersonation restriction remains. Activity on this
+project-readable progress surface is creator-only; other writers receive progress without the feed.
+
 ## Source ingestion
 
 - Pasted text: trimmed, nonempty UTF-8, at most 1 MiB.
@@ -53,6 +60,12 @@ The result shows three labeled full-text options, hashtags, tagging suggestions,
 ## Share-link presentation
 
 `Link to share` is optional LFX-side data, prefilled from the URL source until the user edits it, and initially empty for pasted text or files. The client sends it as `answers.share_link`; it is validated as a bounded HTTPS URL without credentials and is not added to the agent form. The generation response carries the answer into the additive pending-run `answers` field; creator-bound result polls carry it back for persistence alongside the structured option sidecar. Optional `sourceWords` accompanies that poll for the source summary; its label/fetched state are taken from the validated envelope's provenance.
+
+For browser-independent completion, Generate captures the normalized link answers and source word
+count in that private started-run record, alongside initialization permission and the already-recorded
+opaque creator subject. It stores no profile fields there. Documents reconciliation uses those
+captured values instead of relying on a creator-bound result poll to return them; the public progress
+projection exposes none of that private context. See [Durable started runs](./mktg-document-revisions.md#durable-started-runs).
 
 A LinkedIn revision read adds a validated `linkedinPost` projection (options, notes, LFX answers and optional source summary) for its read-only view. No raw personal profile fields are exposed. Both the intake result and stored document use the same `LinkedinPostOptionsComponent`: it substitutes every literal `[LINK]` only for display/copy, shows a dashed `add your link` chip when absent, and keeps the literal placeholder in copied text with the design's quiet reminder. Raw option text, the original agent envelope and the existing privacy-normalized persisted Markdown/content hash are not modified by link substitution.
 

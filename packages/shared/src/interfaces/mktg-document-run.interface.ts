@@ -38,7 +38,7 @@ export interface MktgDocumentRunProgress {
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
   state: MktgDocumentRunState;
-  /** Ephemeral, server-filtered public steps; never raw events or reasoning. */
+  /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
   failureText?: string;

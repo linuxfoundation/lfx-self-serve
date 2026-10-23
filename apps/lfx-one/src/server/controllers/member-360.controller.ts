@@ -64,15 +64,7 @@ export class Member360Controller {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
       }
       const response = await this.service.result(req, sessionId, project);
-      await this.runs.recordResultBestEffort(
-        req,
-        sessionId,
-        {
-          status: response.status === 'needs_input' ? 'questions' : response.status,
-          persistence: response.persistence,
-        },
-        project
-      );
+      await this.runs.recordResultBestEffort(req, sessionId, Member360Service.toRunResult(response), project);
       logger.success(req, operation, start, { status: response.status });
       res.json(response);
     } catch (error) {

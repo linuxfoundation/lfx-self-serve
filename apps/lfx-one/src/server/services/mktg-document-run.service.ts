@@ -25,6 +25,9 @@ import {
   BOILERPLATES_INTAKE,
   FAQ_INTAKE,
   ICP_INTAKE,
+  LINKEDIN_POST_INTAKE,
+  MEMBER_360_API,
+  LINKEDIN_SOURCE_MAX_WORDS,
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentAgentKey,
@@ -52,16 +55,13 @@ import {
   isMktgRunAttemptId,
   mktgRunIdFromKey,
   mktgRunRenewAt,
+  normalizeLinkedinShareAnswers,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
-import { LINKEDIN_POST_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
-import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils/linkedin-post-presentation.utils';
-import { MEMBER_360_API } from '@lfx-one/shared/constants/member-360.constants';
-import { LINKEDIN_SOURCE_MAX_WORDS } from '@lfx-one/shared/constants/linkedin-post.constants';
 import { LinkedinPostService } from './linkedin-post.service';
 import { Member360Service } from './member-360.service';
 import { BrandKitService } from './brand-kit.service';
@@ -117,8 +117,8 @@ export class MktgDocumentRunService {
 
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
   public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
-    const type = this.catalogDocumentType(agentId);
-    if (type?.kind !== 'run') throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));
+    if (!type) throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
     return this.start(req, project, type.agentKey, sessionId, 0, 'initial', context ?? {});
   }
 
@@ -292,7 +292,7 @@ export class MktgDocumentRunService {
               const result = await this.result(req, record);
               record = await this.advanceResult(req, stored, result);
               fullReply = result.failureText ?? result.reply;
-              activity = result.activity;
+              activity = record.creatorSubject && getEffectiveSub(req) === record.creatorSubject ? result.activity : undefined;
             }
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
@@ -510,8 +510,21 @@ export class MktgDocumentRunService {
     if (result.status === 'failed' || result.status === 'refused') {
       return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, run.persistRetries, result.failureText ?? result.reply ?? '');
     }
+    const unsupportedPause = !findMktgRunIntake(run.agentKey, true)?.endpoints.answers && (run.state === 'questions' || result.status === 'questions');
+    if (unsupportedPause && Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs) {
+      return this.mark(
+        req,
+        stored,
+        'failed',
+        run.retryAt,
+        undefined,
+        run.answeredQuestionsId,
+        0,
+        result.failureText ?? run.failureText ?? 'The agent needs more input than this version can give it; run it again.'
+      );
+    }
     if (result.status === 'questions' && (!result.questionsId || result.questionsId !== run.answeredQuestionsId)) {
-      return run.state === 'questions' ? run : this.mark(req, stored, 'questions');
+      return run.state === 'questions' ? run : this.mark(req, stored, 'questions', run.retryAt, undefined, run.answeredQuestionsId, 0, result.failureText);
     }
     if (run.state === 'questions' || (run.state === 'storing' && !staleReceipt)) {
       return run;
@@ -548,12 +561,7 @@ export class MktgDocumentRunService {
         );
       case `${MEMBER_360_API}/result`: {
         const result = await new Member360Service(attribution).result(req, record.sessionId, record.project);
-        return {
-          status: result.status === 'needs_input' ? 'questions' : result.status,
-          activity: result.activity,
-          persistence: result.persistence,
-          failureText: result.message,
-        };
+        return Member360Service.toRunResult(result);
       }
       default:
         throw ServiceValidationError.forField('agentKey', 'No registered result endpoint for this run.');
@@ -794,7 +802,7 @@ export class MktgDocumentRunService {
   }
 
   private catalogDocumentType(agentId: string): MktgDocumentType | undefined {
-    return MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey, true));
+    return MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'living' && type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey));
   }
 
   private hash(value: string): string {

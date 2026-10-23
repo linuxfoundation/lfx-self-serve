@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,17 +11,21 @@ import { Member360Controller } from './member-360.controller';
 const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn() }));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
-    resolveProject = mocks.preflight;
-    startForOneOff = mocks.track;
-    recordResultBestEffort = mocks.record;
+    public resolveProject = mocks.preflight;
+    public startForOneOff = mocks.track;
+    public recordResultBestEffort = mocks.record;
   },
 }));
-vi.mock('../services/member-360.service', () => ({
-  Member360Service: class {
-    start = mocks.start;
-    result = mocks.result;
-  },
-}));
+vi.mock('../services/member-360.service', async (original) => {
+  const actual = await original<typeof import('../services/member-360.service')>();
+  return {
+    Member360Service: class {
+      public static toRunResult = actual.Member360Service.toRunResult;
+      public start = mocks.start;
+      public result = mocks.result;
+    },
+  };
+});
 vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: () => 'synthetic-subject' }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: () => 0, success: vi.fn() } }));
 
