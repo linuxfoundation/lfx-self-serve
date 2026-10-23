@@ -131,6 +131,25 @@ The existing `latestRevision` response field carries that approved identity, or
 null when none is approved (no stale badge). Selecting older approved content can
 also mark a deck out of date; revision number alone never determines freshness.
 
+### Sign-off checks (read-only)
+
+`GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks?project=<uid>`
+uses the same canonical project-writer boundary as document reads. It returns
+`{ checks: [{ id, label, status, detail }] }` with five findings: verbatim tagline,
+goal/audience coverage, avoid-list phrases, word limits and unanswered FAQ.
+Stored agent findings add a sixth row when available. No role decision or write
+occurs; this endpoint does not activate Send or decide authorization policy.
+
+Checks use the selected stored JSON (kit chapters come from its sidecar), not
+Markdown rendering or browser-supplied content. Dependent checks read only the
+approved-current framework through the existing store seam; failed reads remain
+errors, while confirmed absence produces explained `n/a` findings. A missing or
+empty applicable goal/word-limit/FAQ structure does not pass by an empty loop.
+Counts are recomputed, not trusted from agent sidecar counts. Avoid-list scanning
+uses escaped, Unicode-aware phrase boundaries on explicit prose fields, excluding
+definitions, SVG bytes, URLs, input records and source labels. No approved-current
+selection, immutable bytes, comment thread or redraft is mutated by this read.
+
 ### Family exports
 
 Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
