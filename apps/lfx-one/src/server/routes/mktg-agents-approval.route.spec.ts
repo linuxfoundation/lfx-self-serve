@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
 
 const approve = vi.hoisted(() => vi.fn());
+const comments = vi.hoisted(() => ({ add: vi.fn(), read: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/foundation-message.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
@@ -16,6 +17,8 @@ vi.mock('../controllers/member-360-workbook.controller', () => ({ Member360Workb
 vi.mock('../controllers/mktg-documents.controller', () => ({
   MktgDocumentsController: class {
     public approveRevision = approve;
+    public addComment = comments.add;
+    public listComments = comments.read;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn() } }));
@@ -25,6 +28,38 @@ import { blockDuringImpersonation } from '../middleware/impersonation-readonly.m
 import router from './mktg-agents.route';
 
 describe('Marketing OS approval route', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each([true, false])('guards comment writes without blocking normal writers (impersonating=%s)', (impersonationActive) => {
+    const route = router.stack.find(
+      (entry) => entry.route?.path === '/documents/:agentKey/:documentId/comments' && entry.route?.stack[0]?.method === 'post'
+    )?.route;
+    expect(route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const req = { path: '/documents/foundation-message/living/comments', method: 'POST', impersonationActive } as Request;
+    const res = {} as Response;
+    const next = vi.fn();
+    route?.stack[0].handle(req, res, next);
+    if (impersonationActive) {
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+      expect(comments.add).not.toHaveBeenCalled();
+    } else {
+      expect(next).toHaveBeenCalledWith();
+      route?.stack[1].handle(req, res, next);
+      expect(comments.add).toHaveBeenCalledWith(req, res, next);
+    }
+  });
+
+  it('keeps impersonated comment reads on the writer-gated controller', () => {
+    const route = router.stack.find(
+      (entry) => entry.route?.path === '/documents/:agentKey/:documentId/comments' && entry.route?.stack[0]?.method === 'get'
+    )?.route;
+    expect(route?.stack).toHaveLength(1);
+    const req = { path: '/documents/foundation-message/living/comments', method: 'GET', impersonationActive: true } as Request;
+    const res = {} as Response;
+    const next = vi.fn();
+    route?.stack[0].handle(req, res, next);
+    expect(comments.read).toHaveBeenCalledWith(req, res, next);
+  });
   it.each(['start', 'advance', 'result'])('guards rebuild %s before invoking its controller', (method) => {
     const layer = router.stack.find((entry) => entry.route?.path === `/rebuild/${method}`);
     expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
