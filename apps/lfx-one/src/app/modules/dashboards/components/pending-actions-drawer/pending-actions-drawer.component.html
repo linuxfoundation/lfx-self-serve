@@ -30,18 +30,21 @@
     <div class="flex flex-col" data-testid="pending-actions-drawer-list">
       @for (group of sectionedRows(); track group.section) {
         <section role="group" [attr.aria-label]="group.label" [attr.data-testid]="'pending-actions-drawer-section-' + group.section">
-          <!-- Section header: label + item-count badge + inline gray divider, matching the dashboard's section-header idiom. -->
-          <div class="flex items-center gap-3 px-4 pt-4 pb-2">
-            <h2 class="shrink-0 text-sm font-medium text-gray-900" [attr.data-testid]="'pending-actions-drawer-section-title-' + group.section">
-              {{ group.label }}
-            </h2>
-            <lfx-badge
-              [value]="group.rows.length"
-              severity="secondary"
-              size="small"
-              [attr.data-testid]="'pending-actions-drawer-section-count-' + group.section" />
-            <div class="flex-1 border-t border-gray-200 self-center" aria-hidden="true"></div>
-          </div>
+          <!-- Section header: label + item-count badge + inline gray divider, matching the dashboard's section-header idiom.
+               Skipped when there is a single section — it would only repeat the drawer title and count. -->
+          @if (sectionedRows().length > 1) {
+            <div class="flex items-center gap-3 px-4 pt-4 pb-2">
+              <h2 class="shrink-0 text-sm font-medium text-gray-900" [attr.data-testid]="'pending-actions-drawer-section-title-' + group.section">
+                {{ group.label }}
+              </h2>
+              <lfx-badge
+                [value]="group.rows.length"
+                severity="secondary"
+                size="small"
+                [attr.data-testid]="'pending-actions-drawer-section-count-' + group.section" />
+              <div class="flex-1 border-t border-gray-200 self-center" aria-hidden="true"></div>
+            </div>
+          }
           <div class="divide-y divide-gray-200">
             @for (item of group.rows; track item.rowKey) {
               <div
@@ -74,16 +77,24 @@
                         </span>
                       </div>
                     } @else if (item.buttonLink) {
-                      <a
-                        [href]="item.buttonLink"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="group text-sm font-medium text-gray-900 hover:text-blue-600 flex items-center gap-1.5 min-w-0"
-                        [attr.title]="item.text"
-                        data-testid="pending-actions-drawer-title">
-                        <span class="truncate group-hover:underline">{{ item.text }}</span>
-                        <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
-                      </a>
+                      <div class="flex flex-col gap-0.5 min-w-0">
+                        <a
+                          [href]="item.buttonLink"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="group text-sm font-medium text-gray-900 hover:text-blue-600 flex items-center gap-1.5 min-w-0"
+                          [attr.title]="item.text"
+                          data-testid="pending-actions-drawer-title">
+                          <span class="truncate group-hover:underline">{{ item.text }}</span>
+                          <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
+                        </a>
+                        @if (item.type === 'RSVP' && item.startTime) {
+                          <!-- Formatted in the browser so the time is the viewer's local time, like the dashboard meeting card. -->
+                          <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-meeting-date">{{
+                            item.startTime | meetingTime: null : 'compact'
+                          }}</span>
+                        }
+                      </div>
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 min-w-0">
                         <span class="text-sm font-medium text-gray-900 truncate block" [attr.title]="item.text" data-testid="pending-actions-drawer-title">

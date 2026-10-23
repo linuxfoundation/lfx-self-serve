@@ -162,7 +162,8 @@ describe('FilterPillsComponent', () => {
     expect(group?.classList).toContain('bg-gray-100');
     expect(pill('all').className).toContain('bg-white');
     expect(pill('all').className).not.toContain('bg-blue-500');
-    expect(pill('kubecon').className).toContain('text-gray-600');
+    expect(pill('kubecon').className).toContain('text-gray-500');
+    expect(pill('all').className).toContain('text-[12px]');
     expect(pill('all').getAttribute('aria-pressed')).toBe('true');
   });
 

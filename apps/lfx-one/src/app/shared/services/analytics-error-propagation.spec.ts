@@ -45,19 +45,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-group-attendance',
       // Its empty state claims the foundation has no matching groups, so a zero-filled response
       // reads as measured absence.
-      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', groupType: 'all', range: 'YTD', page: 1, size: 25 }),
     },
     {
       name: 'getEngagementAttendanceTrend',
       url: '/api/analytics/engagement-attendance-trend',
       // No months renders "no meeting attendance in the last twelve months", which a swallowed failure would fake.
-      call: () => service.getEngagementAttendanceTrend({ foundationSlug: 'aaif', projectSlug: null }),
+      call: () => service.getEngagementAttendanceTrend({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementOrgParticipation',
       url: '/api/analytics/engagement-org-participation',
       // An empty table renders "no organizations", which would state a failed read as measured fact.
-      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif', projectSlug: null }),
+      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementNonMemberParticipation',
@@ -71,7 +71,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would
       // read as a foundation where nobody is in that group.
-      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif', projectSlug: null }),
+      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEventsRegistrationForecast',

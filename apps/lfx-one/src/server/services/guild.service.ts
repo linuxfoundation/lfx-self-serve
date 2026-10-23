@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
-import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
+import { GuildSessionEvent, MktgChatMessage, MktgRunOutcomeSource, MktgFailedRunOutcome } from '@lfx-one/shared/interfaces';
+import { mktgRunFailureFromPayloads } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -48,6 +49,10 @@ const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
  * Marketing OS workspace, so only the key is required.
  */
 export class GuildService {
+  // Share the controller's event read with the outcome adapter, only for this
+  // request. Never cache sessions across users or polls.
+  private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
@@ -254,7 +259,29 @@ export class GuildService {
     if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
       payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
     }
+    GuildService.resultPayloads.set(req, { sessionId, payloads });
     return payloads;
+  }
+
+  /** One best-effort outcome step, after authorization and before result logging/persistence. */
+  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(req: Request, sessionId: string, result: T): Promise<T | MktgFailedRunOutcome> {
+    if (result.status === 'ready' || result.status === 'refused' || result.status === 'failed') return result;
+    if (result.status !== 'pending' && result.status !== 'questions') return result;
+    const endpoint = (req.originalUrl ?? req.path ?? '').split('?')[0];
+    if (!Object.values(MKTG_AGENT_INTAKES).some((intake) => intake.endpoints.result === endpoint || intake.endpoints.result === `/api/mktg-agents${endpoint}`))
+      return result;
+    try {
+      const id = sessionId.trim();
+      const recorded = GuildService.resultPayloads.get(req);
+      const payloads = recorded?.sessionId === id ? recorded.payloads : await this.getRawEventPayloads(req, id);
+      const failure = mktgRunFailureFromPayloads(payloads);
+      // No metadata probe: the session status vocabulary is not independently verified.
+      // An aged error with only teardown is evidence; recovering runs incur no extra read.
+      return failure ? { ...result, status: 'failed', failure } : result;
+    } catch (error) {
+      logger.warning(req, 'mktg_run_failure_lookup', 'Could not check the Guild outcome; keeping the current result', { err: error });
+      return result;
+    }
   }
 
   /**
@@ -413,6 +440,11 @@ function toEpoch(value: string): number {
  * Guild wraps the original trigger input in JSON (sometimes inside a ```json
  * markdown block, sometimes double-serialized). Ported from guild_embed's
  * history route. Falls back to the raw string when nothing parses.
+ *
+ * The content is user-authored and unbounded, so the ```json block is located
+ * with `indexOf` (linear in the subject length) rather than a regex, whose
+ * backtracking was cubic on an unclosed fence (CWE-1333,
+ * linuxfoundation/lfx-self-serve-ops#53).
  */
 function extractTriggerMessageText(data: string): string {
   if (!data) {
@@ -442,12 +474,22 @@ function extractTriggerMessageText(data: string): string {
     return null;
   };
 
-  // 1. JSON inside a markdown code block.
-  const jsonMatch = data.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    const fromBlock = parseInput(jsonMatch[1].trim());
-    if (fromBlock !== null) {
-      return fromBlock;
+  // 1. JSON inside a markdown code block: the first ```json fence and the next
+  // ``` after it, the same block the former lazy regex captured.
+  const fenceOpen = '```json';
+  const fenceClose = '```';
+  const open = data.indexOf(fenceOpen);
+  if (open >= 0) {
+    const blockStart = open + fenceOpen.length;
+    const close = data.indexOf(fenceClose, blockStart);
+    if (close >= 0) {
+      const block = data.slice(blockStart, close).trim();
+      if (block) {
+        const fromBlock = parseInput(block);
+        if (fromBlock !== null) {
+          return fromBlock;
+        }
+      }
     }
   }
 

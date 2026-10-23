@@ -48,6 +48,12 @@ export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
  */
 export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;
 
+/**
+ * Re-fetch interval while a votes list shows a just-opened vote still waiting on its invitation count (GH-4078).
+ * Polling stops once the index reports the count or the RECENTLY_OPENED_VOTE_TTL_MS carrier expires.
+ */
+export const VOTE_INVITATION_COUNT_REFRESH_MS = 10 * 1000;
+
 /** Reminder reads/sends reject an inactive poll with this state-conflict code. */
 export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
