@@ -243,6 +243,108 @@ describe('MktgAgentRunComponent', () => {
       logoCount: 0,
     };
 
+    it('consumes accepted entry mode without cancelling the run, then reloads its questions without a second Generate', async () => {
+      await configure('browser', agentId, { mode: 'new', project: PROJECT_1.slug });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+      progress.next({ type: 'submitted' });
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({
+          queryParams: { mode: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        })
+      );
+      queryParams.next(convertToParamMap({ project: PROJECT_1.slug }));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      expect(component['phase']()).toBe('running');
+      expect(component['freshMode']()).toBe(true);
+      expect(query('mktg-run-sources')).not.toBeNull();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId, sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        questionsId: 'e'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+      };
+      TestBed.inject(MktgRunAttemptService).save({
+        request,
+        state: 'questions',
+        attempt: pending.attempt,
+        pendingQuestions: pending,
+        updatedAt: new Date().toISOString(),
+      });
+      progress.next({ type: 'questions', pending });
+      progress.complete();
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      fixture.destroy();
+      fixture = TestBed.createComponent(MktgAgentRunComponent);
+      component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(component['pendingQuestions']()).toEqual(pending.questions);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(lastIntake).toHaveBeenCalledTimes(1);
+      expect(query('mktg-run-start')).toBeNull();
+    });
+
+    it('restores an accepted writing attempt after the consumed URL reloads, without re-submitting', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      TestBed.inject(MktgRunAttemptService).save({
+        request,
+        state: 'writing',
+        requiresReattachment: true,
+        attempt: { session: { agentId, sessionId: 'synthetic-writing', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        updatedAt: new Date().toISOString(),
+      });
+      progress.next({ type: 'submitted' });
+      queryParams.next(convertToParamMap({}));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      fixture.destroy();
+      fixture = TestBed.createComponent(MktgAgentRunComponent);
+      component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(query('mktg-agent-run-submit-button')).toBeNull();
+    });
+
+    it.each(['project', 'subject'])('does not let accepted URL consumption mask a real %s change', async (change) => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      progress.next({ type: 'submitted' });
+      queryParams.next(convertToParamMap({}));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      if (change === 'project') activeContext.set(PROJECT_2);
+      else userSignal.set({ sub: 'synthetic-other-subject' } as User);
+      await fixture.whenStable();
+      expect(progress.observed).toBe(false);
+      expect(component['freshMode']()).toBe(false);
+      expect(component['intakeForm'].get('website_url')?.value).not.toBe(history.answers.website_url);
+    });
+
     it('reads durable scalars before defaults, preserves blank optionals, and does not touch the accepted attempt on open', async () => {
       await configure('browser', agentId, { mode: 'new', questions: 'unrelated-token' });
       lastIntake.mockReturnValue(of(history));
