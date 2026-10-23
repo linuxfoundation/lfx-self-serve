@@ -344,7 +344,9 @@ export class ComposerGuestsComponent {
     const rows = this.filteredGuestRows();
     const at = rows.findIndex((row) => row.guest === guest);
     const neighbour = at === -1 ? undefined : (rows[at + 1] ?? rows[at - 1]);
-    this.focusGuestRemoveButton(neighbour?.guest.uid || neighbour?.guest.tempId || null);
+    // `trackId` is exactly what the template builds the button's test id from, so the two can't drift apart.
+    const neighbourHasIdentity = !!(neighbour?.guest.uid || neighbour?.guest.tempId);
+    this.focusGuestRemoveButton(neighbour && neighbourHasIdentity ? neighbour.trackId : null);
 
     // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
     // nobody is invited yet, and picking the person again is the whole way back.
