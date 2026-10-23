@@ -25,6 +25,27 @@ describe('MktgRunAttemptService', () => {
     service = TestBed.inject(MktgRunAttemptService);
   });
 
+  it.each(['a'.repeat(64), 'b'.repeat(8), 'invalid-digest'])('validates a one-off answered digest at save and reload: %s', (digest) => {
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
+    service.save({
+      request: accepted,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+      answeredQuestionsId: digest,
+      attempt: {
+        documentId: accepted.documentId,
+        runId: 'c'.repeat(64),
+        session: { agentId: accepted.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+      },
+    });
+    const stored = JSON.parse(localStorage.getItem(localStorage.key(0) ?? '') ?? '{}');
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load(request.projectUid, accepted.agentId, accepted.documentId);
+    const expected = digest === 'invalid-digest' ? undefined : digest;
+    expect(stored.answeredQuestionsId).toBe(expected);
+    expect(restored?.answeredQuestionsId).toBe(expected);
+  });
+
   it('projects an accepted one-off into a single-use document-scoped handoff, never a fresh Generate draft', () => {
     const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, answers: { content_text: 'private-source' } };
     const run = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-capability' };

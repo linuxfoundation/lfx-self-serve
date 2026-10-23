@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinStoredProfile } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
-import { LINKEDIN_SOURCE_MAX_WORDS, MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 vi.mock('@lfx-one/shared/constants', async (original) => {
   const actual = await original<typeof import('@lfx-one/shared/constants')>();
   return {
@@ -17,7 +17,7 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
-  context: vi.fn(),
+  ownedResult: vi.fn(),
   attribution: vi.fn(),
   track: vi.fn(),
   record: vi.fn(),
@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
-    public ownedOneOffContext = mocks.context;
+    public ownedOneOffResult = mocks.ownedResult;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public resumeAfterQuestions = mocks.resume;
@@ -70,7 +70,6 @@ vi.mock('../services/project.service', () => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn() } }));
 import { LinkedinPostController } from './linkedin-post.controller';
-import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 
 function request(body: unknown, sub = 'subject-one', username = 'initial-user'): Request {
@@ -92,30 +91,26 @@ describe('LinkedIn endpoint boundaries', () => {
       if (!resolved.writer) throw Object.assign(new Error('No access'), { statusCode: 403 });
       return resolved.uid;
     });
-    mocks.context.mockResolvedValue(null);
+    mocks.ownedResult.mockReset().mockResolvedValue({ status: 'pending' });
     mocks.track.mockResolvedValue('a'.repeat(64));
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
-  it('uses captured link/source/profile policy on a minimal owned poll, matching plain document reconciliation', async () => {
+  it('delegates owned completion only after HMAC and writer checks, without applying policy in the controller', async () => {
     const body = { sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one'), project: 'project-one' };
-    const captured = { answers: { share_link: 'https://synthetic.example/original' }, sourceWords: 43, initializeProfile: false };
-    mocks.context.mockResolvedValue(captured);
     const next = vi.fn();
     const controller = new LinkedinPostController();
-    await controller.result(request(body), response(), next);
+    const req = request(body);
+    await controller.result(req, response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.context).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one');
-    expect(mocks.result).toHaveBeenLastCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', captured.answers, 43);
-    expect(mocks.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'subject-one' }, false);
-    await controller.result(request({ ...body, answers: { share_link: 'https://synthetic.example/changed' }, sourceWords: 1 }), response(), next);
-    expect(mocks.result).toHaveBeenLastCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', captured.answers, 43);
-    mocks.context.mockClear();
+    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', body);
+    expect(mocks.result).not.toHaveBeenCalled();
+    mocks.ownedResult.mockClear();
     await controller.result(request({ ...body, ownerToken: 'forged' }), response(), next);
-    expect(mocks.context).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).not.toHaveBeenCalled();
     mocks.project.mockResolvedValue({ uid: 'project-one', writer: false });
     await controller.result(request(body), response(), next);
-    expect(mocks.context).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
 
   it('binds gap answers to the owner and writer grant, validates ids, and continues the same session', async () => {
@@ -229,8 +224,8 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ownerToken: createSessionOwnerToken('subject-one', 'session-one') }));
   });
   it('logs and sends the resolved terminal outcome, never an earlier pending status', async () => {
-    const resolve = vi.spyOn(GuildService.prototype, 'resolveRunOutcome').mockResolvedValue({ status: 'failed' });
-    try {
+    mocks.ownedResult.mockResolvedValue({ status: 'failed' });
+    {
       const res = response();
       const next = vi.fn();
       await new LinkedinPostController().result(
@@ -241,26 +236,20 @@ describe('LinkedIn endpoint boundaries', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({ status: 'failed' });
       expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'linkedin_result', 0, { status: 'failed' });
-    } finally {
-      resolve.mockRestore();
     }
   });
-  it('preserves omitted answers and bounds sourceWords in words, not bytes', async () => {
+  it('passes legacy source inputs unchanged to the service boundary', async () => {
     const controller = new LinkedinPostController();
     const body = {
       project: 'project-one',
       sessionId: 'session-one',
       ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
-      sourceWords: LINKEDIN_SOURCE_MAX_WORDS,
+      sourceWords: 43,
     };
     const next = vi.fn();
     await controller.result(request(body), response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.result).toHaveBeenCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', undefined, LINKEDIN_SOURCE_MAX_WORDS);
-    mocks.result.mockClear();
-    await controller.result(request({ ...body, sourceWords: LINKEDIN_SOURCE_MAX_WORDS + 1 }), response(), next);
-    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 400 }));
-    expect(mocks.result).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one', body);
   });
 
   it('refuses another user’s token before reading events or saving profiles', async () => {
@@ -306,7 +295,7 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.saveFromInput).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0].statusCode).toBe(400);
   });
-  it('passes only validated LFX share-link answers on an owned result poll', async () => {
+  it('passes LFX share-link inputs to the owned result service for validation', async () => {
     const body = {
       project: 'project-one',
       sessionId: 'session-one',
@@ -317,11 +306,7 @@ describe('LinkedIn endpoint boundaries', () => {
     const next = vi.fn();
     await new LinkedinPostController().result(req, response(), next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.result).toHaveBeenCalledWith(req, 'subject-one', 'session-one', 'project-one', body.answers, 0);
-    mocks.result.mockClear();
-    await new LinkedinPostController().result(request({ ...body, answers: { share_link: 'javascript:bad' } }), response(), next);
-    expect(next.mock.calls[0][0].statusCode).toBe(400);
-    expect(mocks.result).not.toHaveBeenCalled();
+    expect(mocks.ownedResult).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'session-one', body);
   });
   it('erases only the effective user and requires authentication for deletion', async () => {
     const controller = new LinkedinPostController();

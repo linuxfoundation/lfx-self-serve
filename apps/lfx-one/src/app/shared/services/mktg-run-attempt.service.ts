@@ -9,6 +9,7 @@ import {
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -133,6 +134,7 @@ export class MktgRunAttemptService {
     const key = this.key(pending.request.projectUid, pending.request.agentId, subject, pending.request.documentId);
     const oneOff = pending.request.intake.oneOffDocument === true;
     const value = { ...pending, updatedAt: new Date().toISOString() };
+    const answeredQuestionsId = value.answered?.questionsId || value.answeredQuestionsId;
     this.memory.set(key, value);
     this.inputMemory.set(key, value);
     try {
@@ -157,8 +159,7 @@ export class MktgRunAttemptService {
         }),
         ...(!oneOff && value.pendingQuestions && { pendingQuestions: value.pendingQuestions }),
         ...(!oneOff && value.answered && { answered: value.answered }),
-        ...(oneOff &&
-          (value.answered?.questionsId || value.answeredQuestionsId) && { answeredQuestionsId: value.answered?.questionsId || value.answeredQuestionsId }),
+        ...(oneOff && MKTG_RUN_QUESTIONS_ID_REGEX.test(answeredQuestionsId ?? '') && { answeredQuestionsId }),
         requiresReattachment: !!(value.requiresReattachment || value.request.documents?.length || value.request.logoFiles?.length),
       };
       window.localStorage.setItem(key, JSON.stringify(stored));
@@ -226,7 +227,7 @@ export class MktgRunAttemptService {
         ...(!MKTG_AGENT_INTAKES[agentId].oneOffDocument && parsed.pendingQuestions && { pendingQuestions: parsed.pendingQuestions }),
         ...(!MKTG_AGENT_INTAKES[agentId].oneOffDocument && parsed.answered && { answered: parsed.answered }),
         ...(MKTG_AGENT_INTAKES[agentId].oneOffDocument &&
-          /^[a-f0-9]{64}$/.test(parsed.answeredQuestionsId ?? '') && { answeredQuestionsId: parsed.answeredQuestionsId }),
+          MKTG_RUN_QUESTIONS_ID_REGEX.test(parsed.answeredQuestionsId ?? '') && { answeredQuestionsId: parsed.answeredQuestionsId }),
       };
       this.memory.set(key, restored);
       return restored;

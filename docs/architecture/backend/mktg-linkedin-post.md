@@ -61,12 +61,17 @@ optional cache nor a URL token is the authoritative pending record: a plain docu
 URL in another browser still uses server `detail.runs[]` reconciliation.
 
 After HMAC validation and writer entitlement, the owned result controller reads
-`MktgDocumentRunService.ownedOneOffContext` for that exact project/agent/session and
-creator. A tracked result uses the captured link answers, source word count and original
-profile-initialization permission, just like Documents reconciliation. Browser omissions
-or later source context cannot replace them. Legacy untracked sessions retain the existing
-result-body contract. The private reader does not start or poll a run and is never exposed
-as an endpoint or public progress projection. `profileSaved: false` remains distinct from
+`MktgDocumentRunService.ownedOneOffResult` for that exact project/agent/session and
+creator. Its shared `agentResult` dispatcher owns the captured link answers, source word
+count and original profile-initialization permission for BOTH owned polls and Documents
+reconciliation; the controller applies no completion policy. It reuses the fetched record
+and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
+The existing post-write metadata winner confirmation remains unchanged.
+Browser omissions or later source context cannot replace captured values. Legacy untracked
+sessions retain the result-body contract. A transient tracking read failure logs a fixed
+service warning and uses that same legacy creator contract for this poll; authorization
+failures are never softened. This service method is not a new endpoint or public progress
+projection. `profileSaved: false` remains distinct from
 a successful document receipt in the shared progress event, for the cutover's existing
 profile-persistence warning.
 

@@ -118,15 +118,68 @@ export class MktgDocumentRunService {
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
-  /** Private completion context only, after the caller checked its owner token and project writer grant. */
-  public async ownedOneOffContext(req: Request, project: string, agentId: string, sessionId: string): Promise<MktgOneOffRunContext | null> {
-    const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
-    if (!stored) return null; // Legacy untracked sessions keep their existing result contract.
+  /** Owned controller calls only, after HMAC and writer checks. Uses the same completion policy as Documents. */
+  public async ownedOneOffResult(
+    req: Request,
+    project: string,
+    agentId: string,
+    sessionId: string,
+    fallbackBody: Record<string, unknown>
+  ): Promise<MktgRunResultResponse> {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId);
-    if (!type || stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== getEffectiveSub(req)) {
-      throw new AuthorizationError('This run does not belong to this requester and project.');
+    const creatorSubject = getEffectiveSub(req);
+    if (!type || !creatorSubject) throw new AuthorizationError('This run does not belong to this requester and project.');
+    const answers = fallbackBody['answers'] === undefined ? undefined : normalizeLinkedinShareAnswers(fallbackBody['answers']);
+    if (answers === null) throw ServiceValidationError.forField('answers', 'Only a valid link-to-share answer is accepted.');
+    const sourceWords = fallbackBody['sourceWords'] ?? 0;
+    if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
+      throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
+    let stored: MktgStoredStartedRun | null = null;
+    try {
+      stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
+    } catch (error) {
+      // getObject can throw transport/provider errors before read's parser boundary. Never soften authorization failures.
+      let status: unknown = error instanceof MicroserviceError ? error.statusCode : undefined;
+      if (error && typeof error === 'object') {
+        if ('statusCode' in error) status = error.statusCode;
+        if ('$metadata' in error && error.$metadata && typeof error.$metadata === 'object' && 'httpStatusCode' in error.$metadata)
+          status = error.$metadata.httpStatusCode;
+      }
+      const networkFailure =
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.code === 'ECONNREFUSED' || error.code === 'EAI_AGAIN');
+      const transient = typeof status === 'number' ? status >= 500 || status === 408 || status === 429 : networkFailure;
+      if (!transient || error instanceof AuthorizationError || error instanceof ServiceValidationError) throw error;
+      logger.warning(req, 'mktg_owned_run_read', 'Tracking read unavailable; using the creator result contract for this poll', { project });
     }
-    return stored.record.oneOff ?? null;
+    if (stored && (stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== creatorSubject))
+      throw new AuthorizationError('This run does not belong to this requester and project.');
+    const record: MktgStartedRunRecord = stored?.record ?? {
+      schema: MKTG_STARTED_RUN_SCHEMA,
+      project,
+      agentKey: type.agentKey,
+      sessionId,
+      runId: this.hash(sessionId),
+      documentId: this.documentId(type.agentKey, sessionId),
+      creatorSubject,
+      oneOff: { answers, sourceWords, initializeProfile: !isImpersonating(req) },
+      startedAt: new Date().toISOString(),
+      priorVersion: 0,
+      state: 'writing',
+      result: null,
+    };
+    const result = await this.result(req, record);
+    // Reuse the authorized record/result; mark still confirms the metadata winner after writing.
+    if (stored && !isMktgRunClosed(stored.record.state)) {
+      try {
+        await this.advanceResult(req, stored, result);
+      } catch {
+        logger.warning(req, 'mktg_run_record_result', 'Result returned; tracking may retry on a Documents read', { project });
+      }
+    }
+    return result;
   }
 
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
