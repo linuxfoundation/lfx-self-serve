@@ -115,7 +115,7 @@ describe('MktgLastIntakeService', () => {
     expect(mocks.get).toHaveBeenCalledWith(req, 'marketing-os-artifacts', `document-last-intake/${project}/${types[0].agentKey}.json`);
   });
 
-  it('projects only opted-in LinkedIn source scalars and keeps its whole-record byte cap', async () => {
+  it('owns LinkedIn source-aware projection without persisting inactive fields or uploads', async () => {
     const service = new MktgLastIntakeService();
     await service.recordStartBestEffort(req, {
       ...input('linkedin-post'),
@@ -125,10 +125,29 @@ describe('MktgLastIntakeService', () => {
     expect(written()).toMatchObject({ agentKey: 'linkedin-post', documentCount: 0, logoCount: 0 });
     mocks.get.mockResolvedValue({ body: JSON.stringify(written()) });
     expect((await service.read(req, project, 'linkedin-post'))?.answers['content_text']).toBe('Synthetic source');
-    mocks.put.mockClear();
-    await service.recordStartBestEffort(req, { ...input('linkedin-post'), answers: { content_text: 'x'.repeat(MKTG_LAST_INTAKE_MAX_BYTES) } });
-    expect(mocks.put).not.toHaveBeenCalled();
-    expect(mocks.warning).toHaveBeenCalled();
+    await service.recordStartBestEffort(req, {
+      ...input('linkedin-post'),
+      answers: { content_source: 'file', content_text: 'unused-private', content_url: 'https://unused.example/', content_file_base64: 'private-upload' },
+    });
+    expect(written().answers).toEqual({ content_source: 'file', share_link: '' });
+  });
+  it('replaces an older snapshot with current metadata when pasted text exceeds the cap', async () => {
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, { ...input('linkedin-post'), answers: { content_source: 'text', content_text: 'older text' } });
+    mocks.get.mockResolvedValue({ body: JSON.stringify(written()) });
+    expect((await service.read(req, project, 'linkedin-post'))?.answers['content_text']).toBe('older text');
+    await service.recordStartBestEffort(req, {
+      ...input('linkedin-post'),
+      runId: 'b'.repeat(64),
+      answers: { content_source: 'text', content_text: 'x'.repeat(MKTG_LAST_INTAKE_MAX_BYTES), share_link: 'https://current.example/' },
+    });
+    const current = written();
+    expect(current.runId).toBe('b'.repeat(64));
+    expect(current.answers).toEqual({ content_source: 'text', share_link: 'https://current.example/' });
+    expect(Buffer.byteLength(JSON.stringify(current))).toBeLessThanOrEqual(MKTG_LAST_INTAKE_MAX_BYTES);
+    expect(mocks.put.mock.calls.at(-1)?.[2]).toBe(mocks.put.mock.calls[0][2]);
+    mocks.get.mockResolvedValue({ body: JSON.stringify(current) });
+    expect((await service.read(req, project, 'linkedin-post'))?.answers).toEqual(current.answers);
   });
   it('denies a nonwriter before reading any private object', async () => {
     mocks.resolve.mockRejectedValue(new AuthorizationError('No write access'));

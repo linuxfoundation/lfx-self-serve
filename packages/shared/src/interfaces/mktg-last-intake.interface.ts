@@ -28,6 +28,11 @@ export interface MktgLastIntakeStart extends MktgLastIntake {
   runId: string;
 }
 
+/** Service boundary projects untrusted source values before any history persistence. */
+export interface MktgLastIntakeInput extends Omit<MktgLastIntakeStart, 'answers'> {
+  answers: unknown;
+}
+
 /** Private last-writer-wins snapshot; deliberately separate from started-run/session records. */
 export interface MktgStoredLastIntake extends MktgLastIntake {
   schema: string;

@@ -11,7 +11,10 @@ import {
   MKTG_LAST_INTAKE_SCHEMA,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
-import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeStart, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
+import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeInput, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
+import { LINKEDIN_POST_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
+import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils/linkedin-post-presentation.utils';
 import { Request } from 'express';
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -61,7 +64,7 @@ export class MktgLastIntakeService {
    * Last PUT wins intentionally (not CAS and not chronological conflict resolution).
    * Failure must not turn an accepted session into a retryable Generate error.
    */
-  public async recordStartBestEffort(req: Request, input: MktgLastIntakeStart): Promise<void> {
+  public async recordStartBestEffort(req: Request, input: MktgLastIntakeInput): Promise<void> {
     try {
       const { agentKey, intake } = this.registration(MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === input.agentId)?.agentKey);
       if (!getEffectiveSub(req)) throw new AuthenticationError('A signed-in writer subject is required.');
@@ -78,7 +81,12 @@ export class MktgLastIntakeService {
         documentCount: intake.documents ? input.documentCount : 0,
         logoCount: intake.logoFiles ? input.logoCount : 0,
       };
-      const body = Buffer.from(JSON.stringify(record));
+      let body = Buffer.from(JSON.stringify(record));
+      if (body.length > MKTG_LAST_INTAKE_MAX_BYTES && intake.agentId === LINKEDIN_POST_INTAKE.agentId) {
+        // Replace older inputs with current metadata; never truncate or retain the prior run's text.
+        delete record.answers['content_text'];
+        body = Buffer.from(JSON.stringify(record));
+      }
       if (body.length > MKTG_LAST_INTAKE_MAX_BYTES) throw ServiceValidationError.forField('intake', 'Scalar intake history exceeds its storage limit.');
       await this.store.putContentAddressedObject(
         req,
@@ -110,11 +118,23 @@ export class MktgLastIntakeService {
 
   private scalarAnswers(intake: MktgAgentIntake, raw: unknown): Record<string, string> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
-    const source = raw as Record<string, unknown>;
+    let source = raw as Record<string, unknown>;
+    const linkedin = intake.agentId === LINKEDIN_POST_INTAKE.agentId;
+    if (linkedin) {
+      if (source['content_source'] !== 'text' && source['content_source'] !== 'url' && source['content_source'] !== 'file')
+        throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
+      const share = normalizeLinkedinShareAnswers({ [LINKEDIN_SHARE_LINK_ANSWER_KEY]: source[LINKEDIN_SHARE_LINK_ANSWER_KEY] });
+      if (!share) throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
+      source = { ...source, ...share };
+    }
     const dependencyKeys = new Set((intake.attachments ?? []).map((attachment) => attachment.answerKey));
     return Object.fromEntries(
       (intake.lastIntakeFields ?? intake.fields.map((field) => field.key))
         .filter((key) => !dependencyKeys.has(key) && Object.hasOwn(source, key))
+        .filter(
+          (key) =>
+            !linkedin || ((key !== 'content_text' || source['content_source'] === 'text') && (key !== 'content_url' || source['content_source'] === 'url'))
+        )
         .map((key) => {
           const value = source[key];
           if (typeof value !== 'string') throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');

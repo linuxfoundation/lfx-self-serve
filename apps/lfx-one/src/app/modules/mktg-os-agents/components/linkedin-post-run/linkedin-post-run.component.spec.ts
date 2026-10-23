@@ -18,7 +18,7 @@ import {
   MKTG_KIT_FAMILIES,
   MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
-import { LinkedinEnvelope, LinkedinResult, MktgLastIntake, ProjectContext } from '@lfx-one/shared/interfaces';
+import { LinkedinEnvelope, LinkedinGeneration, LinkedinPendingRun, LinkedinResult, MktgLastIntake, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -127,10 +127,55 @@ describe('LinkedIn profile and post surface', () => {
     expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
     expect(fixture.componentInstance['source']()).toBe(source);
     expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text, url, share_link: '' });
-    expect(api.pending).not.toHaveBeenCalled();
+    expect(api.pending).toHaveBeenCalledWith(LINKEDIN_POST_INTAKE, 'project-one');
     expect(api.start).not.toHaveBeenCalled();
     expect(api.wait).not.toHaveBeenCalled();
     if (source === 'file') expect(fixture.nativeElement.textContent).toContain('choose it again');
+  });
+  function acceptedRun(): LinkedinGeneration {
+    return {
+      sessionId: 'accepted-session',
+      ownerToken: 'synthetic-owner',
+      documentId: 'run-0123456789abcdef01234567',
+      source: { label: 'pasted text', words: 2, fetched: false },
+      answers: { share_link: '' },
+    };
+  }
+  function pendingRun(run = acceptedRun()): LinkedinPendingRun {
+    return { ...run, agentId: LINKEDIN_POST_INTAKE.agentId, projectUid: 'project-one', savedAt: new Date().toISOString() };
+  }
+  it('consumes fresh mode after accepted Draft and resumes that same pending run on reload', async () => {
+    const run = acceptedRun();
+    api.start.mockReturnValue(of(run));
+    api.wait.mockReturnValue(NEVER);
+    const fixture = await fresh();
+    fixture.componentInstance['contentForm'].controls.text.setValue('New source');
+    await fixture.componentInstance['onDraft']();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).not.toContain('mode=');
+    api.pending.mockReturnValue(pendingRun(run));
+    fixture.destroy();
+    const reloaded = await render();
+    expect(reloaded.componentInstance['run']()?.sessionId).toBe(run.sessionId);
+    expect(api.start).toHaveBeenCalledTimes(1);
+    expect(api.wait).toHaveBeenCalledTimes(2);
+  });
+  it('resumes a live pending run even from a fresh Family entry, without reading older scalar inputs', async () => {
+    api.pending.mockReturnValue(pendingRun());
+    api.wait.mockReturnValue(NEVER);
+    await fresh();
+    expect(TestBed.inject(Router).url).not.toContain('mode=');
+    expect(history.lastIntake).not.toHaveBeenCalled();
+    expect(api.wait).toHaveBeenCalledOnce();
+    expect(api.start).not.toHaveBeenCalled();
+  });
+  it('asks for pasted text again when the latest oversized snapshot omitted it', async () => {
+    history.lastIntake.mockReturnValue(of({ answers: { content_source: 'text', share_link: 'https://current.example/' }, documentCount: 0, logoCount: 0 }));
+    const fixture = await fresh();
+    expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text: '', share_link: 'https://current.example/' });
+    expect(fixture.nativeElement.textContent).toContain('paste it again');
+    await fixture.componentInstance['onDraft']();
+    expect(api.start).not.toHaveBeenCalled();
   });
   it('does not request last inputs on a normal entry', async () => {
     await render();

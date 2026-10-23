@@ -113,9 +113,12 @@ no intake fields beyond the project, so its plain project-scoped route carries i
 input. LinkedIn Family and document Run again use `mode=new` through the same
 `MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. The dedicated source form restores
 writer-gated last text/URL and share-link scalars before any run navigation, preserving
-explicit blanks; files require reattachment. Fresh mode never resumes a pending run or
-starts generation: Draft remains explicit. Denied history disables Draft; unavailable
-history is a warning, not invented absence. Profile/LFX prefill remains independent and
+explicit blanks; files require reattachment and oversized pasted text requires re-entry.
+A live project/subject-bound pending run takes precedence over old scalar history and
+resumes even from a fresh Family entry. After an accepted start (or pending recovery),
+entry-only `mode=new` is consumed with a replacement URL update, so reload resumes the
+same run rather than starting another. New generation still requires explicit Draft.
+Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
 scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs

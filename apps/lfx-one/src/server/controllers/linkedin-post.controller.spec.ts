@@ -141,7 +141,7 @@ describe('LinkedIn endpoint boundaries', () => {
       project: 'project-one',
       agentId: 'linkedin-post',
       runId: 'a'.repeat(64),
-      answers: { content_source: 'text', content_text: 'Synthetic source', share_link: '' },
+      answers: req.body.answers,
       documentCount: 0,
       logoCount: 0,
     });
@@ -160,19 +160,15 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).toHaveBeenCalled();
     expect(mocks.history).not.toHaveBeenCalled();
   });
-  it('isolates rejected or stalled history from the accepted Generate response', async () => {
-    const req = request({ project: 'project-one', answers: { content_source: 'file', content_file_base64: 'private-upload', content_text: 'unused-private' } });
+  it('does not await the service-owned history projection after an accepted Generate', async () => {
+    const req = request({ project: 'project-one', answers: { content_source: 'file', content_file_base64: 'private-upload' } });
     const next = vi.fn();
     const res = response();
-    mocks.history.mockRejectedValueOnce(new Error('private-store-error'));
-    await new LinkedinPostController().generate(req, res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalled();
-    expect(mocks.history.mock.calls[0][1].answers).toEqual({ content_source: 'file', share_link: '' });
-    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private-store-error');
     mocks.history.mockImplementationOnce(() => new Promise<void>(() => undefined));
     await new LinkedinPostController().generate(req, res, next);
-    expect(res.json).toHaveBeenCalledTimes(2);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledOnce();
+    expect(mocks.history.mock.calls[0][1].answers).toBe(req.body.answers);
   });
 
   it('checks writer entitlement and validates share-link edits before the metadata store', async () => {

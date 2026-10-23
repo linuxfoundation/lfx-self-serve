@@ -251,13 +251,18 @@ their leftover artifact.
 
 A separate private snapshot at
 `document-last-intake/{project}/{agentKey}.json` remembers the registered scalar
-fields of the latest accepted Generate for an active living agent. It uses the
-existing `marketing-os-artifacts` purpose and server-resolved writer partition.
+fields of the latest accepted Generate for an active living agent, or a one-off intake
+that declares an explicit `lastIntakeFields` allowlist. LinkedIn opts into source kind,
+selected pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
+It uses the existing `marketing-os-artifacts` purpose and server-resolved writer partition.
 The BFF starts this best-effort write only after sending the Generate acknowledgement;
 a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
 blank fields are retained; absent fields are not invented as last-run answers.
 Dependency attachment answer keys are excluded and dependencies must be resolved afresh,
-not replayed from this snapshot.
+not replayed from this snapshot. If LinkedIn's projected record exceeds
+`MKTG_LAST_INTAKE_MAX_BYTES`, the service writes the current metadata without
+`content_text` (never truncated text), replacing older inputs rather than restoring run N-1.
+The source page asks the writer to paste that omitted text again; uploads are never retained.
 
 This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
 conflict resolution. It holds run ID and start time, scalar answers, and document/logo

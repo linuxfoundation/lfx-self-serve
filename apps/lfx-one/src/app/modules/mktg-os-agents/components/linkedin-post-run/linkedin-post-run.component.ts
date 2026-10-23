@@ -251,9 +251,10 @@ export class LinkedinPostRunComponent {
           this.fillProfile();
           const editProfile = this.route.snapshot.queryParamMap.get('profile') === 'edit';
           this.editing.set(!response.profile || editProfile);
-          const pending = this.freshMode() ? null : this.api.pending(this.intake(), this.context.activeContextUid());
+          const pending = this.api.pending(this.intake(), this.context.activeContextUid());
           if (pending) {
             this.run.set(pending);
+            this.consumeFreshMode();
             this.contentForm.controls.share_link.setValue(pending.answers?.[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
             if (!editProfile) {
               this.editing.set(false);
@@ -429,6 +430,7 @@ export class LinkedinPostRunComponent {
         .pipe(
           switchMap((run) => {
             this.run.set(run);
+            this.consumeFreshMode();
             return this.waitForRun(project, run);
           }),
           takeUntilDestroyed(this.destroyRef)
@@ -480,6 +482,7 @@ export class LinkedinPostRunComponent {
         ? this.api.start(this.intake(), project, inputs.answers, inputs.setup ?? this.setup() ?? undefined).pipe(
             switchMap((fresh) => {
               this.run.set(fresh);
+              this.consumeFreshMode();
               this.runFailed.set(false);
               return this.waitForRun(project, fresh);
             })
@@ -561,6 +564,16 @@ export class LinkedinPostRunComponent {
         },
       });
   }
+  private consumeFreshMode(): void {
+    if (this.freshMode())
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { mode: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+  }
+
   /** Entry-only source restoration; independent of accepted-start navigation and run ownership. */
   private initLastIntakeRestore(): void {
     toObservable(
@@ -571,15 +584,17 @@ export class LinkedinPostRunComponent {
         fresh: this.freshMode(),
         grant: this.historyGrant(),
         reload: this.reload(),
+        ready: !this.loading(),
+        pending: !!this.run(),
       }))
     )
       .pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-        switchMap(({ project, sub, writer, fresh, grant }) => {
+        switchMap(({ project, sub, writer, fresh, grant, ready, pending }) => {
           this.lastIntakeDenied.set(false);
           this.lastIntakeNote.set('');
           this.lastIntakeLoading.set(false);
-          if (!project || !sub || !writer || !fresh || grant !== JSON.stringify([project, sub])) return of(null);
+          if (!project || !sub || !writer || !fresh || !ready || pending || grant !== JSON.stringify([project, sub])) return of(null);
           this.contentForm.reset();
           this.file.set(null);
           this.source.set(this.sources.find((item) => item.value === this.route.snapshot.queryParamMap.get('source'))?.value ?? 'text');
@@ -590,7 +605,7 @@ export class LinkedinPostRunComponent {
               this.lastIntakeNote.set(
                 this.lastIntakeDenied()
                   ? 'You need write access to run this project’s agents.'
-                  : 'Last run inputs could not be loaded. Available device inputs or suggested defaults are shown.'
+                  : 'Last run inputs could not be loaded. Enter the source to draft.'
               );
               return of(null);
             })
@@ -609,6 +624,8 @@ export class LinkedinPostRunComponent {
           { emitEvent: false }
         );
         if (source === 'file') this.lastIntakeNote.set('The last run used a file — choose it again to draft.');
+        else if (source === 'text' && !Object.hasOwn(answers, 'content_text'))
+          this.lastIntakeNote.set('Last source text was not kept — paste it again to draft.');
       });
   }
 
