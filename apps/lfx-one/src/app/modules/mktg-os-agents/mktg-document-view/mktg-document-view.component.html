@@ -396,6 +396,9 @@
         </section>
 
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
+          @if (commentScope(); as scope) {
+            <lfx-mktg-comments-panel [scope]="scope" [content]="asset()?.content" />
+          }
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>

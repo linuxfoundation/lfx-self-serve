@@ -176,6 +176,7 @@ export class MktgDocumentCommentsService {
               this.reading.set(false);
               this.data.set([]);
               this.measured.set(false);
+              this.readError.set(MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.access);
             }
             this.writeError.set(extractErrorMessage(error, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.save));
           }
