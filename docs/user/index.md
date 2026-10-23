@@ -35,7 +35,7 @@ features:
   - title: Votes
     details: Participate in elections and votes for your governing boards.
     link: /votes/
-  - title: My Badges
+  - title: Badges
     details: View and share digital badges you have earned through LFX.
     link: /badges/
   - title: Profile
