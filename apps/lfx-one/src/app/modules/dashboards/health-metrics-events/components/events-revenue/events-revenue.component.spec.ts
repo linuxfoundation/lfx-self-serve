@@ -157,11 +157,11 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-registration-value-rev-1')?.tagName).toBe('B');
     expect(text('events-revenue-registration-value-rev-1')).toBe('$180K');
     expect(text('events-revenue-registration-goal-rev-1')).toBe('/ $200K');
-    expect(query('events-revenue-registration-goal-rev-1')?.classList).toContain('text-[10px]');
+    expect(query('events-revenue-registration-goal-rev-1')?.classList).toContain('text-[12px]');
     expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
     expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
     expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
-    expect(query('events-revenue-sponsorship-no-goal-rev-1')?.classList).toContain('text-[10px]');
+    expect(query('events-revenue-sponsorship-no-goal-rev-1')?.classList).toContain('text-[12px]');
     expect(query('events-revenue-row-rev-1')?.textContent).not.toContain('Set goal');
     expect(query('events-revenue-unconverted-rev-1')).toBeNull();
     expect(query('events-revenue-unconverted-note')).toBeNull();
