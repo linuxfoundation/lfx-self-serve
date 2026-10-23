@@ -10,6 +10,7 @@ import {
   MKTG_DOCUMENT_CURRENT_KEY,
   MKTG_DOCUMENT_READ_CONCURRENCY,
   MKTG_DOCUMENT_TYPES,
+  MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_WRITE_ATTEMPTS,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_REVISION_CONTENT_TYPE,
@@ -43,8 +44,9 @@ import {
   MktgGenerationAttribution,
   MktgLegacyDocument,
   MktgListedRevision,
-  MktgRevisionAuthor,
   MktgRevisionRef,
+  MktgRedraftRevisionMetadata,
+  MktgDocumentRedraftContext,
   MktgRevisionContentSource,
   MktgRevisionFormat,
   MktgRevisionRecord,
@@ -74,21 +76,14 @@ import {
   readLinkedinDocumentContent,
   readMktgFrameworkRef,
   projectMktgRebuildStaleness,
+  validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
 import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
-import {
-  AuthenticationError,
-  AuthorizationError,
-  ConflictError,
-  MicroserviceError,
-  PreconditionFailedError,
-  ResourceNotFoundError,
-  ServiceValidationError,
-} from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
@@ -96,7 +91,8 @@ import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { MktgSignOffSettingsService } from './mktg-sign-off-settings.service';
 import { ObjectStoreService } from './object-store.service';
-import type { UserService } from './user.service';
+import { MktgDocumentAuthorService } from './mktg-document-author.service';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 
 /**
  * Immutable revision bundles, mutable current pointer. The pointer is also the
@@ -108,14 +104,16 @@ import type { UserService } from './user.service';
  */
 export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
+  private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly artifactService = new MktgArtifactService();
   private readonly signOffSettings = new MktgSignOffSettingsService();
   private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
-  private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
-  private userService?: Promise<UserService>;
 
   /** A per-generation context only; never change the visiting Request or share an override across runs. */
-  public constructor(private readonly generationAttribution?: MktgGenerationAttribution) {}
+  public constructor(
+    private readonly generationAttribution?: MktgGenerationAttribution,
+    private readonly authors = new MktgDocumentAuthorService()
+  ) {}
 
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
@@ -125,8 +123,18 @@ export class MktgDocumentStoreService {
     projectUid: string | undefined,
     sessionId: string
   ): Promise<MktgArtifactPersistReceipt | null> {
-    const receipt = await this.artifactService.persist(req, spec, envelope, projectUid, { revisionManaged: true });
-    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
+    try {
+      const context = await this.redrafts.forSession(req, sessionId);
+      if (context || (envelope as MktgArtifactEnvelope & Record<string, unknown>)['mode'] === 'redraft') {
+        const project = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
+        this.assertRedraftSource(context, project ?? undefined, spec.agentKey, envelope);
+      }
+      const receipt = await this.artifactService.persist(req, spec, envelope, projectUid, { revisionManaged: true });
+      return receipt ? await this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
+    } catch (error) {
+      logger.warning(req, 'mktg_document_store_persist', 'Asset was not persisted; returning no receipt', { err: error });
+      return null;
+    }
   }
 
   /** Persist structured content through the same CAS writer; JSON has no pre-revision Markdown twin. */
@@ -259,6 +267,9 @@ export class MktgDocumentStoreService {
   ): Promise<MktgStoredRevision> {
     const documentId = type.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
+    const redraft = await this.redrafts.forSession(req, sessionId);
+    this.assertRedraftSource(redraft, project, type.agentKey, source.sidecar);
+    if (redraft && redraft.documentId !== documentId) throw ServiceValidationError.forField('redraft', 'The redraft does not name this document.');
     let sidecar = source.sidecar;
     if (type.kind === 'living' && MKTG_REBUILD_DOWNSTREAM_KEYS.includes(type.agentKey)) {
       const framework = await this.generationFramework(req, project, type.agentKey, sessionId);
@@ -276,13 +287,15 @@ export class MktgDocumentStoreService {
       documentId,
       {
         createdAt: new Date().toISOString(),
-        origin: 'generated',
+        origin: redraft ? 'revised' : 'generated',
         restoredFromId: null,
+        ...(redraft && { basedOnId: redraft.basedOnId }),
         source: { sessionId, draftVersion: source.version, intakeMode: source.intakeMode },
         bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar, brandFile: null },
       },
       this.sha256(type.kind === 'run' ? sessionId : `${sessionId}:${source.contentSha256}`),
-      source.contentSha256
+      source.contentSha256,
+      redraft ? { redraftRunId: redraft.runId, commentCount: redraft.comments.length } : undefined
     );
   }
 
@@ -302,7 +315,8 @@ export class MktgDocumentStoreService {
     documentId: string,
     fields: MktgRevisionRecordFields,
     generation?: string,
-    excludeLegacySha?: string
+    excludeLegacySha?: string,
+    redraftMetadata?: MktgRedraftRevisionMetadata
   ): Promise<MktgStoredRevision> {
     for (let attempt = 0; attempt < MKTG_DOCUMENT_WRITE_ATTEMPTS; attempt++) {
       const snapshot = await this.readCurrent(req, project, type, documentId);
@@ -342,7 +356,7 @@ export class MktgDocumentStoreService {
         throw ServiceValidationError.forField('basedOnId', 'The base revision does not belong to this document.');
       }
       const next = entries.reduce((maximum, entry) => Math.max(maximum, entry.sequence), 0) + 1;
-      const revision = await this.writeRevision(req, project, type, documentId, next, { ...fields, basedOnId }, generation);
+      const revision = await this.writeRevision(req, project, type, documentId, next, { ...fields, basedOnId }, generation, redraftMetadata);
       // A generated Draft commits to the manifest without displacing approved current.
       const keepSelection = Boolean(
         type.kind === 'living' && snapshot.record && Object.hasOwn(this.approvalsOf(snapshot.record.approvals), snapshot.record.revisionId)
@@ -571,7 +585,7 @@ export class MktgDocumentStoreService {
     action: MktgSignOffAction
   ): Promise<MktgRevisionResponse | null> {
     if (isImpersonating(req)) throw new AuthorizationError('Sign-off is not available while impersonating a user');
-    const by = this.author(req);
+    const by = this.authors.captureAuthorId(req);
     if (type.kind !== 'living') throw ServiceValidationError.forField('documentId', 'Sign-off is only available for living documents.');
     if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role') {
       throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
@@ -645,6 +659,28 @@ export class MktgDocumentStoreService {
     );
     const revision = updated.revisions.find((entry) => entry.id === revisionId);
     return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
+  }
+
+  /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
+  public async assertRedraftScope(req: Request, spec: MktgArtifactSpec, sessionId: string, projectUid?: string): Promise<MktgDocumentRedraftContext | null> {
+    const context = await this.redrafts.forSession(req, sessionId);
+    if (!context) return null;
+    const project = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
+    this.redrafts.assertScope(context, project ?? undefined, spec.agentKey);
+    return context;
+  }
+
+  /** Private history join from already-authorized immutable revision bytes, never a public descriptor DTO. */
+  public async redraftForRevision(req: Request, view: MktgRevisionResponse): Promise<MktgDocumentRedraftContext | null> {
+    const key = `${buildMktgDocumentPrefix(view.project, view.type.agentKey, view.documentId)}${view.revision.id}.json`;
+    const parsed = parseMktgRevisionKey(key, buildMktgDocumentProjectPrefix(view.project));
+    const stored = parsed ? await this.loadRevision(req, { ...parsed, key }, view.project) : null;
+    if (!stored || stored.record.origin !== 'revised' || !stored.record.source.sessionId) return null;
+    const context = await this.redrafts.forSession(req, stored.record.source.sessionId);
+    if (!context) throw new MicroserviceError('The redraft history context is unavailable.', 503, 'MKTG_REDRAFT_CONTEXT_UNAVAILABLE');
+    this.redrafts.assertScope(context, view.project, view.type.agentKey);
+    if (context.documentId !== view.documentId) throw this.corruptDocument('Invalid redraft history context.');
+    return context;
   }
 
   /** Plain and sidecar attachments consume approved current; only true pre-revision plain fallback remains. */
@@ -825,7 +861,7 @@ export class MktgDocumentStoreService {
           ...(await Promise.all(
             entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
               ...this.summary(entry, offset + index + 1),
-              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
+              author: await this.authors.resolveAuthor(req, entry.metadata?.['author-id']),
             }))
           ))
         );
@@ -1016,12 +1052,12 @@ export class MktgDocumentStoreService {
             const approval = annotation
               ? {
                   approvedAt: annotation.approvedAt,
-                  approvedBy: await this.resolveAuthor(req, annotation.approvedBy),
+                  approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy),
                   ...(attribution
                     ? {
                         signOff: {
-                          ed: { at: attribution.ed.at, by: await this.resolveAuthor(req, attribution.ed.by) },
-                          tocChair: { at: attribution.tocChair.at, by: await this.resolveAuthor(req, attribution.tocChair.by) },
+                          ed: { at: attribution.ed.at, by: await this.authors.resolveAuthor(req, attribution.ed.by) },
+                          tocChair: { at: attribution.tocChair.at, by: await this.authors.resolveAuthor(req, attribution.tocChair.by) },
                         },
                       }
                     : {}),
@@ -1032,10 +1068,13 @@ export class MktgDocumentStoreService {
               ? {
                   state: request.state,
                   requestedAt: request.requestedAt,
-                  requestedBy: await this.resolveAuthor(req, request.requestedBy),
+                  requestedBy: await this.authors.resolveAuthor(req, request.requestedBy),
                   roles: {
-                    ed: { name: (await this.resolveAuthor(req, request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
-                    tocChair: { name: (await this.resolveAuthor(req, request.roles.tocChair))?.name ?? null, decision: request.decisions.tocChair?.decision },
+                    ed: { name: (await this.authors.resolveAuthor(req, request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
+                    tocChair: {
+                      name: (await this.authors.resolveAuthor(req, request.roles.tocChair))?.name ?? null,
+                      decision: request.decisions.tocChair?.decision,
+                    },
                   },
                 }
               : null;
@@ -1068,7 +1107,7 @@ export class MktgDocumentStoreService {
     const approvals = this.approvalsOf(snapshot.record?.approvals);
     const kept = keepSelection ? snapshot.record : null;
     const changedAt = kept ? kept.changedAt : new Date().toISOString();
-    const changedBy = kept ? kept.changedBy : this.author(req);
+    const changedBy = kept ? kept.changedBy : this.authors.captureAuthorId(req);
     const signOff = signOffWrite?.signOff ?? this.signOffOf(snapshot.record?.signOff);
     if (approve && !approvals[revisionId])
       approvals[revisionId] = {
@@ -1096,7 +1135,7 @@ export class MktgDocumentStoreService {
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
   private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.authors.resolveAuthor(req, record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
@@ -1130,7 +1169,7 @@ export class MktgDocumentStoreService {
           if (!metadata || (!snapshot.record && metadata['managed'] === 'true')) return null;
           onEligibleKey?.();
           const entry = { ...parsed, ...object, metadata };
-          if (loadHistoricalBodies && !metadata['content-sha']) {
+          if (loadHistoricalBodies && (!metadata['content-sha'] || (metadata['origin'] === 'revised' && metadata['comment-count'] === undefined))) {
             const stored = await this.loadRevision(req, entry, project);
             return stored ? { ...entry, record: stored.record } : null;
           }
@@ -1182,7 +1221,8 @@ export class MktgDocumentStoreService {
     documentId: string,
     sequence: number,
     fields: MktgRevisionRecordFields,
-    generation?: string
+    generation?: string,
+    redraftMetadata?: MktgRedraftRevisionMetadata
   ): Promise<MktgStoredRevision> {
     const record: MktgRevisionRecord = {
       schema: MKTG_REVISION_SCHEMA,
@@ -1197,8 +1237,8 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    let authorId = record.origin === 'legacy' ? null : this.author(req);
-    if (record.origin === 'generated' && this.generationAttribution) {
+    let authorId = record.origin === 'legacy' ? null : this.authors.captureAuthorId(req);
+    if ((record.origin === 'generated' || record.origin === 'revised') && this.generationAttribution) {
       authorId = this.generationAttribution.creatorSubject;
     }
     const status = this.recordStatus(record);
@@ -1212,7 +1252,8 @@ export class MktgDocumentStoreService {
       'draft-version': String(record.source.draftVersion),
       format: this.format(record.bundle.format),
       status: Buffer.from(boundedStatus).toString('base64'),
-      'comment-count': String(record.comments.length),
+      'comment-count': String(redraftMetadata?.commentCount ?? record.comments.length),
+      ...(redraftMetadata && { 'redraft-run-id': redraftMetadata.redraftRunId }),
       'based-on': record.basedOnId ?? '',
       'restored-from': record.restoredFromId ?? '',
       [MKTG_REBUILD_UPSTREAM_METADATA_KEY]: JSON.stringify(readMktgFrameworkRef(record.bundle.sidecar?.[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY])),
@@ -1245,7 +1286,7 @@ export class MktgDocumentStoreService {
       status: entry.record ? this.recordStatus(entry.record) : Buffer.from(metadata['status'] ?? '', 'base64').toString('utf8'),
       contentSha256: entry.record?.bundle.contentSha256 ?? metadata['content-sha'] ?? '',
       format: this.format(entry.record?.bundle.format ?? metadata['format']),
-      commentCount: entry.record?.comments?.length ?? Number(metadata['comment-count'] ?? 0),
+      commentCount: this.commentCount(entry.record, metadata),
       upstreamFramework: this.summaryFramework(entry),
       draftVersion: entry.record?.source.draftVersion ?? (Number(metadata['draft-version']) || undefined),
       latest: false,
@@ -1338,6 +1379,32 @@ export class MktgDocumentStoreService {
     };
   }
 
+  private assertRedraftSource(context: MktgDocumentRedraftContext | null, project: string | undefined, agentKey: string, evidence: unknown): void {
+    if (context) {
+      this.redrafts.assertScope(context, project, agentKey);
+      if (!validateMktgRedraftResult(context, evidence).valid)
+        throw ServiceValidationError.forField('redraft', 'The result does not match its frozen redraft input.');
+    } else if (
+      evidence &&
+      typeof evidence === 'object' &&
+      'mode' in evidence &&
+      evidence.mode === 'redraft' &&
+      Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, agentKey)
+    ) {
+      throw new MicroserviceError('The redraft contract context is not available.', 503, 'MKTG_REDRAFT_CONTEXT_UNAVAILABLE');
+    }
+  }
+
+  /** Optional metadata can be recovered from the validated agent sidecar without inventing hashed host fields. */
+  private commentCount(record: MktgRevisionRecord | undefined, metadata: Record<string, string>): number {
+    const count = Number(metadata['comment-count']);
+    if (metadata['comment-count'] !== undefined && Number.isSafeInteger(count) && count >= 0) return count;
+    const revision = record?.bundle.sidecar?.['revision'];
+    if (record?.origin === 'revised' && revision && typeof revision === 'object' && 'comments' in revision && Array.isArray(revision.comments))
+      return revision.comments.length;
+    return record?.comments?.length ?? 0;
+  }
+
   /** Structured assets have no Markdown review-status line. */
   private recordStatus(record: MktgRevisionRecord): string {
     return record.bundle.format === 'json' ? '' : findMktgDocumentStatus(record.bundle.markdown);
@@ -1345,49 +1412,6 @@ export class MktgDocumentStoreService {
 
   private format(value: unknown): MktgRevisionFormat {
     return value === 'json' ? 'json' : 'markdown';
-  }
-
-  /** Store only the effective opaque subject; an unidentified impersonation target is unattributed. */
-  private author(req: Request): string | null {
-    // #3773 rejects stored names/usernames; a missing target sub stays null, never the operator's sub.
-    // getEffectiveSub's deprecation concerns upstream API arguments, not a stored opaque key.
-    const userId = getEffectiveSub(req);
-    if (!userId && !isImpersonating(req)) throw new AuthenticationError('A signed-in writer subject is required when not impersonating.');
-    return userId;
-  }
-
-  /** Request-scoped promise memoization prevents repeat lookups/warnings, including failed directory reads. */
-  private async resolveAuthor(req: Request, userId: string | null | undefined): Promise<MktgRevisionAuthor | null> {
-    if (!userId) return null;
-    let authors = this.authors.get(req);
-    if (!authors) {
-      authors = new Map();
-      this.authors.set(req, authors);
-    }
-    let author = authors.get(userId);
-    if (!author) {
-      author = (async () => {
-        try {
-          this.userService ??= import('./user.service')
-            .then(({ UserService }) => new UserService())
-            .catch((error: unknown) => {
-              this.userService = undefined;
-              throw error;
-            });
-          const response = await (await this.userService).getUserInfo(req, userId);
-          if (!response.success) {
-            logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
-            return { name: null };
-          }
-          return { name: response.data?.name || null };
-        } catch (err) {
-          logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name', { err });
-          return { name: null };
-        }
-      })();
-      authors.set(userId, author);
-    }
-    return author;
   }
 
   private corruptDocument(message: string): MicroserviceError {
@@ -1402,6 +1426,10 @@ export class MktgDocumentStoreService {
   /** Supply the legacy artifact receipt's required default when intake metadata is unknown. */
   private intakeMode(value: unknown): MktgArtifactIntakeMode {
     return this.recordedIntakeMode(value) ?? 'form';
+  }
+
+  private author(req: Request): string | null {
+    return this.authors.captureAuthorId(req);
   }
 
   private sha256(value: string): string {

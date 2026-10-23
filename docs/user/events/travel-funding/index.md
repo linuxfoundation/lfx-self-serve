@@ -8,7 +8,7 @@ last_updated: 2026-10-06
 intercom_collection: Events
 ---
 
-The Travel Fund helps open-source developers and community members attend Linux Foundation events they would otherwise be unable to attend due to a lack of funding. Priority is given to applicants from underrepresented groups and those from lower-socioeconomic backgrounds. You apply for travel funding from the **Travel Funding** tab on the My Events page.
+The Travel Fund helps open-source developers and community members attend Linux Foundation events they would otherwise be unable to attend due to a lack of funding. Priority is given to applicants from underrepresented groups and those from lower-socioeconomic backgrounds. You apply for travel funding from the **Travel Funding** tab on the Events page.
 
 > **Note:** If your employer is able to cover the cost of attending the event, please do not apply — the fund is intended for community members who have no other way to attend.
 
