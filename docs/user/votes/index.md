@@ -22,7 +22,7 @@ The Votes section lets you create and manage polls for formal project governance
 
 ## Navigation
 
-To view and cast votes, select **My Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. My Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls.
+To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls.
 
 To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the polls for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see polls with every status.
 
@@ -45,7 +45,7 @@ While the summary loads, counts show dashes and the cells are disabled. A succes
 
 While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
-Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
+Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. Votes and existing creation, voting, and result permissions are unchanged.
 
 ### Empty lists
 
@@ -57,19 +57,19 @@ When a list has no votes, the message names the situation:
 
 Search ignores leading and trailing spaces, so a search of only spaces does not filter the list. **Reset filters** clears every filter and selects **All**.
 
-If **My Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
+If **Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
 
 ### Sharing a link to a vote
 
 Select **⋮ → Copy link** on an active or ended vote to copy a direct link to it, which you can paste into an email, a chat or a mailing list. Draft votes have no link.
 
-Opening the link signs you in if needed and opens the vote in **My Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
+Opening the link signs you in if needed and opens the vote in **Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
 
 ### Your vote
 
-In **My Votes**, the **Your vote** column shows your participation rather than a response count. A solid green circle-check means **Voted**; hover over or focus the icon to see its tooltip. A muted dash means **Not voted**. Both indicators have accessible labels and apply to active and ended votes. The separate **Status** column shows whether the vote is active or ended. Project, Foundation, and group vote tables retain their response summaries.
+In **Votes**, the **Your vote** column shows your participation rather than a response count. A solid green circle-check means **Voted**; hover over or focus the icon to see its tooltip. A muted dash means **Not voted**. Both indicators have accessible labels and apply to active and ended votes. The separate **Status** column shows whether the vote is active or ended. Project, Foundation, and group vote tables retain their response summaries.
 
-### My Votes summary
+### Votes summary
 
 Two summary cells above the table help you find approaching deadlines and outstanding responses:
 
@@ -82,7 +82,7 @@ Select a cell to filter the table and switch to **Active**. Select the same cell
 
 If your filters have no matches, the empty list keeps the controls available. **Reset filters** clears the summary and table filters and selects **All**. If a scope change removes the selected group, only that group selection is cleared.
 
-My Votes group choices use consistent English alphabetical ordering across browser and server locales.
+Votes group choices use consistent English alphabetical ordering across browser and server locales.
 
 While loading, the cells show dashes and cannot be selected. A successfully loaded empty feed shows zero. If loading fails, counts are unavailable and **Unable to load your votes** appears instead of the no-invitations message. Select **Retry** to reload without losing your search and group controls.
 
