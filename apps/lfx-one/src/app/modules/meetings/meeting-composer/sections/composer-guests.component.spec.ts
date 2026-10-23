@@ -528,6 +528,22 @@ describe('ComposerGuestsComponent', () => {
       expect(focus).toHaveBeenLastCalledWith(null);
     });
 
+    it('skips rows without a remove button when handing focus on', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      const target = { ...savedGroupGuest, uid: 'g-1', email: 'one@example.com', type: 'direct' as const };
+      const blocked = { ...target, uid: 'g-2', email: 'two@example.com' };
+      const next = { ...target, uid: 'g-3', email: 'three@example.com' };
+      formService.setGuests([target, blocked, next]);
+      // Stand-in for a series-wide guest in an occurrence edit, which renders no remove button.
+      vi.spyOn(component as unknown as { filteredGuestRows: () => ComposerGuestRow[] }, 'filteredGuestRows').mockReturnValue(
+        component['guestRows']().map((row) => ({ ...row, removable: row.guest.uid !== 'g-2' }))
+      );
+
+      component['onRemoveGuest'](component['guestRows']()[0].guest);
+
+      expect(focus).toHaveBeenLastCalledWith('g-3');
+    });
+
     it('stops offering undo once another guest is added', () => {
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);

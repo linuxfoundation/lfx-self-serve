@@ -338,15 +338,16 @@ export class ComposerGuestsComponent {
     // keyless row, and removing one such guest dropped all of them.
     const key = guest.uid || guest.tempId || null;
 
-    // The focused remove button goes with its row, so hand focus to the next row (or the previous one),
-    // keeping the place for removing several in a row. A keyless neighbour's track id is its index, which
-    // shifts with the removal, so it falls back to the search like an emptied list does.
+    // The focused remove button goes with its row, so hand focus to the nearest row after it that still
+    // has one (or before it), keeping the place for removing several in a row. Rows without a remove
+    // button (series-wide guests in an occurrence edit) are skipped, and so are keyless rows, whose track
+    // id is their index and shifts with the removal. With none left, focus falls back to the search.
     const rows = this.filteredGuestRows();
     const at = rows.findIndex((row) => row.guest === guest);
-    const neighbour = at === -1 ? undefined : (rows[at + 1] ?? rows[at - 1]);
+    const focusable = (row: ComposerGuestRow): boolean => row.removable && !!(row.guest.uid || row.guest.tempId);
+    const neighbour = at === -1 ? undefined : (rows.slice(at + 1).find(focusable) ?? rows.slice(0, at).reverse().find(focusable));
     // `trackId` is exactly what the template builds the button's test id from, so the two can't drift apart.
-    const neighbourHasIdentity = !!(neighbour?.guest.uid || neighbour?.guest.tempId);
-    this.focusGuestRemoveButton(neighbour && neighbourHasIdentity ? neighbour.trackId : null);
+    this.focusGuestRemoveButton(neighbour?.trackId ?? null);
 
     // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
     // nobody is invited yet, and picking the person again is the whole way back.
