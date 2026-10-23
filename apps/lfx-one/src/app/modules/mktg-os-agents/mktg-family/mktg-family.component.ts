@@ -156,7 +156,8 @@ export class MktgFamilyComponent {
       const agents: Record<string, MktgAgent> = {};
       for (const row of this.family()?.rows ?? []) {
         const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
-        if (row.state === 'coming-soon' || (type?.kind !== 'living' && row.state !== 'missing')) continue;
+        // One-off states are canonical already; their actions arrive with the shared Family integration.
+        if (row.state === 'coming-soon' || type?.kind !== 'living') continue;
         const agent = MKTG_AGENTS.find((candidate) => candidate.id === type?.catalogAgentId && candidate.status === 'active');
         if (agent && MKTG_AGENT_INTAKES[agent.id] && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)) agents[row.asset.id] = agent;
       }

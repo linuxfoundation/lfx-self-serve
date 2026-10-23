@@ -116,6 +116,8 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(root.textContent).toContain('You need write access');
     expect(button('slides')?.disabled).toBe(true);
+    expect(root.querySelector('[data-testid="family-export-slides"]')?.parentElement?.getAttribute('role')).toBe('note');
+    expect(root.querySelector('[data-testid="family-export-pdf"]')?.parentElement?.getAttribute('role')).toBe('note');
     expect(api.run).not.toHaveBeenCalled();
   });
 

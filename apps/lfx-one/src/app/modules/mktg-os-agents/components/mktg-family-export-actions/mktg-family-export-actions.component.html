@@ -13,6 +13,7 @@
       Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
     </p>
     <span
+      role="note"
       [pTooltip]="pdfDisabledReason()"
       tooltipPosition="bottom"
       tooltipEvent="both"
@@ -28,6 +29,7 @@
         (onClick)="downloadPdf()" />
     </span>
     <span
+      role="note"
       [pTooltip]="exportDisabledReason()"
       tooltipPosition="bottom"
       tooltipEvent="both"

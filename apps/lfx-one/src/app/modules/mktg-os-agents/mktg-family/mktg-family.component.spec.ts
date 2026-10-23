@@ -364,6 +364,9 @@ describe('Marketing family page', () => {
       const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
       expect(run?.disabled).toBe(false);
       expect(run?.textContent).toContain('Run Member 360');
+      // State/filter changes alone must not activate the one-off row action before its shared-rule integration.
+      expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-member-360"]')).toBeNull();
+      expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
       expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')).toBeNull();
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       run?.click();

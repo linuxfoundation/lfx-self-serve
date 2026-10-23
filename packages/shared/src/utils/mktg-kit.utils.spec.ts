@@ -133,7 +133,7 @@ describe('Marketing kit plan of record', () => {
     }
     expect(summarizeMktgKit([])).toEqual({ level: null, coreFloor: 0, inKit: 0 });
   });
-  it('counts one-off runs by local calendar month, never marking them stale', () => {
+  it('counts one-off runs by UTC calendar month, never marking them stale', () => {
     const data = listing([
       document('linkedin-post'),
       document('linkedin-post', '2026-10-31T12:00:00'),
@@ -157,6 +157,16 @@ describe('Marketing kit plan of record', () => {
     expect(mktgKitRunDate('2026-10-01T00:30:00+02:00')).toBe('30 Sep');
     expect(mktgKitRunDate('invalid')).toBe('—');
     expect(mktgKitRunDate(null)).toBe('—');
+  });
+  it('uses UTC for both month counts and last-run labels across a local month boundary', () => {
+    const asset = MKTG_KIT_FAMILIES[2].assets[0];
+    const now = new Date('2026-10-01T00:30:00Z');
+    const october = resolveMktgKitAsset(asset, listing([document('linkedin-post', '2026-09-30T23:45:00-02:00')]), now);
+    expect(october).toMatchObject({ monthlyCount: 1, badge: '1 this month' });
+    expect(mktgKitRunDate(october.document?.createdAt)).toBe('1 Oct');
+    const september = resolveMktgKitAsset(asset, listing([document('linkedin-post', '2026-10-01T00:15:00+02:00')]), now);
+    expect(september).toMatchObject({ monthlyCount: 0, badge: 'Last run 30 Sep' });
+    expect(mktgKitRunDate(september.document?.createdAt)).toBe('30 Sep');
   });
   it('registered types with an unavailable agent read Coming soon instead of Not run yet or a run count', () => {
     const asset = MKTG_KIT_FAMILIES[1].assets[0];
