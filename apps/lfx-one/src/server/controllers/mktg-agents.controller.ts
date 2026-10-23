@@ -6,6 +6,7 @@ import {
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   FAQ_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -15,6 +16,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_CHAT_MESSAGE_MAX_CHARS,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -128,6 +130,17 @@ export class MktgAgentsController {
     if (!message || typeof message !== 'string' || !message.trim()) {
       next(
         ServiceValidationError.forField('message', 'message is required and must be a non-empty string', {
+          operation: 'mktg_agents_chat',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (message.trim().length > MKTG_CHAT_MESSAGE_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('message', `message must be at most ${MKTG_CHAT_MESSAGE_MAX_CHARS} characters`, {
           operation: 'mktg_agents_chat',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -517,7 +530,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      const result: BrandKitResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.brandKitService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
@@ -874,7 +891,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      const result: FoundationMessageResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.foundationMessageService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
@@ -1108,7 +1129,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_result', {});
 
     try {
-      const result: BoilerplatesResultResponse = await this.boilerplatesService.getResult(req, validSessionId, validProjectUid);
+      const result: BoilerplatesResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.boilerplatesService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'boilerplates_result', startTime, { status: result.status });
       res.json(result);
@@ -1147,6 +1172,16 @@ export class MktgAgentsController {
     if (feedback !== undefined && typeof feedback !== 'string') {
       next(
         ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (typeof feedback === 'string' && feedback.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('feedback', `feedback must be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS} characters`, {
           operation: 'icp_generate',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -1294,7 +1329,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      const result: IcpResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.icpService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
@@ -1597,7 +1636,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_result', {});
 
     try {
-      const result: FaqResultResponse = await this.faqService.getResult(req, validSessionId, validProjectUid);
+      const result: FaqResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.faqService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'faq_result', startTime, { status: result.status });
       res.json(result);

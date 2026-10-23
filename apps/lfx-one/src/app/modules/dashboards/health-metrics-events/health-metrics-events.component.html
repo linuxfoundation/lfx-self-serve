@@ -16,8 +16,7 @@
     [dataSections]="dataSections"
     [subNavItems]="subNavItems()"
     navLabel="Events sections"
-    testIdPrefix="events"
-    [crossReference]="crossReference">
+    testIdPrefix="events">
     <ng-template lfxHealthMetricsL2Section="kpi">
       <lfx-events-at-a-glance [glance]="glance()" [status]="glanceStatus()" (reading)="shell.sectionReading('kpi')" (settled)="shell.sectionSettled('kpi')" />
     </ng-template>

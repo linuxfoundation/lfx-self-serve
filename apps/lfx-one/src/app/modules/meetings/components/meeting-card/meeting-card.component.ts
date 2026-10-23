@@ -75,6 +75,7 @@ import {
 } from '@lfx-one/shared';
 import {
   applyAttachmentScopeOverrides,
+  applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
@@ -993,7 +994,10 @@ export class MeetingCardComponent implements OnInit {
         this.pastMeeting()
           ? fetched()
           : filterAttachmentsForOccurrence(
-              applyAttachmentScopeOverrides(fetched() as MeetingAttachment[], this.meetingService.attachmentScopeOverrides()),
+              applyAttachmentScopeOverrides(
+                applyMeetingAttachmentChanges(fetched() as MeetingAttachment[], this.meetingService.attachmentChanges().get(id)),
+                this.meetingService.attachmentScopeOverrides()
+              ),
               this.occurrence()?.occurrence_id
             )
       );

@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-4" data-testid="events-registrations-growth">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Registrations and growth unavailable"
       subtitle="We could not load registrations by year for this foundation. Refresh the page to try again."
@@ -13,6 +14,7 @@
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-registrations-growth-loading" aria-hidden="true" />
   } @else if (view().rows.length === 0) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-chart-column"
       title="No registrations recorded yet"
       subtitle="Once this foundation's events take registrations, each year's registrations and attendees appear here."
@@ -41,34 +43,36 @@
 
     <div class="flex flex-col gap-2" data-testid="events-registrations-growth-by-year">
       <div class="flex items-baseline justify-between gap-2">
-        <h4 class="text-sm font-medium text-gray-900">By year</h4>
-        <span class="text-xs text-gray-500" data-testid="events-registrations-growth-count-label">{{ countLabel() }}</span>
+        <h4 class="text-[13px] font-medium text-gray-900">By year</h4>
+        <span class="text-[12px] text-gray-500" data-testid="events-registrations-growth-count-label">{{ countLabel() }}</span>
       </div>
-      <lfx-table [rowHover]="false" [value]="view().rows" data-testid="events-registrations-growth-table">
+      <lfx-table styleClass="hm-table" [rowHover]="false" [value]="view().rows" data-testid="events-registrations-growth-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Year</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Total</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">In-person</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Virtual</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Year</span></th>
+            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Total</span></th>
+            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">In-person</span></th>
+            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Virtual</span></th>
           </tr>
         </ng-template>
 
         <ng-template #body let-row>
           <tr [attr.data-testid]="'events-registrations-growth-row-' + row.year">
             <td>
-              <span class="text-sm font-semibold tabular-nums text-gray-900">{{ row.year }}</span>
+              <span class="text-[13px] font-semibold tabular-nums text-gray-900">{{ row.year }}</span>
             </td>
             <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-total-' + row.year">{{ row.totalLabel }}</span>
+              <span class="text-[13px] tabular-nums text-gray-900" [attr.data-testid]="'events-registrations-growth-total-' + row.year">{{
+                row.totalLabel
+              }}</span>
             </td>
             <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-in-person-' + row.year">{{
+              <span class="text-[13px] tabular-nums text-gray-900" [attr.data-testid]="'events-registrations-growth-in-person-' + row.year">{{
                 row.inPersonLabel
               }}</span>
             </td>
             <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-virtual-' + row.year">{{
+              <span class="text-[13px] tabular-nums text-gray-900" [attr.data-testid]="'events-registrations-growth-virtual-' + row.year">{{
                 row.virtualLabel
               }}</span>
             </td>

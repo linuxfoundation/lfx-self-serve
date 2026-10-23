@@ -195,9 +195,11 @@ export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
 export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
 
 /**
- * Longest the outlet keeps its skeleton up after the loader reports the embed mounted, waiting for
- * the embed's first paint, in ms. After this the embed is shown whatever it holds, so a render that
- * never produces height cannot strand the skeleton.
+ * Longest the outlet's own paint check keeps the skeleton up after the loader reports the embed
+ * mounted, in ms. After this the embed is shown whatever it holds, so a render that never produces
+ * content cannot strand the skeleton. It applies only to bundles without the `first-paint`
+ * capability; for those with it the outlet waits on `handle.rendered`, which the loader bounds
+ * itself.
  */
 export const GW_EMBED_FIRST_PAINT_TIMEOUT_MS = 10_000;
 
@@ -220,6 +222,23 @@ export const GW_EMBED_HOST_SESSION_LOGOUT_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/
  * mode would ignore `session` and keep its own session in `localStorage`.
  */
 export const GW_EMBED_CAPABILITY_MISSING_CODE = 'gw_embed_capability_missing';
+
+/**
+ * The manifest capability of a bundle that signals its own first paint, which makes the loader's
+ * `handle.rendered` mean "something is on screen". Without it `rendered` resolves with `ready`,
+ * before anything is drawn, and the outlet falls back to its own paint check.
+ */
+export const GW_EMBED_FIRST_PAINT_CAPABILITY = 'first-paint';
+
+/**
+ * Classes of the spinner the outlet hands the embed as `GwHostContext.loadingIndicator`, so the
+ * embed's loading states look like the rest of LFX. The CSS ring LFX uses for first-paint spinners
+ * (`invite.component.html`), not a Font Awesome icon: the kit is deferred, and an icon whose font
+ * has not loaded draws nothing (`.claude/rules/styling.md`). 21px, the size `text-2xl` gave the
+ * icon. The embed's stylesheet defines `border-blue-200` with Tailwind's own blue, which wins inside
+ * the embed root, so the outlet also sets both border colours inline from `lfxColors`.
+ */
+export const GW_EMBED_LOADING_INDICATOR_CLASS = 'h-6 w-6 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin';
 
 /**
  * Route prefixes the embed can be mounted under, and the value handed to the embed as

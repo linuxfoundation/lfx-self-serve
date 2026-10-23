@@ -77,6 +77,8 @@ import {
 } from '../interfaces/foundation-message.interface';
 import { MktgFrameworkAsset, MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>(FOUNDATION_MESSAGE_ANSWER_KEYS);
@@ -122,7 +124,10 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
   const record = answers as Record<string, unknown>;
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(record, MKTG_INTAKE_ANSWER_LIMITS['foundation-setup']);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = record['project_name'];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
@@ -174,6 +179,9 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
       }
       if (entries.some((link) => !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(link))) {
         errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} must be http(s) URLs, one per line`);
+      }
+      if (entries.some((link) => link.length > MKTG_INTAKE_URL_MAX_CHARS)) {
+        errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} URLs must be at most ${MKTG_INTAKE_URL_MAX_CHARS} characters each`);
       }
     }
   }

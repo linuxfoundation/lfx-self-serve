@@ -7,10 +7,21 @@ import type { KeyValue, SetIfLockHeldResult } from '@gatewaze/host-session';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loggerMock, lfxSessionGet } = vi.hoisted(() => ({
+const { loggerMock, lfxSessionGet, adminContextOverride } = vi.hoisted(() => ({
   loggerMock: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
   lfxSessionGet: vi.fn(),
+  /** When set, stands in for getAdminContext; otherwise the package's own runs against the fakes. */
+  adminContextOverride: { impl: null as null | ((...args: unknown[]) => Promise<unknown>) },
 }));
+
+vi.mock('@gatewaze/host-session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@gatewaze/host-session')>();
+  return {
+    ...actual,
+    getAdminContext: (...args: Parameters<typeof actual.getAdminContext>) =>
+      adminContextOverride.impl ? adminContextOverride.impl(...args) : actual.getAdminContext(...args),
+  };
+});
 
 vi.mock('./logger.service', () => ({ logger: loggerMock }));
 // The LFX session a Realtime socket checks before each refresh.
@@ -129,6 +140,13 @@ function fakeUpstreams() {
     userStatuses: [] as number[],
     logoutStatus: 204,
     grants: 0,
+    /** GoTrue /user's `id`. */
+    userId: 'gw-user-synthetic',
+    /** The admin_profiles rows getAdminContext reads (its select names every column). */
+    profileRows: [] as unknown[],
+    profileStatus: 200,
+    /** The rows rpc/admin_get_features answers. */
+    featureRows: [] as unknown[],
   };
   const calls: string[] = [];
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
@@ -153,12 +171,18 @@ function fakeUpstreams() {
     if (url === `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`) {
       return json(state.refreshStatus, state.refreshStatus === 200 ? {} : { error: 'refresh_token_not_found' });
     }
+    if (url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles?select=id,`)) {
+      return json(state.profileStatus, state.profileStatus === 200 ? state.profileRows : {});
+    }
+    if (url === `${SUPABASE_URL}/rest/v1/rpc/admin_get_features`) {
+      return json(200, state.featureRows);
+    }
     if (url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles`)) {
       return state.adminStatus === 200 ? json(200, [{ is_active: state.adminActive }]) : json(state.adminStatus, {});
     }
     if (url === `${SUPABASE_URL}/auth/v1/user`) {
       const status = state.userStatuses.shift() ?? 200;
-      return status === 200 ? json(200, { id: 'gw-user-synthetic', email: USER_EMAIL }) : json(status, { msg: 'synthetic' });
+      return status === 200 ? json(200, { id: state.userId, email: USER_EMAIL }) : json(status, { msg: 'synthetic' });
     }
     if (url === `${SUPABASE_URL}/auth/v1/logout?scope=local`) return new Response(null, { status: state.logoutStatus });
     throw new Error(`unexpected fetch ${url}`);
@@ -507,6 +531,109 @@ describe('GatewazeSessionService me and logout', () => {
         user: { id: 'gw-user-synthetic', email: USER_EMAIL },
       });
       expect(upstreams.count(USER)).toBe(1);
+    });
+
+    describe('the admin context', () => {
+      // The session's user id comes from the ID token grant: `gw-user-<sub>`.
+      const SESSION_USER_ID = `gw-user-${SUB_A}`;
+      const PROFILE = {
+        id: 'profile-synthetic',
+        user_id: SESSION_USER_ID,
+        email: USER_EMAIL,
+        name: null,
+        role: 'admin',
+        avatar_url: null,
+        is_active: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      };
+
+      beforeEach(() => {
+        upstreams.state.userId = SESSION_USER_ID;
+        upstreams.state.profileRows = [PROFILE];
+        upstreams.state.featureRows = [{ feature: 'newsletters' }, { feature: 'broadcasts' }];
+      });
+
+      it('adds the profile and the granted features to an admin answer', async () => {
+        await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({
+          outcome: 'ok',
+          user: { id: SESSION_USER_ID, email: USER_EMAIL },
+          admin: { profile: PROFILE, features: ['newsletters', 'broadcasts'] },
+        });
+        expect(upstreams.calls.some((url) => url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles?select=id,`))).toBe(true);
+      });
+
+      it('leaves admin out when the context cannot be read, and logs why without the user id', async () => {
+        upstreams.state.profileStatus = 500;
+
+        await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'ok', user: { id: SESSION_USER_ID, email: USER_EMAIL } });
+        const warning = loggerMock.warning.mock.calls.find((call) => String(call[2]).includes('admin context read failed'));
+        expect(warning).toBeDefined();
+        expect(warning?.[1]).toBe('get_gatewaze_me');
+        expect(warning?.[3]).toEqual({ err: expect.stringContaining('500') });
+        expect(JSON.stringify(warning)).not.toContain(SESSION_USER_ID);
+      });
+
+      it('answers unavailable, with no unhandled rejection, when getUser fails while the admin context is pending', async () => {
+        upstreams.state.userStatuses = [500];
+        // A getAdminContext that broke its never-rejects promise, rejecting after getUser has failed
+        // and nothing is awaiting it any more.
+        let releaseProfile: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          releaseProfile = resolve;
+        });
+        adminContextOverride.impl = async () => {
+          await held;
+          throw new Error('synthetic late failure');
+        };
+        const unhandled = vi.fn();
+        process.on('unhandledRejection', unhandled);
+        try {
+          await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
+          releaseProfile();
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          expect(unhandled).not.toHaveBeenCalled();
+        } finally {
+          process.off('unhandledRejection', unhandled);
+          adminContextOverride.impl = null;
+        }
+      });
+
+      it('leaves admin out when the profile is in an unexpected shape', async () => {
+        upstreams.state.profileRows = [{ ...PROFILE, avatar_url: undefined }];
+
+        const result = await service.getGatewazeMe(buildReq());
+
+        expect(result).toMatchObject({ outcome: 'ok' });
+        expect(result).not.toHaveProperty('admin');
+        expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_me', expect.stringContaining('admin context unusable'), {
+          reason: 'admin_profiles row in an unexpected shape',
+        });
+      });
+
+      it("leaves admin out when GoTrue's user is not the profile's user", async () => {
+        upstreams.state.userId = 'gw-user-someone-else';
+
+        const result = await service.getGatewazeMe(buildReq());
+
+        expect(result).toMatchObject({ outcome: 'ok' });
+        expect(result).not.toHaveProperty('admin');
+        expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_me', expect.stringContaining('not for the signed-in user'));
+      });
+
+      it('never reads it for a non-admin, so the 403 cannot carry it', async () => {
+        upstreams.state.adminActive = false;
+
+        await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'not_admin', email: USER_EMAIL });
+        expect(upstreams.calls.some((url) => url.includes('rpc/admin_get_features'))).toBe(false);
+      });
+
+      it('never reads it while the admin check is pending', async () => {
+        upstreams.state.adminStatus = 503;
+
+        await expect(service.getGatewazeMe(buildReq())).resolves.toMatchObject({ outcome: 'admin_check_pending' });
+        expect(upstreams.calls.some((url) => url.includes('rpc/admin_get_features'))).toBe(false);
+      });
     });
 
     it('answers not_admin with the email when admin_profiles has no active row', async () => {

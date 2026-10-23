@@ -4448,7 +4448,7 @@ export class AnalyticsController {
   /** An optional, well-formed `projectSlug` query param; `null` is the all-projects scope. */
   private getOptionalProjectSlug(req: Request, operation: string): string | null {
     const projectSlug = getStringQueryParam(req, 'projectSlug');
-    // Same shape the client accepts, so a slug the selector sends never 400s here.
+    // The page no longer sends one; the filter stays until Engagement moves to its new models.
     if (projectSlug && !HEALTH_METRICS_PROJECT_SLUG_PATTERN.test(projectSlug)) {
       throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation });
     }
