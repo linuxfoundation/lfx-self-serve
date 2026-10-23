@@ -21,7 +21,7 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
     '[attr.aria-label]': 'ariaLabel()',
     '[attr.data-testid]': "testIdPrefix() + '-sub-nav'",
     '[class.hmn-closed]': 'closed()',
-    '[style.top.px]': 'topPx()',
+    '[style.--hmn-top]': "topPx() + 'px'",
     '(mouseleave)': 'closed.set(false)',
     '(focusin)': 'closed.set(false)',
     '(click)': 'openFromRail($event)',

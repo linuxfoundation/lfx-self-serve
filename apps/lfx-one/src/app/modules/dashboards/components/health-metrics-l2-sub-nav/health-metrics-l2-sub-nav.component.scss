@@ -14,8 +14,10 @@
   align-self: flex-start;
   min-width: 28px;
 
+  // The offset only applies while pinned; a relative host would just be pushed below the first card.
   @media (min-width: theme('screens.lg')) {
     position: sticky;
+    top: var(--hmn-top, 0px);
   }
 }
 

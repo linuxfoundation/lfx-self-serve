@@ -81,8 +81,9 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(item('orgs').getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('pins at the offset the shell passes', () => {
-    expect(host.style.top).toBe('96px');
+  it('hands the shell offset to the sticky rule rather than setting `top` inline', () => {
+    expect(host.style.getPropertyValue('--hmn-top')).toBe('96px');
+    expect(host.style.top).toBe('');
   });
 
   // jsdom applies no container query, so the rail shows and the nav reads as collapsed unless a test hides it.
