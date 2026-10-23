@@ -22,6 +22,7 @@ import {
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_RUN_NEW_MODE,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
@@ -195,6 +196,7 @@ export class MktgAgentRunComponent {
   private readonly priorDocumentCount = signal(0);
   private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
+  protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
   /** Field keys pre-filled from LFX data this session — the raw record behind the "From LFX" chips. */
@@ -657,6 +659,12 @@ export class MktgAgentRunComponent {
       return;
     }
     this.startGeneration();
+  }
+
+  protected onRetryRun(): void {
+    const request = this.activeRequest;
+    if (!this.runFailed() || !request || this.phase() === 'running') return;
+    this.startGeneration(request);
   }
 
   /** Another empty row on a `url-list` field, up to its `maxItems`. */
@@ -1166,6 +1174,7 @@ export class MktgAgentRunComponent {
     this.activityStartedAt.set(0);
     this.phase.set('form');
     this.recheckingAttempt.set(false);
+    this.runFailed.set(false);
     this.errorText.set('');
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
@@ -1347,7 +1356,7 @@ export class MktgAgentRunComponent {
     return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
-  private startGeneration(): void {
+  private startGeneration(retryRequest?: MktgGenerateRequest): void {
     const projectUid = this.projectContext.activeContextUid();
     const agent = this.agent;
     const intake = this.intake;
@@ -1359,7 +1368,8 @@ export class MktgAgentRunComponent {
       return;
     }
 
-    const answers = this.buildAnswers();
+    if (retryRequest && (retryRequest.projectUid !== projectUid || retryRequest.agentId !== agent.id)) return;
+    const answers = retryRequest?.answers ?? this.buildAnswers();
     // Remember what the user typed, keyed by intake field key, so the NEXT
     // agent's form on this project can offer it back instead of asking again.
     // Only the intake's own answers — the auto-attached dependency documents
@@ -1367,8 +1377,9 @@ export class MktgAgentRunComponent {
     // FULL state goes in, not the payload: a cleared optional field has to
     // erase its remembered answer rather than leave the old one to be
     // re-offered once this run's 24h record expires.
-    this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
+    if (!retryRequest) this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
+    this.runFailed.set(false);
     this.errorText.set('');
     this.clearQuestions();
     this.activity.set([]);
@@ -1382,11 +1393,11 @@ export class MktgAgentRunComponent {
     // browser fallback) and overlay the current stored attachments onto the
     // answers. The retired Request changes form sends no feedback here.
     this.generationSub?.unsubscribe();
-    this.generationSub = this.resolveDependenciesForGate(projectUid)
+    this.generationSub = (retryRequest ? of(this.dependencyDocs()) : this.resolveDependenciesForGate(projectUid))
       .pipe(
         switchMap((docs) => {
           this.dependencyDocs.set(docs);
-          const attached = docs ? this.applyAttachments(answers, docs) : null;
+          const attached = retryRequest?.answers ?? (docs ? this.applyAttachments(answers, docs) : null);
           if (!attached) {
             // The stored dependency disappeared between page load and submit,
             // or the check itself failed — surface the honest gate note
@@ -1395,7 +1406,7 @@ export class MktgAgentRunComponent {
             this.phase.set('form');
             return EMPTY;
           }
-          const request: MktgGenerateRequest = {
+          const request: MktgGenerateRequest = retryRequest ?? {
             agentId: agent.id,
             projectUid,
             intake,
@@ -1420,6 +1431,7 @@ export class MktgAgentRunComponent {
           this.navigating.set(false);
           this.recheckingAttempt.set(false);
           this.writingStretch.set(false);
+          this.runFailed.set(!!retryRequest);
           this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
           this.phase.set('form');
         },
@@ -1461,12 +1473,11 @@ export class MktgAgentRunComponent {
       this.discardPendingNavigation();
       this.navigating.set(false);
       this.recheckingAttempt.set(false);
-      this.activeRequest = null;
+      if (progress.type === 'refused') this.activeRequest = null;
       this.writingStretch.set(false);
       this.clearQuestions();
-      this.errorText.set(
-        progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
-      );
+      this.runFailed.set(progress.type === 'failed');
+      this.errorText.set(progress.type === 'failed' ? (progress.failure?.reason ?? MKTG_RUN_FAILURE_REASON) : progress.reply);
       this.phase.set('form');
       return;
     }

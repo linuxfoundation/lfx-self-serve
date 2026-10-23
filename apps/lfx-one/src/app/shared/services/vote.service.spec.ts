@@ -173,6 +173,16 @@ describe('VoteService', () => {
     expect(error).toHaveBeenCalledWith(failure);
   });
 
+  it('propagates vote-count HTTP failures instead of reporting a zero total (GH-4078)', () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    http.get.mockReturnValue(throwError(() => failure));
+    const next = vi.fn();
+    const error = vi.fn();
+    service.getVotesCountByProject('p1').subscribe({ next, error });
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
   // GH-2730: the carrier overlays a just-opened vote's known-active status over stale index rows
   // while the search index catches up. It must self-heal — evict on convergence, prune at the
   // TTL — or it would pin a stale 'active' over the fetched server value indefinitely.
@@ -197,7 +207,7 @@ describe('VoteService', () => {
     it('evicts the carried uid once a fetched row comes back active — the server value has converged', () => {
       service.markVoteOpened('v1');
 
-      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })]);
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
 
       // After eviction the carrier no longer overlays — a stale row would flow through unchanged.
       const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
@@ -210,7 +220,7 @@ describe('VoteService', () => {
       // A just-opened vote can end early inside the TTL (ITX's EndPollIfAllResponded), so any
       // converged non-disabled status — not just `active` — is the server's truth and must not be
       // overlaid back to active.
-      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED })]);
+      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 4 })]);
       expect(converged[0].status).toBe(PollStatus.ENDED);
 
       // The carry was evicted on convergence — a subsequent stale row flows through unchanged.
@@ -266,6 +276,96 @@ describe('VoteService', () => {
     });
   });
 
+  // GH-4078: a vote inside either carrier window can't be trusted to report its electorate yet.
+  describe('awaiting invitation count (GH-4078)', () => {
+    it('reports nothing awaiting when no vote was marked', () => {
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })])).toBe(false);
+    });
+
+    it('treats a just-opened vote as awaiting until its carrier expires', () => {
+      vi.useFakeTimers();
+      try {
+        service.markVoteOpened('v1');
+        expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+        expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats a just-created open vote as awaiting, but not a just-created draft', () => {
+      service.markVoteCreated(buildVote({ uid: 'opened' }), true);
+      service.markVoteCreated(buildVote({ uid: 'draft' }), false);
+
+      expect(service.isAwaitingInvitationCount('opened')).toBe(true);
+      expect(service.isAwaitingInvitationCount('draft')).toBe(false);
+    });
+
+    it('stops awaiting once a fetched row converges and evicts the carrier', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
+
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+    });
+
+    it('does not reopen a just-opened vote as Active from a stale draft row after it was seen as Ended', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
+
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+      // Re-opening the vote restarts the carrier, so a stale draft row is overlaid as Active again.
+      service.markVoteOpened('v1');
+      expect(service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the just-opened carrier while the index reports a non-draft status before its electorate', () => {
+      service.markVoteOpened('v1');
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      // The server status still wins; only eviction waits for the count.
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+    });
+
+    it('keeps the just-created carrier while the indexed row is open but has no electorate yet', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+      const serverRow = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+
+      expect(service.mergeRecentlyCreatedVotes([serverRow])).toEqual([serverRow]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+    });
+
+    it('adopts a fetched Ended status so the retained carrier is not re-inserted as Active', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote', project_uid: 'p1' }), true);
+
+      // All tab: the index already reports Ended, but no electorate yet — the carrier is retained.
+      const ended = buildVote({ uid: 'new-vote', project_uid: 'p1', status: PollStatus.ENDED, total_voting_request_invitations: 0 });
+      expect(service.mergeRecentlyCreatedVotes([ended], { projectUid: 'p1', statusFilter: null })).toEqual([ended]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+
+      // Active tab: the server no longer returns the ended vote, and the carrier must not put it back.
+      expect(service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      // Ended tab: the carrier now inserts under the status the server reported.
+      const endedTab = service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ENDED });
+      expect(endedTab.map((vote) => [vote.uid, vote.status])).toEqual([['new-vote', PollStatus.ENDED]]);
+    });
+
+    it('counts a list as awaiting only for open rows still missing a positive electorate', () => {
+      service.markVoteOpened('v1');
+
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 0 })])).toBe(true);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })])).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])).toBe(false);
+    });
+  });
+
   // GH-4007: a just-created (including cloned) vote can be missing entirely from a fetched page
   // until the search index catches up — unlike the GH-2730 carrier above, there is no row to patch,
   // so the carrier must insert one. Self-heals the same way: evict on convergence, prune at the TTL.
@@ -290,7 +390,7 @@ describe('VoteService', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
       const merged = service.mergeRecentlyCreatedVotes([serverRow]);
 
       expect(merged).toEqual([serverRow]);
@@ -507,7 +607,7 @@ describe('VoteService', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
       const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
 
       expect(merged).toEqual([serverRow]);

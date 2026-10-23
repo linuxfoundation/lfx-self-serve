@@ -125,7 +125,7 @@ test.describe('Marketing OS Documents structure', () => {
     // Enter via the fourth tab, then select the type to exercise content-ready scrolling.
     await page.getByTestId('mktg-kit-tab-documents').click();
     await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
-    await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(5);
+    await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(4);
     await expect(page.getByTestId('mktg-documents-page').locator('main, aside')).toHaveCount(0);
   });
 

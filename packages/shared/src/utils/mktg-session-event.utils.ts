@@ -55,6 +55,11 @@ function parseEmbeddedJson(value: string): unknown {
   }
 }
 
+/** Root task metadata only: tool errors must not become session/agent failures. */
+export function isMktgToolTaskEvent(event: unknown): boolean {
+  return isRecord(event) && isRecord(event['task']) && event['task']['entity_type'] === 'EntTaskTool';
+}
+
 /** Ignore reasoning before walking any content, including embedded transcript-shaped JSON. */
 export function isMktgReasoningEvent(event: unknown): boolean {
   return isRecord(event) && isRecord(event['content']) && event['content']['type'] === MKTG_SESSION_REASONING_CONTENT_TYPE;

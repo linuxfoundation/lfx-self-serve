@@ -52,6 +52,8 @@ vi.mock('../services/project.service', () => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn() } }));
 import { LinkedinPostController } from './linkedin-post.controller';
+import { GuildService } from '../services/guild.service';
+import { logger } from '../services/logger.service';
 
 function request(body: unknown, sub = 'subject-one', username = 'initial-user'): Request {
   return Object.assign({} as Request, { method: 'POST', body, oidc: { user: { sub, 'https://sso.linuxfoundation.org/claims/username': username } } });
@@ -65,7 +67,7 @@ function response(): Response {
 describe('LinkedIn endpoint boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.project.mockResolvedValue({ uid: 'project-one', writer: true });
+    mocks.project.mockResolvedValue({ uid: 'project-one', name: 'Synthetic project', writer: true });
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567' });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
@@ -157,8 +159,29 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).not.toHaveBeenCalled();
     const agent = MKTG_AGENTS.find((a) => a.id === 'linkedin-post');
     expect(agent?.status).toBe('active');
-    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), 'subject-one', expect.anything(), undefined, 'linkedin-post');
+    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), 'subject-one', expect.anything(), undefined, 'linkedin-post', {
+      uid: 'project-one',
+      name: 'Synthetic project',
+      writer: true,
+    });
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ownerToken: createSessionOwnerToken('subject-one', 'session-one') }));
+  });
+  it('logs and sends the resolved terminal outcome, never an earlier pending status', async () => {
+    const resolve = vi.spyOn(GuildService.prototype, 'resolveRunOutcome').mockResolvedValue({ status: 'failed' });
+    try {
+      const res = response();
+      const next = vi.fn();
+      await new LinkedinPostController().result(
+        request({ project: 'project-one', sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one') }),
+        res,
+        next
+      );
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ status: 'failed' });
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'linkedin_result', 0, { status: 'failed' });
+    } finally {
+      resolve.mockRestore();
+    }
   });
   it('preserves omitted answers and bounds sourceWords in words, not bytes', async () => {
     const controller = new LinkedinPostController();

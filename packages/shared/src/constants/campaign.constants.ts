@@ -1210,6 +1210,16 @@ export const MONITOR_CUTOVER_MISMATCH_CODE = 'MONITOR_CUTOVER_MISMATCH';
 /** The error `code` (HTTP 409) of the inverse refusal, by a pod with the cutover ON; also retryable. */
 export const MONITOR_CUTOVER_LEGACY_MISMATCH_CODE = 'MONITOR_CUTOVER_LEGACY_MISMATCH';
 export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data sources; refresh in a moment.';
+/**
+ * The error `code` (HTTP 403) of a monitor read refused because its ad account is shared by every
+ * foundation (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account). Account-scoped
+ * reads on such an account return every foundation's campaigns, so only LF administrators (a ROOT
+ * writer or a ROOT `global_marketing_ops` holder) can monitor it here. lfx-self-serve-ops#54.
+ */
+export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RESTRICTED';
+/** The user-facing message of that refusal: the account is shared by every foundation, so only LF administrators can monitor it. */
+export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
+  'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';

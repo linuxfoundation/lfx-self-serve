@@ -15,6 +15,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
@@ -377,6 +378,33 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-result')).toBeNull();
     });
 
+    it('keeps Run again idle until Start and retries a failed fresh request without losing its sources or mode', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValue(
+        of<MktgGenerateProgress>({ type: 'failed', failure: { eventType: 'runtime_error', reason: 'Synthetic failed session. Retry.' } })
+      );
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(generate).not.toHaveBeenCalled();
+      expect(component['showIntakeForm']()).toBe(false);
+      component['onSubmit']();
+      await fixture.whenStable();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      expect(request).toMatchObject({ newRun: true, answers: { website_url: history.answers.website_url } });
+      expect(component['runFailed']()).toBe(true);
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-retry')).not.toBeNull();
+      generate.mockReturnValue(of<MktgGenerateProgress>({ type: 'submitted' }));
+      component['onRetryRun']();
+      await fixture.whenStable();
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect(generate).toHaveBeenLastCalledWith(request);
+      expect(component['freshMode']()).toBe(true);
+      expect(component['runFailed']()).toBe(false);
+      expect(component['phase']()).toBe('running');
+    });
+
     it('clears entry-only fresh mode when opening a sibling agent', async () => {
       await configure('browser', agentId, { mode: 'new', project: 'synthetic' });
       component['onOpenAgent']('brand-kit');
@@ -619,6 +647,38 @@ describe('MktgAgentRunComponent', () => {
       expect(loadRun).not.toHaveBeenCalled();
       expect(generate).not.toHaveBeenCalled();
     });
+  });
+
+  it('leaves the running phase on terminal failure, keeps typed inputs and offers Retry', async () => {
+    await configure();
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    const before = component['intakeForm'].getRawValue();
+    const request: MktgGenerateRequest = {
+      agentId: SHELL_AGENT.id,
+      projectUid: PROJECT_1.uid,
+      intake: SHELL_INTAKE,
+      answers: before,
+      feedback: 'Keep the revision feedback.',
+    };
+    component['activeRequest'] = request;
+    component['phase'].set('running');
+    component['onProgress']({ type: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry.' } }, PROJECT_1.uid);
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('form');
+    expect(component['intakeForm'].getRawValue()).toEqual(before);
+    expect(query('mktg-agent-run-error')?.textContent).toContain('The agent could not start. Retry.');
+    expect(query('mktg-agent-run-retry')?.textContent).toContain('Retry');
+    const actions = query('mktg-agent-run-error-actions');
+    expect(actions?.classList.contains('mt-3')).toBe(true);
+    expect(actions?.classList.contains('flex')).toBe(true);
+    expect(actions?.classList.contains('gap-2')).toBe(true);
+    expect(actions?.contains(query('mktg-agent-run-retry'))).toBe(true);
+    expect(component['activeRequest']).toBe(request);
+    component['intakeForm'].reset(); // Retry must not rebuild from a subsequently edited form.
+    component['onRetryRun']();
+    expect(generate).toHaveBeenLastCalledWith(request);
+    expect(generate.mock.calls.at(-1)?.[0].feedback).toBe('Keep the revision feedback.');
   });
 
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
@@ -891,7 +951,8 @@ describe('MktgAgentRunComponent', () => {
       expect(component['navigating']()).toBe(false);
       expect(component['phase']()).toBe('form');
       expect(component['submitDisabled']()).toBe(false);
-      expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic terminal failure');
+      expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
+      expect(query('mktg-agent-run-error')?.textContent).not.toContain('Synthetic terminal failure');
       component['onRetryHandoff']();
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(generate).not.toHaveBeenCalled();
@@ -1124,7 +1185,8 @@ describe('MktgAgentRunComponent', () => {
       component['onProgress']({ type: 'failed', failureText }, PROJECT_1.uid);
       await fixture.whenStable();
       expect(component['phase']()).toBe('form');
-      expect(query('mktg-agent-run-error')?.textContent).toContain(failureText || 'The agent could not complete this run. Your intake is kept — try again.');
+      expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
+      if (failureText) expect(query('mktg-agent-run-error')?.textContent).not.toContain(failureText);
     }
   );
 
