@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
@@ -18,6 +19,7 @@ describe('ComposerGuestsComponent', () => {
   let fixture: ComponentFixture<ComposerGuestsComponent>;
   let component: ComposerGuestsComponent;
   let formService: MeetingComposerFormService;
+  let announce: ReturnType<typeof vi.fn>;
 
   const savedGroupGuest: MeetingRegistrantWithState = {
     uid: 'registrant-1',
@@ -47,8 +49,10 @@ describe('ComposerGuestsComponent', () => {
   const reconcile = (members: CommitteeMember[]): void => component['onCommitteeMembersChange'](members);
 
   beforeEach(async () => {
+    announce = vi.fn().mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       providers: [
+        { provide: LiveAnnouncer, useValue: { announce } },
         MeetingComposerFormService,
         ConfirmationService,
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -58,7 +62,7 @@ describe('ComposerGuestsComponent', () => {
         {
           provide: MeetingService,
           useValue: {
-            createRegistrantFormGroup: () => new FormGroup({ email: new FormControl('') }),
+            createRegistrantFormGroup: () => new FormGroup({ email: new FormControl(''), first_name: new FormControl(''), last_name: new FormControl('') }),
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ ...guest, meeting_id: meetingUid }),
             getChangedFields: () => ({}),
           },
@@ -371,6 +375,219 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.guests().map((entry) => entry.email)).toEqual(['second@example.com']);
     });
   });
+
+  describe('undoing a removal', () => {
+    beforeEach(() => formService.mode.set('edit'));
+
+    it('is not offered on a create, where nothing is invited yet', () => {
+      formService.mode.set('create');
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+
+      expect(component['lastRemoval']()).toBeNull();
+    });
+
+    it('puts a never-saved guest back where it sat', () => {
+      const first = { ...savedGroupGuest, uid: '', tempId: 'temp_1', email: 'a@example.com', type: 'direct' as const, state: 'new' as const };
+      const second = { ...first, tempId: 'temp_2', email: 'b@example.com' };
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](first);
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['b@example.com']);
+
+      component['onUndoRemove']();
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['a@example.com', 'b@example.com']);
+      expect(component['lastRemoval']()).toBeNull();
+      expect(announce).toHaveBeenLastCalledWith('Member One restored to the guest list.', 'polite');
+    });
+
+    it('restores a saved group guest to its saved state and lifts the email suppression', () => {
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+      expect(formService.guests()[0].state).toBe('deleted');
+      expect(formService.suppressedGuestEmails().has('member@example.com')).toBe(true);
+
+      component['onUndoRemove']();
+
+      expect(formService.guests()).toEqual([savedGroupGuest]);
+      expect(formService.suppressedGuestEmails().has('member@example.com')).toBe(false);
+    });
+
+    it('tells screen readers that Undo is available', () => {
+      formService.setGuests([savedGroupGuest]);
+
+      component['onRemoveGuest'](savedGroupGuest);
+
+      expect(announce).toHaveBeenCalledWith('Member One removed from the guest list. Undo is available above the list.', 'polite');
+    });
+
+    it('withdraws undo once a group puts the same email back, instead of duplicating it', () => {
+      const direct = { ...savedGroupGuest, type: 'direct' as const };
+      formService.setGuests([direct]);
+      component['onRemoveGuest'](direct);
+
+      // A group picked afterwards re-adds the person: removed direct guests are not suppressed.
+      reconcile([member]);
+      expect(component['undoableRemoval']()).toBeNull();
+
+      component['onUndoRemove']();
+
+      const live = formService.guests().filter((entry) => entry.state !== 'deleted' && entry.email === 'member@example.com');
+      expect(live).toHaveLength(1);
+    });
+
+    it('keeps undo when another row already shared the email, such as a registration for another occurrence', () => {
+      const thisOccurrence = { ...savedGroupGuest, uid: 'occ-a', type: 'direct' as const, occurrence_id: '1893456000' };
+      const otherOccurrence = { ...thisOccurrence, uid: 'occ-b', occurrence_id: '1894060800' };
+      formService.setGuests([thisOccurrence, otherOccurrence]);
+
+      component['onRemoveGuest'](thisOccurrence);
+
+      expect(component['undoableRemoval']()).not.toBeNull();
+    });
+
+    it('withdraws undo for a group guest once the selected groups change', () => {
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a' }]);
+      const groupGuest = { ...savedGroupGuest, uid: '', tempId: 'temp_1', state: 'new' as const };
+      formService.setGuests([groupGuest]);
+      component['onRemoveGuest'](groupGuest);
+      expect(component['undoableRemoval']()).not.toBeNull();
+
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-b' }]);
+
+      expect(component['undoableRemoval']()).toBeNull();
+    });
+
+    it('offers undo for a guest with no email', () => {
+      const emailless = { ...savedGroupGuest, uid: 'no-email', email: '', type: 'direct' as const };
+      formService.setGuests([emailless]);
+
+      component['onRemoveGuest'](emailless);
+
+      expect(component['undoableRemoval']()).not.toBeNull();
+    });
+
+    it('withdraws undo for a group guest once a voting-status filter narrows', () => {
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep', 'observer'] }]);
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+      expect(component['undoableRemoval']()).not.toBeNull();
+
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep'] }]);
+
+      expect(component['undoableRemoval']()).toBeNull();
+    });
+
+    it('moves keyboard focus back to the restored row', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['onUndoRemove']();
+
+      expect(focus).toHaveBeenCalledWith('registrant-1');
+    });
+
+    it('hands keyboard focus to the guest search when the undo notice is dismissed', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['onDismissUndo']();
+
+      expect(component['undoableRemoval']()).toBeNull();
+      expect(focus).toHaveBeenCalledWith(null);
+    });
+
+    it('hands focus to the next row after a removal, then the previous one, then the search', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      const first = { ...savedGroupGuest, uid: 'g-1', email: 'one@example.com', type: 'direct' as const };
+      const second = { ...first, uid: 'g-2', email: 'two@example.com' };
+      formService.setGuests([first, second]);
+      const live = (uid: string) => formService.guests().find((entry) => entry.uid === uid) as MeetingRegistrantWithState;
+
+      component['onRemoveGuest'](live('g-1'));
+      expect(focus).toHaveBeenLastCalledWith('g-2');
+
+      component['onRemoveGuest'](live('g-2'));
+      expect(focus).toHaveBeenLastCalledWith(null);
+    });
+
+    it('skips rows without a remove button when handing focus on', () => {
+      const focus = vi.spyOn(component as unknown as { focusGuestRemoveButton: (trackId: string | null) => void }, 'focusGuestRemoveButton');
+      const target = { ...savedGroupGuest, uid: 'g-1', email: 'one@example.com', type: 'direct' as const };
+      const blocked = { ...target, uid: 'g-2', email: 'two@example.com' };
+      const next = { ...target, uid: 'g-3', email: 'three@example.com' };
+      formService.setGuests([target, blocked, next]);
+      // Stand-in for a series-wide guest in an occurrence edit, which renders no remove button.
+      vi.spyOn(component as unknown as { filteredGuestRows: () => ComposerGuestRow[] }, 'filteredGuestRows').mockReturnValue(
+        component['guestRows']().map((row) => ({ ...row, removable: row.guest.uid !== 'g-2' }))
+      );
+
+      component['onRemoveGuest'](component['guestRows']()[0].guest);
+
+      expect(focus).toHaveBeenLastCalledWith('g-3');
+    });
+
+    it('stops offering undo once another guest is added', () => {
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['addDirectGuest']({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+
+      expect(component['lastRemoval']()).toBeNull();
+    });
+  });
+
+  describe('adding and removing without a confirm step', () => {
+    it('puts a valid search pick straight onto the list, resets the search and announces it', () => {
+      component['quickAddForm'].setValue({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
+
+      component['onUserSelected']();
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['ada@example.com']);
+      expect(component['quickAddForm'].value.email).toBeFalsy();
+      expect(announce).toHaveBeenCalledWith('Ada Byron added to the guest list.', 'polite');
+    });
+
+    it('announces a removal, falling back to the email when the guest has no name', () => {
+      const guest = { ...savedGroupGuest, uid: 'registrant-2', first_name: '', last_name: '', type: 'direct' as const };
+      formService.setGuests([guest]);
+
+      component['onRemoveGuest'](guest);
+
+      expect(announce).toHaveBeenCalledWith('member@example.com removed from the guest list.', 'polite');
+    });
+
+    it('announces every one of two consecutive changes that read the same', () => {
+      // Two guests sharing a name: a bound region would hold the same text and stay silent the second time.
+      const first = { ...savedGroupGuest, uid: 'registrant-2', email: 'a@example.com', type: 'direct' as const };
+      const second = { ...first, uid: 'registrant-3', email: 'b@example.com' };
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](first);
+      component['onRemoveGuest'](second);
+
+      expect(announce).toHaveBeenCalledTimes(2);
+      expect(announce).toHaveBeenNthCalledWith(2, 'Member One removed from the guest list.', 'polite');
+    });
+  });
+
   /**
    * Covers what this section hands the group picker as the organizer's saved sharing decision.
    * @description The picker mounts after the load has settled, so it never sees the hydration

@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
+import { LiveAnnouncer } from '@angular/cdk/a11y';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -9,7 +10,14 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type {
+  ComposerGuestRemoval,
+  ComposerGuestRow,
+  CommitteeMember,
+  ManualGuestDialogResult,
+  MeetingCommittee,
+  MeetingRegistrantWithState,
+} from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
   getSavedAttendeeVisibility,
@@ -50,6 +58,10 @@ export class ComposerGuestsComponent {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  /** Adds and removes are otherwise silent rows changing below; it re-announces a repeated message, which a bound region would not. */
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly injector = inject(Injector);
   protected readonly formService = inject(MeetingComposerFormService);
   protected readonly inviteResend = inject(MeetingInviteResendService);
 
@@ -57,32 +69,13 @@ export class ComposerGuestsComponent {
 
   protected readonly quickAddForm = this.meetingService.createRegistrantFormGroup();
 
-  /** User selected from search but not yet added; cleared on confirm or dismiss. */
-  protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
-
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
+  /** The last removal when editing, offered back as Undo until the next add or remove replaces it. */
+  protected readonly lastRemoval = signal<ComposerGuestRemoval | null>(null);
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['first_name'], g['last_name']].filter(Boolean).join(' ') || String(g['email'] ?? '');
-  });
-
-  protected readonly stagedGuestInitials: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return avatarInitials(g['first_name'] as string, g['last_name'] as string, g['email'] as string);
-  });
-
-  protected readonly stagedGuestSecondaryLine: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['email'], g['org_name']].filter(Boolean).join(' · ');
-  });
 
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
@@ -233,15 +226,41 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * Stages the person picked from search rather than adding immediately.
+   * The removal Undo can still put back; `null` once putting it back would be wrong.
+   * @description A removed direct guest isn't suppressed, so a group picked afterwards can re-add the
+   * same person; restoring the row on top would queue a duplicate invite. Rows that already shared the
+   * email at removal don't count. A group guest's row also carries the group it came through, which a
+   * change of selected groups can make stale, so Undo is withdrawn for them on any group change.
+   */
+  protected readonly undoableRemoval: Signal<ComposerGuestRemoval | null> = computed(() => {
+    const removal = this.lastRemoval();
+    if (!removal) return null;
+
+    if (this.liveEmailCount(removal.guest.email) > removal.liveSameEmail) return null;
+    if (removal.guest.type === 'committee' && this.committeeKey() !== removal.committeeKey) return null;
+
+    return removal;
+  });
+
+  /** Each selected group with its voting-status filter: narrowing a filter can drop a group guest as surely as deselecting the group. */
+  private readonly committeeKey: Signal<string> = computed(() =>
+    this.selectedCommittees()
+      .map((committee) => `${committee.uid}:${[...(committee.allowed_voting_statuses ?? [])].sort().join('|')}`)
+      .sort()
+      .join(',')
+  );
+
+  /**
+   * Adds the person picked from search straight to the invited list.
    * @description The directory can return a person without a usable first/last name, which the add
    * payload requires. Handing those to the dialog prefilled beats dropping the pick silently.
-   * For valid picks we show a preview card and require an explicit "Add" click before committing.
+   * No per-pick confirmation: nothing is sent until the composer's Next / Save changes.
    */
   protected onUserSelected(): void {
     if (this.quickAddForm.valid) {
-      this.stagedGuest.set(this.quickAddForm.value as Record<string, unknown>);
+      const guest = this.quickAddForm.value as Record<string, unknown>;
       this.quickAddForm.reset();
+      this.addDirectGuest(guest);
       return;
     }
 
@@ -250,19 +269,50 @@ export class ComposerGuestsComponent {
     this.openManualDialog(prefill);
   }
 
-  protected onConfirmStagedGuest(): void {
-    const guest = this.stagedGuest();
-    if (!guest) return;
-    this.stagedGuest.set(null);
-    this.addDirectGuest(guest);
-  }
-
-  protected onDismissStagedGuest(): void {
-    this.stagedGuest.set(null);
-  }
-
   protected onOpenManualDialog(): void {
     this.openManualDialog(null);
+  }
+
+  /**
+   * Puts the last removed guest back exactly as they were.
+   * @description A saved guest is still in the list marked deleted, so its row is swapped back for the
+   * original; a never-saved one was dropped, so it goes back where it sat. A group guest's email was
+   * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
+   */
+  protected onUndoRemove(): void {
+    const removal = this.undoableRemoval();
+    this.lastRemoval.set(null);
+    if (!removal) return;
+
+    const { guest, index, label } = removal;
+    const key = guest.uid || guest.tempId || null;
+    const email = guest.email?.toLowerCase() ?? '';
+
+    if (guest.type === 'committee') {
+      this.formService.unsuppressGuestEmail(guest.email);
+    }
+
+    this.formService.updateGuests((current) => {
+      // A keyless saved row was replaced by a deleted copy, so the reference is gone; its email is what is left.
+      const at = current.findIndex((candidate) =>
+        key === null ? candidate.state === 'deleted' && candidate.email?.toLowerCase() === email : (candidate.uid || candidate.tempId) === key
+      );
+
+      if (at !== -1) {
+        return current.map((candidate, i) => (i === at ? guest : candidate));
+      }
+
+      return [...current.slice(0, index), guest, ...current.slice(index)];
+    });
+
+    void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
+    this.focusGuestRemoveButton(key);
+  }
+
+  protected onDismissUndo(): void {
+    this.lastRemoval.set(null);
+    // The dismiss button held focus and is gone with the notice; no row to return to, so the search takes it.
+    this.focusGuestRemoveButton(null);
   }
 
   /** Resend is only offered once the meeting exists upstream (edit mode) and the guest is saved. */
@@ -277,25 +327,42 @@ export class ComposerGuestsComponent {
     }
   }
 
-  protected onRequestRemoveGuest(guest: MeetingRegistrantWithState, displayName: string): void {
-    const label = displayName || guest.email || 'this guest';
-    this.confirmationService.confirm({
-      header: 'Remove guest',
-      message: `Are you sure you want to remove ${label} from this meeting?`,
-      icon: 'fa-light fa-triangle-exclamation',
-      acceptLabel: 'Remove',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.onRemoveGuest(guest),
-    });
-  }
-
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
+    const label = this.guestLabel(guest);
+    // When editing, Undo appears above the list; focus goes to a neighbouring row, so say Undo is there.
+    const undoHint = this.formService.isEditMode() ? ' Undo is available above the list.' : '';
+    void this.liveAnnouncer.announce(`${label} removed from the guest list.${undoHint}`, 'polite');
+
     // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
     // happens to be missing on the candidate: `undefined === undefined` matched every other
     // keyless row, and removing one such guest dropped all of them.
     const key = guest.uid || guest.tempId || null;
+
+    // The focused remove button goes with its row, so hand focus to the nearest row after it that still
+    // has one (or before it), keeping the place for removing several in a row. Rows without a remove
+    // button (series-wide guests in an occurrence edit) are skipped, and so are keyless rows, whose track
+    // id is their index and shifts with the removal. With none left, focus falls back to the search.
+    const rows = this.filteredGuestRows();
+    const at = rows.findIndex((row) => row.guest === guest);
+    const focusable = (row: ComposerGuestRow): boolean => row.removable && !!(row.guest.uid || row.guest.tempId);
+    const neighbour = at === -1 ? undefined : (rows.slice(at + 1).find(focusable) ?? rows.slice(0, at).reverse().find(focusable));
+    // `trackId` is exactly what the template builds the button's test id from, so the two can't drift apart.
+    this.focusGuestRemoveButton(neighbour?.trackId ?? null);
+
+    // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
+    // nobody is invited yet, and picking the person again is the whole way back.
+    if (this.formService.isEditMode()) {
+      const index = this.formService.guests().findIndex((candidate) => (key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key));
+      const original = index === -1 ? guest : this.formService.guests()[index];
+      this.lastRemoval.set({
+        guest: original,
+        index: Math.max(index, 0),
+        label,
+        // Counted without the removed row itself, so a guest with no email starts from 0 rather than -1.
+        liveSameEmail: this.liveEmailCount(original.email, original),
+        committeeKey: this.committeeKey(),
+      });
+    }
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
     // un-deleting a saved one who is still a member of a selected group. Only group guests are
@@ -454,5 +521,35 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
+    // Undo restores a row by position and identity, so it is only offered while nothing else has moved.
+    this.lastRemoval.set(null);
+    void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
+  }
+
+  private liveEmailCount(email: string | null | undefined, excluding?: MeetingRegistrantWithState): number {
+    const target = email?.toLowerCase();
+    if (!target) return 0;
+    return this.formService.guests().filter((guest) => guest !== excluding && guest.state !== 'deleted' && guest.email?.toLowerCase() === target).length;
+  }
+
+  /**
+   * Moves focus to a row's remove button, or the guest search when there is no row to give it to.
+   * @description Remove, Undo and dismiss each destroy the button that held focus, which would drop
+   * keyboard users back to the top of the document. `afterNextRender` only runs in the browser, so this
+   * is SSR-safe.
+   */
+  private focusGuestRemoveButton(trackId: string | null): void {
+    afterNextRender(
+      () => {
+        const root = this.host.nativeElement;
+        const removeButton = trackId ? root.querySelector<HTMLElement>(`[data-testid="composer-guest-remove-${CSS.escape(trackId)}"]`) : null;
+        (removeButton ?? root.querySelector<HTMLElement>('#composer-guest-search'))?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  private guestLabel(guest: MeetingRegistrantWithState): string {
+    return [guest.first_name, guest.last_name].filter(Boolean).join(' ') || guest.email || 'Guest';
   }
 }

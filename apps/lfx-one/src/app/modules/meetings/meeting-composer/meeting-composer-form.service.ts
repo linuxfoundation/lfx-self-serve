@@ -497,6 +497,19 @@ export class MeetingComposerFormService {
     this.suppressedGuestEmails.update((current) => new Set(current).add(email.toLowerCase()));
   }
 
+  /** Lifts a suppression when the removal it recorded is undone, so the group can manage the guest again. */
+  public unsuppressGuestEmail(email: string | null | undefined): void {
+    if (!email) {
+      return;
+    }
+
+    this.suppressedGuestEmails.update((current) => {
+      const next = new Set(current);
+      next.delete(email.toLowerCase());
+      return next;
+    });
+  }
+
   public isSectionValid(section: MeetingComposerSectionId): boolean {
     const form = this.form();
 
