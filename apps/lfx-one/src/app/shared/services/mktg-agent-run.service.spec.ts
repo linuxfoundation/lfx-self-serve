@@ -151,6 +151,43 @@ describe('MktgAgentRunService', () => {
     subscription.unsubscribe();
   });
 
+  it.each([false, true])('numbers a fresh v1 after existing v3 without collisions, including resumed requests (resume=%s)', async (resume) => {
+    const prior = storedV1Run();
+    prior.versions = [1, 2, 3].map((version) => ({ version, document: '# prior ' + version, createdAt: new Date().toISOString() }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prior));
+    resultResponses = [{ status: 'ready', documentMarkdown: '# Fresh session output', version: 1 }];
+    let subscription = service.generate({ ...generateRequest(), newRun: true }).subscribe();
+    if (resume) {
+      subscription.unsubscribe();
+      const pending = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load('proj-1', 'brand-kit');
+      if (!pending) throw new Error('Missing synthetic accepted attempt');
+      expect(pending.request.newRun).toBeUndefined();
+      // The synthetic follow-up intake differs from the live registry pinned by load().
+      subscription = service.resume({ ...pending, request: { ...pending.request, intake: CHAT_INTAKE } }).subscribe();
+    }
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    subscription.unsubscribe();
+    const fresh = service.loadRun('proj-1', 'brand-kit');
+    expect(fresh?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4]);
+    expect(fresh?.versions[3]).toMatchObject({ document: '# Fresh session output', source: { version: 1 } });
+    resultResponses = [
+      { status: 'ready', documentMarkdown: '# Stale v4', version: 4 },
+      { status: 'ready', documentMarkdown: '# Next v5', version: 5 },
+    ];
+    const next = service.generate(generateRequest('Next change')).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      '/api/mktg-agents/chat',
+      expect.objectContaining({
+        message: renderMktgIntakeMessage(CHAT_INTAKE, ANSWERS, 'Next change', 4),
+      })
+    );
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4, 5]);
+    next.unsubscribe();
+  });
+
   it.each(['draft', 'failed'] as const)('restores a %s pending after reload without any POST', (state) => {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending: MktgPendingGeneration = { request: generateRequest(), state, updatedAt: new Date().toISOString(), requiresReattachment: state === 'failed' };
