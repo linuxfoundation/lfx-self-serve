@@ -6,6 +6,7 @@ import { MKTG_DOCUMENT_COMMENT_ID_REGEX, MKTG_DOCUMENT_COMMENT_MAX_CHARS } from 
 import {
   describeMktgDocumentCommentField,
   isMktgDocumentCommentAnchor,
+  mktgDocumentCommentAnchorKind,
   mktgDocumentCommentTab,
   readMktgDocumentCommentField,
   validateMktgDocumentCommentBatch,
@@ -68,6 +69,9 @@ describe('comment field paths', () => {
   });
 
   it('isolates the owning agent and anchor kind', () => {
+    expect(mktgDocumentCommentAnchorKind('brand-kit')).toBe('passage');
+    expect(mktgDocumentCommentAnchorKind('foundation-message')).toBe('field');
+    expect(mktgDocumentCommentAnchorKind('boilerplates')).toBe('field');
     expect(isMktgDocumentCommentAnchor('foundation-message', { report: 'not content' }, { kind: 'field', key: 'report' })).toBe(false);
     expect(isMktgDocumentCommentAnchor('foundation-message', SOURCE, { kind: 'passage', key: 'mf.tagline' })).toBe(false);
     const kit = { kit: { font: 'Sample Sans' }, chapters: { voice: { line: 'Open mesh' } } };
@@ -89,6 +93,15 @@ describe('comment field labels', () => {
     expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1]', content)).toBe('Goal column 2 · Community');
     expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1].bite', content)).toBe('Sound bite · Goal column 2 · Community');
     expect(describeMktgDocumentCommentField('foundation-message', 'icp[0].cta', content)).toBe('Call to action · Audience 1 · Maintainers');
+  });
+  it('labels kit passages and boilerplate lengths with the same original-index context as their inline pins', () => {
+    const kit = { chapters: { color: { palette: [{ name: 'Synthetic dark' }] }, voice: { attributes: [{ name: 'Plain' }] } } };
+    expect(describeMktgDocumentCommentField('brand-kit', 'chapters.voice.line', kit)).toBe('Brand line');
+    expect(describeMktgDocumentCommentField('brand-kit', 'chapters.color.palette[0].hex', kit)).toBe('Color value · Color 1 · Synthetic dark');
+    expect(describeMktgDocumentCommentField('brand-kit', 'chapters.voice.attributes[0].line', kit)).toBe('Voice attribute · Attribute 1 · Plain');
+    expect(describeMktgDocumentCommentField('boilerplates', 'bp[1].t', { bp: [{ l: 'One-liner' }, { l: '25 words' }] })).toBe(
+      'Boilerplate text · Length 2 · 25 words'
+    );
   });
   it('keeps missing-context indexes meaningful and unknown-agent fields honest', () => {
     expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1].vp')).toBe('Value proposition · Goal column 2');

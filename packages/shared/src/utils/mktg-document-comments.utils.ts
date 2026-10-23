@@ -14,7 +14,12 @@ import {
   MKTG_DOCUMENT_COMMENT_ROOTS,
   MKTG_DOCUMENT_COMMENT_UNSAFE_PARTS,
 } from '../constants/mktg-document-comments.constants';
-import type { MktgCommentAgentKey, MktgDocumentCommentAnchor, MktgDocumentCommentField } from '../interfaces/mktg-document-comments.interface';
+import type {
+  MktgCommentAgentKey,
+  MktgDocumentCommentAnchor,
+  MktgDocumentCommentAnchorKind,
+  MktgDocumentCommentField,
+} from '../interfaces/mktg-document-comments.interface';
 
 /** Resolve own JSON properties only; null is a real field, inherited properties are not. */
 export function readMktgDocumentCommentField(source: unknown, path: string): MktgDocumentCommentField | null {
@@ -31,9 +36,14 @@ export function readMktgDocumentCommentField(source: unknown, path: string): Mkt
   return value === undefined ? null : { value };
 }
 
+/** One anchor-kind contract for validation and browser controls. */
+export function mktgDocumentCommentAnchorKind(agentKey: MktgCommentAgentKey): MktgDocumentCommentAnchorKind {
+  return agentKey === 'brand-kit' ? 'passage' : 'field';
+}
+
 /** Validate the stored asset's field, not a sorted display-row index or caller-supplied passage. */
 export function isMktgDocumentCommentAnchor(agentKey: MktgCommentAgentKey, source: unknown, anchor: MktgDocumentCommentAnchor): boolean {
-  if (anchor.kind !== (agentKey === 'brand-kit' ? 'passage' : 'field')) return false;
+  if (anchor.kind !== mktgDocumentCommentAnchorKind(agentKey)) return false;
   const root = anchor.key.match(/^[a-zA-Z][a-zA-Z0-9_]*/)?.[0] ?? '';
   if (!(MKTG_DOCUMENT_COMMENT_ROOTS[agentKey] as readonly string[]).includes(root)) return false;
   if (agentKey === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor.key)) return false;

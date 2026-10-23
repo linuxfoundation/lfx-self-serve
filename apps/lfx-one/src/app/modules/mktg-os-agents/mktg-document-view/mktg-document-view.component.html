@@ -335,6 +335,7 @@
               class="block min-w-0"
               [projectName]="projectName()"
               [asset]="boilerplatesAsset"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
@@ -357,6 +358,7 @@
             <lfx-brand-kit-web-view
               class="block min-w-0"
               [kit]="kit"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
@@ -399,7 +401,7 @@
           @if (commentScope(); as scope) {
             <lfx-mktg-comments-panel
               [scope]="scope"
-              [content]="asset()?.content"
+              [content]="commentContent()"
               [priorVersion]="current.revision.draftVersion ?? null"
               (ready)="onRedraftReady(scope, $event)" />
           }

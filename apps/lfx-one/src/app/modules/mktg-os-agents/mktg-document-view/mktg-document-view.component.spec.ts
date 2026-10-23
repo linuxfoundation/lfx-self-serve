@@ -1391,6 +1391,22 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.restoreRevision).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, 'voice'])('keeps the reader tab or pinned chapter %s when a kit redraft lands', async (pinnedTab) => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+    await render('/documents/brand-kit/living?tab=color');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const id = `000003-${'c'.repeat(64)}`;
+    panel.ready.emit({ agentKey: 'brand-kit', documentId: 'living', revisionId: id, tab: pinnedTab });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', 'brand-kit', 'living'], {
+      queryParams: expect.objectContaining({ revision: id, tab: pinnedTab ?? 'color' }),
+    });
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+  });
+
   it('reports a stored Draft whose landing is rejected instead of silently losing the result', async () => {
     useFrameworkRevision();
     await render('/documents/foundation-message/living');
@@ -1927,7 +1943,11 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/brand-kit/living');
 
     expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    expect(panel?.scope()).toEqual({ projectUid: PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id });
+    expect(panel?.content()).toMatchObject({ chapters: kitSidecar()['chapters'], kit: kitSidecar()['kit'] });
     expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(false);
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
     expect(query('mktg-document-view-framework')).toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
     expectContentColumn('brand-kit-web-view');
@@ -2063,7 +2083,11 @@ describe('MktgDocumentViewComponent', () => {
     expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit&mode=new');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    expect(panel?.scope()).toEqual({ projectUid: PROJECT.uid, agentKey: 'boilerplates', documentId: 'living', revisionId: jsonRevision.id });
+    expect(panel?.content()).toEqual(content);
     expectContentColumn('mktg-boilerplates-view');
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
 
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-boilerplates-view-tab-sources"]')?.click();
     await settle();
@@ -2123,6 +2147,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-faq-view-title')).toBeNull();
+    expect(query('mktg-comments-panel')).toBeNull();
     expect(query('mktg-faq-view-metadata')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');

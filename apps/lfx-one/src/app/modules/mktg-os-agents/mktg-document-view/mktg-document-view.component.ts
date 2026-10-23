@@ -298,6 +298,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  /** Label context uses the stored content shape, never the transformed display rows. */
+  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -988,7 +990,7 @@ export class MktgDocumentViewComponent {
   private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
     return computed(() => {
       const view = this.view();
-      if (!view || !this.asset() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
+      if (!view || !this.commentContent() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
       if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
       return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
     });

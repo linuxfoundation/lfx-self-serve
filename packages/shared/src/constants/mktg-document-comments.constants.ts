@@ -5,6 +5,28 @@ import type { MktgCommentAgentKey, MktgDocumentCommentLabelGroup } from '../inte
 
 /** Labels are contract-specific, not a UI catalog; other agents extend their own entry. */
 export const MKTG_DOCUMENT_COMMENT_LABELS: Partial<Record<MktgCommentAgentKey, Record<string, string>>> = {
+  'brand-kit': {
+    'chapters.logo.system': 'Logo system',
+    'chapters.logo.symbol': 'Symbol',
+    'chapters.logo.clear_space': 'Clear space',
+    'chapters.logo.minimum_size.rule': 'Minimum size',
+    'chapters.color.summary': 'Palette summary',
+    'chapters.color.palette[].hex': 'Color value',
+    'chapters.color.palette[].role': 'Color role',
+    'chapters.color.contrast.rule': 'Contrast rule',
+    'chapters.type.family': 'Typeface',
+    'chapters.type.summary': 'Type summary',
+    'chapters.type.note': 'Type note',
+    'chapters.visual.icons.recommended': 'Recommended icons',
+    'chapters.visual.imagery.rule': 'Imagery rule',
+    'chapters.usage.summary': 'Usage summary',
+    'chapters.usage.examples[].name': 'Example usage',
+    'chapters.voice.umbrella': 'Umbrella message',
+    'chapters.voice.line': 'Brand line',
+    'chapters.voice.attributes[].line': 'Voice attribute',
+    'chapters.voice.note': 'Voice note',
+  },
+  boilerplates: { 'bp[].t': 'Boilerplate text' },
   'foundation-message': {
     'mf.vision': 'Vision',
     'mf.mission': 'Mission',
@@ -39,6 +61,17 @@ export const MKTG_DOCUMENT_COMMENT_LABELS: Partial<Record<MktgCommentAgentKey, R
   },
 };
 export const MKTG_DOCUMENT_COMMENT_LABEL_GROUPS: Partial<Record<MktgCommentAgentKey, Record<string, MktgDocumentCommentLabelGroup>>> = {
+  'brand-kit': {
+    'chapters.color.palette': { label: 'Color', title: '.name' },
+    'chapters.logo.partnership': { label: 'Rule', title: '' },
+    'chapters.logo.watchouts': { label: 'Watchout', title: '' },
+    'chapters.type.rules': { label: 'Rule', title: '' },
+    'chapters.visual.icons.rules': { label: 'Rule', title: '' },
+    'chapters.visual.imagery.avoid': { label: 'Avoid', title: '' },
+    'chapters.usage.examples': { label: 'Example', title: '.name' },
+    'chapters.voice.attributes': { label: 'Attribute', title: '.name' },
+  },
+  boilerplates: { bp: { label: 'Length', title: '.l' } },
   'foundation-message': {
     'mf.goals': { label: 'Goal column', title: '.t' },
     icp: { label: 'Audience', title: '.name' },

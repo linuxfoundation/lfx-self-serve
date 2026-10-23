@@ -8,7 +8,7 @@ import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MKTG_DOCUMENT_COMMENT_MAX_CHARS, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
-import { describeMktgDocumentCommentField } from '@lfx-one/shared/utils';
+import { describeMktgDocumentCommentField, mktgDocumentCommentAnchorKind } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { finalize, take } from 'rxjs';
@@ -75,6 +75,8 @@ export class MktgFieldCommentsComponent {
     if (focus) button?.focus();
   }
   protected save(): void {
+    const scope = this.comments.selectedScope();
+    if (!scope) return;
     const text = this.form.controls.text.value;
     if (!text.trim()) this.form.controls.text.setErrors({ required: true });
     if (this.form.invalid || this.busy() || this.comments.saving() || !isPlatformBrowser(this.platformId)) {
@@ -88,7 +90,7 @@ export class MktgFieldCommentsComponent {
     this.busy.set(true);
     this.error.set('');
     this.comments
-      .add({ kind: 'field', key: this.field() }, text, this.requestId)
+      .add({ kind: mktgDocumentCommentAnchorKind(scope.agentKey), key: this.field() }, text, this.requestId)
       .pipe(
         take(1),
         finalize(() => this.busy.set(false)),

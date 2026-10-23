@@ -482,6 +482,14 @@ sessions, attribution IDs or agent handles are added to the request contract.
 
 The framework document view adds data-keyed comment controls inside the existing
 field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
+Stored Brand Kits opt into string passage pins in their screen chapters (never SVG
+bytes, generated sample text or the printed book). The BFF captures passage text
+from the immutable stored key for `brand_kit_revise_form`; the browser sends only
+that key and comment. Boilerplates pin each original `bp[index].t` length and send
+the selected asset's comments through the same redraft flow. Kit and Boilerplates
+keep their full-width rendering, with Comments below; run previews, legacy/unreadable
+assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
+and boilerplate lengths identically in pins and the panel.
 The controls appear on hover/focus, and stay visible on hover-less devices; threads
 and a wrapper-based composer pin beneath their field. Disabled hosts have no
 layout box; the extra hover groups use display:contents until controls are shown.
