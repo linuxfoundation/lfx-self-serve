@@ -368,7 +368,7 @@ describe('isLocalDateOnlyString', () => {
     ['', false],
     [null, false],
     [undefined, false],
-    [20260102, false],
+    [20300304, false],
   ])('isLocalDateOnlyString(%s) → %s', (value, expected) => {
     expect(isLocalDateOnlyString(value)).toBe(expected);
   });
