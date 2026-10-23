@@ -11,7 +11,7 @@ import type {
   MonitorConnectionAccount,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -2101,4 +2101,206 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
       expect(getPlatformAudience).toHaveBeenCalledWith('tlf', 'meta-ads', 'last_30_days');
     }
   );
+});
+
+/**
+ * lfx-self-serve-ops#54: the BFF refuses a non-root caller the Google, Reddit, Meta and X monitors
+ * (and LinkedIn's legacy arm), because those ad accounts are shared by every foundation. The tab
+ * shows that as a notice, not an error, and keeps Google's project-scoped keyword section.
+ */
+describe('MonitoringTabComponent — shared-account restriction', () => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  let service: Record<string, ReturnType<typeof vi.fn>>;
+  let context: ReturnType<typeof signal<{ slug: string }>>;
+
+  const restricted = (): HttpErrorResponse =>
+    new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } });
+  const failed = (): HttpErrorResponse => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } });
+
+  async function setup(connections: CampaignMonitorConnections): Promise<void> {
+    context = signal({ slug: 'cncf' });
+    service = {
+      getMonitorData: vi.fn().mockReturnValue(of(null)),
+      getKeywords: vi.fn().mockReturnValue(of(null)),
+      getAudience: vi.fn().mockReturnValue(of(null)),
+      getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
+      getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
+      getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
+      getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
+      getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
+      getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
+      getMicrosoftMonitorData: vi.fn().mockReturnValue(of(null)),
+      getTwitterMonitorData: vi.fn().mockReturnValue(of(null)),
+      getHubSpotMonitorData: vi.fn().mockReturnValue(of(null)),
+      getMonitorConnections: vi.fn().mockReturnValue(of(connections)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: context } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: CampaignService, useValue: service },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+  }
+
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  function select(platform: string): void {
+    (el(`platform-${platform}`) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  const flagOff: CampaignMonitorConnections = { viaCampaignService: false, platforms: {} };
+  const flagOn: CampaignMonitorConnections = {
+    viaCampaignService: true,
+    platforms: { reddit: { state: 'connected', accountId: 't2_cncf', label: 't2_cncf' } },
+  };
+
+  it("shows Google's restricted notice in place of the error, and keeps the keyword section", async () => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+
+    expect(el('monitoring-restricted')?.textContent).toContain('Google Ads monitoring is limited to LF administrators');
+    expect(el('monitoring-error')).toBeNull();
+    expect(el('keyword-performance')).not.toBeNull();
+  });
+
+  it('still shows the error block for any other Google failure', async () => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(failed));
+    fixture.detectChanges();
+
+    expect(el('monitoring-error')).not.toBeNull();
+    expect(el('monitoring-restricted')).toBeNull();
+  });
+
+  it.each([
+    ['legacy (flag off)', flagOff],
+    ['cutover (flag on)', flagOn],
+  ] as const)('shows a restricted Reddit read as a notice on the %s path, and its Refresh reads the panel again', async (_path, connections) => {
+    await setup(connections);
+    service['getRedditMonitorData'].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    select('reddit');
+
+    const notice = el('reddit-connection-notice');
+    expect(notice?.getAttribute('data-state')).toBe('restricted');
+    expect(el('reddit-connection-notice-title')?.textContent).toContain('monitoring is limited to LF administrators');
+    expect(el('reddit-error')).toBeNull();
+
+    const reads = service['getRedditMonitorData'].mock.calls.length;
+    service['getRedditMonitorData'].mockReturnValue(of(null));
+    (el('reddit-connection-notice-retry') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(service['getRedditMonitorData'].mock.calls.length).toBe(reads + 1);
+    expect(el('reddit-connection-notice')).toBeNull();
+  });
+
+  const flagOnShared: CampaignMonitorConnections = {
+    viaCampaignService: true,
+    platforms: {
+      meta: { state: 'connected', accountId: 'act_cncf', label: 'act_cncf' },
+      twitter: { state: 'connected', accountId: '18ce54d4x5t', label: '18ce54d4x5t' },
+    },
+  };
+
+  it.each([
+    { panel: 'meta', read: 'getMetaMonitorData', path: 'legacy', connections: flagOff },
+    { panel: 'meta', read: 'getMetaMonitorData', path: 'cutover', connections: flagOnShared },
+    { panel: 'linkedin', read: 'getLinkedInMonitorData', path: 'legacy', connections: flagOff },
+    { panel: 'twitter', read: 'getTwitterMonitorData', path: 'cutover', connections: flagOnShared },
+  ] as const)('shows a restricted $panel read on the $path path as a notice, not an error', async ({ panel, read, connections }) => {
+    await setup(connections);
+    service[read].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    if (panel === 'twitter') {
+      // X's button is hidden while the app disables the platform, so the panel is selected directly.
+      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
+      fixture.detectChanges();
+    } else {
+      select(panel);
+    }
+
+    expect(service[read]).toHaveBeenCalled();
+    expect(el(`${panel}-connection-notice`)?.getAttribute('data-state')).toBe('restricted');
+    expect(el(`${panel}-connection-notice-title`)?.textContent).toContain('monitoring is limited to LF administrators');
+    expect(el(`${panel}-error`)).toBeNull();
+  });
+
+  it('clears the restricted states when the foundation changes', async () => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    service['getRedditMonitorData'].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    select('reddit');
+    expect(el('reddit-connection-notice')?.getAttribute('data-state')).toBe('restricted');
+
+    service['getMonitorData'].mockReturnValue(of(null));
+    service['getRedditMonitorData'].mockReturnValue(of(null));
+    context.set({ slug: 'tlf' });
+    fixture.detectChanges();
+
+    expect(el('reddit-connection-notice')).toBeNull();
+    select('google');
+    expect(el('monitoring-restricted')).toBeNull();
+  });
+
+  it('clears cached Google monitor data after a refusal so a pending retry cannot render it', async () => {
+    await setup(flagOff);
+    const payload = { campaigns: [], accountTotals: null, actionItems: [], dateRange: { mode: 'last_30_days' }, pulledAt: '2026-10-01T00:00:00Z' };
+    service['getMonitorData'].mockReturnValue(of(payload));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { refresh(): void; monitorData(): unknown };
+    expect(instance.monitorData()).toEqual(payload);
+
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-restricted')).not.toBeNull();
+    expect(instance.monitorData()).toBeNull();
+
+    service['getMonitorData'].mockReturnValue(new Subject<never>());
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-loading')).not.toBeNull();
+    expect(el('monitoring-kpis')).toBeNull();
+  });
+
+  it('shows a keyword restriction independently, clears cached keywords, and retries after grants change', async () => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    const keywords = { keywords: [], totalKeywords: 0, totals: { impressions: 0, clicks: 0, spend: 0, conversions: 0, avgCtr: 0 }, days: 30 };
+    service['getKeywords'].mockReturnValue(of(keywords));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { refresh(): void; keywordsData(): unknown };
+    expect(instance.keywordsData()).toEqual(keywords);
+
+    service['getKeywords'].mockReturnValue(throwError(restricted));
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('keyword-restricted')?.textContent).toContain('keyword insights are limited to LF administrators');
+    expect(el('keyword-error')).toBeNull();
+    expect(el('keyword-empty')).toBeNull();
+    expect(instance.keywordsData()).toBeNull();
+
+    service['getKeywords'].mockReturnValue(new Subject<never>());
+    instance.refresh();
+    fixture.detectChanges();
+    expect(el('keyword-restricted')).toBeNull();
+    expect(el('keyword-loading')).not.toBeNull();
+
+    service['getKeywords'].mockReturnValue(of(keywords));
+    context.set({ slug: 'acme-foundation' });
+    fixture.detectChanges();
+    expect(el('keyword-restricted')).toBeNull();
+    expect(el('keyword-empty')).not.toBeNull();
+    expect(service['getKeywords']).toHaveBeenLastCalledWith('acme-foundation', 30);
+  });
 });

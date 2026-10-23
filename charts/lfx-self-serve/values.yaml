@@ -739,6 +739,10 @@ environment:
   # foundations' spend. TELL PEOPLE BEFORE FLIPPING IT: a reader who is not warned files the
   # drop as a bug, and "the dashboard lost half its keywords" is a plausible-sounding report.
   #
+  # The legacy arm is ROOT-only (writer or global_marketing_ops, lfx-self-serve-ops#54),
+  # independently of the monitor cutover. Non-root callers receive a shared-account restriction
+  # while this flag is off; campaign-service's project-scoped reads remain available when it is on.
+  #
   # A project with no campaign-service campaigns reads EMPTY rather than falling back. That is
   # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
   # this flag exists to close.
@@ -883,7 +887,12 @@ environment:
   # Serves the account monitors from campaign-service's account-monitor endpoints (#2519):
   # /api/campaigns/linkedin/monitor, /meta/monitor and /reddit/monitor switch backend, and the
   # campaign-service-only /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all
-  # (404 while off). Google (/monitor) is not affected.
+  # (404 while off). Google (/monitor) has no campaign-service arm.
+  #
+  # This flag does NOT isolate shared accounts: Google Ads, Meta, Reddit and X run one ad account
+  # shared by every foundation, so their monitors -- and LinkedIn's legacy (flag-off) allowlist arm --
+  # are root-only whatever this flag says; other callers get a 403 MONITOR_SHARED_ACCOUNT_RESTRICTED
+  # (lfx-self-serve-ops#54). Only LinkedIn's campaign-service arm is project-isolated.
   #
   # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback, so with
   # this on the Monitor tab's account pickers offer each project's connection's account rather than

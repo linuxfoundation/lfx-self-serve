@@ -23,16 +23,19 @@ import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
   GW_EMBED_ENABLED_FEATURES,
   GW_EMBED_ENABLED_MODULE_IDS,
+  GW_EMBED_FIRST_PAINT_CAPABILITY,
   GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
   GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
+  GW_EMBED_LOADING_INDICATOR_CLASS,
   GW_EMBED_NOTIFICATION_SEVERITY,
   GW_EMBED_PAINTED_CONTENT_SELECTOR,
   GW_EMBED_STYLESHEET_ROUTE,
   GW_HOST_SESSION_PROXY_API_MOUNT,
   GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
+  lfxColors,
 } from '@lfx-one/shared/constants';
 import { resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext } from '@lfx-one/shared/interfaces';
@@ -65,7 +68,8 @@ import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provi
  * naming the current content-hashed entry and stylesheet); the loader reads the manifest, checks
  * the host contract, injects the stylesheet and imports the entry. Admin changes therefore reach
  * this page on the next load with no LFX release. The dependency is bumped only for a loader
- * contract change, or to use a capability the loader checks for (`host-session`, 1.1.0). The
+ * contract change, or to use a capability the loader checks for (`host-session` in 1.1.0;
+ * `first-paint` and `host-loading-indicator` in 1.2.0). The
  * dynamic import of the loader is
  * still wrapped, because a runtime failure from the embed — a bad chunk, a render crash on mount —
  * is handled the same way: caught, logged, and surfaced via `mountError` for the inline fallback.
@@ -104,7 +108,8 @@ export class GwModuleOutletComponent {
    * Template-bound: it shows the skeleton and keeps `#gw-embed-root` at `visibility: hidden`. The
    * loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything,
    * so clearing this on `ready` left a blank pane until the embed's own first paint. It is cleared
-   * when `waitForFirstPaint` sees content instead.
+   * when the embed has painted instead: `waitForRendered` for a bundle with the `first-paint`
+   * capability, `waitForFirstPaint` for any other.
    */
   protected readonly mounting = signal(false);
 
@@ -123,7 +128,7 @@ export class GwModuleOutletComponent {
   private pendingNavigation: Pick<NavigationStart, 'id' | 'navigationTrigger'> | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
-  /** Ends a `waitForFirstPaint` in progress; null when none is. */
+  /** Ends a `waitForRendered` or `waitForFirstPaint` in progress; null when none is. */
   private endPaintWait: (() => void) | null = null;
 
   // 7. Constructor
@@ -238,6 +243,9 @@ export class GwModuleOutletComponent {
         notify: (notification) => this.showHostToast(notification),
         onFatal: (err) => this.onFatal(err),
         navigateHost: (path) => this.handleHostNavigation(path),
+        // LFX's own CSS spinner ring in place of the embed's, so its loading states match the rest
+        // of the app. The loader passes this only to a bundle with the `host-loading-indicator` capability.
+        loadingIndicator: () => createGwEmbedLoadingIndicator(document),
       };
 
       const mod = await this.loadEmbedLoader();
@@ -251,15 +259,21 @@ export class GwModuleOutletComponent {
       // Returns at once; the loader fetches the manifest, stylesheet and bundle, then mounts.
       // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
       // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
-      this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
+      // Held in a local: teardown nulls `this.mountHandle` while the awaits below are pending.
+      const handle = mod.mount(this.embedRoot().nativeElement, ctx);
+      this.mountHandle = handle;
       this.watchHostNavigation();
       // Keep the skeleton up until the embed has painted: `mounting` is cleared in the finally
       // below. Clearing it on the synchronous return would leave the outlet blank while the loader
       // is still fetching, and clearing it on `ready` leaves it blank until React's first render.
-      const manifest = await this.mountHandle.ready;
+      const manifest = await handle.ready;
       if (manifest) {
         console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
-        await this.waitForFirstPaint(this.embedRoot().nativeElement);
+        // A bundle that signals its own first paint makes `rendered` exact; any other resolves it
+        // with `ready`, before anything is drawn, so the outlet watches the root itself instead.
+        await (manifest.capabilities?.includes(GW_EMBED_FIRST_PAINT_CAPABILITY)
+          ? this.waitForRendered(handle.rendered)
+          : this.waitForFirstPaint(this.embedRoot().nativeElement));
       } else if (!this.destroyed && !this.hostPanelShowing()) {
         // Nothing mounted. The loader has already said why through `onFatal`, but it marks a
         // manifest or bundle fetch failure as recoverable (a retry may work), which `onFatal`
@@ -299,9 +313,7 @@ export class GwModuleOutletComponent {
    * The root keeps laying out while hidden (`visibility`, not `display`), which is what lets the
    * observers measure it.
    *
-   * Seam: `@gatewaze/admin-embed` 1.2.0 adds a `first-paint` capability and a `handle.rendered`
-   * promise that resolves on the embed's own first paint. When the dependency moves to it, await
-   * that here when the handle has it and keep this observer as the fallback for older bundles.
+   * The fallback for a bundle without the `first-paint` capability; see `waitForRendered`.
    */
   private waitForFirstPaint(root: HTMLElement): Promise<void> {
     return new Promise((resolve) => {
@@ -334,6 +346,27 @@ export class GwModuleOutletComponent {
       // has height (Radix's root Theme) does not resize it, so mutations are watched too.
       resizeObserver?.observe(root);
       mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
+    });
+  }
+
+  /**
+   * Resolves when the loader's `rendered` does, for a bundle with the `first-paint` capability: the
+   * embed signals once its first route content or spinner has committed. The loader bounds that
+   * wait itself, and resolves `rendered` on a fatal error and on `unmount()` too. The error panel
+   * ends the wait at once, as it does for `waitForFirstPaint`.
+   */
+  private waitForRendered(rendered: Promise<void>): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.destroyed || this.hostPanelShowing()) {
+        resolve();
+        return;
+      }
+      const finish = (): void => {
+        this.endPaintWait = null;
+        resolve();
+      };
+      this.endPaintWait = finish;
+      void rendered.then(finish);
     });
   }
 
@@ -525,6 +558,21 @@ export function gwEmbedHasPaintedContent(root: HTMLElement): boolean {
     }
   }
   return false;
+}
+
+/**
+ * LFX's CSS spinner ring, as `GwHostContext.loadingIndicator` hands it to the embed: a new element
+ * on every call, decorative, since the embed wraps it in its own `role="status"` box with a
+ * screen-reader label. The border colours are inline because the embed's own `border-blue-200`
+ * rule (Tailwind's blue) wins over LFX's class inside the embed root. Exported for the spec.
+ */
+export function createGwEmbedLoadingIndicator(doc: Document): HTMLElement {
+  const ring = doc.createElement('div');
+  ring.className = GW_EMBED_LOADING_INDICATOR_CLASS;
+  ring.style.borderColor = lfxColors.blue[200];
+  ring.style.borderTopColor = lfxColors.blue[500];
+  ring.setAttribute('aria-hidden', 'true');
+  return ring;
 }
 
 /**

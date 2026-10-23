@@ -8,7 +8,7 @@ import { FoundationMessageContent, MktgDependencyDocument, MktgRunAsset, MktgSto
 import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

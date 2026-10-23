@@ -291,7 +291,7 @@ describe('MembersChurnComponent', () => {
     expect(text('members-churn-footer')).toBe(
       'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.'
     );
-    expect(query('members-churn-footer')?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-circle-info');
+    expect(query('members-churn-footer')?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
   });
 
   it('separates a failed churn read from a year without churn', async () => {

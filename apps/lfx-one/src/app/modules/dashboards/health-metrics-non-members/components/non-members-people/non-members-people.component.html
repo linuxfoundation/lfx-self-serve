@@ -5,12 +5,14 @@
 <div class="flex flex-col gap-4" data-testid="non-members-people">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="People unavailable"
       subtitle="We could not load this foundation's engaged non-member individuals. Refresh the page to try again."
       data-testid="non-members-people-error" />
   } @else if (!loading() && scopeTotal() === 0) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-user"
       title="No engaged non-member individuals"
       subtitle="No individual from a non-member organization attended a meeting in this period."
@@ -27,7 +29,7 @@
           placeholder="Search person or organization…"
           icon="fa-light fa-search"
           size="small"
-          styleClass="w-full"
+          styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
           dataTest="non-members-people-search" />
       </div>
     </div>
@@ -44,6 +46,7 @@
     </p>
 
     <lfx-table
+      styleClass="hm-table"
       [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
@@ -63,10 +66,10 @@
       data-testid="non-members-people-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Person</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last attended</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Person</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Last attended</span></th>
         </tr>
       </ng-template>
 
@@ -74,23 +77,23 @@
         <tr [attr.data-testid]="'non-members-people-row-' + view.rowKey">
           <td>
             <div class="flex flex-col">
-              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-name'">{{
+              <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-name'">{{
                 view.displayName
               }}</span>
               @if (view.jobTitle) {
-                <span class="text-[11.5px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-title'">{{ view.jobTitle }}</span>
+                <span class="text-[12px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-title'">{{ view.jobTitle }}</span>
               }
             </div>
           </td>
           <td>
-            <span class="text-sm text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-organization'">{{
+            <span class="text-[13px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-organization'">{{
               view.organizationLabel
             }}</span>
           </td>
           <td class="text-right">
             <span
-              class="text-sm tabular-nums"
-              [class.text-gray-800]="view.meetingsLabel !== '—'"
+              class="text-[13px] tabular-nums"
+              [class.text-gray-900]="view.meetingsLabel !== '—'"
               [class.text-gray-400]="view.meetingsLabel === '—'"
               [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-meetings'"
               >{{ view.meetingsLabel }}</span
@@ -98,7 +101,7 @@
           </td>
           <td class="text-right">
             <span
-              class="whitespace-nowrap text-sm tabular-nums text-gray-500"
+              class="whitespace-nowrap text-[13px] tabular-nums text-gray-500"
               [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-last-attended'"
               >{{ view.lastAttendedLabel }}</span
             >
@@ -108,7 +111,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="4" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-people-no-match">
+          <td colspan="4" class="py-6 text-center text-[13px] text-gray-500" data-testid="non-members-people-no-match">
             @if (!loading()) {
               No person or organization matches “{{ search() }}”.
             }

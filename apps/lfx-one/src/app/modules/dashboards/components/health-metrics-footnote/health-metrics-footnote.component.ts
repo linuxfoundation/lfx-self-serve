@@ -8,8 +8,7 @@ import { HEALTH_METRICS_BASE_PATH } from '@lfx-one/shared/constants';
 import type { HealthMetricsFootnotePart } from '@lfx-one/shared/interfaces';
 
 /**
- * The design's section footnote (`.tfoot`): a top rule, then an info icon, or a warning icon for a caution note, before
- * the text. Text comes as parts so a run can be bold or link to another tab; projected content follows the parts.
+ * The design's section note: plain grey text, or a warning icon on an amber panel for a caution note. Text comes as parts so a run can be bold or link to another tab; projected content follows the parts.
  */
 @Component({
   selector: 'lfx-health-metrics-footnote',

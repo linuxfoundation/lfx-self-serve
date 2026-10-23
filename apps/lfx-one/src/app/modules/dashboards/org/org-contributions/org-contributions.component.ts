@@ -47,7 +47,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
-import { decorateCommitFeedRow, decorateRepoRow } from './org-contributions.util';
+import { decorateCommitFeedRow, decorateRepoRow, describeContributionsWindow } from './org-contributions.util';
 
 /** Code Contributions list page (LFXV2-1894) — KPI strip, composing filter bar, server-paginated Repositories table, per-repo drill-in. */
 @Component({
@@ -132,6 +132,8 @@ export class OrgContributionsComponent {
 
   protected readonly kpis = computed(() => this.response().kpis);
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
+  /** States the counting rule and exact window under the KPI strip, so displayed figures can be matched to source data. */
+  protected readonly windowCaption: Signal<string> = computed(() => describeContributionsWindow(this.query().dateRange));
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
   protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());

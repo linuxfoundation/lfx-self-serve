@@ -642,7 +642,7 @@ export class VotesTableComponent {
     return {
       ...vote,
       endedEarlyTooltip,
-      participation: computeVoteRowParticipation(vote),
+      participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,
     };

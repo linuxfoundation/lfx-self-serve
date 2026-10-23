@@ -43,6 +43,8 @@ export class OrgMeetingsSpendBreakdownComponent {
   protected readonly spend: Signal<OrgMeetingsSpendBreakdown> = this.initSpend();
 
   protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  /** "past 90 days" / "all time" — the coverage note reads it after a comma, where the `the` prefix would not fit "all time". */
+  protected readonly coveragePeriod: Signal<string> = computed(() => ORG_MEETINGS_TIME_RANGE_LABELS[this.timeRange()].toLowerCase());
   /** "the past 90 days" — reads naturally after "recorded for". */
   protected readonly periodLabel: Signal<string> = computed(() => `the ${ORG_MEETINGS_TIME_RANGE_LABELS[this.timeRange()].toLowerCase()}`);
   /** Only a window the viewer changed can be reset; on the default the state renders reason-only. */

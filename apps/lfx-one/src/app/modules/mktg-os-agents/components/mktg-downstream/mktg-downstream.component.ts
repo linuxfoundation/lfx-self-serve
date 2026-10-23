@@ -4,7 +4,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
+import { mktgKitRootPath } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
@@ -21,7 +22,6 @@ import { catchError, of, switchMap } from 'rxjs';
 export class MktgDownstreamComponent {
   private readonly store = inject(MktgDocumentStoreService);
   private readonly platform = inject(PLATFORM_ID);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly user = inject(UserService);
   public readonly project = input.required<string>();
@@ -29,7 +29,6 @@ export class MktgDownstreamComponent {
   public readonly refreshKey = input('');
   public readonly writer = input(false);
   protected readonly familyId = MKTG_KIT_POSITIONING_FAMILY_ID;
-  protected readonly moduleRoute = this.route.parent;
   protected readonly listing = signal<MktgDocumentsResponse | null>(null);
   protected readonly failed = signal(false);
   protected readonly loading = signal(false);
@@ -82,8 +81,7 @@ export class MktgDownstreamComponent {
   protected rebuild(): void {
     const framework = this.listing()?.approvedFramework;
     if (!framework || !this.projectSlug() || !this.writer() || this.user.impersonating()) return;
-    void this.router.navigate(['families', this.familyId], {
-      relativeTo: this.moduleRoute,
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'families', this.familyId], {
       state: { [MKTG_REBUILD_NAVIGATION_STATE_KEY]: { project: this.project(), frameworkRevisionId: framework.revisionId } },
       queryParams: { project: this.projectSlug() },
     });

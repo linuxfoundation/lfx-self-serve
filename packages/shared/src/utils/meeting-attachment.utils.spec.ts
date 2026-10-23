@@ -8,8 +8,14 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { Meeting, MeetingOccurrence } from '../interfaces';
-import { applyAttachmentScopeOverrides, canScopeAttachmentToOccurrence, filterAttachmentsForOccurrence, getAttachmentScope } from './meeting-attachment.utils';
+import { Meeting, MeetingAttachment, MeetingOccurrence } from '../interfaces';
+import {
+  applyAttachmentScopeOverrides,
+  applyMeetingAttachmentChanges,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
+} from './meeting-attachment.utils';
 
 const FUTURE_START = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const FUTURE_ID = String(Math.floor(FUTURE_START.getTime() / 1000));
@@ -114,5 +120,36 @@ describe('attachment scope overrides', () => {
       const result = applyAttachmentScopeOverrides([series, mine], new Map([['series', OTHER_ID]]));
       expect(result.find((a) => a.uid === 'mine')).toBe(mine);
     });
+  });
+});
+
+describe('applyMeetingAttachmentChanges', () => {
+  const read = (uid: string): MeetingAttachment => ({ uid, meeting_id: 'mtg-1', type: 'link', name: uid, created_at: '2030-01-01T00:00:00Z' });
+  const changes = (added: MeetingAttachment[], deleted: string[]) => ({ added, deletedUids: new Set(deleted) });
+
+  it('returns the list untouched when nothing changed', () => {
+    const list = [read('a')];
+    expect(applyMeetingAttachmentChanges(list, undefined)).toBe(list);
+    expect(applyMeetingAttachmentChanges(list, changes([], []))).toBe(list);
+  });
+
+  it('lists an attachment the read does not return yet, newest first', () => {
+    const result = applyMeetingAttachmentChanges([read('a')], changes([read('b'), read('c')], []));
+    expect(result.map((a) => a.uid)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('leaves an added attachment as the read has it once the read returns it', () => {
+    const fetched = { ...read('b'), name: 'indexed' };
+    const result = applyMeetingAttachmentChanges([fetched], changes([read('b')], []));
+    expect(result).toEqual([fetched]);
+  });
+
+  it('drops a deleted attachment the read still returns', () => {
+    const result = applyMeetingAttachmentChanges([read('a'), read('b')], changes([], ['a']));
+    expect(result.map((a) => a.uid)).toEqual(['b']);
+  });
+
+  it('never lists an attachment that was added and then deleted', () => {
+    expect(applyMeetingAttachmentChanges([], changes([read('a')], ['a']))).toEqual([]);
   });
 });

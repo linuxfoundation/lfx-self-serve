@@ -20,6 +20,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   applyAttachmentScopeOverrides,
+  applyMeetingAttachmentChanges,
   filterAttachmentsForOccurrence,
   generateAcceptString,
   getAcceptedFileTypesDisplay,
@@ -147,7 +148,14 @@ export class MeetingMaterialsDrawerComponent {
       // A live meeting's read can still show a scope that was just changed (the query service indexes asynchronously), so
       // overlay the changes saved in this session. A past meeting has no scopes.
       const loaded = attachments as MeetingAttachment[];
-      this.existingAttachments.set(this.isPastMode() ? loaded : applyAttachmentScopeOverrides(loaded, this.meetingService.attachmentScopeOverrides()));
+      this.existingAttachments.set(
+        this.isPastMode()
+          ? loaded
+          : applyAttachmentScopeOverrides(
+              applyMeetingAttachmentChanges(loaded, this.meetingService.attachmentChanges().get(this.meetingId() ?? '')),
+              this.meetingService.attachmentScopeOverrides()
+            )
+      );
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.pendingScopes.set(new Map());
@@ -275,6 +283,10 @@ export class MeetingMaterialsDrawerComponent {
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
         const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
+        if (!isPast) {
+          // Every card and page showing this meeting lists the link now, rather than after the query service indexes it.
+          this.meetingService.recordAttachmentChanges(id, { added: [{ ...(attachment as MeetingAttachment), ...this.newItemOccurrence() }] });
+        }
         this.materialsChanged.emit({ deletedUids: [], addedAttachments });
       },
       error: () => {
@@ -363,7 +375,9 @@ export class MeetingMaterialsDrawerComponent {
           this.saving.set(false);
           const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
           this.applySavedScopes(scopeResults.filter((r) => r.ok));
-          this.clearSavedUploadsAndDeletions(uploadResults, successfullyDeletedUids, isPast ? undefined : id);
+          // Built before the staged files are cleared: the scope a file was queued with lives only on its staged entry.
+          const savedFiles = this.toSavedFiles(uploadResults, id);
+          this.clearSavedUploadsAndDeletions(uploadResults, successfullyDeletedUids, isPast ? undefined : savedFiles);
           const hasPartialFailure = deleteResults.some((r) => !r.ok) || scopeResults.some((r) => !r.ok) || uploadResults.some((r) => r.result === null);
           const addedAttachments: PastMeetingAttachment[] = isPast
             ? uploadResults
@@ -384,6 +398,10 @@ export class MeetingMaterialsDrawerComponent {
                   created_by: r.created_by,
                 }))
             : [];
+          if (!isPast) {
+            // Deletions are recorded by the service itself, as the meeting editor deletes too.
+            this.meetingService.recordAttachmentChanges(id!, { added: savedFiles });
+          }
           this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments });
           if (hasPartialFailure) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
@@ -440,15 +458,15 @@ export class MeetingMaterialsDrawerComponent {
    * an upload that went through would otherwise be uploaded again as a duplicate, and a delete that went through
    * would be refused as not found on every retry.
    */
-  private clearSavedUploadsAndDeletions(uploadResults: MeetingAttachmentUploadResult[], deletedUids: string[], meetingId?: string): void {
+  private clearSavedUploadsAndDeletions(uploadResults: MeetingAttachmentUploadResult[], deletedUids: string[], savedFiles?: MeetingAttachment[]): void {
     const uploaded = uploadResults.filter((r): r is MeetingAttachmentUploadResult & { result: PresignAttachmentResponse } => r.result !== null);
     if (uploaded.length > 0) {
       const uploadedIds = new Set(uploaded.map((r) => r.id));
       this.pendingAttachments.update((current) => current.filter((a) => !uploadedIds.has(a.id)));
       // A live meeting's drawer does not reload after a save, so list what saved or it would be in neither list until reopened.
       // (A past meeting's list is refreshed by its parent.)
-      if (meetingId) {
-        this.existingAttachments.update((current) => [...current, ...uploaded.map((r) => this.toMeetingAttachment(r.result, meetingId))]);
+      if (savedFiles) {
+        this.existingAttachments.update((current) => [...current, ...savedFiles]);
       }
     }
     if (deletedUids.length > 0) {
@@ -459,7 +477,15 @@ export class MeetingMaterialsDrawerComponent {
     }
   }
 
-  private toMeetingAttachment(upload: PresignAttachmentResponse, meetingId: string): MeetingAttachment {
+  /** The files that uploaded, each carrying the scope it was queued with: the write response can omit `occurrence_id`. */
+  private toSavedFiles(uploadResults: MeetingAttachmentUploadResult[], meetingId: string): MeetingAttachment[] {
+    const queuedScopes = new Map(this.pendingAttachments().map((a) => [a.id, a.occurrence_id]));
+    return uploadResults
+      .filter((r): r is MeetingAttachmentUploadResult & { result: PresignAttachmentResponse } => r.result !== null)
+      .map((r) => this.toMeetingAttachment(r.result, meetingId, queuedScopes.get(r.id)));
+  }
+
+  private toMeetingAttachment(upload: PresignAttachmentResponse, meetingId: string, occurrenceId?: string): MeetingAttachment {
     return {
       uid: upload.uid,
       meeting_id: upload.meeting_id ?? meetingId,
@@ -472,7 +498,7 @@ export class MeetingMaterialsDrawerComponent {
       file_content_type: upload.file_content_type,
       created_at: upload.created_at,
       created_by: upload.created_by,
-      occurrence_id: upload.occurrence_id,
+      occurrence_id: occurrenceId ?? upload.occurrence_id,
     };
   }
 

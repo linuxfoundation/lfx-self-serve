@@ -335,6 +335,31 @@ describe('BoilerplatesService.getResult', () => {
     expect((await service.getResult(req, 'session-1')).status).toBe('questions');
   });
 
+  it('does not keep an already-answered questions block as a pause after an idle runtime ends without an asset', async () => {
+    const questions = agentTextPayload(questionsText());
+    const started = JSON.stringify({ type: 'runtime_start', task: { id: 'synthetic-boilerplates-task', entity_type: 'EntTaskAgent' } });
+    const ended = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-boilerplates-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, ended]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+    const replay = JSON.stringify({
+      type: 'llm_start',
+      payload: JSON.stringify({ messages: [{ role: 'assistant', content: [{ type: 'text', text: questionsText() }] }] }),
+    });
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, JSON.stringify({ type: 'mktg_session_turn_started' }), started, replay, ended]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: '' });
+  });
+
+  it('requires a fresh finalize after a queued turn and applies the shared later-reply failure rule', async () => {
+    const old = finalizePayload(AGENT_ENVELOPE);
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
+    const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(questionsText()), agentTextPayload('Synthetic operation stopped.'), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: 'Synthetic operation stopped.' });
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload('Synthetic operation stopped.'), agentTextPayload(questionsText()), done]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+  });
+
   it('stays pending while the agent works', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload('Reading the website.')]);
 

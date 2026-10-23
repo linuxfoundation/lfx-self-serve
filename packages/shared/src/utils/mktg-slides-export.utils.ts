@@ -367,7 +367,7 @@ export function readMktgSlidesExportRecord(value: unknown): MktgSlidesExportReco
   return isMktgSlidesExportRecord(value) ? value : null;
 }
 
-/** Whether the last export is out of date: the document's latest revision holds other content than the revision exported. */
+/** Whether the last export is out of date: approved current holds other content than the exported revision. */
 export function isMktgSlidesExportStale(last: MktgSlidesExportRecord | null, latest: MktgSlidesExportRevisionRef | null): boolean {
   return !!last && !!latest && latest.contentSha256 !== last.contentSha256;
 }

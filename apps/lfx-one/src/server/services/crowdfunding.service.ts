@@ -34,6 +34,7 @@ import {
   BackendAttribution,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
+  BackendDonationStats,
   BackendGoalInput,
   BackendInitiative,
   BackendMyTransactionListResponse,
@@ -263,15 +264,14 @@ export class CrowdfundingService {
   public async getMyDonationStats(req: Request): Promise<DonationStats> {
     const startTime = logger.startOperation(req, 'cf_get_my_donation_stats');
 
-    // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
-    const [allDonations, allSubscriptions] = await Promise.all([
-      cfFetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/crowdfunding/me/donations'),
+    // Donation totals are aggregated by CF from the Ledger; recurring donations are subscriptions in CF.
+    const [donationStats, allSubscriptions] = await Promise.all([
+      cfFetch<BackendDonationStats>(req, 'getMyDonationStats_donations', '/crowdfunding/me/donations/stats'),
       cfFetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/crowdfunding/me/subscriptions'),
     ]);
 
-    const totalDonated = allDonations.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
-    // Filter to valid string IDs before counting — donations without initiative_id are excluded.
-    const initiativesSupported = new Set(allDonations.map((d) => d.initiative_id).filter((id): id is string => typeof id === 'string')).size;
+    const totalDonated = donationStats.total_donated_cents / 100;
+    const initiativesSupported = donationStats.initiatives_supported;
     // Recurring counts and amounts come from active subscriptions, not one-time donations.
     const activeSubscriptions = allSubscriptions.filter((s) => s.status === 'active');
     const activeRecurringCount = activeSubscriptions.length;

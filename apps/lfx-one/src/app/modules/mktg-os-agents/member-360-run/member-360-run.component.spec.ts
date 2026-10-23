@@ -9,7 +9,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { member360DocumentType, member360Revision, MEMBER_360_STORED_DOCUMENT } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { Member360Service } from '@services/member-360.service';
+import { MKTG_AGENTS } from '@lfx-one/shared/constants';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -86,18 +88,41 @@ describe('Member360RunComponent', () => {
     const breadcrumb = fixture.nativeElement.querySelector('[data-testid="member-360-breadcrumb"]');
     expect(breadcrumb.textContent).toMatch(/Sample Foundation kit.*Member & sponsor kit.*Member 360/s);
     expect(breadcrumb.querySelectorAll('li:not([aria-hidden])')).toHaveLength(3);
-    expect(breadcrumb.querySelector('a')?.getAttribute('data-testid')).toBe('member-360-back');
+    expect(breadcrumb.querySelectorAll('a')).toHaveLength(2);
+    expect(breadcrumb.querySelector('[data-testid="mktg-breadcrumb-link-0"]')?.getAttribute('href')).toBe('/mktg-os-agents?project=sample-foundation');
+    expect(breadcrumb.querySelector('[data-testid="mktg-breadcrumb-link-1"]')?.getAttribute('href')).toBe(
+      '/mktg-os-agents/families/member-sponsor?project=sample-foundation'
+    );
     const intake = fixture.nativeElement.querySelector('[data-testid="member-360-intake"]');
     expect(intake.querySelector('[data-testid="member-360-run"]')).not.toBeNull();
     expect(intake.textContent).toContain('Sources this run will use');
+  });
+  it('keeps fixed context parents for a shared URL without copying revision, tab or stale project', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/member-360?project=old&revision=old&tab=old');
+    await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-breadcrumb-link-1"]')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/families/member-sponsor?project=sample-foundation'
+    );
+    expect(root.querySelector('[aria-current="page"]')?.textContent).toBe(MKTG_AGENTS.find((agent) => agent.id === 'member-360')?.name);
   });
   it('names the comparison run and displays its real stored date', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
     );
-    await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-last-run"]').textContent).toContain('Last run Q3 2026, 1 Oct');
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-compare"]').textContent).toContain('Previous run: Q3 2026 (1 Oct)');
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: 'project/mktg-os-agents', children: [{ path: 'member-360', component: Member360RunComponent }] }]);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/member-360?project=stale&revision=old&tab=sources', Member360RunComponent);
+    await harness.fixture.whenStable();
+    const root = harness.routeNativeElement;
+    expect(root?.querySelector(`[data-testid="member-360-run-history-${MEMBER_360_STORED_DOCUMENT.documentId}"]`)?.getAttribute('href')).toBe(
+      `/project/mktg-os-agents/documents/member-360/${MEMBER_360_STORED_DOCUMENT.documentId}?project=sample-foundation`
+    );
+    expect(root?.querySelector('[data-testid="member-360-last-run"]')?.textContent).toContain('Last run Q3 2026, 1 Oct');
+    expect(root?.querySelector('[data-testid="member-360-compare"]')?.textContent).toContain('Previous run: Q3 2026 (1 Oct)');
   });
   it('keeps duplicate filenames distinct and preserves focus after removing the middle file', async () => {
     await render();

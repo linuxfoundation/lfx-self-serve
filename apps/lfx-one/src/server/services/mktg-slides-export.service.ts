@@ -9,8 +9,6 @@ import {
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_SLIDES_EXPORT_CONTRACT_ID,
-  MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS,
-  MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS,
   MKTG_SLIDES_EXPORT_GUILD_HANDLE,
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
@@ -49,6 +47,7 @@ import {
   MktgStoredRevision,
 } from '@lfx-one/shared/interfaces';
 import {
+  settledMktgSessionError,
   buildMktgSlidesExportPrefix,
   buildMktgFamilyExportPrefix,
   buildMktgFamilyExportRecordKey,
@@ -228,7 +227,7 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * Last export and newest readable identity for freshness comparison only.
+   * Last export and approved-current identity for freshness comparison only.
    * Export start selects approved-current bytes; result polling loads the
    * exact revision selected at start even if approval/current has moved.
    */
@@ -239,10 +238,11 @@ export class MktgSlidesExportService {
     agentKey: MktgSlidesExportAgentKey,
     documentId: string
   ): Promise<MktgSlidesExportLastResponse> {
-    const [last, latestRevision] = await Promise.all([
+    const [last, summary] = await Promise.all([
       this.readLastExport(req, project, agentKey, documentId),
-      this.documentStore.readNewestRevisionRef(req, project, type, documentId),
+      this.documentStore.readApprovedCurrentSummary(req, project, type, documentId),
     ]);
+    const latestRevision = summary ? { id: summary.id, number: summary.number, contentSha256: summary.contentSha256 } : null;
     return { last, latestRevision };
   }
 
@@ -602,38 +602,7 @@ export class MktgSlidesExportService {
    * the next poll looks again.
    */
   private readErrorText(payloads: string[], now: number = Date.now()): string | null {
-    let error: { text: string; at: number } | null = null;
-    let lastActivity = Number.NEGATIVE_INFINITY;
-    for (const payload of payloads) {
-      let event: unknown;
-      try {
-        event = JSON.parse(payload);
-      } catch {
-        // Not JSON: not an event this reader can attribute.
-        continue;
-      }
-      if (!this.isRecord(event)) {
-        continue;
-      }
-      const type = typeof event['type'] === 'string' ? event['type'] : '';
-      const at = typeof event['created_at'] === 'string' ? Date.parse(event['created_at']) : Number.NaN;
-      if (/error|fail/i.test(type) && !/tool/i.test(type)) {
-        const content = event['content'];
-        error = { text: typeof content === 'string' ? content : JSON.stringify(content ?? type), at };
-      } else if (Number.isFinite(at)) {
-        lastActivity = Math.max(lastActivity, at);
-      }
-    }
-    if (!error) {
-      return null;
-    }
-    // An error without a readable time cannot be aged: it stands.
-    if (!Number.isFinite(error.at)) {
-      return error.text;
-    }
-    const recovered = lastActivity > error.at + MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS;
-    const settled = now - error.at >= MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS;
-    return !recovered && settled ? error.text : null;
+    return settledMktgSessionError(payloads, now)?.text ?? null;
   }
 
   private buildRecord(context: MktgSlidesExportResultContext, summary: MktgRevisionSummary, envelope: MktgSlidesExportEnvelope): MktgSlidesExportRecord {

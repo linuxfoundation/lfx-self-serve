@@ -67,7 +67,16 @@ export interface MktgRebuildAdvanceRequest extends MktgRebuildRequest {
   answers?: MktgRunAnswer[];
 }
 
+/** Expiring project-wide CAS lease. Contains no requester identity or capability. */
+export interface MktgRebuildActiveMarker {
+  chainId: string;
+  startedAt: string;
+  expiresAt: number;
+}
+
 export interface MktgRebuildResponse {
+  /** Start attached to an existing chain; ownerToken is minted for this caller. */
+  attached?: boolean;
   project: string;
   chainId: string;
   ownerToken: string;

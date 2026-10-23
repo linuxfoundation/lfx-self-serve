@@ -5,12 +5,14 @@ import {
   FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
   LENS_COOKIE_KEY,
   MKTG_DOCUMENT_TYPES,
+  MKTG_LAST_INTAKE_API,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
   SELECTED_FOUNDATION_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
+} from '../../../../packages/shared/src/constants';
 import { createHash } from 'node:crypto';
+import { findMktgRunIntake } from '../../../../packages/shared/src/utils/mktg-document-store.utils';
 import type {
   FoundationMessageContent,
   MktgArtifactStoredResponse,
@@ -18,7 +20,7 @@ import type {
   MktgDocumentType,
   MktgRevisionResponse,
   MktgRevisionSummary,
-} from '@lfx-one/shared/interfaces';
+} from '@lfx-one/shared';
 import { expect, Page, Route, test as baseTest } from '@playwright/test';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
@@ -166,6 +168,7 @@ export async function setupKit(
   page: Page,
   options: {
     loaded?: boolean;
+    approvedFramework?: boolean;
     writer?: boolean;
     status?: number;
     hold?: Promise<void>;
@@ -205,7 +208,7 @@ export async function setupKit(
   await page.route('**/api/nav/lens-items*', (route) => {
     const lens = new URL(route.request().url()).searchParams.get('lens') ?? 'project';
     return kitJson(route, {
-      items: lens === 'project' ? [{ ...KIT_PROJECT, logoUrl: null, isFoundation: false }] : [],
+      items: lens === 'project' || lens === 'foundation' ? [{ ...KIT_PROJECT, logoUrl: null, isFoundation: lens === 'foundation' }] : [],
       next_page_token: null,
       upstream_failed: false,
       lens,
@@ -214,12 +217,61 @@ export async function setupKit(
   // Safety net: abort and FAIL the test for unexpected reads or writes, never hide a path regression.
   await page.route((url) => url.pathname.startsWith('/api/mktg-'), rejectUnexpected);
   await page.route(
+    (url) => url.pathname === '/api/mktg-agents/slides-export/family/last',
+    (route) => {
+      const familyId = new URL(route.request().url()).searchParams.get('familyId');
+      if (!isProjectRead(route) || !familyId) return rejectUnexpected(route);
+      return kitJson(route, { last: null, currentMembers: [], skippedMembers: [], stale: false });
+    }
+  );
+  const intakePaths = new Set(
+    MKTG_DOCUMENT_TYPES.filter((type) => !!findMktgRunIntake(type.agentKey)).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
+  );
+  await page.route(
+    (url) => intakePaths.has(url.pathname),
+    (route) => (isProjectRead(route) ? kitJson(route, { intake: null }, writer ? 200 : 403) : rejectUnexpected(route))
+  );
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/foundation-message/stored',
+    (route) => {
+      if (!isProjectRead(route)) return rejectUnexpected(route);
+      if (!options.approvedFramework) return kitJson(route, { code: 'NO_SYNTHETIC_APPROVED_FRAMEWORK' }, 404);
+      const documentMarkdown = JSON.stringify(frameworkContent());
+      const stored: MktgArtifactStoredResponse = {
+        documentMarkdown,
+        format: 'json',
+        receipt: {
+          project: KIT_PROJECT.uid,
+          s3_key: 'synthetic/framework/approved.json',
+          content_sha256: createHash('sha256').update(documentMarkdown).digest('hex'),
+          version: 3,
+          intake_mode: 'form',
+        },
+        revisionNumber: 3,
+        sidecar: null,
+      };
+      return kitJson(route, stored);
+    }
+  );
+  await page.route(
     (url) => url.pathname === '/api/mktg-agents/documents',
     async (route) => {
       if (!isProjectRead(route)) return rejectUnexpected(route);
       if (options.hold) await options.hold;
       const status = options.status ?? (writer ? 200 : 403);
-      return kitJson(route, status === 200 ? kitDocuments(options.loaded) : { error: 'Synthetic read failure' }, status);
+      const listing = kitDocuments(options.loaded);
+      if (options.approvedFramework) {
+        const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'foundation-message');
+        if (!type) throw new Error('Missing synthetic framework type');
+        const revision = kitRevision(type).revision;
+        listing.approvedFramework = {
+          agentKey: type.agentKey,
+          revisionId: revision.id,
+          revisionNumber: revision.number,
+          contentSha256: revision.contentSha256,
+        };
+      }
+      return kitJson(route, status === 200 ? listing : { error: 'Synthetic read failure' }, status);
     }
   );
   const frameworkType = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
@@ -289,7 +341,7 @@ async function seedKitContext(page: Page): Promise<void> {
 }
 
 /** SPA entry avoids SSR requests bypassing page.route. Also works at mobile widths. */
-export async function openKit(page: Page, path = ''): Promise<void> {
+export async function openKit(page: Page, path = '', mount: 'project' | 'foundation' = 'project'): Promise<void> {
   // PersonaService always refreshes afterNextRender; a quiet SSR frame is not client readiness.
   const personaReady = page.waitForResponse(
     (response) => {
@@ -308,5 +360,5 @@ export async function openKit(page: Page, path = ''): Promise<void> {
   await page.evaluate((url) => {
     history.pushState({}, '', url);
     dispatchEvent(new PopStateEvent('popstate'));
-  }, `/project/mktg-os-agents${path}?project=${KIT_PROJECT.slug}`);
+  }, `/${mount}/mktg-os-agents${path}?project=${KIT_PROJECT.slug}`);
 }

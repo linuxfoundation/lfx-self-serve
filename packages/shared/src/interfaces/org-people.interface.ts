@@ -184,10 +184,11 @@ export interface OrgPersonCompanyEmailsResponse {
   /** Addresses on the org's domains, primary-first. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
-   * `resolved`: the lookup succeeded; an empty list means none on record (person-key lookups only — a
-   * username-keyed response is `resolved` only with at least one address). `unavailable`: no usable
-   * identity, or a username with no qualifying address or an ambiguous match. `failed`: the lookup
-   * errored. A missing status must be treated as `failed`, never as `unavailable` or an empty set.
+   * `resolved`: the lookup succeeded; an empty list means none on record. A username that resolves to one
+   * roster person is looked up by that person's key, so it follows this rule too; only the fallback for
+   * other usernames is `resolved` solely with at least one address. `unavailable`: no usable identity, or a
+   * fallback username with no qualifying address or an ambiguous match. `failed`: the lookup errored. A
+   * missing status must be treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }

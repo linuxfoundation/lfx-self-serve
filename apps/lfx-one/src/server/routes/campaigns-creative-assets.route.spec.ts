@@ -44,6 +44,7 @@ vi.mock('../controllers/audience-builder.controller', () => ({ AudienceBuilderCo
 vi.mock('../controllers/campaign-optimize.controller', () => ({ CampaignOptimizeController: class {} }));
 vi.mock('../middleware/require-marketing-access.middleware', () => ({
   requireCampaignManager: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireGoogleMonitorAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {

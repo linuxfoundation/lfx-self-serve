@@ -10,10 +10,13 @@ import {
   MKTG_KIT_FRAMEWORK_AGENT_ID,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_REBUILD_ACTIVE_TTL_MS,
+  MKTG_REBUILD_CHAIN_ID_REGEX,
   MKTG_REBUILD_KEY_PREFIX,
   MKTG_REBUILD_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
+  MktgRebuildActiveMarker,
   MktgRebuildAdvanceRequest,
   MktgRebuildRecord,
   MktgRebuildRequest,
@@ -83,8 +86,24 @@ export class MktgRebuildService {
       status: 'running',
       steps: types.map((type) => ({ agentId: type.catalogAgentId ?? '', agentKey: type.agentKey, status: 'queued', activity: [] })),
     };
-    if (!(await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', this.key(record), this.input(record))))
-      throw new PreconditionFailedError('A rebuild with this identifier already exists. Try again.');
+    const attached = await this.claimProject(req, record);
+    if (attached) return attached;
+    try {
+      if (!(await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', this.key(record), this.input(record)))) throw this.unavailable();
+    } catch (err) {
+      logger.warning(req, 'mktg_rebuild_publish', 'Chain publication failed; failing closed', { err, project: record.project, chainId: record.chainId });
+      // A failed acknowledgement may hide a published chain already driven by another tab.
+      const published = await this.store.getPrivateObject(req, 'marketing-os-artifacts', this.key(record));
+      if (published) return this.response(req, this.read(published.body, record.project, record.chainId));
+      await this.activeLease(req, record, 'release').catch((err) => {
+        logger.warning(req, 'mktg_rebuild_publish', 'Active rebuild lease could not be released; expiry will reclaim it', {
+          err,
+          project: record.project,
+          chainId: record.chainId,
+        });
+      });
+      throw this.unavailable();
+    }
     return this.advance(req, project, { ...this.response(req, record), stepIndex: 0 });
   }
 
@@ -259,15 +278,45 @@ export class MktgRebuildService {
     const saved = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
     if (!saved) throw new ResourceNotFoundError('Rebuild', request.chainId);
     const record = this.read(saved.body, project.uid, request.chainId);
-    if (record.operationId)
+    const advance = request as Partial<MktgRebuildAdvanceRequest>;
+    const advancing = advance.stepIndex !== undefined;
+    const queuedTarget =
+      advance.answers === undefined &&
+      advance.stepIndex === record.steps.findIndex((step) => step.status !== 'draft') &&
+      record.steps[advance.stepIndex ?? -1]?.status === 'queued';
+    const freshResponse = async () => {
+      const fresh = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
+      if (!fresh) throw this.unavailable();
+      return this.response(req, this.read(fresh.body, project.uid, request.chainId));
+    };
+    const duplicate =
+      advancing &&
+      advance.answers === undefined &&
+      ((!!record.operationId && queuedTarget) || ['running', 'draft', 'failed'].includes(record.steps[advance.stepIndex ?? -1]?.status ?? ''));
+    const passive = !advancing || duplicate;
+    if (record.operationId) {
+      if (passive) return this.response(req, record);
       throw new ConflictError(
         'A rebuild operation is in progress or was interrupted. Do not resubmit it; reload the family to inspect saved Drafts.',
         'MKTG_REBUILD_IN_FLIGHT'
       );
+    }
     if (!saved.etag) throw this.invalidRecord();
+    const before = JSON.stringify(record);
+    if (record.status !== 'complete' && record.status !== 'failed') {
+      try {
+        await this.activeLease(req, record, passive ? 'check' : 'renew');
+      } catch (err) {
+        if ((passive || queuedTarget) && err instanceof PreconditionFailedError) return freshResponse();
+        throw err;
+      }
+    }
+    if (duplicate) return this.response(req, record);
     record.operationId = randomUUID();
-    if (!(await this.store.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.input(record), ifMatch: saved.etag }, true)))
+    if (!(await this.store.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.input(record), ifMatch: saved.etag }, true))) {
+      if (passive || queuedTarget) return freshResponse();
       throw new PreconditionFailedError('Rebuild progress changed. Reload it.');
+    }
     try {
       await work(record);
     } catch (error) {
@@ -276,6 +325,10 @@ export class MktgRebuildService {
       throw error;
     }
     await this.finish(req, record);
+    if (!advancing && JSON.stringify(record) !== before && record.status !== 'complete' && record.status !== 'failed')
+      await this.activeLease(req, record, 'renew').catch((err) => {
+        logger.warning(req, 'mktg_rebuild_renew', 'Lease renewal failed after saved progress', { err, project: record.project, chainId: record.chainId });
+      });
     return this.response(req, record);
   }
 
@@ -287,6 +340,88 @@ export class MktgRebuildService {
     delete record.operationId;
     if (!(await this.store.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.input(record), ifMatch: saved.etag }, true)))
       throw new PreconditionFailedError('Rebuild progress could not be saved. Reload the family.');
+    if (record.status === 'complete' || record.status === 'failed')
+      await this.activeLease(req, record, 'release').catch((err) => {
+        logger.warning(req, 'mktg_rebuild_release', 'Terminal progress is saved; lease release failed', {
+          err,
+          project: record.project,
+          chainId: record.chainId,
+        });
+      });
+  }
+
+  /** The project CAS precedes chain publication and every Guild side effect. */
+  private async claimProject(req: Request, record: MktgRebuildRecord): Promise<MktgRebuildResponse | null> {
+    const key = this.activeKey(record.project);
+    const marker: MktgRebuildActiveMarker = { chainId: record.chainId, startedAt: record.createdAt, expiresAt: Date.now() + MKTG_REBUILD_ACTIVE_TTL_MS };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const saved = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
+      if (saved) {
+        const active = this.marker(saved.body);
+        if (active.expiresAt > Date.now()) {
+          let existing: MktgRebuildRecord;
+          try {
+            const chain = await this.store.getPrivateObject(req, 'marketing-os-artifacts', this.key({ project: record.project, chainId: active.chainId }));
+            if (!chain) throw this.unavailable();
+            existing = this.read(chain.body, record.project, active.chainId);
+          } catch (err) {
+            logger.warning(req, 'mktg_rebuild_attach', 'Active chain is unavailable; failing closed', {
+              err,
+              project: record.project,
+              chainId: active.chainId,
+            });
+            throw this.unavailable();
+          }
+          if (existing.status !== 'complete' && existing.status !== 'failed') {
+            if (existing.framework.revisionId !== record.framework.revisionId)
+              throw new ConflictError('A rebuild for an earlier framework is still running.', 'MKTG_REBUILD_FRAMEWORK_CHANGED');
+            return { ...this.response(req, existing), attached: true };
+          }
+        }
+        if (!saved.etag) throw this.unavailable();
+        if (await this.store.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.input(marker), ifMatch: saved.etag }, true)) return null;
+      } else if (await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', key, this.input(marker))) return null;
+    }
+    throw this.unavailable();
+  }
+
+  private async activeLease(req: Request, record: MktgRebuildRecord, mode: 'check' | 'renew' | 'release'): Promise<void> {
+    const key = this.activeKey(record.project);
+    let saved = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
+    if (
+      !saved &&
+      mode !== 'release' &&
+      record.status !== 'complete' &&
+      record.status !== 'failed' &&
+      Date.now() - Date.parse(record.createdAt) <= MKTG_REBUILD_TTL_MS
+    ) {
+      const marker: MktgRebuildActiveMarker = { chainId: record.chainId, startedAt: record.createdAt, expiresAt: Date.now() + MKTG_REBUILD_ACTIVE_TTL_MS };
+      if (await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', key, this.input(marker))) return;
+      saved = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
+    }
+    const marker = saved && this.marker(saved.body);
+    if (mode === 'release' && marker?.chainId !== record.chainId) return;
+    if (!saved?.etag || !marker || marker.chainId !== record.chainId || (mode === 'check' && marker.expiresAt <= Date.now()))
+      throw new ConflictError('This rebuild is no longer active. Reload the family.', 'MKTG_REBUILD_EXPIRED');
+    if (mode === 'check' && marker.expiresAt > Date.now()) return;
+    marker.expiresAt = mode === 'release' ? 0 : Date.now() + MKTG_REBUILD_ACTIVE_TTL_MS;
+    const written = await this.store.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.input(marker), ifMatch: saved.etag }, true);
+    if (!written && mode !== 'release') throw new PreconditionFailedError('Active rebuild changed. Reload the family.');
+  }
+
+  private marker(body: string): MktgRebuildActiveMarker {
+    try {
+      const marker = JSON.parse(body);
+      if (marker && MKTG_REBUILD_CHAIN_ID_REGEX.test(marker.chainId) && Number.isFinite(Date.parse(marker.startedAt)) && Number.isFinite(marker.expiresAt))
+        return marker;
+    } catch {
+      // Corrupt private state cannot authorize another session.
+    }
+    throw this.unavailable();
+  }
+
+  private unavailable(): MicroserviceError {
+    return new MicroserviceError('Rebuild publication is unavailable. Retry shortly.', 503, 'MKTG_REBUILD_UNAVAILABLE');
   }
 
   private read(body: string, project: string, chainId: string): MktgRebuildRecord {
@@ -320,10 +455,11 @@ export class MktgRebuildService {
       framework: record.framework,
       status: record.status,
       ownerToken: createSessionOwnerToken(this.owner(req), this.binding(record.project, record.chainId)),
-      steps: record.steps.map((step) => ({
+      steps: record.steps.map((step, index) => ({
         agentId: step.agentId,
         agentKey: step.agentKey,
-        status: step.status,
+        status:
+          record.operationId && step.status === 'queued' && index === record.steps.findIndex((entry) => entry.status !== 'draft') ? 'running' : step.status,
         activity: step.activity,
         ...(step.questions && { questions: step.questions, questionsId: step.questionsId }),
         ...(step.persistence && { persistence: step.persistence }),
@@ -340,10 +476,13 @@ export class MktgRebuildService {
   private binding(project: string, chainId: string): string {
     return `rebuild:${project}:${chainId}`;
   }
+  private activeKey(project: string): string {
+    return `${MKTG_REBUILD_KEY_PREFIX}/${project}/active`;
+  }
   private key(record: { project: string; chainId: string }): string {
     return `${MKTG_REBUILD_KEY_PREFIX}/${record.project}/${record.chainId}.json`;
   }
-  private input(record: MktgRebuildRecord) {
+  private input(record: MktgRebuildRecord | MktgRebuildActiveMarker) {
     return { body: Buffer.from(JSON.stringify(record)), contentType: 'application/json; charset=utf-8', cacheControl: 'private, no-store' };
   }
   private changedFramework(): ConflictError {

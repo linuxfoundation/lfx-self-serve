@@ -19,10 +19,9 @@
         styleClass="min-h-12 max-w-full whitespace-normal break-words"
         data-testid="member-360-download" />
       <a
-        routerLink="../../../member-360"
+        [routerLink]="runRoute()"
         data-testid="member-360-new-run"
-        [queryParams]="{ revision: null }"
-        queryParamsHandling="merge"
+        [queryParams]="projectParams()"
         class="inline-flex min-h-12 items-center rounded-lg border border-gray-300 bg-white px-4 font-semibold"
         >New run</a
       >
@@ -324,8 +323,7 @@
             } @else {
               <a
                 [routerLink]="['../', run.documentId]"
-                [queryParams]="{ revision: null }"
-                queryParamsHandling="merge"
+                [queryParams]="projectParams()"
                 class="text-blue-600"
                 [attr.data-testid]="'member-360-history-open-' + run.documentId"
                 >Open</a

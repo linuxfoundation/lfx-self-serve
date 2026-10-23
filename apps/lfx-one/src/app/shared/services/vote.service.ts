@@ -11,7 +11,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
@@ -35,7 +35,7 @@ import {
   VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
-import { isVoteClosingSoon } from '@lfx-one/shared/utils';
+import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
@@ -47,6 +47,9 @@ export class VoteService {
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
+  // Status a fetched row already confirmed past Draft for a just-opened vote still awaiting its invitation count
+  // (GH-4078), so a later stale Draft row is overlaid with it (e.g. Ended) instead of being reopened as Active.
+  private readonly recentlyOpenedConfirmedStatus = new Map<string, PollStatus>();
   private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
 
   /**
@@ -154,10 +157,9 @@ export class VoteService {
       }
     }
 
-    return this.http.get<QueryServiceCountResponse>('/api/votes/count', { params }).pipe(
-      catchError(() => of({ count: 0 })),
-      map((response) => response.count)
-    );
+    // Errors propagate (GH-4078): the dashboard decides whether a failure reads as zero (foreground) or
+    // keeps the last confirmed total (silent invitation-count poll).
+    return this.http.get<QueryServiceCountResponse>('/api/votes/count', { params }).pipe(map((response) => response.count));
   }
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
@@ -344,6 +346,7 @@ export class VoteService {
    * immediately after the PUT instead of waiting on index visibility.
    */
   public markVoteOpened(voteUid: string): void {
+    this.recentlyOpenedConfirmedStatus.delete(voteUid);
     this.recentlyOpenedVotes.update((opened) => new Map(opened).set(voteUid, Date.now()));
   }
 
@@ -358,6 +361,8 @@ export class VoteService {
     for (const [uid, markedAt] of current) {
       if (now - markedAt < RECENTLY_OPENED_VOTE_TTL_MS) {
         live.set(uid, markedAt);
+      } else {
+        this.recentlyOpenedConfirmedStatus.delete(uid);
       }
     }
     if (live.size !== current.size) {
@@ -366,8 +371,9 @@ export class VoteService {
     return live;
   }
 
-  /** Evicts a carried uid once a fetched row already shows it open — the server value has converged. */
+  /** Evicts a carried uid once a fetched row shows it open with a positive invitation count — the server value has converged. */
   public evictRecentlyOpenedVote(voteUid: string): void {
+    this.recentlyOpenedConfirmedStatus.delete(voteUid);
     this.recentlyOpenedVotes.update((opened) => {
       if (!opened.has(voteUid)) return opened;
       const next = new Map(opened);
@@ -382,7 +388,11 @@ export class VoteService {
    * back with any other status have converged — the server's value wins and the entry is evicted
    * (a just-opened vote can end early inside the TTL via ITX's `EndPollIfAllResponded`, so
    * non-disabled ≠ active). Self-healing — once the index catches up, the fetched value flows
-   * through unchanged and the carrier empties.
+   * through unchanged and the carrier empties. Eviction also waits for a positive invitation count
+   * (GH-4078): the index can report the open status before the electorate, and evicting early would
+   * flip the row back to "No one invited"; the TTL still ends the carrier if the count never arrives.
+   * While it waits, the status that row confirmed is remembered, so a later stale `disabled` row is
+   * overlaid with it (e.g. Ended) rather than reopened as Active.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
@@ -395,11 +405,34 @@ export class VoteService {
         return vote;
       }
       if (vote.status !== PollStatus.DISABLED) {
-        this.evictRecentlyOpenedVote(vote.uid);
+        if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyOpenedVote(vote.uid);
+        else this.recentlyOpenedConfirmedStatus.set(vote.uid, vote.status);
         return vote;
       }
-      return { ...vote, status: PollStatus.ACTIVE };
+      return { ...vote, status: this.recentlyOpenedConfirmedStatus.get(vote.uid) ?? PollStatus.ACTIVE };
     });
+  }
+
+  /**
+   * True while a vote sits in the live just-opened or just-created carrier window (GH-4078) — its
+   * index row (or synthesized row) can't be trusted to report the invited electorate yet, so the
+   * votes table shows "Counting invitations…" instead of "No one invited". Read-only: unlike the
+   * getLive* helpers this never prunes, so it is safe to call from a computed.
+   */
+  public isAwaitingInvitationCount(voteUid: string): boolean {
+    const now = Date.now();
+    const openedAt = this.recentlyOpenedVotes().get(voteUid);
+    if (openedAt !== undefined && now - openedAt < RECENTLY_OPENED_VOTE_TTL_MS) return true;
+    const created = this.recentlyCreatedVotes().get(voteUid);
+    return created !== undefined && created.vote.status !== PollStatus.DISABLED && now - created.markedAt < RECENTLY_OPENED_VOTE_TTL_MS;
+  }
+
+  /**
+   * True when any row in a rendered votes list would show "Counting invitations…" (GH-4078) — derived from the same
+   * computeVoteRowParticipation state the votes table renders, so polling and the label cannot drift apart.
+   */
+  public hasVotesAwaitingInvitationCount(votes: Vote[]): boolean {
+    return votes.some((vote) => computeVoteRowParticipation(vote, this.isAwaitingInvitationCount(vote.uid)).state === VoteRowParticipationState.COUNTING);
   }
 
   /**
@@ -420,7 +453,7 @@ export class VoteService {
     this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote: carried, markedAt: Date.now() }));
   }
 
-  /** Evicts a carried uid once a fetched row already carries it — the server row is now the source of truth. */
+  /** Evicts a carried uid once a fetched row carries it with a positive invitation count — the server row is now the source of truth. */
   public evictRecentlyCreatedVote(voteUid: string): void {
     this.recentlyCreatedVotes.update((created) => {
       if (!created.has(voteUid)) return created;
@@ -433,8 +466,8 @@ export class VoteService {
   /**
    * Inserts any still-live recently-created vote (GH-4007) that is missing from a fetched page —
    * prepended so a just-created or cloned vote appears in the list immediately instead of only
-   * after the search index converges. Self-healing: once a fetched page already contains the uid,
-   * the carried entry is evicted and the server row is used instead.
+   * after the search index converges. Self-healing: once a fetched page contains the uid with a
+   * positive invitation count, the carried entry is evicted and the server row is used instead.
    *
    * `options` scope the insertion to the list actually being rendered:
    * - `projectUid`/`committeeUid` keep a vote created in one project/committee from leaking into
@@ -455,7 +488,9 @@ export class VoteService {
    * happen on a *different* tab/page than the one the vote was created from, e.g. Active →
    * Draft → Active before the index catches up) so the carried status is kept instead of
    * discarding the synthesized vote; only a fetched row reporting any other status is treated as
-   * real convergence and evicts the carrier.
+   * real convergence and evicts the carrier — once it also reports a positive invitation count
+   * (GH-4078, same reasoning as `mergeRecentlyOpenedVotes`). Until then the carrier adopts the
+   * fetched status, so a vote fetched as Ended isn't later re-inserted as Active.
    */
   public mergeRecentlyCreatedVotes(
     votes: Vote[],
@@ -482,7 +517,8 @@ export class VoteService {
       if (!carried) return vote;
       present.add(vote.uid);
       if (vote.status !== PollStatus.DISABLED) {
-        this.evictRecentlyCreatedVote(vote.uid);
+        if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyCreatedVote(vote.uid);
+        else this.updateRecentlyCreatedVoteStatus(vote.uid, vote.status);
         return vote;
       }
       // Don't re-badge a stale Disabled row outside the tab its carried status actually belongs to
@@ -655,5 +691,18 @@ export class VoteService {
       this.recentlyCreatedVotes.set(live);
     }
     return liveVotes;
+  }
+
+  /**
+   * Adopts a fetched row's status for a carried vote still waiting on its invitation count (GH-4078) — keeps
+   * `markedAt` so the window doesn't restart, and stops a vote fetched as Ended from being re-inserted as
+   * Active under a tab whose page no longer returns it.
+   */
+  private updateRecentlyCreatedVoteStatus(voteUid: string, status: PollStatus): void {
+    this.recentlyCreatedVotes.update((created) => {
+      const entry = created.get(voteUid);
+      if (!entry || entry.vote.status === status) return created;
+      return new Map(created).set(voteUid, { ...entry, vote: { ...entry.vote, status } });
+    });
   }
 }

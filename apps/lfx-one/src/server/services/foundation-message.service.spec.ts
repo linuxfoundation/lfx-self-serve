@@ -479,6 +479,87 @@ describe('FoundationMessageService.getResult', () => {
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending', activity: [] });
   });
 
+  const runtime = (type: string, entity = 'EntTaskAgent', id = 'agent-1'): string => JSON.stringify({ type, task: { id, entity_type: entity } });
+  const reply = (text: string): string => JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: text } });
+
+  it('fails immediately on a finished agent runtime with no valid framework, with plain-text reply and no persistence', async () => {
+    const failureText = 'Sources are missing. <img src=x onerror=alert(1)>\nPlease supply the project website.';
+    guildMocks.getRawEventPayloads.mockResolvedValue([runtime('runtime_start'), reply(failureText), runtime('runtime_done')]);
+    expect(await service.getResult(req, 'session-1', 'proj-uid-1')).toEqual({ status: 'failed', failureText, activity: [] });
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+    guildMocks.getRawEventPayloads.mockResolvedValue([runtime('runtime_done')]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: '' });
+  });
+
+  it('keeps pending tools, capped pages and queued turns pending, never accepting an old finalize replay', async () => {
+    for (const extra of [
+      runtime('runtime_start', 'EntTaskTool', 'fetch-1'),
+      JSON.stringify({ type: 'mktg_session_events_truncated' }),
+      JSON.stringify({ type: 'mktg_session_turn_started' }),
+    ]) {
+      guildMocks.getRawEventPayloads.mockResolvedValue([runtime('runtime_done'), extra]);
+      expect((await service.getResult(req, 'session-1')).status).toBe('pending');
+    }
+    const old = toolResultPayload(buildEnvelope());
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, runtime('runtime_done'), JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
+  });
+
+  it('keeps questions as a pause after runtime_done unless a genuine later reply supersedes them', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([RANKED_GOALS_QUESTION]), runtime('runtime_done')]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      questionsPayload([RANKED_GOALS_QUESTION]),
+      reply('The intake cannot be completed.'),
+      runtime('runtime_done'),
+    ]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: 'The intake cannot be completed.' });
+    const streamQuestions = llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([RANKED_GOALS_QUESTION]) }] }]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([reply('An earlier rejection.'), streamQuestions, runtime('runtime_done')]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+  });
+
+  it('excludes reasoning MIME before extracting questions, final replies or live activity', async () => {
+    const reasoning = JSON.stringify({
+      type: 'agent_notification_progress',
+      content: {
+        type: 'application/guild-reasoning-progress',
+        data: questionsText([RANKED_GOALS_QUESTION]),
+        nested: { type: 'text', text: questionsText([RANKED_GOALS_QUESTION]) },
+      },
+    });
+    guildMocks.getRawEventPayloads.mockResolvedValue([reasoning, runtime('runtime_done')]);
+    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'failed', failureText: '', activity: [] });
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([RANKED_GOALS_QUESTION]), reasoning, runtime('runtime_done')]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+    guildMocks.getRawEventPayloads.mockResolvedValue([reply('A real rejection.'), reasoning, runtime('runtime_done')]);
+    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'failed', failureText: 'A real rejection.', activity: [] });
+  });
+
+  it('fails after accepted answers when only the already-answered questions replay and the new runtime ends idle', async () => {
+    const questions = questionsPayload([RANKED_GOALS_QUESTION]);
+    const replay = llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([RANKED_GOALS_QUESTION]) }] }]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      questions,
+      runtime('runtime_done'),
+      JSON.stringify({ type: 'mktg_session_turn_started' }),
+      runtime('runtime_start'),
+      replay,
+      runtime('runtime_done'),
+    ]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: '' });
+  });
+
+  it('a valid schema/hash-checked framework wins over a terminal failure signal', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      runtime('runtime_start'),
+      toolResultPayload(buildEnvelope()),
+      reply('Complete.'),
+      runtime('runtime_done'),
+    ]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('ready');
+  });
+
   it('reports what the agent has done so far, in plain sentences, on every poll', async () => {
     const fetch = {
       type: 'runtime_start',

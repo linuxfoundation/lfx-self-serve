@@ -22,7 +22,7 @@ import type {
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -126,14 +126,6 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
   'orgs',
   'geo',
 ] as const satisfies readonly HealthMetricsEventsSectionKey[];
-
-/** Note under the sub-nav items, linking to the Members list. */
-export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: "An organization's event record also appears in",
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'list',
-};
 
 /** Query params the Events sections read; `event` lets a finding link open one event's forecast. */
 export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {

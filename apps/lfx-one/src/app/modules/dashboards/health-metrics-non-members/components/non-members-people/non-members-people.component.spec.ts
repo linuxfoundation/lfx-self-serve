@@ -141,13 +141,13 @@ describe('NonMembersPeopleComponent', () => {
     expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
   });
 
-  it("gives People its own info note on each person's organization, plus the all-time caveat", async () => {
+  it("gives People its own plain note on each person's organization, plus the all-time caveat", async () => {
     await render();
     const note = query('non-members-people-provisional');
 
     expect(text('non-members-people-provisional')).toContain("treat each person's organization as provisional too");
     expect(text('non-members-people-provisional')).not.toContain('never send it to sales');
-    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-circle-info');
+    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
     expect(text('non-members-people-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
   });
 

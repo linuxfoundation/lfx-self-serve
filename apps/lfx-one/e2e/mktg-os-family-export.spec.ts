@@ -9,6 +9,25 @@ import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
+test('export stays on the Family URL and Back returns to Kit, never to an export action', async ({ page }, info) => {
+  await openFamilyExports(page, { existing: true });
+  await page.getByTestId('mktg-breadcrumb-link-0').click();
+  await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
+  await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
+  await expect(page.getByTestId('family-export-last-link')).toBeVisible();
+  const url = page.url();
+  const entries = await page.evaluate(() => history.length);
+  await page.getByTestId('family-export-slides').getByRole('button').click();
+  await page.getByTestId('family-export-update').getByRole('button').click();
+  await expect(page.getByTestId('family-export-success')).toBeVisible({ timeout: 15_000 });
+  expect(page.url()).toBe(url);
+  expect(await page.evaluate(() => history.length)).toBe(entries);
+  await expect(page.getByTestId('family-export-last-link')).toHaveAttribute('target', '_blank');
+  await page.goBack();
+  await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('export-back-to-kit.png'), fullPage: true });
+});
+
 test('no earlier export creates a deck, shows progress, then the dated revision-linked last export', async ({ page }, info) => {
   const controls = await openFamilyExports(page, { result: 'pending' });
   const sent = page.waitForRequest((request) => request.url().endsWith('/family/start'));

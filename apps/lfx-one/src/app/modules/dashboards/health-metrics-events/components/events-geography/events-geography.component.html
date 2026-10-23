@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-4" data-testid="events-geo">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Geographic distribution unavailable"
       subtitle="We could not load registrations by country for this foundation. Refresh the page to try again."
@@ -13,12 +14,14 @@
     <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-geo-loading" aria-hidden="true" />
   } @else if (!view().foundationMeasured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="No registrations by country yet"
       subtitle="Once this foundation's event registrations carry a country, the countries represented appear here."
       data-testid="events-geo-foundation-unmeasured" />
   } @else if (!view().measured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="Geographic distribution not available for this period"
       subtitle="No registration in the selected period carries a country. Pick another period to see it."
@@ -30,7 +33,9 @@
 
     <div class="flex flex-col gap-2" data-testid="events-geo-headline">
       <div class="flex items-baseline gap-2">
-        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-geo-headline-value">{{ view().headline.value }}</span>
+        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-geo-headline-value">{{
+          view().headline.value
+        }}</span>
         @if (view().headline.delta !== null) {
           <span
             class="text-[13px] font-medium tabular-nums"
@@ -42,7 +47,7 @@
           </span>
         }
       </div>
-      <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+      <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
     </div>
 
     <div class="flex flex-col gap-3" data-testid="events-geo-top">

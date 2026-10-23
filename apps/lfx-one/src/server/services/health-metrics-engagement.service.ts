@@ -82,8 +82,8 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
 };
 
 /**
- * The project selector's scope on views that denormalize an all-projects roll-up row: a null slug
- * reads the roll-up, since summing per-project rows would double-count shared meetings and people.
+ * The optional project scope on views that denormalize an all-projects roll-up row (the page no longer sends one):
+ * a null slug reads the roll-up, since summing per-project rows would double-count shared meetings and people.
  */
 const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)';
 
@@ -342,7 +342,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug, ...levels],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null, ...levels],
       {
         view: MEETING_PARTICIPATION_VIEW,
         operation: 'get_engagement_meeting_participation',
@@ -389,7 +389,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null],
       {
         view: ATTENDANCE_MONTHLY_VIEW,
         operation: 'get_engagement_attendance_trend',
@@ -442,7 +442,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null],
       {
         view: ORG_PARTICIPATION_VIEW,
         operation: 'get_engagement_org_participation',
@@ -546,7 +546,7 @@ export class HealthMetricsEngagementService {
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
     `;
 
-    const binds = [query.foundationSlug, query.projectSlug, query.projectSlug];
+    const binds = [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null];
     const result = await executeSnowflakeViewRead<RepresentativesRow>(this.snowflakeService, req, sql, binds, {
       view: REPRESENTATIVES_VIEW,
       operation: 'get_engagement_representatives',

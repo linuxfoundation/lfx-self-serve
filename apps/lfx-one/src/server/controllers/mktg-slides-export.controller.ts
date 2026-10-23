@@ -139,7 +139,7 @@ export class MktgSlidesExportController {
     }
   }
 
-  /** GET /api/mktg-agents/slides-export/last?project=&agentKey=&documentId= — the document's last export and latest revision. */
+  /** GET /api/mktg-agents/slides-export/last?project=&agentKey=&documentId= — the document's last export and its approved current (null when none approved). */
   public async last(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_slides_export_last';
     const target = this.readTarget(req, { project: req.query['project'], agentKey: req.query['agentKey'], documentId: req.query['documentId'] }, operation);

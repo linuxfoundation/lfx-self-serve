@@ -13,8 +13,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
-
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   HealthMetricsEngagementAttendanceTrend,
@@ -25,7 +23,7 @@ import type {
 
 /**
  * `#trend` — all-meeting attendance over the trailing twelve months, from the view's monthly grain.
- * It follows the project selector but not the period pill: the window always ends with this month.
+ * It ignores the period pill: the window always ends with this month.
  */
 @Component({
   selector: 'lfx-engagement-attendance-trend',
@@ -35,7 +33,6 @@ import type {
 export class EngagementAttendanceTrendComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
@@ -52,7 +49,6 @@ export class EngagementAttendanceTrendComponent {
 
   protected readonly query: Signal<HealthMetricsEngagementAttendanceTrendQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-    projectSlug: this.chrome.selectedProjectSlug(),
   }));
   protected readonly response: Signal<HealthMetricsEngagementAttendanceTrend> = this.initResponse();
 
@@ -103,7 +99,7 @@ export class EngagementAttendanceTrendComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);

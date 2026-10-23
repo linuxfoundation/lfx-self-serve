@@ -75,14 +75,11 @@ export class EngagementGroupAttendanceComponent {
 
   protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(this.parseInitialGroupType());
   /**
-   * Every scope change restarts paging. The period, foundation and project come from the page header, which
+   * Every scope change restarts paging. The period and foundation come from the page header, which
    * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
    */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(
-      () =>
-        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`
-    ),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
   });
   protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
@@ -110,7 +107,7 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  /** `null` means the foundation has no groups at all; a project or chip with zero matches keeps its
+  /** `null` means the foundation has no groups at all; a chip with zero matches keeps its
    * own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
@@ -154,7 +151,6 @@ export class EngagementGroupAttendanceComponent {
   private initQuery(): HealthMetricsEngagementGroupQuery {
     return {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-      projectSlug: this.chrome.selectedProjectSlug(),
       groupType: this.groupType(),
       range: this.chrome.selectedRange(),
       page: this.page(),

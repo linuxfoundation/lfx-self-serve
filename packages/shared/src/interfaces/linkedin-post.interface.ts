@@ -43,6 +43,8 @@ export type LinkedinFormRenderVersion = 1 | 2;
 
 /** Server-composed form; no feedback path in this WorkItem. */
 export interface LinkedinForm {
+  project_name?: string;
+  project_uid?: string;
   today: string;
   saved_profile?: LinkedinProfile;
   setup?: LinkedinSetup;
@@ -51,7 +53,15 @@ export interface LinkedinForm {
   content_url?: string;
   content_file_name?: string;
 }
+/** Live retry snapshot; raw sources and personal setup stay in memory only. */
+export interface LinkedinRetryInputs {
+  answers: Record<string, string>;
+  setup?: LinkedinSetup;
+  /** A restored run needs the requester to choose/paste/re-enter its source again. */
+  requiresSource?: boolean;
+}
 export interface LinkedinGeneration extends MktgRunSessionResponse {
+  retryInputs?: LinkedinRetryInputs;
   /** Last answered gap round, retained with a pending capability to avoid asking twice after reload. */
   answeredQuestionsId?: string;
   documentId: string;
@@ -60,6 +70,8 @@ export interface LinkedinGeneration extends MktgRunSessionResponse {
   source: { label: string; words: number; fetched: boolean };
 }
 export interface LinkedinPendingRun extends MktgPendingDocumentRun {
+  /** Reload metadata only; no content_text, content_url, upload bytes or personal setup. */
+  retryInputs?: Omit<LinkedinRetryInputs, 'setup'>;
   answeredQuestionsId?: string;
   source: LinkedinGeneration['source'];
 }

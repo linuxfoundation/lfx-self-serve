@@ -1,0 +1,178 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The design's `.hmn`: a column right of the sections that collapses into a rail of ticks once the page
+// (`hmpage`, the gate's column) is 1100px or narrower. The rail opens as a floating panel on hover or focus,
+// its items fading in one after another; picking one closes it until the pointer leaves.
+:host {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex: 0 0 28px;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: flex-start;
+  min-width: 28px;
+
+  // The offset only applies while pinned; a relative host would just be pushed below the first card.
+  @media (min-width: theme('screens.lg')) {
+    position: sticky;
+    top: var(--hmn-top, 0px);
+  }
+}
+
+.hmn-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  padding: 10px 0 10px 8px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.hmn-tick {
+  display: block;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background-color: theme('colors.gray.300');
+  transition:
+    width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.35s ease;
+}
+
+.hmn-tick-active {
+  width: 20px;
+  background-color: theme('colors.blue.500');
+}
+
+// Faded rather than `visibility: hidden`, so a keyboard can still tab into the items and open it.
+.hmn-panel {
+  position: absolute;
+  top: -14px;
+  right: -10px;
+  width: 300px;
+  padding: 14px 16px 14px 18px;
+  border: 1px solid theme('colors.gray.200');
+  border-radius: 14px;
+  background-color: theme('colors.white');
+  box-shadow:
+    0 12px 32px -8px theme('colors.gray.900 / 18%'),
+    0 2px 6px theme('colors.gray.900 / 6%');
+  opacity: 0;
+  transform: translateX(10px) scale(0.96);
+  transform-origin: top right;
+  pointer-events: none;
+  transition:
+    opacity 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.hmn-item {
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 0.15s;
+}
+
+:host(:hover),
+:host(:focus-within) {
+  .hmn-panel {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .hmn-item {
+    opacity: 1;
+    transform: none;
+    transition-delay: calc(var(--hmn-index) * 28ms + 40ms);
+  }
+
+  .hmn-rail {
+    opacity: 0;
+  }
+}
+
+:host(.hmn-closed) {
+  .hmn-panel {
+    opacity: 0;
+    transform: translateX(10px) scale(0.96);
+    pointer-events: none;
+  }
+
+  .hmn-item {
+    opacity: 0;
+  }
+
+  .hmn-rail {
+    opacity: 1;
+  }
+}
+
+.hmn-label {
+  transition: color 0.15s ease;
+}
+
+.hmn-item:hover .hmn-label,
+.hmn-item:focus-visible .hmn-label {
+  color: theme('colors.gray.900');
+}
+
+.hmn-tipbox {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 2px);
+  box-shadow: 0 4px 12px theme('colors.gray.900 / 18%');
+  transition:
+    opacity 0.15s,
+    transform 0.15s,
+    visibility 0.15s;
+}
+
+.hmn-tip:hover .hmn-tipbox,
+.hmn-item:focus-visible .hmn-tipbox {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+// Wide pages: a plain column, always open.
+@container hmpage (width > 1100px) {
+  :host {
+    flex: 0 1 300px;
+    align-items: stretch;
+    min-width: 240px;
+  }
+
+  .hmn-rail {
+    display: none;
+  }
+
+  .hmn-panel,
+  :host(.hmn-closed) .hmn-panel {
+    position: static;
+    width: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background-color: transparent;
+    box-shadow: none;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition: none;
+  }
+
+  .hmn-item,
+  :host(.hmn-closed) .hmn-item {
+    opacity: 1;
+    transform: none;
+    transition:
+      color 0.15s,
+      border-color 0.3s ease;
+  }
+}

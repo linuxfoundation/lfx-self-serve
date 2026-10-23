@@ -58,6 +58,14 @@ describe('MktgRebuildController', () => {
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
     expect(deps[method]).toHaveBeenCalledTimes(1);
   });
+  it('returns the attached chain and caller capability unchanged', async () => {
+    const attached = { chainId: body.chainId, ownerToken: body.ownerToken, attached: true, status: 'running', steps: [] };
+    deps.start.mockResolvedValueOnce(attached);
+    const res = response();
+    await controller.start(request(body), res, next);
+    expect(res.json).toHaveBeenCalledWith(attached);
+    expect(next).not.toHaveBeenCalled();
+  });
   it.each(['start', 'advance', 'result'] as const)('blocks %s during impersonation before any lookup', async (method) => {
     await controller[method](request(body, true), response(), next);
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));

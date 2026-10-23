@@ -2,8 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE, MKTG_SLIDES_EXPORT_AGENT_KEYS, MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants';
-import { nativeAssetRevisionResponse, openAssetDocument, openDraftAssetRun, openUnapprovedAssetDocument } from './helpers/mktg-os-asset-views.helper';
+import {
+  BRAND_KIT_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_SLIDES_EXPORT_AGENT_KEYS,
+  MKTG_SLIDES_EXPORT_API_PATH,
+} from '@lfx-one/shared/constants';
+import {
+  columnAssetRevisionResponse,
+  nativeAssetRevisionResponse,
+  openAssetDocument,
+  openDraftAssetRun,
+  openUnapprovedAssetDocument,
+} from './helpers/mktg-os-asset-views.helper';
 
 test.describe('Native FAQ document approval and header', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
@@ -138,6 +150,35 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
+  test(`${key} print media fills a paper-sized viewport without content-column containment`, async ({ page, browserName }, info) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.addInitScript(() => {
+      window.print = () => undefined;
+    });
+    await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
+    const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
+    const print = page.getByTestId(key === 'brand-kit' ? 'brand-kit-book' : 'mktg-framework-print');
+    await expect(print).toBeHidden();
+    await page
+      .getByTestId(prefix + '-download-pdf')
+      .getByRole('button')
+      .click();
+    await expect(page.locator('body')).toHaveClass(new RegExp(key === 'brand-kit' ? BRAND_KIT_PRINT_BODY_CLASS : FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    await page.emulateMedia({ media: 'print' });
+    // Media emulation does not paginate or apply @page margins. Measure against
+    // a paper-sized initial containing block, not the app shell's offset wrapper.
+    const paperViewport = key === 'brand-kit' ? { width: 11 * 96, height: 8.5 * 96 } : { width: 8.5 * 96, height: 11 * 96 };
+    await page.setViewportSize(paperViewport);
+    await expect(print).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-revisions')).toBeHidden();
+    const box = await print.boundingBox();
+    if (!box) throw new Error('The approved print document must be rendered');
+    expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paperViewport.width });
+    if (key === 'brand-kit') await expect(print.locator('[data-testid^="brand-kit-page-"]')).toHaveCount(16);
+    else await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+    if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
+    await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
+  });
   test(`${key} reads the last export while approved bytes remain pending`, async ({ page }, info) => {
     const lastRead = page.waitForRequest((request) => new URL(request.url()).pathname === `${MKTG_SLIDES_EXPORT_API_PATH}/last`);
     await openUnapprovedAssetDocument(page, key, true);

@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { buildBrandKitBookView } from '@lfx-one/shared/utils';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BrandKitViewComponent } from './brand-kit-view.component';

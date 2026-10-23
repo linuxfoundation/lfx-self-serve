@@ -3,6 +3,9 @@
 
 import type { LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
 
+/** Provenance belongs to the pushed edit history entry, not the previous route. */
+export const LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY = 'mktgEditPushed';
+
 /** Verbatim Step 1/2 copy and defaults from the live agent src/profile.ts. */
 export const LINKEDIN_ABOUT_FIELDS = [
   { key: 'name', label: 'Name', ask: 'Their name' },
@@ -61,6 +64,8 @@ export const LINKEDIN_LINK_PLACEHOLDER = '[LINK]';
 export const LINKEDIN_SHARE_LINK_HINT = 'Optional. Fills [LINK] in every option and in Copy post. Prefilled when you draft from a link; you can change it.';
 export const LINKEDIN_MISSING_LINK_COPY_NOTICE = 'Copied. This post still contains [LINK] — replace it before posting.';
 export const LINKEDIN_SOURCE_MAX_BYTES = 1024 * 1024;
+/** Bounded reload recovery: never put an upload or a large unpublished source in localStorage. */
+export const LINKEDIN_RETRY_TEXT_MAX_CHARS = 4096;
 /** A byte-bounded text can contain at most this many one-byte, space-separated words. */
 export const LINKEDIN_SOURCE_MAX_WORDS = Math.ceil(LINKEDIN_SOURCE_MAX_BYTES / 2);
 /** Durable at-most-once automatic profile initialization, independent of current.json deletion. */

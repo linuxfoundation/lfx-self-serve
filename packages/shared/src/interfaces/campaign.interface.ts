@@ -3098,8 +3098,12 @@ export type MonitorTabPlatform = 'google' | MonitorPanelKey;
 /** The Monitor tab's trailing-days choices; a member of `MONITOR_DATE_RANGE_OPTIONS`. */
 export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number];
 
-/** Why a Monitor panel shows an empty state instead of data: a connection state, or the platform's metrics switched off upstream. */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled';
+/**
+ * Why a Monitor panel shows an empty state instead of data: a connection state, the platform's metrics
+ * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
+ * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
+ */
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {

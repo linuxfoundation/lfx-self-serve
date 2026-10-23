@@ -3,18 +3,7 @@
 
 <!-- Run.dc.html uses exact pixel spacing because this app's rem base is 14px. The app shell supplies the global header. -->
 <div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
-  <nav aria-label="Breadcrumb" class="text-[14px] text-gray-500" data-testid="member-360-breadcrumb">
-    <ol class="flex flex-wrap items-center gap-2">
-      <li data-testid="member-360-breadcrumb-kit">
-        <a routerLink=".." queryParamsHandling="preserve" class="text-blue-600" data-testid="member-360-back">{{ context.activeContext()?.name }} kit</a>
-      </li>
-      <li aria-hidden="true">›</li>
-      <!-- The family page will wire this crumb when its independent layer lands. -->
-      <li>Member &amp; sponsor kit</li>
-      <li aria-hidden="true">›</li>
-      <li aria-current="page">Member 360</li>
-    </ol>
-  </nav>
+  <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="context.activeContext()?.slug ?? null" data-testid="member-360-breadcrumb" />
   <section class="flex w-full min-w-0 flex-col gap-[20px]">
     <header class="flex flex-col gap-[6px]">
       <h1 class="text-[30px] font-bold">Member 360</h1>
@@ -168,7 +157,7 @@
         @for (run of history(); track run.documentId) {
           <a
             [routerLink]="['../documents/member-360', run.documentId]"
-            queryParamsHandling="preserve"
+            [queryParams]="projectParams()"
             class="text-blue-600"
             [attr.data-testid]="'member-360-run-history-' + run.documentId"
             >{{ run.createdAt | date: 'd MMM y' : 'UTC' }} · Open</a

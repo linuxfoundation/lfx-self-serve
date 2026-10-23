@@ -5,6 +5,7 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -36,7 +37,7 @@ import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-fra
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
+  imports: [TooltipModule, DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })
@@ -72,6 +73,19 @@ export class MktgFamilyExportActionsComponent {
   protected readonly canExport = this.initCanExport();
   protected readonly canPrint = this.initCanPrint();
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
+  /** Why the export buttons are greyed out, for their tooltips; empty while they take a click. */
+  protected readonly exportDisabledReason = computed(() => {
+    if (this.canExport()) return '';
+    if (!this.writer()) return 'You need write access to this project to export';
+    if (!this.target()) return 'This family has no assets the exporter supports yet';
+    if (this.checking()) return 'Checking approved assets and the last export…';
+    if (this.lookupError()) return 'Could not check the approved assets. Use Check again.';
+    if (this.busy()) return 'An export is already running';
+    return this.approvalNote;
+  });
+  protected readonly pdfDisabledReason = computed(() =>
+    this.canPrint() ? '' : this.exportDisabledReason() || 'Approve the messaging framework or the brand kit first: the PDF prints those'
+  );
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
 

@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-4" data-testid="events-sponsorship">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Sponsorship unavailable"
       subtitle="We could not load sponsorship for this foundation. Refresh the page to try again."
@@ -13,12 +14,14 @@
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="events-sponsorship-loading" aria-hidden="true" />
   } @else if (!view().foundationMeasured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="No sponsorship yet"
       subtitle="Once this foundation's events sell sponsorship packages, revenue and tiers appear here."
       data-testid="events-sponsorship-foundation-unmeasured" />
   } @else if (!view().measured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="Sponsorship unavailable for this period"
       subtitle="Sponsorship for the selected period has not been measured yet. Pick another period to see it."
@@ -33,7 +36,9 @@
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-sponsorship-hero">
       <div class="flex flex-col gap-2" data-testid="events-sponsorship-headline">
         <div class="flex items-baseline gap-2">
-          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-sponsorship-headline-value">{{ view().headline.value }}</span>
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-sponsorship-headline-value">{{
+            view().headline.value
+          }}</span>
           @if (view().headline.delta !== null) {
             <span
               class="text-[13px] font-medium tabular-nums"
@@ -45,14 +50,16 @@
             </span>
           }
         </div>
-        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-sponsorship-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-sponsorship-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-side-' + stat.key + '-value'">
+            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
+            <dd
+              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
+              [attr.data-testid]="'events-sponsorship-side-' + stat.key + '-value'">
               {{ stat.value }}
             </dd>
           </div>
@@ -94,7 +101,7 @@
         <span class="text-[12px] text-gray-400">count sold</span>
       </div>
       @if (view().tiers.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
+        <p class="text-[13px] text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
       } @else {
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().tiers; track row.key; let index = $index) {

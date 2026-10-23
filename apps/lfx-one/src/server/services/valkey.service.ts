@@ -7,6 +7,7 @@ import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/ut
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 
+import { isoDateReplacer } from '../helpers/date-format.helper';
 import { addShutdownHook } from '../utils/shutdown';
 import { logger } from './logger.service';
 
@@ -121,7 +122,7 @@ export class ValkeyService implements CachePort {
   public async setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (!this.client) return false;
     try {
-      const serialized = JSON.stringify(value);
+      const serialized = JSON.stringify(value, isoDateReplacer);
       const writeSize = Buffer.byteLength(serialized, 'utf8');
       const maxBytes = ValkeyService.maxBytesFor(key);
       if (writeSize > maxBytes) {

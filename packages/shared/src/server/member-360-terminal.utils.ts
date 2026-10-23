@@ -8,6 +8,7 @@ import {
   MEMBER_360_STOPPED_MESSAGE,
 } from '../constants/member-360.constants';
 import type { Member360FailureReason, Member360Result } from '../interfaces/member-360.interface';
+import { isMktgToolTaskEvent } from '../utils/mktg-session-event.utils';
 import { createMember360Redactor } from './member-360-redaction.utils';
 
 /** Classify redacted prose on the server; never expose internal markers in the short reason. */
@@ -36,7 +37,7 @@ export function member360TerminalResult(payloads: string[], contacts: (string | 
     const task = record(event['task']);
     const content = record(event['content']);
     const root = task['entity_type'] === 'EntTaskAgent' && task['parent_task_id'] == null;
-    const tool = task['entity_type'] === 'EntTaskTool';
+    const tool = isMktgToolTaskEvent(event);
     // Guild's task.status is CURRENT state even on historical events. Only the
     // root runtime_done ends the run: neither tool completion nor a model turn,
     // notification or aborted response stream proves that the session ended.

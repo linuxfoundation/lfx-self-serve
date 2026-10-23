@@ -143,7 +143,7 @@ export async function openMember360(page: Page, path = 'member-360'): Promise<vo
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, `/project/mktg-os-agents/${path}?project=${MEMBER_360_PROJECT.slug}`);
   let testId = 'member-360-run-page';
-  if (!path || path === 'agents') testId = 'mktg-os-agents-page';
+  if (!path) testId = 'mktg-kit-page';
   if (path.startsWith('documents')) testId = 'mktg-document-view-page';
   await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20000 });
 }

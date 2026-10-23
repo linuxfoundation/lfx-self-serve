@@ -229,6 +229,16 @@
   border-bottom: 1px solid #f1f5f9; /* slate-100 */
 }
 
+/* Health Metrics tables (the design's tables): its exact pixel padding and a stronger rule under the header. */
+.p-datatable.hm-table .p-datatable-thead > tr > th {
+  padding: 0 6px 8px;
+  border-bottom-color: theme('colors.gray.200');
+}
+
+.p-datatable.hm-table .p-datatable-tbody > tr > td {
+  padding: 11px 6px;
+}
+
 .p-menu .p-menu-item.text-red-500 .p-menu-item-content,
 .p-menu .p-menu-item.text-red-500 .p-menu-item-label,
 .p-menu .p-menu-item.text-red-500 .p-menu-item-icon {

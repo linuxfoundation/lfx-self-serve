@@ -1,7 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<section class="flex flex-col gap-4 w-full" data-testid="mktg-framework-view">
+<!-- Screen-only containment sizes native grids to their column without changing the print document's positioning context. -->
+<section class="[@media_screen]:@container/asset flex min-w-0 flex-col gap-4 w-full" data-testid="mktg-framework-view">
   <!-- Asset header: what this is, which version, where the run stands -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-framework-view-header">
     @if (showMetadata()) {
@@ -24,25 +25,39 @@
       <div class="grow"></div>
       <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or export it to Google Slides (the panel below the header shows the export). -->
       <div class="flex flex-wrap items-center gap-2" data-testid="mktg-framework-view-actions">
-        <lfx-button
-          label="Download PDF"
-          icon="fa-light fa-file-pdf"
-          [outlined]="true"
-          size="small"
-          [disabled]="!printView()"
-          ariaLabel="Download the approved current messaging framework as a PDF"
-          data-testid="mktg-framework-view-download-pdf"
-          (onClick)="onDownloadPdf()" />
-        <lfx-button
-          label="Export to Google Slides"
-          icon="fa-light fa-presentation-screen"
-          [outlined]="true"
-          size="small"
-          [loading]="slidesExport.busy()"
-          [disabled]="!slidesExport.canExport()"
-          ariaLabel="Export the messaging framework to Google Slides"
-          data-testid="mktg-framework-view-export-slides"
-          (onClick)="slidesExport.onExport()" />
+        <span
+          [pTooltip]="pdfTooltip()"
+          tooltipPosition="bottom"
+          tooltipEvent="both"
+          [attr.aria-label]="pdfTooltip() || null"
+          [attr.tabindex]="pdfTooltip() ? 0 : null">
+          <lfx-button
+            label="Download PDF"
+            icon="fa-light fa-file-pdf"
+            [outlined]="true"
+            size="small"
+            [disabled]="!printView()"
+            ariaLabel="Download the approved current messaging framework as a PDF"
+            data-testid="mktg-framework-view-download-pdf"
+            (onClick)="onDownloadPdf()" />
+        </span>
+        <span
+          [pTooltip]="slidesExport.disabledReason()"
+          tooltipPosition="bottom"
+          tooltipEvent="both"
+          [attr.aria-label]="slidesExport.disabledReason() || null"
+          [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+          <lfx-button
+            label="Export to Google Slides"
+            icon="fa-light fa-presentation-screen"
+            [outlined]="true"
+            size="small"
+            [loading]="slidesExport.busy()"
+            [disabled]="!slidesExport.canExport()"
+            ariaLabel="Export the messaging framework to Google Slides"
+            data-testid="mktg-framework-view-export-slides"
+            (onClick)="slidesExport.onExport()" />
+        </span>
         <ng-content select="[asset-actions]" />
       </div>
     }
@@ -58,7 +73,12 @@
     }
   }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="mktg-framework-view-slides-export" />
+  <lfx-mktg-slides-export
+    #slidesExport
+    [target]="exportTarget()"
+    [lookupTarget]="exportLookupTarget()"
+    [viewingDraft]="viewingDraft()"
+    data-testid="mktg-framework-view-slides-export" />
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">
@@ -92,12 +112,12 @@
       <!-- FRAMEWORK: the statements, the goal columns, say and avoid -->
       @case ('framework') {
         <div
-          class="flex flex-col gap-5"
+          class="flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere]"
           role="tabpanel"
           id="mktg-framework-panel-framework"
           aria-labelledby="mktg-framework-tab-framework"
           data-testid="mktg-framework-view-panel-framework">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 @lg/asset:grid-cols-2 gap-3">
             <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
               <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Vision</span>
               <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-vision">{{ framework.mf.vision }}</p>
@@ -120,7 +140,7 @@
           <div class="flex flex-col gap-2">
             <h3 class="text-sm font-semibold text-gray-900">Goal columns</h3>
             <!-- auto-fit: as many columns as fit at 18rem each, so two to five goals share the width (arbitrary value, see styling.md). -->
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3" data-testid="mktg-framework-view-goals">
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3" data-testid="mktg-framework-view-goals">
               @for (goal of goals(); track goal.id) {
                 <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [attr.data-testid]="'mktg-framework-view-goal-' + goal.id">
                   <div class="flex items-baseline justify-between gap-2">
@@ -164,7 +184,7 @@
           </div>
 
           <!-- Say and avoid -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 @2xl/asset:grid-cols-2 gap-3">
             <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
               <h3 class="text-sm font-semibold text-gray-900">Say</h3>
               <ul class="flex flex-wrap gap-1.5" data-testid="mktg-framework-view-say">
@@ -199,7 +219,7 @@
           </div>
 
           <!-- The anchor questions and the reviewer's notes -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 @2xl/asset:grid-cols-2 gap-3">
             <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
               <h3 class="text-sm font-semibold text-gray-900">Every piece of content answers</h3>
               <ol class="flex flex-col gap-1 list-decimal pl-5 text-sm text-gray-800" data-testid="mktg-framework-view-anchor">
@@ -231,7 +251,7 @@
       <!-- ICPs: one card per segment -->
       @case ('icps') {
         <div
-          class="grid grid-cols-1 xl:grid-cols-2 gap-3"
+          class="grid min-w-0 grid-cols-1 @4xl/asset:grid-cols-2 gap-3 [overflow-wrap:anywhere]"
           role="tabpanel"
           id="mktg-framework-panel-icps"
           aria-labelledby="mktg-framework-tab-icps"
@@ -304,7 +324,7 @@
       <!-- MESSAGE HOUSE: umbrella, the line, three pillars, the foundation, the audiences -->
       @case ('message-house') {
         <div
-          class="flex flex-col gap-3"
+          class="flex min-w-0 flex-col gap-3 [overflow-wrap:anywhere]"
           role="tabpanel"
           id="mktg-framework-panel-message-house"
           aria-labelledby="mktg-framework-tab-message-house"
@@ -314,7 +334,7 @@
             <p class="text-base font-medium text-blue-900" data-testid="mktg-framework-view-umbrella">{{ framework.mh.umbrella }}</p>
             <p class="font-display text-lg text-blue-900" data-testid="mktg-framework-view-line">{{ framework.mh.line }}</p>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="mktg-framework-view-pillars">
+          <div class="grid grid-cols-1 @2xl/asset:grid-cols-3 gap-3" data-testid="mktg-framework-view-pillars">
             @for (pillar of pillars(); track pillar.t) {
               <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
                 <h3 class="text-sm font-semibold text-gray-900">{{ pillar.t }}</h3>
@@ -349,7 +369,7 @@
       <!-- KEY NUMBERS -->
       @case ('numbers') {
         <div
-          class="grid grid-cols-2 lg:grid-cols-4 gap-3"
+          class="grid min-w-0 grid-cols-2 @2xl/asset:grid-cols-4 gap-3 [overflow-wrap:anywhere]"
           role="tabpanel"
           id="mktg-framework-panel-numbers"
           aria-labelledby="mktg-framework-tab-numbers"
@@ -366,7 +386,7 @@
       <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
       @case ('sources') {
         <div
-          class="grid grid-cols-1 lg:grid-cols-2 gap-3"
+          class="grid min-w-0 grid-cols-1 @2xl/asset:grid-cols-2 gap-3 [overflow-wrap:anywhere]"
           role="tabpanel"
           id="mktg-framework-panel-sources"
           aria-labelledby="mktg-framework-tab-sources"

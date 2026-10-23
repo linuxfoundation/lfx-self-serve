@@ -218,3 +218,24 @@ export const requireNorthStarAccess = createMarketingAccessMiddleware('marketing
 
 /** Campaigns endpoints — read and write. */
 export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');
+
+/**
+ * Google account monitor only: its required project does not scope the shared account. With marketing
+ * FGA enabled, ROOT writers and ROOT `global_marketing_ops` may reach the controller without an
+ * additional project grant. Other callers retain the ordinary project check and the controller's
+ * shared-account refusal. Flag-off keeps the existing ED-only baseline. Never use for project writes.
+ */
+export async function requireGoogleMonitorAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (
+      isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga) &&
+      ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req)))
+    ) {
+      next();
+      return;
+    }
+    await requireCampaignManager(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+}

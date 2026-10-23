@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  ContributionsDateRange,
   ContributionSource,
   OrgContributionCommitRow,
   OrgContributionCommitRowVm,
@@ -80,4 +81,28 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
     initials: computePersonInitials(row.committerName),
     avatarColorClass: avatarColorClass(row.username ?? row.committerName),
   };
+}
+
+/**
+ * Exact window the KPI strip and tables aggregate over, in UTC — mirrors the BFF predicates
+ * (`activity_ts >= DATEADD(..., CURRENT_TIMESTAMP())`) so reviewers can match filters against source records.
+ */
+export function describeContributionsWindow(range: ContributionsDateRange, now: Date = new Date()): string {
+  if (range === 'all') {
+    return 'across all recorded history';
+  }
+  const start = new Date(now.getTime());
+  if (range === '12mo') {
+    // `setUTCMonth` overflows into the next month when the target month is shorter (Feb 29 → Mar 1),
+    // while `DATEADD(month, -12, ...)` clamps to the month end. Clamp the same way, or the caption
+    // is off by a day on exactly the dates someone would be reconciling against source records.
+    const day = start.getUTCDate();
+    start.setUTCDate(1);
+    start.setUTCMonth(start.getUTCMonth() - 12);
+    const lastDayOfTargetMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+    start.setUTCDate(Math.min(day, lastDayOfTargetMonth));
+  } else {
+    start.setUTCDate(start.getUTCDate() - (range === '90d' ? 90 : 30));
+  }
+  return `from ${formatLongDateUtc(start.toISOString())} to ${formatLongDateUtc(now.toISOString())} (UTC)`;
 }

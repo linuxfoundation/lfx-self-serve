@@ -134,6 +134,16 @@
           Loading campaign data...
         </div>
       </div>
+    } @else if (googleRestricted()) {
+      <!-- The Google Ads customer is shared by every foundation (lfx-self-serve-ops#54): a notice, not an error, with the project's own keywords below. -->
+      <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="monitoring-restricted">
+        <i class="fa-light fa-lock text-3xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-700">Google Ads monitoring is limited to LF administrators</p>
+        <p class="max-w-lg text-center text-xs text-gray-500">
+          This Google Ads account is shared by every foundation, so its campaigns and spend can't be shown for a single project.
+        </p>
+      </div>
+      <ng-container [ngTemplateOutlet]="googleInsights" />
     } @else if (error()) {
       <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="monitoring-error">
         <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
@@ -258,215 +268,7 @@
         </div>
       </div>
 
-      <!-- ===== Keyword Performance ===== -->
-      <div class="flex flex-col gap-4" data-testid="keyword-performance">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <h4 class="text-sm font-semibold text-gray-900">Keyword Performance</h4>
-            @if (hasKeywords()) {
-              <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ keywords().length }} keywords</span>
-            }
-          </div>
-        </div>
-
-        @if (keywordsLoading() && !keywordsData()) {
-          <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="keyword-loading">
-            <div class="flex items-center gap-2 text-sm text-gray-500">
-              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-              Loading keywords...
-            </div>
-          </div>
-        } @else if (keywordsError()) {
-          <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8" data-testid="keyword-error">
-            <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
-            <p class="text-sm text-red-600">{{ keywordsError() }}</p>
-          </div>
-        } @else if (!hasKeywords()) {
-          <div
-            class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8"
-            data-testid="keyword-empty">
-            <i class="fa-light fa-key text-2xl text-gray-400" aria-hidden="true"></i>
-            <p class="text-sm text-gray-500">No keyword data available for the selected date range.</p>
-          </div>
-        } @else {
-          <!-- Keyword Totals Strip -->
-          @if (keywordTotalsView(); as kwTotals) {
-            <!--
-              When the keyword set is capped upstream these totals cover only the returned rows,
-              so the labels say so. Rendering "Spend" flat over a top-N slice states a project
-              total that is simply lower than the truth, which reads as a measurement rather than
-              as a partial view.
-            -->
-            @if (keywordTotalsPartial()) {
-              <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-partial">
-                <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
-                Totals cover the top {{ keywords().length }} keywords by impressions, not every keyword in this project.
-              </p>
-            } @else if (keywordTotalsUnverified()) {
-              <!--
-                Completeness UNKNOWN, and NOT scoped to this project.
-                An absent `truncated` identifies the LEGACY read, whose GAQL query carries no
-                project filter at all -- it is account-wide across every foundation on the shared
-                Google Ads customer id. So this caption must not say "for this project": that
-                would tell an ED that another foundation's rows are theirs, which is precisely
-                the cross-foundation leak the cutover closes.
-              -->
-              <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-unverified">
-                <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
-                Totals cover the {{ keywords().length }} keywords returned by the ad account, which may include other foundations' campaigns.
-              </p>
-            }
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
-              <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">
-                  Impressions
-                  @if (keywordTotalsPartial()) {
-                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
-                  }
-                </p>
-                <p class="text-sm font-semibold text-gray-900">{{ kwTotals.impressions }}</p>
-              </div>
-              <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">
-                  Clicks
-                  @if (keywordTotalsPartial()) {
-                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
-                  }
-                </p>
-                <p class="text-sm font-semibold text-gray-900">{{ kwTotals.clicks }}</p>
-              </div>
-              <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">Avg CTR</p>
-                <p class="text-sm font-semibold text-gray-900">{{ kwTotals.avgCtr }}</p>
-              </div>
-              <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">
-                  Spend
-                  @if (keywordTotalsPartial()) {
-                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
-                  }
-                </p>
-                <p class="text-sm font-semibold text-gray-900">{{ kwTotals.spend }}</p>
-              </div>
-              <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">
-                  Conversions
-                  @if (keywordTotalsPartial()) {
-                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
-                  }
-                </p>
-                <p class="text-sm font-semibold text-gray-900">{{ kwTotals.conversions }}</p>
-              </div>
-            </div>
-          }
-
-          <!-- Keyword Table -->
-          <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="keyword-table">
-            <div class="overflow-x-auto">
-              <table class="w-full text-left text-sm">
-                <thead>
-                  <tr class="border-b border-gray-200 bg-gray-50">
-                    <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
-                    <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
-                    <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
-                    <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (kw of visibleKeywordRows(); track kw.trackKey) {
-                    <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
-                      <td class="px-4 py-2.5">
-                        <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
-                        <div class="flex items-center gap-1">
-                          <span class="text-xs text-gray-400">{{ kw.campaignLabel }}</span>
-                          <button
-                            type="button"
-                            (click)="copyName(kw.campaign)"
-                            class="text-gray-400 hover:text-blue-600"
-                            [attr.title]="'Copy: ' + kw.campaign"
-                            aria-label="Copy campaign name">
-                            <i
-                              [class]="copiedName() === kw.campaign ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'"
-                              aria-hidden="true"></i>
-                          </button>
-                        </div>
-                      </td>
-                      <td class="px-4 py-2.5">
-                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="kw.matchTypeClass">
-                          {{ kw.matchType }}
-                        </span>
-                      </td>
-                      <td class="px-4 py-2.5 text-center">
-                        <span class="text-sm font-medium" [class]="kw.qualityScoreClass">
-                          {{ kw.qualityScore }}
-                        </span>
-                      </td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.conversions }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            @if (keywordTotalPages() > 1) {
-              <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
-                <span class="text-xs text-gray-500">
-                  Showing {{ (keywordPage() - 1) * keywordPageSize + 1 }}–{{
-                    keywordPage() === keywordTotalPages() ? keywords().length : keywordPage() * keywordPageSize
-                  }}
-                  of
-                  {{ keywords().length }}
-                </span>
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    (click)="goToKeywordPage(keywordPage() - 1)"
-                    [disabled]="!hasKeywordPrevPage()"
-                    class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
-                    data-testid="keyword-page-prev"
-                    aria-label="Previous page">
-                    <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
-                  </button>
-                  @for (page of keywordPageNumbers(); track page) {
-                    <button
-                      type="button"
-                      (click)="goToKeywordPage(page)"
-                      [class]="
-                        keywordPage() === page
-                          ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
-                          : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
-                      "
-                      [attr.data-testid]="'keyword-page-' + page">
-                      {{ page }}
-                    </button>
-                  }
-                  <button
-                    type="button"
-                    (click)="goToKeywordPage(keywordPage() + 1)"
-                    [disabled]="!hasKeywordNextPage()"
-                    class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
-                    data-testid="keyword-page-next"
-                    aria-label="Next page">
-                    <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
-        }
-      </div>
-
-      <!-- Audience Demographics -->
-      <lfx-audience-demographics [days]="selectedDays()" [projectSlug]="activeFoundationSlug()" data-testid="monitoring-audience" />
+      <ng-container [ngTemplateOutlet]="googleInsights" />
     }
   } @else if (selectedPlatform() === 'linkedin') {
     <!-- LinkedIn Ads Panel -->
@@ -1062,7 +864,228 @@
     </div>
   </ng-template>
 
-  <!-- A panel's empty state in place of its data (monitor cutover only): what is missing and who can fix it. -->
+  <!--
+    Google Ads' project-scoped keyword and audience sections, read separately (`/keywords`, `/audience`) from
+    the account-wide monitor. Shared by the data branch and the restricted branch, so a caller refused the
+    shared Google Ads account (lfx-self-serve-ops#54) still sees its own project's keywords.
+  -->
+  <ng-template #googleInsights>
+    <!-- ===== Keyword Performance ===== -->
+    <div class="flex flex-col gap-4" data-testid="keyword-performance">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <h4 class="text-sm font-semibold text-gray-900">Keyword Performance</h4>
+          @if (hasKeywords()) {
+            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ keywords().length }} keywords</span>
+          }
+        </div>
+      </div>
+
+      @if (keywordsLoading() && !keywordsData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8" data-testid="keyword-loading">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading keywords...
+          </div>
+        </div>
+      } @else if (keywordsRestricted()) {
+        <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-restricted">
+          <i class="fa-light fa-lock text-2xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-gray-700">Google Ads keyword insights are limited to LF administrators</p>
+          <p class="text-xs text-gray-500">This legacy read uses an ad account shared by every foundation.</p>
+        </div>
+      } @else if (keywordsError()) {
+        <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8" data-testid="keyword-error">
+          <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
+          <p class="text-sm text-red-600">{{ keywordsError() }}</p>
+        </div>
+      } @else if (!hasKeywords()) {
+        <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="keyword-empty">
+          <i class="fa-light fa-key text-2xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">No keyword data available for the selected date range.</p>
+        </div>
+      } @else {
+        <!-- Keyword Totals Strip -->
+        @if (keywordTotalsView(); as kwTotals) {
+          <!--
+            When the keyword set is capped upstream these totals cover only the returned rows,
+            so the labels say so. Rendering "Spend" flat over a top-N slice states a project
+            total that is simply lower than the truth, which reads as a measurement rather than
+            as a partial view.
+          -->
+          @if (keywordTotalsPartial()) {
+            <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-partial">
+              <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+              Totals cover the top {{ keywords().length }} keywords by impressions, not every keyword in this project.
+            </p>
+          } @else if (keywordTotalsUnverified()) {
+            <!--
+              Completeness UNKNOWN, and NOT scoped to this project.
+              An absent `truncated` identifies the LEGACY read, whose GAQL query carries no
+              project filter at all -- it is account-wide across every foundation on the shared
+              Google Ads customer id. So this caption must not say "for this project": that
+              would tell an ED that another foundation's rows are theirs, which is precisely
+              the cross-foundation leak the cutover closes.
+            -->
+            <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-unverified">
+              <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+              Totals cover the {{ keywords().length }} keywords returned by the ad account, which may include other foundations' campaigns.
+            </p>
+          }
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">
+                Impressions
+                @if (keywordTotalsPartial()) {
+                  <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                }
+              </p>
+              <p class="text-sm font-semibold text-gray-900">{{ kwTotals.impressions }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">
+                Clicks
+                @if (keywordTotalsPartial()) {
+                  <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                }
+              </p>
+              <p class="text-sm font-semibold text-gray-900">{{ kwTotals.clicks }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">Avg CTR</p>
+              <p class="text-sm font-semibold text-gray-900">{{ kwTotals.avgCtr }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">
+                Spend
+                @if (keywordTotalsPartial()) {
+                  <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                }
+              </p>
+              <p class="text-sm font-semibold text-gray-900">{{ kwTotals.spend }}</p>
+            </div>
+            <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <p class="text-xs text-gray-500">
+                Conversions
+                @if (keywordTotalsPartial()) {
+                  <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                }
+              </p>
+              <p class="text-sm font-semibold text-gray-900">{{ kwTotals.conversions }}</p>
+            </div>
+          </div>
+        }
+
+        <!-- Keyword Table -->
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="keyword-table">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of visibleKeywordRows(); track kw.trackKey) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'keyword-row-' + $index">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                      <div class="flex items-center gap-1">
+                        <span class="text-xs text-gray-400">{{ kw.campaignLabel }}</span>
+                        <button
+                          type="button"
+                          (click)="copyName(kw.campaign)"
+                          class="text-gray-400 hover:text-blue-600"
+                          [attr.title]="'Copy: ' + kw.campaign"
+                          aria-label="Copy campaign name">
+                          <i
+                            [class]="copiedName() === kw.campaign ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'"
+                            aria-hidden="true"></i>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [class]="kw.matchTypeClass">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-medium" [class]="kw.qualityScoreClass">
+                        {{ kw.qualityScore }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.conversions }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (keywordTotalPages() > 1) {
+            <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2.5" data-testid="keyword-pagination">
+              <span class="text-xs text-gray-500">
+                Showing {{ (keywordPage() - 1) * keywordPageSize + 1 }}–{{
+                  keywordPage() === keywordTotalPages() ? keywords().length : keywordPage() * keywordPageSize
+                }}
+                of
+                {{ keywords().length }}
+              </span>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  (click)="goToKeywordPage(keywordPage() - 1)"
+                  [disabled]="!hasKeywordPrevPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="keyword-page-prev"
+                  aria-label="Previous page">
+                  <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                @for (page of keywordPageNumbers(); track page) {
+                  <button
+                    type="button"
+                    (click)="goToKeywordPage(page)"
+                    [class]="
+                      keywordPage() === page
+                        ? 'rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
+                        : 'rounded-md px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100'
+                    "
+                    [attr.data-testid]="'keyword-page-' + page">
+                    {{ page }}
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="goToKeywordPage(keywordPage() + 1)"
+                  [disabled]="!hasKeywordNextPage()"
+                  class="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                  data-testid="keyword-page-next"
+                  aria-label="Next page">
+                  <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Audience Demographics -->
+    <lfx-audience-demographics [days]="selectedDays()" [projectSlug]="activeFoundationSlug()" data-testid="monitoring-audience" />
+  </ng-template>
+
+  <!-- A panel's empty state in place of its data: what is missing or refused, and who can fix it. -->
   <ng-template #monitorNotice let-notice let-panel="panel">
     <div
       class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"

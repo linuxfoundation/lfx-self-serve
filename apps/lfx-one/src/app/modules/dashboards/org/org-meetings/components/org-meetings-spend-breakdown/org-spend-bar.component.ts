@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import type { OrgMeetingsSpendSegment, OrgMeetingsSpendOtherItem, OrgSpendBarSegment } from '@lfx-one/shared/interfaces';
 import { slugify } from '@lfx-one/shared/utils';
@@ -12,7 +13,7 @@ import { Popover, PopoverModule } from 'primeng/popover';
 // it stays local to org-meetings.
 @Component({
   selector: 'lfx-org-spend-bar',
-  imports: [PopoverModule],
+  imports: [DecimalPipe, PopoverModule],
   templateUrl: './org-spend-bar.component.html',
 })
 export class OrgSpendBarComponent {
@@ -25,6 +26,8 @@ export class OrgSpendBarComponent {
   protected readonly othersPopoverItems: WritableSignal<OrgMeetingsSpendOtherItem[]> = signal([]);
 
   protected readonly titleSlug: Signal<string> = computed(() => slugify(this.title()));
+  /** Denominator every percentage in this card divides by — the attendance records across all its rows, including the others bucket. */
+  protected readonly totalAttendances: Signal<number> = computed(() => this.segments().reduce((sum, segment) => sum + (segment.count ?? 0), 0));
 
   protected readonly rows: Signal<OrgSpendBarSegment[]> = this.initRows();
 

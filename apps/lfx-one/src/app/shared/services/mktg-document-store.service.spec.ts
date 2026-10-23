@@ -173,6 +173,33 @@ describe('MktgDocumentStoreService', () => {
     request.flush({});
   });
 
+  it('marks timer reads explicitly and keeps failure-detail refresh scoped to an explicit navigation', () => {
+    service.listDocuments('proj-1', true).subscribe();
+    service.getDocument('proj-1', 'brand-kit', 'living', true).subscribe();
+    service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID, true).subscribe();
+    const timers = http.match(() => true);
+    expect(timers).toHaveLength(3);
+    for (const request of timers) {
+      expect(request.request.params.get('poll')).toBe('1');
+      expect(request.request.params.has('refreshRun')).toBe(false);
+      request.flush({});
+    }
+    const id = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', false, id).subscribe();
+    const refresh = http.expectOne((request) => request.params.get('refreshRun') === id);
+    expect(refresh.request.params.has('poll')).toBe(false);
+    refresh.flush({});
+  });
+
+  it('retries the exact recorded run without a Generate or Restore request', () => {
+    const id = 'b'.repeat(64);
+    service.retryRun('proj-1', 'brand-kit', 'living', id).subscribe();
+    const retry = http.expectOne(`/api/mktg-agents/documents/brand-kit/living/runs/${id}/retry`);
+    expect(retry.request.method).toBe('POST');
+    expect(retry.request.body).toEqual({ project: 'proj-1' });
+    retry.flush({});
+  });
+
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const next = vi.fn();

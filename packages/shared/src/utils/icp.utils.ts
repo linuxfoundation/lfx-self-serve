@@ -42,6 +42,8 @@ import {
 } from '../constants/icp.constants';
 import { IcpEnvelope, IcpFormPayload, IcpFormPayloadOptions, IcpIntakeMode, IcpStructure, IcpValidationResult } from '../interfaces/icp.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 /**
  * Answer keys the generate endpoint accepts (intake fields + auto-attached
@@ -67,11 +69,14 @@ const REQUIRED_ANSWER_KEYS = ['project_name', 'github_url', ICP_REQUIRED_GAP_FIL
  * `lfx_membership_data` (see `FORM_ANSWER_KEYS`).
  */
 export function validateIcpIntakeAnswers(answers: unknown): IcpValidationResult {
-  const errors: string[] = [];
   if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
   const record = answers as Record<string, unknown>;
+  const errors = validateMktgIntakeAnswerLengths(record, MKTG_INTAKE_ANSWER_LIMITS.icp);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   for (const key of REQUIRED_ANSWER_KEYS) {
     const value = record[key];

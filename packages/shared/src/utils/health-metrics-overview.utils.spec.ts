@@ -28,6 +28,7 @@ import {
   buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   buildHealthMetricsOverviewTrainingRoute,
+  buildHealthMetricsYtdRangeLabel,
   groupHealthMetricsOverviewFindings,
   resolveHealthMetricsOverviewGroupMeta,
   resolveHealthMetricsOverviewKpiClassification,
@@ -481,5 +482,15 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
 describe('HEALTH_METRICS_OVERVIEW_GROUP_ORDER', () => {
   it('is a permutation of every classification key, so the render order never silently drops a group', () => {
     expect([...HEALTH_METRICS_OVERVIEW_GROUP_ORDER].sort()).toEqual(Object.keys(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).sort());
+  });
+});
+
+describe('buildHealthMetricsYtdRangeLabel', () => {
+  it('spans January 1 to the given day of its year', () => {
+    expect(buildHealthMetricsYtdRangeLabel(new Date(2026, 9, 22))).toBe('Jan 1 – Oct 22, 2026');
+  });
+
+  it('reads a single day on January 1', () => {
+    expect(buildHealthMetricsYtdRangeLabel(new Date(2027, 0, 1))).toBe('Jan 1 – Jan 1, 2027');
   });
 });

@@ -14,17 +14,16 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /** Health Metrics tab bar, in render order; every tab routes to its Level 2 page. */
 export const HEALTH_METRICS_TABS = [
-  { key: 'overview', label: 'Overview', route: '', projectScoped: false },
-  { key: 'engagement', label: 'Engagement', route: 'engagement', projectScoped: true },
-  { key: 'events', label: 'Events', route: 'events', projectScoped: false },
-  { key: 'members', label: 'Members', route: 'members', projectScoped: false },
-  { key: 'non-members', label: 'Non-Members', route: 'non-members', projectScoped: false },
-  { key: 'training', label: 'Training', route: 'training', projectScoped: false },
+  { key: 'overview', label: 'Overview', route: '' },
+  { key: 'engagement', label: 'Engagement', route: 'engagement' },
+  { key: 'events', label: 'Events', route: 'events' },
+  { key: 'members', label: 'Members', route: 'members' },
+  { key: 'non-members', label: 'Non-Members', route: 'non-members' },
+  { key: 'training', label: 'Training', route: 'training' },
 ] as const;
 
 /** The query-param keys the sections and the Overview deep links share, tied to the typed param shape. */
@@ -121,14 +120,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     footnoteCaution: true,
   },
 ] as const;
-
-/** Note under the sub-nav items, linking to the Members board section. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Board & voting-member attendance is reported per member in',
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'board',
-};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a

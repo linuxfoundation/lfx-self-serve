@@ -16,6 +16,7 @@ import {
   LinkedinSetup,
   LinkedinQuestionsTurn,
   MktgRunAnswer,
+  Project,
 } from '@lfx-one/shared/interfaces';
 import {
   extractMktgEnvelopeCandidates,
@@ -52,14 +53,23 @@ export class LinkedinPostService {
     user: string,
     answers: Record<string, unknown>,
     setup: LinkedinSetup | undefined,
-    handle: string
+    handle: string,
+    project: Pick<Project, 'name' | 'uid'>
   ): Promise<Omit<LinkedinGeneration, 'ownerToken'>> {
+    if (!project?.name?.trim() || !project.uid?.trim())
+      throw ServiceValidationError.forField('project', 'The project could not be resolved. Reload the page before drafting.');
     const lfxAnswers = normalizeLinkedinShareAnswers({ [LINKEDIN_SHARE_LINK_ANSWER_KEY]: answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] });
     if (!lfxAnswers) throw ServiceValidationError.forField(LINKEDIN_SHARE_LINK_ANSWER_KEY, 'Enter one HTTPS link to share, or leave it empty.');
     const saved = await this.profiles.read(req, user);
     if (!saved && !setup) throw ServiceValidationError.forField('setup', 'Set up your LinkedIn profile before drafting.');
     const source = await this.sources.ingest(answers, req);
-    const form: LinkedinForm = { ...source, today: new Date().toISOString().slice(0, 10), ...(saved ? { saved_profile: saved.profile } : { setup }) };
+    const form: LinkedinForm = {
+      ...source,
+      project_name: project.name.trim(),
+      project_uid: project.uid,
+      today: new Date().toISOString().slice(0, 10),
+      ...(saved ? { saved_profile: saved.profile } : { setup }),
+    };
     logger.debug(req, 'linkedin_generate', 'Submitting the rendered form', { content_source: source.content_source, saved_profile: !!saved });
     const sessionId = await this.guild.createSession(req, { message: renderLinkedinFormText(form), handle });
     return {

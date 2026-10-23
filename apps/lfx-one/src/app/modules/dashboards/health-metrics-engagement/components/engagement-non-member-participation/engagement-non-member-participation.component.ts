@@ -29,8 +29,8 @@ import type {
 
 /**
  * `#nonmem` — organizations turning up without paying for membership, ranked by the view's
- * `SORT_RANK_<period>`. The view carries no project key, so the section is foundation-scoped and the
- * period pill re-filters the loaded rows rather than re-reading.
+ * `SORT_RANK_<period>`. The section is foundation-scoped, and the period pill re-filters the loaded
+ * rows rather than re-reading.
  */
 @Component({
   selector: 'lfx-engagement-non-member-participation',
@@ -57,8 +57,6 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
-  /** The view carries no project key, so a selected project needs saying out loud here. */
-  protected readonly projectSelected = computed(() => this.chrome.selectedProjectSlug() !== null);
 
   protected readonly query: Signal<HealthMetricsEngagementNonMemberQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementNonMemberParticipation> = this.initResponse();

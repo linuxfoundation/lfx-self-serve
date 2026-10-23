@@ -60,6 +60,8 @@ import { FoundationMessageQuestion } from '../interfaces/foundation-message.inte
 import { MktgBoilerplatesAsset, MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { foundationMessageBasisLinks, foundationMessageQuestionLabel, isFoundationMessageAnswerSubstantive } from './foundation-message.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>([...Object.values(BOILERPLATES_FIELD_KEYS), BOILERPLATES_FRAMEWORK_ANSWER_KEY]);
@@ -154,7 +156,10 @@ export function validateBoilerplatesIntakeAnswers(answers: unknown): Boilerplate
   if (!isRecord(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(answers, MKTG_INTAKE_ANSWER_LIMITS.boilerplates);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = answers[BOILERPLATES_FIELD_KEYS.projectName];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {

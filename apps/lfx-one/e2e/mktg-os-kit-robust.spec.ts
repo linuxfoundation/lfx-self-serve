@@ -41,7 +41,7 @@ test.describe('Marketing kit responsive structure', () => {
       }
       await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
       await expect(page.getByTestId('mktg-kit-tab-kit')).toHaveAttribute('aria-current', 'page');
-      await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(5);
+      await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
       if (width === 390) {
         const first = await page.getByTestId('mktg-kit-tab-kit').boundingBox();
         const last = await page.getByTestId('mktg-kit-tab-documents').boundingBox();

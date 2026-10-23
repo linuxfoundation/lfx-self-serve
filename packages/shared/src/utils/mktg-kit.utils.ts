@@ -17,7 +17,7 @@ import type { MktgKitAsset, MktgKitAssetRow, MktgKitFamily, MktgKitFamilyView, M
 /** Render workflow states independently of their provenance (including future producer states). */
 export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'version' | 'monthlyCount'>): string {
   if (row.monthlyCount !== null) {
-    return row.monthlyCount > 0 ? `${row.monthlyCount} this month` : 'None yet';
+    return row.monthlyCount > 0 ? `${row.monthlyCount} this month` : MKTG_KIT_STATE_LABELS.missing;
   }
   if (!row.state) return '';
   const label = MKTG_KIT_STATE_LABELS[row.state];

@@ -105,20 +105,6 @@ describe('HealthMetricsNonMembersComponent', () => {
       expect(fixture.nativeElement.querySelector(`[data-testid="non-members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
     expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('Non-members attending meetings also appear in Engagement');
-    expect(fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-cross-reference-link"]').getAttribute('href')).toBe(
-      '/foundation/health-metrics/engagement#nonmem'
-    );
-  });
-
-  it('says above the sections that the project selector does not narrow them', async () => {
-    await setup();
-    const note = fixture.nativeElement.querySelector('[data-testid="non-members-scope-note"]');
-
-    expect(note.textContent).toContain('foundation-wide');
-    expect(note.compareDocumentPosition(fixture.nativeElement.querySelector('[data-testid="health-metrics-non-members-page"]'))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
   });
 
   it('re-lands a held deep link once every data section settles, then releases it', async () => {

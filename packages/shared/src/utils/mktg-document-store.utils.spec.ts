@@ -7,8 +7,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_SCHEMA } from '../constants/mktg-document-store.constants';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+import type { MktgRunResultResponse } from '../interfaces/mktg-run.interface';
+import type { MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
 import {
   buildMktgDocumentPrefix,
   buildMktgDocumentProjectPrefix,
@@ -18,6 +20,10 @@ import {
   describeMktgRevision,
   describeMktgRevisionAuthor,
   findMktgDocumentType,
+  mktgDocumentLocationOfReceipt,
+  mktgRunProgress,
+  mktgRunResultIdentity,
+  findMktgRunIntake,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -25,7 +31,61 @@ import {
 const SHA = 'ab'.repeat(32);
 const BRAND_KIT = findMktgDocumentType('brand-kit') as MktgDocumentType;
 
+function startedRun(overrides: Partial<MktgStartedRunRecord> = {}): MktgStartedRunRecord {
+  return {
+    schema: MKTG_STARTED_RUN_SCHEMA,
+    runId: SHA,
+    project: 'synthetic-project',
+    agentKey: BRAND_KIT.agentKey,
+    documentId: 'living',
+    sessionId: 'private-synthetic-session',
+    startedAt: '2026-10-19T00:00:00Z',
+    priorVersion: 0,
+    state: 'writing',
+    result: null,
+    ...overrides,
+  };
+}
+
 describe('mktg-document-store utils', () => {
+  it('uses a bounded payload digest and prefers the exact receipt content SHA', () => {
+    const result: MktgRunResultResponse = { status: 'ready', version: 1, documentMarkdown: 'Synthetic output marker. '.repeat(5000) };
+    const digest = mktgRunResultIdentity(result);
+    expect(digest).toHaveLength(16);
+    expect(digest).toBe(mktgRunResultIdentity({ ...result }));
+    expect(digest).not.toBe(mktgRunResultIdentity({ ...result, documentMarkdown: 'Different synthetic output' }));
+    const recorded: MktgRunResultResponse = {
+      ...result,
+      persistence: { project: 'synthetic-project', s3_key: 'synthetic-key', version: 1, content_sha256: SHA },
+    };
+    expect(mktgRunResultIdentity(recorded)).toBe(SHA);
+    expect(mktgRunResultIdentity(recorded, false)).toBe(digest);
+  });
+
+  it('projects paused run state without private session fields', () => {
+    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject' });
+    expect(mktgRunProgress(run)).toMatchObject({ runId: SHA, state: 'questions' });
+    expect(mktgRunProgress(run)).not.toHaveProperty('sessionId');
+    expect(mktgRunProgress(run)).not.toHaveProperty('creatorSubject');
+    expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
+    expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
+  });
+  it('derives run membership from the active catalog and registered intake', () => {
+    expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
+    expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();
+  });
+  it('normalizes only the exact snake-case receipt location for UI readers', () => {
+    expect(
+      mktgDocumentLocationOfReceipt({
+        s3_key: 'synthetic',
+        project: 'synthetic-project',
+        version: 1,
+        content_sha256: SHA,
+        document_location: { agent_key: BRAND_KIT.agentKey, document_id: 'living', revision_id: `000001-${SHA}` },
+      })
+    ).toEqual({ agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId: `000001-${SHA}` });
+    expect(mktgDocumentLocationOfReceipt()).toBeUndefined();
+  });
   it('lists living documents in run order before the one-off run types', () => {
     expect(MKTG_DOCUMENT_TYPES.map((type) => `${type.kind}:${type.agentKey}`)).toEqual([
       'living:brand-kit',

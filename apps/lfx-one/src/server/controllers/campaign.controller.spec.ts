@@ -160,6 +160,11 @@ vi.mock('../services/campaign-metrics.service', () => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
+// The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
+// outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
+vi.mock('../utils/persona-helper', () => ({
+  personaDetectionService: { checkRootWriter: vi.fn(async () => true), checkRootCampaignManager: vi.fn(async () => true) },
+}));
 
 import { CampaignController } from './campaign.controller';
 

@@ -249,7 +249,7 @@ describe('HealthMetricsEventsComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge before a read and the Members note', async () => {
+  it('lists every section in the sub-nav, with no badge before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]');
 
@@ -257,7 +257,6 @@ describe('HealthMetricsEventsComponent', () => {
       expect(fixture.nativeElement.querySelector(`[data-testid="events-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
     expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('also appears in Members');
   });
 
   it('shows the note the forecast reports on its sub-nav item', async () => {

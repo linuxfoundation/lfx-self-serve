@@ -8,6 +8,7 @@ import {
   FoundationMessageResultResponse,
   FoundationMessageStoredResponse,
   MktgIntakeDocument,
+  MktgGenerationAttribution,
   MktgRunAnswer,
   MktgRunQuestion,
 } from '@lfx-one/shared/interfaces';
@@ -15,9 +16,10 @@ import {
   buildFoundationMessageFormPayload,
   buildMktgRunActivity,
   extractFoundationMessageQuestions,
-  extractMktgAgentTexts,
+  extractMktgCurrentTurnAgentTexts,
   extractMktgEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
+  mktgFailureAfterQuestions,
   foundationMessageAsset,
   foundationMessageContentJson,
   foundationMessageQuestionsId,
@@ -76,10 +78,14 @@ export class FoundationMessageService {
    * record and provenance ride in the revision's sidecar). Plain and sidecar
    * stored reads serve approved current, never a newer Draft.
    */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** The foundation-message knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
@@ -133,14 +139,16 @@ export class FoundationMessageService {
   }
 
   /**
-   * Fetch the session's current result: `ready` once a valid envelope appears
+   * Read only the latest queued turn's result: `ready` once a valid envelope appears
    * in the event stream, with the framework as the run's asset and (when the
    * write succeeded) the persistence receipt of the stored revision;
-   * `questions` whenever the session holds a questions block and no valid
+   * `questions` while that turn holds an unanswered questions block and no valid
    * envelope yet — the LATEST block the agent wrote, reported on every poll
-   * until a newer block or the envelope appears, which is why it carries a
+   * until a new envelope or a later real reply after runtime end, with a
    * `questionsId`: the run shell ignores the block it already answered by
-   * that id while the agent works on the answers; `pending` otherwise.
+   * that id while the agent works on the answers; `failed` if the runtime
+   * ended without a valid asset or an open pause (including after a later real
+   * reply); `pending` otherwise.
    * `projectUid` decides the storage partition and is entitlement-checked
    * before anything is written; without it the framework is still returned,
    * just not stored.
@@ -152,7 +160,12 @@ export class FoundationMessageService {
     const activity = buildMktgRunActivity(payloads);
 
     if (!envelope) {
+      const outcome = mktgFailureAfterQuestions(payloads, (text) => !!extractFoundationMessageQuestions(text));
       const questions = this.findLatestQuestions(req, payloads);
+      if (outcome) {
+        logger.debug(req, 'foundation_message_result', 'Agent runtime ended without a valid framework', {});
+        return { status: 'failed', failureText: outcome.replyText, activity };
+      }
       if (questions) {
         return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };
       }
@@ -200,14 +213,12 @@ export class FoundationMessageService {
    * answer until the agent writes a newer block (or the envelope ends the
    * run). Only the agent's own text turns are read — never a tool result,
    * where a fetched page or a search hit could plant a block, and never a
-   * user event, which `getRawEventPayloads` drops anyway.
+   * user content, which `getRawEventPayloads` replaces with content-free turn markers.
    */
   private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
     let latest: MktgRunQuestion[] | null = null;
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
-        latest = extractFoundationMessageQuestions(text) ?? latest;
-      }
+    for (const text of extractMktgCurrentTurnAgentTexts(payloads)) {
+      latest = extractFoundationMessageQuestions(text) ?? latest;
     }
     if (latest) {
       logger.debug(req, 'foundation_message_result', 'The agent is asking questions', { questions: latest.length });
@@ -233,7 +244,7 @@ export class FoundationMessageService {
   }
 
   /**
-   * The authoritative envelope of the session: the LATEST valid result of the
+   * The latest queued turn's authoritative envelope: the LATEST valid result of the
    * agent's finalize tool (`finalize_messaging_framework`), read only from
    * that tool's result events — a page the agent fetched or a search hit is
    * a tool result too, but of another tool, and nothing else in a payload is
@@ -249,31 +260,29 @@ export class FoundationMessageService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, FOUNDATION_MESSAGE_FINALIZE_TOOL)) {
-        for (const candidate of extractMktgEnvelopeCandidates(resultText, FOUNDATION_MESSAGE_CONTRACT_ID)) {
-          candidateCount++;
-          const result = validateFoundationMessageEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateFoundationMessageEnvelope passed every schema gate.
-          const envelope = candidate as FoundationMessageEnvelope;
-          const recomputedSha = createHash('sha256')
-            .update(Buffer.from(foundationMessageContentJson(envelope.content), 'utf8'))
-            .digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-          latest = envelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, FOUNDATION_MESSAGE_FINALIZE_TOOL)) {
+      for (const candidate of extractMktgEnvelopeCandidates(resultText, FOUNDATION_MESSAGE_CONTRACT_ID)) {
+        candidateCount++;
+        const result = validateFoundationMessageEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
         }
+        // Safe: validateFoundationMessageEnvelope passed every schema gate.
+        const envelope = candidate as FoundationMessageEnvelope;
+        const recomputedSha = createHash('sha256')
+          .update(Buffer.from(foundationMessageContentJson(envelope.content), 'utf8'))
+          .digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        latest = envelope;
       }
     }
 

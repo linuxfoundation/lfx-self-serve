@@ -2,19 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsL2SubNavComponent } from './health-metrics-l2-sub-nav.component';
 
-import type { HealthMetricsL2CrossReference, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
-const CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Board & voting-member attendance is reported per member in',
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'board',
-};
 const ITEMS: HealthMetricsL2SubNavItem[] = [
   { key: 'participation', label: 'Meeting participation', count: null, note: '' },
   { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
@@ -23,9 +16,14 @@ const ITEMS: HealthMetricsL2SubNavItem[] = [
 
 describe('HealthMetricsL2SubNavComponent', () => {
   let fixture: ComponentFixture<HealthMetricsL2SubNavComponent>;
+  let host: HTMLElement;
+
+  function item(key: string): HTMLButtonElement {
+    return host.querySelector(`[data-testid="engagement-sub-nav-${key}"]`) as HTMLButtonElement;
+  }
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [HealthMetricsL2SubNavComponent], providers: [provideRouter([])] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [HealthMetricsL2SubNavComponent] }).compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsL2SubNavComponent);
     fixture.componentRef.setInput('items', ITEMS);
@@ -33,92 +31,98 @@ describe('HealthMetricsL2SubNavComponent', () => {
     fixture.componentRef.setInput('topPx', 96);
     fixture.componentRef.setInput('ariaLabel', 'Engagement sections');
     fixture.componentRef.setInput('testIdPrefix', 'engagement');
-    fixture.componentRef.setInput('crossReference', CROSS_REFERENCE);
     fixture.detectChanges();
+    host = fixture.nativeElement as HTMLElement;
   });
 
-  it('renders one button per item plus the cross-reference note', () => {
-    expect(fixture.nativeElement.querySelectorAll('button[data-testid^="engagement-sub-nav-"]')).toHaveLength(3);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(
-      'Board & voting-member attendance is reported per member in Members'
-    );
-    expect(fixture.nativeElement.querySelector('nav').getAttribute('aria-label')).toBe('Engagement sections');
+  it('is a labelled navigation landmark with one button per item and one rail tick per item', () => {
+    expect(host.getAttribute('role')).toBe('navigation');
+    expect(host.getAttribute('aria-label')).toBe('Engagement sections');
+    expect(host.getAttribute('data-testid')).toBe('engagement-sub-nav');
+    expect(host.querySelectorAll('button[data-testid^="engagement-sub-nav-"]')).toHaveLength(3);
+    expect(host.querySelectorAll('[data-testid="engagement-sub-nav-rail"] .hmn-tick')).toHaveLength(3);
   });
 
-  it('links the note to the target tab section, keeping the current query params', async () => {
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-link"]');
-
-    expect(link.textContent?.trim()).toBe('Members');
-    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
-  });
-
-  it('omits the cross-reference note when the tab has none', () => {
-    fixture.componentRef.setInput('crossReference', null);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]')).toBeNull();
-  });
-
-  it('shows a count and note only where the item carries them', () => {
-    const committees = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
-    expect(committees.textContent).toContain('12');
-    expect(committees.textContent).toContain('2 dormant');
-
-    // A null count is an unresolved total, not a zero — the badge is omitted entirely.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-participation"]').textContent).not.toContain('0');
-  });
-
-  it('marks exactly the active item as current', () => {
-    const current = fixture.nativeElement.querySelectorAll('[aria-current="true"]');
+  it('marks exactly the active item as current, on its rail tick too', () => {
+    const current = host.querySelectorAll('[aria-current="true"]');
 
     expect(current).toHaveLength(1);
     expect(current[0].getAttribute('data-testid')).toBe('engagement-sub-nav-committees');
+    const ticks = Array.from(host.querySelectorAll('.hmn-tick')).map((tick) => tick.classList.contains('hmn-tick-active'));
+    expect(ticks).toEqual([false, true, false]);
   });
 
-  it('highlights the active item as a pale blue block in semibold, with a hover background on the others', () => {
-    const active = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
-    const inactive = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
+  // The design's `.hmn-item`: a blue bar on the left rule and a dark medium label; the rest stay grey and regular.
+  it('lights the active item with a blue bar and a dark medium-weight label', () => {
+    const activeLabel = item('committees').querySelector('.hmn-label') as HTMLElement;
+    const inactiveLabel = item('orgs').querySelector('.hmn-label') as HTMLElement;
 
-    expect(active.className).toContain('bg-blue-100');
-    expect(active.className).toContain('font-semibold');
-    expect(active.className).not.toContain('border-l');
-    expect(inactive.className).toContain('text-gray-700');
-    expect(inactive.className).toContain('hover:bg-gray-100');
-    expect(inactive.className).not.toContain('font-semibold');
+    expect(item('committees').className).toContain('border-blue-500');
+    expect(activeLabel.className).toContain('text-gray-900');
+    expect(activeLabel.firstElementChild?.className).toContain('font-medium');
+    expect(item('orgs').className).toContain('border-transparent');
+    expect(inactiveLabel.className).toContain('text-gray-500');
+    expect(inactiveLabel.firstElementChild?.className).toContain('font-normal');
   });
 
-  it('shows a count as a pill, blue on the active item, and a note after a red dot', () => {
-    const activeCount = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees-count"]');
-    const inactiveCount = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs-count"]');
-    const note = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees-note"]');
+  it('shows a count as an outlined pill and a note as a warning icon with a tooltip, only where the item has them', () => {
+    const count = host.querySelector('[data-testid="engagement-sub-nav-committees-count"]') as HTMLElement;
+    const note = host.querySelector('[data-testid="engagement-sub-nav-committees-note"]') as HTMLElement;
+    const tooltip = note.querySelector('[role="tooltip"]') as HTMLElement;
 
-    expect(activeCount.textContent.trim()).toBe('12');
-    expect(activeCount.className).toContain('bg-blue-200');
-    expect(inactiveCount.className).toContain('bg-gray-100');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-participation-count"]')).toBeNull();
-    expect(note.textContent.trim()).toBe('2 dormant');
-    expect(note.querySelector('.bg-red-500')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs-note"]')).toBeNull();
+    expect(count.textContent?.trim()).toBe('12');
+    expect(count.className).toContain('border-gray-200');
+    // A null count is an unresolved total, not a zero — the badge is omitted entirely.
+    expect(host.querySelector('[data-testid="engagement-sub-nav-participation-count"]')).toBeNull();
+    expect(note.querySelector('.fa-circle-exclamation')).not.toBeNull();
+    expect(tooltip.textContent?.trim()).toBe('2 dormant');
+    expect(item('committees').getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(host.querySelector('[data-testid="engagement-sub-nav-orgs-note"]')).toBeNull();
+    expect(item('orgs').getAttribute('aria-describedby')).toBeNull();
   });
 
-  // The host is the grid item, so it is what sticks; a sticky child would have no room to travel in it.
-  it('pins the rail at the offset the page measured, sticking the host and capping the list to the viewport', () => {
-    const host = fixture.nativeElement as HTMLElement;
-    const nav = host.querySelector('[data-testid="engagement-sub-nav"]') as HTMLElement;
-
-    expect(host.style.top).toBe('96px');
-    expect(host.classList).toContain('lg:sticky');
-    expect(host.style.getPropertyValue('--l2-sub-nav-top')).toBe('96px');
-    expect(nav.className).toContain('lg:overflow-y-auto');
-    expect(nav.className).toContain('lg:max-h-[calc(100vh_-_var(--l2-sub-nav-top)_-_40px)]');
+  it('hands the shell offset to the sticky rule rather than setting `top` inline', () => {
+    expect(host.style.getPropertyValue('--hmn-top')).toBe('96px');
+    expect(host.style.top).toBe('');
   });
 
-  it('emits the picked section rather than scrolling itself', () => {
+  // jsdom applies no container query, so the rail shows and the nav reads as collapsed unless a test hides it.
+  it('keeps focus on the picked item on the wide layout, where there is no panel to shut', () => {
+    (host.querySelector('.hmn-rail') as HTMLElement).style.display = 'none';
+    item('orgs').focus();
+
+    item('orgs').click();
+    fixture.detectChanges();
+
+    expect(host.classList).not.toContain('hmn-closed');
+    expect(document.activeElement).toBe(item('orgs'));
+  });
+
+  it('emits the picked section rather than scrolling itself, then shuts the panel until the pointer leaves', () => {
     const picked = vi.fn();
     fixture.componentInstance.sectionPicked.subscribe(picked);
 
-    fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]').click();
+    item('orgs').click();
+    fixture.detectChanges();
 
     expect(picked).toHaveBeenCalledWith('orgs');
+    expect(host.classList).toContain('hmn-closed');
+
+    host.dispatchEvent(new MouseEvent('mouseleave'));
+    fixture.detectChanges();
+    expect(host.classList).not.toContain('hmn-closed');
+  });
+
+  it('opens from a tap on the rail by focusing the current item, and Escape shuts it again', () => {
+    (host.querySelector('[data-testid="engagement-sub-nav-rail"]') as HTMLElement).click();
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(item('committees'));
+
+    item('committees').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+
+    expect(host.classList).toContain('hmn-closed');
+    expect(document.activeElement).not.toBe(item('committees'));
   });
 });

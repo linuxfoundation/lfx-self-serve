@@ -35,8 +35,6 @@ export interface HealthMetricsTab {
   label: string;
   /** Router path segment relative to `foundation/health-metrics`; `''` is the Overview. */
   route: string;
-  /** Whether the tab's sections follow the header's project selector. */
-  projectScoped: boolean;
 }
 
 /** Engagement's sub-nav badge, keyed to its own sections. */
@@ -134,8 +132,9 @@ export interface HealthMetricsEngagementGroupAttendance {
 /** Wire query for `GET /api/analytics/engagement-group-attendance`. */
 export interface HealthMetricsEngagementGroupQuery {
   foundationSlug: string;
-  /** `null` is the all-projects scope — the view has no roll-up row, so the predicate is dropped. */
-  projectSlug: string | null;
+  /** Absent or `null` is the all-projects scope, which drops the predicate. The client no longer
+   * sends it; the server keeps the optional filter. */
+  projectSlug?: string | null;
   groupType: HealthMetricsEngagementGroupTypeFilter;
   range: HealthMetricsRange;
   /** 1-based. */
@@ -192,8 +191,9 @@ export interface HealthMetricsEngagementMeetingParticipation {
 /** Wire query for `GET /api/analytics/engagement-meeting-participation`. */
 export interface HealthMetricsEngagementParticipationQuery {
   foundationSlug: string;
-  /** `null` reads the view's all-projects roll-up rows. */
-  projectSlug: string | null;
+  /** Absent or `null` reads the view's all-projects roll-up rows. The client no longer sends it;
+   * the server keeps the optional filter. */
+  projectSlug?: string | null;
   range: HealthMetricsRange;
 }
 
@@ -219,8 +219,9 @@ export interface HealthMetricsEngagementAttendanceTrend {
  * twelve months, so the period selector never reaches the wire. */
 export interface HealthMetricsEngagementAttendanceTrendQuery {
   foundationSlug: string;
-  /** `null` reads the view's all-projects roll-up rows. */
-  projectSlug: string | null;
+  /** Absent or `null` reads the view's all-projects roll-up rows. The client no longer sends it;
+   * the server keeps the optional filter. */
+  projectSlug?: string | null;
 }
 
 /** One chart point. `rate` is a percent (0-100), `null` for a gap in the line. */
@@ -331,8 +332,9 @@ export interface HealthMetricsEngagementOrgParticipation {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementOrgQuery {
   foundationSlug: string;
-  /** `null` reads the view's all-projects roll-up rows. */
-  projectSlug: string | null;
+  /** Absent or `null` reads the view's all-projects roll-up rows. The client no longer sends it;
+   * the server keeps the optional filter. */
+  projectSlug?: string | null;
 }
 
 /** One non-member organization's numbers for a single period. Every period ships on every row, so
@@ -457,8 +459,9 @@ export interface HealthMetricsEngagementRepresentatives {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
-  /** `null` reads the view's all-projects rows, whose captions are the deduped all-projects counts. */
-  projectSlug: string | null;
+  /** Absent or `null` reads the all-projects rows and deduped captions. The client no longer sends
+   * it; the server keeps the optional filter. */
+  projectSlug?: string | null;
 }
 
 /** Query params the Engagement sections read on arrival and write back; `null` clears one the URL carries. */

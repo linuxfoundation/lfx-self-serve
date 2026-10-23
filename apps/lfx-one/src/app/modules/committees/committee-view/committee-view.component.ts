@@ -42,7 +42,12 @@ import {
   TabConfigEntry,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_VALID_TABS,
+  VOTE_INVITATION_COUNT_REFRESH_MS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
@@ -248,6 +253,12 @@ export class CommitteeViewComponent {
   public surveysLoading = signal<boolean>(true);
   private readonly votesRefresh = signal(0);
   private readonly surveysRefresh = signal(0);
+  // Set by the invitation-count poll before it bumps votesRefresh (GH-4078) and consumed by the next
+  // initVotes fetch, which then runs silently: no badge-hiding votesLoading, no error toast, and a
+  // failure keeps the current rows instead of emptying the Votes tab.
+  private votesRefreshSilent = false;
+  // Committee whose fetch produced the current rawVotes(), so a failed silent poll only keeps rows it owns.
+  private votesCommitteeUid: string | undefined;
   // Confirmed deadline from committee-votes' voteExtended output, held until rawVotes() reflects a
   // deadline at least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — this
   // must live here rather than in CommitteeVotesComponent because @switch destroys that component on
@@ -553,6 +564,21 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+
+    // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
+    // real participation count appears without a manual reload; stops once the carrier window ends.
+    // A tick that lands while a foreground fetch is loading is skipped so it never cancels that fetch;
+    // the poll re-arms once its rows arrive.
+    toObservable(this.rawVotes)
+      .pipe(
+        switchMap((votes) => (this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        filter(() => !this.votesLoading()),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.votesRefreshSilent = true;
+        this.votesRefresh.update((v) => v + 1);
+      });
 
     // Self-healing eviction for extendedVoteOverrides (mirrors votes-table's own extendedDeadlines
     // pattern): once rawVotes() reflects a deadline at least as new as the override, drop it rather
@@ -1724,12 +1750,14 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.votesRefresh)]).pipe(
         switchMap(([committee]) => {
+          const silent = this.votesRefreshSilent;
+          this.votesRefreshSilent = false;
           // Only fetch if voting is enabled and the user has access (member or admin, not visitor).
           if (!committee?.uid || !committee.enable_voting || (!committee.my_role && !committee.writer)) {
             this.votesLoading.set(false);
             return of([]);
           }
-          this.votesLoading.set(true);
+          if (!silent) this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(committee.uid).pipe(
             // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote that is missing
             // from the page entirely while the search index catches up — scoped to this committee so
@@ -1744,7 +1772,14 @@ export class CommitteeViewComponent {
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
             // index rows — same transformation the child component previously applied.
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            tap(() => (this.votesCommitteeUid = committee.uid)),
             catchError(() => {
+              // A failed background poll keeps the current rows without a toast; the new array re-arms
+              // the poll so it retries while the carrier window is still live (GH-4078). The rows are
+              // kept only when they were fetched for this same committee, so a poll can never surface
+              // another committee's votes (keyed on the fetch, not each row's committee_uid, because a
+              // multi-committee vote carries only its primary committee there).
+              if (silent) return of(this.votesCommitteeUid === committee.uid ? [...this.rawVotes()] : []);
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
             }),

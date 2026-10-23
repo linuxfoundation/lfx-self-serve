@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-4" data-testid="events-speakers">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Speakers and proposals unavailable"
       subtitle="We could not load speaker proposals for this foundation. Refresh the page to try again."
@@ -13,12 +14,14 @@
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-speakers-loading" aria-hidden="true" />
   } @else if (!view().foundationMeasured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="No speaker proposals yet"
       subtitle="Once this foundation's events open a call for proposals, submissions and speakers appear here."
       data-testid="events-speakers-foundation-unmeasured" />
   } @else if (!view().measured) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="Speakers and proposals unavailable for this period"
       subtitle="Proposals for the selected period have not been measured yet. Pick another period to see them."
@@ -36,15 +39,17 @@
 
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-speakers-hero">
       <div class="flex flex-col gap-2" data-testid="events-speakers-headline">
-        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-speakers-headline-value">{{ view().headline.value }}</span>
-        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-speakers-headline-value">{{
+          view().headline.value
+        }}</span>
+        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-speakers-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-speakers-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
+            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
+            <dd class="flex items-baseline gap-1.5 text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">
               <span [attr.data-testid]="'events-speakers-side-' + stat.key + '-value'">{{ stat.value }}</span>
               @if (stat.delta !== null) {
                 <span
@@ -110,7 +115,7 @@
         <span class="text-[12px] text-gray-400">proposals submitted</span>
       </div>
       @if (view().organizations.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="events-speakers-organizations-empty">No organization submitted a proposal in the selected period.</p>
+        <p class="text-[13px] text-gray-500" data-testid="events-speakers-organizations-empty">No organization submitted a proposal in the selected period.</p>
       } @else {
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().organizations; track row.key) {
@@ -134,16 +139,16 @@
     <div class="flex flex-col gap-2" data-testid="events-speakers-proposals">
       <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Recent proposals</h4>
       @if (view().proposals.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
+        <p class="text-[13px] text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
       } @else {
-        <lfx-table [rowHover]="false" [value]="view().proposals" data-testid="events-speakers-table">
+        <lfx-table styleClass="hm-table" [rowHover]="false" [value]="view().proposals" data-testid="events-speakers-table">
           <ng-template #header>
             <tr>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Speaker</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Submitted</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Status</span></th>
+              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Speaker</span></th>
+              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Event</span></th>
+              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Submitted</span></th>
+              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Status</span></th>
             </tr>
           </ng-template>
 
@@ -153,27 +158,27 @@
               <td>
                 <div class="flex flex-col gap-0.5">
                   @if (row.proposal.jobTitle) {
-                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-speakers-job-title-' + row.proposal.proposalKey">{{
+                    <span class="text-[13px] font-medium text-gray-900" [attr.data-testid]="'events-speakers-job-title-' + row.proposal.proposalKey">{{
                       row.proposal.jobTitle
                     }}</span>
                   }
-                  <span class="text-xs text-gray-500">{{ row.proposal.sessionTitle }}</span>
+                  <span class="text-[12px] text-gray-500">{{ row.proposal.sessionTitle }}</span>
                 </div>
               </td>
               <td>
-                <span class="text-sm text-gray-800" [attr.data-testid]="'events-speakers-organization-label-' + row.proposal.proposalKey">{{
+                <span class="text-[13px] text-gray-900" [attr.data-testid]="'events-speakers-organization-label-' + row.proposal.proposalKey">{{
                   row.organizationLabel
                 }}</span>
               </td>
               <td>
-                <span class="text-sm text-gray-800">{{ row.proposal.eventName }}</span>
+                <span class="text-[13px] text-gray-900">{{ row.proposal.eventName }}</span>
               </td>
               <td>
-                <span class="text-sm tabular-nums text-gray-800">{{ row.dateLabel }}</span>
+                <span class="text-[13px] tabular-nums text-gray-900">{{ row.dateLabel }}</span>
               </td>
               <td>
                 <span
-                  class="rounded-full px-2 py-0.5 text-xs font-medium"
+                  class="inline-flex h-[20px] items-center rounded-full px-[8px] text-[11px] font-medium"
                   [class]="row.statusClass"
                   [attr.data-testid]="'events-speakers-status-badge-' + row.proposal.proposalKey"
                   >{{ row.proposal.status }}</span

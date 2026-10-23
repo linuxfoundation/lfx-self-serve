@@ -7,7 +7,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NavigationEnd, NavigationStart, provideRouter, Router, Event as RouterEvent } from '@angular/router';
 import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
+  GW_EMBED_FIRST_PAINT_CAPABILITY,
   GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
+  GW_EMBED_LOADING_INDICATOR_CLASS,
+  lfxColors,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
   GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_STYLESHEET_ROUTE,
@@ -155,6 +158,7 @@ describe('GwModuleOutletComponent', () => {
     let browserFixture: ComponentFixture<GwModuleOutletComponent>;
     let warmSession: ReturnType<typeof vi.spyOn>;
     let resolveReady: (manifest: GwEmbedManifest | null) => void;
+    let resolveRendered: () => void;
     let innerUnmount: ReturnType<typeof vi.fn>;
 
     const EMBED_URL = 'https://admin.example.test/embed';
@@ -205,6 +209,9 @@ describe('GwModuleOutletComponent', () => {
         unmount: innerUnmount,
         ready: new Promise<GwEmbedManifest | null>((resolve) => {
           resolveReady = resolve;
+        }),
+        rendered: new Promise<void>((resolve) => {
+          resolveRendered = resolve;
         }),
       }));
       configure({});
@@ -336,6 +343,86 @@ describe('GwModuleOutletComponent', () => {
       await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false), { timeout: 1000 });
       expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
       expect(browserFixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('The embed crashed.');
+    });
+
+    describe("a bundle with the 'first-paint' capability", () => {
+      const FIRST_PAINT_MANIFEST: GwEmbedManifest = { ...MANIFEST, capabilities: ['host-session', GW_EMBED_FIRST_PAINT_CAPABILITY] };
+
+      it("keeps the skeleton up until the loader's rendered resolves, not the outlet's own paint check", async () => {
+        // The paint check would pass at once; with the capability it is not consulted.
+        const paintTest = vi.fn(() => true);
+        setPaintTest(paintTest);
+        await browserFixture.whenStable();
+        await settle();
+
+        resolveReady(FIRST_PAINT_MANIFEST);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(browserComponent['mounting']()).toBe(true);
+        expect(paintTest).not.toHaveBeenCalled();
+
+        resolveRendered();
+        for (let i = 0; i < 10; i++) {
+          await Promise.resolve();
+        }
+        // Swapped in the microtasks after rendered, as with the paint check.
+        expect(browserComponent['mounting']()).toBe(false);
+        expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+        expect(embedRootEl().style.visibility).toBe('');
+      });
+
+      it('drops the skeleton at once when the error panel goes up before rendered resolves', async () => {
+        await browserFixture.whenStable();
+        await settle();
+        resolveReady(FIRST_PAINT_MANIFEST);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        (loaderMount.mock.calls[0][1] as GwHostContext).onFatal?.({
+          error_type: 'render_crash',
+          code: 'GW_RENDER_CRASH',
+          message: 'The embed crashed.',
+          recoverable: false,
+        });
+        await browserFixture.whenStable();
+
+        await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false), { timeout: 1000 });
+      });
+    });
+
+    it("uses the outlet's paint check for a bundle without the 'first-paint' capability, whose rendered resolves too early", async () => {
+      setPaintTest((root) => root.childElementCount > 0);
+      await browserFixture.whenStable();
+      await settle();
+      resolveReady(MANIFEST);
+      // An older loader resolves rendered with ready; that must not drop the skeleton.
+      resolveRendered();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+
+      embedRootEl().appendChild(document.createElement('div'));
+      await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false));
+    });
+
+    it("hands the embed LFX's spinner as the loading indicator, a new decorative element per call", async () => {
+      const pending = mount();
+      await settle();
+      const factory = (loaderMount.mock.calls[0][1] as GwHostContext).loadingIndicator;
+
+      const first = factory?.();
+      const second = factory?.();
+
+      // A CSS ring, not a Font Awesome icon: the kit is deferred and an unloaded icon draws nothing.
+      expect(first?.tagName).toBe('DIV');
+      expect(first?.className).toBe(GW_EMBED_LOADING_INDICATOR_CLASS);
+      expect(first?.className).not.toContain('fa-');
+      expect(first?.getAttribute('aria-hidden')).toBe('true');
+      // Inline, so LFX's blues win over the embed's own border-blue-200 inside its root.
+      expect(first?.style.borderRightColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderBottomColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderLeftColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderTopColor).toBe(hexToRgb(lfxColors.blue[500]));
+      expect(second).not.toBe(first);
+      resolveReady(MANIFEST);
+      await pending;
     });
 
     it('stops waiting for the first paint when the outlet is torn down', async () => {
@@ -658,6 +745,12 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 });
+
+/** How the test DOM serialises an inline hex colour. */
+function hexToRgb(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
 
 describe('gwEmbedHasPaintedContent', () => {
   // The real predicate, with layout stood in: the test DOM gives every element a zero-size rect.

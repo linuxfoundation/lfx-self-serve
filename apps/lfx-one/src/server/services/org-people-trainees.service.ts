@@ -24,6 +24,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
+import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
@@ -287,20 +288,4 @@ function isStoredString(cell: unknown): boolean {
 /** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
 function isStoredNullableString(cell: unknown): boolean {
   return cell === null || isStoredString(cell);
-}
-
-/** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */
-function toIsoTimestamp(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    // Treat Snowflake NTZ strings (no timezone marker) as UTC, not server-local - same drift `toIsoDate` prevents on the date helper.
-    const isoLike = value.includes(' ') ? value.replace(' ', 'T') : value;
-    const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(isoLike) ? isoLike : `${isoLike}Z`;
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  return null;
 }

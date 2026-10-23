@@ -183,20 +183,6 @@ describe('HealthMetricsMembersComponent', () => {
       expect(fixture.nativeElement.querySelector(`[data-testid="members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
     expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('Group attendance is in Engagement');
-    expect(fixture.nativeElement.querySelector('[data-testid="members-sub-nav-cross-reference-link"]').getAttribute('href')).toBe(
-      '/foundation/health-metrics/engagement#committees'
-    );
-  });
-
-  it('says above the sections that the project selector does not narrow them', async () => {
-    await setup();
-    const note = fixture.nativeElement.querySelector('[data-testid="members-scope-note"]');
-
-    expect(note.textContent).toContain('foundation-wide');
-    expect(note.compareDocumentPosition(fixture.nativeElement.querySelector('[data-testid="health-metrics-members-page"]'))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
   });
 
   function stub<T>(type: new (...args: never[]) => T): T {

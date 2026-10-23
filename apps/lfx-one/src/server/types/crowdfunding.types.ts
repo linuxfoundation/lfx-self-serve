@@ -126,6 +126,12 @@ export interface BackendMyTransactionListResponse {
   offset: number;
 }
 
+/** Raw snake_case donation aggregate from GET /crowdfunding/me/donations/stats on the upstream crowdfunding service. */
+export interface BackendDonationStats {
+  total_donated_cents: number;
+  initiatives_supported: number;
+}
+
 /** Raw snake_case subscription shape from GET /crowdfunding/me/subscriptions on the upstream crowdfunding service. */
 export interface BackendSubscription {
   id: string;
