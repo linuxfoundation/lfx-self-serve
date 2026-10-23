@@ -63,6 +63,7 @@ import { createHash } from 'node:crypto';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
 import { LinkedinPostService } from './linkedin-post.service';
 import { Member360Service } from './member-360.service';
 import { BrandKitService } from './brand-kit.service';
@@ -116,6 +117,57 @@ export class MktgDocumentRunService {
     const type = this.catalogDocumentType(agentId);
     if (!type) throw ServiceValidationError.forField('agentId', 'No registered document intake for this agent.');
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
+  }
+
+  /** After owner/writer checks, select captured context over the controller's validated typed fallback and reuse Documents completion. */
+  public async ownedOneOffResult(
+    req: Request,
+    project: string,
+    agentId: string,
+    sessionId: string,
+    fallback: MktgOneOffRunContext
+  ): Promise<MktgRunResultResponse> {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId);
+    const creatorSubject = getEffectiveSub(req);
+    if (!type || !creatorSubject) throw new AuthorizationError('This run does not belong to this requester and project.');
+    let stored: MktgStoredStartedRun | null = null;
+    try {
+      stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
+    } catch (error) {
+      const classification = classifyTransientStorageError(error);
+      if (!classification.transient || error instanceof AuthorizationError || error instanceof ServiceValidationError) throw error;
+      logger.warning(req, 'mktg_owned_run_read', 'Tracking read unavailable; using the creator result contract for this poll', {
+        project,
+        status: classification.status,
+        code: classification.code,
+      });
+    }
+    if (stored && (stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== creatorSubject))
+      throw new AuthorizationError('This run does not belong to this requester and project.');
+    const record: MktgStartedRunRecord = stored?.record ?? {
+      schema: MKTG_STARTED_RUN_SCHEMA,
+      project,
+      agentKey: type.agentKey,
+      sessionId,
+      runId: this.hash(sessionId),
+      documentId: this.documentId(type.agentKey, sessionId),
+      creatorSubject,
+      oneOff: { ...fallback, initializeProfile: !isImpersonating(req) },
+      startedAt: new Date().toISOString(),
+      priorVersion: 0,
+      state: 'writing',
+      result: null,
+    };
+    const result = await this.result(req, record);
+    // Reuse the authorized record/result; mark still confirms the metadata winner after writing.
+    if (stored && !isMktgRunClosed(stored.record.state)) {
+      try {
+        await this.advanceResult(req, stored, result);
+      } catch (err) {
+        logger.warning(req, 'mktg_run_record_result', 'Result returned; tracking may retry on a Documents read', { project, err });
+      }
+    }
+    return result;
   }
 
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */

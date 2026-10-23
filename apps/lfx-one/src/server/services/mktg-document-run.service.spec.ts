@@ -235,6 +235,80 @@ describe('MktgDocumentRunService core', () => {
     expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
   });
 
+  it('uses one completion policy for owned and Documents reads, retaining the record through completion', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    const context = { answers: { share_link: 'https://post.example/original' }, sourceWords: 32 };
+    await service.startForOneOff(creator, 'linkedin-post', project, session, context);
+    const documentId = `run-${hash(session).slice(0, 24)}`;
+    flows.linkedin.mockResolvedValue({
+      ...ready(),
+      persistence: { ...ready().persistence, document_location: { ...location('linkedin-post'), document_id: documentId } },
+    });
+    flows.get.mockClear();
+    const result = await service.ownedOneOffResult(creator, project, 'linkedin-post', session, {
+      answers: { share_link: 'https://post.example/changed' },
+      sourceWords: 1,
+    });
+    expect(result.status).toBe('ready');
+    expect(flows.linkedin).toHaveBeenCalledExactlyOnceWith(creator, 'synthetic-creator', session, project, context.answers, 32);
+    expect(flows.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'synthetic-creator' }, true);
+    // One context lookup, then mark's existing post-write winner confirmation; no duplicate pre-write record/result lookup.
+    expect(flows.get.mock.calls).toEqual([[key()], [key()]]);
+    expect(flows.get.mock.invocationCallOrder[1]).toBeGreaterThan(flows.beforePut.mock.invocationCallOrder[0]);
+    expect(stored().metadata['state']).toBe('completed');
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-other' } } });
+    await expect(service.ownedOneOffResult(visitor, project, 'linkedin-post', session, {})).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.ownedOneOffResult(creator, project, 'member-360', session, {})).rejects.toBeInstanceOf(AuthorizationError);
+    flows.linkedin.mockResolvedValue({ status: 'pending' });
+    await service.ownedOneOffResult(creator, project, 'linkedin-post', 'untracked-session', {});
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', 'untracked-session', project, undefined, undefined);
+    await service.ownedOneOffResult(creator, 'other-project', 'linkedin-post', session, {});
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, 'other-project', undefined, undefined);
+  });
+
+  it.each(['service', 'provider', 'network'])('falls back on a transient %s read and logs no private body/error details', async (kind) => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session, { sourceWords: 99 });
+    flows.get.mockImplementationOnce(() => {
+      if (kind === 'service') throw new MicroserviceError('private provider message', 503, 'STORE_UNAVAILABLE');
+      if (kind === 'provider') throw Object.assign(new Error('private provider message'), { $metadata: { httpStatusCode: 503 } });
+      throw Object.assign(new Error('private provider message'), { code: 'ECONNRESET' });
+    });
+    const body = { answers: { share_link: 'https://post.example/fallback' }, sourceWords: 12 };
+    expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).toMatchObject({ status: 'pending' });
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, project, body.answers, 12);
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_owned_run_read', expect.any(String), {
+      project,
+      status: kind === 'network' ? 0 : 503,
+      code: kind === 'network' ? 'network' : 'http',
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private provider message');
+    flows.linkedin.mockClear();
+    flows.get.mockImplementationOnce(() => {
+      throw new AuthorizationError('No access');
+    });
+    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).rejects.toBeInstanceOf(AuthorizationError);
+    flows.get.mockImplementationOnce(() => {
+      throw Object.assign(new Error('Non-transient synthetic permission failure'), { code: 'EACCES' });
+    });
+    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).rejects.toMatchObject({ code: 'EACCES' });
+    expect(flows.linkedin).not.toHaveBeenCalled();
+  });
+
+  it('retains the tracking-write error for operators without changing the successful result', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
+    const result = {
+      ...ready(),
+      persistence: { ...ready().persistence, document_location: { ...location('linkedin-post'), document_id: `run-${hash(session).slice(0, 24)}` } },
+    };
+    flows.linkedin.mockResolvedValue(result);
+    const err = new MicroserviceError('Synthetic metadata write failed', 503, 'STORE_UNAVAILABLE');
+    flows.beforePut.mockRejectedValueOnce(err);
+    expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, {})).toBe(result);
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_run_record_result', expect.any(String), { project, err });
+  });
+
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
     await service.startForOneOff(req, 'member-360', project, 'second-session');

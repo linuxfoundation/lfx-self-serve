@@ -9,12 +9,11 @@ import {
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { LinkedinProfileInput, Project } from '@lfx-one/shared/interfaces';
+import { LinkedinProfileInput, MktgOneOffRunContext, Project } from '@lfx-one/shared/interfaces';
 import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareAnswers, normalizeLinkedinShareLink, validLinkedinAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
-import { GuildService } from '../services/guild.service';
 import { LinkedinPostService } from '../services/linkedin-post.service';
 import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
@@ -27,7 +26,6 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 /** Identity from the authenticated session only; every run also requires project writer access. */
 export class LinkedinPostController {
   private readonly posts = new LinkedinPostService();
-  private readonly guild = new GuildService();
   private readonly profiles = new LinkedinProfileService();
   private readonly projects = new ProjectService();
   private readonly documents = new MktgDocumentStoreService();
@@ -126,9 +124,9 @@ export class LinkedinPostController {
       const sourceWords = body['sourceWords'] ?? 0;
       if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
         throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
+      const fallback: MktgOneOffRunContext = { answers, sourceWords };
       const project = await this.writableProject(req, body['project']);
-      const result = await this.guild.resolveRunOutcome(req, sessionId, await this.posts.result(req, user, sessionId, project.uid, answers, sourceWords));
-      await this.runs.recordResultBestEffort(req, sessionId, result, project.uid);
+      const result = await this.runs.ownedOneOffResult(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId, fallback);
       logger.success(req, operation, start, { status: result.status });
       res.set('Cache-Control', 'private, no-store').json(result);
     } catch (error) {
