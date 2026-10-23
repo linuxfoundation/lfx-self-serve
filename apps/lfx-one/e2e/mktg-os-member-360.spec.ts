@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '@lfx-one/shared/constants/member-360.constants';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '@lfx-one/shared/constants';
 
 import {
   json,

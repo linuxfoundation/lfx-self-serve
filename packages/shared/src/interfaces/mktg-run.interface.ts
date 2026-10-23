@@ -14,6 +14,7 @@ import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-messa
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
 import type { BoilerplatesChecks, BoilerplatesContent, BoilerplatesMode, BoilerplatesReport } from './boilerplates.interface';
 import type { BrandKitRevision } from './brand-kit.interface';
+import type { MktgRunFailureReason } from './mktg-document-run.interface';
 import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
@@ -807,7 +808,7 @@ export interface MktgRunResultResponse {
   /** Set when the session's own error events (runtime_error, llm_failed, …) ended the run before any output — this item's detection; `failureText` is main's idle-runtime-end reply. */
   failure?: MktgRunFailure;
   /** Server-classified failure code; never inferred by matching agent prose in the client. */
-  failureReason?: string;
+  failureReason?: MktgRunFailureReason;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
   /** The agent's refusal reply, as the requester reads it. Present when `refused`. */

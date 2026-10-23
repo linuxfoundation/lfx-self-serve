@@ -23,6 +23,7 @@ import {
 import {
   MktgDocumentDetailResponse,
   MktgDocumentRunProgress,
+  MktgRunFailureReason,
   MktgDocumentType,
   MktgGenerateProgress,
   MktgPendingGeneration,
@@ -538,7 +539,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalled();
   });
 
-  function memberProgress(state: MktgDocumentRunProgress['state'], failureReason?: string): MktgDocumentDetailResponse {
+  function memberProgress(state: MktgDocumentRunProgress['state'], failureReason?: MktgRunFailureReason): MktgDocumentDetailResponse {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
     if (!type) throw new Error('Missing synthetic document type');
     return {
@@ -635,6 +636,8 @@ describe('MktgDocumentViewComponent', () => {
     store.getDocument.mockReturnValue(of(memberProgress('questions')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toContain('The agent is waiting for input.');
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('The agent is waiting for input.');
     expect(query('mktg-run-activity-title')).not.toBeNull();
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-intake-link')).toBeNull();
@@ -659,10 +662,12 @@ describe('MktgDocumentViewComponent', () => {
     impersonating.set(true);
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('member-360-result')).not.toBeNull();
+    const reads = [store.getDocument.mock.calls.length, store.getRevision.mock.calls.length, store.listDocuments.mock.calls.length];
     viewer.set({ sub: 'synthetic-writer' });
     await settle();
     viewer.set(undefined);
     await settle();
+    expect([store.getDocument.mock.calls.length, store.getRevision.mock.calls.length, store.listDocuments.mock.calls.length]).toEqual(reads);
     expect(query('member-360-result')).not.toBeNull();
     expect(query('mktg-document-view-loading')).toBeNull();
   });

@@ -10,8 +10,7 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import { createHash } from 'node:crypto';
-import type { MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
-import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
+import type { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRunFailureReason } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { member360Fixture, member360Revision, MEMBER_360_PROJECT, MEMBER_360_STORED_DOCUMENT } from '../fixtures/mock-data/member-360.mock';
@@ -136,7 +135,11 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
   await expect(page.getByTestId('docs-content')).toBeVisible({ timeout: 20000 });
 }
 /** Server-recorded progress; fixtures deliberately contain no creator/session capability or question text. */
-export function member360Progress(state: MktgDocumentRunProgress['state'], failureReason?: string, failureText?: string): MktgDocumentDetailResponse {
+export function member360Progress(
+  state: MktgDocumentRunProgress['state'],
+  failureReason?: MktgRunFailureReason,
+  failureText?: string
+): MktgDocumentDetailResponse {
   const view = member360Revision();
   return {
     project: view.project,

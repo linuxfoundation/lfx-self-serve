@@ -4,12 +4,18 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { MKTG_RUN_FAILURE_REASON, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '../constants/mktg-run.constants';
-import { mktgRunFailureFromPayloads, settledMktgSessionError } from './mktg-run-failure.utils';
+import { isMktgRunFailureReason, mktgRunFailureFromPayloads, settledMktgSessionError } from './mktg-run-failure.utils';
 
 const now = Date.parse('2026-10-21T12:00:00Z');
 const event = (type: string, content: unknown = {}, ago = 60_000): string => JSON.stringify({ type, content, created_at: new Date(now - ago).toISOString() });
 
 describe('shared Guild terminal failure detection', () => {
+  it.each(['no_edit_access', 'agent_stopped'])('accepts the classified reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(true);
+  });
+  it.each(['unknown_code', '__proto__', 'constructor', 'no_edit_access extra', '', null, undefined, 12])('rejects non-allow-listed reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(false);
+  });
   it.each(['runtime_error', 'llm_failed', 'session_errored'])('fails only a settled last %s without exposing raw payloads', (type) => {
     expect(mktgRunFailureFromPayloads([event(type, { error: 'PRIVATE' })], now)).toEqual({ eventType: type, reason: MKTG_RUN_FAILURE_REASON });
   });

@@ -372,8 +372,7 @@ export class MktgDocumentViewComponent {
     computed(() => ({
       project: this.projectContext.activeContextUid(),
       slug: this.projectContext.activeContext()?.slug ?? '',
-      user: this.params().agentKey === 'member-360' ? this.userService.user()?.sub : undefined,
-      subject: this.userService.user()?.sub ?? '',
+      subject: this.params().agentKey === 'member-360' ? '' : (this.userService.user()?.sub ?? ''),
       ...this.params(),
       revisionId: this.revisionParam(),
       runId: this.runParam(),
@@ -590,7 +589,7 @@ export class MktgDocumentViewComponent {
                   const failure = this.selectedRun();
                   if (request.agentKey === 'member-360' && failure?.state === 'failed') {
                     this.runFailed.set(true);
-                    this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason === 'no_edit_access' ? 'no_edit_access' : 'agent_stopped']);
+                    this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason ?? 'agent_stopped']);
                     this.failureDetails.set(failure.failureText ?? '');
                   }
                   const selected = cycle.detail.runs?.find((run) => run.runId === this.handoffRunId());
@@ -937,6 +936,7 @@ export class MktgDocumentViewComponent {
   private initLiveState(): Signal<string> {
     return computed(() => {
       if (this.runState() === 'failed') return this.selectedRun() || !this.unconfirmed() ? 'The run did not finish.' : 'The run could not be confirmed.';
+      if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState()) return 'Generating the asset.';
       return this.view() ? 'The asset is ready.' : '';

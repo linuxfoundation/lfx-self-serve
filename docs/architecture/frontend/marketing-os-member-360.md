@@ -69,7 +69,11 @@ It never invents an answer endpoint or redirects to an unusable form. Because th
 answers endpoint, its original writing deadline keeps running: an authorized read after expiry
 marks it failed with a fixed server-authored instruction to run again, never private question text. A classified
 failure keeps the short reason, collapsed Details and host-scoped Run again; the
-server-projected `failureReason` preserves that classification independently of prose.
+server-projected `failureReason` preserves that classification independently of prose on failed runs only.
+The `MktgRunFailureReason` union currently contains `Member360FailureReason`; the dedicated
+`isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
+not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
+its guard's explicit allow-list together, with their own safe message presentation; no prose matching.
 The expired unsupported-input failure offers Run again, not Retry or paused Refresh: the existing
 Member failure view hides the shared retry card, so it cannot reopen that unanswerable session
 for another window. The BFF retry API is unchanged; this is a document-page action policy.
