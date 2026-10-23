@@ -50,7 +50,11 @@ export class MktgProjectRolesService {
   /** Provisional B3: exact TOC, one committee and one Active Chair/Vice Chair; never silently pick among candidates. */
   private async tocChairOf(req: Request, project: string): Promise<MktgProjectRole | null> {
     try {
-      const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${project}` }, { skipMailingListEnrichment: true });
+      const committees = await this.committeeService.getCommittees(
+        req,
+        { tags: `project_uid:${project}` },
+        { skipMailingListEnrichment: true, requireComplete: true }
+      );
       const toc = committees.filter((committee) => committee.project_uid === project && committee.category === 'Technical Oversight Committee');
       if (toc.length !== 1) return null;
       const committee = toc[0];

@@ -61,7 +61,7 @@ describe('MktgProjectRolesService', () => {
       tocChair: { name: 'TOC chair', subject: 'auth0|opaque-chair' },
     });
     expect(mocks.settings).toHaveBeenCalledWith(req, project);
-    expect(mocks.committees).toHaveBeenCalledWith(req, { tags: `project_uid:${project}` }, { skipMailingListEnrichment: true });
+    expect(mocks.committees).toHaveBeenCalledWith(req, { tags: `project_uid:${project}` }, { skipMailingListEnrichment: true, requireComplete: true });
     expect(mocks.members).toHaveBeenCalledWith(req, committee.uid, { require_complete: 'true' });
     expect(mocks.subject).toHaveBeenCalledWith(req, chair.email);
     expect(JSON.stringify(await service.rolesOf(req, project))).not.toContain('@');
@@ -153,6 +153,12 @@ describe('MktgProjectRolesService', () => {
     mocks.members.mockResolvedValue(members);
     expect((await service.rolesOf(req, project)).tocChair).toBeNull();
     expect(mocks.subject).not.toHaveBeenCalledWith(req, chair.email);
+  });
+
+  it('does not infer a unique TOC from a failed complete committee listing', async () => {
+    mocks.committees.mockRejectedValue(new MicroserviceError('Later list page failed', 502, 'BAD_GATEWAY'));
+    expect((await service.rolesOf(req, project)).tocChair).toBeNull();
+    expect(mocks.members).not.toHaveBeenCalled();
   });
 
   it('does not pick a chair from a failed complete roster read', async () => {
