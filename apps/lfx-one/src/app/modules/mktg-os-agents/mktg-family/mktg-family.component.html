@@ -26,30 +26,41 @@
             </span>
           } @else if (nextAgent(); as next) {
             <div class="flex flex-col gap-1">
-              <lfx-button
-                label="Run next agent"
-                icon="fa-light fa-play"
-                [ariaLabel]="'Run next agent: ' + next.agent.name"
-                [routerLink]="['../../', next.agent.id]"
-                [queryParams]="runQueryParams()"
-                data-testid="mktg-family-run" />
+              @if (next.blocked) {
+                <span [pTooltip]="next.blocked" tooltipPosition="bottom" tooltipEvent="both" [attr.aria-label]="next.blocked" tabindex="0">
+                  <lfx-button
+                    label="Run next agent"
+                    icon="fa-light fa-play"
+                    [ariaLabel]="'Run next agent: ' + next.agent.name"
+                    [disabled]="true"
+                    data-testid="mktg-family-run" />
+                </span>
+              } @else {
+                <lfx-button
+                  label="Run next agent"
+                  icon="fa-light fa-play"
+                  [ariaLabel]="'Run next agent: ' + next.agent.name"
+                  [routerLink]="['../../', next.agent.id]"
+                  [queryParams]="runQueryParams()"
+                  data-testid="mktg-family-run" />
+              }
               <span class="text-xs text-gray-500" data-testid="mktg-family-run-next">Next: {{ next.label }}</span>
             </div>
-          } @else if (firstAgent()?.name ?? definition.pendingAgentName; as name) {
+          } @else if (firstRunName(); as name) {
             <span
-              [pTooltip]="firstAgent()?.status === 'active' ? '' : pendingReason()"
+              [pTooltip]="firstRunEnabled() ? '' : pendingReason()"
               tooltipPosition="bottom"
               tooltipEvent="both"
-              [attr.aria-label]="(firstAgent()?.status === 'active' ? '' : pendingReason()) || null"
-              [attr.tabindex]="firstAgent()?.status === 'active' ? null : 0">
+              [attr.aria-label]="(firstRunEnabled() ? '' : pendingReason()) || null"
+              [attr.tabindex]="firstRunEnabled() ? null : 0">
               <lfx-button
                 [label]="'Run ' + name"
                 icon="fa-light fa-play"
-                [ariaLabel]="firstAgent()?.status === 'active' ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
-                [disabled]="firstAgent()?.status !== 'active'"
+                [ariaLabel]="firstRunEnabled() ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
+                [disabled]="!firstRunEnabled()"
                 (onClick)="runFirstAgent()"
                 data-testid="mktg-family-run" />
-              @if (firstAgent()?.status !== 'active') {
+              @if (!firstRunEnabled()) {
                 <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ pendingReason() }}</span>
               }
             </span>
@@ -112,14 +123,33 @@
                       }
                       <p class="mt-1 text-xs text-gray-500">{{ row.asset.description }}</p>
                       @if (rowRunAgents()[row.asset.id]; as agent) {
-                        <lfx-button
-                          [label]="'Run ' + agent.name"
-                          [text]="true"
-                          size="small"
-                          styleClass="p-0 text-sm"
-                          [routerLink]="['../../', agent.id]"
-                          [queryParams]="runQueryParams()"
-                          [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
+                        @if (rowRunBlocked()[row.asset.id]; as reason) {
+                          <!-- Above the row's stretched link so the tooltip gets the hover. -->
+                          <span
+                            class="relative z-10 inline-block"
+                            [pTooltip]="reason"
+                            tooltipPosition="bottom"
+                            tooltipEvent="both"
+                            [attr.aria-label]="reason"
+                            tabindex="0">
+                            <lfx-button
+                              [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                              [text]="true"
+                              size="small"
+                              styleClass="p-0 text-sm"
+                              [disabled]="true"
+                              [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
+                          </span>
+                        } @else {
+                          <lfx-button
+                            [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                            [text]="true"
+                            size="small"
+                            styleClass="p-0 text-sm"
+                            [routerLink]="['../../', agent.id]"
+                            [queryParams]="runQueryParams()"
+                            [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
+                        }
                       }
                     </th>
                     <td class="whitespace-nowrap border-gray-200 bg-white p-3 @[600px]:border-y" [attr.data-testid]="'mktg-family-state-' + row.asset.id">

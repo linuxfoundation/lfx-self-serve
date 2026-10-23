@@ -7,6 +7,46 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Intake size boundary
+
+The Brand Kit, Messaging Framework, Boilerplates, FAQ and ICP generate endpoints
+validate intake answer lengths in the shared validators before parsing attached
+framework JSON or calling a generation service. Oversized answers return HTTP 400
+through the existing `ServiceValidationError` path; no Guild session is created.
+The policy lives in `packages/shared/src/constants/mktg-intake.constants.ts`.
+
+Limits count submitted UTF-16 code units **before trimming**, including whitespace:
+project names take up to 200 characters, individual URLs 2,048, and descriptions,
+notes and short ICP answers 4,000. The Messaging Framework's `links` answer keeps
+its existing link-count limit, with a per-URL cap and an aggregate budget allowing
+CRLF separators. Whole ICP sibling documents take up to 400,000 characters each;
+attached messaging-framework JSON keeps the existing 400,000-character limit.
+Uploaded document text and logo payloads retain their separate existing budgets.
+These intake limits do not change the chat-message or ICP-feedback size gates.
+
+## Run outcomes
+
+Catalog result controllers await `GuildService.resolveRunOutcome` after authorization
+and before logging or recording their response. It only adds failure to pending/questions;
+validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
+The existing idle-runtime completion path uses failed/failureText for a final plain
+reply without an asset. Provider error events add failed/failure when no output
+arrives; both fields are additive, and terminal outcomes are never replaced.
+An error outside a tool task must settle for 30 seconds without recovery. Only
+explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
+agent text, including progress/questions, proves recovery. Status, heartbeat,
+unknown and lifecycle/completion events leave the error standing at any age.
+Tool-task errors are excluded using the same `isMktgToolTaskEvent` metadata predicate
+as Member 360. Queued-turn boundaries discard prior-turn errors; capped pages
+remain inconclusive rather than proving a terminal outcome.
+Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
+the five-second constant remains exported for compatibility, not recovery evidence.
+The recorded healthy stream supports immediate new-work recovery and long silent
+model turns; a recorded failed stream is still unavailable. No unverified session
+metadata probe is used. Lookup failures log a warning and preserve the result.
+Generic browser history retains versions/answers/Q&A on failure, marks session reuse
+invalid, and retries the exact failed request including feedback on a new session.
+
 ## Current is not newest
 
 Revision bundles remain immutable JSON at
@@ -206,6 +246,31 @@ acknowledgements cannot update another project or view.
 The pre-revision artifact compatibility write carries `revision-managed`
 metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
 their leftover artifact.
+
+## Last scalar intake
+
+A separate private snapshot at
+`document-last-intake/{project}/{agentKey}.json` remembers the registered scalar
+fields of the latest accepted Generate for an active living agent. It uses the
+existing `marketing-os-artifacts` purpose and server-resolved writer partition.
+The BFF starts this best-effort write only after sending the Generate acknowledgement;
+a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
+blank fields are retained; absent fields are not invented as last-run answers.
+Dependency attachment answer keys are excluded and dependencies must be resolved afresh,
+not replayed from this snapshot.
+
+This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
+conflict resolution. It holds run ID and start time, scalar answers, and document/logo
+counts only; it does not retain an author identifier because there is no audit consumer.
+Existing snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response. It never stores uploaded bytes,
+extracted source text, source filenames, Guild sessions or capability tokens.
+`GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
+`private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
+absence returns `{ intake: null }`; failed or malformed reads return an error,
+not absence. A failed post-start snapshot write warns without rejecting the
+already accepted Generate, avoiding a retry that could create a second session.
+There is no historical backfill, new source-file store or attachment-reuse claim.
 
 ## Durable started runs
 

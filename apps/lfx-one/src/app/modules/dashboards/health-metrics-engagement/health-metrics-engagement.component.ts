@@ -6,7 +6,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
-  HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementSubNavItems } from '@lfx-one/shared/utils';
 
@@ -50,7 +49,6 @@ export class HealthMetricsEngagementComponent {
   protected readonly sections = HEALTH_METRICS_ENGAGEMENT_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS;
-  protected readonly crossReference = HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE;
 
   // `null` until that section reports, which renders no badge rather than a misleading zero.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);

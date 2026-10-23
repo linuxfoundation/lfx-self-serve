@@ -19,6 +19,7 @@ import {
   PENDING_ACTION_SECTION_ORDER,
 } from '@lfx-one/shared/constants';
 import { buildFormationPendingActionView, isReviewableJoinApplication } from '@lfx-one/shared/utils';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
@@ -48,6 +49,7 @@ import type {
     EmptyStateComponent,
     RsvpButtonGroupComponent,
     JoinRequestSummaryComponent,
+    MeetingTimePipe,
   ],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',

@@ -10,7 +10,7 @@ import {
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsEngagementAttendanceRule } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
@@ -143,17 +143,6 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
   'nps',
   'churn',
 ] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
-
-/** Note under the sub-nav items, linking to Engagement's group attendance. */
-export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Group attendance is in',
-  linkLabel: 'Engagement',
-  route: 'engagement',
-  fragment: 'committees',
-};
-
-/** The project selector does not narrow Members, so the page says so above its sections. */
-export const HEALTH_METRICS_MEMBERS_SCOPE_NOTE = 'Members figures are foundation-wide. The project selector does not narrow them.';
 
 /** A delta or share the data cannot support, e.g. a partial year with no same-window comparison. */
 export const HEALTH_METRICS_MEMBERS_NOT_AVAILABLE = 'not available';

@@ -441,3 +441,4 @@ export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './mktg-last-intake.interface';

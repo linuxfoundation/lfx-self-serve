@@ -6,6 +6,7 @@ import {
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   FAQ_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -15,6 +16,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_CHAT_MESSAGE_MAX_CHARS,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -53,6 +55,7 @@ import {
   MktgDocumentExtractResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
+  MktgLastIntakeStart,
   MktgReadText,
   MktgRunAnswer,
   MktgRunResultResponse,
@@ -85,6 +88,7 @@ import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { MktgSourceTextService } from '../services/mktg-source-text.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgLastIntakeService } from '../services/mktg-last-intake.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -99,6 +103,21 @@ export class MktgAgentsController {
   private readonly mktgSourceTextService = new MktgSourceTextService();
   private readonly projectService = new ProjectService();
   private readonly documentRuns = new MktgDocumentRunService();
+  private readonly lastIntake = new MktgLastIntakeService();
+
+  /** GET /api/mktg-agents/intakes/:agentKey/last?project=<uid> — writer-only scalar prefill. */
+  public async getLastIntake(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_last_intake_get';
+    const startTime = logger.startOperation(req, operation, {});
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const intake = await this.lastIntake.read(req, req.query['project'], req.params['agentKey']);
+      logger.success(req, operation, startTime, { found: intake !== null });
+      res.json({ intake });
+    } catch (error) {
+      next(error);
+    }
+  }
 
   /**
    * POST /api/mktg-agents/chat
@@ -111,6 +130,17 @@ export class MktgAgentsController {
     if (!message || typeof message !== 'string' || !message.trim()) {
       next(
         ServiceValidationError.forField('message', 'message is required and must be a non-empty string', {
+          operation: 'mktg_agents_chat',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (message.trim().length > MKTG_CHAT_MESSAGE_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('message', `message must be at most ${MKTG_CHAT_MESSAGE_MAX_CHARS} characters`, {
           operation: 'mktg_agents_chat',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -357,6 +387,7 @@ export class MktgAgentsController {
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
       const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
+      this.recordLastIntake(req, { project, agentId: agent.id, runId, answers: answers as Record<string, string>, documentCount: 0, logoCount: files.length });
     } catch (error) {
       next(error);
     }
@@ -499,7 +530,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      const result: BrandKitResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.brandKitService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
@@ -659,6 +694,14 @@ export class MktgAgentsController {
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
       const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
+      this.recordLastIntake(req, {
+        project,
+        agentId: agent.id,
+        runId,
+        answers: answers as Record<string, string>,
+        documentCount: submitted.length,
+        logoCount: 0,
+      });
     } catch (error) {
       next(error);
     }
@@ -848,7 +891,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      const result: FoundationMessageResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.foundationMessageService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
@@ -937,6 +984,7 @@ export class MktgAgentsController {
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
       const response: BoilerplatesGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
+      this.recordLastIntake(req, { project, agentId: agent.id, runId, answers: answers as Record<string, string>, documentCount: 0, logoCount: 0 });
     } catch (error) {
       next(error);
     }
@@ -1081,7 +1129,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_result', {});
 
     try {
-      const result: BoilerplatesResultResponse = await this.boilerplatesService.getResult(req, validSessionId, validProjectUid);
+      const result: BoilerplatesResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.boilerplatesService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'boilerplates_result', startTime, { status: result.status });
       res.json(result);
@@ -1120,6 +1172,16 @@ export class MktgAgentsController {
     if (feedback !== undefined && typeof feedback !== 'string') {
       next(
         ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (typeof feedback === 'string' && feedback.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+      next(
+        ServiceValidationError.forField('feedback', `feedback must be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS} characters`, {
           operation: 'icp_generate',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -1198,6 +1260,7 @@ export class MktgAgentsController {
       // unexplained.
       const response: IcpGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme, runId };
       res.json(response);
+      this.recordLastIntake(req, { project, agentId: agent.id, runId, answers: answers as Record<string, string>, documentCount: 0, logoCount: 0 });
     } catch (error) {
       next(error);
     }
@@ -1266,7 +1329,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      const result: IcpResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.icpService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
@@ -1430,6 +1497,14 @@ export class MktgAgentsController {
       logger.success(req, 'faq_generate', startTime, { session_created: true });
       const response: FaqGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
+      this.recordLastIntake(req, {
+        project,
+        agentId: agent.id,
+        runId,
+        answers: answers as Record<string, string>,
+        documentCount: submitted.length,
+        logoCount: 0,
+      });
     } catch (error) {
       next(error);
     }
@@ -1561,7 +1636,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_result', {});
 
     try {
-      const result: FaqResultResponse = await this.faqService.getResult(req, validSessionId, validProjectUid);
+      const result: FaqResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.faqService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'faq_result', startTime, { status: result.status });
       res.json(result);
@@ -1597,6 +1676,14 @@ export class MktgAgentsController {
     } catch {
       return '';
     }
+  }
+
+  /** Detached from the response: a stalled snapshot must never delay an accepted Generate ACK. */
+  private recordLastIntake(req: Request, input: MktgLastIntakeStart): void {
+    void this.lastIntake.recordStartBestEffort(req, input).catch(() => {
+      // Defensive collaborator boundary; never log the rejected error or the validated input body.
+      logger.warning(req, 'mktg_last_intake_write', 'Run accepted, but scalar intake history could not be saved');
+    });
   }
 
   /** Record the ACK through the catalog-aware domain service. */

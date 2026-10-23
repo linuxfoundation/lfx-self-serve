@@ -17,6 +17,7 @@ import {
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
@@ -517,7 +518,10 @@ describe('MktgDocumentViewComponent', () => {
     await renderLinkedin(linkedinResponse());
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
-    expect(navigate).toHaveBeenCalledWith(['linkedin-post'], expect.objectContaining({ queryParams: { project: PROJECT.slug } }));
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({ queryParams: { project: PROJECT.slug, mode: null, ...MKTG_RUN_RESUME_QUERY_CLEAR } })
+    );
   });
 
   it('replaces the automatic questions leg with a scoped continuation URL', async () => {
@@ -541,7 +545,7 @@ describe('MktgDocumentViewComponent', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     component['onProgress']({ type: 'questions', pending: questions }, pending);
     expect(navigate).toHaveBeenCalledWith([expect.any(String), BRAND_KIT_INTAKE.agentId], {
-      queryParams: { project: PROJECT.slug, questions: 'synthetic-q-token' },
+      queryParams: { project: PROJECT.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: 'synthetic-q-token', mode: null },
       replaceUrl: true,
     });
     expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
@@ -856,13 +860,13 @@ describe('MktgDocumentViewComponent', () => {
     async (state) => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started(state)] }));
-      await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+      await render('/documents/brand-kit/living?run=' + 'b'.repeat(64) + '&type=drop&profile=drop');
       expect(query('mktg-document-view-run')).not.toBeNull();
       expect(query('mktg-document-view-revision-chip')).toBeNull();
       const action = query('mktg-document-view-run-again');
       const run = query('mktg-document-view-run');
       if (!action || !run) throw new Error('Missing first-run actions');
-      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
+      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
       expect(action.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
       expect(query('brand-kit-web-view-header')).toBeNull();
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed' || state === 'questions');
@@ -1054,7 +1058,7 @@ describe('MktgDocumentViewComponent', () => {
       if (binding === 'valid') {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           [expect.any(String), 'documents', BRAND_KIT.agentKey, 'living'],
-          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: LATEST.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: LATEST.id, mode: null }) })
         );
         expect(changed).toHaveBeenCalledWith(PROJECT.uid);
       } else {
@@ -1096,7 +1100,7 @@ describe('MktgDocumentViewComponent', () => {
       if (receipted) {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           expect.anything(),
-          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: OLDER.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: OLDER.id, mode: null }) })
         );
       } else {
         expect(navigate).not.toHaveBeenCalled();
@@ -1171,6 +1175,15 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')).toBeNull();
   });
 
+  it('retains the route project scope for Run again while active context is temporarily null', async () => {
+    await render('/documents/brand-kit/living?project=route-synthetic&profile=drop');
+    const instance: unknown = harness.routeDebugElement?.componentInstance;
+    if (!(instance instanceof MktgDocumentViewComponent)) throw new Error('Missing routed document instance');
+    activeContext.set(null);
+    await settle();
+    expect(instance['runAgainParams']()).toMatchObject({ project: 'route-synthetic', mode: 'new' });
+  });
+
   it.each(['brand-kit', 'foundation-message', 'boilerplates'])('keeps malformed %s assets out of Markdown fallback without hiding history', async (key) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
     if (!type) throw new Error('Missing synthetic structured type');
@@ -1180,7 +1193,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     await render(`/documents/${key}/living`);
     expect(query('mktg-document-view-unsupported-asset')).not.toBeNull();
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit&mode=new');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-revisions')).not.toBeNull();
   });
@@ -1197,7 +1210,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'icp', 'living', false);
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'icp', 'living', LATEST.id, true);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit ICP');
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit&mode=new');
     expect(harness.routeNativeElement?.querySelectorAll('h1')).toHaveLength(1);
     expect(query('mktg-document-view-document')?.querySelector('h2')?.textContent).toBe('Revision 2');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
@@ -1356,7 +1369,7 @@ describe('MktgDocumentViewComponent', () => {
     const download = query('brand-kit-web-view-download-pdf');
     if (!download) throw new Error('Missing kit download');
     expect(action.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
+    expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
@@ -1404,7 +1417,7 @@ describe('MktgDocumentViewComponent', () => {
     if (!exportAction) throw new Error('Missing framework export');
     expect(exportAction.compareDocumentPosition(runAgain) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(runAgain.getAttribute('href')).toBe(
-      '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit'
+      '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit&mode=new'
     );
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
@@ -1669,11 +1682,11 @@ describe('MktgDocumentViewComponent', () => {
   it('renders the catalog Run again href for both the framework and native FAQ', async () => {
     useFrameworkRevision();
     await render('/project/mktg-os-agents/documents/foundation-message/living?project=testorbit');
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit&mode=new');
     store.getRevision.mockReturnValue(of(faqResponse()));
     await harness.navigateByUrl(`/project/mktg-os-agents/documents/faq/living?project=testorbit&revision=${LATEST.id}`);
     await settle();
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit&mode=new');
   });
 
   it('blocks a second approval after navigation until the first write finalizes', async () => {
@@ -2029,7 +2042,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-boilerplates-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v3');
     const runAgain = expectHeaderRunAgain('mktg-boilerplates-view-header', 'mktg-boilerplates-view-actions');
-    expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit');
+    expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit&mode=new');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
     expectContentColumn('mktg-boilerplates-view');

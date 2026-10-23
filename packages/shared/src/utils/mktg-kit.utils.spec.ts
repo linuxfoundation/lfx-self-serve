@@ -63,6 +63,15 @@ describe('Marketing kit plan of record', () => {
     expect(keys).not.toContain('icp');
     expect(MKTG_KIT_FAMILIES[0].agentIds).toEqual(['foundation-setup', 'boilerplates', 'faq', 'brand-kit']);
   });
+  it('keeps board Run wording separate from catalog agent identities and row headings', () => {
+    expect(MKTG_KIT_FAMILIES[0].assets.filter((asset) => asset.runName !== undefined).map((asset) => [asset.label, asset.runName])).toEqual([
+      ['Messaging framework', 'messaging framework'],
+      ['Boilerplates', 'boilerplates'],
+      ['FAQ', 'FAQ'],
+      ['Brand kit', 'brand kit'],
+    ]);
+  });
+
   it('keeps legacy ICP documents out of the kit and its summary', () => {
     const families = resolveMktgKit(listing([document('icp')]));
     expect(families.flatMap((family) => family.rows).some((row) => row.asset.agentKey === 'icp')).toBe(false);
@@ -134,7 +143,7 @@ describe('Marketing kit plan of record', () => {
     const row = resolveMktgKitAsset(MKTG_KIT_FAMILIES[2].assets[0], data, new Date(2026, 9, 19));
     expect(row).toMatchObject({ state: null, monthlyCount: 2, version: null, badge: '2 this month' });
     expect(summarizeMktgKit(resolveMktgKit(data)).inKit).toBe(0);
-    expect(resolveMktgKitAsset(MKTG_KIT_FAMILIES[2].assets[0], listing()).badge).toBe('None yet');
+    expect(resolveMktgKitAsset(MKTG_KIT_FAMILIES[2].assets[0], listing()).badge).toBe('Not run yet');
   });
   it('renders exact board state labels, with approval reserved for its real producer', () => {
     expect(describeMktgKitAsset({ state: 'approved', version: 3, monthlyCount: null })).toBe('Approved · v3');

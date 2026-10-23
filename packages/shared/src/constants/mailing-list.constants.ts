@@ -19,6 +19,13 @@ export const MAILING_LIST_LABEL = {
 } as const;
 
 /**
+ * Allowed shape of the name a user types for a mailing list.
+ * Groups.io only accepts letters, numbers and single hyphens, so consecutive, leading and
+ * trailing hyphens are rejected. Uppercase is allowed: existing lists use it.
+ */
+export const MAILING_LIST_NAME_PATTERN = /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/;
+
+/**
  * Configurable labels for mailing list members displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed
  * while keeping all code and file names consistent

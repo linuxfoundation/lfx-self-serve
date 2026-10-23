@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { MktgGenerateRequest, User } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserService } from './user.service';
@@ -23,6 +23,27 @@ describe('MktgRunAttemptService', () => {
     user.set({ sub: 'synthetic-subject' } as User);
     TestBed.configureTestingModule({ providers: [{ provide: UserService, useValue: { user } }] });
     service = TestBed.inject(MktgRunAttemptService);
+  });
+
+  it('keeps completed source payloads for same-visit reuse without retaining a recoverable attempt or persisting bytes', () => {
+    const uploaded = { ...request, documents: [{ kind: 'file' as const, title: 'synthetic.txt', text: 'private-source' }] };
+    service.reserve(uploaded);
+    service.clear(request.projectUid, request.agentId);
+    expect(service.load(request.projectUid, request.agentId)).toBeNull();
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBe(uploaded);
+    expect(window.localStorage.length).toBe(0);
+    expect(TestBed.runInInjectionContext(() => new MktgRunAttemptService()).lastInputs(request.projectUid, request.agentId)).toBeNull();
+    user.set({ sub: 'other-subject' } as User);
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBeNull();
+  });
+
+  it('does not reuse inputs across project/agent boundaries or after the input TTL', () => {
+    service.reserve(request);
+    expect(service.lastInputs('other-project', request.agentId)).toBeNull();
+    expect(service.lastInputs(request.projectUid, 'other-agent')).toBeNull();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + MKTG_RUN_STORAGE_TTL_MS + 1);
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBeNull();
+    clock.mockRestore();
   });
 
   it('retains the draft before a session exists, restoring its answers without an owner token', () => {

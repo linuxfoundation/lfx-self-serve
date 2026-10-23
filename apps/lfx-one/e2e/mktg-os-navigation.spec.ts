@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   DOCUMENT_PROJECT,
@@ -96,7 +96,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     const assetUrl = page.url();
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-agent-run-page')).toBeVisible();
-    expect(new URL(page.url()).search).toBe('?project=' + DOCUMENT_PROJECT.slug);
+    expect(new URL(page.url()).search).toBe('?project=' + DOCUMENT_PROJECT.slug + '&mode=' + MKTG_RUN_NEW_MODE);
     await page.screenshot({ path: info.outputPath('run-again-intake.png'), fullPage: true });
     await page.goBack();
     await expect(page).toHaveURL(assetUrl);

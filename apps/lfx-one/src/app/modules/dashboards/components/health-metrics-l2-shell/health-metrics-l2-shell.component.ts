@@ -40,11 +40,11 @@ import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/healt
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
-import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Level 2 tab shell — anchored sections the page scrolls, beside a sticky sub-nav that tracks scroll
- * position, per the design's `l2Shell`. The tab projects each section's body
+ * Level 2 tab shell — anchored sections the page scrolls, beside a sticky section nav on their right that
+ * tracks scroll position, per the design's `.hm-row`. The tab projects each section's body
  * through a keyed `lfxHealthMetricsL2Section` template and reports its reads back through
  * `sectionReading` / `sectionSettled`, so a fragment deep link lands once the page stops reflowing.
  *
@@ -79,7 +79,6 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public readonly navLabel = input.required<string>();
   /** Prefixes every `data-testid`, so each tab keeps its own test ids. */
   public readonly testIdPrefix = input.required<string>();
-  public readonly crossReference = input<HealthMetricsL2CrossReference | null>(null);
 
   private readonly startSentinel = viewChild<ElementRef<HTMLElement>>('startSentinel');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
@@ -89,6 +88,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // re-scrolls once per read that lands, because each one moves the anchors below it.
   private readonly pendingSection = signal<string | null>(null);
   protected readonly activeSection = linkedSignal(() => this.sections()[0]?.key ?? '');
+  /** The design pins the nav 24px below the header, 8px lower than a section's scroll margin. */
+  protected readonly subNavTopPx = computed(() => this.chrome.stickyTopPx() + 8);
 
   // Ids resolved once per input rather than per render — the template only reads fields.
   protected readonly sectionViews = computed<HealthMetricsL2SectionView[]>(() => buildHealthMetricsL2SectionViews(this.sections(), this.idPrefix()));
