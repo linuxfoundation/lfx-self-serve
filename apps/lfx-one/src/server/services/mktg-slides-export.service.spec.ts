@@ -442,11 +442,15 @@ describe('MktgSlidesExportService', () => {
           status: 'ready',
           record: { deckId: DECK_ID, revisionId: startedId, revisionNumber: 1 },
         });
-        expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last?.revisionId).toBe(startedId);
+        await expect(service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).rejects.toMatchObject({
+          statusCode: 502,
+          code: 'MKTG_APPROVED_REVISION_UNREADABLE',
+        });
       }
       const records = [...store.objects.entries()].filter(([key]) => key.startsWith('slides-exports/'));
       expect(records).toHaveLength(1);
       expect(JSON.parse(records[0][1].body)).toMatchObject({ deckId: DECK_ID });
+      if (document) expect(JSON.parse(records[0][1].body)).toMatchObject({ revisionId: startedId, revisionNumber: 1 });
       await expect(service.getFamilyLast(req, PROJECT, familyInput.familyId)).rejects.toMatchObject({
         statusCode: 502,
         code: 'MKTG_APPROVED_REVISION_UNREADABLE',
