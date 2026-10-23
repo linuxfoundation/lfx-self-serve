@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 
@@ -121,10 +121,11 @@ test('last-export lookup starts even while family document listing is held', asy
   await page.screenshot({ path: info.outputPath('eager-family-lookup.png'), fullPage: true });
 });
 
-test('unsupported family explains its export state and disables both actions', async ({ page }, info) => {
+test('unsupported family shows one line without export buttons or Positioning notes', async ({ page }, info) => {
   await openFamilyExports(page, { familyId: 'website-web' });
   await expect(page.getByTestId('family-export-unsupported')).toContainText('no assets supported by the exporter');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  for (const action of ['pdf', 'slides', 'pdf-note']) await expect(page.getByTestId(`family-export-${action}`)).toHaveCount(0);
+  await expect(page.getByTestId('family-export-actions').locator('p')).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 

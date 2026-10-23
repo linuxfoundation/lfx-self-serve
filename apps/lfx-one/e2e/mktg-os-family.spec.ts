@@ -161,6 +161,8 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
     release();
     await expect(page.getByTestId('mktg-family-asset-messaging-framework')).toContainText('Draft');
+    await expect(page.getByTestId('mktg-family-loading')).toBeAttached();
+    await expect(page.getByTestId('mktg-family-loading')).toBeEmpty();
   });
   test('source details have honest loading and absent-report states', async ({ page }) => {
     let release = () => {};
@@ -209,6 +211,8 @@ test.describe('Marketing family content', () => {
     await openKit(page, '/families/website-web');
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveText('Coming soon');
+    await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Coming soon');
+    await expect(page.getByTestId('mktg-family-run-aeo-geo')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
     await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeEnabled();

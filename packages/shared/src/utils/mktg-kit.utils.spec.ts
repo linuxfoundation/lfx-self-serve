@@ -11,6 +11,7 @@ import {
   isMktgKitFamilyLive,
   mktgKitCurrentVersion,
   mktgKitSources,
+  mktgKitRunDate,
   resolveMktgKit,
   resolveMktgKitAsset,
   resolveMktgKitLivingState,
@@ -144,6 +145,22 @@ describe('Marketing kit plan of record', () => {
     expect(row).toMatchObject({ state: null, monthlyCount: 2, version: null, badge: '2 this month' });
     expect(summarizeMktgKit(resolveMktgKit(data)).inKit).toBe(0);
     expect(resolveMktgKitAsset(MKTG_KIT_FAMILIES[2].assets[0], listing()).badge).toBe('Not run yet');
+  });
+  it('Not run yet means never run; prior one-offs have a deterministic last-run label and no approval filter state', () => {
+    const asset = MKTG_KIT_FAMILIES[2].assets[0];
+    const now = new Date('2026-10-23T12:00:00Z');
+    expect(resolveMktgKitAsset(asset, listing(), now)).toMatchObject({ state: 'missing', badge: 'Not run yet', monthlyCount: 0 });
+    const data = listing([document('linkedin-post', '2026-08-01T12:00:00Z'), document('linkedin-post', '2026-09-10T12:00:00Z')]);
+    expect(resolveMktgKitAsset(asset, data, now)).toMatchObject({ state: null, badge: 'Last run 10 Sept', monthlyCount: 0 });
+    expect(data.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].createdAt).toBe('2026-08-01T12:00:00Z');
+    expect(resolveMktgKitAsset(asset, listing([document('linkedin-post', null)]), now).badge).toBe('Last run —');
+    expect(mktgKitRunDate('2026-10-01T00:30:00+02:00')).toBe('30 Sept');
+    expect(mktgKitRunDate('invalid')).toBe('—');
+    expect(mktgKitRunDate(null)).toBe('—');
+  });
+  it('registered types with an unavailable agent read Coming soon instead of Not run yet or a run count', () => {
+    const asset = MKTG_KIT_FAMILIES[1].assets[0];
+    expect(resolveMktgKitAsset(asset, listing([document('aeo-geo')]))).toMatchObject({ state: 'coming-soon', badge: 'Coming soon', monthlyCount: null });
   });
   it('renders exact board state labels, with approval reserved for its real producer', () => {
     expect(describeMktgKitAsset({ state: 'approved', version: 3, monthlyCount: null })).toBe('Approved · v3');

@@ -389,6 +389,22 @@ describe('Marketing family page', () => {
     expect(lastExport).toHaveBeenCalledWith({ project: 'synthetic', familyId: 'positioning-brand' }, true);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).not.toBeNull();
   });
+  it('keeps the loading status node mounted while changing its announcement', async () => {
+    loading.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toContain('Loading family assets');
+    loading.set(false);
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
+    expect(status?.textContent).toBe('');
+    loading.set(true);
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
+    expect(status?.textContent).toContain('Loading family assets');
+  });
   it('renders loading and errors without claiming missing documents, keeping catalog actions', async () => {
     loading.set(true);
     families.set([]);

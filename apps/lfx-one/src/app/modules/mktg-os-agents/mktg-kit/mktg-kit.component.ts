@@ -9,6 +9,8 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
+import { resolveMktgFamilyActions } from '@lfx-one/shared/utils';
+import { ProjectContextService } from '@services/project-context.service';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
@@ -23,6 +25,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
 export class MktgKitComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly context = inject(ProjectContextService);
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
   protected readonly familyCount = MKTG_KIT_FAMILIES.length;
@@ -48,12 +51,20 @@ export class MktgKitComponent {
 
   private initCards() {
     return computed(() =>
-      this.kit.families().map((family) => ({
-        ...family,
-        needsRebuild: family.rows.some((row) => row.state === 'needs-rebuild'),
-        rows: family.live ? family.rows.filter((row) => this.selectedFilter() === 'all' || row.state === this.selectedFilter()) : [],
-        agentNames: family.family.leadSummary ?? family.agents.map((agent) => agent.name).join(', '),
-      }))
+      this.kit.families().map((family) => {
+        const actions = resolveMktgFamilyActions(family, {
+          loaded: !this.kit.loading() && !this.kit.error(),
+          canWrite: this.context.canWrite(),
+          approvedFramework: !!this.kit.documents()?.approvedFramework,
+        });
+        const rows = Object.values(actions.rows).map((entry) => entry.row);
+        return {
+          ...family,
+          needsRebuild: rows.some((row) => row.state === 'needs-rebuild'),
+          rows: family.live ? rows.filter((row) => this.selectedFilter() === 'all' || row.state === this.selectedFilter()) : [],
+          agentNames: family.family.leadSummary ?? family.agents.map((agent) => agent.name).join(', '),
+        };
+      })
     );
   }
 }
