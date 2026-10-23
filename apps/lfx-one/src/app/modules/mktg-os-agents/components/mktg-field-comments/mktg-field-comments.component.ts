@@ -3,8 +3,6 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MKTG_DOCUMENT_COMMENT_MAX_CHARS, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
@@ -32,10 +30,9 @@ export class MktgFieldCommentsComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly comments = inject(MktgDocumentCommentsService);
   public readonly field = input.required<string>();
-  protected readonly form = new FormGroup({
-    text: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(MKTG_DOCUMENT_COMMENT_MAX_CHARS)] }),
-  });
-  protected readonly opened = signal(false);
+  private readonly draft = computed(() => this.comments.fieldDraft(this.field()));
+  protected readonly form = computed(() => this.draft().form);
+  protected readonly opened = computed(() => this.draft().opened());
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly announcement = signal('');
@@ -47,59 +44,61 @@ export class MktgFieldCommentsComponent {
     describeMktgDocumentCommentField(this.comments.selectedScope()?.agentKey, this.field(), this.comments.labelContent())
   );
   protected readonly countLabel = computed(() => (this.threads().length === 1 ? '1 comment' : `${this.threads().length} comments`));
-  private submittedText = '';
-  private requestId = '';
 
   public constructor() {
     afterRenderEffect(() => {
       this.comments.loaded();
-      if (this.opened()) this.commentButton()?.setAttribute('aria-controls', `${this.inputId()}-composer`);
+      const button = this.commentButton();
+      if (this.opened()) button?.setAttribute('aria-controls', `${this.inputId()}-composer`);
+      else button?.removeAttribute('aria-controls');
     });
-    toObservable(this.comments.draftScopeKey)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.close());
   }
   protected open(): void {
-    this.opened.set(true);
+    this.error.set('');
+    this.draft().opened.set(true);
     this.announcement.set('');
   }
   protected close(focus = false): void {
-    this.form.reset();
-    this.opened.set(false);
+    const draft = this.draft();
+    draft.form.reset();
+    draft.opened.set(false);
     this.error.set('');
-    this.requestId = '';
-    this.submittedText = '';
+    draft.clientRequestId = null;
+    draft.submittedText = '';
     this.announcement.set('');
     const button = this.commentButton();
     button?.removeAttribute('aria-controls');
     if (focus) button?.focus();
   }
   protected save(): void {
-    const text = this.form.controls.text.value;
-    if (!text.trim()) this.form.controls.text.setErrors({ required: true });
-    if (this.form.invalid || this.busy() || this.comments.saving() || !isPlatformBrowser(this.platformId)) {
-      this.form.markAllAsTouched();
+    const draft = this.draft();
+    const text = draft.form.controls.text.value;
+    if (!text.trim()) draft.form.controls.text.setErrors({ required: true });
+    if (draft.form.invalid || this.busy() || this.comments.saving() || !isPlatformBrowser(this.platformId)) {
+      draft.form.markAllAsTouched();
       return;
     }
-    if (!this.requestId || text !== this.submittedText) {
-      this.requestId = window.crypto.randomUUID();
-      this.submittedText = text;
+    if (!draft.clientRequestId || text !== draft.submittedText) {
+      draft.clientRequestId = window.crypto.randomUUID();
+      draft.submittedText = text;
     }
     this.busy.set(true);
     this.error.set('');
     this.comments
-      .add({ kind: 'field', key: this.field() }, text, this.requestId)
+      .add({ kind: 'field', key: this.field() }, text, draft.clientRequestId)
       .pipe(
         take(1),
-        finalize(() => this.busy.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        finalize(() => this.busy.set(false))
       )
       .subscribe({
         next: () => {
-          this.close(true);
+          if (this.draft() !== draft) return;
+          if (draft.form.controls.text.value === text) this.close(!this.destroyRef.destroyed);
           this.announcement.set('Comment added');
         },
-        error: (error: unknown) => this.error.set(extractErrorMessage(error, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.save)),
+        error: (error: unknown) => {
+          if (this.draft() === draft) this.error.set(extractErrorMessage(error, MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES.save));
+        },
       });
   }
   private commentButton(): HTMLButtonElement | null {

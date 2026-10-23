@@ -105,12 +105,10 @@ export class MktgRunAttemptService {
         raw.scope?.agentKey === scope.agentKey &&
         raw.scope?.documentId === scope.documentId &&
         raw.scope?.revisionId === scope.revisionId;
-      const age = Date.now() - Date.parse(raw.updatedAt);
+      const age = typeof raw.updatedAt === 'string' ? Date.now() - Date.parse(raw.updatedAt) : NaN;
+      const stale = !Number.isFinite(age) || age < 0 || age > MKTG_RUN_STORAGE_TTL_MS;
       const valid =
         same &&
-        Number.isFinite(age) &&
-        age >= 0 &&
-        age <= MKTG_RUN_STORAGE_TTL_MS &&
         Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, scope.agentKey) &&
         typeof raw.clientRequestId === 'string' &&
         MKTG_DOCUMENT_COMMENT_ID_REGEX.test(raw.clientRequestId) &&
@@ -124,7 +122,8 @@ export class MktgRunAttemptService {
         raw.priorVersion < Number.MAX_SAFE_INTEGER;
       if (
         !valid ||
-        (raw.attempt &&
+        (!stale &&
+          raw.attempt &&
           (!MKTG_STARTED_RUN_ID_REGEX.test(raw.attempt.runId ?? '') ||
             typeof raw.attempt.session?.sessionId !== 'string' ||
             !raw.attempt.session.sessionId ||
@@ -134,6 +133,23 @@ export class MktgRunAttemptService {
       ) {
         this.clearRedraft(scope);
         return null;
+      }
+      if (stale) {
+        const retained: MktgPendingRedraftIntent = {
+          scope: { ...raw.scope },
+          clientRequestId: raw.clientRequestId,
+          commentIds: [...raw.commentIds],
+          priorVersion: raw.priorVersion,
+          updatedAt: Number.isFinite(age) ? raw.updatedAt : new Date(0).toISOString(),
+          releaseAllowed: raw.releaseAllowed === true,
+        };
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          /* Memory still retains the ID-only recovery. */
+        }
+        this.saveRedraft(retained);
+        return retained;
       }
       return raw;
     } catch {

@@ -111,7 +111,8 @@ export class MktgDocumentRedraftInputService {
     }
     if (!isBoilerplatesEnvelope(data)) throw this.invalid();
     const base = data;
-    const website = base.inputs_record['website_url'];
+    const source = base.inputs_record['website'];
+    const website = source && typeof source === 'object' && 'url' in source && typeof source.url === 'string' ? source.url : undefined;
     return {
       context,
       framework,
@@ -119,7 +120,7 @@ export class MktgDocumentRedraftInputService {
         type: BOILERPLATES_FORM_TYPE,
         project_name: base.project_name,
         project_uid: view.project,
-        website_url: typeof website === 'string' ? website : undefined,
+        website_url: website,
         messaging_framework: messaging,
         revision: {
           mode: 'redraft',

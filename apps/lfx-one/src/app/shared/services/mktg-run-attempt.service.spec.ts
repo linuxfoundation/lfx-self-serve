@@ -35,8 +35,18 @@ describe('MktgRunAttemptService', () => {
     user.set({ sub: 'other-synthetic' } as User);
     expect(restored.loadRedraft(scope)).toBeNull();
     user.set({ sub: 'synthetic-subject' } as User);
-    service.saveRedraft({ ...intent, updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString() });
-    expect(service.loadRedraft(scope)).toBeNull();
+    service.saveRedraft({
+      ...intent,
+      updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString(),
+      attempt: {
+        runId: 'c'.repeat(64),
+        priorVersion: 1,
+        session: { agentId: request.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-expired-capability' },
+      },
+    });
+    expect(service.loadRedraft(scope)).toMatchObject({ clientRequestId: intent.clientRequestId, commentIds: intent.commentIds });
+    expect(service.loadRedraft(scope)?.attempt).toBeUndefined();
+    expect(Object.values(window.localStorage).join('')).not.toContain('synthetic-expired-capability');
   });
 
   it('keeps completed source payloads for same-visit reuse without retaining a recoverable attempt or persisting bytes', () => {

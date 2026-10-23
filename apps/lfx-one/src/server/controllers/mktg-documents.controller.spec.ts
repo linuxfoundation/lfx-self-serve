@@ -10,7 +10,7 @@ vi.mock('../services/mktg-document-redraft.service', () => ({
     public send = redraftMocks.send;
   },
 }));
-const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), release: vi.fn() }));
+const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), release: vi.fn(), terminal: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const storeMocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
@@ -64,6 +64,7 @@ vi.mock('../services/mktg-document-comments.service', () => ({
     public list = commentMocks.list;
     public add = commentMocks.add;
     public release = commentMocks.release;
+    public isRedraftTerminal = commentMocks.terminal;
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -100,7 +101,7 @@ function buildReq(params: Record<string, string> = {}, query: Record<string, unk
 }
 
 function buildRes(): Response & { json: ReturnType<typeof vi.fn> } {
-  return { json: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
+  return { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
 }
 
 describe('MktgDocumentsController', () => {
@@ -171,6 +172,29 @@ describe('MktgDocumentsController', () => {
     await controller.releaseRedraft(buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'unknown-send' }, {}, { project: PROJECT }), res, next);
     expect(res.json).toHaveBeenCalledWith({ state: 'unknown' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('reads only creator terminal proof after canonical writer authorization (writer=%s)', async (writer) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer });
+    commentMocks.terminal.mockResolvedValue(true);
+    const res = buildRes();
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'send-one' }, { project: PROJECT, revision: REVISION_ID });
+    await controller.redraftState(req, res, next);
+    if (writer) {
+      expect(commentMocks.terminal).toHaveBeenCalledWith(
+        req,
+        'resolved-project',
+        expect.objectContaining({ agentKey: 'brand-kit' }),
+        'living',
+        'send-one',
+        REVISION_ID
+      );
+      expect(res.json).toHaveBeenCalledWith({ terminal: true });
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    } else {
+      expect(commentMocks.terminal).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    }
   });
 
   it('lists comments only after writer authorization, using the server project uid', async () => {

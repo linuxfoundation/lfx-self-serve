@@ -8,6 +8,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import type { MktgObservedRunResult } from '@lfx-one/shared/interfaces';
+import { MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { mktgCommentFixture, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { MktgDocumentRedraftClientService } from './mktg-document-redraft-client.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
@@ -54,6 +55,51 @@ describe('comments-only redraft transport/recovery', () => {
     TestBed.tick();
   });
   afterEach(() => http.verify());
+  it.each([false, true])('reconciles an expired nonce without POST and drops it only if terminal=%s', (terminal) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const intent = {
+      scope,
+      clientRequestId: 'expired-send',
+      commentIds: [rows()[0].id],
+      priorVersion: 1,
+      updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString(),
+      releaseAllowed: true,
+    };
+    attempts.saveRedraft(intent);
+    rows.set([...rows(), mktgCommentFixture({ id: 'new-open-comment' })]);
+    client.resume(scope).subscribe();
+    const state = http.expectOne((request) => request.url === `${path}/expired-send/state`);
+    expect(state.request.method).toBe('GET');
+    expect(state.request.params.get('project')).toBe(scope.projectUid);
+    expect(state.request.params.get('revision')).toBe(scope.revisionId);
+    state.flush({ terminal });
+    expect(client.hasIntent(scope)).toBe(!terminal);
+    http.expectNone((request) => request.method === 'POST');
+    if (!terminal) {
+      client.send(scope, 1).subscribe({ error: () => undefined });
+      const retry = http.expectOne(path);
+      expect(retry.request.body.clientRequestId).toBe(intent.clientRequestId);
+      expect(retry.request.body.commentIds).toEqual(intent.commentIds);
+      retry.flush({}, { status: 503, statusText: 'Still uncertain' });
+      client.release(scope).subscribe();
+      http.expectOne(`${path}/expired-send/release`).flush({ success: true });
+      expect(client.hasIntent(scope)).toBe(false);
+    }
+  });
+  it('keeps expired recovery and never posts when the authoritative ledger read fails', () => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.saveRedraft({
+      scope,
+      clientRequestId: 'expired-send',
+      commentIds: [rows()[0].id],
+      priorVersion: 1,
+      updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString(),
+    });
+    client.resume(scope).subscribe({ error: () => undefined });
+    http.expectOne((request) => request.url.endsWith('/expired-send/state')).flush({}, { status: 503, statusText: 'Unavailable' });
+    expect(attempts.loadRedraft(scope)?.clientRequestId).toBe('expired-send');
+    http.expectNone((request) => request.method === 'POST');
+  });
   it('freezes IDs and stores the nonce BEFORE POST; uncertainty/new comments/retry reuse it, restore never posts', () => {
     client.send(scope, 1).subscribe({ error: () => undefined });
     const first = http.expectOne(path);
