@@ -91,7 +91,8 @@ export class MainLayoutComponent {
         // Only a navigation the viewer made closes the mobile drawer. A page rewriting its own address in place —
         // Org Lens writing the default organization into `/org/{page}`, a page syncing its query params — lands with
         // `replaceUrl` and would snap a just-opened drawer shut, which on a phone reads as the menu not opening at
-        // all. Back/forward (popstate) also lands with `replaceUrl`, and does close it.
+        // all. Back/forward (popstate) also lands with `replaceUrl`, and does close it. A viewer action that itself
+        // re-addresses with `replaceUrl` (an organization switch from the drawer) closes the drawer at its source.
         const navigation = this.router.currentNavigation();
         if (!navigation?.extras.replaceUrl || navigation.trigger === 'popstate') {
           this.appService.closeMobileSidebar();
