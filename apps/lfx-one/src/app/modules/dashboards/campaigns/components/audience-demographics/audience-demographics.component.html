@@ -29,6 +29,12 @@
         Loading audience data...
       </div>
     </div>
+  } @else if (restricted()) {
+    <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="audience-restricted">
+      <i class="fa-light fa-lock text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-gray-700">Google Ads audience insights are limited to LF administrators</p>
+      <p class="text-xs text-gray-500">This legacy read uses an ad account shared by every foundation.</p>
+    </div>
   } @else if (error()) {
     <div class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-8" data-testid="audience-error">
       <i class="fa-light fa-circle-exclamation text-2xl text-red-400" aria-hidden="true"></i>

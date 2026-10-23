@@ -10,6 +10,7 @@ import {
   type KeyValue,
   deriveKeys,
   errorMessage,
+  getAdminContext,
   getUser,
   IdTokenGrantRefusedError,
   isAdminCheckPending,
@@ -32,6 +33,7 @@ import {
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
+  GatewazeAdminContext,
   GatewazeHostSessionSettings,
   GatewazeMeResult,
   GatewazeRealtimeSession,
@@ -452,9 +454,18 @@ export class GatewazeSessionService {
     if (!config) {
       return { outcome: 'host_session_unavailable' };
     }
+    const hostConfig = toHostConfig(config);
+    // Started before getUser so the two run in parallel, and only for an admin: the 403 never carries
+    // it. It resolves null on any failure, and `admin` is then left out. It is documented never to
+    // reject, but when getUser throws below nothing awaits it, so the catch keeps a future reject from
+    // becoming an unhandled rejection. Its own warnings (no usable row, a non-200, a timeout) go
+    // through the filtered logger, which drops the GoTrue user id.
+    const adminContext: Promise<GatewazeAdminContext | null> = session.is_admin
+      ? getAdminContext({ ...hostConfig, log: hostSessionCoreLogger('get_gatewaze_me', req) }, session.access_token, session.user_id).catch(() => null)
+      : Promise.resolve(null);
     let user: Record<string, unknown>;
     try {
-      user = await getUser(toHostConfig(config), session.access_token);
+      user = await getUser(hostConfig, session.access_token);
     } catch (error) {
       if (error instanceof SessionEndedError) {
         logger.debug(req, 'get_gatewaze_me', 'GoTrue /user refused the session token', { reason: error.message });
@@ -466,7 +477,18 @@ export class GatewazeSessionService {
     if (!session.is_admin) {
       return { outcome: 'not_admin', email: typeof user['email'] === 'string' ? user['email'] : undefined };
     }
-    return { outcome: 'ok', user };
+    const admin = await adminContext;
+    if (!admin) {
+      logger.debug(req, 'get_gatewaze_me', 'No admin context for the session; answering without it');
+      return { outcome: 'ok', user };
+    }
+    // The embed ignores an `admin` whose profile is not the signed-in user's. The package reads the
+    // row by session.user_id, so this only fails if GoTrue's /user disagrees with the session.
+    if (admin.profile.user_id !== user['id']) {
+      logger.warning(req, 'get_gatewaze_me', 'The admin profile is not for the signed-in user; answering without it');
+      return { outcome: 'ok', user };
+    }
+    return { outcome: 'ok', user, admin };
   }
 
   /**

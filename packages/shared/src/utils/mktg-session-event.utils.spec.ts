@@ -10,6 +10,7 @@ import {
   extractMktgCurrentTurnAgentTexts,
   getMktgSessionOutcome,
   mktgFailureAfterQuestions,
+  isMktgToolTaskEvent,
 } from './mktg-session-event.utils';
 
 const FINALIZE = 'finalize_messaging_document';
@@ -38,6 +39,13 @@ it('shares questions-versus-final-reply precedence without reading reasoning as 
   const reasoning = JSON.stringify({ type: 'agent_notification_progress', content: { type: 'application/guild-reasoning-progress', data: 'Rejected' } });
   expect(mktgFailureAfterQuestions([reply('Synthetic question'), reasoning, done], question)).toBeNull();
   expect(mktgFailureAfterQuestions([done], question)).toEqual({ ended: true, replyText: '' });
+});
+
+it('shares the root tool-task predicate without accepting nested lookalikes', () => {
+  expect(isMktgToolTaskEvent({ task: { entity_type: 'EntTaskTool' } })).toBe(true);
+  for (const value of [null, [], 'not an event', { task: { entity_type: 'EntTaskAgent' } }, { content: { task: { entity_type: 'EntTaskTool' } } }]) {
+    expect(isMktgToolTaskEvent(value)).toBe(false);
+  }
 });
 
 describe('getMktgSessionOutcome', () => {
