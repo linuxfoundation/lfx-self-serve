@@ -7,6 +7,7 @@ import {
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
   GroupsIOMailingList,
+  GroupsIOMemberResponse,
   GroupsIOService,
   MailingListMember,
   MyMailingList,
@@ -717,9 +718,9 @@ export class MailingListService {
    * membership is verified against the query-service index instead, whose documents are tagged
    * with both member_uid and mailing_list_uid (linuxfoundation/lfx-self-serve-ops#955).
    */
-  private async fetchMemberForMutation(req: Request, mailingListId: string, memberId: string, operation: string): Promise<MailingListMember> {
+  private async fetchMemberForMutation(req: Request, mailingListId: string, memberId: string, operation: string): Promise<GroupsIOMemberResponse> {
     const [member, membership] = await Promise.all([
-      this.microserviceProxy.proxyRequest<MailingListMember>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'GET'),
+      this.microserviceProxy.proxyRequest<GroupsIOMemberResponse>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'GET'),
       this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'groupsio_member',
         tags_all: [`member_uid:${memberId}`, `mailing_list_uid:${mailingListId}`],

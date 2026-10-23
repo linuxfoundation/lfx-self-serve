@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import type { MailingListMember } from '@lfx-one/shared/interfaces';
+import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,8 +37,8 @@ import { MailingListService } from './mailing-list.service';
 const req = { log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } } as unknown as Request;
 
 // Mirrors the upstream single-GET `GroupsioMember` response, which carries `id` but no `uid` or
-// `mailing_list_uid` — the shared interface describes the index document, hence the cast.
-const existingMember = {
+// `mailing_list_uid`.
+const existingMember: GroupsIOMemberResponse = {
   id: 'member-1',
   email: 'self@example.com',
   member_type: MailingListMemberType.DIRECT,
@@ -47,7 +47,7 @@ const existingMember = {
   status: 'active',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
-} as unknown as MailingListMember;
+};
 
 // The query-service index document for the same member, tagged with its mailing list.
 const indexedMember: MailingListMember = { ...existingMember, uid: 'member-1', mailing_list_uid: 'list-1' };
@@ -62,7 +62,7 @@ function routeProxy({
   indexed = true,
   lookupError,
   mutation,
-}: { member?: MailingListMember; indexed?: boolean; lookupError?: Error; mutation?: unknown } = {}): void {
+}: { member?: GroupsIOMemberResponse; indexed?: boolean; lookupError?: Error; mutation?: unknown } = {}): void {
   proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string, method: string, params?: Record<string, unknown>) => {
     if (path === '/query/resources') {
       const tagsAll = params?.['tags_all'];
