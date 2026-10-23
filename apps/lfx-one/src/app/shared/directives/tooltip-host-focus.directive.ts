@@ -10,7 +10,7 @@ import { Tooltip } from 'primeng/tooltip';
  * Pair with tooltipEvent="hover" so PrimeNG retains its normal pointer behaviour.
  */
 @Directive({
-  selector: '[lfxTooltipHostFocus]',
+  selector: '[pTooltip][lfxTooltipHostFocus]',
   host: { '(focus)': 'show()', '(blur)': 'hide()' },
 })
 export class TooltipHostFocusDirective {

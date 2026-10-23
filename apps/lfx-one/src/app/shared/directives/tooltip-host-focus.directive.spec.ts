@@ -12,8 +12,8 @@ import { TooltipHostFocusDirective } from './tooltip-host-focus.directive';
   selector: 'lfx-tooltip-host-focus-test',
   imports: [ButtonComponent, TooltipModule, TooltipHostFocusDirective],
   template: `<span role="note" tabindex="0" pTooltip="Synthetic blocked reason" tooltipEvent="hover" lfxTooltipHostFocus>
-    <lfx-button label="Run" [disabled]="true" />
-  </span>`,
+      <lfx-button label="Run" [disabled]="true" /> </span
+    ><span lfxTooltipHostFocus data-testid="without-tooltip"></span>`,
 })
 class HostComponent {}
 
@@ -23,6 +23,8 @@ describe('TooltipHostFocusDirective', () => {
     await fixture.whenStable();
     const host: HTMLElement | null = fixture.nativeElement.querySelector('[role="note"]');
     expect(fixture.nativeElement.querySelector('button')?.disabled).toBe(true);
+    // The marker without pTooltip must not instantiate a directive that requires Tooltip injection.
+    expect(fixture.nativeElement.querySelector('[data-testid="without-tooltip"]')).not.toBeNull();
     host?.focus();
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Synthetic blocked reason');
     host?.blur();
