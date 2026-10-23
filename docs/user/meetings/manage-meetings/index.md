@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-10-06
+last_updated: 2026-10-22
 intercom_collection: Meetings
 ---
 
@@ -41,6 +41,8 @@ The **Invite Guests** step (in the create/edit meeting form) is where you contro
 The invitation list shows a running count split as "X from committees" and "Y direct guests."
 
 From a meeting card in the list, **Invite people** opens the guest list with the **Add Guest** form already open, and **View all** opens it for browsing. For a recurring meeting, the **Add Guest** form asks whether to invite the guest to **All occurrences** (the default) or only the date the card is showing. The same choice appears in the guest list on the meeting's join page.
+
+To resend a guest's meeting invitation, select the **Resend invite** (paper plane) icon next to their name and confirm with **Resend**. The icon appears in the guest list on an upcoming meeting's card or join page, in the **Invite Guests** step when editing a meeting, and in the guest list of the new meeting editor. Committee members can be resent their invitation too. In the **Invite Guests** step, save your changes to a guest before resending, because the invitation goes to their saved email address.
 
 ## Manage meeting materials
 

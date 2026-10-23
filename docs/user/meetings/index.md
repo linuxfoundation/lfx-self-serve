@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-13
+last_updated: 2026-10-22
 intercom_collection: Meetings
 ---
 
@@ -93,7 +93,7 @@ Empty states differ by lens:
 
 ## Public meeting access
 
-Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private** meeting, viewing or joining it never requires an LFX account. This page shows meeting details and the information you need to join. The meeting organizer's name and contact link are only shown to signed-in visitors — unauthenticated visitors see the meeting details without organizer contact info. If a meeting is marked **Restricted**, there's no anonymous form to get past it — you'll generally need to sign in and match an existing registrant record to see full join details; contact the meeting organizer to be added as a registrant.
+Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private** meeting, viewing or joining it never requires an LFX account. This page shows meeting details and the information you need to join. The meeting organizer's name and contact link are only shown to signed-in visitors — unauthenticated visitors see the meeting details without organizer contact info. For a **Private** meeting, only signed-in organizers, invited participants, and linked committee members see the agenda, materials, and date and time. Everyone else sees the title and a private-meeting notice, and visitors who aren't signed in also see the guest join form. If a meeting is marked **Restricted**, there's no anonymous form to get past it — you'll generally need to sign in and match an existing registrant record to see full join details; contact the meeting organizer to be added as a registrant.
 
 ## Related sections
 
