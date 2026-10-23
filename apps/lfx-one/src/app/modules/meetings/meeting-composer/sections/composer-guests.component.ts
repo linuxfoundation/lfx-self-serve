@@ -311,6 +311,8 @@ export class ComposerGuestsComponent {
 
   protected onDismissUndo(): void {
     this.lastRemoval.set(null);
+    // The dismiss button held focus and is gone with the notice; no row to return to, so the search takes it.
+    this.focusRestoredGuest(null);
   }
 
   /** Resend is only offered once the meeting exists upstream (edit mode) and the guest is saved. */

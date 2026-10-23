@@ -503,6 +503,17 @@ describe('ComposerGuestsComponent', () => {
       expect(focus).toHaveBeenCalledWith('registrant-1');
     });
 
+    it('hands keyboard focus to the guest search when the undo notice is dismissed', () => {
+      const focus = vi.spyOn(component as unknown as { focusRestoredGuest: (trackId: string | null) => void }, 'focusRestoredGuest');
+      formService.setGuests([savedGroupGuest]);
+      component['onRemoveGuest'](savedGroupGuest);
+
+      component['onDismissUndo']();
+
+      expect(component['undoableRemoval']()).toBeNull();
+      expect(focus).toHaveBeenCalledWith(null);
+    });
+
     it('stops offering undo once another guest is added', () => {
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);
