@@ -124,6 +124,70 @@ describe('MktgAgentRunService', () => {
     vi.useRealTimers();
   });
 
+  it('reads the private scalar history using the catalog agent key, never a POST', () => {
+    const get = vi.fn(() => of({ intake: null }));
+    Object.assign(TestBed.inject(HttpClient), { get });
+    const received = vi.fn();
+    service.lastIntake('synthetic-project', 'foundation-setup').subscribe(received);
+    expect(get).toHaveBeenCalledWith('/api/mktg-agents/intakes/foundation-message/last', { params: { project: 'synthetic-project' }, transferCache: false });
+    expect(received).toHaveBeenCalledWith(null);
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('propagates unavailable history instead of inventing empty prefill', () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    Object.assign(TestBed.inject(HttpClient), { get: vi.fn(() => throwError(() => failure)) });
+    const error = vi.fn();
+    service.lastIntake('synthetic-project', 'brand-kit').subscribe({ error });
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
+  it('starts a fresh session for explicit newRun even if the intake normally follows up', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const subscription = service.generate({ ...generateRequest(), newRun: true }).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, expect.objectContaining({ answers: ANSWERS }));
+    expect(httpPost.mock.calls.some(([url]) => url === '/api/mktg-agents/chat')).toBe(false);
+    expect(httpPost.mock.calls[0][1]).not.toHaveProperty('priorVersion');
+    subscription.unsubscribe();
+  });
+
+  it.each([false, true])('numbers a fresh v1 after existing v3 without collisions, including resumed requests (resume=%s)', async (resume) => {
+    const prior = storedV1Run();
+    prior.versions = [1, 2, 3].map((version) => ({ version, document: '# prior ' + version, createdAt: new Date().toISOString() }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prior));
+    resultResponses = [{ status: 'ready', documentMarkdown: '# Fresh session output', version: 1 }];
+    let subscription = service.generate({ ...generateRequest(), newRun: true }).subscribe();
+    if (resume) {
+      subscription.unsubscribe();
+      const pending = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load('proj-1', 'brand-kit');
+      if (!pending) throw new Error('Missing synthetic accepted attempt');
+      expect(pending.request.newRun).toBeUndefined();
+      // The synthetic follow-up intake differs from the live registry pinned by load().
+      subscription = service.resume({ ...pending, request: { ...pending.request, intake: CHAT_INTAKE } }).subscribe();
+    }
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    subscription.unsubscribe();
+    const fresh = service.loadRun('proj-1', 'brand-kit');
+    expect(fresh?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4]);
+    expect(fresh?.versions[3]).toMatchObject({ document: '# Fresh session output', source: { version: 1 } });
+    resultResponses = [
+      { status: 'ready', documentMarkdown: '# Stale v4', version: 4 },
+      { status: 'ready', documentMarkdown: '# Next v5', version: 5 },
+    ];
+    const next = service.generate(generateRequest('Next change')).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      '/api/mktg-agents/chat',
+      expect.objectContaining({
+        message: renderMktgIntakeMessage(CHAT_INTAKE, ANSWERS, 'Next change', 4),
+      })
+    );
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4, 5]);
+    next.unsubscribe();
+  });
+
   it.each(['draft', 'failed'] as const)('restores a %s pending after reload without any POST', (state) => {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending: MktgPendingGeneration = { request: generateRequest(), state, updatedAt: new Date().toISOString(), requiresReattachment: state === 'failed' };
@@ -1233,6 +1297,24 @@ describe('MktgAgentRunService', () => {
         }
         throw new Error(`Unexpected POST to ${url}`);
       });
+    });
+
+    it('keeps explicit newRun ICP versions monotonic and derives the next regenerate version', async () => {
+      const prior = icpStoredV1Run();
+      prior.versions = [1, 2, 3].map((version) => ({ version, document: '# Synthetic prior', createdAt: '2026-08-19T00:00:00.000Z' }));
+      window.localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(prior));
+      resultResponses = [{ status: 'ready', documentMarkdown: '# Synthetic v4', version: 4 }];
+      const first = service.generate({ ...icpRequest('Not sent for a new run'), newRun: true }).subscribe();
+      expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, { answers: ICP_ANSWERS, priorVersion: 3, project: 'proj-1' });
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      first.unsubscribe();
+      const stored = service.loadRun('proj-1', 'icp');
+      expect(stored?.versions.map((version) => version.version)).toEqual([1, 2, 3, 4]);
+      expect(stored?.versions.at(-1)?.feedback).toBeUndefined();
+      const second = service.generate(icpRequest()).subscribe();
+      const posts = httpPost.mock.calls.filter(([url]) => url === ICP_INTAKE.endpoints.generate);
+      expect(posts.at(-1)?.[1]).toEqual({ answers: ICP_ANSWERS, priorVersion: 4, project: 'proj-1' });
+      second.unsubscribe();
     });
 
     it('regenerates through the generate endpoint with the full answers + feedback + derived priorVersion — never the chat endpoint', async () => {

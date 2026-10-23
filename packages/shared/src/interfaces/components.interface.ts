@@ -316,7 +316,7 @@ export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dia
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup; 'aria-controls'?: string };
 }
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */

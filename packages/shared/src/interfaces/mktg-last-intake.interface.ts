@@ -13,6 +13,14 @@ export interface MktgLastIntakeResponse {
   intake: MktgLastIntake | null;
 }
 
+/** Read-only Sources summary; edits use the registered intake form controls. */
+export interface MktgRunSourceField {
+  key: string;
+  label: string;
+  value: string;
+  origin: string;
+}
+
 /** BFF-only accepted Generate input, after validation and canonical project resolution. */
 export interface MktgLastIntakeStart extends MktgLastIntake {
   project: string;
