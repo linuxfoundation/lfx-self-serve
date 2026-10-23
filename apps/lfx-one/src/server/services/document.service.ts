@@ -14,6 +14,7 @@ import {
   PastMeetingRecordingQueryResult,
   PastMeetingSummaryQueryResult,
   PastMeetingTranscriptQueryResult,
+  QueryServiceCountResponse,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -153,6 +154,43 @@ export class DocumentService {
     });
 
     return enrichedDocuments;
+  }
+
+  /**
+   * Counts every document a group's Documents tab can list — links, uploaded files, mailing list
+   * artifacts and meeting attachments, recordings, transcripts and summaries — without fetching rows.
+   * Folders are structural and not counted. Each source is counted independently; one that fails
+   * contributes 0 so a transient outage degrades the badge instead of failing the page.
+   */
+  public async getCommitteeDocumentCount(req: Request, committeeUid: string): Promise<number> {
+    logger.debug(req, 'get_committee_document_count', 'Counting committee documents', { committee_uid: committeeUid });
+
+    const byTag = ['committee_link', 'committee_document', 'groupsio_artifact'].map((type) => ({ type, tags: `committee_uid:${committeeUid}` }));
+    const byParent = [
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ].map((type) => ({ type, parent: `committee:${committeeUid}` }));
+
+    const counts = await Promise.all(
+      [...byTag, ...byParent].map((params) =>
+        this.microserviceProxy
+          .proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params)
+          .then(({ count }) => count)
+          .catch((err) => {
+            logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, counting it as 0', {
+              committee_uid: committeeUid,
+              type: params.type,
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+            return 0;
+          })
+      )
+    );
+
+    return counts.reduce((total, count) => total + count, 0);
   }
 
   // ─── Committee / Group Documents ────────────────────────────────────────────

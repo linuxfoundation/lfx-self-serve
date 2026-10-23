@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -36,6 +36,10 @@ export class CommitteeDocumentsComponent {
   // === Inputs ===
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // === Outputs ===
+  /** Emits after a document is added so the parent can refresh the tab badge count. */
+  public readonly documentsChanged = output<void>();
 
   // === Forms ===
   protected readonly filterForm = new FormGroup({
@@ -72,7 +76,7 @@ export class CommitteeDocumentsComponent {
   /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
   protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
-  protected readonly searchedDocuments: Signal<MyDocumentItem[]> = this.initSearchedDocuments();
+  private readonly flattenedDocuments: Signal<MyDocumentItem[]> = this.initFlattenedDocuments();
   protected readonly sourceTabOptions: Signal<FilterPillOption[]> = this.initSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly folderOptions: Signal<{ label: string; value: string }[]> = this.initFolderOptions();
@@ -80,6 +84,11 @@ export class CommitteeDocumentsComponent {
   protected readonly currentFolder: Signal<CommitteeDocument | null> = this.initCurrentFolder();
 
   // === Public Methods ===
+  public onDocumentsChanged(): void {
+    this.refreshTrigger.update((v) => v + 1);
+    this.documentsChanged.emit();
+  }
+
   public onSourceTabChange(tab: string): void {
     this.sourceTab.set(tab);
   }
@@ -103,7 +112,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -142,7 +151,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -170,7 +179,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.onDocumentsChanged();
         }
       },
     });
@@ -252,36 +261,28 @@ export class CommitteeDocumentsComponent {
     });
   }
 
-  /** Documents after the search is applied but before the source pill, so pill counts show what each would list. */
-  private initSearchedDocuments(): Signal<MyDocumentItem[]> {
+  /** Every group document and related document as a flat list — folders included, folder contents not nested. */
+  private initFlattenedDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const query = this.searchQuery().toLowerCase().trim();
-
-      let docs: MyDocumentItem[];
-      if (query && !this.currentFolderUid()) {
-        const committee = this.committee();
-        const committeeUid = committee?.uid;
-        const groupName = committee?.name ?? '';
-        const allDocs = this.committeeDocuments();
-        const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
-        const childCountByFolder = new Map<string, number>();
-        for (const item of allDocs) {
-          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
-            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
-          }
+      const committee = this.committee();
+      const committeeUid = committee?.uid;
+      const groupName = committee?.name ?? '';
+      const allDocs = this.committeeDocuments();
+      const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
+      const childCountByFolder = new Map<string, number>();
+      for (const item of allDocs) {
+        if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+          childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
         }
-        docs = [
-          ...allDocs.map((d) => ({
-            ...this.toDisplayItem(d, committeeUid, groupName, false),
-            isFolder: d.type === 'folder',
-            ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
-          })),
-          ...this.relatedDocuments(),
-        ];
-      } else {
-        docs = this.documents();
       }
-      return docs.filter((doc) => !query || doc.name.toLowerCase().includes(query) || (doc.groupOrMeetingName ?? '').toLowerCase().includes(query));
+      return [
+        ...allDocs.map((d) => ({
+          ...this.toDisplayItem(d, committeeUid, groupName, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        })),
+        ...this.relatedDocuments(),
+      ];
     });
   }
 
@@ -289,8 +290,12 @@ export class CommitteeDocumentsComponent {
     return computed(() => {
       // Don't show counts while either list is still loading; zero counts keep the plain label.
       if (this.isLoading()) return this.baseSourceTabOptions;
+      const query = this.searchQuery().toLowerCase().trim();
+      // At the root the counts cover every document in the group, including those inside folders,
+      // since choosing a pill lists them flat; inside a folder they cover that folder's contents.
       // Folders are structural navigation, not content, so they are not counted.
-      const rows = this.searchedDocuments().filter((doc) => !doc.isFolder);
+      const base = this.currentFolderUid() ? this.documents() : this.flattenedDocuments();
+      const rows = base.filter((doc) => !doc.isFolder && this.matchesSearch(doc, query));
       const counts = new Map<string, number>();
       for (const doc of rows) {
         const bucket = this.sourceBucket(doc);
@@ -305,10 +310,24 @@ export class CommitteeDocumentsComponent {
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
+      const query = this.searchQuery().toLowerCase().trim();
       const tab = this.sourceTab();
-      // Folder rows are structural navigation, not content — never filter them out by source.
-      return this.searchedDocuments().filter((doc) => tab === 'all' || doc.isFolder || this.sourceBucket(doc) === tab);
+      // At the root, a search or a source pill lists every matching document flat so items
+      // inside folders can be found without knowing where they live. Inside a folder the
+      // folder-scoped view is used, so the empty-state message and breadcrumb stay accurate.
+      const flatten = !this.currentFolderUid() && (!!query || tab !== 'all');
+      const base = flatten ? this.flattenedDocuments() : this.documents();
+      return base.filter((doc) => {
+        if (!this.matchesSearch(doc, query)) return false;
+        if (tab === 'all') return true;
+        // Folder rows are structural navigation: kept in the folder-scoped view, hidden once a pill lists documents flat.
+        return doc.isFolder ? !flatten : this.sourceBucket(doc) === tab;
+      });
     });
+  }
+
+  private matchesSearch(doc: MyDocumentItem, query: string): boolean {
+    return !query || doc.name.toLowerCase().includes(query) || (doc.groupOrMeetingName ?? '').toLowerCase().includes(query);
   }
 
   /**

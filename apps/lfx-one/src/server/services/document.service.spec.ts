@@ -102,3 +102,42 @@ describe('DocumentService.getMyDocuments — committee-scoped request from a non
     }
   });
 });
+
+describe('DocumentService.getCommitteeDocumentCount', () => {
+  const req = { bearerToken: 'user-token' } as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sums the count of every document source for the committee', async () => {
+    proxyRequestMock.mockResolvedValue({ count: 2 });
+
+    const total = await new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID);
+
+    const calls = proxyRequestMock.mock.calls.map((call) => ({ path: call[2], params: call[4] as Record<string, unknown> }));
+    expect(calls.every((call) => call.path === '/query/resources/count')).toBe(true);
+    expect(calls.map((call) => call.params['type'])).toEqual([
+      'committee_link',
+      'committee_document',
+      'groupsio_artifact',
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ]);
+    expect(calls[0].params['tags']).toBe(`committee_uid:${COMMITTEE_UID}`);
+    expect(calls[7].params['parent']).toBe(`committee:${COMMITTEE_UID}`);
+    expect(total).toBe(16);
+  });
+
+  it('counts a failing source as 0 instead of failing the whole count', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => {
+      if (params['type'] === 'v1_past_meeting_recording') throw new Error('upstream unavailable');
+      return { count: 1 };
+    });
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(7);
+  });
+});
