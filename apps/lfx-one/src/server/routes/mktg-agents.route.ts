@@ -189,6 +189,8 @@ router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktg
 router.post('/documents/:agentKey/:documentId/comments', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.addComment(req, res, next));
 // POST /api/mktg-agents/documents/:agentKey/:documentId/revise - ID-only comments redraft; project writer access; creator-bound ACK.
 router.post('/documents/:agentKey/:documentId/revise', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.revise(req, res, next));
+// GET creator-owned terminal recovery proof; no private ledger/session fields or mutation.
+router.get('/documents/:agentKey/:documentId/revise/:requestId/state', (req, res, next) => mktgDocumentsController.redraftState(req, res, next));
 // POST release an uncertain/expired reservation; requires project writer access AND the original send creator.
 router.post('/documents/:agentKey/:documentId/revise/:requestId/release', blockDuringImpersonation, (req, res, next) =>
   mktgDocumentsController.releaseRedraft(req, res, next)

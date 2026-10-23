@@ -479,8 +479,13 @@ The client retains each field's browser-memory form and opaque request ID across
 tab-host destruction, keyed by effective viewer and document revision; changing
 that scope discards old drafts. The composer handles explicit save retries. The
 client never automatically retries a POST or invents an ID.
-State is memory-only and all HTTP is browser-gated; no local storage, sources,
-sessions, attribution IDs or agent handles are added to the request contract.
+Comment forms are memory-only and all HTTP is browser-gated; no sources,
+sessions, attribution IDs or agent handles are added to the comment request.
+Redraft recovery separately retains its opaque send nonce after the 24-hour
+capability TTL. Expired session capabilities are removed; a read-only, creator-bound
+ledger check is required before automatic cleanup, which is allowed only for a
+completed/failed (including released) send. Unknown/non-terminal state and failed
+reconciliation retain the frozen IDs; restoring a view never POSTs.
 
 The framework document view adds data-keyed comment controls inside the existing
 field wrappers. Stored JSON order owns array anchors, not a goal's business ID.

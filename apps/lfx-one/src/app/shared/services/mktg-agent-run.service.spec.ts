@@ -152,6 +152,39 @@ describe('MktgAgentRunService', () => {
     vi.useRealTimers();
   });
 
+  it('observes an accepted redraft with the existing receipt budget without generating or overwriting intake history', async () => {
+    const original = storedV1Run();
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(original));
+    const result: MktgRunResultResponse = { status: 'ready', version: 2, documentMarkdown: '# Redraft' };
+    resultResponses = [
+      result,
+      {
+        ...result,
+        persistence: {
+          project: 'proj-1',
+          version: 2,
+          s3_key: 'synthetic',
+          content_sha256: 'b'.repeat(64),
+          document_location: { agent_key: 'brand-kit', document_id: 'living', revision_id: `000002-${'b'.repeat(64)}` },
+        },
+      },
+    ];
+    const received: MktgRunResultResponse[] = [];
+    service
+      .observeAccepted(
+        CHAT_INTAKE,
+        { session: { agentId: 'brand-kit', sessionId: 'accepted-session', ownerToken: 'synthetic-proof' }, priorVersion: 1 },
+        'proj-1'
+      )
+      .subscribe((event) => received.push(event.result));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs * 2);
+    expect(received).toHaveLength(2);
+    expect(received[0].persistence).toBeUndefined();
+    expect(received[1].persistence).toBeDefined();
+    expect(httpPost.mock.calls.every(([url]) => url === CHAT_INTAKE.endpoints.result)).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual(original);
+  });
+
   it('reads the private scalar history using the catalog agent key, never a POST', () => {
     const get = vi.fn(() => of({ intake: null }));
     Object.assign(TestBed.inject(HttpClient), { get });
