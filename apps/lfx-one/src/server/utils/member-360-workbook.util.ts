@@ -11,13 +11,16 @@ import {
   MEMBER_360_MAX_TRACKER_COLUMNS,
   MEMBER_360_MAX_ZIP_ENTRIES,
   PRIORITIES,
-  lfxColors,
-} from '@lfx-one/shared/constants';
-import { Member360Envelope, Member360Tracker } from '@lfx-one/shared/interfaces';
-import { trackerSchema, rankMember360Rows } from '@lfx-one/shared/server';
+  ENGAGEMENT_TIERS,
+} from '@lfx-one/shared/constants/member-360.constants';
+import type { Member360Envelope, Member360Tracker } from '@lfx-one/shared/interfaces/member-360.interface';
+import { trackerSchema } from '@lfx-one/shared/server/member-360.utils';
+import { rankMember360Rows } from '@lfx-one/shared/utils/member-360-ranking.utils';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { ServiceValidationError } from '../errors';
+import { MEMBER_360_WORKBOOK_COLORS, MEMBER_360_WORKBOOK_FORMATS as formats, MEMBER_360_SUMMARY_WIDTHS } from '../constants/member-360-workbook.constants';
+import { addMember360SummaryChart } from './member-360-chart.util';
 
 function trackerError(message: string): ServiceValidationError {
   return new ServiceValidationError([{ field: 'tracker', message, code: 'FIELD_VALIDATION_ERROR' }], message, {
@@ -134,7 +137,7 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
   workbook.created = generatedAt;
   workbook.modified = generatedAt;
   const tabs = envelope.tabs;
-  const sheet = (name: string, headers: string[], rows: (string | number | null)[][]): ExcelJS.Worksheet => {
+  const sheet = (name: string, headers: string[], rows: (string | number | Date | null)[][]): ExcelJS.Worksheet => {
     const result = workbook.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
     if (rows.length)
       result.addTable({
@@ -161,7 +164,7 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
       return Object.entries(value).flatMap(([key, item]) => flatten(item, [path, key.replace(/_/g, ' ')].filter(Boolean).join(' / ')));
     return [];
   };
-  sheet('Summary', ['Measure', 'Value'], flatten(tabs.summary));
+  addSummary(workbook, tabs.summary);
   const keys = MEMBER_360_RANKING_COLUMNS.map((column) => column[1]);
   const ranking = sheet(
     'Member Ranking',
@@ -169,29 +172,27 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
     rankMember360Rows(tabs.member_ranking).map((row) =>
       keys.map((key) => {
         const value = row[key];
+        if (key === 'renewal_date' && typeof value === 'string') return new Date(`${value}T00:00:00.000Z`);
         return Array.isArray(value) ? value.join('; ') : value;
       })
     )
   );
-  const palette = [lfxColors.red[500], lfxColors.amber[400], lfxColors.emerald[600]].map((value) => ({ argb: `FF${value.replace('#', '')}` }));
-  for (const key of ['engagement_score', ...CATEGORY_KEYS.map((key) => `${key}_score`)]) {
-    const index = keys.indexOf(key as (typeof keys)[number]);
-    ranking.addConditionalFormatting({
-      ref: `${ranking.getColumn(index + 1).letter}2:${ranking.getColumn(index + 1).letter}${ranking.rowCount}`,
-      rules: [
-        {
-          type: 'colorScale',
-          priority: 1,
-          cfvo: [
-            { type: 'num', value: 0 },
-            { type: 'num', value: 50 },
-            { type: 'num', value: 100 },
-          ],
-          color: palette,
-        },
-      ],
-    });
-  }
+  const column = (key: (typeof keys)[number]) => ranking.getColumn(keys.indexOf(key) + 1);
+  column('annual_value').numFmt = formats.currency;
+  column('renewal_date').numFmt = formats.date;
+  column('rank').numFmt = formats.integer;
+  column('engaged_contacts').numFmt = formats.contacts;
+  column('engagement_score').numFmt = formats.score;
+  for (const key of CATEGORY_KEYS) column(`${key}_score`).numFmt = formats.score;
+  addRiskFormats(ranking, column('days_to_renewal').letter, column('engagement_tier').letter, column('priority').letter);
+  addHeatScale(ranking, `${column('engagement_score').letter}2:${column('engagement_score').letter}${ranking.rowCount}`);
+  addHeatScale(ranking, `${column('committees_score').letter}2:${column('marketing_social_score').letter}${ranking.rowCount}`);
+  addExpression(
+    ranking,
+    `${column('engaged_contacts').letter}2:${column('engaged_contacts').letter}${ranking.rowCount}`,
+    `${column('engaged_contacts').letter}2=1`,
+    { font: { color: argb(MEMBER_360_WORKBOOK_COLORS.red.text) } }
+  );
   const detailHeaders = CATEGORY_KEYS.flatMap((key) =>
     ['raw_count', 'recency_weighted_count', 'tier_peer_median', 'score'].map((field) => `${CATEGORY_LABELS[key]}: ${field}`)
   );
@@ -208,7 +209,7 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
       }),
     ])
   );
-  sheet(
+  const actions = sheet(
     'Actions by Team',
     ['Owner', 'Priority', 'Member', 'Engagement Tier', 'Days to Renewal', 'Recommended Action', 'Supporting Rationale', 'Suggested Deadline'],
     [...tabs.actions_by_team]
@@ -229,6 +230,7 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
         row.suggested_deadline,
       ])
   );
+  addRiskFormats(actions, 'E', 'D', 'B');
   sheet(
     'Evidence',
     ['Member', 'Category', 'Date', 'Description', 'Source'],
@@ -238,6 +240,161 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
   // ExcelJS otherwise stamps each ZIP entry with the download time. Normalize
   // entry dates too, so repeated downloads of a stored run are byte-identical.
   const zip = await JSZip.loadAsync(await workbook.xlsx.writeBuffer());
+  await addMember360SummaryChart(zip, tabs.summary.tier_distribution);
   for (const entry of Object.values(zip.files)) entry.date = generatedAt;
   return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })).buffer;
+}
+
+function argb(color: string): ExcelJS.Color {
+  return { argb: `FF${color.replace('#', '')}` };
+}
+
+function addExpression(sheet: ExcelJS.Worksheet, ref: string, formula: string, style: Partial<ExcelJS.Style>): void {
+  sheet.addConditionalFormatting({ ref, rules: [{ type: 'expression', priority: 0, formulae: [formula], style }] });
+}
+
+/** One definition for ranking, team handoffs and the Summary watchlist. */
+function addRiskFormats(sheet: ExcelJS.Worksheet, days: string, tier: string, priority?: string, first = 2, last = sheet.rowCount): void {
+  if (last < first) return;
+  const range = (column: string) => `${column}${first}:${column}${last}`;
+  const style = (tone: keyof Omit<typeof MEMBER_360_WORKBOOK_COLORS, 'heat'>): Partial<ExcelJS.Style> => ({
+    fill: { type: 'pattern', pattern: 'solid', fgColor: argb(MEMBER_360_WORKBOOK_COLORS[tone].fill) },
+    font: { color: argb(MEMBER_360_WORKBOOK_COLORS[tone].text) },
+  });
+  for (let row = first; row <= last; row++) sheet.getCell(`${days}${row}`).numFmt = formats.integer;
+  const cell = `${days}${first}`;
+  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}<=120)`, style('red'));
+  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}>120,${cell}<=240)`, style('amber'));
+  for (const value of ENGAGEMENT_TIERS) {
+    let tone: keyof Omit<typeof MEMBER_360_WORKBOOK_COLORS, 'heat'> = 'red';
+    if (value === 'Champion' || value === 'Engaged') tone = 'emerald';
+    if (value === 'Passive') tone = 'amber';
+    addExpression(sheet, range(tier), `${tier}${first}="${value}"`, style(tone));
+  }
+  if (priority) addExpression(sheet, range(priority), `${priority}${first}="High"`, style('red'));
+}
+
+function addHeatScale(sheet: ExcelJS.Worksheet, ref: string): void {
+  sheet.addConditionalFormatting({
+    ref,
+    rules: [
+      {
+        type: 'colorScale',
+        priority: 0,
+        cfvo: [0, 50, 100].map((value) => ({ type: 'num', value })),
+        color: MEMBER_360_WORKBOOK_COLORS.heat.map(argb),
+      },
+    ],
+  });
+}
+
+/** QBR canvas is width-bounded, but large watchlists continue without truncation. */
+function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs']['summary']): void {
+  const sheet = workbook.addWorksheet('Summary', {
+    views: [{ state: 'frozen', ySplit: 5 }],
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  sheet.columns = MEMBER_360_SUMMARY_WIDTHS.map((width) => ({ width }));
+  sheet.properties.defaultRowHeight = 22;
+  const merged = (range: string, text: string) => {
+    sheet.mergeCells(range);
+    const cell = sheet.getCell(range.split(':')[0]);
+    cell.value = text;
+    cell.alignment = { wrapText: true, vertical: 'middle' };
+  };
+  const heading = (row: number, text: string) => {
+    merged(`A${row}:F${row}`, text);
+    sheet.getCell(`A${row}`).font = { bold: true, size: 12 };
+  };
+  const table = (name: string, row: number, headers: string[], rows: (string | number)[][]) => {
+    if (!rows.length) {
+      sheet.getCell(`A${row}`).value = 'None';
+      return;
+    }
+    sheet.addTable({
+      name: `Summary${name}`,
+      ref: `A${row}`,
+      headerRow: true,
+      style: { theme: 'TableStyleMedium2', showRowStripes: true },
+      columns: headers.map((name) => ({ name, filterButton: true })),
+      rows,
+    });
+  };
+  heading(1, `${summary.project_name} · Member 360`);
+  merged('A2:B2', 'Project');
+  merged('C2:F2', summary.project_name);
+  merged('A3:B3', 'Analysis window');
+  merged('C3:F3', `${summary.analysis_window.start} → ${summary.analysis_window.end}`);
+  sheet.getCell('A4').value = 'Run date';
+  sheet.getCell('B4').value = new Date(`${summary.run_date}T00:00:00.000Z`);
+  sheet.getCell('B4').numFmt = formats.date;
+  sheet.getCell('C4').value = 'Members';
+  sheet.getCell('D4').value = summary.member_count;
+  sheet.getCell('A5').value = 'Total value';
+  sheet.getCell('B5').value = summary.total_membership_value;
+  sheet.getCell('B5').numFmt = formats.currency;
+  // Never merge across the chart's C6:F15 anchor.
+  sheet.getCell('A6').value = 'Tier distribution';
+  table(
+    'Tiers',
+    7,
+    ['Tier', 'Count'],
+    ENGAGEMENT_TIERS.map((tier) => [tier, summary.tier_distribution[tier]])
+  );
+  let row = 17;
+  if (summary.movers) {
+    heading(row, 'Movers');
+    sheet.getRow(row + 1).values = ['Gainer', 'Delta', 'Decliner', 'Delta'];
+    for (let i = 0; i < 3; i++) {
+      const gainer = summary.movers.gainers[i];
+      const decliner = summary.movers.decliners[i];
+      sheet.getRow(row + 2 + i).values = [
+        gainer?.member_organization ?? null,
+        gainer?.delta ?? null,
+        decliner?.member_organization ?? null,
+        decliner?.delta ?? null,
+      ];
+      sheet.getCell(`B${row + 2 + i}`).numFmt = formats.delta;
+      sheet.getCell(`D${row + 2 + i}`).numFmt = formats.delta;
+    }
+    row += 6;
+  }
+  heading(row++, 'Watchlist · renewal within 120 days');
+  const first = row + 1;
+  table(
+    'Watchlist',
+    row,
+    ['Member', 'Days to Renewal', 'Score', 'Tier'],
+    summary.watchlist.map((entry) => [entry.member_organization, entry.days_to_renewal, entry.engagement_score, entry.engagement_tier])
+  );
+  for (let i = first; i < first + summary.watchlist.length; i++) sheet.getCell(`C${i}`).numFmt = formats.score;
+  addRiskFormats(sheet, 'B', 'D', undefined, first, first + summary.watchlist.length - 1);
+  row += Math.max(summary.watchlist.length + 1, 1) + 1;
+  heading(row++, 'Action load per team');
+  table(
+    'Actions',
+    row,
+    ['Team', 'Actions', 'High priority'],
+    summary.action_load.map((entry) => [entry.owner, entry.actions, entry.high_priority])
+  );
+  row += summary.action_load.length + 2;
+  heading(row++, 'Data coverage');
+  for (const [label, sources] of [
+    ['Used', summary.data_coverage.sources_used],
+    ['Unavailable', summary.data_coverage.sources_unavailable],
+  ] as const) {
+    if (!sources.length) merged(`A${row}:F${row++}`, `${label}: None`);
+    for (const source of sources) merged(`A${row}:F${row++}`, `${label}: ${source}`);
+  }
+  sheet.eachRow((entry) => {
+    let height = 22;
+    entry.eachCell((cell) => {
+      cell.alignment = { wrapText: true, vertical: 'middle' };
+      if (typeof cell.value === 'number' && (!cell.numFmt || cell.numFmt === 'General')) cell.numFmt = formats.integer;
+      const width = cell.isMerged ? 90 : (sheet.getColumn(cell.col).width ?? 14);
+      height = Math.max(height, Math.ceil(cell.text.length / Math.max(width - 2, 1)) * 15);
+    });
+    entry.height = height;
+  });
+  sheet.pageSetup.printArea = `A1:F${row - 1}`;
 }
