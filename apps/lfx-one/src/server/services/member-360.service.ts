@@ -8,10 +8,20 @@ import {
   MEMBER_360_COMPARISON_UNAVAILABLE,
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
+  MEMBER_360_INPUT_TIMEOUT_MESSAGE,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { Member360Envelope, Member360GenerateRequest, Member360GenerationStart, Member360PriorRun, Member360Result, Project } from '@lfx-one/shared/interfaces';
+import {
+  Member360Envelope,
+  Member360GenerateRequest,
+  Member360GenerationStart,
+  Member360PriorRun,
+  Member360Result,
+  MktgGenerationAttribution,
+  MktgRunResultResponse,
+  Project,
+} from '@lfx-one/shared/interfaces';
 import {
   findMktgDocumentType,
   extractMktgEnvelopeCandidates,
@@ -40,7 +50,21 @@ import { ProjectService } from './project.service';
 export class Member360Service {
   private readonly guild = new GuildService();
   private readonly projects = new ProjectService();
-  private readonly documents = new MktgDocumentStoreService();
+  private readonly documents: MktgDocumentStoreService;
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documents = new MktgDocumentStoreService(attribution);
+  }
+
+  /** One domain adaptation shared by creator polls and durable Documents reconciliation. */
+  public static toRunResult(result: Member360Result): MktgRunResultResponse {
+    return {
+      status: result.status === 'needs_input' ? 'questions' : result.status,
+      activity: result.activity,
+      persistence: result.persistence,
+      failureText: result.status === 'needs_input' ? MEMBER_360_INPUT_TIMEOUT_MESSAGE : result.message,
+    };
+  }
 
   public async start(req: Request, body: Member360GenerateRequest): Promise<Member360GenerationStart> {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
@@ -68,6 +92,12 @@ export class Member360Service {
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
     const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
+    const redactActivity = createMember360Redactor(contacts);
+    const activity = buildMktgRunActivity(payloads).map((step) => ({
+      ...step,
+      label: redactActivity(step.label),
+      ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),
+    }));
     for (const payload of payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL))) {
       for (const candidate of extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID)) {
         const parsed = envelopeSchema.safeParse(candidate);
@@ -94,13 +124,13 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
-      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      if (questionsText) return { status: 'needs_input', activity };
       const failed = member360TerminalResult(payloads, contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
-      return { status: 'pending', activity: buildMktgRunActivity(payloads) };
+      return { status: 'pending', activity };
     }
     const type = findMktgDocumentType('member-360');
     if (!type)
@@ -138,7 +168,18 @@ export class Member360Service {
         content_sha256: this.sha(summary),
       };
       const stored = await this.documents.recordGeneration(req, type, project.uid, bundle, sessionId);
-      return { status: 'ready', stored: true, documentId: stored.record.documentId };
+      return {
+        status: 'ready',
+        stored: true,
+        documentId: stored.record.documentId,
+        persistence: {
+          project: project.uid,
+          version: best.version,
+          s3_key: stored.key,
+          content_sha256: bundle.content_sha256,
+          document_location: { agent_key: type.agentKey, document_id: stored.record.documentId, revision_id: stored.id },
+        },
+      };
     } catch (err) {
       if (err instanceof InvalidRequestError && err.code === MEMBER_360_INVALID_RESULT) throw err;
       logger.warning(req, 'member_360_result', 'Run ready but document write failed; next poll retries the same one-off document', {
