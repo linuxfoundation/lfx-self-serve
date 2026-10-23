@@ -1,7 +1,19 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (withCard()) {
+@if (variant() === 'compact') {
+  <!-- Pixel sizes follow the Health Metrics design; the 14px root makes the rem scale undershoot them. -->
+  <div class="flex min-h-[180px] flex-col items-center justify-center gap-[8px] px-[16px] pb-[8px] pt-[12px] text-center" data-testid="empty-state-compact">
+    <span class="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-gray-50" aria-hidden="true">
+      <i [class]="icon() + ' text-[18px] text-gray-400'"></i>
+    </span>
+    <h3 class="m-0 text-[14px] font-medium text-gray-900">{{ title() }}</h3>
+    @if (subtitle()) {
+      <p class="m-0 max-w-[420px] text-[13px] leading-normal text-gray-500">{{ subtitle() }}</p>
+    }
+    <ng-container [ngTemplateOutlet]="projected" />
+  </div>
+} @else if (withCard()) {
   <lfx-card>
     <ng-container [ngTemplateOutlet]="content" />
   </lfx-card>
@@ -25,7 +37,7 @@
         <p class="text-sm text-gray-500">{{ subtitle() }}</p>
       }
 
-      <ng-content />
+      <ng-container [ngTemplateOutlet]="projected" />
 
       <!-- CTA -->
       @if (ctaLabel() && ctaRoute()) {
@@ -54,3 +66,6 @@
     </div>
   </div>
 </ng-template>
+
+<!-- One projection slot that both layouts render, since Angular projects content into a single ng-content. -->
+<ng-template #projected><ng-content /></ng-template>

@@ -35,8 +35,13 @@
           @if (!writer() || (!saved() && !editing() && !setup())) {
             <lfx-button label="Try again" size="small" (onClick)="reload.set(reload() + 1)" data-testid="mktg-linkedin-retry-load" />
           }
-          @if (run() && !result() && !questions().length) {
-            <lfx-button label="Retry finishing this run" size="small" [disabled]="busy()" (onClick)="onRetryRun()" data-testid="mktg-linkedin-retry-run" />
+          @if (run() && !result() && !questions().length && !editing()) {
+            <lfx-button
+              [label]="runFailed() ? 'Retry' : 'Retry finishing this run'"
+              size="small"
+              [disabled]="busy()"
+              (onClick)="onRetryRun()"
+              data-testid="mktg-linkedin-retry-run" />
           }
         </div>
       }

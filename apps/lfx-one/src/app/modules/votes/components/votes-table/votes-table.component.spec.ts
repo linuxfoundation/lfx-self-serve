@@ -101,7 +101,7 @@ describe('VotesTableComponent — status tab counts', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
@@ -202,7 +202,7 @@ describe('VotesTableComponent — status tab counts on initial load', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
@@ -246,7 +246,7 @@ describe('VotesTableComponent — personal summary filters', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
@@ -454,7 +454,7 @@ describe('VotesTableComponent — empty-state copy', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
@@ -656,7 +656,7 @@ describe('VotesTableComponent — row More menu', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: ClipboardShareService, useValue: { copyLink } },
         { provide: DialogService, useValue: { open: openDialog } },
@@ -1106,7 +1106,11 @@ describe('VotesTableComponent — participation progress', () => {
     vote('no-total', { num_response_received: 8 }),
     vote('no-responses', { total_voting_request_invitations: 12 }),
     vote('zero', { num_response_received: 0, total_voting_request_invitations: 12 }),
+    vote('counting', { num_response_received: 0, total_voting_request_invitations: 0 }),
+    vote('counted', { num_response_received: 0, total_voting_request_invitations: 4 }),
   ];
+  // Rows still inside the just-opened carrier window (GH-4078).
+  const AWAITING = new Set(['counting', 'counted']);
   const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
@@ -1117,7 +1121,7 @@ describe('VotesTableComponent — participation progress', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: (uid: string) => AWAITING.has(uid) } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
@@ -1178,6 +1182,20 @@ describe('VotesTableComponent — participation progress', () => {
     expect(text('votes-participation-empty')).toBe('No one invited');
     expect(text('votes-participation-empty')).not.toMatch(/%/);
     expect(el('votes-participation-bar-empty')).toBeNull();
+  });
+
+  it('shows a just-opened vote as counting invitations instead of "No one invited"', async () => {
+    await render();
+
+    expect(text('votes-participation-counting')).toBe('Counting invitations…');
+    expect(text('votes-participation-counting')).not.toMatch(/No one invited/);
+    expect(el('votes-participation-bar-counting')).toBeNull();
+  });
+
+  it('shows the real participation of a just-opened vote once its invitation count arrives', async () => {
+    await render();
+
+    expect(text('votes-participation-label-counted')).toBe('0 of 4 responded · 0%');
   });
 
   it('shows the response count alone when the invited total is missing', async () => {
@@ -1298,7 +1316,7 @@ describe('VotesTableComponent — Extend deadline', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: VoteService, useValue: { extendVote } },
+        { provide: VoteService, useValue: { extendVote, isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: MailingListService, useValue: {} },
       ],

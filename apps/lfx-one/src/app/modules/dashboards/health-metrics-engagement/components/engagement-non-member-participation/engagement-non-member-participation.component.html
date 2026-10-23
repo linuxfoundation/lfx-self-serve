@@ -3,9 +3,6 @@
 
 <div class="flex flex-col gap-4" data-testid="engagement-non-member-participation">
   <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-    @if (projectSelected()) {
-      <span class="text-[13px] text-gray-500" data-testid="engagement-non-member-participation-scope-note">Foundation-wide; not filtered by project</span>
-    }
     <!-- 13px caption is the design's own pixel size. -->
     <span class="text-[13px] text-gray-500 sm:ml-auto" data-testid="engagement-non-member-participation-count">
       @if (loading() || loadFailed()) {
@@ -18,12 +15,14 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Non-member participation unavailable"
       subtitle="We could not load non-member participation for this foundation. Refresh the page to try again."
       data-testid="engagement-non-member-participation-error" />
   } @else if (!loading() && scopeEmpty()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-building"
       title="No non-member organizations recorded for this foundation"
       subtitle="The analytics model has no non-member participation records for this foundation."
@@ -31,18 +30,21 @@
   } @else if (!loading() && totalRecords() === 0 && !periodCounts()) {
     <!-- Unmeasured attendance is not a measured zero, so it must not read as "none attended". -->
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-circle-question"
       title="Non-member attendance is not available for this period"
       subtitle="The analytics model has not measured non-member attendance for this period."
       data-testid="engagement-non-member-participation-period-unmeasured" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-building"
       title="No non-member organizations attended a meeting in this period"
       subtitle="Choose another period to see non-member organizations that attended earlier."
       data-testid="engagement-non-member-participation-period-empty" />
   } @else {
     <lfx-table
+      styleClass="hm-table"
       [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
@@ -57,10 +59,10 @@
       data-testid="engagement-non-member-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">People</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">People</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Membership</span></th>
         </tr>
       </ng-template>
 
@@ -69,18 +71,18 @@
         @let period = view.period;
         <tr [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId">
           <td>
-            <span class="text-sm font-medium text-gray-900">{{ row.accountName }}</span>
+            <span class="text-[13px] font-medium text-gray-900">{{ row.accountName }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsAttended ?? '—' }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.meetingsAttended ?? '—' }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.distinctPeople ?? '—' }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.distinctPeople ?? '—' }}</span>
           </td>
           <td>
-            <!-- The design's `memStat`, 11.5px exact; the status string is the view's own, rendered as-is. -->
+            <!-- The design's `memStat`; the status string is the view's own, rendered as-is. -->
             <span
-              class="text-[11.5px] text-gray-400 lg:whitespace-nowrap"
+              class="text-[12px] text-gray-400 lg:whitespace-nowrap"
               [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId + '-status'"
               ><span aria-hidden="true">○ </span>{{ row.membershipStatus }}</span
             >

@@ -15,6 +15,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
@@ -242,6 +243,108 @@ describe('MktgAgentRunComponent', () => {
       logoCount: 0,
     };
 
+    it('consumes accepted entry mode without cancelling the run, then reloads its questions without a second Generate', async () => {
+      await configure('browser', agentId, { mode: 'new', project: PROJECT_1.slug });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+      progress.next({ type: 'submitted' });
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({
+          queryParams: { mode: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        })
+      );
+      queryParams.next(convertToParamMap({ project: PROJECT_1.slug }));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      expect(component['phase']()).toBe('running');
+      expect(component['freshMode']()).toBe(true);
+      expect(query('mktg-run-sources')).not.toBeNull();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId, sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        questionsId: 'e'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+      };
+      TestBed.inject(MktgRunAttemptService).save({
+        request,
+        state: 'questions',
+        attempt: pending.attempt,
+        pendingQuestions: pending,
+        updatedAt: new Date().toISOString(),
+      });
+      progress.next({ type: 'questions', pending });
+      progress.complete();
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      fixture.destroy();
+      fixture = TestBed.createComponent(MktgAgentRunComponent);
+      component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(component['pendingQuestions']()).toEqual(pending.questions);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(lastIntake).toHaveBeenCalledTimes(1);
+      expect(query('mktg-run-start')).toBeNull();
+    });
+
+    it('restores an accepted writing attempt after the consumed URL reloads, without re-submitting', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      TestBed.inject(MktgRunAttemptService).save({
+        request,
+        state: 'writing',
+        requiresReattachment: true,
+        attempt: { session: { agentId, sessionId: 'synthetic-writing', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        updatedAt: new Date().toISOString(),
+      });
+      progress.next({ type: 'submitted' });
+      queryParams.next(convertToParamMap({}));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      fixture.destroy();
+      fixture = TestBed.createComponent(MktgAgentRunComponent);
+      component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(query('mktg-agent-run-submit-button')).toBeNull();
+    });
+
+    it.each(['project', 'subject'])('does not let accepted URL consumption mask a real %s change', async (change) => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      progress.next({ type: 'submitted' });
+      queryParams.next(convertToParamMap({}));
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      if (change === 'project') activeContext.set(PROJECT_2);
+      else userSignal.set({ sub: 'synthetic-other-subject' } as User);
+      await fixture.whenStable();
+      expect(progress.observed).toBe(false);
+      expect(component['freshMode']()).toBe(false);
+      expect(component['intakeForm'].get('website_url')?.value).not.toBe(history.answers.website_url);
+    });
+
     it('reads durable scalars before defaults, preserves blank optionals, and does not touch the accepted attempt on open', async () => {
       await configure('browser', agentId, { mode: 'new', questions: 'unrelated-token' });
       lastIntake.mockReturnValue(of(history));
@@ -261,6 +364,89 @@ describe('MktgAgentRunComponent', () => {
       expect(prepare).not.toHaveBeenCalled();
       expect(reserve).not.toHaveBeenCalled();
       expect(component['showIntakeForm']()).toBe(false);
+    });
+
+    it.each([agentId, 'brand-kit'])('labels answer-cache fallback from %s before Start without claiming no prior inputs', async (sourceAgent) => {
+      await configure('browser', agentId, { mode: 'new' });
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId: sourceAgent, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/remembered',
+        origin: sourceAgent === agentId ? 'Remembered on this device' : 'From your Brand Kit run',
+      });
+      expect(component['sourceNote']()).toBe('');
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('keeps project-default priority and the unavailable-history warning with remembered fallbacks', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      rememberedAnswers[PROJECT_1.uid] = {
+        github_url: { value: 'https://github.com/synthetic/remembered', agentId, savedAt: new Date().toISOString() },
+        website_url: { value: 'https://remembered.example', agentId, savedAt: new Date().toISOString() },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: 'https://github.com/synthetic/default',
+        origin: 'Suggested default',
+      });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({
+        value: 'https://remembered.example',
+        origin: 'Remembered on this device',
+      });
+      expect(component['sourceNote']()).toContain('could not be loaded');
+    });
+
+    it.each([false, true])('merges partial durable fields with visit/device fields without replacing explicit blanks (visit=%s)', async (visit) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const device = { project_name: 'Device name', website_url: 'https://device.example', github_url: 'https://github.com/synthetic/device' };
+      storedRuns[PROJECT_1.uid] = storedRun(PROJECT_1.uid, 'Synthetic completed run', device);
+      if (visit)
+        TestBed.inject(MktgRunAttemptService).reserve({
+          agentId,
+          intake: MKTG_AGENT_INTAKES[agentId],
+          projectUid: PROJECT_1.uid,
+          answers: { github_url: 'https://github.com/synthetic/visit' },
+        });
+      lastIntake.mockReturnValue(of({ ...history, answers: { project_name: 'Durable name', website_url: '' } }));
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['sourceFields']().find((field) => field.key === 'project_name')).toMatchObject({ value: 'Durable name', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({ value: '', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
+        value: visit ? 'https://github.com/synthetic/visit' : device.github_url,
+        origin: visit ? 'Saved in this visit' : 'Saved on this device',
+      });
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'failed'])('shows the %s dependency blocker and recovery before opening Edit', async (state) => {
+      await configure('browser', 'brand-kit', { mode: 'new' });
+      if (state === 'failed') resolveDependencies.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['showIntakeForm']()).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency'))).toBe(true);
+      if (state === 'failed') {
+        expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-dependency-retry'))).toBe(true);
+        resolveDependencies.mockReturnValue(of({}));
+        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
+        await fixture.whenStable();
+        expect(component['dependencyCheckFailed']()).toBe(false);
+      }
+      expect(query('mktg-run-sources')?.contains(query('mktg-agent-run-missing-dependency-link'))).toBe(true);
+      component['onEditSources']();
+      await fixture.whenStable();
+      expect(host().querySelectorAll('[data-testid="mktg-agent-run-missing-dependency"]')).toHaveLength(1);
+      expect(query('mktg-agent-run-form')?.contains(query('mktg-agent-run-missing-dependency'))).toBe(true);
+      expect(generate).not.toHaveBeenCalled();
     });
 
     it('edits on this page then starts exactly one fresh run, retaining Sources above the feed', async () => {
@@ -292,6 +478,33 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-sources')).toBeTruthy();
       expect(query('mktg-run-source-website_url')?.textContent).toContain('https://edited.example');
       expect(query('mktg-agent-run-result')).toBeNull();
+    });
+
+    it('keeps Run again idle until Start and retries a failed fresh request without losing its sources or mode', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValue(
+        of<MktgGenerateProgress>({ type: 'failed', failure: { eventType: 'runtime_error', reason: 'Synthetic failed session. Retry.' } })
+      );
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(generate).not.toHaveBeenCalled();
+      expect(component['showIntakeForm']()).toBe(false);
+      component['onSubmit']();
+      await fixture.whenStable();
+      const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      expect(request).toMatchObject({ newRun: true, answers: { website_url: history.answers.website_url } });
+      expect(component['runFailed']()).toBe(true);
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-retry')).not.toBeNull();
+      generate.mockReturnValue(of<MktgGenerateProgress>({ type: 'submitted' }));
+      component['onRetryRun']();
+      await fixture.whenStable();
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect(generate).toHaveBeenLastCalledWith(request);
+      expect(component['freshMode']()).toBe(true);
+      expect(component['runFailed']()).toBe(false);
+      expect(component['phase']()).toBe('running');
     });
 
     it('clears entry-only fresh mode when opening a sibling agent', async () => {
@@ -355,7 +568,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it.each([true, false])('reuses reserved same-visit inputs without changing the pending attempt (history exists=%s)', async (accepted) => {
+    it.each([true, false])('never infers upload identity from equal scalars/counts (shared history exists=%s)', async (accepted) => {
       await configure('browser', agentId, { mode: 'new' });
       const intake = MKTG_AGENT_INTAKES[agentId];
       const request = {
@@ -372,13 +585,34 @@ describe('MktgAgentRunComponent', () => {
       lastIntake.mockReturnValue(of(accepted ? { ...history, documentCount: 1 } : null));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(component['documents']()[0]?.title).toBe('synthetic.txt');
-      expect(component['missingDocuments']()).toBe(0);
+      // The shared snapshot may belong to another writer/run with equal scalars/counts.
+      // It has no run-binding identifier; local synthetic.txt cannot be treated as that run's file.
+      expect(component['documents']()).toHaveLength(accepted ? 0 : 1);
+      if (!accepted) expect(component['documents']()[0]?.title).toBe('synthetic.txt');
+      expect(component['missingDocuments']()).toBe(accepted ? 1 : 0);
       expect(component['priorDocumentCount']()).toBe(1);
       expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
-      if (!accepted) expect(loadRun).not.toHaveBeenCalled();
+      expect(loadRun).toHaveBeenCalledWith(PROJECT_1.uid, agentId);
       expect(generate).not.toHaveBeenCalled();
       expect(attempts.load(PROJECT_1.uid, agentId)).toBe(before);
+    });
+
+    it('requires logo reattachment when a shared snapshot cannot be bound to this visit', async () => {
+      await configure('browser', 'brand-kit', { mode: 'new' });
+      const answers = { project_name: 'Synthetic brand', website_url: 'https://brand.example' };
+      TestBed.inject(MktgRunAttemptService).reserve({
+        agentId: 'brand-kit',
+        intake: MKTG_AGENT_INTAKES['brand-kit'],
+        projectUid: PROJECT_1.uid,
+        answers,
+        logoFiles: [{ name: 'local.svg', text: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }],
+      });
+      lastIntake.mockReturnValue(of({ answers, documentCount: 0, logoCount: 1 }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['logoFiles']()).toEqual([]);
+      expect(component['missingLogos']()).toBe(1);
+      expect(generate).not.toHaveBeenCalled();
     });
 
     it.each([null, 503, 403])('labels fallback/defaults honestly and fails closed on denied history (%s)', async (status) => {
@@ -515,6 +749,38 @@ describe('MktgAgentRunComponent', () => {
       expect(loadRun).not.toHaveBeenCalled();
       expect(generate).not.toHaveBeenCalled();
     });
+  });
+
+  it('leaves the running phase on terminal failure, keeps typed inputs and offers Retry', async () => {
+    await configure();
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    const before = component['intakeForm'].getRawValue();
+    const request: MktgGenerateRequest = {
+      agentId: SHELL_AGENT.id,
+      projectUid: PROJECT_1.uid,
+      intake: SHELL_INTAKE,
+      answers: before,
+      feedback: 'Keep the revision feedback.',
+    };
+    component['activeRequest'] = request;
+    component['phase'].set('running');
+    component['onProgress']({ type: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry.' } }, PROJECT_1.uid);
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('form');
+    expect(component['intakeForm'].getRawValue()).toEqual(before);
+    expect(query('mktg-agent-run-error')?.textContent).toContain('The agent could not start. Retry.');
+    expect(query('mktg-agent-run-retry')?.textContent).toContain('Retry');
+    const actions = query('mktg-agent-run-error-actions');
+    expect(actions?.classList.contains('mt-3')).toBe(true);
+    expect(actions?.classList.contains('flex')).toBe(true);
+    expect(actions?.classList.contains('gap-2')).toBe(true);
+    expect(actions?.contains(query('mktg-agent-run-retry'))).toBe(true);
+    expect(component['activeRequest']).toBe(request);
+    component['intakeForm'].reset(); // Retry must not rebuild from a subsequently edited form.
+    component['onRetryRun']();
+    expect(generate).toHaveBeenLastCalledWith(request);
+    expect(generate.mock.calls.at(-1)?.[0].feedback).toBe('Keep the revision feedback.');
   });
 
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
@@ -787,7 +1053,8 @@ describe('MktgAgentRunComponent', () => {
       expect(component['navigating']()).toBe(false);
       expect(component['phase']()).toBe('form');
       expect(component['submitDisabled']()).toBe(false);
-      expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic terminal failure');
+      expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
+      expect(query('mktg-agent-run-error')?.textContent).not.toContain('Synthetic terminal failure');
       component['onRetryHandoff']();
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(generate).not.toHaveBeenCalled();
@@ -1020,7 +1287,8 @@ describe('MktgAgentRunComponent', () => {
       component['onProgress']({ type: 'failed', failureText }, PROJECT_1.uid);
       await fixture.whenStable();
       expect(component['phase']()).toBe('form');
-      expect(query('mktg-agent-run-error')?.textContent).toContain(failureText || 'The agent could not complete this run. Your intake is kept — try again.');
+      expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
+      if (failureText) expect(query('mktg-agent-run-error')?.textContent).not.toContain(failureText);
     }
   );
 

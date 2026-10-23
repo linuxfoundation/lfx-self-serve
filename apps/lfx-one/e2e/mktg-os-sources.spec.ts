@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -11,6 +11,60 @@ import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 test.describe('Marketing OS new run Sources', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
   for (const mount of ['project', 'foundation'] as const) {
+    test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
+      const sources = await setupFreshSources(page);
+      let releaseAck: () => void = () => undefined;
+      const accepted = new Promise<void>((resolve) => {
+        releaseAck = resolve;
+      });
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
+        await accepted;
+        await route.fulfill({ json: { sessionId: 'synthetic-questions-session', ownerToken: 'synthetic-questions-proof', runId: 'b'.repeat(64) } });
+      });
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
+        route.fulfill({
+          json: {
+            status: 'questions',
+            questionsId: 'c'.repeat(64),
+            questions: [
+              {
+                key: 'goal',
+                label: 'Goal',
+                question: 'Which synthetic goal should guide this run?',
+                why: 'Synthetic research gap.',
+                suggestedAnswer: 'Grow adoption',
+                basis: [],
+              },
+            ],
+          },
+        })
+      );
+      await sources.open(mount);
+      const start = page.getByTestId('mktg-run-start').getByRole('button');
+      await expect(start).toBeEnabled();
+      expect(sources.generated).toHaveLength(0);
+      try {
+        await start.click();
+        await expect.poll(() => sources.generated.length).toBe(1);
+        expect(new URL(page.url()).searchParams.get('mode')).toBe('new');
+      } finally {
+        releaseAck();
+      }
+      await expect.poll(() => new URL(page.url()).searchParams.has('mode')).toBe(false);
+      const questions = page.getByTestId('mktg-run-questions');
+      await expect(questions).toContainText('Which synthetic goal should guide this run?');
+      await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+      await withDesktopSourcesSetup(page, async () => {
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(questions).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      });
+      await expect(questions).toContainText('Which synthetic goal should guide this run?');
+      await expect(page.locator('[data-test="mktg-run-questions-answer-goal"]')).toHaveValue('Grow adoption');
+      await expect(page.getByTestId('mktg-run-start')).toHaveCount(0);
+      expect(sources.generated).toHaveLength(1);
+      await page.screenshot({ path: test.info().outputPath(`questions-reload-no-second-session-${mount}.png`), fullPage: true });
+    });
+
     test(`${mount}: asset header Run again opens prefilled Sources, then edit and Start land the revision`, async ({ page }) => {
       const sources = await setupFreshSources(page);
       const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
@@ -64,6 +118,29 @@ test.describe('Marketing OS new run Sources', () => {
       expect(sources.generated[0]).toMatchObject({ answers: { website_url: 'https://edited.example', notes: '' } });
       await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
       await page.screenshot({ path: test.info().outputPath('fresh-run-exact-asset.png'), fullPage: true });
+    });
+  }
+
+  for (const status of [404, 503]) {
+    test(`collapsed Sources explains and recovers a dependency failure (${status})`, async ({ page }) => {
+      const sources = await setupFreshSources(page);
+      await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+        route.fulfill({ status, json: { error: 'Synthetic dependency unavailable' } })
+      );
+      await sources.open();
+      const card = page.getByTestId('mktg-run-sources');
+      await expect(page.getByTestId('mktg-agent-run-form')).not.toBeVisible();
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
+      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+      if (status === 503) {
+        await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
+          route.fulfill({ status: 404, json: { error: 'No approved synthetic framework' } })
+        );
+        await card.getByTestId('mktg-agent-run-dependency-retry').getByRole('button').click();
+      }
+      await expect(card.getByTestId('mktg-agent-run-missing-dependency-link').getByRole('button')).toBeVisible();
+      expect(sources.generated).toHaveLength(0);
+      await page.screenshot({ path: test.info().outputPath(`collapsed-dependency-${status}.png`), fullPage: true });
     });
   }
 

@@ -375,18 +375,28 @@ export class EventBusService {
 
 An explicit `?mode=new` opens Sources for review, never a generation or a
 questions-token consumption. Scalar prefill comes from the writer-gated durable
-last-intake snapshot, then this user's device run, then honestly labelled defaults.
+last-intake snapshot, this user's scoped same-visit inputs, then completed device-run
+inputs, choosing the first present value per field before honestly labelled defaults.
+An explicit blank wins over lower-priority values; each field labels its actual origin.
 An unavailable history read is distinct from no history; denied access suppresses
 private fallback and Start. Recorded blank fields remain blank. Project, effective
-subject and mode changes cancel the previous reads and reset the form; SSR never
-reads private browser history or starts a history request. Back, catalog tiles and
+subject and explicit entry-mode changes cancel the previous reads and reset the form; SSR never
+reads private browser history or starts a history request. Once Generate is accepted, its
+entry-only mode is consumed with replaceUrl. Sources state stays latched for that visit;
+the scoped internal URL clear does not reset or cancel the attempt. Reload restores saved
+questions or polls the accepted writing attempt, never issuing another Generate. Back, catalog tiles and
 dependency links clear this entry-only mode instead of transferring it to another agent.
 
 Edit exposes the registered intake controls in place. Start alone prepares or
 submits a fresh run, resolving dependency documents again, and removes fresh mode
 from the asset handoff URL. Sources stay read-only above research/questions once
-started. Uploaded payloads can be reused only from matching same-visit memory;
-that cache outlives successful attempt cleanup, not an application reload. Missing
+started. Dependency blockers and recovery controls remain visible with the editor collapsed.
+Fresh sessions never reset document-history numbering: envelope identity is retained separately,
+while local history stays monotonic; regenerate-via-generate intakes still send priorVersion.
+Uploaded payloads are reused only from an owned same-visit draft when no shared snapshot exists.
+The shared scalar/count DTO cannot bind local bytes to a recorded run, so equal values/counts
+never establish upload provenance; a shared snapshot requires reattachment or explicit omission.
+The same-visit cache outlives successful attempt cleanup, not an application reload. Missing
 source counts require reattachment or an explicit choice to continue without them,
 never a false kept-file claim. No uploaded content is added to browser persistence.
 The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
