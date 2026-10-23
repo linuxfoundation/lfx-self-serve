@@ -190,6 +190,16 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     selectedProject.set({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' });
   });
 
+  it("clears a slot that was empty before the pick without touching the page's address", async () => {
+    selectedProject.set(null);
+    const { navMenu } = await createNavMenu('/meetings', 'me', 'project');
+    selectItem(navMenu, betaItem);
+
+    restorePick?.();
+
+    expect(TestBed.inject(ProjectContextService).clearProject).toHaveBeenCalledWith(false);
+  });
+
   it('puts the selected project back when the pick never leaves the page, unless another one was selected since', async () => {
     const { navMenu } = await createNavMenu('/meetings', 'me', 'project');
     selectItem(navMenu, betaItem);

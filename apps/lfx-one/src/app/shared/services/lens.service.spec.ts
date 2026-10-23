@@ -250,6 +250,40 @@ describe('LensService — menu lens preview', () => {
       expect(lens.previewingMenuLens()).toBe(false);
     });
 
+    it('leaves a newer preview the viewer chose while the pick was pending', () => {
+      const { lens, events } = setup('me');
+      lens.previewMenuLens('project');
+      lens.commitMenuLens();
+      events.next(new NavigationStart(7, '/project/meetings'));
+
+      // Still in the drawer, the viewer taps Organization while the pick's guard is pending.
+      lens.previewMenuLens('org');
+      events.next(cancel(7));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(lens.menuLens()).toBe('org');
+    });
+
+    it('undoes two chained picks back to the page lens when the second, superseding pick fails', () => {
+      const { lens, events } = setup('me');
+      const firstRestore = vi.fn();
+      const secondRestore = vi.fn();
+      lens.previewMenuLens('project');
+      lens.commitMenuLens('project', firstRestore);
+      events.next(new NavigationStart(7, '/project/overview'));
+
+      // Before it lands, the viewer previews Organization and picks again.
+      lens.previewMenuLens('org');
+      lens.commitMenuLens('org', secondRestore);
+      events.next(cancel(7, NavigationCancellationCode.SupersededByNewNavigation));
+      events.next(new NavigationStart(8, '/org/acme/overview'));
+      events.next(cancel(8));
+
+      expect(lens.activeLens()).toBe('me');
+      expect(secondRestore).toHaveBeenCalledTimes(1);
+      expect(firstRestore).toHaveBeenCalledTimes(1);
+    });
+
     it("follows a pick superseded by the viewer's next tap, and keeps the lens if that navigation lands", () => {
       const { lens, events } = setup('foundation', { hasBoardRole: true });
       lens.previewMenuLens('me');

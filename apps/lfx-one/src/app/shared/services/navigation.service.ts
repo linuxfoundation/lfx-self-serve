@@ -90,7 +90,8 @@ export class NavigationService {
       skip(1),
       filter((isHybrid) => isHybrid),
       tap(() => {
-        const active = this.lensService.activeLens();
+        // The menu's lens: a nav lens the mobile drawer previews off a Me or Org page needs its sibling as much as an active one.
+        const active = this.lensService.menuLens();
         if (active === 'foundation' || active === 'project') {
           const sibling: NavLens = active === 'foundation' ? 'project' : 'foundation';
           this.preloadSibling(sibling);

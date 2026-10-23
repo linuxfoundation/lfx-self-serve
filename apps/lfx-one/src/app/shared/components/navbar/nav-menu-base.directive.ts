@@ -220,7 +220,8 @@ export abstract class NavMenuBase {
 
   /**
    * Puts the selector slot a previewed pick is about to overwrite back to its current value — for a pick whose navigation
-   * never leaves the page — unless something has selected another context since.
+   * never leaves the page — unless something has selected another context since. Never touches the address: the page
+   * the viewer stayed on keeps its own `?project=`.
    */
   private contextRestorer(asFoundation: boolean, picked: ProjectContext): () => void {
     const slot = asFoundation ? this.projectContextService.selectedFoundation : this.projectContextService.selectedProject;
@@ -231,9 +232,9 @@ export abstract class NavMenuBase {
         if (asFoundation) this.projectContextService.setFoundation(previous, false);
         else this.projectContextService.setProject(previous, false);
       } else if (asFoundation) {
-        this.projectContextService.clearFoundation();
+        this.projectContextService.clearFoundation(false);
       } else {
-        this.projectContextService.clearProject();
+        this.projectContextService.clearProject(false);
       }
     };
   }
