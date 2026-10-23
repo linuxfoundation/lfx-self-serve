@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  model,
+  output,
+  PLATFORM_ID,
+  Signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
@@ -75,6 +89,8 @@ export class OrgSelectorComponent {
   public readonly enabled = input<boolean>(true);
   /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
   public readonly variant = input<ContextSelectorVariant>('default');
+  /** The viewer picked an organization that re-addresses the page (a switch, or leaving the not-found dead end). */
+  public readonly itemSelected = output<OrgItem>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
@@ -316,6 +332,7 @@ export class OrgSelectorComponent {
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
+        this.itemSelected.emit(item);
       }
       this.popoverRef()?.hide();
       return;
@@ -344,6 +361,7 @@ export class OrgSelectorComponent {
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
     // re-addressed to the new selection (no-op outside Org Lens).
     this.orgLensNavigation.navigateToSelectedOrg('switch');
+    this.itemSelected.emit(item);
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();

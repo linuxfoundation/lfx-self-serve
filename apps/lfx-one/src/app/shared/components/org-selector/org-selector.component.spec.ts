@@ -88,20 +88,28 @@ describe('OrgSelectorComponent.selectItem', () => {
   });
 
   it('selects another organization and re-addresses the page as a switch', () => {
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
+
     pick(rowB);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta-llc' }));
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    expect(selected).toHaveBeenCalledWith(rowB);
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.
   it('does nothing for the organization already selected', () => {
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
+
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    expect(selected).not.toHaveBeenCalled();
   });
 
   // On the dead end the selection is the cookie's or a bootstrap default that never made it into the
@@ -109,12 +117,15 @@ describe('OrgSelectorComponent.selectItem', () => {
   // way out. Still no re-selection: the address moves, the account does not.
   it('leaves the not-found dead end for the already selected organization, without re-selecting it', () => {
     isOnNotFound.mockReturnValue(true);
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
 
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    expect(selected).toHaveBeenCalledWith(rowA);
   });
 
   // FR-010 switcher Retry: the control stays focusable while busy (aria-disabled), so the guard in
