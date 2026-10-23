@@ -262,7 +262,7 @@ export class SidebarNavService {
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
-  // then My Formations (#2753) appended to My Engagement while `formation-enabled` is on — the first
+  // then My Formations (#2753) appended to Engagement while `formation-enabled` is on — the first
   // item-level gate on this lens; the section gates subtract whole sections by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
@@ -286,36 +286,43 @@ export class SidebarNavService {
       label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/',
+      testId: 'sidebar-item-my-dashboard',
     },
     {
       label: this.meEngagementSectionLabel,
       isSection: true,
+      testId: 'sidebar-item-my-engagement',
       expanded: true,
       items: [
         {
           label: 'Meetings',
           icon: 'fa-light fa-calendar',
           routerLink: '/meetings',
+          testId: 'sidebar-item-my-meetings',
         },
         {
           label: 'Events',
           icon: 'fa-light fa-ticket',
           routerLink: '/events',
+          testId: 'sidebar-item-my-events',
         },
         {
           label: 'Meetups',
           icon: 'fa-light fa-handshake',
           routerLink: '/meetups',
+          testId: 'sidebar-item-my-meetups',
         },
         {
           label: COMMITTEE_LABEL.plural,
           icon: 'fa-light fa-users-between-lines',
           routerLink: '/groups',
+          testId: 'sidebar-item-my-groups',
         },
         {
           label: MAILING_LIST_LABEL.plural,
           icon: 'fa-light fa-envelope',
           routerLink: '/mailing-lists',
+          testId: 'sidebar-item-my-mailing-lists',
         },
         {
           label: 'Newsletters',
@@ -329,11 +336,13 @@ export class SidebarNavService {
           label: VOTE_LABEL.plural,
           icon: 'fa-light fa-check-to-slot',
           routerLink: '/votes',
+          testId: 'sidebar-item-my-votes',
         },
         {
           label: SURVEY_LABEL.plural,
           icon: 'fa-light fa-clipboard-list',
           routerLink: '/surveys',
+          testId: 'sidebar-item-my-surveys',
         },
       ],
     },
@@ -363,11 +372,13 @@ export class SidebarNavService {
           label: 'Initiatives',
           icon: 'fa-light fa-box-dollar',
           routerLink: '/crowdfunding/initiatives',
+          testId: 'sidebar-item-my-initiatives',
         },
         {
           label: 'Donations',
           icon: 'fa-light fa-hand-heart',
           routerLink: '/crowdfunding/donations',
+          testId: 'sidebar-item-my-donations',
         },
       ],
     },
@@ -814,7 +825,7 @@ export class SidebarNavService {
     this.projectGroupsNavItem,
   ];
 
-  // --- Me — My Formations page (#2753; dark-launched, appended to My Engagement) ---
+  // --- Me — My Formations page (#2753; dark-launched, appended to Engagement) ---
   private readonly myFormationsNavItem: SidebarMenuItem = {
     label: 'Formations',
     icon: 'fa-light fa-list-check',
@@ -1046,7 +1057,7 @@ export class SidebarNavService {
   }
 
   /**
-   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section. Only
+   * Appends My Formations (#2753) as the last child of the Me lens's Engagement section. Only
    * called while `formation-enabled` is on, so the static `meLensItems` tree stays flag-free.
    */
   private withMyFormationsNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {

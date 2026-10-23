@@ -106,4 +106,4 @@ The **More** menu for archiving and activating is only available for initiatives
 ## Related
 
 - [View Initiatives](../view-initiatives/) — browse and filter your full list of initiatives
-- [My Donations](../my-donations/) — view your donation history and manage payment methods
+- [Donations](../my-donations/) — view your donation history and manage payment methods

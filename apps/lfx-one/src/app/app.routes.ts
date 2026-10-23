@@ -826,7 +826,7 @@ export const routes: Routes = [
         // lensRedirectGuard rewriting it to /foundation/formations (the auditor-only queue) or the
         // non-existent /project/formations. No projectQueryParamGuard either: the page carries no
         // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
-        // to My Dashboard).
+        // to Dashboard).
         path: 'formations',
         title: 'Formations',
         data: { lens: 'me' },

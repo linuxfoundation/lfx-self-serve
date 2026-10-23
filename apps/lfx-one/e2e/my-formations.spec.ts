@@ -24,7 +24,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(page.getByTestId('my-formations-title')).toHaveText('Formations', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('my-formations-description')).toContainText("Formations you're invited to");
 
-    // Sidebar: last item of My Engagement, right after My Surveys.
+    // Sidebar: last item of Engagement, right after Surveys.
     const nav = page.getByTestId('sidebar-my-formations');
     await expect(nav).toBeVisible();
     await expect(nav).toContainText('Formations');
@@ -127,13 +127,13 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(page.getByTestId('my-formations-error')).toHaveCount(0);
   });
 
-  test('is absent from the sidebar and redirects to My Dashboard while formation-enabled is off', async ({ page }) => {
+  test('is absent from the sidebar and redirects to the Dashboard while formation-enabled is off', async ({ page }) => {
     await gotoMyFormations(page, { flagEnabled: false });
 
     await expect(page).toHaveURL(/^https?:\/\/[^/]+\/$/, { timeout: DATA_LOAD_TIMEOUT });
     // Wait for the Me sidebar to render before asserting the item's absence, or an unloaded page
     // would pass vacuously.
-    await expect(page.getByTestId('sidebar-item-dashboard')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-my-dashboard')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('sidebar-my-formations')).toHaveCount(0);
     await expect(page.getByTestId('my-formations-title')).toHaveCount(0);
   });

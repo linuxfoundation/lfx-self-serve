@@ -68,7 +68,7 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
     await expect(row.getByTestId(`my-formations-blocking-${CASCADE}`)).toBeAttached();
   });
 
-  test('the sidebar entry is the last child of My Engagement and points at /formations', async ({ page }) => {
+  test('the sidebar entry is the last child of Engagement and points at /formations', async ({ page }) => {
     // The test id sits on the router link itself (navbar.component.html's menuItem template).
     const nav = page.getByTestId('sidebar-my-formations');
     await expect(nav).toBeAttached();
@@ -77,7 +77,7 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
 
     // Every menu item inside a section carries a `sidebar-*` test id (navbar.component.html's
     // menuItem template), so the section's last such descendant is its last entry.
-    const engagement = page.getByTestId('sidebar-item-engagement');
+    const engagement = page.getByTestId('sidebar-item-my-engagement');
     await expect(engagement).toBeAttached();
     await expect(engagement.locator('[data-testid^="sidebar-"]').last()).toHaveAttribute('data-testid', 'sidebar-my-formations');
   });
