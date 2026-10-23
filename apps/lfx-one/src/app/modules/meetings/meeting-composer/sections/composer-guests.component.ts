@@ -57,32 +57,11 @@ export class ComposerGuestsComponent {
 
   protected readonly quickAddForm = this.meetingService.createRegistrantFormGroup();
 
-  /** User selected from search but not yet added; cleared on confirm or dismiss. */
-  protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
-
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['first_name'], g['last_name']].filter(Boolean).join(' ') || String(g['email'] ?? '');
-  });
-
-  protected readonly stagedGuestInitials: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return avatarInitials(g['first_name'] as string, g['last_name'] as string, g['email'] as string);
-  });
-
-  protected readonly stagedGuestSecondaryLine: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['email'], g['org_name']].filter(Boolean).join(' · ');
-  });
 
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
@@ -233,32 +212,22 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * Stages the person picked from search rather than adding immediately.
+   * Adds the person picked from search straight to the invited list.
    * @description The directory can return a person without a usable first/last name, which the add
    * payload requires. Handing those to the dialog prefilled beats dropping the pick silently.
-   * For valid picks we show a preview card and require an explicit "Add" click before committing.
+   * No per-pick confirmation: nothing is sent until the composer's Next / Save changes.
    */
   protected onUserSelected(): void {
     if (this.quickAddForm.valid) {
-      this.stagedGuest.set(this.quickAddForm.value as Record<string, unknown>);
+      const guest = this.quickAddForm.value as Record<string, unknown>;
       this.quickAddForm.reset();
+      this.addDirectGuest(guest);
       return;
     }
 
     const prefill = this.quickAddForm.value;
     this.quickAddForm.reset();
     this.openManualDialog(prefill);
-  }
-
-  protected onConfirmStagedGuest(): void {
-    const guest = this.stagedGuest();
-    if (!guest) return;
-    this.stagedGuest.set(null);
-    this.addDirectGuest(guest);
-  }
-
-  protected onDismissStagedGuest(): void {
-    this.stagedGuest.set(null);
   }
 
   protected onOpenManualDialog(): void {
@@ -275,20 +244,6 @@ export class ComposerGuestsComponent {
     if (meetingId) {
       this.inviteResend.confirmAndResend(this.confirmationService, meetingId, guest);
     }
-  }
-
-  protected onRequestRemoveGuest(guest: MeetingRegistrantWithState, displayName: string): void {
-    const label = displayName || guest.email || 'this guest';
-    this.confirmationService.confirm({
-      header: 'Remove guest',
-      message: `Are you sure you want to remove ${label} from this meeting?`,
-      icon: 'fa-light fa-triangle-exclamation',
-      acceptLabel: 'Remove',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.onRemoveGuest(guest),
-    });
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
