@@ -137,7 +137,14 @@ export class LensService {
       this.menuLensPreview.set(null);
       return;
     }
-    const pick: MenuLensPick = { previous: this.activeLens(), committed: lens, previewed: this.menuLens(), epoch: this.menuLensPreviewEpoch, onRestore };
+    const pick: MenuLensPick = {
+      previous: this.activeLens(),
+      previousNavLens: this.navLensSelection(),
+      committed: lens,
+      previewed: this.menuLens(),
+      epoch: this.menuLensPreviewEpoch,
+      onRestore,
+    };
     this.setLens(lens);
     pick.committed = this.activeLens();
     this.menuLensPreview.set(null);
@@ -254,6 +261,12 @@ export class LensService {
           return;
         }
         this.setLens(pick.previous);
+        // The pick may have moved the last viewed nav lens too (a foundation or project lens committed from a Me or Org
+        // page), which the merged Projects tab resolves to.
+        if (this.navLensSelection() !== pick.previousNavLens) {
+          this.navLensSelection.set(pick.previousNavLens);
+          this.persistNavLensToCookie(pick.previousNavLens);
+        }
         if (pick.epoch === this.menuLensPreviewEpoch) {
           this.menuLensPreview.set(pick.previewed);
         }

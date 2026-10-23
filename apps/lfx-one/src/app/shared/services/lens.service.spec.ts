@@ -223,6 +223,19 @@ describe('LensService — menu lens preview', () => {
       expect(lens.previewingMenuLens()).toBe(false);
     });
 
+    it("puts back the last viewed nav lens a hybrid's failed foundation pick moved", () => {
+      const { lens, events } = setup('me', { hasBoardRole: true, storedNavLens: 'project' });
+      lens.previewMenuLens('project');
+      lens.commitMenuLens('foundation');
+      expect(lens.lastNavLens()).toBe('foundation');
+
+      events.next(new NavigationStart(7, '/foundation/overview'));
+      events.next(cancel(7));
+
+      expect(lens.lastNavLens()).toBe('project');
+      expect(lens.activeLens()).toBe('me');
+    });
+
     it('puts the page lens back without bringing back a preview the drawer has since dropped', () => {
       const { lens, events } = setup('me');
       lens.previewMenuLens('project');

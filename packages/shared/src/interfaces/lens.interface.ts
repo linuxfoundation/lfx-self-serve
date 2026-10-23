@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LensItem } from './navigation.interface';
+import type { LensItem, NavLens } from './navigation.interface';
 
 /**
  * Navigation lens types
@@ -79,6 +79,8 @@ export interface DisplayLensItem {
 export interface MenuLensPick {
   /** The page's lens before the pick. */
   previous: Lens;
+  /** The last viewed nav lens before the pick, which the merged Projects tab resolves to. */
+  previousNavLens: NavLens;
   /** The lens the pick made active. */
   committed: Lens;
   /** The lens the drawer was previewing. */
