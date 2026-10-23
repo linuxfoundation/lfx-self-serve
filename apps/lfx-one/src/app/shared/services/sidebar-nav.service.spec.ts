@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   AKRITES_ENABLED_FLAG,
@@ -37,6 +37,8 @@ import { SidebarNavService } from './sidebar-nav.service';
 
 describe('SidebarNavService', () => {
   const activeLens = signal<Lens>('foundation');
+  // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
+  const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
@@ -81,6 +83,7 @@ describe('SidebarNavService', () => {
 
   beforeEach(() => {
     activeLens.set('foundation');
+    menuLensPreview.set(null);
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
@@ -132,7 +135,7 @@ describe('SidebarNavService', () => {
             }),
           },
         },
-        { provide: LensService, useValue: { activeLens } },
+        { provide: LensService, useValue: { activeLens, menuLens: computed(() => menuLensPreview() ?? activeLens()) } },
         {
           provide: PersonaService,
           useValue: {
@@ -157,9 +160,9 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            canWrite,
-            activeProjectStage,
-            activeProjectStageResolved,
+            menuCanWrite: canWrite,
+            menuProjectStage: activeProjectStage,
+            menuProjectStageResolved: activeProjectStageResolved,
             formationOverviewAllowedSlug,
           },
         },
@@ -185,6 +188,19 @@ describe('SidebarNavService', () => {
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
     });
+  });
+
+  it('builds the menu for the lens the mobile drawer previews, and returns to the active lens once the preview ends (#4208)', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('me');
+    const meItems = service.sidebarItems();
+
+    menuLensPreview.set('project');
+    expect(service.sidebarItems().some((item) => item.routerLink?.startsWith('/project/'))).toBe(true);
+    expect(service.sidebarItems()).not.toEqual(meItems);
+
+    menuLensPreview.set(null);
+    expect(service.sidebarItems()).toEqual(meItems);
   });
 
   it('hides Marketing OS on foundation lens when the flag is off', () => {

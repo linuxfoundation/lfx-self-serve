@@ -24,6 +24,7 @@ import { CreatePermissionService } from '@services/create-permission.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
@@ -51,8 +52,42 @@ interface NavbarView {
   announcedPartialLookupFailed: Signal<boolean>;
   tabIndicator: Signal<NavbarTabIndicator | null>;
   hydrated: WritableSignal<boolean>;
+  activeLensId: Signal<Lens>;
   retryMenu(): void;
+  switchLens(lens: Lens): void;
+  onOrgSelected(): void;
 }
+
+/**
+ * A `LensService` stand-in whose menu lens behaves as the real one's (#4208): a preview shows another lens's menu while
+ * `activeLens` — what the page renders from — stays put, a commit makes it active, a clear drops it.
+ */
+const createLensServiceFake = (lens: Lens, lenses: LensOption[]) => {
+  const activeLens = signal<Lens>(lens);
+  const preview = signal<Lens | null>(null);
+  const menuLens = computed(() => preview() ?? activeLens());
+  return {
+    activeLens,
+    menuLens,
+    previewingMenuLens: computed(() => menuLens() !== activeLens()),
+    displayMenuLens: menuLens,
+    isHybridPersona: signal(false),
+    availableLenses: signal(lenses),
+    displayLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
+    displayActiveLens: activeLens,
+    setLens: vi.fn((next: Lens) => {
+      activeLens.set(next);
+      return true;
+    }),
+    switchLens: vi.fn(),
+    previewMenuLens: vi.fn((next: Lens) => preview.set(next === activeLens() ? null : next)),
+    commitMenuLens: vi.fn(() => {
+      activeLens.set(menuLens());
+      preview.set(null);
+    }),
+    clearMenuLensPreview: vi.fn(() => preview.set(null)),
+  };
+};
 
 const retryMenuLookups = vi.fn();
 
@@ -88,18 +123,8 @@ const createNavbarFixture = async (
     providers: [
       { provide: Router, useValue: { url, events: EMPTY, navigate: vi.fn(), parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-      {
-        provide: LensService,
-        useValue: {
-          activeLens: signal(lens),
-          isHybridPersona: signal(false),
-          availableLenses: signal(lenses),
-          displayLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
-          displayActiveLens: signal(lens),
-          setLens: vi.fn(),
-          switchLens: vi.fn(),
-        },
-      },
+      { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/org', 'acme', page]) } },
       {
         provide: UserService,
         useValue: {
@@ -110,7 +135,7 @@ const createNavbarFixture = async (
           impersonating: signal(false),
         },
       },
-      { provide: ProjectContextService, useValue: { activeContext: signal(null), activeRouteLensKind: signal(null) } },
+      { provide: ProjectContextService, useValue: { activeContext: signal(null), menuContext: signal(null), activeRouteLensKind: signal(null) } },
       {
         provide: PersonaService,
         useValue: {
@@ -344,6 +369,133 @@ describe('NavbarComponent', () => {
     unhydrated.hydrated.set(false);
     expect(unhydrated.showPartialLookupFailed()).toBe(true);
     expect(unhydrated.announcedPartialLookupFailed()).toBe(false);
+  });
+
+  describe('mobile lens tabs preview a lens menu (#4208)', () => {
+    const pickTemplate =
+      '<a class="lfxn__item" href="/foundation/meetings" data-testid="pick">Meetings</a>' +
+      '<a class="lfxn__item" href="https://docs.example.org" data-testid="external">Docs</a>';
+
+    const lensServiceOf = () => TestBed.inject(LensService) as unknown as ReturnType<typeof createLensServiceFake>;
+
+    it('switches lens and lands on its page from the desktop tabs, as before', async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'me' });
+      const lensService = lensServiceOf();
+
+      navbar.switchLens('project');
+
+      expect(lensService.switchLens).toHaveBeenCalledWith('project');
+      expect(lensService.previewMenuLens).not.toHaveBeenCalled();
+    });
+
+    it('only previews the lens menu in the drawer: no navigation, the drawer stays open and the page lens is untouched', async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'me', mobile: true });
+      const lensService = lensServiceOf();
+      const appService = TestBed.inject(AppService);
+      appService.openMobileSidebar();
+      TestBed.tick();
+
+      navbar.switchLens('project');
+
+      expect(lensService.previewMenuLens).toHaveBeenCalledWith('project');
+      expect(lensService.switchLens).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+      expect(appService.showMobileSidebar()).toBe(true);
+      expect(navbar.activeLensId()).toBe('project');
+      expect(lensService.activeLens()).toBe('me');
+    });
+
+    it('drops the preview when the drawer closes without a pick, leaving the page lens as it was', async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'me', mobile: true });
+      const lensService = lensServiceOf();
+      const appService = TestBed.inject(AppService);
+      appService.openMobileSidebar();
+      TestBed.tick();
+      navbar.switchLens('project');
+
+      appService.closeMobileSidebar();
+      TestBed.tick();
+
+      expect(lensService.clearMenuLensPreview).toHaveBeenCalled();
+      expect(lensService.menuLens()).toBe('me');
+      expect(lensService.activeLens()).toBe('me');
+      expect(lensService.setLens).not.toHaveBeenCalled();
+      expect(lensService.commitMenuLens).not.toHaveBeenCalled();
+    });
+
+    it('drops the preview when the drawer navbar is destroyed before the drawer reports closing (a jump to another layout)', async () => {
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'me', mobile: true });
+      const lensService = lensServiceOf();
+      (fixture.componentInstance as unknown as NavbarView).switchLens('project');
+
+      fixture.destroy();
+
+      expect(lensService.previewingMenuLens()).toBe(false);
+      expect(lensService.activeLens()).toBe('me');
+    });
+
+    it('commits the previewed lens when a page link in its menu is followed, before the router sees the click', async () => {
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'me', mobile: true, template: pickTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const lensService = lensServiceOf();
+      navbar.switchLens('project');
+      const link = fixture.nativeElement.querySelector('[data-testid="pick"]') as HTMLAnchorElement;
+      // Stands in for RouterLink's own listener on the anchor: the lens must already be committed when it runs.
+      let lensWhenRouted: Lens | null = null;
+      link.addEventListener('click', (event) => {
+        lensWhenRouted = lensService.activeLens();
+        event.preventDefault();
+      });
+
+      link.click();
+
+      expect(lensWhenRouted).toBe('project');
+      expect(lensService.commitMenuLens).toHaveBeenCalledTimes(1);
+      expect(lensService.previewingMenuLens()).toBe(false);
+    });
+
+    it('commits nothing for an external link, a modified click or a click without a preview', async () => {
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'me', mobile: true, template: pickTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const lensService = lensServiceOf();
+      const pick = fixture.nativeElement.querySelector('[data-testid="pick"]') as HTMLAnchorElement;
+      const external = fixture.nativeElement.querySelector('[data-testid="external"]') as HTMLAnchorElement;
+      for (const link of [pick, external]) link.addEventListener('click', (event) => event.preventDefault());
+
+      pick.click();
+      expect(lensService.commitMenuLens).not.toHaveBeenCalled();
+
+      navbar.switchLens('project');
+      external.click();
+      pick.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+
+      expect(lensService.commitMenuLens).not.toHaveBeenCalled();
+      expect(lensService.activeLens()).toBe('me');
+    });
+
+    it("lands an organization picked in a previewed Org Lens on that organization's overview, with Org Lens committed", async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'me', mobile: true, lenses: [ALL_LENSES.me, ALL_LENSES.org] });
+      const lensService = lensServiceOf();
+      navbar.switchLens('org');
+
+      navbar.onOrgSelected();
+
+      expect(lensService.activeLens()).toBe('org');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+    });
+
+    it('only closes the drawer on an organization pick without a preview, leaving the address to the selector', async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'org', mobile: true, lenses: [ALL_LENSES.me, ALL_LENSES.org] });
+      const lensService = lensServiceOf();
+      const appService = TestBed.inject(AppService);
+      appService.openMobileSidebar();
+
+      navbar.onOrgSelected();
+
+      expect(appService.showMobileSidebar()).toBe(false);
+      expect(lensService.commitMenuLens).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
   });
 
   describe('lens-tab pill (#3825)', () => {

@@ -52,6 +52,23 @@ export class NavigationService {
     { initialValue: null }
   );
 
+  // A lens the mobile drawer previews (#4208) needs its list for the selector, but must not pick a default context or
+  // write the URL — the page underneath keeps its own lens and context. preloadSibling() loads without either, and is a
+  // no-op once the list is loaded or in flight; a pick from the preview commits the lens, and the preloader above runs.
+  private readonly menuLensPreloader = toSignal(
+    toObservable(this.lensService.menuLens).pipe(
+      filter((lens): lens is NavLens => (lens === 'foundation' || lens === 'project') && this.lensService.previewingMenuLens()),
+      tap((lens) => {
+        this.preloadSibling(lens);
+        // A hybrid's merged selector reads both lists, and off a nav lens neither preloader above has loaded the other.
+        if (this.lensService.isHybridPersona()) {
+          this.preloadSibling(lens === 'foundation' ? 'project' : 'foundation');
+        }
+      })
+    ),
+    { initialValue: null }
+  );
+
   // Re-fetch the project lens if foundation visibility flips mid-session (e.g. persona refresh
   // expands allowed lenses) so accumulated items get re-filtered through applyVisibilityFilters.
   private readonly foundationVisibilityWatcher = toSignal(

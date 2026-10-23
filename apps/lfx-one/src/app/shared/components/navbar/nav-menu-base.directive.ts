@@ -60,17 +60,23 @@ export abstract class NavMenuBase {
   /** Final org-selector visibility — `parent input ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
   protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
 
-  protected readonly activeLens = this.lensService.activeLens;
-  protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
+  /**
+   * The lens the menu shows: the page's active lens, or the one the mobile drawer's lens tabs preview (#4208). The page's
+   * own lens changes only when a pick from this menu commits it.
+   */
+  protected readonly menuLens = this.lensService.menuLens;
+  protected readonly isOrgLens = computed(() => this.menuLens() === 'org');
   protected readonly isHybridPersona = this.lensService.isHybridPersona;
-  protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.activeContext());
+  protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.menuContext());
   // Carried on every nav item's routerLink so switching tabs (Meetings, Groups, Mailing Lists, ...)
   // keeps ?project= in the URL instead of silently dropping it (LFXV2-2837). Gated on the route's
   // declared lens rather than just checking selectedProject — activeContext() falls back to the
   // cookie-restored selection on Me/Org lenses too, which would otherwise leak a foundation/project
   // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
+  // A lens the mobile drawer previews (#4208) has no route yet: its own lens decides instead, so a Me or Org menu
+  // previewed over a foundation page carries no slug, and a previewed foundation / project menu carries its selector's.
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
-    const kind = this.projectContextService.activeRouteLensKind();
+    const kind = this.lensService.previewingMenuLens() ? this.navLens() : this.projectContextService.activeRouteLensKind();
     if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};
@@ -155,12 +161,19 @@ export abstract class NavMenuBase {
     // for those users — setLens('foundation') would be a no-op and the selection would silently fail.
     const foundationAllowed = this.lensService.availableLenses().some((option) => option.id === 'foundation');
     const asFoundation = item.isFoundation && foundationAllowed;
-    this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    // A pick from a lens the mobile drawer previews has no page of that lens under it to re-target (#4208). It commits
+    // like any pick from that menu, so a navigation that never leaves the page puts the page's lens back.
+    const fromPreview = this.lensService.previewingMenuLens();
+    if (fromPreview) {
+      this.lensService.commitMenuLens(asFoundation ? 'foundation' : 'project', this.contextRestorer(asFoundation, context));
+    } else {
+      this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    }
     // Decide the navigation before the context syncs the URL: a navigation owns the destination, so
     // the switch must not also `replaceState` the current history entry — that rewrote the page the
     // user came from to the new slug, and Back then landed on a URL the landing-page guards bounce
     // forward (Bugbot on #2757). Only a switch that keeps the page syncs `?project=` in place.
-    const target = this.contextSwitchTarget();
+    const target = this.contextSwitchTarget(fromPreview);
     if (asFoundation) {
       this.projectContextService.setFoundation(context, target === null);
     } else {
@@ -175,9 +188,16 @@ export abstract class NavMenuBase {
    * The lens whose overview a context switch must navigate to, or `null` when the switch keeps the
    * current page and only re-targets it. Keeps the URL's lens prefix in sync with the selected
    * context so a hard refresh restores it (syncLensFromRoute + projectQueryParamGuard): navigate on a
-   * lens-type change, off an entity page, or off the Project lens landing/checklist pages.
+   * lens-type change, off an entity page, or off the Project lens landing/checklist pages. A pick made in a previewed
+   * lens always navigates: the page underneath belongs to another lens, so re-targeting it would write `?project=`
+   * onto, say, a Me or Org page.
    */
-  private contextSwitchTarget(): NavLens | null {
+  private contextSwitchTarget(fromPreview: boolean): NavLens | null {
+    // activeLens reflects setLens() synchronously, clamped to what the persona may use.
+    const targetLens: NavLens = this.lensService.activeLens() === 'foundation' ? 'foundation' : 'project';
+    if (fromPreview) {
+      return targetLens;
+    }
     // Primary-outlet segments, not a split of the raw URL: `Router.url` serializes `path?query#fragment`,
     // so a fragment with no query string would otherwise stay glued to the last segment (same
     // approach as `MentorPageComponent.resolveActiveTab`).
@@ -186,8 +206,6 @@ export abstract class NavMenuBase {
     if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
       return null;
     }
-    // activeLens() reflects setLens() synchronously, clamped to what the persona may use.
-    const targetLens: NavLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
     const lensTypeChanged = currentPrefix !== targetLens;
     const onEntityPage = segments.length === 3;
     // The Project lens landing page is decided per project by `formationOverviewRedirectGuard`
@@ -198,6 +216,26 @@ export abstract class NavMenuBase {
     const currentPath = `/${segments.join('/')}`;
     const onLandingDecisionPage = targetLens === 'project' && (currentPath === LENS_DEFAULT_ROUTES.project || currentPath === FORMATION_CHECKLIST_PATH);
     return lensTypeChanged || onEntityPage || onLandingDecisionPage ? targetLens : null;
+  }
+
+  /**
+   * Puts the selector slot a previewed pick is about to overwrite back to its current value — for a pick whose navigation
+   * never leaves the page — unless something has selected another context since.
+   */
+  private contextRestorer(asFoundation: boolean, picked: ProjectContext): () => void {
+    const slot = asFoundation ? this.projectContextService.selectedFoundation : this.projectContextService.selectedProject;
+    const previous = slot();
+    return () => {
+      if (slot()?.uid !== picked.uid) return;
+      if (previous) {
+        if (asFoundation) this.projectContextService.setFoundation(previous, false);
+        else this.projectContextService.setProject(previous, false);
+      } else if (asFoundation) {
+        this.projectContextService.clearFoundation();
+      } else {
+        this.projectContextService.clearProject();
+      }
+    };
   }
 
   private initEffectiveShowOrgSelector(): Signal<boolean> {
@@ -212,7 +250,7 @@ export abstract class NavMenuBase {
 
   private initNavLens(): Signal<NavLens | null> {
     return computed(() => {
-      const lens = this.activeLens();
+      const lens = this.menuLens();
       return lens === 'foundation' || lens === 'project' ? lens : null;
     });
   }

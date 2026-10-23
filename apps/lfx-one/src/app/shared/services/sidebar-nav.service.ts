@@ -100,7 +100,11 @@ export class SidebarNavService {
       this.writerGrantsService.hasWriterFoundation()
   );
 
-  private readonly activeLens = this.lensService.activeLens;
+  /**
+   * The lens the menu is built for — the page's active lens, or the lens the mobile drawer previews (#4208). Everything
+   * here shapes the menu only, so it follows the menu lens and leaves the page's lens alone.
+   */
+  private readonly menuLens = this.lensService.menuLens;
 
   /**
    * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
@@ -157,7 +161,7 @@ export class SidebarNavService {
       this.personaService.personaLookupFailed() ||
       this.marketingProbeFailedSlugs().has(this.marketingScopeSlug()) ||
       // A foundation writer grant can be what unlocks the foundation menu (see sidebarItemsPending).
-      (this.activeLens() === 'foundation' && this.writerGrantsService.lookupFailed())
+      (this.menuLens() === 'foundation' && this.writerGrantsService.lookupFailed())
   );
 
   /**
@@ -174,20 +178,17 @@ export class SidebarNavService {
     // A foundation writer grant can be what unlocks the foundation menu: wait for the fast path only.
     // The idle-deferred sweep (inherited access) is too slow to hold the menu for; if it widens later,
     // the menu simply fills in.
-    if (this.activeLens() === 'foundation' && !this.writerGrantsService.summaryResolved()) return true;
+    if (this.menuLens() === 'foundation' && !this.writerGrantsService.summaryResolved()) return true;
     // The auditor / root-writer probe can surface the Formations item on its own.
-    if (this.activeLens() === 'foundation' && this.foundationAuditorProbePending()) return true;
+    if (this.menuLens() === 'foundation' && this.foundationAuditorProbePending()) return true;
     return (
-      this.activeLens() === 'project' &&
-      this.isFormationEnabled() &&
-      !this.formationOverviewAllowed() &&
-      !this.projectContextService.activeProjectStageResolved()
+      this.menuLens() === 'project' && this.isFormationEnabled() && !this.formationOverviewAllowed() && !this.projectContextService.menuProjectStageResolved()
     );
   });
 
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
-    switch (this.activeLens()) {
+    switch (this.menuLens()) {
       case 'foundation':
         return this.foundationLensItems();
       case 'project': {
@@ -206,10 +207,10 @@ export class SidebarNavService {
         // as it is for a dashboard the redirect guard let stand (`formationOverviewAllowed`): the nav
         // stays in step with that page rather than collapsing under it once the flag arrives late.
         if (this.isFormationEnabled() && !this.formationOverviewAllowed()) {
-          if (!this.projectContextService.activeProjectStageResolved()) {
+          if (!this.projectContextService.menuProjectStageResolved()) {
             return [];
           }
-          if (isFormationStageGate(this.projectContextService.activeProjectStage())) {
+          if (isFormationStageGate(this.projectContextService.menuProjectStage())) {
             return this.formationStageNavItems;
           }
         }
@@ -221,7 +222,7 @@ export class SidebarNavService {
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
-        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite() ? [this.projectInitiativesNavItem] : [];
+        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
         // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
@@ -429,7 +430,7 @@ export class SidebarNavService {
         // Only query when an authenticated user is actually on the foundation lens — this signal
         // only drives the foundation "Projects" entry. DocsLayoutComponent injects this service
         // even on public /docs pages, so an ungated query would fire (and 401) for anonymous visitors.
-        if (!this.userService.authenticated() || this.activeLens() !== 'foundation') {
+        if (!this.userService.authenticated() || this.menuLens() !== 'foundation') {
           return '';
         }
         return this.projectContextService.selectedFoundation()?.slug ?? '';
@@ -503,7 +504,7 @@ export class SidebarNavService {
    * signals still at their `false` default and never see the Formations item.
    */
   private readonly foundationAuditorBootstrap: Signal<unknown> = toSignal(
-    toObservable(computed(() => this.userService.authenticated() && this.activeLens() === 'foundation')).pipe(
+    toObservable(computed(() => this.userService.authenticated() && this.menuLens() === 'foundation')).pipe(
       switchMap((shouldProbe) => {
         if (!shouldProbe) return of(null);
         this.foundationAuditorProbePending.set(true);
@@ -585,7 +586,7 @@ export class SidebarNavService {
       );
 
       // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347).
-      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite()) {
+      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite()) {
         items.push(this.foundationInitiativesNavItem);
       }
 
@@ -1018,7 +1019,7 @@ export class SidebarNavService {
   private menuScopeKey(): string {
     const foundation = this.projectContextService.selectedFoundation()?.slug ?? '';
     const project = this.projectContextService.selectedProject()?.slug ?? '';
-    return `${this.activeLens()}|${foundation}|${project}`;
+    return `${this.menuLens()}|${foundation}|${project}`;
   }
 
   /** Marks a new marketing probe for `slug` as the latest, returning its generation. */
@@ -1117,7 +1118,7 @@ export class SidebarNavService {
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
+    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.menuCanWrite());
   }
 
   /**
