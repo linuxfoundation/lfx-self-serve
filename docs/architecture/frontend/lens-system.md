@@ -31,7 +31,8 @@ class LensService {
   menuLens: Signal<Lens>; // the previewed lens while one stands, otherwise activeLens
   previewingMenuLens: Signal<boolean>; // menuLens !== activeLens
   previewMenuLens(lens: Lens): void; // a drawer lens tab: show that lens's menu, no navigation
-  commitMenuLens(lens?: Lens): void; // a pick from the previewed menu: setLens before it navigates; undone if it never leaves the page
+  commitMenuLens(lens?: Lens, onRestore?: () => void): void; // a pick from the previewed menu: setLens before it navigates; undone if it never leaves the page
+  menuPickPending: Signal<boolean>; // a pick from the previewed menu is still navigating
   clearMenuLensPreview(): void; // the drawer closed without a pick
 }
 ```

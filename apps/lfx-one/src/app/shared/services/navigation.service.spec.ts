@@ -228,4 +228,52 @@ describe('NavigationService — menu lens preview', () => {
     expect(setFoundation).not.toHaveBeenCalled();
     TestBed.resetTestingModule();
   });
+
+  it("preloads the page's sibling list on a hybrid promotion while the drawer previews Me", async () => {
+    const http = { get: vi.fn().mockReturnValue(of({ ...emptyPage(), items: [{ uid: 'p1', slug: 'p1', name: 'P1' }] })) };
+    const activeLens = signal('foundation');
+    const menuLens = signal('me');
+    const isHybridPersona = signal(false);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: http },
+        {
+          provide: LensService,
+          useValue: {
+            activeLens,
+            menuLens,
+            previewingMenuLens: computed(() => menuLens() !== activeLens()),
+            availableLenses: signal([]),
+            isHybridPersona,
+            setLens: vi.fn(),
+          },
+        },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            selectedFoundation: signal({ uid: 'f1', slug: 'f1', name: 'F1' }),
+            selectedProject: signal(null),
+            clearFoundation: vi.fn(),
+            clearProject: vi.fn(),
+            setFoundation: vi.fn(),
+            setProject: vi.fn(),
+          },
+        },
+        { provide: PersonaService, useValue: { personaProjects: signal({}) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: FavoriteProjectsService, useValue: { state: signal({ data: new Set<string>(), loading: false, error: false }) } },
+      ],
+    });
+    const service = TestBed.inject(NavigationService);
+    TestBed.inject(ApplicationRef).tick();
+    await Promise.resolve();
+    expect(service.loaded('project')()).toBe(false);
+
+    isHybridPersona.set(true);
+    TestBed.inject(ApplicationRef).tick();
+    await Promise.resolve();
+
+    expect(service.loaded('project')()).toBe(true);
+    TestBed.resetTestingModule();
+  });
 });
