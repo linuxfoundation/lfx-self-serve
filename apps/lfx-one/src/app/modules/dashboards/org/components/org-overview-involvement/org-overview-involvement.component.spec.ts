@@ -19,7 +19,14 @@ async function buildMetrics(training: OrgTrainingEnrollmentsResponse): Promise<D
     getFoundationCoverage: () => of({ accountId: ACCOUNT_ID, foundationCount: 1, foundations: [] }),
     getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 11, monthlyData: [3], monthlyLabels: ['Oct 2026'] }),
     getMaintainersMonthly: () =>
-      of({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', totalMaintainersYearly: 5, totalProjectsYearly: 6, monthlyData: [5], monthlyLabels: ['Oct 2026'] }),
+      of({
+        accountId: ACCOUNT_ID,
+        accountName: 'Acme Motors',
+        totalMaintainersYearly: 5,
+        totalProjectsYearly: 6,
+        monthlyData: [5],
+        monthlyLabels: ['Oct 2026'],
+      }),
     getEventAttendanceMonthly: () =>
       of({
         accountId: ACCOUNT_ID,
