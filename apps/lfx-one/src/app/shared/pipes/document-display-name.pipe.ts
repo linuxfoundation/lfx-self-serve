@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate } from '@angular/common';
-import { Pipe, PipeTransform } from '@angular/core';
+import { inject, LOCALE_ID, Pipe, PipeTransform } from '@angular/core';
 import { MEETING_DATED_NAME_SOURCES } from '@lfx-one/shared/constants';
 import { MyDocumentItem } from '@lfx-one/shared/interfaces';
 
@@ -15,10 +15,13 @@ import { MyDocumentItem } from '@lfx-one/shared/interfaces';
   name: 'documentDisplayName',
 })
 export class DocumentDisplayNamePipe implements PipeTransform {
+  // Same locale source as the Date column's `date` pipe, so the two can't drift apart.
+  private readonly locale = inject(LOCALE_ID);
+
   public transform(doc: MyDocumentItem): string {
     if (doc.isFolder || !MEETING_DATED_NAME_SOURCES.includes(doc.source) || !Number.isFinite(Date.parse(doc.date))) {
       return doc.name;
     }
-    return `${formatDate(doc.date, 'MMM d, y', 'en-US')} – ${doc.name}`;
+    return `${formatDate(doc.date, 'MMM d, y', this.locale)} – ${doc.name}`;
   }
 }
