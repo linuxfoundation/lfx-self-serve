@@ -518,6 +518,9 @@ describe('private field comment store', () => {
     await store.bindRun(req, project, type, 'living', 'send-one', runId);
     expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: runId });
     expect((await store.bindRun(req, project, type, 'living', 'send-one', runId, true)).state).toBe('started');
+    await store.endStart(req, project, type, 'living', 'send-one', true);
+    expect(record().submissions[0].state).toBe('started');
+    await expect(store.release(req, project, type, 'living', 'send-one')).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
     await expect(store.bindRun(req, project, type, 'living', 'send-one', 'e'.repeat(64))).rejects.toBeInstanceOf(ConflictError);
     flows.subject.mockReturnValue('other-creator');
     await expect(store.bindRun(req, project, type, 'living', 'send-one', runId)).rejects.toBeInstanceOf(ConflictError);

@@ -295,6 +295,7 @@ export class MktgDocumentCommentsService {
         !(submission.state === 'reserved' && Date.now() - Date.parse(submission.createdAt) > MKTG_RUN_POLL.timeoutMs)
       )
         throw new ConflictError('This send is still active.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+      if (uncertain && submission.state === 'started') return { record: null, result: submission };
       if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: submission };
       const updated: MktgDocumentCommentSubmission = { ...submission, state: uncertain ? 'uncertain' : 'failed' };
       return {
