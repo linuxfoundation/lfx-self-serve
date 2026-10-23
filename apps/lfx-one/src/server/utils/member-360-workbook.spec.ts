@@ -201,7 +201,12 @@ describe('Member 360 workbook and tracker round trips', () => {
     const envelope = member360Fixture();
     const seed = envelope.tabs.member_ranking[0];
     const days = [null, -1, 120, 121, 240, 241];
-    envelope.tabs.member_ranking = days.map((days_to_renewal, index) => ({ ...seed, rank: index + 1, engagement_score: 100 - index, days_to_renewal }));
+    envelope.tabs.member_ranking = days.map((daysToRenewal, index) => ({
+      ...seed,
+      rank: index + 1,
+      engagement_score: 100 - index,
+      days_to_renewal: daysToRenewal,
+    }));
     const output = new ExcelJS.Workbook();
     await output.xlsx.load(await buildMember360Workbook(envelope));
     expect(days.map((_, index) => output.getWorksheet('Member Ranking')?.getCell(`F${index + 2}`).value)).toEqual(days);

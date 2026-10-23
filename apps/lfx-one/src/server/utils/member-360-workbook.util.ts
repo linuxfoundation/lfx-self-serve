@@ -245,7 +245,7 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
   return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })).buffer;
 }
 
-function argb(color: string): ExcelJS.Color {
+function argb(color: string): Partial<ExcelJS.Color> {
   return { argb: `FF${color.replace('#', '')}` };
 }
 
