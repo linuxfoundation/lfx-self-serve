@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal } from '@angular/core';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
@@ -10,6 +10,8 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewEventsView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { forkJoin } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -18,18 +20,20 @@ import { OverviewCardComponent } from '../overview-card/overview-card.component'
 import { OverviewEventTrendDialogComponent } from '../overview-event-trend-dialog/overview-event-trend-dialog.component';
 import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-explore-link.component';
 
-import type { HealthMetricsOverviewEvent, HealthMetricsOverviewEventRowView, HealthMetricsOverviewEventsView } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewEventRowView, HealthMetricsOverviewEventsView, HealthMetricsOverviewTrendDialogData } from '@lfx-one/shared/interfaces';
 
 /** The period's events and sponsorship, and its event list: upcoming for YTD, the year's past events otherwise. */
 @Component({
   selector: 'lfx-overview-events-card',
-  imports: [OverviewCardComponent, OverviewEventTrendDialogComponent, OverviewExploreLinkComponent],
+  imports: [OverviewCardComponent, OverviewExploreLinkComponent],
+  providers: [DialogService],
   templateUrl: './overview-events-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })
 export class OverviewEventsCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly chrome = inject(HealthMetricsChromeService);
+  private readonly dialogService = inject(DialogService);
 
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.events;
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.events;
@@ -53,15 +57,30 @@ export class OverviewEventsCardComponent {
   protected readonly visibleCount = linkedSignal({ source: this.view, computation: () => HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE });
   protected readonly visibleRows = computed<HealthMetricsOverviewEventRowView[]>(() => (this.view()?.rows ?? []).slice(0, this.visibleCount()));
   protected readonly hasMore = computed(() => (this.view()?.rows.length ?? 0) > this.visibleCount());
-  /** The upcoming event whose registration trend is open. */
-  protected readonly trendEvent = signal<HealthMetricsOverviewEvent | null>(null);
 
   protected showMore(): void {
     this.visibleCount.update((count) => count + HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE);
   }
 
+  /** The design's registration trend dialog: no PrimeNG header, as the body draws its own. */
   protected openTrend(row: HealthMetricsOverviewEventRowView): void {
-    if (!row.clickable) return;
-    this.trendEvent.set(this.read.data()?.events.upcoming.find((event) => event.eventId === row.eventId) ?? null);
+    const event = row.clickable ? this.read.data()?.events.upcoming.find((candidate) => candidate.eventId === row.eventId) : undefined;
+    if (!event) return;
+
+    const data: HealthMetricsOverviewTrendDialogData = { event };
+    const ref = this.dialogService.open(OverviewEventTrendDialogComponent, {
+      showHeader: false,
+      width: 'min(720px, calc(100vw - 32px))',
+      contentStyle: { padding: '22px' },
+      modal: true,
+      draggable: false,
+      resizable: false,
+      dismissableMask: true,
+      closeOnEscape: true,
+      // The dialog focuses its own title; PrimeNG would put focus, and a ring, on the close button.
+      focusOnShow: false,
+      data,
+    }) as DynamicDialogRef;
+    nameDynamicDialog(this.dialogService, ref, OverviewEventTrendDialogComponent.headingId);
   }
 }

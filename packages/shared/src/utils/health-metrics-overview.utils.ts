@@ -10,6 +10,7 @@ import {
   HEALTH_METRICS_OVERVIEW_STROKES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
 } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { resolveHealthMetricsEventsPastStatus } from './health-metrics-events.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
@@ -55,7 +56,6 @@ import type {
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
 
 const NOT_AVAILABLE = '—';
-const OVERVIEW_RANGES: readonly HealthMetricsRange[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'];
 
 /** The page header's year-to-date span, e.g. "Jan 1 – Oct 22, 2026", shown beside the YTD period. */
 export function buildHealthMetricsYtdRangeLabel(today: Date): string {
@@ -65,7 +65,7 @@ export function buildHealthMetricsYtdRangeLabel(today: Date): string {
 
 /** The selected period as one the Overview views carry columns for; `null` for any other. */
 export function toHealthMetricsOverviewRange(range: HealthMetricsRange): HealthMetricsL2Range | null {
-  return OVERVIEW_RANGES.includes(range) ? (range as HealthMetricsL2Range) : null;
+  return (HEALTH_METRICS_L2_RANGES as readonly HealthMetricsRange[]).includes(range) ? (range as HealthMetricsL2Range) : null;
 }
 
 /** Members and non-members, each with its two KPIs and engagement split. */
@@ -102,8 +102,6 @@ export function buildHealthMetricsOverviewNpsView(nps: HealthMetricsOverviewNps,
   const period = l2 ? nps.periods[l2] : null;
   const score = period?.npsScore ?? null;
   const responses = period?.responsesCount ?? null;
-  const change = period?.scoreChangePp ?? null;
-  const roundedChange = change === null ? 0 : Math.round(Math.abs(change));
   const rows = [
     { key: 'promoters', label: 'Promoters', range: '9–10', dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, count: period?.promotersCount ?? null },
     { key: 'passives', label: 'Passives', range: '7–8', dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium, count: period?.passivesCount ?? null },
@@ -114,14 +112,7 @@ export function buildHealthMetricsOverviewNpsView(nps: HealthMetricsOverviewNps,
     isEmpty: !period || (score === null && !responses),
     subtitle: `Last survey: ${period?.lastUpdatedQuarter ?? NOT_AVAILABLE} · ${formatCount(responses)} of ${formatCount(period?.recipientsCount)} responded (${formatShare(period?.responseRatePct ?? null)})`,
     scoreLabel: score === null ? NOT_AVAILABLE : String(Math.round(score)),
-    delta:
-      change === null || roundedChange === 0
-        ? null
-        : {
-            label: `${roundedChange} ${roundedChange === 1 ? 'pt' : 'pts'}${period?.previousSurveyQuarter ? ` vs ${period.previousSurveyQuarter}` : ''}`,
-            direction: change > 0 ? 'up' : 'down',
-            good: change > 0,
-          },
+    delta: buildNpsDelta(period?.scoreChangePp ?? null, period?.previousSurveyQuarter ?? null),
     segments: buildGaugeSegments(score),
     needle: score === null ? null : gaugeNeedle(score),
     ariaLabel: score === null ? 'Net Promoter Score not available' : `Net Promoter Score ${Math.round(score)} on a scale from -100 to 100`,
@@ -195,14 +186,18 @@ export function buildHealthMetricsOverviewChurnView(churn: HealthMetricsOverview
 export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOverviewOutstandingBalance): HealthMetricsOverviewBalanceView {
   const high = balance.highRiskUsd ?? 0;
   const medium = balance.mediumRiskUsd ?? 0;
-  const share = (pct: number | null, amount: number): number => clampPct(pct !== null ? pct * 100 : high + medium > 0 ? (amount / (high + medium)) * 100 : 0);
+  // The view's share when it has one, otherwise the band's part of the two amounts.
+  const share = (pct: number | null, amount: number): number => {
+    if (pct !== null) return clampPct(pct * 100);
+    return high + medium > 0 ? clampPct((amount / (high + medium)) * 100) : 0;
+  };
   const highMembers = balance.highRiskMembers;
 
   return {
     isEmpty: !balance.measured || !balance.outstandingUsd,
     totalLabel: formatMoney(balance.outstandingUsd),
     overdueMembersLabel: formatCount(balance.overdueMembers),
-    atRiskLabel: highMembers === null ? NOT_AVAILABLE : `${formatCount(highMembers)} ${highMembers === 1 ? 'member' : 'members'}`,
+    atRiskLabel: formatMembers(highMembers),
     rows: [
       {
         key: 'high',
@@ -253,7 +248,8 @@ export function buildHealthMetricsOverviewEventsView(
       key: 'total',
       label: 'Total events',
       value: formatCount(total),
-      delta: buildPctDelta(period?.changes?.events ?? null, true, ' vs last year'),
+      // The view's change covers held events only, so a YTD total that adds upcoming ones carries none, as on the Events tab.
+      delta: isYtd ? null : buildPctDelta(period?.changes?.events ?? null, true, ' vs last year'),
       note: isYtd ? `${formatCount(held)} held · ${formatCount(upcoming)} upcoming` : `${formatCount(held)} held`,
     },
     sponsorship: buildSponsorshipView(revenue, sponsorshipPeriod?.goalUsd ?? null, sponsorshipPeriod?.progressToGoal ?? null),
@@ -272,9 +268,10 @@ export function buildHealthMetricsOverviewTrainingView(
   const period = l2 ? enrollment.periods[l2] : null;
   const isRevenue = metric === 'revenue';
   const total = (isRevenue ? period?.totals.revenueUsd : period?.totals.enrollments) ?? null;
-  const goal = range === 'YTD' ? (isRevenue ? enrollment.goals.revenueUsd : enrollment.goals.enrollments) : null;
-  const format = (value: number | null): string => (value === null ? NOT_AVAILABLE : isRevenue ? formatCurrency(value) : formatNumber(value));
-  const fraction = goal && total !== null ? total / goal : 0;
+  const goals = trainingGoal(enrollment, range, isRevenue);
+  const goal = goals.goal;
+  const format = (value: number | null): string => formatTrainingValue(value, isRevenue);
+  const fraction = goals.progress ?? (goal && total !== null ? total / goal : 0);
   const metricLabel = isRevenue ? 'Revenue' : 'Enrollments';
   const programs = (period?.byType ?? [])
     .filter((type) => (isRevenue ? type.isListedRevenue : type.isListed))
@@ -351,12 +348,7 @@ export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverview
       pctLabel: formatShare(share, false),
       attendance: share,
       widthPct: clampPct(share * 100),
-      barClass:
-        share >= HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE
-          ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high
-          : share > 0
-            ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium
-            : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
+      barClass: attendanceFill(share),
       lastAttendedLabel: member.lastAttendedDate ? formatIsoDateLabel(member.lastAttendedDate) : NOT_AVAILABLE,
     });
   }
@@ -576,7 +568,7 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
     hasGoal,
     goalLabel: hasGoal ? formatCurrency(goal) : '',
     widthPct: clampPct(progress * 100),
-    progressLabel: hasGoal ? `${formatShare(progress, false)} reached · ${remaining > 0 ? `${formatCurrency(remaining)} to goal` : 'goal met'}` : 'No goal set',
+    progressLabel: hasGoal ? `${formatShare(progress, false)} reached · ${remainingLabel(remaining)}` : 'No goal set',
   };
 }
 
@@ -651,6 +643,33 @@ function formatEventDates(start: string | null, end: string | null): string {
   return `${monthDay(start)}–${Number(end.slice(8, 10))}, ${endYear}`;
 }
 
+/** The year's goal and its modelled progress, which the view carries for YTD only. */
+function trainingGoal(
+  enrollment: HealthMetricsTrainingEnrollment,
+  range: HealthMetricsRange,
+  isRevenue: boolean
+): { goal: number | null; progress: number | null } {
+  if (range !== 'YTD') return { goal: null, progress: null };
+  if (isRevenue) return { goal: enrollment.goals.revenueUsd, progress: enrollment.goals.revenueUsd ? enrollment.goals.revenueProgressYtd : null };
+  return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
+}
+
+function formatTrainingValue(value: number | null, isRevenue: boolean): string {
+  if (value === null) return NOT_AVAILABLE;
+  return isRevenue ? formatCurrency(value) : formatNumber(value);
+}
+
+/** Green at the design's good line, amber above none, red at none. */
+function attendanceFill(share: number): string {
+  if (share >= HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE) return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high;
+  if (share > 0) return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium;
+  return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low;
+}
+
+function remainingLabel(remaining: number): string {
+  return remaining > 0 ? `${formatCurrency(remaining)} to goal` : 'goal met';
+}
+
 function kpi(key: string, label: string, value: string): HealthMetricsOverviewKpiView {
   return { key, label, value, delta: null, note: '' };
 }
@@ -660,6 +679,18 @@ function buildPctDelta(change: number | null, higherIsGood: boolean, suffix = ''
   const rounded = change === null ? 0 : Math.round(Math.abs(change) * 100);
   if (change === null || rounded === 0) return null;
   return { label: `${rounded}%${suffix}`, direction: change > 0 ? 'up' : 'down', good: change > 0 === higherIsGood };
+}
+
+/** The score's change since the previous survey wave, named when the view has it. */
+function buildNpsDelta(change: number | null, previousQuarter: string | null): HealthMetricsOverviewDelta | null {
+  const points = buildPointsDelta(change, true);
+  if (!points) return null;
+  return previousQuarter ? { ...points, label: `${points.label} vs ${previousQuarter}` } : points;
+}
+
+function formatMembers(count: number | null): string {
+  if (count === null) return NOT_AVAILABLE;
+  return `${formatCount(count)} ${count === 1 ? 'member' : 'members'}`;
 }
 
 /** A change in percentage points, e.g. "1 pt". */

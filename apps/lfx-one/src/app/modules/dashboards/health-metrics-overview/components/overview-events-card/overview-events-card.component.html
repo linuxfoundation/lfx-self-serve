@@ -122,7 +122,3 @@
     </div>
   }
 </lfx-overview-card>
-
-@if (trendEvent(); as event) {
-  <lfx-overview-event-trend-dialog [event]="event" (closed)="trendEvent.set(null)" />
-}

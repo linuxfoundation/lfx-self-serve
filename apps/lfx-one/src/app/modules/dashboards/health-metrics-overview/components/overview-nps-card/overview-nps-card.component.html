@@ -24,8 +24,8 @@
             [attr.data-testid]="'overview-nps-segment-' + segment.key"></path>
         }
         @if (view.needle; as needle) {
-          <line x1="66" y1="66" stroke="#0F172B" stroke-width="2" stroke-linecap="round" [attr.x2]="needle.x" [attr.y2]="needle.y"></line>
-          <circle cx="66" cy="66" r="3.5" fill="#0F172B"></circle>
+          <line x1="66" y1="66" stroke-width="2" stroke-linecap="round" [attr.stroke]="strokes.needle" [attr.x2]="needle.x" [attr.y2]="needle.y"></line>
+          <circle cx="66" cy="66" r="3.5" [attr.fill]="strokes.needle"></circle>
         }
       </svg>
       <div class="flex flex-col gap-[4px]">

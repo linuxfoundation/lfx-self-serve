@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject } from '@angular/core';
-import { HEALTH_METRICS_OVERVIEW_CARDS, HEALTH_METRICS_OVERVIEW_EMPTY_COPY } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_OVERVIEW_CARDS, HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_STROKES } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewOrgsView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 
@@ -27,6 +27,7 @@ export class OverviewOrgsCardComponent {
 
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.orgs;
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.orgs;
+  protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewParticipatingOrgs({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewParticipatingOrgsView | null>(() => {
     const orgs = this.read.data();

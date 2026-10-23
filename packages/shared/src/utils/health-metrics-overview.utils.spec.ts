@@ -357,15 +357,21 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     truncated: false,
   };
 
-  it('counts upcoming events into the YTD total and compares it with last year', () => {
+  // The view's change covers held events only, so it belongs on a past year's total, not on one that adds upcoming events.
+  it('counts upcoming events into the YTD total without the held-only change', () => {
     const view = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD', 'YTD');
 
     expect(view.total).toEqual({
       key: 'total',
       label: 'Total events',
       value: '22',
-      delta: { label: '24% vs last year', direction: 'down', good: false },
+      delta: null,
       note: '20 held · 2 upcoming',
+    });
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR', '2025').total.delta).toEqual({
+      label: '24% vs last year',
+      direction: 'down',
+      good: false,
     });
     expect(view.listTitle).toBe('Upcoming events');
     expect(view.rows.map((row) => row.eventId)).toEqual(['e1', 'e2', 'e3']);
@@ -477,6 +483,12 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     expect(view.items[0].widthPct).toBe(100);
     expect(view.items[1].widthPct).toBe(1);
     expect(view.progressPath).not.toBe('');
+  });
+
+  it("prefers the view's modelled progress for YTD over the plain share of the goal", () => {
+    const modelled = { ...enrollment, goals: { ...enrollment.goals, enrollmentsProgressYtd: 1 } };
+
+    expect(buildHealthMetricsOverviewTrainingView(modelled, 'YTD', 'enrollments').goalLabel).toBe('100% of 150K goal');
   });
 
   it('adds Bundle on the revenue view', () => {

@@ -29,9 +29,9 @@
     <div class="flex flex-wrap items-start gap-x-[40px] gap-y-[24px]">
       <div class="relative h-[194px] w-[212px] flex-none" data-testid="overview-training-arc">
         <svg width="212" height="194" viewBox="0 0 212 194" class="absolute inset-0" role="img" [attr.aria-label]="view.ariaLabel">
-          <path fill="none" stroke="#F1F5F9" stroke-width="8" stroke-linecap="round" [attr.d]="view.trackPath"></path>
+          <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.track" [attr.d]="view.trackPath"></path>
           @if (view.progressPath) {
-            <path fill="none" stroke="#009AFF" stroke-width="8" stroke-linecap="round" [attr.d]="view.progressPath"></path>
+            <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.progress" [attr.d]="view.progressPath"></path>
           }
         </svg>
         <div class="absolute inset-x-0 top-[62px] flex flex-col items-center gap-[2px] text-center">

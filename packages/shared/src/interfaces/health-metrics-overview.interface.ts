@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Signal } from '@angular/core';
+
 import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
@@ -449,4 +451,15 @@ export interface HealthMetricsOverviewTrendView {
   bandPath: string;
   /** `null` once the event is past the chart's window or has no actuals. */
   todayX: string | null;
+}
+
+/** One Overview card's read: the response once it lands, and where the read stands. */
+export interface HealthMetricsOverviewCardRead<T> {
+  data: Signal<T | null>;
+  status: Signal<HealthMetricsOverviewCardStatus>;
+}
+
+/** What the events card hands the registration trend dialog. */
+export interface HealthMetricsOverviewTrendDialogData {
+  event: HealthMetricsOverviewEvent;
 }

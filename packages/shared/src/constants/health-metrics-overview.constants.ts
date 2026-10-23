@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants';
 
@@ -140,6 +141,9 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   training: { label: 'Explore Enrollment & Revenue', commands: [HEALTH_METRICS_BASE_PATH, 'training'], fragment: 'enroll', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewExploreLink>;
 
+/** The design's purple for maintainers and this year's registrations; no `lfxColors` scale carries it. */
+export const HEALTH_METRICS_OVERVIEW_PURPLE = '#AD46FF';
+
 /** Fills for dots, bars and legend swatches, applied via `[class]`. */
 export const HEALTH_METRICS_OVERVIEW_FILL_CLASSES = {
   high: 'bg-emerald-500',
@@ -158,13 +162,23 @@ export const HEALTH_METRICS_OVERVIEW_BADGE_CLASSES = {
   bad: 'bg-red-50 text-red-700',
 } as const;
 
-/** The same tones as SVG strokes, for the donut, gauge and trend chart. */
+/** The same tones as SVG strokes, for the donut, gauge, training arc and trend chart. */
 export const HEALTH_METRICS_OVERVIEW_STROKES = {
-  high: '#00BC7D',
-  medium: '#FFB900',
-  low: '#FF6467',
-  track: '#F1F5F9',
+  high: lfxColors.emerald[500],
+  medium: lfxColors.amber[400],
+  low: lfxColors.red[400],
+  track: lfxColors.gray[100],
+  progress: lfxColors.blue[500],
+  needle: lfxColors.gray[900],
+  gridline: lfxColors.gray[100],
+  baseline: lfxColors.gray[200],
+  lastYear: lfxColors.gray[400],
+  today: lfxColors.gray[300],
+  thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;
+
+/** The forecast range band behind the predicted line: the progress blue at 10%. */
+export const HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL = `${lfxColors.blue[500]}1A`;
 
 /** An upcoming event's `comp_score` → its pill and bar. An unknown or empty score draws neither. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_PACE = {

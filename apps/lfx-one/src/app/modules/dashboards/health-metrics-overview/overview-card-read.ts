@@ -2,24 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, EMPTY, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
-import type { HealthMetricsOverviewCardStatus } from '@lfx-one/shared/interfaces';
-
-/** One card's read: the response once it lands, and where the read stands. */
-export interface OverviewCardRead<T> {
-  data: Signal<T | null>;
-  status: Signal<HealthMetricsOverviewCardStatus>;
-}
+import type { HealthMetricsOverviewCardRead, HealthMetricsOverviewCardStatus } from '@lfx-one/shared/interfaces';
 
 /**
  * Reads a card's data once per foundation, from an injection context. Every read carries all periods, so a
  * period change never re-reads. SSR stays loading, so the server's skeleton matches the client's first paint.
  */
-export function injectOverviewCardRead<T>(read: (foundationSlug: string) => Observable<T>): OverviewCardRead<T> {
+export function injectOverviewCardRead<T>(read: (foundationSlug: string) => Observable<T>): HealthMetricsOverviewCardRead<T> {
   const projectContext = inject(ProjectContextService);
   const status = signal<HealthMetricsOverviewCardStatus>('loading');
 

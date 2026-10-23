@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { HEALTH_METRICS_OVERVIEW_CARDS, HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_OVERVIEW_CARDS,
+  HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
+  HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
+  HEALTH_METRICS_OVERVIEW_STROKES,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewTrainingView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 
@@ -27,6 +32,7 @@ export class OverviewTrainingCardComponent {
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.training;
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.training;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.training;
+  protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly metrics: readonly { id: HealthMetricsOverviewTrainingMetric; label: string }[] = [
     { id: 'enrollments', label: 'Enrollment' },
     { id: 'revenue', label: 'Revenue' },

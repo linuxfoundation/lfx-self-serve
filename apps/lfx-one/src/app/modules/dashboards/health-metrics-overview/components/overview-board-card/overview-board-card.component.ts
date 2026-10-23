@@ -7,6 +7,7 @@ import { buildHealthMetricsOverviewAddPastMeetingUrl, buildHealthMetricsOverview
 import { environment } from '@environments/environment';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -18,7 +19,7 @@ import type { HealthMetricsOverviewBoardRowView, HealthMetricsOverviewBoardSort,
 /** The board's meetings and average attendance, then every invited member, lowest attendance first. */
 @Component({
   selector: 'lfx-overview-board-card',
-  imports: [OverviewCardComponent, OverviewKpiStripComponent],
+  imports: [OverviewCardComponent, OverviewKpiStripComponent, TooltipModule],
   templateUrl: './overview-board-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })
@@ -40,6 +41,8 @@ export class OverviewBoardCardComponent {
     return board ? buildHealthMetricsOverviewBoardView(board, this.chrome.selectedRange()) : null;
   });
   protected readonly rows = computed<HealthMetricsOverviewBoardRowView[]>(() => sortHealthMetricsOverviewBoardRows(this.view()?.rows ?? [], this.sort()));
+  protected readonly nameAriaSort = computed(() => this.ariaSort('name'));
+  protected readonly attendanceAriaSort = computed(() => this.ariaSort('att'));
   protected readonly nameSortIcon = computed(() => this.sortIcon('name'));
   protected readonly attendanceSortIcon = computed(() => this.sortIcon('att'));
 
@@ -48,7 +51,7 @@ export class OverviewBoardCardComponent {
     this.sort.set(this.sort() === `${column}-asc` ? `${column}-desc` : `${column}-asc`);
   }
 
-  protected ariaSort(column: 'name' | 'att'): 'ascending' | 'descending' | 'none' {
+  private ariaSort(column: 'name' | 'att'): 'ascending' | 'descending' | 'none' {
     const sort = this.sort();
     if (!sort.startsWith(column)) return 'none';
     return sort.endsWith('asc') ? 'ascending' : 'descending';

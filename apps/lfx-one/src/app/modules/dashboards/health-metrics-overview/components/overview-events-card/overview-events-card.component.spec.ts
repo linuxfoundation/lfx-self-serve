@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,12 +22,6 @@ import type {
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEvents,
 } from '@lfx-one/shared/interfaces';
-
-@Component({ selector: 'lfx-overview-event-trend-dialog', template: '<div data-testid="trend-stub">{{ event().eventId }}</div>' })
-class TrendDialogStubComponent {
-  public readonly event = input.required<HealthMetricsOverviewEvent>();
-  public readonly closed = output<void>();
-}
 
 const RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'] as const;
 const GLANCE: HealthMetricsEventsAtAGlance = {
@@ -86,8 +81,10 @@ const EVENTS: HealthMetricsOverviewEvents = {
 
 describe('OverviewEventsCardComponent', () => {
   let fixture: ComponentFixture<OverviewEventsCardComponent>;
+  let open: ReturnType<typeof vi.fn>;
 
   async function render(failSponsorship = false): Promise<void> {
+    open = vi.fn().mockReturnValue({});
     await TestBed.configureTestingModule({
       imports: [OverviewEventsCardComponent],
       providers: [
@@ -106,8 +103,7 @@ describe('OverviewEventsCardComponent', () => {
       ],
     })
       .overrideComponent(OverviewEventsCardComponent, {
-        remove: { imports: [OverviewEventTrendDialogComponent] },
-        add: { imports: [TrendDialogStubComponent] },
+        set: { providers: [{ provide: DialogService, useValue: { open, dialogComponentRefMap: new Map() } }] },
       })
       .compileComponents();
     fixture = TestBed.createComponent(OverviewEventsCardComponent);
@@ -156,14 +152,17 @@ describe('OverviewEventsCardComponent', () => {
     await render();
 
     rows()[1].click();
-    fixture.detectChanges();
-    expect(query('trend-stub')?.textContent).toBe('u1');
-
-    fixture.componentInstance['trendEvent'].set(null);
-    fixture.detectChanges();
     rows()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    fixture.detectChanges();
-    expect(query('trend-stub')?.textContent).toBe('u2');
+
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open.mock.calls[0][0]).toBe(OverviewEventTrendDialogComponent);
+    expect(open.mock.calls[0][1]).toMatchObject({
+      showHeader: false,
+      modal: true,
+      dismissableMask: true,
+      data: { event: expect.objectContaining({ eventId: 'u1' }) },
+    });
+    expect(open.mock.calls[1][1].data.event.eventId).toBe('u2');
   });
 
   it("lists a past year's events, back on the first page, none of them opening the trend", async () => {
@@ -179,8 +178,7 @@ describe('OverviewEventsCardComponent', () => {
     expect(rows()[0].getAttribute('role')).toBeNull();
     expect(query('overview-events-row-p1-registrations')?.textContent).toContain('Hit goal');
     rows()[0].click();
-    fixture.detectChanges();
-    expect(query('trend-stub')).toBeNull();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('fails as a whole when any of its reads fails', async () => {

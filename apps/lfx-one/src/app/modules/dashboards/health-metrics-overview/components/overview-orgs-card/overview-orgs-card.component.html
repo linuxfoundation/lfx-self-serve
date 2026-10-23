@@ -23,7 +23,7 @@
             <div class="flex items-center gap-[20px]">
               <div class="relative h-[112px] w-[112px] flex-none">
                 <svg width="112" height="112" viewBox="0 0 112 112" class="block -rotate-90" aria-hidden="true">
-                  <circle cx="56" cy="56" r="46" fill="none" stroke="#F1F5F9" stroke-width="8"></circle>
+                  <circle cx="56" cy="56" r="46" fill="none" stroke-width="8" [attr.stroke]="strokes.track"></circle>
                   @for (segment of half.donut; track segment.key) {
                     <circle
                       cx="56"

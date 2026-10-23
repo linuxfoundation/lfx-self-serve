@@ -5,6 +5,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -52,9 +53,10 @@ const point = (daysToEvent: number, actual: number | null, forecast: number | nu
 
 describe('OverviewEventTrendDialogComponent', () => {
   let fixture: ComponentFixture<OverviewEventTrendDialogComponent>;
-  let closed: ReturnType<typeof vi.fn>;
+  let close: ReturnType<typeof vi.fn>;
 
   async function render(curve: HealthMetricsEventsForecastCurve | Error): Promise<void> {
+    close = vi.fn();
     await TestBed.configureTestingModule({
       imports: [OverviewEventTrendDialogComponent],
       providers: [
@@ -66,12 +68,11 @@ describe('OverviewEventTrendDialogComponent', () => {
           },
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { event: EVENT } } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(OverviewEventTrendDialogComponent);
-    fixture.componentRef.setInput('event', EVENT);
-    closed = vi.fn();
-    fixture.componentInstance.closed.subscribe(closed);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -86,12 +87,11 @@ describe('OverviewEventTrendDialogComponent', () => {
     formats: [{ format: 'In Person', points: [point(-90, 100, null), point(-46, 330, null), point(0, null, 620)] }],
   };
 
-  it('is a labelled modal with the headline figures and the curve', async () => {
+  it('titles itself with the event, under the heading the dialog is named by, with the figures and the curve', async () => {
     await render(oneFormat);
 
-    const dialog = query('overview-trend-dialog');
-    expect(dialog?.getAttribute('aria-modal')).toBe('true');
-    expect(fixture.nativeElement.querySelector(`#${dialog?.getAttribute('aria-labelledby')}`)?.textContent?.trim()).toBe('Acme Summit');
+    expect(fixture.nativeElement.querySelector(`#${OverviewEventTrendDialogComponent.headingId}`)?.textContent?.trim()).toBe('Acme Summit');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Springfield · Dec 8–10, 2026');
     expect(query('overview-trend-kpi-current')?.textContent).toContain('330');
     expect(query('overview-trend-kpi-predicted')?.textContent).toContain('620');
     expect(query('overview-trend-chart')?.querySelectorAll('path').length).toBeGreaterThanOrEqual(3);
@@ -111,14 +111,18 @@ describe('OverviewEventTrendDialogComponent', () => {
     expect(fixture.componentInstance['format']()).toBe('In Person');
   });
 
-  it('closes on the close button, the backdrop and Escape', async () => {
+  it('opens with focus on its title rather than the close button', async () => {
+    await render(oneFormat);
+
+    expect(document.activeElement?.id).toBe(OverviewEventTrendDialogComponent.headingId);
+  });
+
+  it('closes the dialog from its close button', async () => {
     await render(oneFormat);
 
     query('overview-trend-close')?.click();
-    query('overview-trend-backdrop')?.click();
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
-    expect(closed).toHaveBeenCalledTimes(3);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('says so when the trend cannot be read', async () => {
