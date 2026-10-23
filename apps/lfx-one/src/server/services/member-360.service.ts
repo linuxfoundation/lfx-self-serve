@@ -63,6 +63,7 @@ export class Member360Service {
       activity: result.activity,
       persistence: result.persistence,
       failureText: result.status === 'needs_input' ? MEMBER_360_INPUT_TIMEOUT_MESSAGE : result.message,
+      failureReason: result.reason,
     };
   }
 
