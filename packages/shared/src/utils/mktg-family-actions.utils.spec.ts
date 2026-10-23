@@ -117,6 +117,16 @@ describe('One rule for every family action', () => {
     });
     expect(resolveMktgFamilyActions(family('events'), context).header).toBeNull();
   });
+  it.each([
+    ['positioning-brand', 'Run messaging framework'],
+    ['social-community', 'Run LinkedIn posts'],
+    ['member-sponsor', 'Run Member 360'],
+  ])('reader headers keep board copy for %s even when the denied read has no rows', (id, label) => {
+    const view = { ...family(id), rows: [] };
+    const result = resolveMktgFamilyActions(view, { ...context, canWrite: false });
+    expect(result.header).toMatchObject({ label, blockedReason: MKTG_FAMILY_WRITE_REQUIRED });
+    expect(result.rows).toEqual({});
+  });
   it('unavailable leads use declared pending copy, even without catalog membership', () => {
     const view = family('member-sponsor');
     view.family = {

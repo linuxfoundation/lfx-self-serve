@@ -83,10 +83,8 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
   if (!agentId) return { rows, header: null };
   const available = isMktgFamilyAgentAvailable(agentId);
   const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
-  const lead = Object.values(rows).find(({ row }) =>
-    MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.asset.agentKey && type.catalogAgentId === agentId)
-  );
-  const name = lead?.row.asset.runName ?? lead?.row.asset.label ?? view.family.pendingAgentName ?? agent?.name ?? agentId;
+  const leadAsset = view.family.assets.find((asset) => MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === asset.agentKey && type.catalogAgentId === agentId));
+  const name = leadAsset?.runName ?? leadAsset?.label ?? view.family.pendingAgentName ?? agent?.name ?? agentId;
   const unavailableName = view.family.pendingAgentName ?? name;
   let leadBlocked = view.family.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon'];
   if (available || !context.canWrite) leadBlocked = blockedReason(agentId);
