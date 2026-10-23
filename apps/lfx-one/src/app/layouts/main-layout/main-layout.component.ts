@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, NgClass } from '@angular/common';
-import { Component, HostListener, inject, model, signal } from '@angular/core';
+import { Component, HostListener, inject, linkedSignal, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -16,12 +16,12 @@ import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
-import { DrawerModule } from 'primeng/drawer';
+import { FocusTrap } from 'primeng/focustrap';
 import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, DrawerModule, ImpersonationBannerComponent],
+  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, FocusTrap, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
 })
@@ -35,8 +35,15 @@ export class MainLayoutComponent {
   private readonly document = inject(DOCUMENT);
   protected readonly userService = inject(UserService);
 
-  // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
+  // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
+
+  // The drawer's navbar mounts on the first open and then stays, so it is never torn down mid-slide and below `lg`
+  // only — a desktop session never opens the drawer and never builds a second navbar.
+  protected readonly mobileNavbarMounted = linkedSignal<boolean, boolean>({
+    source: this.showMobileSidebar,
+    computation: (open, previous) => open || (previous?.value ?? false),
+  });
 
   // Project/foundation selector panel open state (drives the main-content backdrop)
   protected readonly selectorPanelOpen = model(false);
@@ -112,33 +119,23 @@ export class MainLayoutComponent {
     this.appService.openMobileSidebar();
   }
 
-  /** Close the mobile drawer from its backdrop (PrimeNG's own mask is off). */
+  /** Close the mobile drawer from its backdrop. */
   public closeMobileSidebar(): void {
     this.appService.closeMobileSidebar();
   }
 
   /**
-   * Escape closes the mobile drawer (PrimeNG's own Escape handling is off) — unless an overlay opened above it (a navbar
+   * Escape closes the mobile drawer — unless an overlay opened above it (a navbar
    * popover or selector panel, a dialog, the What's New drawer, a nav tooltip) is still open: that overlay takes the key.
    * PrimeNG overlays stay in the DOM through their leave animation, and this listener is bound before any tooltip's.
    */
   @HostListener('document:keydown.escape')
   public onEscape(): void {
-    const overlayAbove = this.document.querySelector('.p-popover, .p-dialog-mask, .p-drawer:not(.mobile-navbar-drawer), .lfxn-tooltip.is-visible');
+    const overlayAbove = this.document.querySelector('.p-popover, .p-dialog-mask, .p-drawer, .lfxn-tooltip.is-visible');
     if (!this.showMobileSidebar() || overlayAbove) {
       return;
     }
     this.closeMobileSidebar();
-  }
-
-  /**
-   * Safety net: with the drawer's mask, Escape and close icon off, PrimeNG no longer closes it by itself — the
-   * backdrop and Escape go through {@link closeMobileSidebar}. Kept so a PrimeNG-initiated close still resets the state.
-   */
-  public onDrawerVisibilityChange(visible: boolean): void {
-    if (!visible) {
-      this.appService.closeMobileSidebar();
-    }
   }
 
   /**

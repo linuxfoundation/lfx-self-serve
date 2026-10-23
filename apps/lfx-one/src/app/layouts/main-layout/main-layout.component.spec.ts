@@ -22,6 +22,7 @@ interface LayoutHarness {
   routerEvents: Subject<unknown>;
   menuButton: () => HTMLButtonElement;
   backdrop: () => HTMLElement | null;
+  panel: () => HTMLElement;
 }
 
 /** Renders the real layout template with its child components stubbed out (NO_ERRORS_SCHEMA), so the hamburger and backdrop bindings are exercised. */
@@ -53,6 +54,7 @@ const createLayout = async (): Promise<LayoutHarness> => {
     routerEvents,
     menuButton: () => element.querySelector<HTMLButtonElement>('[data-testid="mobile-menu-button"]')!,
     backdrop: () => element.querySelector<HTMLElement>('[data-testid="mobile-sidebar-backdrop"]'),
+    panel: () => element.querySelector<HTMLElement>('[data-testid="mobile-sidebar-drawer"]')!,
   };
 };
 
@@ -122,15 +124,34 @@ describe('MainLayoutComponent mobile drawer', () => {
     expect(appService.showMobileSidebar()).toBe(false);
   });
 
-  it('closes when the drawer reports itself hidden, and ignores a visible report', async () => {
-    const { fixture, appService } = await createLayout();
-    appService.openMobileSidebar();
+  // The iOS half of #4172: the panel's visibility is bound to the state itself, so it can't stay hidden while the state says open.
+  it('shows the panel exactly while the state is open, and makes it inert while closed', async () => {
+    const { fixture, appService, menuButton, panel } = await createLayout();
+    expect(panel().classList.contains('is-open')).toBe(false);
+    expect(panel().hasAttribute('inert')).toBe(true);
 
-    fixture.componentInstance.onDrawerVisibilityChange(true);
-    expect(appService.showMobileSidebar()).toBe(true);
+    menuButton().click();
+    await fixture.whenStable();
+    expect(panel().classList.contains('is-open')).toBe(true);
+    expect(panel().hasAttribute('inert')).toBe(false);
 
-    fixture.componentInstance.onDrawerVisibilityChange(false);
-    expect(appService.showMobileSidebar()).toBe(false);
+    appService.closeMobileSidebar();
+    await fixture.whenStable();
+    expect(panel().classList.contains('is-open')).toBe(false);
+    expect(panel().hasAttribute('inert')).toBe(true);
+  });
+
+  it('mounts the drawer navbar on the first open and keeps it mounted after closing', async () => {
+    const { fixture, appService, menuButton, panel } = await createLayout();
+    expect(panel().querySelector('lfx-navbar')).toBeNull();
+
+    menuButton().click();
+    await fixture.whenStable();
+    expect(panel().querySelector('lfx-navbar')).not.toBeNull();
+
+    appService.closeMobileSidebar();
+    await fixture.whenStable();
+    expect(panel().querySelector('lfx-navbar')).not.toBeNull();
   });
 
   it('closes on navigation, so a lens switch from the drawer leaves it closed and reopenable', async () => {

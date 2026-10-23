@@ -22,8 +22,10 @@
       [(selectorPanelOpen)]="selectorPanelOpen"></lfx-navbar>
   </div>
 
-  <!-- Navbar - Mobile Drawer. The layout owns the backdrop and the stacking order, not PrimeNG's modal mask and
-       auto z-index: reopening during the close animation let the old panel's teardown strip both off the new one. -->
+  <!-- Navbar - Mobile Drawer. A layout-owned panel, not PrimeNG's p-drawer: its Angular-animation lifecycle (re-parenting
+       the panel to <body> on enter, tearing down on leave) could leave the panel invisible or stripped on iOS WebKit while
+       the state said open. The panel always exists and slides with a CSS transition bound to the state, so what is shown
+       can't drift from it. The navbar mounts on first open and then stays. -->
   @if (showMobileSidebar()) {
     <div
       class="lg:hidden fixed inset-0 z-[998] bg-black/40 touch-none mobile-navbar-backdrop"
@@ -31,17 +33,17 @@
       aria-hidden="true"
       data-testid="mobile-sidebar-backdrop"></div>
   }
-  <p-drawer
-    [visible]="showMobileSidebar()"
-    (visibleChange)="onDrawerVisibilityChange($event)"
-    position="left"
-    [modal]="false"
-    [autoZIndex]="false"
-    [closeOnEscape]="false"
-    [showCloseIcon]="false"
-    styleClass="lg:hidden mobile-navbar-drawer"
+  <div
+    class="lg:hidden fixed top-0 left-0 z-[999] flex h-full w-[296px] flex-col mobile-navbar-drawer"
+    [class.is-open]="showMobileSidebar()"
+    [attr.inert]="showMobileSidebar() ? null : ''"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Navigation"
+    pFocusTrap
+    [pFocusTrapDisabled]="!showMobileSidebar()"
     data-testid="mobile-sidebar-drawer">
-    <ng-template #headless>
+    @if (mobileNavbarMounted()) {
       <lfx-navbar
         [items]="sidebarItems()"
         [showMeSelector]="activeLens() === 'me'"
@@ -49,8 +51,8 @@
         [showOrgSelector]="activeLens() === 'org'"
         [(selectorPanelOpen)]="selectorPanelOpen"
         [mobile]="true"></lfx-navbar>
-    </ng-template>
-  </p-drawer>
+    }
+  </div>
 
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
   @if (selectorPanelOpen()) {
