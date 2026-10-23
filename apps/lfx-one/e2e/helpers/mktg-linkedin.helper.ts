@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_API, LENS_COOKIE_KEY, MKTG_DOCUMENT_TYPES, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_API,
+  LENS_COOKIE_KEY,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_DOCUMENTS_API_PATH,
+  MKTG_LAST_INTAKE_API,
+  PERSONA_COOKIE_KEY,
+  SELECTED_PROJECT_COOKIE_KEY,
+} from '../../../../packages/shared/src/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
 import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '@lfx-one/shared/utils/linkedin-post-run.utils';
@@ -104,6 +112,23 @@ export async function setupLinkedin(
     })
   );
   await page.route('**/api/projects/*/sfid*', (route) => json(route, { sfid: null }));
+  // Family navigation must never fall through to the live writer-gated listing/history.
+  await page.route(
+    (url) => url.pathname === MKTG_DOCUMENTS_API_PATH,
+    (route) => {
+      if (route.request().method() !== 'GET' || new URL(route.request().url()).searchParams.get('project') !== project.uid)
+        return route.abort('blockedbyclient');
+      return json(route, { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })) }, options.writer === false ? 403 : 200);
+    }
+  );
+  await page.route(
+    (url) => url.pathname === `${MKTG_LAST_INTAKE_API}/linkedin-post/last`,
+    (route) => {
+      if (route.request().method() !== 'GET' || new URL(route.request().url()).searchParams.get('project') !== project.uid)
+        return route.abort('blockedbyclient');
+      return json(route, { intake: null }, options.writer === false ? 403 : 200);
+    }
+  );
   await page.route(`**${LINKEDIN_API}/profile`, (route) => {
     if (route.request().method() === 'PUT')
       return json(route, { profile: { profile: selectedProfile, profile_markdown: renderLinkedinProfileMarkdown(selectedProfile) } });
