@@ -414,10 +414,11 @@ never allowed; redrafts append ordinary Drafts through the existing writer.
 
 ## Reserved comment sends and release
 
-The lifecycle support alone registers no route. The additive producer registers
+The lifecycle support alone registers no route; its additive producer exposes
 writer-gated `POST /documents/:agentKey/:documentId/revise` with ID-only
-`project`, `revisionId`, ordered `commentIds`, and `clientRequestId`, plus a
-writer-and-creator-gated release action. No caller previous JSON or routing is
+`project`, `revisionId`, ordered `commentIds`, and `clientRequestId`.
+`POST /documents/:agentKey/:documentId/revise/:requestId/release` is gated on
+both the writer grant and the original send creator; its body carries only project. No caller previous JSON or routing is
 accepted. The existing private comment ledger holds opaque `requestedBy`,
 creation time, base/selected IDs, state, and an optional run hash; never a raw
 session ID or owner token. Only a fresh committed reservation can call Guild.
@@ -427,7 +428,8 @@ Conclusive non-acceptance before a session exists marks the reservation failed
 and reopens its threads in one CAS. Same-ID replay reports that recorded failure;
 only an explicit new send uses a new ID. Unknown transport or a partial start
 records uncertain and leaves threads sent. The creator can explicitly release
-uncertainty to failed/open, retaining the old hash without rebinding it.
+uncertainty to failed/open, retaining the old hash without rebinding it. Any expired
+reserved send can also be released by its creator.
 Uncertain/failed and unbound reserved sends older than the existing Run timeout
 are not busy. Late bind/release/result work cannot touch a newer reservation.
 No recovery path automatically resubmits to Guild.
@@ -450,6 +452,8 @@ never overwrite an earlier result's resolutions. Names still resolve at read tim
 
 Producer refusal guards keep redraft-bound sessions out of ICP result persistence,
 generic chat and typed free-text answer turns. Ordinary sessions are unchanged.
-Descriptor reads fail closed; result polls currently perform up to three bounded
-private descriptor GETs (scope, persistence, settlement), an intentional cost rather
-than a second cache or lifecycle authority.
+Descriptor reads fail closed. One ready domain result pass performs up to three
+private descriptor GETs for Markdown or two for JSON. Documents reconciliation
+adds one settlement lookup (four/three total). A public result endpoint also
+rechecks through the trusted Run reader, so it can perform seven/five respectively.
+This bounded read cost is explicit; no second cache or lifecycle authority is added.

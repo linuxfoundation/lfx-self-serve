@@ -17,6 +17,7 @@ import {
   MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_REDRAFT_SUBMISSION_KEYS,
+  MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import type {
   MktgAddDocumentCommentRequest,
@@ -287,7 +288,12 @@ export class MktgDocumentCommentsService {
       const submission = record.submissions.find((row) => row.id === requestId);
       if (!submission || submission.requestedBy !== actor)
         throw new ConflictError('Only the send creator may change its reservation.', 'MKTG_REDRAFT_REQUEST_CONFLICT');
-      if (releaseOnly && submission.state !== 'uncertain' && submission.state !== 'failed' && !(submission.state === 'reserved' && !this.busy(submission)))
+      if (
+        releaseOnly &&
+        submission.state !== 'uncertain' &&
+        submission.state !== 'failed' &&
+        !(submission.state === 'reserved' && Date.now() - Date.parse(submission.createdAt) > MKTG_RUN_POLL.timeoutMs)
+      )
         throw new ConflictError('This send is still active.', 'MKTG_REDRAFT_COMMENTS_BUSY');
       if (uncertain && submission.state === 'started') return { record: null, result: submission };
       if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: submission };

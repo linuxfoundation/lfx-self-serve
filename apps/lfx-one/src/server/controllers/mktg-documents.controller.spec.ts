@@ -3,8 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn() }));
-const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn() }));
+const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn(), resolveProject: vi.fn() }));
+const redraftMocks = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock('../services/mktg-document-redraft.service', () => ({
+  MktgDocumentRedraftService: class {
+    public send = redraftMocks.send;
+  },
+}));
+const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), release: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const storeMocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
@@ -25,9 +31,13 @@ const loggerMocks = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils')),
+}));
 vi.mock('../services/mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public listDocuments = storeMocks.listDocuments;
@@ -42,6 +52,7 @@ vi.mock('../services/mktg-document-run.service', async () => {
   return {
     MktgDocumentRunService: class {
       public readProgress = runMocks.readProgress;
+      public resolveProject = runMocks.resolveProject;
       public retry = runMocks.retry;
       public refreshFailure = runMocks.refreshFailure;
       public detailWithProgress = actual.MktgDocumentRunService.prototype.detailWithProgress;
@@ -52,6 +63,7 @@ vi.mock('../services/mktg-document-comments.service', () => ({
   MktgDocumentCommentsService: class {
     public list = commentMocks.list;
     public add = commentMocks.add;
+    public release = commentMocks.release;
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -98,11 +110,57 @@ describe('MktgDocumentsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    runMocks.resolveProject.mockResolvedValue(PROJECT);
     runMocks.readProgress.mockResolvedValue({ runs: [] });
     runMocks.retry.mockResolvedValue(undefined);
     runMocks.refreshFailure.mockResolvedValue(null);
     controller = new MktgDocumentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it('starts a redraft only after writer/readiness authorization and uses its canonical project', async () => {
+    const body = { project: PROJECT, revisionId: REVISION_ID, commentIds: ['synthetic-comment'], clientRequestId: 'send-one' };
+    const res = buildRes();
+    runMocks.resolveProject.mockResolvedValue('canonical-project');
+    redraftMocks.send.mockResolvedValue({ runId: 'd'.repeat(64) });
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, body), res, next);
+    expect(redraftMocks.send).toHaveBeenCalledWith(
+      expect.anything(),
+      'canonical-project',
+      expect.objectContaining({ agentKey: 'brand-kit' }),
+      'living',
+      body,
+      expect.anything()
+    );
+    expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(redraftMocks.send.mock.invocationCallOrder[0]);
+    expect(next).not.toHaveBeenCalled();
+  });
+  it('denies redraft without writer access or with caller-authored previous JSON', async () => {
+    const body = { project: PROJECT, revisionId: REVISION_ID, commentIds: ['synthetic-comment'], clientRequestId: 'send-one' };
+    runMocks.resolveProject.mockRejectedValueOnce(new AuthorizationError('Synthetic denied'));
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, body), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(redraftMocks.send).not.toHaveBeenCalled();
+    next.mockClear();
+    runMocks.resolveProject.mockClear();
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, { ...body, previous: {} }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(runMocks.resolveProject).not.toHaveBeenCalled();
+    expect(redraftMocks.send).not.toHaveBeenCalled();
+  });
+
+  it('releases only after writer authorization and keeps creator checks in the ledger', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer: true });
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'send-one' }, {}, { project: PROJECT });
+    const res = buildRes();
+    await controller.releaseRedraft(req, res, next);
+    expect(commentMocks.release).toHaveBeenCalledWith(req, 'resolved-project', expect.objectContaining({ agentKey: 'brand-kit' }), 'living', 'send-one');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    commentMocks.release.mockClear();
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    await controller.releaseRedraft(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(commentMocks.release).not.toHaveBeenCalled();
   });
 
   it('lists comments only after writer authorization, using the server project uid', async () => {

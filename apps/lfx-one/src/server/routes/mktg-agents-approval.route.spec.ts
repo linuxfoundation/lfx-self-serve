@@ -49,6 +49,17 @@ describe('Marketing OS approval route', () => {
     }
   });
 
+  it.each(['/documents/:agentKey/:documentId/revise', '/documents/:agentKey/:documentId/revise/:requestId/release'])(
+    'guards redraft writer route %s during impersonation',
+    (path) => {
+      const route = router.stack.find((entry) => entry.route?.path === path)?.route;
+      expect(route?.stack[0].handle).toBe(blockDuringImpersonation);
+      const next = vi.fn();
+      route?.stack[0].handle({ path, method: 'POST', impersonationActive: true } as Request, {} as Response, next);
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    }
+  );
+
   it('keeps impersonated comment reads on the writer-gated controller', () => {
     const route = router.stack.find(
       (entry) => entry.route?.path === '/documents/:agentKey/:documentId/comments' && entry.route?.stack[0]?.method === 'get'
