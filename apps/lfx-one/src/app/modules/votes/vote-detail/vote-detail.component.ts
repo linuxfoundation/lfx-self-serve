@@ -131,9 +131,14 @@ export class VoteDetailComponent {
   /** Write access on the vote; null while the check is running. */
   protected readonly canManage: Signal<boolean | null> = this.initCanManage();
   protected readonly audience: Signal<'voter' | 'creator'> = computed(() => (this.canManage() ? 'creator' : 'voter'));
-  /** The body waits for both access inputs, so a manager never flashes the voter panel (or the reverse). */
-  protected readonly accessLoading: Signal<boolean> = computed(() => this.canManage() === null || this.myResponseLoading());
+  /**
+   * The body waits for both access inputs, so a manager never flashes the voter panel (or the reverse). A post-ballot
+   * refresh keeps the previous response until the new one lands, so only the first load shows the skeleton.
+   */
+  protected readonly accessLoading: Signal<boolean> = computed(() => this.canManage() === null || (this.myResponseLoading() && !this.myResponse()));
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
+  /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
+  protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
 
   // === Computed Signals ===
   protected readonly tabs: Signal<readonly VoteDetailTabOption[]> = this.initTabs();

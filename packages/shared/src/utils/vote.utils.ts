@@ -778,7 +778,7 @@ export function resolveVoterResultsState(
   if (!myResponseLoading && !myResponseError && !myResponse) return 'not_participant';
   const decoratedResponseStatus = listResponseStatus ?? vote.response_status;
   const submitted = myResponse?.vote_status === IndexedVoteResponseStatus.RESPONDED || decoratedResponseStatus === VoteResponseStatus.RESPONDED;
-  if (vote.status === PollStatus.ENDED) return 'closed';
+  if (normalizePollStatus(vote.status) === PollStatus.ENDED) return 'closed';
   if (submitted) return 'submitted';
   return 'not_voted';
 }
@@ -802,7 +802,7 @@ export function canVoterFetchVoteResults(
 ): boolean {
   return (
     vote?.uid === voteId &&
-    vote.status === PollStatus.ENDED &&
+    normalizePollStatus(vote.status) === PollStatus.ENDED &&
     myResponse?.vote_uid === voteId &&
     !myResponse.voter_removed &&
     !myResponseLoading &&

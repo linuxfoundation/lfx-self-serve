@@ -269,6 +269,16 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-you-voted')).not.toBeNull();
     });
 
+    it('fetches final results for a participant when the ended status arrives in another case', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: 'ENDED' as PollStatus })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(read(fixture, 'voterState')).toBe('closed');
+      expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
+      expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
+    });
+
     it('hides the "You voted" line on a pseudo-anonymous vote but still shows the totals', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true })));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
@@ -330,6 +340,39 @@ describe('VoteDetailComponent', () => {
       results.next(makeResults());
       TestBed.tick();
       expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent?.trim()).toBe('1 invited voter has not responded yet');
+    });
+  });
+
+  describe('participation card', () => {
+    const participationCard = (fixture: ComponentFixture<VoteDetailComponent>): Element | null =>
+      fixture.nativeElement.querySelector('lfx-vote-participation-card');
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+    });
+
+    it('waits for the results before showing a manager the participation totals', async () => {
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      const fixture = await setup();
+      TestBed.tick();
+
+      expect(testId(fixture, 'vote-detail-results-loading')).not.toBeNull();
+      expect(participationCard(fixture)).toBeNull();
+
+      results.next(makeResults());
+      results.complete();
+      TestBed.tick();
+      expect(participationCard(fixture)).not.toBeNull();
+    });
+
+    it('never shows zero participation beside a results error', async () => {
+      voteService.getVoteResults.mockReturnValue(httpError(500));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(participationCard(fixture)).toBeNull();
     });
   });
 
@@ -416,6 +459,26 @@ describe('VoteDetailComponent', () => {
       expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
       expect(voteService.fetchVote).toHaveBeenLastCalledWith('vote-1', { skipCache: true });
       expect(read<VoteDetailState>(fixture, 'state').vote).not.toBeNull();
+    });
+  });
+
+  describe('ballot refresh', () => {
+    it('keeps the body in place while my response reloads after a ballot, then shows the confirmation', async () => {
+      const refreshed = new Subject<MyVoteResponse>();
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE))).mockReturnValueOnce(refreshed);
+      const fixture = await setup();
+      expect(testId(fixture, 'vote-detail-voter-not-voted')).not.toBeNull();
+
+      call(fixture, 'onVoteSubmitted');
+      TestBed.tick();
+      expect(read(fixture, 'myResponseLoading')).toBe(true);
+      expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-locked')).not.toBeNull();
+
+      refreshed.next(makeResponse(IndexedVoteResponseStatus.RESPONDED));
+      refreshed.complete();
+      TestBed.tick();
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
     });
   });
 

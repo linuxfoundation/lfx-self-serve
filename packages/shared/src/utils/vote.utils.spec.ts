@@ -983,6 +983,8 @@ describe('voter results helpers', () => {
       ['empty response after a failed lookup', vote(), null, false, true, undefined, 'not_voted'],
       ['closed vote for a participant', vote({ status: PollStatus.ENDED }), responded, false, false, undefined, 'closed'],
       ['closed vote for an invitee who never voted', vote({ status: PollStatus.ENDED }), response(), false, false, undefined, 'closed'],
+      ['mixed-case Ended status for a participant', vote({ status: 'Ended' as PollStatus }), responded, false, false, undefined, 'closed'],
+      ['upper-case ENDED status for a participant', vote({ status: 'ENDED' as PollStatus }), responded, false, false, undefined, 'closed'],
       ['active vote with a recorded ballot', vote(), responded, false, false, undefined, 'submitted'],
       ['active vote, list row says responded', vote(), response(), false, false, VoteResponseStatus.RESPONDED, 'submitted'],
       ['active vote, vote row says responded', vote({ response_status: VoteResponseStatus.RESPONDED }), response(), false, false, undefined, 'submitted'],
@@ -1007,6 +1009,8 @@ describe('voter results helpers', () => {
     it.each<[string, Vote | null, MyVoteResponse | null, boolean, boolean, boolean]>([
       ['ended vote with a settled matching response', ended, responded, false, false, true],
       ['ended vote for an invitee who never voted', ended, response(), false, false, true],
+      ['mixed-case Ended status', vote({ status: 'Ended' as PollStatus }), responded, false, false, true],
+      ['upper-case ENDED status', vote({ status: 'ENDED' as PollStatus }), responded, false, false, true],
       ['active vote', vote(), responded, false, false, false],
       ['vote not loaded', null, responded, false, false, false],
       ['removed voter', ended, response({ voter_removed: true }), false, false, false],

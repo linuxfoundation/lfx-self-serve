@@ -44,7 +44,12 @@
         }
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-2 flex flex-col gap-6 min-w-0" role="tabpanel" [attr.data-testid]="'vote-detail-panel-' + activeTab()">
+          <div
+            class="lg:col-span-2 flex flex-col gap-6 min-w-0"
+            role="tabpanel"
+            id="vote-detail-tab-panel"
+            [attr.aria-labelledby]="'vote-detail-tab-' + activeTab()"
+            [attr.data-testid]="'vote-detail-panel-' + activeTab()">
             @switch (activeTab()) {
               @case ('overview') {
                 @if (voteData.description) {
@@ -136,7 +141,8 @@
                           <p class="text-sm text-gray-700">Voters ranked the choices in order of preference.</p>
                         </div>
                       }
-                      @if (audience() === 'creator') {
+                      <!-- Before results load (or if they fail) the totals would read as zero; resultsBody shows the loading/error state. -->
+                      @if (audience() === 'creator' && hasLoadedResults()) {
                         <lfx-vote-participation-card [stats]="participationStats()" [showAbstained]="showAbstain()" testId="vote-detail-participation" />
                       }
                       <ng-container [ngTemplateOutlet]="resultsBody" />

@@ -124,4 +124,36 @@ describe('VoteDetailHeaderComponent', () => {
 
     expect(tabs).toEqual(['comments']);
   });
+
+  it('keeps only the selected tab in the Tab order and points it at the page panel', () => {
+    render();
+    const tab = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-tab-${key}"]`);
+
+    expect(tab('overview').getAttribute('tabindex')).toBe('0');
+    expect(tab('overview').id).toBe('vote-detail-tab-overview');
+    expect(tab('overview').getAttribute('aria-controls')).toBe('vote-detail-tab-panel');
+    expect(tab('results').getAttribute('tabindex')).toBe('-1');
+    expect(tab('results').getAttribute('aria-controls')).toBeNull();
+  });
+
+  it('moves between tabs with the arrow, Home and End keys, wrapping at the ends', () => {
+    render();
+    const tabs: string[] = [];
+    fixture.componentInstance.tabChange.subscribe((tab) => tabs.push(tab));
+    const tablist: HTMLElement = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-tabs"]');
+    const press = (key: string): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true });
+      tablist.dispatchEvent(event);
+      return event;
+    };
+
+    expect(press('ArrowRight').defaultPrevented).toBe(true);
+    press('ArrowLeft');
+    press('End');
+    press('Home');
+    expect(press('Tab').defaultPrevented).toBe(false);
+
+    const keys = VOTE_DETAIL_TABS.map((option) => option.key);
+    expect(tabs).toEqual([keys[1], keys[keys.length - 1], keys[keys.length - 1], keys[0]]);
+  });
 });

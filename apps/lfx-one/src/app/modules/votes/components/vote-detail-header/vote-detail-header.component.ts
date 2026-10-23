@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, inject, input, output, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -25,6 +25,7 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 export class VoteDetailHeaderComponent {
   // === Services ===
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -55,6 +56,24 @@ export class VoteDetailHeaderComponent {
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
+
+  // === Protected Methods ===
+  /** WAI-ARIA tabs keyboard model: arrows wrap, Home/End jump to the ends, and focus follows the selected tab. */
+  protected onTabKeydown(event: KeyboardEvent): void {
+    const keys = this.tabs().map((tab) => tab.key);
+    const idx = keys.indexOf(this.activeTab());
+    let next: number | null = null;
+    if (event.key === 'ArrowRight') next = (idx + 1) % keys.length;
+    else if (event.key === 'ArrowLeft') next = (idx - 1 + keys.length) % keys.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = keys.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    this.tabChange.emit(keys[next]);
+    if (isPlatformBrowser(this.platformId)) {
+      this.tabBtns()[next]?.nativeElement.focus();
+    }
+  }
 
   // === Private Initializers ===
   private initCloseDateText(): Signal<string> {
