@@ -51,6 +51,7 @@ export class CommitteeDocumentsComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
+  protected readonly relatedLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
   /** UID of the folder the user has drilled into; null means the root view. */
   protected readonly currentFolderUid = signal<string | null>(null);
@@ -60,9 +61,12 @@ export class CommitteeDocumentsComponent {
     { label: 'All Sources', value: null },
     { label: 'Link', value: 'link' },
     { label: 'File', value: 'file' },
+    { label: 'Meeting', value: 'meeting' },
+    { label: 'Mailing List', value: 'mailing_list' },
   ];
 
   // === Computed Signals ===
+  protected readonly isLoading: Signal<boolean> = computed(() => this.loading() || this.relatedLoading());
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
@@ -308,14 +312,22 @@ export class CommitteeDocumentsComponent {
 
   private initRelatedDocuments(): Signal<MyDocumentItem[]> {
     return toSignal(
-      combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger)]).pipe(
-        filter(([committee]) => !!committee?.uid),
-        switchMap(([committee]) =>
-          this.documentService.getMyDocuments(null, committee.uid).pipe(
+      // Keyed on the committee uid only: adding a link, folder or file can't change meeting or mailing list items.
+      toObservable(this.committee).pipe(
+        map((committee) => committee?.uid),
+        filter((uid): uid is string => !!uid),
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          this.relatedLoading.set(true);
+          return this.documentService.getMyDocuments(null, uid).pipe(
             map((items) => items.filter((item) => !item.id.startsWith('committee_link:'))),
-            catchError(() => of([] as MyDocumentItem[]))
-          )
-        )
+            catchError((err: { status?: number }) => {
+              console.warn('Failed to load related committee documents', err?.status);
+              return of([] as MyDocumentItem[]);
+            }),
+            finalize(() => this.relatedLoading.set(false))
+          );
+        })
       ),
       { initialValue: [] as MyDocumentItem[] }
     );

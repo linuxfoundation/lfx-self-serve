@@ -82,7 +82,7 @@
     <!-- Table -->
     <lfx-documents-table
       [documents]="filteredDocuments()"
-      [loading]="loading()"
+      [loading]="isLoading()"
       [showFoundation]="false"
       (folderOpen)="onFolderOpen($event)"
       testIdPrefix="committee-documents"
