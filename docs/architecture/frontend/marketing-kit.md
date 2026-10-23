@@ -108,9 +108,10 @@ activation on the wrapper rather than PrimeNG's disabled descendant component.
 All enabled header and row Run actions are real anchors. Native Cmd/Ctrl-click opens a new
 tab without navigating the original family. Replacement query params preserve the selected
 project and drop stale questions/generation/revision/run selectors. Living actions use
-`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 has
-no intake fields beyond the project, so its plain project-scoped route carries its complete
-input. LinkedIn Family and document Run again use `mode=new` through the same
+`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
+null: its run page's window/compare/tracker inputs are not registered as a last-intake
+allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
+follow-up. LinkedIn Family and document Run again use `mode=new` through the same
 `MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. The dedicated source form restores
 writer-gated last text/URL and share-link scalars before any run navigation, preserving
 explicit blanks; files require reattachment and oversized pasted text requires re-entry.

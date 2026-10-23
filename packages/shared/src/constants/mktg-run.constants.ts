@@ -45,6 +45,7 @@ import {
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
+import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -685,7 +686,7 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
   oneOffDocument: true,
   tracksDocumentRun: true,
-  lastIntakeFields: ['content_source', 'content_text', 'content_url', 'share_link'],
+  lastIntakeFields: ['content_source', 'content_text', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY],
   formTitleAction: 'Draft',
   documentName: 'LinkedIn post',
   intro: 'Three post options in your voice, from pasted text, a link or a file.',

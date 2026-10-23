@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LINKEDIN_POST_INTAKE,
+  LINKEDIN_SHARE_LINK_ANSWER_KEY,
   MKTG_AGENTS,
   MKTG_AGENT_INTAKES,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -12,9 +14,7 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeInput, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
-import { LINKEDIN_POST_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
-import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
-import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils/linkedin-post-presentation.utils';
+import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';

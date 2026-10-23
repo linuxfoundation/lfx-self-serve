@@ -1,18 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import type { MktgLastIntakeStart, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
 import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_LAST_INTAKE_MAX_BYTES, MKTG_LAST_INTAKE_SCHEMA } from '@lfx-one/shared/constants';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), resolve: vi.fn(), author: vi.fn(), warning: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', async () => ({
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-last-intake.constants')),
+vi.mock('@lfx-one/shared/constants', async (original) => ({
+  ...(await original<typeof import('@lfx-one/shared/constants')>()),
 }));
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
