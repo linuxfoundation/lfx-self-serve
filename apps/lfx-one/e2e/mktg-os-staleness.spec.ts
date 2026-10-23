@@ -50,6 +50,14 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await page.getByTestId('mktg-rebuild-open-boilerplates').getByRole('button').click();
     await expect(page).toHaveURL(new RegExp(`revision=${upstreamRef(2).revisionId}`));
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic rebuilt draft');
+    await page.goBack();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await expect(page).toHaveURL(STALENESS_FAMILY_URL);
+    // Returning to a Family entry must not replay the consumed automatic rebuild intent.
+    expect(calls.starts).toEqual(['boilerplates', 'faq']);
+    await page.goBack();
+    await expect(page).toHaveURL(STALENESS_ASSET_URL);
+    await expect(page.getByTestId('mktg-downstream-card')).toBeVisible();
   });
 
   test('a pasted URL never starts a rebuild write', async ({ page }) => {

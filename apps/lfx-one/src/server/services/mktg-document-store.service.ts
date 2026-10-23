@@ -635,32 +635,9 @@ export class MktgDocumentStoreService {
     documentId: string,
     revisionId: string
   ): Promise<MktgRevisionSummary | null> {
-    return (await this.getRevision(req, project, type, documentId, revisionId))?.revision ?? null;
-  }
-
-  /** Explicit newest-identity lookup for export comparison; never returns a pre-revision artifact. */
-  public async readNewestRevisionRef(
-    req: Request,
-    project: string,
-    type: MktgDocumentType,
-    documentId: string
-  ): Promise<{ id: string; number: number; contentSha256: string } | null> {
-    const detail = await this.readDocument(
-      req,
-      project,
-      type,
-      documentId,
-      await this.readCurrent(req, project, type, documentId),
-      MKTG_DOCUMENT_READ_CONCURRENCY,
-      false,
-      false
-    );
-    if (!detail) return null;
-    for (const summary of detail.revisions) {
-      const revision = await this.loadSummaryRevision(req, detail, summary);
-      if (revision) return { id: revision.id, number: summary.number, contentSha256: revision.record.bundle.contentSha256 };
-    }
-    return null;
+    const snapshot = await this.readCurrent(req, project, type, documentId);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot);
+    return detail ? ((await this.readRevision(req, detail, revisionId))?.revision ?? null) : null;
   }
 
   private generationProvenanceKey(project: string, agentKey: MktgDocumentAgentKey, sessionId: string): string {
@@ -728,9 +705,7 @@ export class MktgDocumentStoreService {
     type: MktgDocumentType,
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
-    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
-    allowLegacy = true,
-    hydrateNames = true
+    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse | null> {
     let eligibleCount = 0;
     const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency, true, () => {
@@ -744,7 +719,7 @@ export class MktgDocumentStoreService {
           ...(await Promise.all(
             entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
               ...this.summary(entry, offset + index + 1),
-              author: hydrateNames ? await this.resolveAuthor(req, entry.metadata?.['author-id']) : null,
+              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
             }))
           ))
         );
@@ -761,11 +736,10 @@ export class MktgDocumentStoreService {
         type,
         documentId,
         revisions: summaries.reverse(),
-        current: await this.currentSelection(req, snapshot.record, hydrateNames),
+        current: await this.currentSelection(req, snapshot.record),
         approvedCurrent: null,
       };
-      // Identity-only freshness reads never hydrate names; public reads keep all attribution.
-      return hydrateNames ? this.withApprovals(req, detail, snapshot.record, readConcurrency) : detail;
+      return this.withApprovals(req, detail, snapshot.record, readConcurrency);
     }
     // Unreadable revision history must never serve an older pre-revision copy.
     if (snapshot.record) return null;
@@ -777,7 +751,6 @@ export class MktgDocumentStoreService {
       });
       return null;
     }
-    if (!allowLegacy) return null;
     const legacy = documentId === MKTG_LIVING_DOCUMENT_ID ? await this.findLegacyDocument(req, type, project) : null;
     return legacy ? { project, type, documentId, revisions: [this.legacySummary(legacy)], current: null, approvedCurrent: null } : null;
   }
@@ -917,9 +890,9 @@ export class MktgDocumentStoreService {
   }
 
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
-  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null, hydrateNames = true): Promise<MktgDocumentCurrentSelection | null> {
+  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: hydrateNames ? await this.resolveAuthor(req, record.changedBy) : null };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {

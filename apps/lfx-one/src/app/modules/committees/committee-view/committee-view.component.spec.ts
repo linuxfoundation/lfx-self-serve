@@ -5,7 +5,8 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import type { Committee, CommitteeMember, CommitteeTab, Meeting } from '@lfx-one/shared/interfaces';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -18,10 +19,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { DocumentService } from '@services/document.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, EMPTY, of, Subject } from 'rxjs';
+import { BehaviorSubject, EMPTY, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeViewComponent } from './committee-view.component';
@@ -97,9 +99,11 @@ describe('CommitteeViewComponent', () => {
             getVotesByCommittee: vi.fn(() => of([])),
             mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
             mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
+            hasVotesAwaitingInvitationCount: vi.fn(() => false),
           },
         },
         { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
+        { provide: DocumentService, useValue: { getCommitteeDocumentCount: vi.fn(() => of(null)) } },
         { provide: MessageService, useValue: { add: vi.fn(), clear: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: UserService, useValue: { user: signal(null), viewerUsername: signal<string | null>('viewer') } },
@@ -153,6 +157,96 @@ describe('CommitteeViewComponent', () => {
     flush();
 
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fetches votes while a just-opened vote is still counting invitations, then stops (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      // The first fetched list is still counting; the catch-up refetch has converged.
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation(
+        (votes: Vote[]) => votes.length > 0 && getVotesByCommittee.mock.calls.length === 1
+      );
+
+      createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the votes, badge and silence when a background poll fails, then retries (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const messageService = TestBed.inject(MessageService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+
+      const setVotesLoading = vi.spyOn(component.votesLoading, 'set');
+      getVotesByCommittee.mockReturnValue(throwError(() => new Error('index unavailable')));
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+      expect(setVotesLoading).not.toHaveBeenCalledWith(true);
+      expect(messageService.add).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips a poll tick while a foreground votes fetch is loading, so it cannot cancel it (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      // A foreground reload is still in flight when the armed timer fires.
+      const pending = new Subject<Vote[]>();
+      getVotesByCommittee.mockReturnValue(pending);
+      component.onVotesRefreshed();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votesLoading()).toBe(true);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(pending.observed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   describe('Members tab badge', () => {

@@ -165,7 +165,6 @@ import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
-import { ObjectStoreService } from './object-store.service';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
@@ -571,8 +570,8 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject({ code: 'MKTG_ASSET_NOT_APPROVED' });
     });
 
-    it('keeps approved current as the read/export/listing selection but retains newest identity for export comparison', async () => {
-      const { first, second } = await twoRevisions();
+    it('keeps approved current as the read/export/listing selection', async () => {
+      const { first } = await twoRevisions();
       await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
       expect((await service.readLatest(req, SPEC, PROJECT))?.documentMarkdown).toBe('# First');
       expect((await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {}))?.revision.id).toBe(first.id);
@@ -581,7 +580,6 @@ describe('MktgDocumentStoreService', () => {
         latestRevisionId: first.id,
         approvedCurrent: { revisionId: first.id, number: 1 },
       });
-      expect(await service.readNewestRevisionRef(req, PROJECT, BRAND_KIT, 'living')).toMatchObject({ id: second.id, number: 2 });
     });
 
     it.each(['missing', 'historical-corrupt'])('distinguishes %s approved current from absent approval with other revisions still readable', async (fault) => {
@@ -1645,6 +1643,29 @@ describe('MktgDocumentStoreService', () => {
       expect(latest?.summary.number).toBe(1);
     });
 
+    it('finishes the exact exported revision when a later approved current disappears, retaining integrity checks', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+      await approveStored(FRAMEWORK, 1);
+      const started = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', {});
+      if (!started) throw new Error('Missing synthetic export revision');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      await approveStored(FRAMEWORK, 2);
+      const [firstKey, secondKey] = revisionKeys();
+      store.objects.delete(secondKey);
+
+      await expect(service.getDocument(req, PROJECT, FRAMEWORK, 'living')).rejects.toMatchObject({ code: 'MKTG_APPROVED_REVISION_UNREADABLE' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toMatchObject({
+        id: started.summary.id,
+        number: 1,
+        contentSha256: started.summary.contentSha256,
+      });
+      const first = storedObject(firstKey);
+      store.objects.set(firstKey, { ...first, body: 'corrupt synthetic revision' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+      store.objects.delete(firstKey);
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+    });
+
     it('exports the existing selected content after Make current without creating a copy', async () => {
       const first = jsonEnvelope('First');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
@@ -1671,60 +1692,6 @@ describe('MktgDocumentStoreService', () => {
       });
       seedLegacy('# Brand Kit\n');
       await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject({ code: 'MKTG_ASSET_NOT_APPROVED' });
-    });
-  });
-
-  describe('readNewestRevisionRef — the last-export lookup’s latest revision', () => {
-    it('reads the listing and the newest revision’s body alone', async () => {
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
-      const second = jsonEnvelope('Third');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, second, PROJECT, 'session-3');
-      const getObject = vi.spyOn(ObjectStoreService.prototype, 'getObject');
-
-      const newest = await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living');
-
-      expect(newest).toMatchObject({ number: 3, contentSha256: second.content_sha256 });
-      expect(newest?.id).toBe(revisionKeys()[2].split('/').pop()?.replace('.json', ''));
-      expect(getObject).toHaveBeenCalledTimes(2); // Current pointer plus one revision body.
-      expect(getObject.mock.calls.filter(([, , key]) => /\/[0-9]{6}-[a-f0-9]{64}\.json$/.test(key))).toHaveLength(1);
-      getObject.mockRestore();
-    });
-
-    it('skips every name lookup for freshness when author, selector and approver are the same actor', async () => {
-      const envelope = jsonEnvelope('Approved content');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, envelope, PROJECT, 'session-1');
-      await approveStored(FRAMEWORK, 1);
-      const current = JSON.parse(storedObject(`documents/${PROJECT}/foundation-message/living/current.json`).body);
-      expect(current.approvals[current.revisionId].approvedBy).toBe(current.changedBy);
-      expect(storedObject(revisionKeys()[0]).metadata['author-id']).toBe(current.changedBy);
-      // A new HTTP request must not reuse the names cached during generation/approval.
-      const lookupRequest = Object.create(req) as Request;
-      directoryMocks.getUserInfo.mockClear();
-      directoryMocks.getUserInfo.mockImplementation(() => new Promise<never>(() => undefined));
-      expect(await service.readNewestRevisionRef(lookupRequest, PROJECT, FRAMEWORK, 'living')).toMatchObject({
-        number: 1,
-        contentSha256: envelope.content_sha256,
-      });
-      expect(directoryMocks.getUserInfo).not.toHaveBeenCalled();
-      directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
-      const detail = await service.getDocument(lookupRequest, PROJECT, FRAMEWORK, 'living');
-      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
-      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
-      expect(detail?.revisions[0].approval?.approvedBy).toEqual({ name: 'The writer' });
-      expect(directoryMocks.getUserInfo).toHaveBeenCalledExactlyOnceWith(lookupRequest, current.changedBy);
-    });
-
-    it('walks back past a newest revision that fails its integrity checks, and is null with nothing stored', async () => {
-      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toBeNull();
-      const first = jsonEnvelope('First');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
-      const tamperedKey = revisionKeys()[1];
-      const tampered = store.objects.get(tamperedKey);
-      store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
-
-      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toMatchObject({ number: 1, contentSha256: first.content_sha256 });
     });
   });
 

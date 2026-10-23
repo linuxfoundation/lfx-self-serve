@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { Location } from '@angular/common';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -11,9 +12,11 @@ import {
   LINKEDIN_FILE_ACCEPT,
   LINKEDIN_FILE_TYPES_LABEL,
   LINKEDIN_POST_INTAKE,
+  LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
   LINKEDIN_SOURCE_MAX_BYTES,
   MKTG_KIT_FAMILIES,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import { LinkedinEnvelope, LinkedinResult, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
@@ -22,7 +25,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 
@@ -125,9 +128,21 @@ describe('LinkedIn profile and post surface', () => {
     if (!family) throw new Error('Expected a catalog family for the intake');
     const element: HTMLElement = fixture.nativeElement;
     expect(element.querySelectorAll('nav[aria-label="Breadcrumb"]')).toHaveLength(1);
-    const link = element.querySelector('[data-testid="mktg-linkedin-family-back"]');
+    const link = element.querySelector('[data-testid="mktg-breadcrumb-link-1"]');
     expect(link?.textContent?.trim()).toBe(family.name);
     expect(link?.getAttribute('href')).toContain(`/families/${family.id}`);
+  });
+  it('uses fixed context parents on a shared run URL and the catalog agent title', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=old&profile=edit&revision=old');
+    const fixture = await render();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelector('[data-testid="mktg-breadcrumb-link-0"]')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=example-project');
+    expect(element.querySelector('[data-testid="mktg-breadcrumb-link-1"]')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/families/social-community?project=example-project'
+    );
+    expect(element.querySelector('[aria-current="page"]')?.textContent).toBe('LinkedIn Post Agent');
   });
   it.each(['project', 'user'])('distinguishes a missing %s from a refused writer grant', async (missing) => {
     if (missing === 'project') context.set(null);
@@ -614,9 +629,140 @@ describe('LinkedIn profile and post surface', () => {
     vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => (key === 'profile' ? 'edit' : null));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const fixture = await render();
-    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { profile: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    expect(navigate).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).not.toBeNull();
     expect(fixture.componentInstance['profileForm'].controls['name'].value).toBe('Example author');
+    expect(api.start).not.toHaveBeenCalled();
+  });
+
+  it('pushes profile editing, restores it from the URL, and cancels through browser history', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    const runUrl = '/project/mktg-os-agents/linkedin-post?project=example-project';
+    await router.navigateByUrl(runUrl);
+    const fixture = await render();
+    fixture.componentInstance['onEdit']();
+    await fixture.whenStable();
+    expect(router.url).toContain('profile=edit');
+    expect(fixture.componentInstance['editing']()).toBe(true);
+    TestBed.inject(Location).back();
+    await vi.waitFor(() => expect(router.url).toBe(runUrl));
+    expect(fixture.componentInstance['editing']()).toBe(false);
+    TestBed.inject(Location).forward();
+    await vi.waitFor(() => expect(router.url).toContain('profile=edit'));
+    expect(fixture.componentInstance['editing']()).toBe(true);
+    const back = vi.spyOn(TestBed.inject(Location), 'back');
+    fixture.componentInstance['onCancelEdit']();
+    expect(back).toHaveBeenCalledOnce();
+  });
+
+  it('saves an edit by returning to its pushed run entry, so the next Back leaves the run page', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(Location);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    await router.navigateByUrl('/project/mktg-os-agents/families/social-community?project=example-project');
+    const runUrl = '/project/mktg-os-agents/linkedin-post?project=example-project';
+    await router.navigateByUrl(runUrl);
+    const fixture = await render();
+    const writes = vi.spyOn(router, 'navigate');
+    fixture.componentInstance['onEdit']();
+    await fixture.whenStable();
+    expect(location.getState()).toMatchObject({ [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true });
+    fixture.componentInstance['onProfileSubmit']();
+    await vi.waitFor(() => expect(router.url).toBe(runUrl));
+    await fixture.whenStable();
+    expect(writes).toHaveBeenCalledOnce();
+    location.back();
+    await vi.waitFor(() => expect(router.url).toContain('/families/social-community'));
+    await fixture.whenStable();
+  });
+
+  it.each(['cancel', 'save'] as const)('cold entry → Family → Back → %s clears profile in place', async (action) => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(Location);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    const editUrl = '/project/mktg-os-agents/linkedin-post?project=example-project&profile=edit';
+    await router.navigateByUrl(editUrl);
+    let fixture = await render();
+    await router.navigateByUrl('/project/mktg-os-agents/families/social-community?project=example-project');
+    fixture.destroy();
+    location.back();
+    await vi.waitFor(() => expect(router.url).toBe(editUrl));
+    fixture = await render();
+    const back = vi.spyOn(TestBed.inject(Location), 'back');
+    const navigate = vi.spyOn(router, 'navigate');
+    if (action === 'cancel') fixture.componentInstance['onCancelEdit']();
+    else fixture.componentInstance['onProfileSubmit']();
+    await fixture.whenStable();
+    expect(back).not.toHaveBeenCalled();
+    expect(router.url).toBe('/project/mktg-os-agents/linkedin-post?project=example-project');
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ replaceUrl: true, queryParams: { profile: null, project: 'example-project' } }));
+  });
+
+  it.each(['cancel', 'save'] as const)('an in-app document hand-off returns to the document on %s', async (action) => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    const documentUrl = '/project/mktg-os-agents/documents/linkedin-post/synthetic?project=example-project';
+    await router.navigateByUrl(documentUrl);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&profile=edit', {
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+    });
+    const fixture = await render();
+    if (action === 'cancel') fixture.componentInstance['onCancelEdit']();
+    else fixture.componentInstance['onProfileSubmit']();
+    await vi.waitFor(() => expect(router.url).toBe(documentUrl));
+    await fixture.whenStable();
+  });
+
+  it('keeps setup-only answers on intake after an edit pushed from a stored document', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/documents/linkedin-post/synthetic?project=example-project');
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&profile=edit', {
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+    });
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    const back = vi.spyOn(TestBed.inject(Location), 'back');
+    component['profileForm'].patchValue({ ...profile.about, ...profile.voice });
+    component['onProfileSubmit']();
+    await fixture.whenStable();
+    expect(back).not.toHaveBeenCalled();
+    expect(router.url).toBe('/project/mktg-os-agents/linkedin-post?project=example-project');
+    expect(component['setup']()).toMatchObject({
+      name: profile.about.name,
+      role: profile.about.role,
+      focus_areas: profile.about.focus_areas,
+      primary_audience: profile.about.primary_audience,
+    });
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
+    expect(api.save).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
+  });
+
+  it('loads a content source URL, pushes source switches and restores the prior source without another write', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    const path = '/project/mktg-os-agents/linkedin-post?project=example-project';
+    await router.navigateByUrl(`${path}&source=url`);
+    const fixture = await render();
+    expect(fixture.componentInstance['source']()).toBe('url');
+    fixture.componentInstance['onSource']('file');
+    await fixture.whenStable();
+    expect(router.url).toContain('source=file');
+    await router.navigateByUrl(`${path}&source=url`);
+    await fixture.whenStable();
+    expect(fixture.componentInstance['source']()).toBe('url');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-content-url"]')).not.toBeNull();
     expect(api.start).not.toHaveBeenCalled();
   });
 
@@ -701,6 +847,120 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['setup']()).toBeNull();
     expect(component['saved']()?.profile).toEqual(profile);
   });
+  it.each(['provider', 'idle'] as const)('shows %s failure with Retry and starts a new session using the unchanged inputs', async (kind) => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['editing'].set(false);
+    component['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
+    const retryInputs = { answers: { content_source: 'text', content_text: 'Synthetic release notes', share_link: '' } };
+    const run = {
+      sessionId: 'dead-session',
+      ownerToken: 'synthetic-token',
+      documentId: 'run-0123456789abcdef01234567',
+      source: { label: 'pasted text', words: 3, fetched: false },
+      retryInputs,
+    };
+    component['run'].set(run);
+    component['busy'].set(true);
+    component['handleResult'](
+      kind === 'provider'
+        ? { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Your inputs are kept.' } }
+        : { status: 'failed', failureText: 'Synthetic idle-runtime reply.' }
+    );
+    if (kind === 'idle') expect(component['error']()).toBe(MKTG_RUN_FAILURE_REASON);
+    fixture.detectChanges();
+    expect(component['busy']()).toBe(false);
+    expect(component['result']()).toBeNull();
+    for (const action of ['cancel', 'save'] as const) {
+      component['onEdit']();
+      await fixture.whenStable();
+      if (action === 'cancel') component['onCancelEdit']();
+      else component['onProfileSubmit']();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component['runFailed']()).toBe(true);
+      expect(component['error']()).toBe(MKTG_RUN_FAILURE_REASON);
+      expect(component['editing']()).toBe(false);
+      expect(api.start).not.toHaveBeenCalled();
+      expect(api.wait).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-run"] button')?.textContent.trim()).toBe('Retry');
+    }
+    component['contentForm'].controls.text.setValue('');
+    await component['onDraft']();
+    fixture.detectChanges();
+    expect(component['error']()).toContain('Supply pasted text');
+    expect(component['runFailed']()).toBe(true);
+    expect(component['run']()).toBe(run);
+    expect(api.start).not.toHaveBeenCalled();
+    expect(api.wait).not.toHaveBeenCalled();
+    const retry = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-run"] button');
+    expect(retry.textContent.trim()).toBe('Retry');
+    api.start.mockReturnValue(of({ ...run, sessionId: 'fresh-session' }));
+    api.wait.mockReturnValue(NEVER);
+    retry.click();
+    expect(api.start).toHaveBeenCalledWith(LINKEDIN_POST_INTAKE, 'project-one', retryInputs.answers, undefined);
+    expect(component['run']()?.sessionId).toBe('fresh-session');
+    expect(api.wait.mock.calls.at(-1)?.[2].sessionId).toBe('fresh-session');
+    component['handleResult']({ status: 'failed', failure: { eventType: 'runtime_error', reason: 'Synthetic session failure.' } });
+    api.wait.mockClear();
+    api.start.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    component['onRetryRun']();
+    component['onRetryRun']();
+    expect(component['runFailed']()).toBe(true);
+    expect(api.wait).not.toHaveBeenCalled(); // A failed new-session POST never makes the dead session resumable again.
+  });
+
+  it.each(['file', 'text', 'url'] as const)('asks for a missing %s source after reload, never resumes the failed session', async (source) => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
+    component['editing'].set(false);
+    component['run'].set({
+      sessionId: 'dead-session',
+      ownerToken: 'synthetic-proof',
+      documentId: 'run-0123456789abcdef01234567',
+      source: { label: 'source', words: 3, fetched: false },
+      retryInputs: { answers: { content_source: source }, requiresSource: true },
+    });
+    component['handleResult']({ status: 'failed' });
+    component['onRetryRun']();
+    expect(component['source']()).toBe(source);
+    expect(component['run']()).toBeNull();
+    const prompts = { file: 'choose the file again', text: 'paste it again', url: 'enter the link again' };
+    expect(component['error']()).toContain(prompts[source]);
+    expect(api.start).not.toHaveBeenCalled();
+    expect(api.wait).not.toHaveBeenCalled();
+  });
+
+  it('returns a reloaded failed first run to empty setup instead of polling the dead session', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['editing'].set(false);
+    const answers = { content_source: 'text', content_text: 'Synthetic kept source.' };
+    component['run'].set({
+      sessionId: 'dead-first-run',
+      ownerToken: 'synthetic-proof',
+      documentId: 'run-0123456789abcdef01234567',
+      source: { label: 'text', words: 3, fetched: false },
+      retryInputs: { answers },
+    });
+    component['handleResult']({ status: 'failed', failure: { eventType: 'runtime_error', reason: 'Synthetic failed session.' } });
+    component['onRetryRun']();
+    fixture.detectChanges();
+    expect(component['editing']()).toBe(true);
+    expect(component['profileForm'].controls['name'].value).toBe('');
+    expect(component['error']()).toBe("Your setup answers aren't kept in the browser — enter them again to draft");
+    expect(api.wait).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
+    component['profileForm'].patchValue(profile.about);
+    component['onProfileSubmit']();
+    api.start.mockReturnValue(of({ ...component['run'](), sessionId: 'fresh-first-run' }));
+    api.wait.mockReturnValue(NEVER);
+    component['onRetryRun']();
+    expect(api.start).toHaveBeenCalledWith(LINKEDIN_POST_INTAKE, 'project-one', answers, expect.objectContaining(profile.about));
+    expect(api.wait.mock.calls.at(-1)?.[2].sessionId).toBe('fresh-first-run');
+  });
+
   it('exposes retry-run and Run-board breadcrumb controls through stable test ids', async () => {
     const fixture = await render();
     const component = fixture.componentInstance;
@@ -721,7 +981,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(crumb.textContent).toContain('Example project kit');
     expect(crumb.textContent).toContain('Social & community');
     expect(crumb.textContent).toContain('LinkedIn');
-    expect(crumb.querySelector('[data-testid="mktg-linkedin-back"]').tagName).toBe('A');
+    expect(crumb.querySelector('[data-testid="mktg-breadcrumb-link-0"]').tagName).toBe('A');
   });
   it('shows profile questions alone, sends answers on the same run and returns to three options', async () => {
     const fixture = await stored();

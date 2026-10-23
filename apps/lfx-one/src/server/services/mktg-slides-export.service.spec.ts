@@ -46,6 +46,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-family-export.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/faq.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-failure.utils')),
   readFoundationMessageContent: (text: string): unknown => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>;
@@ -136,6 +137,7 @@ import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shar
 import type { Request } from 'express';
 
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/utils/mktg-slides-export.utils';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -414,6 +416,47 @@ describe('MktgSlidesExportService', () => {
       expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last).toBeNull();
     });
 
+    it.each(['family', 'document'] as const)('records a finished %s export on A when a later approved B disappears', async (scope) => {
+      await seedFramework(documentStore);
+      const family = scope === 'family' ? await service.startFamilyExport(req, familyInput) : null;
+      const document = scope === 'document' ? await service.startExport(req, input()) : null;
+      const startedId = family?.snapshot.members[0]?.revisionId ?? document?.revision.id;
+      expect(startedId).toBeTruthy();
+      await seedFramework(documentStore, 'New approved.');
+      const current = (await documentStore.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.approvedCurrent;
+      if (!current) throw new Error('Missing synthetic approval');
+      expect(current.revisionId).not.toBe(startedId);
+      const key = `documents/${PROJECT}/foundation-message/living/${current.revisionId}.json`;
+      expect(store.objects.delete(key)).toBe(true);
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      if (family) {
+        expect(await service.getFamilyResult(req, family.sessionId, family.snapshot)).toMatchObject({
+          status: 'ready',
+          record: { deckId: DECK_ID, members: family.snapshot.members },
+        });
+      }
+      if (document) {
+        const context = { project: PROJECT, type: FRAMEWORK, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: document.revision.id };
+        expect(await service.getResult(req, document.sessionId, context)).toMatchObject({
+          status: 'ready',
+          record: { deckId: DECK_ID, revisionId: startedId, revisionNumber: 1 },
+        });
+        await expect(service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).rejects.toMatchObject({
+          statusCode: 502,
+          code: 'MKTG_APPROVED_REVISION_UNREADABLE',
+        });
+      }
+      const records = [...store.objects.entries()].filter(([key]) => key.startsWith('slides-exports/'));
+      expect(records).toHaveLength(1);
+      expect(JSON.parse(records[0][1].body)).toMatchObject({ deckId: DECK_ID });
+      if (document) expect(JSON.parse(records[0][1].body)).toMatchObject({ revisionId: startedId, revisionNumber: 1 });
+      await expect(service.getFamilyLast(req, PROJECT, familyInput.familyId)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'MKTG_APPROVED_REVISION_UNREADABLE',
+      });
+    });
+
     it('reads approved identities without loading revision bodies, even when an approved body is corrupt', async () => {
       await seedFramework(documentStore);
       const started = await service.startFamilyExport(req, familyInput);
@@ -650,8 +693,10 @@ describe('MktgSlidesExportService', () => {
         revisionId: byHash.revision.id,
       });
       expect(result).toMatchObject({ status: 'ready', record: { revisionId: byHash.revision.id, revisionNumber: 1, contentSha256: olderSha } });
-      // The newer revision stands beside it, so the panel says the deck is out of date.
-      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).latestRevision).toMatchObject({ number: 2 });
+      // A newer Draft does not change approved current or stale the deck.
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.latestRevision).toEqual(byHash.revision);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(false);
     });
 
     it('refuses an update before any deck exists, and a revision it does not store', async () => {
@@ -684,7 +729,10 @@ describe('MktgSlidesExportService', () => {
         revisionId: started.revision.id,
       });
       expect(result).toMatchObject({ status: 'ready', record: { revisionId: started.revision.id, deckId: DECK_ID } });
-      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last?.deckId).toBe(DECK_ID);
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.last?.deckId).toBe(DECK_ID);
+      expect(last.latestRevision === null).toBe(!approved);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(approved);
     });
     it('keeps a ready deck with the revision it came from, once however often it is polled, and updates that deck next time', async () => {
       await seedFramework(documentStore);
@@ -713,6 +761,7 @@ describe('MktgSlidesExportService', () => {
       const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
       expect(last.last?.deckId).toBe(DECK_ID);
       expect(last.latestRevision).toEqual(started.revision);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(false);
 
       await service.startExport(req, input({ mode: 'update' }));
       expect(sentMessage()).toContain(`\nDECK ID: ${DECK_ID}\n`);
@@ -765,7 +814,7 @@ describe('MktgSlidesExportService', () => {
       expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(polls);
     });
 
-    it('reports the newer revision beside the last export once the framework changes', async () => {
+    it('reports newly approved current beside the last export', async () => {
       await seedFramework(documentStore, 'First.');
       const started = await service.startExport(req, input());
       guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
@@ -782,6 +831,20 @@ describe('MktgSlidesExportService', () => {
 
       expect(last.last?.contentSha256).toBe(started.revision.contentSha256);
       expect(last.latestRevision).toMatchObject({ number: 2, contentSha256: newer });
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(true);
+    });
+
+    it('marks a deck stale when Make current selects older approved content', async () => {
+      await seedFramework(documentStore, 'Older approval.');
+      const olderId = (await documentStore.readApprovedCurrentSummary(req, PROJECT, FRAMEWORK, 'living'))?.id ?? '';
+      await seedFramework(documentStore, 'Exported approval.');
+      const started = await service.startExport(req, input());
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getResult(req, 'session-1', { ...input(), revisionId: started.revision.id });
+      await documentStore.restoreRevision(req, PROJECT, FRAMEWORK, 'living', olderId);
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.latestRevision).toMatchObject({ id: olderId, number: 1 });
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(true);
     });
 
     it('answers a failed export with a plain message and the deck it left behind, never the error text', async () => {
@@ -832,9 +895,21 @@ describe('MktgSlidesExportService', () => {
 
       guildMocks.getRawEventPayloads.mockResolvedValue([
         drop(minuteAgo.toISOString()),
-        JSON.stringify({ type: 'agent_notification_progress', created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(), content: {} }),
+        JSON.stringify({
+          type: 'agent_notification_progress',
+          created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(),
+          content: { type: 'text', data: 'Reading another source.' },
+        }),
       ]);
       expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
+
+      for (const type of ['llm_start', 'runtime_start', 'tool_start']) {
+        guildMocks.getRawEventPayloads.mockResolvedValue([
+          drop(minuteAgo.toISOString()),
+          JSON.stringify({ type, created_at: new Date(minuteAgo.getTime() + 1_000).toISOString(), content: {} }),
+        ]);
+        expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
+      }
 
       // Settled, with nothing after it but the run's teardown: a failed export.
       guildMocks.getRawEventPayloads.mockResolvedValue([

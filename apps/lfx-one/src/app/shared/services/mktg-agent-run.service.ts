@@ -6,13 +6,18 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   MKTG_ARTIFACT_SHA256_REGEX,
+  MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_LAST_INTAKE_API,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
+  MktgLastIntake,
+  MktgLastIntakeResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgGenerateProgress,
@@ -105,6 +110,26 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+
+  /** Writer-gated history read only; callers distinguish unavailable history from absence. */
+  public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.catalogAgentId === agentId);
+    if (!type) return of(null);
+    return this.http
+      .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {
+        params: { project: projectUid },
+        transferCache: false,
+      })
+      .pipe(
+        map((response) => response.intake),
+        take(1),
+        catchError((error: unknown) => {
+          console.error('Failed to load Marketing OS intake history', error instanceof HttpErrorResponse ? { status: error.status } : {});
+          return throwError(() => error);
+        })
+      );
+  }
+
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
@@ -141,8 +166,14 @@ export class MktgAgentRunService {
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
-    } else if (request.intake.regenerateViaGenerate) {
+    } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
+      // Failed-session Retry must never chat on that failed session. Like an
+      // intake's Generate resubmit, it starts a new session with priorVersion.
+      // Fresh Sources preserve that history contract, but omit old feedback.
       attempt$ = this.resubmitRun(request, stored);
+    } else if (request.newRun) {
+      // appendVersion keeps the new session's v1 distinct from existing history.
+      attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);
     }
@@ -316,7 +347,7 @@ export class MktgAgentRunService {
       return this.startRun(request);
     }
     const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
-    if (request.feedback?.trim()) {
+    if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
     return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
@@ -408,7 +439,20 @@ export class MktgAgentRunService {
         }
         if (result.status === 'failed') {
           this.track(request, { state: 'failed' });
-          return concat(activity$, of<MktgGenerateProgress>({ type: 'failed', failureText: result.failureText ?? '' }));
+          // Invalidate session reuse, not successful versions, answers or Q&A.
+          const stored = this.loadRun(request.projectUid, request.agentId);
+          if (stored) this.saveRun({ ...stored, sessionFailed: true });
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'failed',
+              failureText: result.failureText ?? '',
+              failure: result.failure ?? {
+                reason: MKTG_RUN_FAILURE_REASON,
+                eventType: 'session_failed',
+              },
+            })
+          );
         }
         if (result.status === 'refused') {
           this.track(request, { state: 'failed' });
@@ -417,7 +461,12 @@ export class MktgAgentRunService {
         }
         const { run, version } = this.appendVersion(request, attempt, result, answered);
         this.attempts.clear(request.projectUid, request.agentId, subject);
-        return concat(activity$, of<MktgGenerateProgress>({ type: 'document', run }), this.retryPersistence(request, attempt.session, result, version));
+        const documentLocation = run.versions.find((entry) => entry.version === version)?.documentLocation ?? null;
+        return concat(
+          activity$,
+          of<MktgGenerateProgress>({ type: 'document', run, documentLocation, attempt }),
+          this.retryPersistence(request, attempt, result, version)
+        );
       })
     );
   }
@@ -543,14 +592,14 @@ export class MktgAgentRunService {
    */
   private retryPersistence(
     request: MktgGenerateRequest,
-    session: MktgSessionInfo,
+    attempt: MktgRunAttempt,
     result: MktgRunResultResponse,
     version: number
   ): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
-    const body = this.resultBody(session, request.projectUid);
+    const body = this.resultBody(attempt.session, request.projectUid);
     const subject = this.attempts.subject();
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
@@ -574,12 +623,15 @@ export class MktgAgentRunService {
       // Inclusive takeWhile emits that matching response and then completes.
       takeWhile((response) => !matches(response), true),
       filter(matches),
-      map(
-        (response): MktgGenerateProgress => ({
+      map((response): MktgGenerateProgress => {
+        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
+        return {
           type: 'persisted',
-          run: subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null,
-        })
-      )
+          run,
+          attempt: run ? attempt : null,
+          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
+        };
+      })
     );
   }
 
@@ -639,16 +691,15 @@ export class MktgAgentRunService {
     const version: MktgRunVersion = {
       source,
       documentLocation: result.persistence?.project === request.projectUid ? mktgDocumentLocationOfReceipt(result.persistence) : undefined,
-      // The envelope's own version is authoritative. awaitOutcome reaches this
-      // only for a result that is not `questions`, which pollForOutcome's
-      // isDocument gate let through with its document and version present, so
-      // the fallbacks only narrow the type. A fresh-run intake's envelope
-      // always says version 1, so the run numbers its own history instead.
-      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
+      // source.version retains the envelope version. Local history must remain
+      // unique across fresh sessions, including a resumed request without newRun.
+      // Dedicated fresh-run intakes always number locally; other intakes also
+      // retain a higher authoritative envelope version when one is supplied.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : Math.max(lastVersion + 1, result.version ?? 0),
       document: result.documentMarkdown ?? '',
       // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
-      feedback: request.feedback,
+      feedback: request.newRun ? undefined : request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is
       // the one whose README fetch matters, and it is what the result note

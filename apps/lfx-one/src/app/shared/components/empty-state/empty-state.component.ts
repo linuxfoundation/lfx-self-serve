@@ -31,6 +31,8 @@ export class EmptyStateComponent {
   public readonly ctaSize = input<ButtonProps['size']>('small');
   /** Set to false when the component is already inside a card-like container */
   public readonly withCard = input(true);
+  /** `compact` is the in-card state Health Metrics sections use: no card or CTA of its own, smaller type and icon. */
+  public readonly variant = input<'default' | 'compact'>('default');
 
   // === Outputs ===
   public readonly ctaClick = output<void>();

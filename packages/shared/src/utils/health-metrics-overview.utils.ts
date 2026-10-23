@@ -205,3 +205,9 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
     };
   });
 }
+
+/** The page header's year-to-date span, e.g. "Jan 1 – Oct 22, 2026", shown beside the YTD period. */
+export function buildHealthMetricsYtdRangeLabel(today: Date): string {
+  const end = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `Jan 1 – ${end}, ${today.getFullYear()}`;
+}

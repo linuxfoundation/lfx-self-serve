@@ -4,11 +4,11 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_AGENT_INTAKES, MKTG_LIVING_DOCUMENT_ID, MKTG_REBUILD_STEP_LABELS } from '@lfx-one/shared/constants';
 import { MktgRebuildResponse, MktgRebuildStepView, MktgRevisionRef, MktgRunAnswer } from '@lfx-one/shared/interfaces';
-import { buildMktgDocumentProjectPrefix, parseMktgRevisionKey } from '@lfx-one/shared/utils';
+import { buildMktgDocumentProjectPrefix, parseMktgRevisionKey, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -26,7 +26,6 @@ export class MktgRebuildComponent {
   private readonly user = inject(UserService);
   private readonly platform = inject(PLATFORM_ID);
   private readonly destroy = inject(DestroyRef);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   public readonly project = input.required<string>();
   public readonly projectSlug = input<string | null>(null);
@@ -42,7 +41,6 @@ export class MktgRebuildComponent {
   public readonly sending = signal(false);
   protected readonly startedAt = signal(0);
   protected readonly livingId = MKTG_LIVING_DOCUMENT_ID;
-  protected readonly moduleRoute = this.route.parent;
   private subscription?: Subscription;
   private usedAutoStart = '';
   public readonly active = computed(() => this.sending() || this.chain()?.status === 'running' || this.chain()?.status === 'questions');
@@ -103,8 +101,7 @@ export class MktgRebuildComponent {
 
   protected openDraft(row: MktgRebuildStepView): void {
     if (!row.revisionId || !this.projectSlug() || !isPlatformBrowser(this.platform)) return;
-    const url = this.router.createUrlTree(['documents', row.agentKey, this.livingId], {
-      relativeTo: this.moduleRoute,
+    const url = this.router.createUrlTree([mktgKitRootPath(this.router.url), 'documents', row.agentKey, this.livingId], {
       queryParams: { project: this.projectSlug(), revision: row.revisionId },
     });
     if (this.active()) window.open(this.router.serializeUrl(url), '_blank', 'noopener,noreferrer');

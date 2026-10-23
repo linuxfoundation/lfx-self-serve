@@ -41,7 +41,6 @@ import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
-import { projectParticipatingOrgsEnabledGuard } from './shared/guards/project-participating-orgs-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -374,13 +373,12 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES); rolled out behind
-      // `project-lens-participating-orgs` (CanMatch). The BFF checks the same flag and enforces project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
+      // project `viewer` on every read.
       {
         path: 'project/participating-orgs',
         title: 'Participating Organizations',
         data: { lens: 'project' },
-        canMatch: [projectParticipatingOrgsEnabledGuard],
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',

@@ -10,6 +10,7 @@ import { provideRouter, Router } from '@angular/router';
 import {
   Meeting,
   MeetingAttachment,
+  MeetingAttachmentChangesByMeeting,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -92,6 +93,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingDetail,
@@ -479,6 +481,7 @@ describe('MeetingCardComponent — invitee panels', () => {
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -586,6 +589,7 @@ describe('MeetingCardComponent — remove myself', () => {
           useValue: {
             removedRegistrationMeetingIds: removedIds,
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
             removeMyMeetingRegistration,
@@ -1354,6 +1358,7 @@ describe('MeetingCardComponent — summary modal read-only', () => {
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
@@ -1441,6 +1446,7 @@ describe('MeetingCardComponent — occurrence-scoped materials', () => {
   const uids = (list: readonly { uid: string }[]): string[] => list.map((a) => a.uid);
 
   let overrides: ReturnType<typeof signal<ReadonlyMap<string, string>>>;
+  let changes: ReturnType<typeof signal<MeetingAttachmentChangesByMeeting>>;
 
   async function mount(attachments: MeetingAttachment[]): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
@@ -1458,6 +1464,7 @@ describe('MeetingCardComponent — occurrence-scoped materials', () => {
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
             attachmentScopeOverrides: overrides,
+            attachmentChanges: changes,
             getMeetingAttachments: vi.fn().mockReturnValue(of(attachments)),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
           },
@@ -1477,6 +1484,7 @@ describe('MeetingCardComponent — occurrence-scoped materials', () => {
 
   beforeEach(() => {
     overrides = signal<ReadonlyMap<string, string>>(new Map());
+    changes = signal<MeetingAttachmentChangesByMeeting>(new Map());
   });
 
   it("groups the series-wide materials and this date's, and leaves other dates' out", async () => {
@@ -1510,5 +1518,30 @@ describe('MeetingCardComponent — occurrence-scoped materials', () => {
     overrides.set(new Map([['series', OTHER_OCCURRENCE_ID]]));
 
     expect(card.attachments()).toEqual([]);
+  });
+
+  it('lists an attachment the moment it is added, before a read returns it', async () => {
+    const card = await mount([attachment('series')]);
+
+    changes.set(new Map([[MEETING.id, { added: [attachment('new')], deletedUids: new Set() }]]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['new', 'series']);
+  });
+
+  it('drops an attachment the moment it is deleted, even though a read still returns it', async () => {
+    const card = await mount([attachment('series'), attachment('mine', OCCURRENCE_ID)]);
+
+    changes.set(new Map([[MEETING.id, { added: [], deletedUids: new Set(['mine']) }]]));
+
+    expect(card.occurrenceAttachments()).toEqual([]);
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
+  });
+
+  it("does not show another meeting's changes", async () => {
+    const card = await mount([attachment('series')]);
+
+    changes.set(new Map([['other-meeting', { added: [attachment('new')], deletedUids: new Set(['series']) }]]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
   });
 });
