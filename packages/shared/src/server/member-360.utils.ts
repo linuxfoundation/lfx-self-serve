@@ -248,7 +248,7 @@ export function renderMember360FormMessage(input: Member360FormInput): string {
       ''
     );
   } else {
-    lines.push("CATEGORY WEIGHTS: Paul's defaults.", '');
+    lines.push("CATEGORY WEIGHTS: the scoring model's defaults.", '');
   }
 
   if (input.feedback !== undefined) {

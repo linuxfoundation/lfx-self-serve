@@ -17,7 +17,6 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
-  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -41,8 +40,6 @@ describe('SidebarNavService', () => {
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
-  // On by default: the other project-lens ordering tests expect the entry in place.
-  const participatingOrgsEnabled = signal(true);
   const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const akritesEnabled = signal(false);
@@ -89,7 +86,6 @@ describe('SidebarNavService', () => {
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
-    participatingOrgsEnabled.set(true);
     orgSegment.set(null);
     mentorshipEnabled.set(false);
     akritesEnabled.set(false);
@@ -126,7 +122,6 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
-              if (key === PROJECT_LENS_PARTICIPATING_ORGS_FLAG) return participatingOrgsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
@@ -284,14 +279,11 @@ describe('SidebarNavService', () => {
     }
   });
 
-  it('shows Participating organizations right after Documents on the project lens only while its flag is on, for non-writers too, and not on the foundation lens', () => {
+  it('shows Participating organizations right after Documents on the project lens, for non-writers too, and not on the foundation lens', () => {
     const service = TestBed.inject(SidebarNavService);
     activeLens.set('project');
     canWrite.set(false);
-    participatingOrgsEnabled.set(false);
-    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
 
-    participatingOrgsEnabled.set(true);
     const items = service.sidebarItems();
     const itemLabels = labels(items);
     expect(findByLink(items, '/project/participating-orgs')).toEqual(

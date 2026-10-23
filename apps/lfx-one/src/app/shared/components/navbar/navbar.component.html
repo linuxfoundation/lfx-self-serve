@@ -105,7 +105,12 @@
           [class.hidden]="!effectiveShowOrgSelector()"
           data-testid="org-selector-slot"
           [attr.data-visible]="effectiveShowOrgSelector()">
-          <lfx-org-selector variant="navbar" [(isPanelOpen)]="selectorPanelOpen" [enabled]="effectiveShowOrgSelector()"></lfx-org-selector>
+          <!-- A switch can re-address the page with replaceUrl, which the layout leaves alone, so the pick closes the mobile drawer itself. -->
+          <lfx-org-selector
+            variant="navbar"
+            [(isPanelOpen)]="selectorPanelOpen"
+            [enabled]="effectiveShowOrgSelector()"
+            (itemSelected)="closeMobileDrawer()"></lfx-org-selector>
         </div>
 
         <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->

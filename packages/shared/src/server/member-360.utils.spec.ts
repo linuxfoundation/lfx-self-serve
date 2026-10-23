@@ -24,7 +24,7 @@ describe('Member 360 form-only contract', () => {
     expect(text).toContain('a\\|b');
     const weightsLine = text.split('\n').find((line) => line.startsWith('CATEGORY WEIGHTS:')) ?? '';
     // Pin the complete upstream prompt line without a person's name in test data.
-    expect(createHash('sha256').update(weightsLine).digest('hex')).toBe('42205192ed4645a9353fd23b9e1aec20d8791794f510f15ae43ce7e58f281310');
+    expect(createHash('sha256').update(weightsLine).digest('hex')).toBe('a034f2d693896d65c4b4c103599d4a3544b9bf33c150446cba5e3b2a2de01846');
     expect(text).toContain('PRIOR MEMBER 360 RUN: none supplied');
   });
   it('rejects unsafe tracker filenames on Generate and flattens delimiters defensively', () => {

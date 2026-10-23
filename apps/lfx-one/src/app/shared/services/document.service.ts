@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MyDocumentItem } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { catchError, map, Observable, of } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -22,5 +22,14 @@ export class DocumentService {
     if (projectUid) params = params.set('project_uid', projectUid);
     if (committeeUid) params = params.set('committee_uid', committeeUid);
     return this.http.get<MyDocumentItem[]>('/api/documents', { params: params.keys().length ? params : undefined });
+  }
+
+  /** Counts the documents a group's Documents tab lists, without fetching them. Resolves to null on error so a badge can stay hidden. */
+  public getCommitteeDocumentCount(committeeUid: string): Observable<number | null> {
+    const params = new HttpParams().set('committee_uid', committeeUid);
+    return this.http.get<{ count: number }>('/api/documents/count', { params }).pipe(
+      map(({ count }) => count),
+      catchError(() => of(null))
+    );
   }
 }

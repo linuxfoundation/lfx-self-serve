@@ -5,14 +5,9 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { isFlagEnabled, getProjectIdBySlug, checkSingleAccessStrict } = vi.hoisted(() => ({
-  isFlagEnabled: vi.fn(),
+const { getProjectIdBySlug, checkSingleAccessStrict } = vi.hoisted(() => ({
   getProjectIdBySlug: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
-}));
-
-vi.mock('../services/launchdarkly-server.service', () => ({
-  LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) },
 }));
 
 vi.mock('../services/project.service', () => ({
@@ -29,7 +24,7 @@ vi.mock('../services/logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { PROJECT_LENS_PARTICIPATING_ORGS_FLAG, PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE } from '@lfx-one/shared/constants';
+import { PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE } from '@lfx-one/shared/constants';
 
 import { requireProjectParticipatingOrgsAccess } from './require-project-participating-orgs-access.middleware';
 
@@ -49,18 +44,8 @@ function errorOf(next: Mock): { statusCode?: number; message?: string; clientMes
 describe('requireProjectParticipatingOrgsAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    isFlagEnabled.mockResolvedValue(true);
     getProjectIdBySlug.mockResolvedValue({ uid: UID, slug: 'synthetic-project', exists: true });
     checkSingleAccessStrict.mockResolvedValue(true);
-  });
-
-  it('404s when the rollout flag is off for the caller, before any lookup or access check', async () => {
-    isFlagEnabled.mockResolvedValue(false);
-    const { next } = await run('synthetic-project');
-    expect(errorOf(next)?.statusCode).toBe(404);
-    expect(isFlagEnabled).toHaveBeenCalledWith(expect.anything(), PROJECT_LENS_PARTICIPATING_ORGS_FLAG, false);
-    expect(getProjectIdBySlug).not.toHaveBeenCalled();
-    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('400s on a malformed slug', async () => {

@@ -7,7 +7,7 @@
  * A project with no company code activity in the selected window must say so instead of rendering a
  * zeroed page, and a filter that matches no company must leave the page in place with the table's
  * no-match message. The unit spec renders the component against a service double; this pins the
- * same two branches through the real route, flag guard and HTTP client, with the BFF reads stubbed.
+ * same two branches through the real route and HTTP client, with the BFF reads stubbed.
  *
  * Coverage:
  *   P1  Summary `null` (no activity in the window): `participating-orgs-empty` and its copy
@@ -16,19 +16,9 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- *
- * The page is rolled out behind `project-lens-participating-orgs`; the client flag is pinned on
- * through the non-production localStorage override. The BFF checks the same flag server-side, which is
- * why the participating-orgs reads are stubbed rather than left to the real server.
  */
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  LENS_COOKIE_KEY,
-  PERSONA_COOKIE_KEY,
-  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
-  SELECTED_PROJECT_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type {
   PersistedPersonaState,
   PersonaType,
@@ -65,13 +55,6 @@ function summaryWithActivity(): ProjectParticipatingOrgsSummary {
     allCommits: 160,
     memberCommitShareOfCompanyCommits: 0.4,
   };
-}
-
-async function pinParticipatingOrgsFlag(page: Page): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [PROJECT_LENS_PARTICIPATING_ORGS_FLAG]: true }),
-  ] as const);
 }
 
 async function seedContextCookies(page: Page): Promise<void> {
@@ -114,7 +97,6 @@ async function stubContext(page: Page, summary: ProjectParticipatingOrgsSummaryR
  * Express server, whose fetches bypass `page.route` and hit the real BFF.
  */
 async function gotoParticipatingOrgs(page: Page, summary: ProjectParticipatingOrgsSummaryResponse, list: ProjectParticipatingOrgsPage): Promise<void> {
-  await pinParticipatingOrgsFlag(page);
   await seedContextCookies(page);
   await stubContext(page, summary, list);
 

@@ -11,6 +11,7 @@ const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } = vi.hoisted(
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, getEffectiveUsername }));
 vi.mock('../services/email-verification.service', () => ({ EmailVerificationService: class {} }));
+vi.mock('../services/meeting-preference.service', () => ({ MeetingPreferenceService: class {} }));
 vi.mock('../services/logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
 
 import type { Request } from 'express';

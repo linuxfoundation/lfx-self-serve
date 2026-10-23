@@ -50,7 +50,10 @@ const {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    getMeetingRegistrantsByUsername: vi.fn(),
+    getMeetingRegistrantsByVerifiedEmails: vi.fn(),
     getMeetingRegistrantCount: vi.fn(),
+    getMeetingJoinUrl: vi.fn(),
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
@@ -58,8 +61,6 @@ const {
     getPastMeetingParticipants: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
-    getMeetingRegistrantsByUsername: vi.fn(),
-    getMeetingJoinUrl: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   // exists to avoid.
   PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS: (await import('../../../../../packages/shared/src/constants/meeting-registrant.constants'))
     .PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
+  ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
   PUBLIC_ANONYMOUS_PAST_MEETING_KEYS: (await import('../../../../../packages/shared/src/constants/public-past-meeting.constants'))
     .PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS: (await import('../../../../../packages/shared/src/constants/public-live-meeting.constants'))
@@ -548,6 +550,35 @@ describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
     expect(Object.keys(payload.meeting).every((key) => (PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS as readonly string[]).includes(key))).toBe(true);
   });
 
+  it('keeps a signed-in non-registrant on the guest projection when no verified-email row matches', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].full_access).toBe(false);
+  });
+
+  it('falls through to the password gate when the verified-email lookup fails', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockRejectedValueOnce(new Error('auth-service down'));
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].full_access).toBe(false);
+  });
+
   it('computes can_join from the full internal meeting before the anonymous projection strips start_time', async () => {
     // Starts 10 minutes ago, inside the join window — the allowlist would otherwise make
     // this unknowable to the client once start_time is stripped from the guest response.
@@ -676,6 +707,34 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     const { meeting } = res.json.mock.calls[0][0];
     expect(meeting.invited).toBe(true);
     expect(meeting.registrant_count).toBe(12);
+  });
+
+  it('marks an alias-row invitee invited through the verified-email fallback', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [{ uid: 'reg-alias' }], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com');
+    expect(res.json.mock.calls[0][0].meeting.invited).toBe(true);
+  });
+
+  it('skips the verified-email fallback while impersonating', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    isImpersonatingMock.mockReturnValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+    isImpersonatingMock.mockReturnValue(false);
   });
 
   it('still serves the meeting when the count is unavailable', async () => {
@@ -1185,6 +1244,37 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
+  it('allows an alias-row registrant on a restricted meeting via the verified-email check', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [{ email: 'alias@example.com' }], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
+  });
+
+  it('skips the verified-email check while impersonating', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    isImpersonatingMock.mockReturnValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(403);
+    isImpersonatingMock.mockReturnValue(false);
+  });
+
   it('allows an authenticated organizer on a private meeting and restores the M2M token', async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
@@ -1614,6 +1704,135 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).not.toHaveProperty('username');
+  });
+});
+
+describe('PublicMeetingController.postMeetingJoinUrl restricted registrant match (PCC-1570)', () => {
+  const PRIMARY = 'user@acme-motors.example';
+  const ALIAS = 'user+meetings@example.com';
+  let controller: PublicMeetingController;
+
+  function buildJoinReq(body: Record<string, unknown> = {}) {
+    const { req, res, next } = buildReqRes(true);
+    req.body = body;
+    req.headers = { 'x-meeting-password': 'pw' };
+    return { req, res, next };
+  }
+
+  function expectNotRegistered(next: ReturnType<typeof vi.fn>) {
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toMatchObject({ code: 'NOT_REGISTERED_FOR_MEETING' });
+    expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    validatePasswordMock.mockReturnValue(true);
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingJoinUrl.mockResolvedValue({ link: 'https://zoom.example/j/1' });
+    meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ uid: 'reg-1', email: ALIAS }], lookupFailed: false });
+    getEffectiveEmailMock.mockReturnValue(PRIMARY);
+    getEffectiveUsernameMock.mockReturnValue(null);
+    isImpersonatingMock.mockReturnValue(false);
+  });
+
+  it("joins with the registrant's alias when only another verified email matches", async () => {
+    const { req, res, next } = buildJoinReq({ email: PRIMARY });
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, PRIMARY);
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalledWith(req, MEETING_ID, PRIMARY);
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, ALIAS);
+    expect(res.json).toHaveBeenCalledWith({ link: 'https://zoom.example/j/1' });
+  });
+
+  it('skips the verified-email lookup when the username matches', async () => {
+    getEffectiveUsernameMock.mockReturnValue('someuser');
+    meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([{ uid: 'reg-1', email: PRIMARY }]);
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, PRIMARY);
+  });
+
+  it('skips the verified-email lookup when the email matches', async () => {
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-1', email: PRIMARY }]);
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+  });
+
+  it('skips the verified-email lookup while impersonating, since the operator joins as themselves', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getRealEmailMock.mockReturnValue(PRIMARY);
+    getRealUsernameMock.mockReturnValue(null);
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expectNotRegistered(next);
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a user registered under none of their emails', async () => {
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [], lookupFailed: false });
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expectNotRegistered(next);
+  });
+
+  it('returns 503 instead of not-registered when an email source is down', async () => {
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [], lookupFailed: true });
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503, code: 'SERVICE_ADVISORY' });
+    expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+  });
+
+  it('passes a query-service failure through instead of reporting not-registered', async () => {
+    const failure = new Error('query service down');
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockRejectedValue(failure);
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+
+  it('still requires an email or username before any lookup', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    const { req, res, next } = buildJoinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((next.mock.calls[0][0] as Error).message).toBe('Validation failed for email');
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+  });
+
+  it('does not join with a typed email that matches nobody', async () => {
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [], lookupFailed: false });
+    const { req, res, next } = buildJoinReq({ email: 'someone-else@example.com' });
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expectNotRegistered(next);
   });
 });
 

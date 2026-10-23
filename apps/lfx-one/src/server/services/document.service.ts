@@ -14,6 +14,7 @@ import {
   PastMeetingRecordingQueryResult,
   PastMeetingSummaryQueryResult,
   PastMeetingTranscriptQueryResult,
+  QueryServiceCountResponse,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -80,12 +81,9 @@ export class DocumentService {
     // When scoped to a specific committee, filter memberships to that committee only.
     const scopedCommittees = committeeUid ? myCommittees.filter((c) => c.uid === committeeUid) : myCommittees;
 
-    // If a committeeUid was requested but the user isn't a member, return early.
-    // No further fetches are needed — access control is enforced by membership.
-    if (committeeUid && scopedCommittees.length === 0) {
-      logger.info(req, 'get_my_documents', 'Committee UID provided but user is not a member — returning empty', { committee_uid: committeeUid });
-      return [];
-    }
+    // A committee-scoped request is not gated on membership: committee links come from the
+    // user's memberships (empty for non-members), while meeting and mailing list artifacts are
+    // queried by committee ref and the query service enforces per-resource access.
 
     // Stage 2 — Fetch all raw items in parallel (no meeting enrichment yet).
     // When committeeUid is set, each fetcher queries directly by committee parent ref
@@ -156,6 +154,53 @@ export class DocumentService {
     });
 
     return enrichedDocuments;
+  }
+
+  /**
+   * Counts every document a group's Documents tab can list — links, uploaded files, mailing list
+   * artifacts and meeting attachments, recordings, transcripts and summaries — without fetching rows.
+   * Folders are not counted: they are indexed as their own `committee_link_folder` type, separate from
+   * `committee_link`. The total is all-or-nothing: if any source fails or reports `has_more`, this
+   * throws so the caller can hide the badge instead of presenting a partial total as exact.
+   */
+  public async getCommitteeDocumentCount(req: Request, committeeUid: string): Promise<number> {
+    logger.debug(req, 'get_committee_document_count', 'Counting committee documents', { committee_uid: committeeUid });
+
+    const byTag = ['committee_link', 'committee_document', 'groupsio_artifact'].map((type) => ({ type, tags: `committee_uid:${committeeUid}` }));
+    const byParent = [
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ].map((type) => ({ type, parent: `committee:${committeeUid}` }));
+
+    const counts = await Promise.all(
+      [...byTag, ...byParent].map(async (params) => {
+        try {
+          const { count, has_more } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources/count',
+            'GET',
+            params
+          );
+          if (has_more) {
+            throw new Error('Count is incomplete (has_more)');
+          }
+          return count;
+        } catch (err) {
+          logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, the total is unavailable', {
+            committee_uid: committeeUid,
+            type: params.type,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+          throw err;
+        }
+      })
+    );
+
+    return counts.reduce((total, count) => total + count, 0);
   }
 
   // ─── Committee / Group Documents ────────────────────────────────────────────

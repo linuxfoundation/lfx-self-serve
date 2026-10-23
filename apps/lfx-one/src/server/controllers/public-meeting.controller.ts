@@ -3,6 +3,7 @@
 
 import { Meeting } from '@lfx-one/shared';
 import {
+  ERROR_CODES,
   MEETING_PASSWORD_HEADER,
   PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS,
   PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
@@ -27,7 +28,7 @@ import {
 import { canJoinMeeting, getCurrentOrNextOccurrence, getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
@@ -191,30 +192,44 @@ export class PublicMeetingController {
       // service OR lookup had a false negative. Re-check directly by email with M2M.
       if (isAuthenticated) {
         const userEmail = getEffectiveEmail(req);
+        let fallbackMatch = false;
         if (userEmail) {
           try {
-            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
-            if (registrantsByEmail.length > 0) {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken)).length > 0;
+            if (fallbackMatch) {
               logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
                 meeting_id: id,
                 email: userEmail,
               });
-              meeting.invited = true;
-              await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
-              res.json({
-                meeting,
-                project: this.toPublicMeetingProject(project, parent),
-                full_access: true,
-                can_join: canJoin,
-              });
-              return;
             }
           } catch (fallbackError) {
-            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing', {
               meeting_id: id,
               err: fallbackError,
             });
           }
+        }
+        // An alias row (meeting-invite preference) only matches through the user's other verified emails.
+        if (!fallbackMatch && !isImpersonating(req)) {
+          try {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, userEmail || undefined)).registrants.length > 0;
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Verified-email registrant check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
+            });
+          }
+        }
+        if (fallbackMatch) {
+          meeting.invited = true;
+          await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
+          res.json({
+            meeting,
+            project: this.toPublicMeetingProject(project, parent),
+            full_access: true,
+            can_join: canJoin,
+          });
+          return;
         }
       }
 
@@ -528,7 +543,6 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
-        email: joinEmail,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -954,6 +968,20 @@ export class PublicMeetingController {
       }
     }
 
+    if (!isImpersonating(req)) {
+      try {
+        const { registrants } = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, meeting.id, email || undefined);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Verified-email registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      }
+    }
+
     // Guard on originalToken, not just isAuthenticated: running the access check while the
     // M2M token is active would evaluate the application identity and could leak access.
     if (originalToken !== undefined) {
@@ -1068,7 +1096,7 @@ export class PublicMeetingController {
     // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
     // no username is available.
     let registrants: MeetingRegistrant[] = [];
-    let matchedBy: 'username' | 'email' | null = null;
+    let matchedBy: 'username' | 'email' | 'verified_email' | null = null;
     if (username) {
       registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
       if (registrants.length > 0) {
@@ -1079,6 +1107,25 @@ export class PublicMeetingController {
       registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
       if (registrants.length > 0) {
         matchedBy = 'email';
+      }
+    }
+    // The verified-email lookup resolves the target's emails; an impersonator joins as themselves.
+    if (registrants.length === 0 && !isImpersonating(req)) {
+      const byVerifiedEmail = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, email);
+      registrants = byVerifiedEmail.registrants;
+      if (registrants.length > 0) {
+        matchedBy = 'verified_email';
+      } else if (byVerifiedEmail.lookupFailed) {
+        // Don't tell a registered user they aren't registered because an email source is down.
+        throw new MicroserviceError(
+          'Unable to verify your meeting registration right now, please reload the page in a moment',
+          503,
+          ERROR_CODES.SERVICE_ADVISORY,
+          {
+            operation: 'post_meeting_link',
+            service: 'public_meeting_controller',
+          }
+        );
       }
     }
 

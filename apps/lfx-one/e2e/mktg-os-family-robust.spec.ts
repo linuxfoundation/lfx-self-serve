@@ -22,7 +22,7 @@ test.describe('Marketing family responsive structure', () => {
         await page.setViewportSize({ width, height: 1000 });
         await setupKit(page, { loaded: true, approvedFramework: true });
         await openKit(page, `/families/${familyId}`);
-        await expect(page.getByTestId('mktg-family-assets').locator('tbody tr')).toHaveCount(
+        await expect(page.getByTestId('mktg-family-assets').getByRole('listitem')).toHaveCount(
           MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.length ?? 0
         );
         const eligible = (MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets ?? []).filter((asset) => {

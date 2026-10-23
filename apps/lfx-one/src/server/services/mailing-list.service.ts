@@ -7,6 +7,7 @@ import {
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
   GroupsIOMailingList,
+  GroupsIOMemberResponse,
   GroupsIOService,
   MailingListMember,
   MyMailingList,
@@ -713,17 +714,24 @@ export class MailingListService {
   /**
    * Fetches a member for an update/delete and verifies it actually belongs to mailingListId —
    * guards against a confused-deputy call where the URL's mailingListId and the member's own
-   * mailing_list_uid diverge.
+   * mailing list diverge. The upstream single-GET response carries no mailing_list_uid, so
+   * membership is verified against the query-service index instead, whose documents are tagged
+   * with both member_uid and mailing_list_uid (linuxfoundation/lfx-self-serve-ops#955).
    */
-  private async fetchMemberForMutation(req: Request, mailingListId: string, memberId: string, operation: string): Promise<MailingListMember> {
-    const member = await this.microserviceProxy.proxyRequest<MailingListMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      'GET'
-    );
+  private async fetchMemberForMutation(req: Request, mailingListId: string, memberId: string, operation: string): Promise<GroupsIOMemberResponse> {
+    const [member, membership] = await Promise.all([
+      this.microserviceProxy.proxyRequest<GroupsIOMemberResponse>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'GET'),
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'groupsio_member',
+        tags_all: [`member_uid:${memberId}`, `mailing_list_uid:${mailingListId}`],
+      }),
+    ]);
 
-    if (member.mailing_list_uid !== mailingListId) {
+    if (!membership.resources?.length) {
+      logger.debug(req, operation, 'Member not found on mailing list index', {
+        mailing_list_uid: mailingListId,
+        member_uid: memberId,
+      });
       throw new ResourceNotFoundError('Mailing List Member', memberId, { operation, service: 'mailing_list_service' });
     }
 
