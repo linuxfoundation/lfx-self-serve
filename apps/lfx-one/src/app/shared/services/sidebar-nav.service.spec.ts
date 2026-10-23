@@ -407,7 +407,7 @@ describe('SidebarNavService', () => {
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toBeUndefined();
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toBeUndefined();
     expect(findByLink(items, '/formations')).toBeUndefined();
   });
 
@@ -416,10 +416,10 @@ describe('SidebarNavService', () => {
     formationEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagementLinks = sectionItems(items, 'My Engagement').map((item) => item.routerLink);
+    const engagementLinks = sectionItems(items, 'Engagement').map((item) => item.routerLink);
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toEqual(
-      expect.objectContaining({ label: 'My Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toEqual(
+      expect.objectContaining({ label: 'Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
     );
     expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
     expect(engagementLinks).not.toContain('/documents');

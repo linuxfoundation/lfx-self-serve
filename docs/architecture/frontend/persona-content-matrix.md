@@ -49,19 +49,19 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 | Section           | Item                          | Route                            |
 | ----------------- | ----------------------------- | -------------------------------- |
-| _(top-level)_     | My Dashboard                  | `/`                              |
-| My Engagement     | My Meetings                   | `/meetings`                      |
-|                   | My Events                     | `/events`                        |
-|                   | My Meetups                    | `/meetups`                       |
-|                   | My Committees                 | `/groups`                        |
-|                   | My Mailing Lists              | `/mailing-lists`                 |
-|                   | My Newsletters                | `/newsletters/my`                |
-|                   | My Votes                      | `/votes`                         |
-|                   | My Surveys                    | `/surveys`                       |
+| _(top-level)_     | Dashboard                     | `/`                              |
+| Engagement        | Meetings                      | `/meetings`                      |
+|                   | Events                        | `/events`                        |
+|                   | Meetups                       | `/meetups`                       |
+|                   | Groups                        | `/groups`                        |
+|                   | Mailing Lists                 | `/mailing-lists`                 |
+|                   | Newsletters                   | `/newsletters/my`                |
+|                   | Votes                         | `/votes`                         |
+|                   | Surveys                       | `/surveys`                       |
 | Education         | Training & Certifications     | `/me/training`                   |
 |                   | Badges                        | `/badges`                        |
-| Crowdfunding      | My Initiatives                | `/crowdfunding/initiatives`      |
-|                   | My Donations                  | `/crowdfunding/donations`        |
+| Crowdfunding      | Initiatives                   | `/crowdfunding/initiatives`      |
+|                   | Donations                     | `/crowdfunding/donations`        |
 | Profile & Account | Profile & Account (user card) | `/profile`                       |
 |                   | Work history & Affiliations   | `/profile/attributions`          |
 |                   | Identities                    | `/profile/identities`            |
@@ -69,7 +69,7 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 |                   | Transactions                  | `/profile/transactions`          |
 |                   | Settings                      | `/profile/settings`              |
 
-> **Profile & Account** is not a nav section: on the Home lens the navbar's me card carries a "My Profile & Account" action (links to `/profile`), and the navbar footer account menu links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
+> **Profile & Account** is not a nav section: on the Home lens the navbar's me card carries a "Profile & Account" action (links to `/profile`), and the navbar footer account menu links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
 
 ---
 
