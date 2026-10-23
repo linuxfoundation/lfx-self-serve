@@ -26,6 +26,7 @@ import {
 import {
   Auth0Identity,
   CdpIdentity,
+  CdpIdentityType,
   CdpWorkExperienceRequest,
   ClaimAliasRequest,
   ClaimAliasResponse,
@@ -33,6 +34,7 @@ import {
   DeveloperTokenInfo,
   EmailManagementData,
   EnrichedIdentity,
+  IdentitiesPrimaryEmail,
   IdentityDisplayState,
   LinuxAliasData,
   ProfileAuthStatus,
@@ -1344,10 +1346,11 @@ export class ProfileController {
       // target's identities.
       const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
-      // Fetch CDP identities and auth-service identities in parallel
-      const [cdpIdentities, auth0Identities] = await Promise.all([
+      // Fetch CDP identities, auth-service identities, and the account's primary email in parallel
+      const [cdpIdentities, auth0Identities, primaryEmail] = await Promise.all([
         this.cdpService.getIdentitiesForUser(req, lfid),
         auth0Sub ? this.auth0Service.getUserIdentities(req, auth0Sub) : Promise.resolve([]),
+        this.resolveIdentitiesPrimaryEmail(req, lfid),
       ]);
 
       logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
@@ -1359,7 +1362,7 @@ export class ProfileController {
       // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
-      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid, primaryEmail);
       const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
 
       logger.success(req, 'get_identities', startTime, {
@@ -1369,6 +1372,8 @@ export class ProfileController {
         display_count: displayIdentities.length,
         hidden_count: enriched.filter((i) => i.displayState === 'hidden').length,
         cdp_posts_queued: cdpPostsQueued,
+        has_primary_email: !!primaryEmail,
+        primary_email_verified: primaryEmail?.verified === true,
       });
 
       res.json(displayIdentities);
@@ -2568,14 +2573,22 @@ export class ProfileController {
    * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry + fire-and-forget POST to CDP,
    *    skipping the POST when a `custom` row for the same email value has already been written
    *    in this loop or already exists as a CDP custom-email row owned by this user (verifiedBy=lfid))
-   * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
+   * 4. In CDP but NOT in auth-service, multi-LFID + verified & verifiedBy≠lfid → HIDDEN
    * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
+   * 6. Primary email (applyPrimaryEmail, runs last) → exactly one email/google row for the
+   *    account's primary address is marked isPrimary; its verified state comes only from the IdP
+   *    `email_verified` proof (or an existing verified auth-service match), unlinked duplicates are
+   *    hidden, and a display-only synthetic row is added when neither source has it. No CDP writes.
+   *
+   * Email-type values match case-insensitively between auth-service and CDP (identityMatchKey);
+   * username values (e.g. GitHub) match exactly. Values written to CDP keep their original casing.
    */
   private reconcileIdentities(
     req: Request,
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
-    lfid: string
+    lfid: string,
+    primaryEmail: IdentitiesPrimaryEmail | null = null
   ): { enriched: EnrichedIdentity[]; cdpPostsQueued: number } {
     // Under impersonation, produce the read-only enriched list without any CDP mutation: no
     // auto-verify, no synthetic-identity creation. Derived here (not a caller-supplied flag) so a
@@ -2589,7 +2602,7 @@ export class ProfileController {
       const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
       const value = this.getAuth0IdentityValue(authId);
       if (cdpPlatform && value) {
-        authServiceMap.set(`${cdpPlatform}:${value}`, authId);
+        authServiceMap.set(this.identityMatchKey(cdpPlatform, CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username', value), authId);
       }
     }
 
@@ -2602,17 +2615,18 @@ export class ProfileController {
 
     // Process CDP identities
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
-      const authKey = `${cdp.platform}:${cdp.value}`;
+      const authKey = this.identityMatchKey(cdp.platform, cdp.type, cdp.value);
       // Google OAuth creates email-type CDP entries — cross-match CDP email entries against Google auth identities
-      const authIdentity = authServiceMap.get(authKey) ?? (cdp.platform === 'email' ? authServiceMap.get(`google:${cdp.value}`) : undefined);
+      const googleKey = cdp.platform === 'email' ? this.identityMatchKey('google', 'email', cdp.value) : null;
+      const authIdentity = authServiceMap.get(authKey) ?? (googleKey ? authServiceMap.get(googleKey) : undefined);
 
       const inAuthService = !!authIdentity;
 
       if (inAuthService) {
         matchedAuthKeys.add(authKey);
         // Also mark the Google auth key as matched to prevent duplicate synthetic entries
-        if (cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2') {
-          matchedAuthKeys.add(`google:${cdp.value}`);
+        if (googleKey && authIdentity?.provider === 'google-oauth2') {
+          matchedAuthKeys.add(googleKey);
         }
       }
 
@@ -2653,14 +2667,14 @@ export class ProfileController {
       }
 
       // In CDP but NOT in auth-service
-      const isCdpVerifiedWithOwner = cdp.verified && !!cdp.verifiedBy;
+      const isVerifiedByOtherOwner = cdp.verified && !!cdp.verifiedBy && cdp.verifiedBy !== lfid;
       let displayState: IdentityDisplayState;
 
       if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdp.platform}+${cdp.type}`)) {
         // Combo not surfaceable via Auth0 (e.g. linkedin+username, gitlab+username) —
         // we have no way to help the user verify it, so hide.
         displayState = 'hidden';
-      } else if (isCdpVerifiedWithOwner && hasMultiLfid) {
+      } else if (isVerifiedByOtherOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
         displayState = 'hidden';
       } else {
@@ -2687,12 +2701,10 @@ export class ProfileController {
         continue;
       }
 
-      const authKey = `${cdpPlatform}:${value}`;
-      if (matchedAuthKeys.has(authKey)) {
+      const type = CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username';
+      if (matchedAuthKeys.has(this.identityMatchKey(cdpPlatform, type, value))) {
         continue;
       }
-
-      const type = CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username';
 
       // Skip combos LFX One can't surface for verification (e.g. lfid, gitlab)
       if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdpPlatform}+${type}`)) {
@@ -2708,14 +2720,15 @@ export class ProfileController {
       const cdpPostPlatform = cdpPlatform === 'email' || cdpPlatform === 'google' ? 'custom' : cdpPlatform;
       const wouldDuplicateCustomEmail =
         cdpPostPlatform === 'custom' &&
-        (postedCustomEmails.has(value) || enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid));
+        (postedCustomEmails.has(value.trim().toLowerCase()) ||
+          enriched.some((id) => id.platform === 'email' && emailsEqual(id.value, value) && id.verified && id.verifiedBy === lfid));
 
       // Skip the CDP create entirely when read-only (impersonation) — the synthetic display entry
       // below is still produced, so the impersonator sees the identity without any CDP mutation.
       if (!skipCdpMutations && !wouldDuplicateCustomEmail) {
         cdpPostsQueued++;
         if (cdpPostPlatform === 'custom') {
-          postedCustomEmails.add(value);
+          postedCustomEmails.add(value.trim().toLowerCase());
         }
         this.cdpService
           .createIdentityForUser(req, [lfid], {
@@ -2753,7 +2766,84 @@ export class ProfileController {
       });
     }
 
+    this.applyPrimaryEmail(enriched, primaryEmail);
+
     return { enriched, cdpPostsQueued };
+  }
+
+  /**
+   * The account's primary email for the identities list: auth-service `primary_email` (keyed on
+   * the LFID username), falling back to the session email. Verified only when it equals the
+   * session email that passed the IdP `email_verified` check — same rule as
+   * `resolveVerifiedUserEmails`. A failed auth-service read falls back rather than failing the
+   * endpoint; returns null when neither source resolves an address.
+   */
+  private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string): Promise<IdentitiesPrimaryEmail | null> {
+    const sessionEmail = getEffectiveEmail(req);
+    const emails = await this.emailVerificationService.getUserEmails(req, lfid).catch(() => null);
+    const email = emails?.primary_email?.trim() || sessionEmail;
+    if (!email) {
+      return null;
+    }
+    return { email, verified: emailsEqual(email, sessionEmail) };
+  }
+
+  /**
+   * Key for matching auth-service identities against CDP identities. Email values are trimmed and
+   * lowercased so a casing difference doesn't split one owned address into two rows; username
+   * values (e.g. GitHub) match exactly.
+   */
+  private identityMatchKey(platform: string, type: CdpIdentityType, value: string): string {
+    return `${platform}:${type === 'email' ? value.trim().toLowerCase() : value}`;
+  }
+
+  /**
+   * Marks exactly one email/google row for the account's primary address as `isPrimary` (preferring
+   * an auth-service-backed verified row), hides any further unlinked rows for the same address, and
+   * adds a display-only synthetic row when neither CDP nor auth-service has it. Linked auth-service
+   * rows (auth0UserId) are never hidden, so a Google or email login on the primary address stays
+   * removable. A row that isn't already verified takes its state from the IdP proof only. LinkedIn
+   * rows are never candidates (#4124). Performs no CDP writes.
+   */
+  private applyPrimaryEmail(enriched: EnrichedIdentity[], primaryEmail: IdentitiesPrimaryEmail | null): void {
+    if (!primaryEmail) {
+      return;
+    }
+
+    const candidates = enriched.filter(
+      (id) => id.type === 'email' && (id.platform === 'email' || id.platform === 'google') && emailsEqual(id.value, primaryEmail.email)
+    );
+
+    if (candidates.length === 0) {
+      enriched.push({
+        id: 'primary-email',
+        platform: 'email',
+        type: 'email',
+        value: primaryEmail.email,
+        verified: primaryEmail.verified,
+        verifiedBy: null,
+        source: 'auth-service',
+        icon: CDP_PLATFORM_ICONS['email'],
+        createdAt: '',
+        updatedAt: '',
+        displayState: primaryEmail.verified ? 'verified' : 'unverified',
+        inAuth0: false,
+        isPrimary: true,
+      });
+      return;
+    }
+
+    const pick = candidates.find((id) => id.displayState === 'verified' && id.inAuth0) ?? candidates[0];
+    for (const candidate of candidates) {
+      if (candidate !== pick && !candidate.auth0UserId) {
+        candidate.displayState = 'hidden';
+      }
+    }
+
+    pick.isPrimary = true;
+    if (pick.displayState !== 'verified') {
+      pick.displayState = primaryEmail.verified ? 'verified' : 'unverified';
+    }
   }
 
   /** Build a LinuxAliasData for a non-claimed state (no alias/forward yet). */

@@ -74,9 +74,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       .map((enriched) => this.mapToConnectedIdentity(enriched))
   );
   public readonly loading: Signal<boolean> = computed(() => !this.identitiesState().loaded);
-  public readonly isEmpty: Signal<boolean> = computed(
-    () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
-  );
+  public readonly isEmpty: Signal<boolean> = computed(() => !this.identitiesLoadError() && this.identitiesState().loaded && this.identities().length === 0);
 
   // Raw EnrichedIdentity[] passed to ProfileLinuxEmailComponent to avoid a duplicate
   // getIdentities() fetch when both panels render on the Identities tab.
@@ -241,7 +239,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       identifier: enriched.value,
       state: enriched.displayState === 'verified' ? 'verified' : 'unverified',
       icon: enriched.icon,
-      isPrimary: false,
+      isPrimary: enriched.isPrimary === true,
       ...(enriched.auth0UserId ? { auth0UserId: enriched.auth0UserId } : {}),
     };
   }

@@ -601,6 +601,18 @@ export interface EnrichedIdentity extends CdpIdentity {
   displayState: IdentityDisplayState;
   inAuth0: boolean;
   auth0UserId?: string;
+  /** True on the single row representing the account's primary email; display-only. */
+  isPrimary?: boolean;
+}
+
+/**
+ * The account's primary email as reconciled into the identities list.
+ * `verified` reflects the IdP `email_verified` assertion only — being the primary address or
+ * appearing in CDP never grants verified status on its own.
+ */
+export interface IdentitiesPrimaryEmail {
+  email: string;
+  verified: boolean;
 }
 
 // --- CDP Work Experience Types ---

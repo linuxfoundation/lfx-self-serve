@@ -5,7 +5,7 @@ import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { OPEN_PROFILE_BANNER_LINK_CLICKED, PENDING_PROFILE_SAVE_KEY } from '@lfx-one/shared/constants';
-import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -442,5 +442,73 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     await fixture.whenStable();
 
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProfileLayoutComponent — identities tab dot ignores the primary email (#4123)', () => {
+  function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'value'>): EnrichedIdentity {
+    return {
+      platform: 'email',
+      type: 'email',
+      verified: false,
+      source: 'cdp',
+      icon: 'fa-light fa-envelope',
+      createdAt: '',
+      updatedAt: '',
+      displayState: 'unverified',
+      inAuth0: false,
+      ...overrides,
+    };
+  }
+
+  async function setup(identities: EnrichedIdentity[]): Promise<ComponentFixture<ProfileLayoutComponent>> {
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: { username: 'dev-user' }, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of(identities)),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('keeps the dot off for a lone unverified primary email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true })]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(false);
+  });
+
+  it('still lights the dot for another unverified identity', async () => {
+    const fixture = await setup([
+      makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true }),
+      makeIdentity({ id: 'cdp-other', value: 'other@example.org' }),
+    ]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(true);
   });
 });

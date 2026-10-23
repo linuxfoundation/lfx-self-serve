@@ -165,9 +165,12 @@ export class ProfileLayoutComponent {
   // Connected identities — fetched once and reused for the tab notification dots and the GitHub handle
   private readonly identities: Signal<EnrichedIdentity[]> = this.initIdentities();
 
-  // Tab notification dots — show when identities are unverified
+  // Tab notification dots — show when identities are unverified. The primary email is skipped: an
+  // unverified primary has no action on the Identities tab, so it must not nag.
   public readonly tabNotifications: Signal<Map<string, boolean>> = computed(() => {
-    const hasUnverified = this.identities().some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified');
+    const hasUnverified = this.identities().some(
+      (id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified' && !id.isPrimary
+    );
     return new Map<string, boolean>([['identities', hasUnverified]]);
   });
 
