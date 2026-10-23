@@ -24,6 +24,12 @@ export function isMktgFamilyAgentAvailable(agentId: string): boolean {
   );
 }
 
+/** Shared entry mode for Family and document Run again; independent of document-only selectors. */
+export function mktgRunModeFor(agentId: string): 'new' | null {
+  if (MKTG_DOCUMENT_TYPES.some((type) => type.catalogAgentId === agentId && type.kind === 'living')) return MKTG_RUN_NEW_MODE;
+  return MKTG_FAMILY_ONE_OFF_RUN_MODES[agentId] ?? null;
+}
+
 /** One policy for Family actions and Kit card data. Does not mutate the supplied view. */
 export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgFamilyActionContext): MktgFamilyActions {
   const rows: MktgFamilyActions['rows'] = {};
@@ -43,10 +49,6 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
     return attachment ? `Approve the ${attachment.documentName.toLowerCase()} first: ${agent?.name ?? agentId} builds on the approved one.` : '';
   };
-  const modeFor = (agentId: string): 'new' | null => {
-    if (MKTG_DOCUMENT_TYPES.some((type) => type.catalogAgentId === agentId && type.kind === 'living')) return MKTG_RUN_NEW_MODE;
-    return MKTG_FAMILY_ONE_OFF_RUN_MODES[agentId] ?? null;
-  };
   for (const row of view.rows) {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
     const agentId = type?.catalogAgentId;
@@ -58,7 +60,7 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
       kind: row.document ? 'run-again' : 'run',
       label: row.document ? 'Run again' : `Run ${row.asset.runName ?? row.asset.label}`,
       agentId,
-      mode: modeFor(agentId),
+      mode: mktgRunModeFor(agentId),
       blockedReason: blockedReason(agentId),
     };
     rows[row.asset.id] = { row, action };
@@ -95,7 +97,7 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
       label: `Run ${available ? name : unavailableName}`,
       nextAssetLabel: '',
       agentId,
-      mode: modeFor(agentId),
+      mode: mktgRunModeFor(agentId),
       blockedReason: leadBlocked,
     },
   };

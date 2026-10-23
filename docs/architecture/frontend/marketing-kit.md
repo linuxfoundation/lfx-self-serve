@@ -110,10 +110,13 @@ tab without navigating the original family. Replacement query params preserve th
 project and drop stale questions/generation/revision/run selectors. Living actions use
 `?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 has
 no intake fields beyond the project, so its plain project-scoped route carries its complete
-input. LinkedIn uses its existing plain route in phase 1; last-input persistence and
-`mode=new` prefill are phase 2, pending the one-off landing integration before the parent
-merges. The mode policy lives in `MKTG_FAMILY_ONE_OFF_RUN_MODES`. Breadcrumbs and row headings
-are unchanged.
+input. LinkedIn Family and document Run again use `mode=new` through the same
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. The dedicated source form restores
+writer-gated last text/URL and share-link scalars before any run navigation, preserving
+explicit blanks; files require reattachment. Fresh mode never resumes a pending run or
+starts generation: Draft remains explicit. Denied history disables Draft; unavailable
+history is a warning, not invented absence. Profile/LFX prefill remains independent and
+scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and

@@ -51,7 +51,7 @@ describe('One rule for every family action', () => {
   it('already-run living and one-off rows say Run again, with modes supported by their run pages', () => {
     for (const [id, asset, mode] of [
       ['positioning-brand', 'messaging-framework', 'new'],
-      ['social-community', 'linkedin-post', null],
+      ['social-community', 'linkedin-post', 'new'],
       ['member-sponsor', 'member-360', null],
     ] as const) {
       const result = resolveMktgFamilyActions(built(family(id)), context);
@@ -64,7 +64,7 @@ describe('One rule for every family action', () => {
       ['member-sponsor', 'member-360', 'Member 360'],
     ]) {
       const result = resolveMktgFamilyActions(family(id), context);
-      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Run ${label}`, mode: null });
+      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Run ${label}`, mode: id === 'social-community' ? 'new' : null });
       expect(result.header).toMatchObject({ kind: 'run-next', label: 'Run next agent', nextAssetLabel: label, blockedReason: '' });
     }
   });

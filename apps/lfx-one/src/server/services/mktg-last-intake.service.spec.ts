@@ -115,13 +115,28 @@ describe('MktgLastIntakeService', () => {
     expect(mocks.get).toHaveBeenCalledWith(req, 'marketing-os-artifacts', `document-last-intake/${project}/${types[0].agentKey}.json`);
   });
 
+  it('projects only opted-in LinkedIn source scalars and keeps its whole-record byte cap', async () => {
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, {
+      ...input('linkedin-post'),
+      answers: { content_source: 'text', content_text: 'Synthetic source', share_link: '', author: 'private-profile', content_file_base64: 'private-upload' },
+    });
+    expect(written().answers).toEqual({ content_source: 'text', content_text: 'Synthetic source', share_link: '' });
+    expect(written()).toMatchObject({ agentKey: 'linkedin-post', documentCount: 0, logoCount: 0 });
+    mocks.get.mockResolvedValue({ body: JSON.stringify(written()) });
+    expect((await service.read(req, project, 'linkedin-post'))?.answers['content_text']).toBe('Synthetic source');
+    mocks.put.mockClear();
+    await service.recordStartBestEffort(req, { ...input('linkedin-post'), answers: { content_text: 'x'.repeat(MKTG_LAST_INTAKE_MAX_BYTES) } });
+    expect(mocks.put).not.toHaveBeenCalled();
+    expect(mocks.warning).toHaveBeenCalled();
+  });
   it('denies a nonwriter before reading any private object', async () => {
     mocks.resolve.mockRejectedValue(new AuthorizationError('No write access'));
     await expect(new MktgLastIntakeService().read(req, project, types[0].agentKey)).rejects.toBeInstanceOf(AuthorizationError);
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
-  it.each(['../brand-kit', 'linkedin-post', 'unknown', ['brand-kit']].map((agentKey) => ({ agentKey })))(
+  it.each(['../brand-kit', 'member-360', 'unknown', ['brand-kit']].map((agentKey) => ({ agentKey })))(
     'rejects unsupported selectors before project/store lookup: $agentKey',
     async ({ agentKey }) => {
       await expect(new MktgLastIntakeService().read(req, project, agentKey)).rejects.toBeInstanceOf(ServiceValidationError);

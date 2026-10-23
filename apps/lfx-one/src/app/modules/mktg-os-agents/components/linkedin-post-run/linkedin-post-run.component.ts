@@ -4,7 +4,7 @@
 import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -27,6 +27,7 @@ import {
   LINKEDIN_VOICE_FIELDS,
   MKTG_AGENTS,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_NEW_MODE,
 } from '@lfx-one/shared/constants';
 import {
   LinkedinContentSource,
@@ -42,6 +43,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -75,6 +77,7 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
 export class LinkedinPostRunComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly api = inject(LinkedinPostService);
+  private readonly history = inject(MktgAgentRunService);
   private readonly documents = inject(MktgDocumentStoreService);
   protected readonly context = inject(ProjectContextService);
   private readonly projects = inject(ProjectService);
@@ -113,6 +116,11 @@ export class LinkedinPostRunComponent {
     mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), this.agent()?.name ?? this.pageLabel)
   );
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
+  protected readonly freshMode = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('mode') === MKTG_RUN_NEW_MODE)), { initialValue: false });
+  private readonly historyGrant = signal('');
+  protected readonly lastIntakeLoading = signal(false);
+  protected readonly lastIntakeDenied = signal(false);
+  protected readonly lastIntakeNote = signal('');
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
   protected readonly busy = signal(false);
@@ -153,6 +161,7 @@ export class LinkedinPostRunComponent {
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) return;
+    this.initLastIntakeRestore();
     this.route.queryParamMap
       .pipe(
         map((params) => params.get('profile') === 'edit'),
@@ -202,6 +211,7 @@ export class LinkedinPostRunComponent {
           this.busy.set(false);
           this.loading.set(true);
           this.writer.set(false);
+          this.historyGrant.set('');
           this.saved.set(null);
           this.profileSaved.set(false);
           this.setup.set(null);
@@ -223,6 +233,7 @@ export class LinkedinPostRunComponent {
             switchMap((project) => {
               if (!project) throw new Error('Project unavailable');
               this.writer.set(!!project.writer);
+              this.historyGrant.set(project.writer ? JSON.stringify([context.uid, sub]) : '');
               return project.writer ? this.api.profile() : of(null);
             }),
             catchError(() => {
@@ -240,7 +251,7 @@ export class LinkedinPostRunComponent {
           this.fillProfile();
           const editProfile = this.route.snapshot.queryParamMap.get('profile') === 'edit';
           this.editing.set(!response.profile || editProfile);
-          const pending = this.api.pending(this.intake(), this.context.activeContextUid());
+          const pending = this.freshMode() ? null : this.api.pending(this.intake(), this.context.activeContextUid());
           if (pending) {
             this.run.set(pending);
             this.contentForm.controls.share_link.setValue(pending.answers?.[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
@@ -344,6 +355,7 @@ export class LinkedinPostRunComponent {
   }
   protected onSource(source: LinkedinContentSource): void {
     this.applySource(source);
+    this.contentForm.markAsDirty();
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { source: source === 'text' ? null : source, project: this.context.activeContext()?.slug ?? null },
@@ -352,11 +364,22 @@ export class LinkedinPostRunComponent {
   }
   protected onFile(event: FileSelectEvent): void {
     this.file.set(event.files[0] ?? null);
+    this.contentForm.markAsDirty();
     this.error.set('');
   }
   protected async onDraft(): Promise<void> {
     const project = this.context.activeContextUid();
-    if (!project || !this.writer() || this.busy() || this.editing() || this.questions().length || this.answering()) return;
+    if (
+      !project ||
+      !this.writer() ||
+      this.busy() ||
+      this.editing() ||
+      this.questions().length ||
+      this.answering() ||
+      this.lastIntakeLoading() ||
+      this.lastIntakeDenied()
+    )
+      return;
     // Draft takes the field value for a NEW document; it must never PATCH the old result.
     // Retain H1 only when an explicit, dirty blur/Enter save is already in flight.
     if (this.linkSaving() && this.contentForm.controls.share_link.dirty) {
@@ -538,6 +561,57 @@ export class LinkedinPostRunComponent {
         },
       });
   }
+  /** Entry-only source restoration; independent of accepted-start navigation and run ownership. */
+  private initLastIntakeRestore(): void {
+    toObservable(
+      computed(() => ({
+        project: this.context.activeContextUid(),
+        sub: this.user.user()?.sub,
+        writer: this.writer(),
+        fresh: this.freshMode(),
+        grant: this.historyGrant(),
+        reload: this.reload(),
+      }))
+    )
+      .pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        switchMap(({ project, sub, writer, fresh, grant }) => {
+          this.lastIntakeDenied.set(false);
+          this.lastIntakeNote.set('');
+          this.lastIntakeLoading.set(false);
+          if (!project || !sub || !writer || !fresh || grant !== JSON.stringify([project, sub])) return of(null);
+          this.contentForm.reset();
+          this.file.set(null);
+          this.source.set(this.sources.find((item) => item.value === this.route.snapshot.queryParamMap.get('source'))?.value ?? 'text');
+          this.lastIntakeLoading.set(true);
+          return this.history.lastIntake(project, this.intake().agentId).pipe(
+            catchError((error: unknown) => {
+              this.lastIntakeDenied.set(error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403));
+              this.lastIntakeNote.set(
+                this.lastIntakeDenied()
+                  ? 'You need write access to run this project’s agents.'
+                  : 'Last run inputs could not be loaded. Available device inputs or suggested defaults are shown.'
+              );
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((intake) => {
+        this.lastIntakeLoading.set(false);
+        if (!intake || this.contentForm.dirty) return;
+        const answers = intake.answers;
+        const source = this.sources.find((item) => item.value === answers['content_source'])?.value ?? 'text';
+        this.source.set(source);
+        this.contentForm.patchValue(
+          { text: answers['content_text'] ?? '', url: answers['content_url'] ?? '', share_link: answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '' },
+          { emitEvent: false }
+        );
+        if (source === 'file') this.lastIntakeNote.set('The last run used a file — choose it again to draft.');
+      });
+  }
+
   private waitForRun(project: string, run: LinkedinGeneration): Observable<LinkedinResult> {
     return this.api.wait(this.intake(), project, run, (response) => this.activity.set(response.activity ?? []));
   }

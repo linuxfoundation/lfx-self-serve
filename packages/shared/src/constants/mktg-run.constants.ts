@@ -685,6 +685,7 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
   oneOffDocument: true,
   tracksDocumentRun: true,
+  lastIntakeFields: ['content_source', 'content_text', 'content_url', 'share_link'],
   formTitleAction: 'Draft',
   documentName: 'LinkedIn post',
   intro: 'Three post options in your voice, from pasted text, a link or a file.',

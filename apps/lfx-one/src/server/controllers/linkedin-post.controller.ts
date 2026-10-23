@@ -20,6 +20,7 @@ import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgLastIntakeService } from '../services/mktg-last-intake.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -32,6 +33,7 @@ export class LinkedinPostController {
   private readonly projects = new ProjectService();
   private readonly documents = new MktgDocumentStoreService();
   private readonly runs = new MktgDocumentRunService();
+  private readonly lastIntake = new MktgLastIntakeService();
 
   public async getProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_linkedin_profile';
@@ -109,6 +111,20 @@ export class LinkedinPostController {
       });
       logger.success(req, operation, start, {});
       res.set('Cache-Control', 'private, no-store').json({ ...result, runId, ownerToken: createSessionOwnerToken(user, result.sessionId) });
+      // Separate from private run tracking: never delay/fail an accepted Generate for history.
+      const scalar: Record<string, string> = {};
+      for (const key of LINKEDIN_POST_INTAKE.lastIntakeFields ?? []) {
+        if (key === 'content_text' && answers['content_source'] !== 'text') continue;
+        if (key === 'content_url' && answers['content_source'] !== 'url') continue;
+        const value = answers[key];
+        if (typeof value === 'string') scalar[key] = value;
+      }
+      scalar[LINKEDIN_SHARE_LINK_ANSWER_KEY] = result.answers?.[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '';
+      void this.lastIntake
+        .recordStartBestEffort(req, { project: project.uid, agentId: LINKEDIN_POST_INTAKE.agentId, runId, answers: scalar, documentCount: 0, logoCount: 0 })
+        .catch(() => {
+          logger.warning(req, 'mktg_last_intake_write', 'Run accepted, but scalar intake history could not be saved');
+        });
     } catch (error) {
       next(error);
     }

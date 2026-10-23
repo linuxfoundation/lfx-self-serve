@@ -19,7 +19,7 @@ import { logger } from './logger.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { ObjectStoreService } from './object-store.service';
 
-/** One private scalar snapshot per project/living agent. No listing or session-record reads. */
+/** One private scalar snapshot per project/registered intake. No listing or session-record reads. */
 export class MktgLastIntakeService {
   private readonly store = new ObjectStoreService();
   private readonly runs = new MktgDocumentRunService();
@@ -100,10 +100,11 @@ export class MktgLastIntakeService {
   }
 
   private registration(rawAgentKey: unknown): { agentKey: string; intake: MktgAgentIntake } {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === rawAgentKey && entry.kind === 'living');
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === rawAgentKey);
     const agent = MKTG_AGENTS.find((entry) => entry.id === type?.catalogAgentId && entry.status === 'active');
     const intake = agent && MKTG_AGENT_INTAKES[agent.id];
-    if (!type || !intake) throw ServiceValidationError.forField('agentKey', 'A registered active living agent is required.');
+    if (!type || !intake || (type.kind !== 'living' && !intake.lastIntakeFields?.length))
+      throw ServiceValidationError.forField('agentKey', 'A registered active agent with scalar history is required.');
     return { agentKey: type.agentKey, intake };
   }
 
@@ -112,13 +113,13 @@ export class MktgLastIntakeService {
     const source = raw as Record<string, unknown>;
     const dependencyKeys = new Set((intake.attachments ?? []).map((attachment) => attachment.answerKey));
     return Object.fromEntries(
-      intake.fields
-        .filter((field) => !dependencyKeys.has(field.key) && Object.hasOwn(source, field.key))
-        .map((field) => {
-          const value = source[field.key];
+      (intake.lastIntakeFields ?? intake.fields.map((field) => field.key))
+        .filter((key) => !dependencyKeys.has(key) && Object.hasOwn(source, key))
+        .map((key) => {
+          const value = source[key];
           if (typeof value !== 'string') throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
           // Keep submitted blanks, but never claim a newly registered/missing field came from this run.
-          return [field.key, value.trim()];
+          return [key, value.trim()];
         })
     );
   }

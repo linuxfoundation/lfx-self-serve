@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Writer-only scalar prefill. No author, source contents or session capabilities cross this boundary. */
+/** Writer-only re-enterable scalar prefill. No author, extracted/uploaded payloads or session capabilities. */
 export interface MktgLastIntake {
   answers: Record<string, string>;
   documentCount: number;

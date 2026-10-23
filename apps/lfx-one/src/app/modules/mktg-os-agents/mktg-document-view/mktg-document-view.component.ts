@@ -27,7 +27,6 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
-  MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
@@ -59,6 +58,7 @@ import {
   mktgKitCrumbsFor,
   mktgKitRootPath,
   mktgRunRouteFor,
+  mktgRunModeFor,
   parseMktgLegacyRevisionId,
   normalizeLinkedinShareLink,
   readBrandKitRevision,
@@ -306,7 +306,7 @@ export class MktgDocumentViewComponent {
   });
   protected readonly runAgainParams = computed(() => ({
     project: this.projectContext.activeContext()?.slug || this.routeProject(),
-    mode: MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === this.runAgentId()) ? MKTG_RUN_NEW_MODE : null,
+    mode: mktgRunModeFor(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.catalogAgentId ?? ''),
     ...MKTG_RUN_RESUME_QUERY_CLEAR,
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();

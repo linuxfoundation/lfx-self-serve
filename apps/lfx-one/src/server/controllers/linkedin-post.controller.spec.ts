@@ -17,6 +17,7 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
+  history: vi.fn(),
   track: vi.fn(),
   record: vi.fn(),
   resume: vi.fn(),
@@ -36,6 +37,11 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public resumeAfterQuestions = mocks.resume;
+  },
+}));
+vi.mock('../services/mktg-last-intake.service', () => ({
+  MktgLastIntakeService: class {
+    public recordStartBestEffort = mocks.history;
   },
 }));
 vi.mock('../services/mktg-document-store.service', () => ({
@@ -62,7 +68,7 @@ vi.mock('../services/project.service', () => ({
     public getProjectById = mocks.project;
   },
 }));
-vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn() } }));
+vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn(), warning: vi.fn() } }));
 import { LinkedinPostController } from './linkedin-post.controller';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
@@ -87,6 +93,7 @@ describe('LinkedIn endpoint boundaries', () => {
       return resolved.uid;
     });
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.history.mockReset().mockResolvedValue(undefined);
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
@@ -130,6 +137,42 @@ describe('LinkedIn endpoint boundaries', () => {
     await new LinkedinPostController().generate(req, res, next);
     expect(mocks.track).toHaveBeenCalledWith(req, 'linkedin-post', 'project-one', 'session-one', { sourceWords: 12 });
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ runId: 'a'.repeat(64) }));
+    expect(mocks.history).toHaveBeenCalledWith(req, {
+      project: 'project-one',
+      agentId: 'linkedin-post',
+      runId: 'a'.repeat(64),
+      answers: { content_source: 'text', content_text: 'Synthetic source', share_link: '' },
+      documentCount: 0,
+      logoCount: 0,
+    });
+    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
+    expect(vi.mocked(res.json).mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
+  });
+
+  it.each(['start', 'track'] as const)('records no last intake when %s fails', async (step) => {
+    mocks[step].mockRejectedValueOnce(new Error('Synthetic failure'));
+    const next = vi.fn();
+    await new LinkedinPostController().generate(
+      request({ project: 'project-one', answers: { content_source: 'text', content_text: 'Synthetic source' } }),
+      response(),
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(mocks.history).not.toHaveBeenCalled();
+  });
+  it('isolates rejected or stalled history from the accepted Generate response', async () => {
+    const req = request({ project: 'project-one', answers: { content_source: 'file', content_file_base64: 'private-upload', content_text: 'unused-private' } });
+    const next = vi.fn();
+    const res = response();
+    mocks.history.mockRejectedValueOnce(new Error('private-store-error'));
+    await new LinkedinPostController().generate(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalled();
+    expect(mocks.history.mock.calls[0][1].answers).toEqual({ content_source: 'file', share_link: '' });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private-store-error');
+    mocks.history.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    await new LinkedinPostController().generate(req, res, next);
+    expect(res.json).toHaveBeenCalledTimes(2);
   });
 
   it('checks writer entitlement and validates share-link edits before the metadata store', async () => {

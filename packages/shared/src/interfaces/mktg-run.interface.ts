@@ -983,6 +983,8 @@ export interface MktgAgentIntake {
   batchPreamble: string[];
   /** Ordered intake fields; required unless marked `optional` or branched by the gate. */
   fields: MktgIntakeField[];
+  /** Explicit scalar history allowlist for dedicated one-off forms; never profile or upload payloads. */
+  lastIntakeFields?: string[];
   /** Section labels the generated document is expected to contain. */
   sections: string[];
   /** BFF endpoints for the agent's validated generation flow. */

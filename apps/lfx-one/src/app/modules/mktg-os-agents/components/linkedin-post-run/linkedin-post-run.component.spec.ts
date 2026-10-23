@@ -18,9 +18,10 @@ import {
   MKTG_KIT_FAMILIES,
   MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
-import { LinkedinEnvelope, LinkedinResult, ProjectContext } from '@lfx-one/shared/interfaces';
+import { LinkedinEnvelope, LinkedinResult, MktgLastIntake, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -59,6 +60,7 @@ describe('LinkedIn profile and post surface', () => {
   const context = signal<ProjectContext | null>({ uid: 'project-one', slug: 'example-project', name: 'Example project' });
   const api = { profile: vi.fn(), save: vi.fn(), start: vi.fn(), wait: vi.fn(), pending: vi.fn(), rememberShareLink: vi.fn(), answer: vi.fn() };
   const projects = { getProject: vi.fn() };
+  const history = { lastIntake: vi.fn() };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   let clipboardDescriptor: PropertyDescriptor | undefined;
   const documents = { saveLinkedinShareLink: vi.fn() };
@@ -68,6 +70,7 @@ describe('LinkedIn profile and post surface', () => {
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
     api.pending.mockReset().mockReturnValue(null);
+    history.lastIntake.mockReset().mockReturnValue(of(null));
     api.start.mockReset();
     api.wait.mockReset();
     api.answer.mockReset().mockReturnValue(of({ success: true }));
@@ -83,6 +86,7 @@ describe('LinkedIn profile and post surface', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: LinkedinPostService, useValue: api },
+        { provide: MktgAgentRunService, useValue: history },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: () => context()?.uid } },
         { provide: ProjectService, useValue: projects },
@@ -104,6 +108,63 @@ describe('LinkedIn profile and post surface', () => {
     fixture.detectChanges();
     return fixture;
   }
+  async function fresh() {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&mode=new');
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    return render();
+  }
+  it.each([
+    { source: 'text', text: 'Synthetic previous text', url: '' },
+    { source: 'url', text: '', url: 'https://source.example/' },
+    { source: 'file', text: '', url: '' },
+  ])('restores $source last inputs only in fresh mode, without polling or generating', async ({ source, text, url }) => {
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: source, content_text: text, content_url: url, share_link: '' }, documentCount: 0, logoCount: 0 })
+    );
+    const fixture = await fresh();
+    expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
+    expect(fixture.componentInstance['source']()).toBe(source);
+    expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text, url, share_link: '' });
+    expect(api.pending).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
+    expect(api.wait).not.toHaveBeenCalled();
+    if (source === 'file') expect(fixture.nativeElement.textContent).toContain('choose it again');
+  });
+  it('does not request last inputs on a normal entry', async () => {
+    await render();
+    expect(history.lastIntake).not.toHaveBeenCalled();
+  });
+  it.each([403, 503])('distinguishes denied and unavailable history (%s)', async (status) => {
+    history.lastIntake.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    const fixture = await fresh();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-intake-note"]')?.textContent).toContain(
+      status === 403 ? 'You need write access' : 'Last run inputs could not be loaded'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(status === 403);
+  });
+  it('keeps a user source choice made while last inputs are loading', async () => {
+    const pending = new Subject<MktgLastIntake | null>();
+    history.lastIntake.mockReturnValue(pending);
+    const fixture = await fresh();
+    fixture.componentInstance['onSource']('url');
+    pending.next({ answers: { content_source: 'text', content_text: 'older source' }, documentCount: 0, logoCount: 0 });
+    expect(fixture.componentInstance['source']()).toBe('url');
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('');
+  });
+  it.each(['project', 'user'])('cancels stale source restoration when %s access changes', async (scope) => {
+    const pending = new Subject<MktgLastIntake | null>();
+    history.lastIntake.mockReturnValue(pending);
+    const fixture = await fresh();
+    projects.getProject.mockReturnValue(of({ writer: false }));
+    if (scope === 'project') context.set({ uid: 'other-project', slug: 'other-project', name: 'Synthetic other project' });
+    else identity.set({ sub: 'other-subject', name: 'Synthetic other author' });
+    await fixture.whenStable();
+    pending.next({ answers: { content_text: 'old-private-source' }, documentCount: 0, logoCount: 0 });
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('');
+    expect(history.lastIntake).toHaveBeenCalledTimes(1);
+  });
   async function stored(link = '') {
     const fixture = await render();
     const component = fixture.componentInstance;

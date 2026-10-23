@@ -4,6 +4,7 @@
 import { expect } from '@playwright/test';
 import { MKTG_KIT_FAMILIES, MKTG_DOCUMENT_TYPES, MKTG_AGENTS, MKTG_AGENT_INTAKES } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { linkedinProfileFromSetup } from '../../../packages/shared/src/utils/linkedin-post.utils';
 import { kitTest as test, kitDocuments, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing family content', () => {
@@ -234,7 +235,10 @@ test.describe('Marketing family content', () => {
       await expect(page.getByTestId('mktg-family-run-next')).toHaveText('Next: ' + label);
       const action = page.getByTestId(`mktg-family-run-${agentId}`).getByRole('link');
       await expect(action).toHaveText('Run ' + label);
-      await expect(action).toHaveAttribute('href', `/project/mktg-os-agents/${agentId}?project=${KIT_PROJECT.slug}`);
+      await expect(action).toHaveAttribute(
+        'href',
+        `/project/mktg-os-agents/${agentId}?project=${KIT_PROJECT.slug}${agentId === 'linkedin-post' ? '&mode=new' : ''}`
+      );
       const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentId);
       if (!type) throw new Error('Missing synthetic one-off type');
       const group = listing.groups.find((entry) => entry.type.agentKey === agentId);
@@ -255,6 +259,26 @@ test.describe('Marketing family content', () => {
       await page.screenshot({ path: test.info().outputPath(`family-${agentId}-run-again.png`), fullPage: true });
     });
   }
+  test('LinkedIn Run again opens the last source inputs without starting or resuming a run', async ({ page }) => {
+    await setupKit(page, {
+      loaded: true,
+      intakes: {
+        'linkedin-post': { answers: { content_source: 'url', content_url: 'https://source.example/previous', share_link: '' }, documentCount: 0, logoCount: 0 },
+      },
+    });
+    const profile = linkedinProfileFromSetup({ name: 'Synthetic author', role: 'Maintainer', focus_areas: 'Code', primary_audience: 'Developers' });
+    await page.route('**/api/mktg-agents/linkedin-post/profile', (route) =>
+      route.fulfill({ json: { profile: { profile, profile_markdown: '# Synthetic profile' } } })
+    );
+    await openKit(page, '/families/social-community');
+    await page.getByTestId('mktg-family-run-linkedin-post').getByRole('link', { name: 'Run again' }).click();
+    await expect(page).toHaveURL(/linkedin-post\?project=kit-synthetic-project&mode=new$/);
+    await expect(page.getByTestId('mktg-linkedin-source-url')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('textbox', { name: 'The content to post about', exact: true })).toHaveValue('https://source.example/previous');
+    await expect(page.getByRole('textbox', { name: /Link to share/ })).toHaveValue('');
+    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toBeEnabled();
+    await page.screenshot({ path: test.info().outputPath('linkedin-last-inputs.png'), fullPage: true });
+  });
   test('header and row Run links preserve native modifier clicks with project and fresh mode', async ({ page, context }) => {
     await setupKit(page, { loaded: true, approvedFramework: true });
     await openKit(page, '/families/positioning-brand');

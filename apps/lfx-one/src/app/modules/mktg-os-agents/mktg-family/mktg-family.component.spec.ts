@@ -382,7 +382,9 @@ describe('Marketing family page', () => {
     if (!row?.asset.agentKey) throw new Error('Missing synthetic one-off');
     const action = () => root?.querySelector<HTMLAnchorElement>(`[data-testid="mktg-family-run-${row.asset.id}"] a`);
     expect(action()?.textContent).toContain('Run ' + row.asset.label);
-    expect(action()?.getAttribute('href')).toBe('/project/mktg-os-agents/' + row.asset.agentKey + '?project=synthetic');
+    expect(action()?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/' + row.asset.agentKey + '?project=synthetic' + (familyId === 'social-community' ? '&mode=new' : '')
+    );
     expect(root?.querySelector('[data-testid="mktg-family-run-next"]')?.textContent).toContain('Next: ' + row.asset.label);
     families.update((items) =>
       items.map((item) => ({
@@ -478,7 +480,7 @@ describe('Marketing family page', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
     for (const id of ['mktg-family-run', 'mktg-family-run-linkedin-post']) {
       const anchor = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(`[data-testid="${id}"] a`);
-      expect(anchor?.getAttribute('href')).toBe('/project/mktg-os-agents/linkedin-post?project=synthetic');
+      expect(anchor?.getAttribute('href')).toBe('/project/mktg-os-agents/linkedin-post?project=synthetic&mode=new');
       anchor?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
       anchor?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
     }
@@ -497,7 +499,9 @@ describe('Marketing family page', () => {
     expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run-linkedin-post"] button')?.disabled).toBe(true);
     writer.set(true);
     await harness.fixture.whenStable();
-    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe('/project/mktg-os-agents/linkedin-post?project=synthetic');
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/linkedin-post?project=synthetic&mode=new'
+    );
   });
   it('defensively renders no-project while isolated from lens navigation', async () => {
     families.set([]);
