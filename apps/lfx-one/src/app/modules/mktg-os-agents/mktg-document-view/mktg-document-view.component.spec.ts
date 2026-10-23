@@ -3,7 +3,7 @@
 
 import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, linkedSignal, signal } from '@angular/core';
+import { computed, linkedSignal, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
@@ -54,7 +54,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 import { Title } from '@angular/platform-browser';
 import { Member360Result } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
-import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
+import { member360Fixture, member360Revision } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 
 describe('MktgDocumentViewComponent', () => {
@@ -636,6 +636,100 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-error')).toBeNull();
     expect(store.getDocument).not.toHaveBeenCalled();
   });
+
+  describe('workbook in the document header', () => {
+    let savedFilename = '';
+    function storedMember(): MktgRevisionResponse {
+      return { ...member360Revision(), project: PROJECT.uid };
+    }
+    function component(): MktgDocumentViewComponent {
+      return harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    }
+    function button(): HTMLButtonElement | null {
+      return query('member-360-download')?.querySelector('button') ?? null;
+    }
+    beforeEach(() => {
+      const view = storedMember();
+      store.getDocument.mockReturnValue(of(view));
+      store.getRevision.mockReturnValue(of(view));
+      vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:synthetic'), revokeObjectURL: vi.fn() }));
+      savedFilename = '';
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedFilename = this.download;
+      });
+    });
+    afterEach(() => {
+      harness?.fixture.destroy();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+    it('exports once from the outer header with its filename and releases the object URL on destroy', async () => {
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      expect(query('mktg-document-view-header')?.contains(query('member-360-download'))).toBe(true);
+      expect(query('member-360-result')?.querySelector('[data-testid="member-360-download"]')).toBeNull();
+      expect(button()?.textContent).toContain('Download Member360_sample-foundation_2026-Q3.xlsx');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      button()?.click();
+      expect(TestBed.inject(Member360Service).download).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
+      expect(savedFilename).toBe('Member360_sample-foundation_2026-Q3.xlsx');
+      harness.fixture.destroy();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
+      vi.advanceTimersByTime(1000);
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+    });
+    it('disables duplicate downloads until the request finishes and recovers from a failed request', async () => {
+      const pending = new Subject<Blob>();
+      const api = vi.mocked(TestBed.inject(Member360Service).download);
+      api.mockReturnValueOnce(pending);
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      button()?.click();
+      harness.detectChanges();
+      expect(button()?.disabled).toBe(true);
+      component()['onDownloadWorkbook']();
+      expect(api).toHaveBeenCalledTimes(1);
+      pending.error(new HttpErrorResponse({ status: 503 }));
+      await settle();
+      expect(query('member-360-notice')?.textContent).toContain('The workbook could not be prepared. Try downloading again.');
+      expect(button()?.disabled).toBe(false);
+      button()?.click();
+      await settle();
+      expect(query('member-360-notice')).toBeNull();
+      expect(api).toHaveBeenCalledTimes(2);
+    });
+    it.each(['document', 'project', 'subject'])('never saves a late workbook after a %s change', async (change) => {
+      const pending = new Subject<Blob>();
+      vi.mocked(TestBed.inject(Member360Service).download).mockReturnValueOnce(pending);
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      button()?.click();
+      if (change === 'document') await harness.navigateByUrl('/documents/member-360/run-fedcba987654321001234567', MktgDocumentViewComponent);
+      if (change === 'project') activeContext.set({ ...PROJECT, uid: 'synthetic-other-project' });
+      if (change === 'subject') subject.set('synthetic-other-writer');
+      await settle();
+      pending.next(new Blob(['old-scope workbook']));
+      pending.complete();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      expect(query('member-360-notice')).toBeNull();
+    });
+    it('does not call browser APIs or fetch a workbook during SSR', () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      const fixture = TestBed.createComponent(MktgDocumentViewComponent);
+      fixture.componentInstance['view'].set(storedMember());
+      fixture.componentInstance['writer'].set(true);
+      fixture.componentInstance['loading'].set(false);
+      fixture.componentInstance['onDownloadWorkbook']();
+      expect(TestBed.inject(Member360Service).download).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      fixture.destroy();
+    });
+    it('keeps a non-writer from invoking the download action', async () => {
+      projectLookup.mockReturnValue(of({ writer: false }));
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      expect(button()?.disabled).toBe(true);
+      component()['onDownloadWorkbook']();
+      expect(TestBed.inject(Member360Service).download).not.toHaveBeenCalled();
+    });
+  });
+
   it('renders Member 360 as the structured type of this document, not a second viewer', async () => {
     const member360 = member360Fixture();
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360 }));

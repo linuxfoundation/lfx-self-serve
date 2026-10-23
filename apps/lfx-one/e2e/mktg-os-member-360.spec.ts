@@ -249,7 +249,7 @@ test('a questions turn keeps the document open with the feed and an unsupported-
   await page.screenshot({ path: info.outputPath('questions-turn-open.png'), fullPage: true });
 });
 
-test('ranking sorts, filters, expands evidence, copies team actions and exports the workbook', async ({ page }, info) => {
+test('ranking sorts, filters, expands evidence and copies team actions', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   const view = member360Revision();
   if (!view.member360) throw new Error('Member 360 fixture is missing');
@@ -283,9 +283,6 @@ test('ranking sorts, filters, expands evidence, copies team actions and exports 
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (_text: string) => undefined } }));
   await page.getByRole('button', { name: 'Copy Member Success list' }).click();
   await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
-  const download = page.waitForEvent('download');
-  await page.getByTestId('member-360-download').getByRole('button').click();
-  expect((await download).suggestedFilename()).toBe('Member360_sample-foundation_2026-Q3.xlsx');
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });
 });
 

@@ -7,8 +7,6 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 import { ProjectContextService } from '@services/project-context.service';
-import { Member360Service } from '@services/member-360.service';
-import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { member360Fixture } from '../../../../../../e2e/fixtures/mock-data/member-360.mock';
@@ -16,16 +14,10 @@ import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from '../../../..
 import { Member360ResultComponent } from './member-360-result.component';
 
 describe('Member360ResultComponent', () => {
-  const api = { download: vi.fn(() => of(new Blob(['workbook']))) };
   const context = signal({ slug: 'sample-foundation', name: 'Sample Foundation', uid: 'sample-project' });
   beforeEach(() =>
     TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        provideNoopAnimations(),
-        { provide: Member360Service, useValue: api },
-        { provide: ProjectContextService, useValue: { activeContext: context } },
-      ],
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: ProjectContextService, useValue: { activeContext: context } }],
     })
   );
   afterEach(() => {
@@ -322,23 +314,7 @@ describe('Member360ResultComponent', () => {
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
   });
-  it('downloads the stored BFF workbook and exposes a download failure', async () => {
-    const view = render();
-    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:synthetic'), revokeObjectURL: vi.fn() }));
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    await view.component['download']();
-    expect(api.download).toHaveBeenCalledWith('sample-project', 'run-0123456789abcdef01234567');
-    vi.advanceTimersByTime(1000);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
-    api.download.mockReturnValueOnce(throwError(() => new Error('unavailable')));
-    await view.component['download']();
-    view.fixture.detectChanges();
-    expect(view.query('member-360-notice').textContent).toContain('could not be prepared');
-    await view.component['download']();
-    view.fixture.destroy();
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
-    vi.advanceTimersByTime(1000);
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+  it('leaves workbook export to the document header', () => {
+    expect(render().fixture.nativeElement.querySelector('[data-testid="member-360-download"]')).toBeNull();
   });
 });

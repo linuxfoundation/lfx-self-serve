@@ -11,13 +11,6 @@
       {{ envelope().inputs.prior_run_provided ? 'compared with the previous run' : 'no previous run comparison' }}
     </p>
     <div class="flex flex-wrap gap-2 xl:col-start-2 xl:row-start-1" data-testid="member-360-result-actions">
-      <lfx-button
-        (onClick)="download()"
-        [loading]="downloading()"
-        label="Download Member360_{{ envelope().project }}_{{ envelope().period.label }}.xlsx"
-        class="min-w-0 max-w-full"
-        styleClass="min-h-12 max-w-full whitespace-normal break-words"
-        data-testid="member-360-download" />
       <a
         [routerLink]="runRoute()"
         data-testid="member-360-new-run"

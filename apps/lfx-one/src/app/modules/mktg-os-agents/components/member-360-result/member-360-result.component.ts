@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, formatCurrency, isPlatformBrowser, JsonPipe, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,8 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
-import { Member360Service } from '@services/member-360.service';
-import { debounceTime, distinctUntilChanged, finalize, firstValueFrom, map, merge, tap, timer } from 'rxjs';
+import { debounceTime, distinctUntilChanged, map, merge, tap } from 'rxjs';
 import {
   ACTION_OWNERS,
   CATEGORY_LABELS,
@@ -33,8 +32,6 @@ import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360S
 })
 export class Member360ResultComponent {
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly api = inject(Member360Service);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly context = inject(ProjectContextService);
@@ -57,7 +54,6 @@ export class Member360ResultComponent {
   protected readonly direction = signal<'ascending' | 'descending'>('descending');
   protected readonly expanded = signal<number | null>(null);
   protected readonly notice = signal('');
-  protected readonly downloading = signal(false);
   protected readonly tooltipDismissed = signal(false);
   private readonly filterValues = toSignal(this.filters.valueChanges.pipe(map(() => this.readFilters())), { initialValue: this.readFilters() });
   protected readonly rows = this.initRows();
@@ -169,29 +165,6 @@ export class Member360ResultComponent {
       this.notice.set(`${owner} list copied.`);
     } catch {
       this.notice.set('Copy failed. You can select the actions and copy them manually.');
-    }
-  }
-  protected async download(): Promise<void> {
-    if (!isPlatformBrowser(this.platformId) || this.downloading()) return;
-    this.downloading.set(true);
-    try {
-      const blob = await firstValueFrom(this.api.download(this.project(), this.documentId()));
-      if (this.destroyRef.destroyed) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Member360_${this.envelope().project}_${this.envelope().period.label}.xlsx`;
-      link.click();
-      timer(1000)
-        .pipe(
-          takeUntilDestroyed(this.destroyRef),
-          finalize(() => URL.revokeObjectURL(url))
-        )
-        .subscribe();
-    } catch {
-      this.notice.set('The workbook could not be prepared. Try downloading again.');
-    } finally {
-      this.downloading.set(false);
     }
   }
   private initCards() {
