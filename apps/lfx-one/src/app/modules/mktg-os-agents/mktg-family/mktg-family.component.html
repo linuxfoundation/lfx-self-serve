@@ -6,10 +6,10 @@
   @if (definition(); as definition) {
     <lfx-page-header data-testid="mktg-family-header" [title]="definition.name" titleTestId="mktg-family-title">
       <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>
-      @if (live()) {
+      @if (live() && actions()?.header; as header) {
         <!-- One primary action, chosen by the family's state: rebuild what is stale, else run the next asset not run yet, else run the lead agent again. -->
         <div pageHeaderActions class="flex flex-wrap items-start gap-3" data-testid="mktg-family-actions">
-          @if (definition.id === rebuildFamilyId && hasStale()) {
+          @if (header.kind === 'rebuild') {
             <span
               [pTooltip]="rebuildBlockedReason()"
               tooltipPosition="bottom"
@@ -24,46 +24,29 @@
                 (onClick)="rebuildPanel()?.start()"
                 data-testid="mktg-family-rebuild" />
             </span>
-          } @else if (nextAgent(); as next) {
+          } @else {
             <div class="flex flex-col gap-1">
-              @if (next.blocked) {
-                <span [pTooltip]="next.blocked" tooltipPosition="bottom" tooltipEvent="both" [attr.aria-label]="next.blocked" tabindex="0">
-                  <lfx-button
-                    label="Run next agent"
-                    icon="fa-light fa-play"
-                    [ariaLabel]="'Run next agent: ' + next.agent.name"
-                    [disabled]="true"
-                    data-testid="mktg-family-run" />
+              @if (header.blockedReason) {
+                <span [pTooltip]="header.blockedReason" tooltipPosition="bottom" tooltipEvent="both" [attr.aria-label]="header.blockedReason" tabindex="0">
+                  <lfx-button [label]="header.label" icon="fa-light fa-play" [ariaLabel]="header.label" [disabled]="true" data-testid="mktg-family-run" />
                 </span>
               } @else {
+                <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
                 <lfx-button
-                  label="Run next agent"
+                  [label]="header.label"
                   icon="fa-light fa-play"
-                  [ariaLabel]="'Run next agent: ' + next.agent.name"
-                  [routerLink]="['../../', next.agent.id]"
-                  [queryParams]="runQueryParams()"
+                  [ariaLabel]="header.label"
+                  [routerLink]="['../../', header.agentId ?? '']"
+                  [queryParams]="header.mode ? runQueryParams().fresh : runQueryParams().plain"
+                  (onClick)="$event.stopPropagation()"
                   data-testid="mktg-family-run" />
               }
-              <span class="text-xs text-gray-500" data-testid="mktg-family-run-next">Next: {{ next.label }}</span>
-            </div>
-          } @else if (firstRunName(); as name) {
-            <span
-              [pTooltip]="firstRunEnabled() ? '' : pendingReason()"
-              tooltipPosition="bottom"
-              tooltipEvent="both"
-              [attr.aria-label]="(firstRunEnabled() ? '' : pendingReason()) || null"
-              [attr.tabindex]="firstRunEnabled() ? null : 0">
-              <lfx-button
-                [label]="'Run ' + name"
-                icon="fa-light fa-play"
-                [ariaLabel]="firstRunEnabled() ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
-                [disabled]="!firstRunEnabled()"
-                (onClick)="runFirstAgent()"
-                data-testid="mktg-family-run" />
-              @if (!firstRunEnabled()) {
-                <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ pendingReason() }}</span>
+              @if (header.kind === 'run-next') {
+                <span class="text-xs text-gray-500" data-testid="mktg-family-run-next">Next: {{ header.nextAssetLabel }}</span>
+              } @else if (header.blockedReason) {
+                <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ header.blockedReason }}</span>
               }
-            </span>
+            </div>
           }
         </div>
       }
@@ -108,7 +91,8 @@
                 <div class="p-2">Made by</div>
               </div>
               <ul role="list" class="col-span-full grid grid-cols-subgrid gap-y-3" data-testid="mktg-family-assets">
-                @for (row of family.rows; track row.asset.id) {
+                @for (entry of rows(); track entry.row.asset.id) {
+                  @let row = entry.row;
                   <!-- Block rows contain stretched links in WebKit too; table rows do not. -->
                   <li
                     class="relative col-span-full grid grid-cols-subgrid rounded-lg border border-gray-200 bg-white"
@@ -128,8 +112,8 @@
                         <span class="font-semibold">{{ row.asset.label }}</span>
                       }
                       <p class="mt-1 text-xs text-gray-500">{{ row.asset.description }}</p>
-                      @if (rowRunAgents()[row.asset.id]; as agent) {
-                        @if (rowRunBlocked()[row.asset.id]; as reason) {
+                      @if (entry.action; as action) {
+                        @if (action.blockedReason; as reason) {
                           <!-- Above the row's stretched link so the tooltip gets the hover. -->
                           <span
                             class="relative z-10 inline-block"
@@ -139,7 +123,7 @@
                             [attr.aria-label]="reason"
                             tabindex="0">
                             <lfx-button
-                              [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                              [label]="action.label"
                               [text]="true"
                               size="small"
                               styleClass="p-0 text-sm"
@@ -149,12 +133,13 @@
                         } @else {
                           <lfx-button
                             class="relative z-10"
-                            [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                            [label]="action.label"
                             [text]="true"
                             size="small"
                             styleClass="p-0 text-sm"
-                            [routerLink]="['../../', agent.id]"
-                            [queryParams]="runQueryParams()"
+                            [routerLink]="['../../', action.agentId]"
+                            [queryParams]="action.mode ? runQueryParams().fresh : runQueryParams().plain"
+                            (onClick)="$event.stopPropagation()"
                             [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
                         }
                       }
