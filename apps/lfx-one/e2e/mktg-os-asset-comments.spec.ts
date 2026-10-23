@@ -51,7 +51,7 @@ test.describe('asset field comments', () => {
     const fixture = await setupComments(page, true);
     try {
       await fixture.open();
-      await expect(page.getByTestId('mktg-comments-panel').getByRole('status')).toContainText('Loading');
+      await expect(page.getByTestId('mktg-comments-loading')).toContainText('Loading');
       expect(await page.getByTestId('mktg-field-comments-mf.vision').boundingBox()).toBeNull();
     } finally {
       fixture.release();

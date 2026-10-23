@@ -6,6 +6,7 @@ import { MKTG_DOCUMENT_COMMENT_ID_REGEX, MKTG_DOCUMENT_COMMENT_MAX_CHARS } from 
 import {
   describeMktgDocumentCommentField,
   isMktgDocumentCommentAnchor,
+  mktgDocumentCommentTab,
   readMktgDocumentCommentField,
   validateMktgDocumentCommentBatch,
 } from './mktg-document-comments.utils';
@@ -55,6 +56,15 @@ describe('comment field paths', () => {
     expect(readMktgDocumentCommentField({ mf: undefined }, 'mf')).toBeNull();
     expect(readMktgDocumentCommentField(SOURCE, 'a'.repeat(513))).toBeNull();
     expect(readMktgDocumentCommentField({ nums: new Array(2) }, 'nums[0]')).toBeNull();
+  });
+
+  it('maps stored kit passages only to registered chapter tabs', () => {
+    expect(mktgDocumentCommentTab('brand-kit', 'chapters.voice.line')).toBe('voice');
+    expect(mktgDocumentCommentTab('brand-kit', 'chapters.color.palette[0].hex')).toBe('color');
+    expect(mktgDocumentCommentTab('brand-kit', 'chapters.not_a_chapter.line')).toBeUndefined();
+    expect(mktgDocumentCommentTab('brand-kit', 'report.notes')).toBeUndefined();
+    expect(mktgDocumentCommentTab('brand-kit', 'chapters.sources.notes')).toBeUndefined();
+    expect(mktgDocumentCommentTab('boilerplates', 'bp[1].t')).toBeUndefined();
   });
 
   it('isolates the owning agent and anchor kind', () => {

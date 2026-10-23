@@ -48,6 +48,7 @@ import {
   MktgGenerateProgress,
   MktgPendingGeneration,
   MktgDocumentCommentScope,
+  MktgRedraftLanding,
   MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -128,7 +129,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  // Framework comments use 740px headroom; non-framework layout keeps its 800px threshold.
+  // The host measures the main two-column layout; each asset owns its inner screen grids.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
@@ -714,6 +715,27 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgRedraftLanding): void {
+    const view = this.view();
+    if (
+      !this.writer() ||
+      !view ||
+      view.project !== scope.projectUid ||
+      view.revision.id !== scope.revisionId ||
+      this.projectContext.activeContextUid() !== scope.projectUid ||
+      this.params().agentKey !== location.agentKey ||
+      this.params().documentId !== location.documentId
+    ) {
+      this.notice.set('A new Draft was stored; open it from Revisions');
+      return;
+    }
+    this.dependencyService.notifyDocumentsChanged(scope.projectUid);
+    const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
+      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
+    });
+  }
+
   protected onRetryRun(): void {
     const run = this.selectedRun();
     const project = this.projectContext.activeContextUid();

@@ -429,7 +429,7 @@ else both release as `{ state: 'unknown' }` without creating or rewriting a ledg
 the distinction is logged only at DEBUG. Writer and effective-subject checks still
 run, and only the creator may change an existing reservation.
 
-Known window (follow-up #47): unknown releases write no tombstone. After a transport
+Known window (a tracked follow-up): unknown releases write no tombstone. After a transport
 failure, an original revise request still in flight can reserve after its unknown
 release returns and the browser clears recovery intent. A creator-owned failed
 tombstone would close that window; this round does not add one or auto-resubmit.

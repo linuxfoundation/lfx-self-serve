@@ -3,7 +3,7 @@
 <section class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" aria-label="Comments" data-testid="mktg-comments-panel">
   <h2 class="text-base font-semibold text-gray-900">Comments</h2>
   @if (comments.loading()) {
-    <p role="status" class="text-sm text-gray-500">Loading comments…</p>
+    <p role="status" class="text-sm text-gray-500" data-testid="mktg-comments-loading">Loading comments…</p>
   }
   @if (comments.loadError()) {
     <p role="alert" class="text-sm text-red-700">{{ comments.loadError() }}</p>
@@ -16,6 +16,36 @@
     @if (!comments.threads().length) {
       <p class="text-sm text-gray-500" data-testid="mktg-comments-empty">No comments on this revision yet.</p>
     }
+  }
+  <lfx-button
+    [label]="sendLabel()"
+    size="small"
+    [disabled]="!maySend()"
+    [ariaDescribedBy]="disabledReason() ? reasonId : undefined"
+    [loading]="runPending()"
+    (onClick)="send()"
+    data-testid="mktg-comments-send" />
+  <p [id]="reasonId" class="text-xs text-gray-600" [class.sr-only]="!disabledReason()" data-testid="mktg-comments-disabled-reason">
+    {{ disabledReason() }}
+  </p>
+  @if (accepted() || activity().length) {
+    <lfx-mktg-run-activity
+      [activity]="activity()"
+      [startedAt]="startedAt()"
+      [title]="'Agent redraft'"
+      [showQuestions]="false"
+      data-testid="mktg-comments-feed" />
+  }
+  <p role="status" aria-live="polite" class="text-sm text-gray-700" [class.sr-only]="!message()" data-testid="mktg-comments-run-message">{{ message() }}</p>
+  @if (releaseAvailable() && comments.loaded() && !comments.loadError()) {
+    <lfx-button
+      label="Release this uncertain send"
+      size="small"
+      [text]="true"
+      [disabled]="runPending()"
+      (onClick)="release()"
+      data-testid="mktg-comments-release" />
+    <p class="text-xs text-gray-500">Release permits a later explicit send. An already accepted run may still finish; nothing is sent automatically.</p>
   }
   <p class="text-xs leading-relaxed text-gray-500">
     Hover or focus a field and choose Comment. The thread stays with that field and is listed here. Comments are the only way to change an asset.
