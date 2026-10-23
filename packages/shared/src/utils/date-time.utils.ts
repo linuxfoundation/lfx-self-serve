@@ -70,7 +70,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
-/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+/** Shape guard shared by {@link parseLocalDateString}, {@link tryParseLocalDateString}, and {@link isLocalDateOnlyString} — keep them in sync by referencing this rather than restating the pattern. */
 const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -100,10 +100,15 @@ export const parseLocalDateString = (dateString: string): Date => {
  * cannot fail on — a malformed value comes back as `null` instead of throwing.
  */
 export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
-  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
+  if (!isLocalDateOnlyString(dateString)) {
     return null;
   }
   return parseLocalDateString(dateString);
+}
+
+/** True when `value` is exactly a `YYYY-MM-DD` date-only string (shape check only; no calendar validation). */
+export function isLocalDateOnlyString(value: unknown): value is string {
+  return typeof value === 'string' && LOCAL_DATE_ONLY_PATTERN.test(value);
 }
 
 /**
