@@ -22,13 +22,22 @@
       [(selectorPanelOpen)]="selectorPanelOpen"></lfx-navbar>
   </div>
 
-  <!-- Navbar - Mobile Drawer -->
+  <!-- Navbar - Mobile Drawer. The layout owns the backdrop and the stacking order, not PrimeNG's modal mask and
+       auto z-index: reopening during the close animation let the old panel's teardown strip both off the new one. -->
+  @if (showMobileSidebar()) {
+    <div
+      class="lg:hidden fixed inset-0 z-[998] bg-black/40 touch-none mobile-navbar-backdrop"
+      (click)="closeMobileSidebar()"
+      aria-hidden="true"
+      data-testid="mobile-sidebar-backdrop"></div>
+  }
   <p-drawer
     [visible]="showMobileSidebar()"
     (visibleChange)="onDrawerVisibilityChange($event)"
     position="left"
-    [modal]="true"
-    [dismissible]="true"
+    [modal]="false"
+    [autoZIndex]="false"
+    [closeOnEscape]="false"
     [showCloseIcon]="false"
     styleClass="lg:hidden mobile-navbar-drawer"
     data-testid="mobile-sidebar-drawer">
@@ -65,8 +74,9 @@
       <button
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
-        (click)="toggleMobileSidebar()"
-        aria-label="Toggle menu"
+        (click)="openMobileSidebar()"
+        aria-label="Open menu"
+        [attr.aria-expanded]="showMobileSidebar()"
         data-testid="mobile-menu-button">
         <i class="fa-light fa-bars text-gray-600 text-xl"></i>
       </button>

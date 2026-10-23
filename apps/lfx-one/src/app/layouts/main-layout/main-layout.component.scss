@@ -7,10 +7,23 @@
 
 ::ng-deep {
   // The navbar brings its own dark floating panel; the drawer is just a transparent 296px track.
+  // A fixed layer instead of PrimeNG's auto z-index: just above the layout's backdrop (998) and below
+  // PrimeNG overlays (1000+), so the popovers and dialogs opened from the navbar still stack above it.
   .mobile-navbar-drawer.p-drawer {
+    z-index: 999;
     width: 296px;
     border: 0;
     background: transparent;
     box-shadow: none;
+  }
+}
+
+.mobile-navbar-backdrop {
+  animation: mobile-navbar-backdrop-in 150ms ease-out;
+}
+
+@keyframes mobile-navbar-backdrop-in {
+  from {
+    opacity: 0;
   }
 }

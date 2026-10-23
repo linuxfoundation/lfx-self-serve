@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, inject, model, signal } from '@angular/core';
+import { Component, HostListener, inject, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -103,9 +103,18 @@ export class MainLayoutComponent {
       });
   }
 
-  /** Toggle the mobile sidebar drawer from the header control. */
-  public toggleMobileSidebar(): void {
-    this.appService.toggleMobileSidebar();
+  /**
+   * Open the mobile drawer from the header control. Always opens, never toggles: the open drawer and its
+   * backdrop cover the control, so a toggle could only ever fire as a close when the state had drifted.
+   */
+  public openMobileSidebar(): void {
+    this.appService.openMobileSidebar();
+  }
+
+  /** Close the mobile drawer — the backdrop and Escape (PrimeNG's own mask and Escape handling are off). */
+  @HostListener('document:keydown.escape')
+  public closeMobileSidebar(): void {
+    this.appService.closeMobileSidebar();
   }
 
   /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */
