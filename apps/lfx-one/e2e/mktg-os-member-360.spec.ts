@@ -3,8 +3,17 @@
 
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '@lfx-one/shared/constants/member-360.constants';
 
-import { json, MEMBER_360_DOCUMENT_ID, openMember360, setupMember360, selectMember360Option } from './helpers/member-360.helper';
+import {
+  json,
+  MEMBER_360_DOCUMENT_ID,
+  openMember360,
+  setupMember360,
+  selectMember360Option,
+  member360Progress,
+  stubMember360Progress,
+} from './helpers/member-360.helper';
 import { member360Revision } from './fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
@@ -132,22 +141,9 @@ test('Generate lands on the document and stays generating until the run is store
   let stored = false;
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
     expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: true, trackers: [] });
-    await json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token', documentId: MEMBER_360_DOCUMENT_ID });
+    await json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
-  await page.route('**/api/mktg-agents/member-360/result', (route) =>
-    json(route, {
-      status: stored ? 'ready' : 'pending',
-      stored,
-      documentId: MEMBER_360_DOCUMENT_ID,
-      activity: Array.from({ length: 10 }, (_, index) => ({
-        id: `step-${index + 1}`,
-        kind: index % 2 ? 'search' : 'lfx',
-        label: index % 2 ? 'Searching the web' : 'Checking LFX',
-        status: index === 9 ? 'running' : 'done',
-        startedAt: '2026-10-19T10:00:00.000Z',
-      })),
-    })
-  );
+  await stubMember360Progress(page, () => (stored ? member360Revision() : member360Progress('writing')));
   await openMember360(page);
   await page.evaluate(() => {
     const url = new URL(location.href);
@@ -174,16 +170,42 @@ test('Generate lands on the document and stays generating until the run is store
   await page.screenshot({ path: info.outputPath('generated-document.png'), fullPage: true });
 });
 
+test('a plain Member document URL in another browser recovers server progress and lands', async ({ page, browser }, info) => {
+  await setupMember360(page, { stored: true }); // suppressCookieBanner runs in each helper setup.
+  let ready = false;
+  await stubMember360Progress(page, () => member360Progress('writing'));
+  await page.route('**/api/mktg-agents/member-360/generate', (route) =>
+    json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-token', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) })
+  );
+  await openMember360(page);
+  await page.getByTestId('member-360-run').getByRole('button').click();
+  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  const other = await browser.newPage({ baseURL: new URL(page.url()).origin });
+  try {
+    await setupMember360(other, { stored: true });
+    await stubMember360Progress(other, () => (ready ? member360Revision() : member360Progress('writing')));
+    await openMember360(other, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+    await expect(other).not.toHaveURL(/generation=|run=/);
+    await expect(other.getByTestId('mktg-run-activity')).toBeVisible();
+    expect(await other.evaluate(() => sessionStorage.length)).toBe(0);
+    ready = true;
+    await expect(other.getByTestId('member-360-result')).toBeVisible({ timeout: 20000 });
+    await other.screenshot({ path: info.outputPath('fresh-browser-landed.png'), fullPage: true });
+  } finally {
+    await other.close();
+  }
+});
+
 test('a finished refusal shows a plain reason, collapsed Details and Run again', async ({ page }, info) => {
   await setupMember360(page); // Includes suppressCookieBanner(page).
-  let polls = 0;
   const message = 'SCOPE GUARD: no entitlement for sample-project-uid in this session; the intake form could not be verified.';
   await page.route('**/api/mktg-agents/member-360/generate', (route) =>
     json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-token', documentId: MEMBER_360_DOCUMENT_ID })
   );
-  await page.route('**/api/mktg-agents/member-360/result', (route) => {
-    polls++;
-    return json(route, { status: 'failed', reason: 'no_edit_access', message });
+  await stubMember360Progress(page, () => member360Progress('failed', 'no_edit_access', message));
+  let legacyPolls = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/member-360/result')) legacyPolls++;
   });
   await openMember360(page);
   await page.getByTestId('member-360-run').getByRole('button').click();
@@ -201,13 +223,26 @@ test('a finished refusal shows a plain reason, collapsed Details and Run again',
   await expect(page.getByTestId('mktg-run-activity')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await expect(page.getByTestId('member-360-result')).toHaveCount(0);
-  expect(polls).toBe(1);
+  expect(legacyPolls).toBe(0);
   await page.screenshot({ path: info.outputPath('terminal-refusal.png'), fullPage: true });
   await page.getByTestId('member-360-run-again').click();
   await expect(page.getByTestId('member-360-run-page')).toBeVisible();
   await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
-  expect(polls).toBe(1);
+  expect(legacyPolls).toBe(0);
   await page.screenshot({ path: info.outputPath('run-again-intake.png'), fullPage: true });
+});
+
+test('an expired unsupported-input run offers Run again instead of Retry', async ({ page }, info) => {
+  await setupMember360(page); // Includes suppressCookieBanner(page).
+  await stubMember360Progress(page, () => member360Progress('failed', undefined, MEMBER_360_INPUT_TIMEOUT_MESSAGE));
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-run-again')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-progress-retry')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-paused-refresh')).toHaveCount(0);
+  await page.getByTestId('member-360-failure-details').getByText('Details', { exact: true }).click();
+  await expect(page.getByTestId('member-360-failure-message')).toHaveText(MEMBER_360_INPUT_TIMEOUT_MESSAGE);
+  await page.screenshot({ path: info.outputPath('expired-needs-input-run-again.png'), fullPage: true });
 });
 
 test('an unsupported tracker type is explained inline before upload', async ({ page }, info) => {
@@ -239,7 +274,7 @@ test('a questions turn keeps the document open with the feed and an unsupported-
   await page.route('**/api/mktg-agents/member-360/generate', (route) =>
     json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-token', documentId: MEMBER_360_DOCUMENT_ID })
   );
-  await page.route('**/api/mktg-agents/member-360/result', (route) => json(route, { status: 'needs_input', activity: [] }));
+  await stubMember360Progress(page, () => member360Progress('questions'));
   await openMember360(page);
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-needs-input')).toContainText('this version of the page cannot answer yet; the run stays open');

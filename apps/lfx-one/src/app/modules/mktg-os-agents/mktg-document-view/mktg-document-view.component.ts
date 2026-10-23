@@ -89,7 +89,6 @@ import {
   merge,
   throwError,
   timer,
-  Observable,
   shareReplay,
   take,
 } from 'rxjs';
@@ -102,9 +101,8 @@ import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-bo
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MEMBER_360_FAILURE_MESSAGES } from '@lfx-one/shared/constants';
-import { Member360Result, MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import { Member360Service } from '@services/member-360.service';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
@@ -157,7 +155,6 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
-  private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -176,12 +173,8 @@ export class MktgDocumentViewComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
-  protected readonly generating = signal(false);
-  protected readonly needsInput = signal(false);
   protected readonly runFailed = signal(false);
   protected readonly failureDetails = signal('');
-  protected readonly runActivity = signal<MktgRunActivity[]>([]);
-  protected readonly runStartedAt = signal(0);
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
   protected readonly reload = signal(0);
@@ -223,12 +216,25 @@ export class MktgDocumentViewComponent {
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
+  protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
+  protected readonly pausedWithoutAnswers = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'questions' && !findMktgRunIntake(run.agentKey, true)?.endpoints.answers;
+  });
   protected readonly generatingLabel = computed(
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), this.view()?.type.itemLabel ?? 'Document')
+    mktgKitCrumbsFor(
+      this.params().agentKey,
+      this.projectName(),
+      mktgKitRootPath(this.router.url),
+      this.view()?.type.itemLabel ??
+        this.runDetail()?.type.itemLabel ??
+        MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ??
+        'Document'
+    )
   );
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
@@ -439,8 +445,6 @@ export class MktgDocumentViewComponent {
             this.notice.set('');
             this.runHistory.set([]);
             this.historyError.set('');
-            this.runActivity.set([]);
-            this.needsInput.set(false);
             this.runFailed.set(false);
             this.failureDetails.set('');
             this.refreshWarning.set('');
@@ -471,68 +475,7 @@ export class MktgDocumentViewComponent {
             }
           }),
           switchMap((request) => {
-            if (!request.project || !request.agentKey || !request.documentId) {
-              this.generating.set(false);
-              return EMPTY;
-            }
-            if (request.agentKey === 'member-360') {
-              this.loading.set(true);
-              const pending = !!request.user && this.member360.isPending(request.project, request.documentId);
-              this.generating.set(pending);
-              this.runStartedAt.set(pending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
-              const ready$: Observable<Member360Result | null> = pending
-                ? this.member360
-                    .waitForStored(request.project, request.documentId, (activity) => this.runActivity.set(activity))
-                    .pipe(
-                      tap((result) => {
-                        this.needsInput.set(result.status === 'needs_input');
-                        if (result.status === 'failed') {
-                          this.runFailed.set(true);
-                          this.errorText.set(MEMBER_360_FAILURE_MESSAGES[result.reason ?? 'agent_stopped'] ?? MEMBER_360_FAILURE_MESSAGES.agent_stopped);
-                          this.failureDetails.set(result.message ?? '');
-                        }
-                      }),
-                      filter((result) => result.status !== 'needs_input')
-                    )
-                : of(null);
-              // Preserve this dedicated receiver's owner capability and stored-read lifecycle.
-              const revision$ = defer(() =>
-                request.revisionId
-                  ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-                  : this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
-                      switchMap((detail) => {
-                        const revisionId = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
-                        if (!revisionId) {
-                          this.generating.set(true);
-                          return EMPTY;
-                        }
-                        return this.documentStore.getRevision(request.project, request.agentKey, request.documentId, revisionId);
-                      })
-                    )
-              );
-              return ready$.pipe(
-                switchMap((result) => (result?.status === 'failed' ? of(null) : revision$)),
-                switchMap((view) => {
-                  if (!view?.member360) return of(view);
-                  return this.documentStore.listDocuments(request.project).pipe(
-                    tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === 'member-360')?.documents ?? [])),
-                    map(() => view),
-                    catchError(() => {
-                      this.historyError.set('Run history could not be loaded.');
-                      return of(view);
-                    })
-                  );
-                }),
-                catchError((error: HttpErrorResponse) => {
-                  this.errorText.set(
-                    pending
-                      ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                      : this.loadErrorText(error.status, error.error?.code)
-                  );
-                  return of(null);
-                })
-              );
-            }
+            if (!request.project || !request.agentKey || !request.documentId) return EMPTY;
             const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === request.agentKey);
             const prepared =
               type?.kind === 'living' && type.catalogAgentId && request.subject && request.generation
@@ -644,6 +587,12 @@ export class MktgDocumentViewComponent {
                     this.refreshWarning.set('');
                   }
                   this.runDetail.set(cycle.detail);
+                  const failure = this.selectedRun();
+                  if (request.agentKey === 'member-360' && failure?.state === 'failed') {
+                    this.runFailed.set(true);
+                    this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason === 'no_edit_access' ? 'no_edit_access' : 'agent_stopped']);
+                    this.failureDetails.set(failure.failureText ?? '');
+                  }
                   const selected = cycle.detail.runs?.find((run) => run.runId === this.handoffRunId());
                   if (selected) observedRun = true;
                   if (selected?.state === 'failed' || (observedRun && !selected && cycle.detail.revisions.length)) this.localProgress.set(null);
@@ -694,7 +643,19 @@ export class MktgDocumentViewComponent {
                     })
                   )
                 : EMPTY;
-            return merge(generation$, reads$, recovery$);
+            return merge(generation$, reads$, recovery$).pipe(
+              switchMap((view) => {
+                if (!view?.member360) return of(view);
+                return this.documentStore.listDocuments(request.project).pipe(
+                  tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === view.type.agentKey)?.documents ?? [])),
+                  map(() => view),
+                  catchError(() => {
+                    this.historyError.set('Run history could not be loaded.');
+                    return of(view);
+                  })
+                );
+              })
+            );
           }),
           takeUntilDestroyed()
         )
@@ -702,7 +663,6 @@ export class MktgDocumentViewComponent {
           this.view.set(view);
           this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
-          this.generating.set(false);
         });
     }
   }

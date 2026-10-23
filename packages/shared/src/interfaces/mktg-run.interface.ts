@@ -806,6 +806,8 @@ export interface MktgRunResultResponse {
   failureText?: string;
   /** Set when the session's own error events (runtime_error, llm_failed, …) ended the run before any output — this item's detection; `failureText` is main's idle-runtime-end reply. */
   failure?: MktgRunFailure;
+  /** Server-classified failure code; never inferred by matching agent prose in the client. */
+  failureReason?: string;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
   /** The agent's refusal reply, as the requester reads it. Present when `refused`. */

@@ -265,6 +265,16 @@ describe('MktgDocumentRunService core', () => {
     expect(flows.member).toHaveBeenCalledTimes(reads);
   });
 
+  it('retains Member failure classification with the redacted details across process-local cache loss', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.member.mockResolvedValue({ status: 'failed', reason: 'no_edit_access', message: 'Synthetic entitled-project refusal.' });
+    const progress = await service.readProgress(req, project);
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureReason: 'no_edit_access', failureText: 'Synthetic entitled-project refusal.' });
+    expect(stored().metadata['failure-reason']).toBe('no_edit_access');
+    const reread = await new MktgDocumentRunService().readProgress(req, project);
+    expect(reread.runs[0]).toMatchObject({ failureReason: 'no_edit_access' });
+  });
+
   it('renews LinkedIn after answers ACK, and ignores the already-answered questions block', async () => {
     await service.startForOneOff(req, 'linkedin-post', project, session);
     const questionsId = 'a'.repeat(64);

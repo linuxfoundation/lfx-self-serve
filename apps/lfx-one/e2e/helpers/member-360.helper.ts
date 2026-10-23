@@ -10,6 +10,8 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import { createHash } from 'node:crypto';
+import type { MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
 import { expect, Page, Route } from '@playwright/test';
 
 import { member360Fixture, member360Revision, MEMBER_360_PROJECT, MEMBER_360_STORED_DOCUMENT } from '../fixtures/mock-data/member-360.mock';
@@ -133,6 +135,44 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
   await expect(page.getByTestId('docs-shell-authed')).toBeAttached({ timeout: 20000 });
   await expect(page.getByTestId('docs-content')).toBeVisible({ timeout: 20000 });
 }
+/** Server-recorded progress; fixtures deliberately contain no creator/session capability or question text. */
+export function member360Progress(state: MktgDocumentRunProgress['state'], failureReason?: string, failureText?: string): MktgDocumentDetailResponse {
+  const view = member360Revision();
+  return {
+    project: view.project,
+    type: view.type,
+    documentId: view.documentId,
+    revisions: [],
+    current: null,
+    approvedCurrent: null,
+    runs: [
+      {
+        project: view.project,
+        agentKey: view.type.agentKey,
+        documentId: view.documentId,
+        runId: 'b'.repeat(64),
+        state,
+        startedAt: '2026-10-19T10:00:00Z',
+        failureReason,
+        failureText,
+        activity: Array.from({ length: 10 }, (_, index) => ({
+          id: `step-${index + 1}`,
+          kind: index % 2 ? 'search' : 'lfx',
+          label: index % 2 ? 'Searching the web' : 'Checking LFX',
+          status: index === 9 ? 'running' : 'done',
+          startedAt: '2026-10-19T10:00:00Z',
+        })),
+      },
+    ],
+  };
+}
+
+export async function stubMember360Progress(page: Page, read: () => MktgDocumentDetailResponse): Promise<void> {
+  await page.route('**/api/mktg-agents/documents/member-360/**', (route) =>
+    json(route, new URL(route.request().url()).pathname.includes('/revisions/') ? member360Revision() : read())
+  );
+}
+
 export async function selectMember360Option(page: Page, testId: string, label: string): Promise<void> {
   await page.getByTestId(testId).getByRole('combobox').click();
   await page.getByRole('option', { name: label, exact: true }).click();

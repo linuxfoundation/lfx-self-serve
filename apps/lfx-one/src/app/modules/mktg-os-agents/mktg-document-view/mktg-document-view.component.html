@@ -62,7 +62,7 @@
 
     <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
 
-    @if (runState(); as state) {
+    @if (!runFailed() && runState(); as state) {
       <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
         <h2 class="text-lg font-semibold text-gray-900">{{ liveState() }}</h2>
         @if (selectedRun(); as run) {
@@ -83,7 +83,14 @@
             <lfx-button label="Retry" [loading]="retrying()" [disabled]="retrying()" (onClick)="onRetryRun()" data-testid="mktg-document-view-progress-retry" />
           }
         } @else if (state === 'questions') {
-          <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+          @if (pausedWithoutAnswers()) {
+            <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+              The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
+            </p>
+            <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-paused-refresh" />
+          } @else {
+            <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+          }
         } @else {
           <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
             <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
@@ -95,7 +102,10 @@
             <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
           }
         }
-        @if (runAgentId() && (state === 'failed' || state === 'questions')) {
+        @if (selectedRun()?.activity; as activity) {
+          <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
+        }
+        @if (runAgentId() && !pausedWithoutAnswers() && (state === 'failed' || state === 'questions')) {
           <lfx-button label="Open the intake form" [text]="true" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
         }
       </section>
@@ -141,18 +151,7 @@
 
     @if (loading()) {
       <div class="rounded-xl border border-gray-200 bg-white" data-testid="mktg-document-view-loading">
-        @if (generating()) {
-          <lfx-mktg-run-activity [activity]="runActivity()" [title]="generatingLabel()" [startedAt]="runStartedAt()" [showQuestions]="false" />
-          @if (needsInput()) {
-            <p class="px-6 pb-5 text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
-              The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
-            </p>
-          } @else {
-            <p class="px-6 pb-5 text-sm text-gray-500" role="status">This run will appear here when it is stored.</p>
-          }
-        } @else {
-          <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
-        }
+        <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
       </div>
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">

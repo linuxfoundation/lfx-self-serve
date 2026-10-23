@@ -178,8 +178,9 @@ export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failu
     documentId: run.documentId,
     startedAt: run.startedAt,
     state: run.state,
-    ...(activity?.length && { activity }),
+    ...(activity && { activity }),
     ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
+    ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
   };
   return progress;
 }

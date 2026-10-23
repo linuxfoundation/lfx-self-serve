@@ -229,12 +229,11 @@ describe('Member360RunComponent', () => {
     expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: true, trackers: [] });
     expect(navigate).toHaveBeenCalledWith(
       ['../documents/member-360', 'run-0123456789abcdef01234567'],
-      expect.objectContaining({ queryParams: { revision: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { revision: null, generation: null, run: null }, queryParamsHandling: 'merge' })
     );
   });
-  it('keeps Generate alive after navigation and retains the pending capability without navigating again', async () => {
+  it('keeps Generate alive after navigation without retaining a browser capability or navigating again', async () => {
     TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
-    const api = TestBed.inject(Member360Service);
     const http = TestBed.inject(HttpTestingController);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await render();
@@ -243,7 +242,7 @@ describe('Member360RunComponent', () => {
     fixture.destroy();
     expect(request.cancelled).toBe(false);
     request.flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' });
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    expect(sessionStorage.length).toBe(0);
     expect(navigate).not.toHaveBeenCalled();
     sessionStorage.clear();
   });
