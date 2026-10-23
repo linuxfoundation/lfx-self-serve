@@ -54,6 +54,7 @@ interface NavbarView {
   retryMenu(): void;
   switchLens(lens: Lens): void;
   onOrgSelected(): void;
+  contextPickLeavesPage(): boolean;
 }
 
 const retryMenuLookups = vi.fn();
@@ -271,6 +272,36 @@ describe('NavbarComponent', () => {
     expect(mobileLensService.selectLens).toHaveBeenCalledWith('org');
     expect(mobileLensService.switchLens).not.toHaveBeenCalled();
     expect(appService.showMobileSidebar()).toBe(true);
+  });
+
+  // A project picked while the drawer previews the Projects lens from a Me page lands on that lens's overview.
+  it("sends a context pick to the picked lens only while the mobile drawer previews a lens other than the page's", async () => {
+    const desktop = await createNavbar([], [], {}, { lens: 'me', url: '/' });
+    desktop.switchLens('project');
+    (TestBed.inject(LensService).activeLens as WritableSignal<Lens>).set('project');
+    expect(desktop.contextPickLeavesPage()).toBe(false);
+
+    const mobile = await createNavbar([], [], {}, { mobile: true, lens: 'me', url: '/' });
+    const activeLens = TestBed.inject(LensService).activeLens as WritableSignal<Lens>;
+    const appService = TestBed.inject(AppService);
+    appService.openMobileSidebar();
+    TestBed.tick();
+    expect(mobile.contextPickLeavesPage()).toBe(false);
+
+    mobile.switchLens('project');
+    activeLens.set('project');
+    expect(mobile.contextPickLeavesPage()).toBe(true);
+
+    // Back on the page's own lens, a pick re-targets the page as before.
+    mobile.switchLens('me');
+    activeLens.set('me');
+    expect(mobile.contextPickLeavesPage()).toBe(false);
+
+    mobile.switchLens('project');
+    activeLens.set('project');
+    appService.closeMobileSidebar();
+    TestBed.tick();
+    expect(mobile.contextPickLeavesPage()).toBe(false);
   });
 
   it('closes the mobile drawer on a company pick only where the pick re-addresses an Org page', async () => {

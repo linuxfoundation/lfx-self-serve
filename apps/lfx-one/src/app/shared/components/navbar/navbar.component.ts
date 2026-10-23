@@ -251,6 +251,11 @@ export class NavbarComponent extends NavMenuBase {
     },
   ];
   protected readonly brandSite = NAVBAR_BRAND_SITE;
+  /**
+   * The lens the mobile drawer showed before its first lens-tab tap since it opened — the page's lens, which the tabs
+   * only preview away from — or null while no tab was tapped. Cleared when the drawer closes.
+   */
+  private lensBeforePreview: Lens | null = null;
   /** The Documentation button reads as active anywhere under `/docs`, as the lens rail it replaced did. */
   protected readonly isDocsActive: Signal<boolean> = computed(() => isDocsPath(this.navigatedUrl()));
 
@@ -283,6 +288,7 @@ export class NavbarComponent extends NavMenuBase {
    */
   protected switchLens(lens: Lens): void {
     if (this.mobile()) {
+      this.lensBeforePreview ??= this.activeLens();
       this.lensService.selectLens(lens);
       return;
     }
@@ -342,6 +348,14 @@ export class NavbarComponent extends NavMenuBase {
 
   protected retryMenu(): void {
     this.sidebarNavService.retryMenuLookups();
+  }
+
+  /**
+   * A project or foundation picked while the mobile drawer previews another lens than the page's lands on the picked
+   * lens's overview, as a desktop lens switch would, instead of writing `?project=` onto a Me or Org page.
+   */
+  protected override contextPickLeavesPage(): boolean {
+    return this.mobile() && this.lensBeforePreview !== null && this.activeLens() !== this.lensBeforePreview;
   }
 
   protected closeMobileDrawer(): void {
@@ -448,6 +462,7 @@ export class NavbarComponent extends NavMenuBase {
         takeUntilDestroyed()
       )
       .subscribe(() => {
+        this.lensBeforePreview = null;
         this.brandMenu()?.hide();
         this.createMenu()?.hide();
         this.userMenu()?.hide();
