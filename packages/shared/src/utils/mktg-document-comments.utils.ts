@@ -5,6 +5,8 @@ import {
   MKTG_BOILERPLATES_COMMENT_FIELD_REGEX,
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
   MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_DOCUMENT_COMMENT_LABELS,
+  MKTG_DOCUMENT_COMMENT_LABEL_GROUPS,
   MKTG_DOCUMENT_COMMENT_MAX_CHARS,
   MKTG_DOCUMENT_COMMENT_PATH_PART_REGEX,
   MKTG_DOCUMENT_COMMENT_PATH_REGEX,
@@ -35,6 +37,23 @@ export function isMktgDocumentCommentAnchor(agentKey: MktgCommentAgentKey, sourc
   if (!(MKTG_DOCUMENT_COMMENT_ROOTS[agentKey] as readonly string[]).includes(root)) return false;
   if (agentKey === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor.key)) return false;
   return readMktgDocumentCommentField(source, anchor.key) !== null;
+}
+
+/** Same human field caption for inline pins, controls and the panel; no UI agent list. */
+export function describeMktgDocumentCommentField(agentKey: MktgCommentAgentKey | undefined, key: string, content?: unknown): string {
+  if (!agentKey) return key;
+  const normalized = key.replace(/\[\d+\]/g, '[]');
+  const base = MKTG_DOCUMENT_COMMENT_LABELS[agentKey]?.[normalized] ?? key;
+  const match = /^(.+?)\[(\d+)\]/.exec(key);
+  if (!match) return base;
+  const prefix = match[1] ?? '';
+  const group = MKTG_DOCUMENT_COMMENT_LABEL_GROUPS[agentKey]?.[prefix];
+  if (!group) return base;
+  const path = `${prefix}[${match[2]}]`;
+  const title = readMktgDocumentCommentField(content, path + group.title)?.value;
+  const suffix = typeof title === 'string' && title.trim() ? ` · ${title}` : '';
+  const caption = `${group.label} ${Number(match[2]) + 1}${suffix}`;
+  return normalized === `${prefix}[]` ? caption : `${base} · ${caption}`;
 }
 
 /** Per-send cap mirrors the owning agent; text is bounded but otherwise remains user data. */

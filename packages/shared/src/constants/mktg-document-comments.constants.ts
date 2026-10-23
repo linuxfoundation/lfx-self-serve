@@ -1,6 +1,52 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MktgCommentAgentKey, MktgDocumentCommentLabelGroup } from '../interfaces/mktg-document-comments.interface';
+
+/** Labels are contract-specific, not a UI catalog; other agents extend their own entry. */
+export const MKTG_DOCUMENT_COMMENT_LABELS: Partial<Record<MktgCommentAgentKey, Record<string, string>>> = {
+  'foundation-message': {
+    'mf.vision': 'Vision',
+    'mf.mission': 'Mission',
+    'mf.positioning': 'Positioning',
+    'mf.tagline': 'Tagline',
+    'mf.crosscut': 'Across the goals',
+    'mf.say': 'Say list',
+    'mf.avoid': 'Avoid list',
+    'mf.anchor': 'Anchor questions',
+    'mf.notes': 'Reviewer notes',
+    'mf.goals[].vp': 'Value proposition',
+    'mf.goals[].key': 'Key message',
+    'mf.goals[].proof': 'Goal proof points',
+    'mf.goals[].bite': 'Sound bite',
+    'mf.goals[].icps': 'Goal audiences',
+    'icp[].who': 'Who the audience is',
+    'icp[].goals': 'Audience goals',
+    'icp[].need': 'Audience need',
+    'icp[].value': 'Audience value',
+    'icp[].lead': 'Audience lead',
+    'icp[].proof': 'Audience proof points',
+    'icp[].cta': 'Call to action',
+    'icp[].channels': 'Audience channels',
+    'icp[].objection': 'Audience objection',
+    'icp[].personas': 'Audience personas',
+    'mh.umbrella': 'Umbrella message',
+    'mh.line': 'Brand line',
+    'mh.pillars[].m': 'Pillar message',
+    'mh.pillars[].p': 'Pillar proof points',
+    'mh.found': 'Message house foundation',
+    'mh.aud': 'Audience leads',
+  },
+};
+export const MKTG_DOCUMENT_COMMENT_LABEL_GROUPS: Partial<Record<MktgCommentAgentKey, Record<string, MktgDocumentCommentLabelGroup>>> = {
+  'foundation-message': {
+    'mf.goals': { label: 'Goal column', title: '.t' },
+    icp: { label: 'Audience', title: '.name' },
+    'mh.pillars': { label: 'Pillar', title: '.t' },
+    nums: { label: 'Key number', title: '[1]' },
+  },
+};
+
 /** Existing private artifact purpose; namespaced separately from immutable revisions. */
 export const MKTG_DOCUMENT_COMMENTS_PREFIX = 'document-comments';
 export const MKTG_DOCUMENT_COMMENTS_SCHEMA = 'mktg-document-comments/v1';
@@ -15,6 +61,7 @@ export const MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES = {
   unexpected: 'The comments response did not match the selected revision.',
 } as const;
 export const MKTG_DOCUMENT_COMMENT_STATUSES = ['open', 'sent', 'resolved'] as const;
+export const MKTG_DOCUMENT_COMMENT_STATUS_LABELS = { open: 'Open', sent: 'Sent to the agent', resolved: 'Resolved by the agent' } as const;
 export const MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES = ['reserved', 'started', 'completed', 'failed', 'uncertain'] as const;
 export const MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS = ['field', 'passage'] as const;
 /** Bound whole-object reads/writes without discarding revision history. */

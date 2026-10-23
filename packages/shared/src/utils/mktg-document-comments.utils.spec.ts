@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_DOCUMENT_COMMENT_ID_REGEX, MKTG_DOCUMENT_COMMENT_MAX_CHARS } from '../constants/mktg-document-comments.constants';
-import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField, validateMktgDocumentCommentBatch } from './mktg-document-comments.utils';
+import {
+  describeMktgDocumentCommentField,
+  isMktgDocumentCommentAnchor,
+  readMktgDocumentCommentField,
+  validateMktgDocumentCommentBatch,
+} from './mktg-document-comments.utils';
 
 const SOURCE = {
   mf: { tagline: 'Open mesh', goals: [{ bite: 'First goal' }, { bite: 'Second goal' }] },
@@ -64,6 +69,20 @@ describe('comment field paths', () => {
     const source = { bp: Array.from({ length: 4 }, () => ({ t: 'Synthetic copy', max: 15 })) };
     for (const key of ['bp', 'bp[0]', 'bp[3].t']) expect(isMktgDocumentCommentAnchor('boilerplates', source, { kind: 'field', key })).toBe(true);
     for (const key of ['bp[4]', 'bp[0].max', 'bp[0].t.length']) expect(isMktgDocumentCommentAnchor('boilerplates', source, { kind: 'field', key })).toBe(false);
+  });
+});
+
+describe('comment field labels', () => {
+  it('uses human captions and original-index titles for repeated framework controls', () => {
+    const content = { mf: { goals: [{ t: 'Adoption' }, { t: 'Community' }] }, icp: [{ name: 'Maintainers' }] };
+    expect(describeMktgDocumentCommentField('foundation-message', 'mf.mission', content)).toBe('Mission');
+    expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1]', content)).toBe('Goal column 2 · Community');
+    expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1].bite', content)).toBe('Sound bite · Goal column 2 · Community');
+    expect(describeMktgDocumentCommentField('foundation-message', 'icp[0].cta', content)).toBe('Call to action · Audience 1 · Maintainers');
+  });
+  it('keeps missing-context indexes meaningful and unknown-agent fields honest', () => {
+    expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1].vp')).toBe('Value proposition · Goal column 2');
+    expect(describeMktgDocumentCommentField('brand-kit', 'kit.font')).toBe('kit.font');
   });
 });
 

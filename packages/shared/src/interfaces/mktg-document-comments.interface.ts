@@ -99,6 +99,16 @@ export interface MktgDocumentCommentScope {
   revisionId: string;
 }
 
+/** Read-only label inputs; never persisted or sent with a comment. */
+export interface MktgDocumentCommentLabelContext {
+  agentKey: MktgCommentAgentKey;
+  content: unknown;
+}
+export interface MktgDocumentCommentLabelGroup {
+  label: string;
+  title: string;
+}
+
 /** Browser-memory form state only; never persisted or included in an HTTP request. */
 export interface MktgDocumentCommentDraft {
   form: FormGroup<{ text: FormControl<string> }>;
