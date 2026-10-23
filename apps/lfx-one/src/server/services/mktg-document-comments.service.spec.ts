@@ -305,6 +305,22 @@ describe('private field comment store', () => {
     await expect(service().add(req, project, type, 'living', request())).rejects.toMatchObject({ statusCode: 503 });
   });
 
+  it.each(['reserved', 'started', 'uncertain', 'completed', 'failed'] as const)('reports creator-only recovery for %s without writing', async (state) => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    await store.reserve(req, project, type, 'living', { project, revisionId, commentIds: [record().threads[0].id], clientRequestId: 'send-one' });
+    const saved = record();
+    saved.submissions[0].state = state;
+    replace(saved);
+    const writes = flows.put.mock.calls.length;
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', revisionId)).toBe(state === 'completed' || state === 'failed');
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'missing-send', revisionId)).toBe(false);
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', resultId)).toBe(false);
+    flows.subject.mockReturnValue('other-opaque-writer');
+    expect(await store.isRedraftTerminal(req, project, type, 'living', 'send-one', revisionId)).toBe(false);
+    expect(flows.put).toHaveBeenCalledTimes(writes);
+  });
+
   it('reserves an ordered send once and freezes only the selected input, not concurrent new comments', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
@@ -529,6 +545,9 @@ describe('private field comment store', () => {
     await store.bindRun(req, project, type, 'living', 'send-one', runId);
     expect(record().threads[0]).toMatchObject({ status: 'sent', sentInRun: runId });
     expect((await store.bindRun(req, project, type, 'living', 'send-one', runId, true)).state).toBe('started');
+    await store.endStart(req, project, type, 'living', 'send-one', true);
+    expect(record().submissions[0].state).toBe('started');
+    await expect(store.release(req, project, type, 'living', 'send-one')).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
     await expect(store.bindRun(req, project, type, 'living', 'send-one', 'e'.repeat(64))).rejects.toBeInstanceOf(ConflictError);
     flows.subject.mockReturnValue('other-creator');
     await expect(store.bindRun(req, project, type, 'living', 'send-one', runId)).rejects.toBeInstanceOf(ConflictError);

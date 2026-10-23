@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { FormControl, FormGroup } from '@angular/forms';
 import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -83,6 +84,36 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.loading()).toBe(false);
     expect(service.loaded()).toBe(true);
     expect(service.threads()).toEqual([]);
+  });
+
+  it('retains per-field draft and nonce across hosts, but never across a revision or viewer change', () => {
+    service.select(SCOPE);
+    finishRead();
+    const create = () => ({
+      form: new FormGroup({ text: new FormControl('Synthetic draft', { nonNullable: true }) }),
+      clientRequestId: 'same-request',
+      submittedText: 'Synthetic draft',
+      opened: signal(true),
+    });
+    const draft = service.fieldDraft('mf.vision', create);
+    expect(service.fieldDraft('mf.vision', create)).toBe(draft);
+    expect(draft.clientRequestId).toBe('same-request');
+    expect(draft.form.controls.text.value).toBe('Synthetic draft');
+    expect(service.fieldDraft('mf.mission', create)).not.toBe(draft);
+    service.select({ ...SCOPE, revisionId: NEXT });
+    http.expectOne((request) => request.params.get('revision') === NEXT).flush({ revisionId: NEXT, threads: [] });
+    expect(service.fieldDraft('mf.vision', create)).not.toBe(draft);
+    service.select(SCOPE);
+    finishRead();
+    const restored = service.fieldDraft('mf.vision', create);
+    expect(restored).not.toBe(draft);
+    user.set({ sub: 'other-synthetic-subject' });
+    const immediate = service.fieldDraft('mf.vision', create);
+    expect(immediate).not.toBe(restored);
+    TestBed.tick();
+    finishRead();
+    expect(service.fieldDraft('mf.vision', create)).toBe(immediate);
+    http.expectNone((request) => request.method === 'POST');
   });
 
   it('shows the authoritative list without writing when a stored view is reopened', () => {

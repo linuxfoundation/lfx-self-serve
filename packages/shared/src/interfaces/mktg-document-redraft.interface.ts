@@ -62,6 +62,10 @@ export type MktgRedraftProgress =
   | { type: 'ready'; location: MktgDocumentLocation }
   | { type: 'failed'; message: string };
 export type MktgReleaseRedraftResponse = { success: true } | { state: 'unknown' };
+/** Only a creator-owned terminal ledger row permits automatic local recovery cleanup. */
+export interface MktgRedraftRecoveryResponse {
+  terminal: boolean;
+}
 /** Private subject-keyed recovery only: the server, not this cache, owns liveness. */
 export interface MktgPendingRedraftIntent {
   scope: MktgDocumentCommentScope;

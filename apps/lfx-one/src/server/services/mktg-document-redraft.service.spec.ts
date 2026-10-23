@@ -160,10 +160,11 @@ describe('reserved redraft delivery', () => {
     expect(f.guild).toHaveBeenCalledTimes(1);
     expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_document_redraft', expect.any(String), expect.objectContaining({ err: error }));
   });
-  it('marks no-session responses failed and exposes post-acceptance conflicts only as uncertainty', async () => {
-    f.guild.mockResolvedValueOnce('');
-    await expect(send()).rejects.toMatchObject({ code: 'guild_invalid_response' });
-    expect(f.state).toBe('failed');
+  it.each([false, true])('keeps an unusable successful ACK uncertain (SDK rejection=%s)', async (sdkRejection) => {
+    if (sdkRejection) f.guild.mockRejectedValueOnce(new MicroserviceError('Synthetic unusable ACK', 502, 'guild_invalid_response'));
+    else f.guild.mockResolvedValueOnce('');
+    await expect(send()).rejects.toMatchObject({ code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+    expect(f.state).toBe('uncertain');
     f.fresh = true;
     f.state = 'reserved';
     const error = new ConflictError('Synthetic context conflict', 'SYNTHETIC_CONTEXT_CONFLICT');
@@ -217,7 +218,7 @@ describe('reserved redraft delivery', () => {
     }
     expect(f.guild).toHaveBeenCalledTimes(2);
   });
-  it.each(['context', 'scope', 'start', 'bind'] as const)('converts a replay %s 4xx into recoverable uncertainty without another Guild call', async (stage) => {
+  it.each(['context', 'scope', 'start', 'bind'] as const)('keeps confirmed starts on replay %s failure without another Guild call', async (stage) => {
     await send();
     f.known.mockResolvedValue('synthetic-session');
     const error = stage === 'scope' ? new AuthorizationError('Synthetic scope') : ServiceValidationError.forField('context', 'Synthetic rejection');
@@ -227,7 +228,8 @@ describe('reserved redraft delivery', () => {
       });
     else f[stage].mockRejectedValueOnce(error);
     await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
-    expect(f.state).toBe('uncertain');
+    expect(f.state).toBe('started');
+    expect(f.end).not.toHaveBeenCalled();
     expect(f.guild).toHaveBeenCalledTimes(1);
   });
   it('never leaks a cleanup4xx after a session as a definitive primary rejection', async () => {
@@ -249,7 +251,7 @@ describe('reserved redraft delivery', () => {
     expect(f.state).toBe('failed');
   });
 
-  it.each([500, 502, 503, 504])('keeps HTTP %s uncertain rather than reopening a possibly accepted start', async (status) => {
+  it.each([408, 429, 500, 502, 503, 504])('keeps HTTP %s uncertain rather than reopening a possibly accepted start', async (status) => {
     const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic gateway failure', {}, 'guild', '/synthetic', 'guild_create_session');
     f.guild.mockRejectedValueOnce(error);
     await expect(send()).rejects.toMatchObject({ code: 'MKTG_REDRAFT_START_UNCERTAIN' });
