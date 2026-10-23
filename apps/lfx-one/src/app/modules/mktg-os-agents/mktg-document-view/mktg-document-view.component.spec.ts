@@ -8,7 +8,6 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
@@ -1437,8 +1436,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
     expectContentColumn('mktg-framework-view');
     expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
-    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).not.toContain('@[740px]:col-span-2');
     expect(query('mktg-comments-panel')).not.toBeNull();
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
     expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.parentElement?.className).toContain('@[800px]:grid-cols');
     expect(selectComments).toHaveBeenLastCalledWith({ projectUid: PROJECT.uid, agentKey: 'foundation-message', documentId: 'living', revisionId: LATEST.id });
 

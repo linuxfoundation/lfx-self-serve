@@ -129,7 +129,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  // Framework comments use 740px headroom; non-framework layout keeps its 800px threshold.
+  // The host measures the main two-column layout; each asset owns its inner screen grids.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
