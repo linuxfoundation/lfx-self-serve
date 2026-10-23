@@ -80,7 +80,12 @@ export class LensService {
    */
   private menuLensPreviewEpoch = 0;
   /** The menu pick whose navigation is still pending, so a pick that supersedes it inherits what the page had before both. */
-  private pendingMenuPick: MenuLensPick | null = null;
+  private readonly pendingMenuPickState: WritableSignal<MenuLensPick | null> = signal(null);
+  /**
+   * True while a pick from the previewed menu is committed but its navigation hasn't landed: the route still describes
+   * the page being left, so the menu's links follow the picked lens, as they did while it was previewed.
+   */
+  public readonly menuPickPending: Signal<boolean> = computed(() => this.pendingMenuPickState() !== null);
   /**
    * The lens the nav menu is built for: the drawer's preview while one stands (and the persona still holds it), otherwise
    * {@link activeLens}. Only the menu stack reads this — the sidebar items, the context selectors and the lens tabs.
@@ -145,7 +150,7 @@ export class LensService {
     }
     // A pick made while an earlier one's navigation is still pending (it re-previewed and picked again) supersedes it:
     // neither left the page, so a rollback must return to what the page had before the first, undoing both.
-    const pending = this.pendingMenuPick;
+    const pending = this.pendingMenuPickState();
     const pick: MenuLensPick = {
       previous: pending?.previous ?? this.activeLens(),
       previousNavLens: pending?.previousNavLens ?? this.navLensSelection(),
@@ -159,7 +164,7 @@ export class LensService {
           }
         : onRestore,
     };
-    this.pendingMenuPick = pick;
+    this.pendingMenuPickState.set(pick);
     this.setLens(lens);
     pick.committed = this.activeLens();
     this.menuLensPreview.set(null);
@@ -272,8 +277,8 @@ export class LensService {
           this.restoreLensIfPickFails(pick);
           return;
         }
-        if (this.pendingMenuPick === pick) {
-          this.pendingMenuPick = null;
+        if (this.pendingMenuPickState() === pick) {
+          this.pendingMenuPickState.set(null);
         }
         if (event instanceof NavigationEnd || this.activeLens() !== pick.committed) {
           return;

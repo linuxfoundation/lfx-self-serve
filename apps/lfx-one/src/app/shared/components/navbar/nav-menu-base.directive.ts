@@ -75,8 +75,10 @@ export abstract class NavMenuBase {
   // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
   // A lens the mobile drawer previews (#4208) has no route yet: its own lens decides instead, so a Me or Org menu
   // previewed over a foundation page carries no slug, and a previewed foundation / project menu carries its selector's.
+  // The same holds while a pick from it is still navigating: the route is still the page being left.
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
-    const kind = this.lensService.previewingMenuLens() ? this.navLens() : this.projectContextService.activeRouteLensKind();
+    const lensDecides = this.lensService.previewingMenuLens() || this.lensService.menuPickPending();
+    const kind = lensDecides ? this.navLens() : this.projectContextService.activeRouteLensKind();
     if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};

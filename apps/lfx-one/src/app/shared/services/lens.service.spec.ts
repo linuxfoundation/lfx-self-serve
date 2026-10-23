@@ -214,6 +214,7 @@ describe('LensService — menu lens preview', () => {
       const { lens, events } = setup('me');
       lens.previewMenuLens('project');
       lens.commitMenuLens();
+      expect(lens.menuPickPending()).toBe(true);
 
       events.next(new NavigationStart(7, '/project/meetings'));
       events.next(new NavigationEnd(7, '/project/meetings', '/project/meetings'));
@@ -221,6 +222,7 @@ describe('LensService — menu lens preview', () => {
 
       expect(lens.activeLens()).toBe('project');
       expect(lens.previewingMenuLens()).toBe(false);
+      expect(lens.menuPickPending()).toBe(false);
     });
 
     it("puts back the last viewed nav lens a hybrid's failed foundation pick moved", () => {
