@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Provider, signal } from '@angular/core';
+import { computed, Provider, signal, untracked } from '@angular/core';
 import type { MktgDocumentComment, MktgDocumentCommentDraft, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
+import { createMktgCommentDraft } from '@shared/utils/mktg-comment-draft.utils';
 import { EMPTY } from 'rxjs';
 
 /** Synthetic role attribution and opaque identifiers only. */
@@ -29,17 +30,25 @@ export function mktgCommentScopeFixture(): MktgDocumentCommentScope {
 /** Presentational hosts do not own comment HTTP. Individual comment specs supply the state they exercise. */
 export function provideMktgCommentsStub(overrides: Partial<MktgDocumentCommentsService> = {}): Provider {
   const scope = overrides.selectedScope ?? signal<MktgDocumentCommentScope | null>(null);
+  const draftScopeKey = overrides.draftScopeKey ?? computed(() => JSON.stringify(scope()));
   const drafts = new Map<string, MktgDocumentCommentDraft>();
+  let draftOwner = '';
   return {
     provide: MktgDocumentCommentsService,
     useValue: {
       threads: signal<MktgDocumentComment[]>([]),
       selectedScope: scope,
-      fieldDraft: (field: string, create: () => MktgDocumentCommentDraft) => {
-        const key = JSON.stringify([scope(), field]);
+      draftScopeKey,
+      fieldDraft: (field: string, create = createMktgCommentDraft) => {
+        const owner = draftScopeKey();
+        if (owner !== draftOwner) {
+          drafts.clear();
+          draftOwner = owner;
+        }
+        const key = field;
         let draft = drafts.get(key);
         if (!draft) {
-          draft = create();
+          draft = untracked(create);
           drafts.set(key, draft);
         }
         return draft;
