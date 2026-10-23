@@ -3406,13 +3406,28 @@ describe('OrgClaService.getContributorAcknowledgments — invalidator display', 
     }
   });
 
-  it('does not call the directory when no row carries a username', async () => {
+  it('does not show an email whose deleted flag is missing', async () => {
+    const list = await readWith({}, [
+      {
+        Data: [
+          { ID: salesforceId, Username: 'cla-manager', Emails: [{ EmailAddress: 'manager@example.org', IsPrimary: true, IsVerified: true, Active: true }] },
+        ],
+        Metadata: { TotalSize: 1 },
+      },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+  });
+
+  it('does not reach for the directory when no row carries a username', async () => {
+    delete process.env['API_GW_AUDIENCE'];
     stageAckRead(contributorPage({ list: [contributor()] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
     expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
     expect(gatewayFetch.mock.calls.some((call) => String(call[1]).includes('/user-service/'))).toBe(false);
+    expect(loggerWarning).not.toHaveBeenCalledWith(expect.anything(), 'org_cla_resolve_invalidator', expect.any(String), expect.anything());
   });
 });
 

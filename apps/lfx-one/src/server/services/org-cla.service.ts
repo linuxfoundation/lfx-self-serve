@@ -2343,7 +2343,7 @@ function primaryVerifiedEmail(emails: unknown): string | undefined {
   for (const entry of emails) {
     if (!entry || typeof entry !== 'object') continue;
     const email = entry as Partial<ApiGatewayUserEmail>;
-    if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted === true) continue;
+    if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted !== false) continue;
     const address = directoryText(email.EmailAddress);
     if (address) return address;
   }
