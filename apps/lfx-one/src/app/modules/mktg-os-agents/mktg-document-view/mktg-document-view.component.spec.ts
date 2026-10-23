@@ -14,6 +14,7 @@ import {
   BRAND_KIT_INTAKE,
   ICP_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  MEMBER_360_INPUT_TIMEOUT_MESSAGE,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
   MKTG_AGENT_INTAKES,
@@ -22,6 +23,7 @@ import {
 import {
   MktgDocumentDetailResponse,
   MktgDocumentRunProgress,
+  MktgRunFailureReason,
   MktgDocumentType,
   MktgGenerateProgress,
   MktgPendingGeneration,
@@ -41,7 +43,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -49,7 +51,6 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 
 // Typed document fixtures and providers share one seam with sibling agents.
 import { Title } from '@angular/platform-browser';
-import { Member360Result } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
 import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -106,11 +107,6 @@ describe('MktgDocumentViewComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
-  const run = {
-    isPending: vi.fn(() => false),
-    pendingStartedAt: vi.fn(() => Date.parse('2026-10-19T10:00:00.000Z')),
-    waitForStored: vi.fn<Member360Service['waitForStored']>(() => of({ status: 'ready', stored: true })),
-  };
   let store: {
     listDocuments: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
@@ -274,7 +270,6 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   beforeEach(async () => {
-    run.isPending.mockReturnValue(false);
     subject = linkedSignal(() => viewer()?.sub ?? '');
     store = {
       listDocuments: vi.fn(() => of({ project: PROJECT.uid, groups: [] })),
@@ -321,8 +316,8 @@ describe('MktgDocumentViewComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: ProjectService, useValue: { getProject: projectLookup } },
+        { provide: Member360Service, useValue: { download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
-        { provide: Member360Service, useValue: run },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
       ],
@@ -544,93 +539,136 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalled();
   });
 
-  it('keeps the document generating until the server confirms persistence', async () => {
-    const completion = new Subject<Member360Result>();
-    run.isPending.mockReturnValue(true);
-    run.waitForStored.mockReturnValue(completion);
+  function memberProgress(state: MktgDocumentRunProgress['state'], failureReason?: MktgRunFailureReason): MktgDocumentDetailResponse {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
+    if (!type) throw new Error('Missing synthetic document type');
+    return {
+      project: PROJECT.uid,
+      type,
+      documentId: 'run-0123456789abcdef01234567',
+      revisions: [],
+      approvedCurrent: null,
+      runs: [
+        {
+          project: PROJECT.uid,
+          agentKey: type.agentKey,
+          documentId: 'run-0123456789abcdef01234567',
+          runId: 'b'.repeat(64),
+          state,
+          startedAt: '2026-10-19T10:00:00Z',
+          failureReason,
+          failureText: state === 'failed' ? 'Synthetic terminal explanation.' : undefined,
+          activity: [{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00Z' }],
+        },
+      ],
+    };
+  }
+
+  it('opens a plain Member URL without a browser capability and keeps server-recorded progress visible', async () => {
+    sessionStorage.clear();
+    store.getDocument.mockReturnValue(of(memberProgress('writing')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('mktg-run-activity-title')?.textContent?.trim()).toBe('Working on Member 360');
-    expect(query('mktg-run-activity-starting')?.textContent).toContain('Starting the agent');
-    expect(query('mktg-run-activity-phase-questions')).toBeNull();
-    const onActivity = run.waitForStored.mock.calls.at(-1)?.[2];
-    onActivity?.([{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }]);
-    await settle();
     expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
-    expect(store.getDocument).not.toHaveBeenCalled();
-    completion.next({ status: 'ready', stored: true });
+    expect(query('mktg-run-activity-phase-questions')).toBeNull();
+    expect(query('member-360-result')).toBeNull();
+    expect(store.getRevision).not.toHaveBeenCalled();
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    store.getDocument.mockReturnValue(of(detail));
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    query('mktg-breadcrumb-current');
+    await harness.navigateByUrl('/documents/member-360/run-0123456789abcdef01234567?run=' + 'b'.repeat(64), MktgDocumentViewComponent);
     await settle();
-    expect(store.getDocument).toHaveBeenCalled();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(query('mktg-document-view-run')).toBeNull();
+    expect(store.listDocuments).toHaveBeenCalledWith(PROJECT.uid);
+  });
+
+  it('hides cached creator activity immediately on a viewer change without re-reading the Member document', async () => {
+    store.getDocument.mockReturnValue(of(memberProgress('questions')));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-run-activity')).not.toBeNull();
+    const reads = store.getDocument.mock.calls.length;
+    viewer.set({ sub: 'synthetic-other-writer' });
+    await settle();
+    expect(query('mktg-run-activity')).toBeNull();
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(store.getDocument).toHaveBeenCalledTimes(reads);
+  });
+
+  it('never displays activity from an in-flight response begun for a previous viewer', async () => {
+    const response = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(response);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    viewer.set({ sub: 'synthetic-other-writer' });
+    response.next(memberProgress('questions'));
+    await settle();
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(query('mktg-run-activity')).toBeNull();
+  });
+
+  it('shows non-creator progress without a feed or extra activity placeholder', async () => {
+    const progress = memberProgress('writing');
+    progress.runs?.forEach((run) => {
+      delete run.activity;
+    });
+    store.getDocument.mockReturnValue(of(progress));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expect(query('mktg-run-activity')).toBeNull();
+    expect(query('mktg-run-activity-starting')).toBeNull();
   });
 
   it.each(
     ['/project/mktg-os-agents', '/foundation/mktg-os-agents'].flatMap((host) =>
       (['no_edit_access', 'agent_stopped'] as const).map((reason) => ({ host, reason }))
     )
-  )('shows a short $reason reason, collapsed Details and host-scoped Run again in $host', async ({ host, reason }) => {
-    run.isPending.mockReturnValue(true);
-    const message =
-      reason === 'no_edit_access'
-        ? 'SCOPE GUARD: no entitlement for sample-project-uid in this session.'
-        : 'The internal session stopped before producing the report.';
-    run.waitForStored.mockReturnValue(of({ status: 'failed', reason, message }));
-    await render(`${host}/documents/member-360/run-0123456789abcdef01234567?revision=obsolete`);
+  )('keeps a short $reason reason, collapsed Details and host-scoped Run again in $host', async ({ host, reason }) => {
+    store.getDocument.mockReturnValue(of(memberProgress('failed', reason)));
+    await render(`${host}/documents/member-360/run-0123456789abcdef01234567`);
     const short =
       reason === 'no_edit_access'
         ? "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
         : "Member 360 couldn't finish this run.";
     expect(query('mktg-document-view-error')?.textContent).toContain(short);
-    expect(query('mktg-document-view-error')?.textContent).not.toContain(message);
+    expect(query('mktg-document-view-error')?.textContent).not.toContain('Synthetic terminal explanation');
     const details = query('member-360-failure-details');
     expect(details?.hasAttribute('open')).toBe(false);
-    expect(details?.querySelector('summary')?.textContent).toBe('Details');
-    expect(query('member-360-failure-message')?.textContent?.trim()).toBe(message);
-    details?.querySelector('summary')?.click();
-    expect(details?.hasAttribute('open')).toBe(true);
-    expect(query('member-360-run-again')?.textContent?.trim()).toBe('Run again');
+    expect(query('member-360-failure-message')?.textContent?.trim()).toBe('Synthetic terminal explanation.');
     expect(query('member-360-run-again')?.getAttribute('href')).toBe(`${host}/member-360?project=testorbit`);
-    expect(query('mktg-document-view-retry')).toBeNull();
-    expect(query('mktg-document-view-loading')).toBeNull();
     expect(query('mktg-run-activity-title')).toBeNull();
-    expect(store.getDocument).not.toHaveBeenCalled();
     expect(store.getRevision).not.toHaveBeenCalled();
   });
 
-  it('shows Member360 activity after Retry of a timed-out receiver, including renewed questions', async () => {
-    const completion = new Subject<Member360Result>();
-    run.isPending.mockReturnValue(true);
-    run.waitForStored
-      .mockReset()
-      .mockReturnValueOnce(throwError(() => new TimeoutError()))
-      .mockReturnValueOnce(completion);
+  it('offers Run again, never Retry, after the unsupported Member input pause expires', async () => {
+    const progress = memberProgress('failed');
+    progress.runs?.forEach((run) => {
+      run.failureText = MEMBER_360_INPUT_TIMEOUT_MESSAGE;
+    });
+    store.getDocument.mockReturnValue(of(progress));
     await render('/documents/member-360/run-0123456789abcdef01234567');
-    const retry = query('mktg-document-view-retry')?.querySelector('button');
-    if (!retry) throw new Error('Missing synthetic timeout Retry');
-    retry.click();
-    await settle();
-    expect(run.waitForStored).toHaveBeenCalledTimes(2);
-    expect(query('mktg-run-activity-title')).not.toBeNull();
-    expect(query('mktg-document-view-error')).toBeNull();
-    run.waitForStored.mock.calls.at(-1)?.[2]?.([
-      { id: 'synthetic-retry-step', kind: 'lfx', label: 'Checking LFX again', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' },
-    ]);
-    await settle();
-    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX again');
-    completion.next({ status: 'needs_input' });
-    await settle();
-    expect(query('member-360-needs-input')).not.toBeNull();
-    expect(query('mktg-run-activity-title')).not.toBeNull();
-    expect(store.getDocument).not.toHaveBeenCalled();
-    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    expect(query('member-360-failure-message')?.textContent).toContain(MEMBER_360_INPUT_TIMEOUT_MESSAGE);
+    expect(query('member-360-run-again')?.getAttribute('href')).toContain('/member-360?project=testorbit');
+    expect(query('mktg-document-view-progress-retry')).toBeNull();
+    expect(query('mktg-document-view-retry')).toBeNull();
+    expect(query('mktg-document-view-paused-refresh')).toBeNull();
+    expect(store.retryRun).not.toHaveBeenCalled();
   });
 
-  it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
-    run.isPending.mockReturnValue(true);
-    run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));
+  it('keeps a questions turn open with its feed and rechecks the same session on explicit refresh', async () => {
+    store.getDocument.mockReturnValue(of(memberProgress('questions')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toContain('The agent is waiting for input.');
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('The agent is waiting for input.');
     expect(query('mktg-run-activity-title')).not.toBeNull();
     expect(query('mktg-document-view-error')).toBeNull();
-    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-intake-link')).toBeNull();
+    store.getDocument.mockClear();
+    query('mktg-document-view-paused-refresh')?.querySelector('button')?.click();
+    await settle();
+    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567', false);
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
   it('renders Member 360 as the structured type of this document, not a second viewer', async () => {
     const member360 = member360Fixture();
@@ -642,37 +680,31 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it('opens a stored Member 360 report without a subject, including after a user-context flicker', async () => {
-    run.waitForStored.mockClear();
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
     viewer.set(undefined);
     impersonating.set(true);
     await render('/documents/member-360/run-0123456789abcdef01234567');
     expect(query('member-360-result')).not.toBeNull();
+    const reads = [store.getDocument.mock.calls.length, store.getRevision.mock.calls.length, store.listDocuments.mock.calls.length];
     viewer.set({ sub: 'synthetic-writer' });
     await settle();
     viewer.set(undefined);
     await settle();
+    expect([store.getDocument.mock.calls.length, store.getRevision.mock.calls.length, store.listDocuments.mock.calls.length]).toEqual(reads);
     expect(query('member-360-result')).not.toBeNull();
     expect(query('mktg-document-view-loading')).toBeNull();
-    expect(run.waitForStored).not.toHaveBeenCalled();
   });
 
-  it('gates pending capabilities on the subject but leaves a failed stored read retryable', async () => {
-    run.isPending.mockClear();
-    run.waitForStored.mockClear();
+  it('leaves an absent Member document read retryable without relying on a subject or browser cache', async () => {
     viewer.set(undefined);
-    run.isPending.mockReturnValue(true);
-    run.waitForStored.mockReturnValue(NEVER);
     store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
     await render('/documents/member-360/run-0123456789abcdef01234567');
-    expect(run.isPending).not.toHaveBeenCalled();
-    expect(run.waitForStored).not.toHaveBeenCalled();
     expect(query('mktg-document-view-loading')).toBeNull();
     expect(query('mktg-document-view-retry')).not.toBeNull();
-    viewer.set({ sub: 'synthetic-writer' });
+    store.getDocument.mockReturnValue(of(memberProgress('writing')));
+    query('mktg-document-view-retry')?.querySelector('button')?.click();
     await settle();
-    expect(run.isPending).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
-    expect(run.waitForStored).toHaveBeenCalled();
+    expect(query('mktg-document-view-run')).not.toBeNull();
   });
 
   it('does not replace a prose document title with the typed document title', async () => {
@@ -706,13 +738,10 @@ describe('MktgDocumentViewComponent', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it.each([false, true])('keeps Member 360 on its own receiver without a living hand-off (pending=%s)', async (pending) => {
-    run.isPending.mockReturnValue(pending);
-    run.waitForStored.mockReset().mockReturnValue(of({ status: 'ready', stored: true }));
+  it('ignores a living generation token for a Member document without submitting another run', async () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
     await render('/documents/member-360/run-0123456789abcdef01234567?generation=synthetic-living-handoff');
     expect(query('member-360-result')).not.toBeNull();
-    expect(run.waitForStored).toHaveBeenCalledTimes(pending ? 1 : 0);
     expect(store.listDocuments).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(MktgRunAttemptService).consume).not.toHaveBeenCalled();
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
