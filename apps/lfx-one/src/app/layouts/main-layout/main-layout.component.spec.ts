@@ -11,6 +11,7 @@ import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
+import { FocusTrap } from 'primeng/focustrap';
 import { Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,7 +28,10 @@ interface LayoutHarness {
   panel: () => HTMLElement;
 }
 
-/** Renders the real layout template with its child components stubbed out (NO_ERRORS_SCHEMA), so the hamburger and backdrop bindings are exercised. */
+/**
+ * Renders the real layout template with its child components stubbed out (NO_ERRORS_SCHEMA), so the hamburger and backdrop
+ * bindings are exercised. PrimeNG's focus trap is the real directive.
+ */
 const createLayout = async (): Promise<LayoutHarness> => {
   const routerEvents = new Subject<unknown>();
   const currentNavigation = signal<{ extras: { replaceUrl?: boolean }; trigger: 'imperative' | 'popstate' } | null>(null);
@@ -47,7 +51,7 @@ const createLayout = async (): Promise<LayoutHarness> => {
       { provide: UserService, useValue: { impersonating: signal(false) } },
     ],
   });
-  TestBed.overrideComponent(MainLayoutComponent, { set: { imports: [NgClass], schemas: [NO_ERRORS_SCHEMA] } });
+  TestBed.overrideComponent(MainLayoutComponent, { set: { imports: [NgClass, FocusTrap], schemas: [NO_ERRORS_SCHEMA] } });
   const fixture = TestBed.createComponent(MainLayoutComponent);
   await fixture.whenStable();
   const element = fixture.nativeElement as HTMLElement;
@@ -209,6 +213,31 @@ describe('MainLayoutComponent mobile drawer', () => {
     appService.closeMobileSidebar();
     await fixture.whenStable();
     expect(document.activeElement).toBe(menuButton());
+
+    fixture.nativeElement.remove();
+  });
+
+  it('keeps keyboard focus inside the open drawer, and drops the trap once it closes', async () => {
+    const { fixture, appService, menuButton, panel } = await createLayout();
+    document.body.appendChild(fixture.nativeElement);
+    const sentinels = () => panel().querySelectorAll<HTMLElement>('[data-p-hidden-focusable="true"]');
+
+    menuButton().click();
+    await fixture.whenStable();
+    const link = document.createElement('a');
+    link.href = '/org/acme/overview';
+    sentinels()[0].after(link);
+
+    // Tabbing past either end lands on one of the trap's sentinels, which hands focus back inside the panel.
+    expect(sentinels()).toHaveLength(2);
+    sentinels()[1].focus();
+    expect(document.activeElement).toBe(link);
+    sentinels()[0].focus();
+    expect(document.activeElement).toBe(link);
+
+    appService.closeMobileSidebar();
+    await fixture.whenStable();
+    expect(sentinels()).toHaveLength(0);
 
     fixture.nativeElement.remove();
   });
