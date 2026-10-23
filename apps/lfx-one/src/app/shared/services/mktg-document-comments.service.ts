@@ -29,6 +29,7 @@ export class MktgDocumentCommentsService {
   private readonly measured = signal(false);
   private readonly readError = signal('');
   private readonly writeError = signal('');
+  private readonly labelData = signal<unknown>(null);
   private readonly stopWrites = new Subject<void>();
   private reader?: Subscription;
   private readEpoch = 0;
@@ -42,6 +43,8 @@ export class MktgDocumentCommentsService {
     if (!isPlatformBrowser(this.platformId) || !subject || !scope || scope.projectUid !== this.project.activeContextUid()) return '';
     return JSON.stringify([subject, scope.projectUid, scope.agentKey, scope.documentId, scope.revisionId]);
   });
+  public readonly selectedScope = this.selection.asReadonly();
+  public readonly labelContent = computed(() => (this.current() ? this.labelData() : null));
   public readonly threads = computed(() => (this.current() ? this.data() : []));
   public readonly loading = computed(() => this.current() && this.reading());
   public readonly saving = computed(() => this.current() && this.writing());
@@ -58,6 +61,10 @@ export class MktgDocumentCommentsService {
       this.stopWrites.next();
       this.stopWrites.complete();
     });
+  }
+
+  public setLabelContent(content: unknown): void {
+    if (this.current()) this.labelData.set(content);
   }
 
   /** Select on navigation and clear on departure. A restored view only GETs, never adds a comment. */
@@ -162,6 +169,7 @@ export class MktgDocumentCommentsService {
     this.cancelRead();
     this.stopWrites.next();
     this.owner.set(owner);
+    this.labelData.set(null);
     this.data.set([]);
     this.measured.set(false);
     this.reading.set(false);

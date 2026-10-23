@@ -97,6 +97,16 @@ export interface MktgDocumentCommentScope {
   revisionId: string;
 }
 
+/** Read-only label inputs; never persisted or sent with a comment. */
+export interface MktgDocumentCommentLabelContext {
+  agentKey: MktgCommentAgentKey;
+  content: unknown;
+}
+export interface MktgDocumentCommentLabelGroup {
+  label: string;
+  title: string;
+}
+
 /** Distinguishes a valid nullable field from a missing/unsafe path. */
 export interface MktgDocumentCommentField {
   value: unknown;

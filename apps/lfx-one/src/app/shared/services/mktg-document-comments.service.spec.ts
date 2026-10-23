@@ -293,6 +293,26 @@ describe('MktgDocumentCommentsService', () => {
     expect(service.loadError()).not.toBe('');
   });
 
+  it('isolates read-only label metadata by effective subject and revision without posting it', () => {
+    const content = { mf: { goals: [{ t: 'Synthetic adoption' }] } };
+    service.setLabelContent(content);
+    expect(service.labelContent()).toBeNull();
+    service.select(SCOPE);
+    finishRead();
+    service.setLabelContent(content);
+    expect(service.labelContent()).toBe(content);
+    user.set({ sub: 'opaque-user-two' });
+    expect(service.labelContent()).toBeNull();
+    TestBed.tick();
+    finishRead();
+    expect(service.labelContent()).toBeNull();
+    service.setLabelContent(content);
+    service.select({ ...SCOPE, revisionId: NEXT });
+    http.expectOne((request) => request.params.get('revision') === NEXT).flush({ revisionId: NEXT, threads: [] });
+    expect(service.labelContent()).toBeNull();
+    http.expectNone((request) => request.method === 'POST');
+  });
+
   it('does not send a stale action after sign-out, and cancels a pending read', () => {
     service.select(SCOPE);
     const read = http.expectOne((request) => request.method === 'GET');
