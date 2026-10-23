@@ -25,6 +25,20 @@ describe('MktgRunAttemptService', () => {
     service = TestBed.inject(MktgRunAttemptService);
   });
 
+  it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    service.saveRedraft(intent);
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+    expect(restored.loadRedraft({ ...scope, revisionId: `000002-${'b'.repeat(64)}` })).toBeNull();
+    user.set({ sub: 'other-synthetic' } as User);
+    expect(restored.loadRedraft(scope)).toBeNull();
+    user.set({ sub: 'synthetic-subject' } as User);
+    service.saveRedraft({ ...intent, updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString() });
+    expect(service.loadRedraft(scope)).toBeNull();
+  });
+
   it('keeps completed source payloads for same-visit reuse without retaining a recoverable attempt or persisting bytes', () => {
     const uploaded = { ...request, documents: [{ kind: 'file' as const, title: 'synthetic.txt', text: 'private-source' }] };
     service.reserve(uploaded);

@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type { MktgRevisionRef } from './mktg-rebuild.interface';
+import type { MktgDocumentLocation } from './mktg-document-store.interface';
+import type { MktgRunAttempt, MktgRunResultResponse, MktgRunActivity } from './mktg-run.interface';
 import type { MktgChatResponse } from './mktg-chat.interface';
 import type {
   MktgCommentAgentKey,
   MktgStoredDocumentComment,
   MktgDocumentCommentSubmission,
   MktgDocumentCommentsRecord,
+  MktgDocumentCommentScope,
 } from './mktg-document-comments.interface';
 
 /** Frozen send input, with no directory identity, session capability or lifecycle state. */
@@ -47,7 +50,29 @@ export interface MktgPreparedRedraft {
 }
 export type MktgRedraftStartResponse = Extract<MktgChatResponse, { sessionId: string }> & { runId: string; priorVersion: number };
 
+/** Existing poller output, without manufacturing intake answers for accepted redrafts. */
+export interface MktgObservedRunResult {
+  result: MktgRunResultResponse;
+  terminal: boolean;
+}
+export type MktgRedraftProgress =
+  | { type: 'submitted'; attempt: MktgRunAttempt }
+  | { type: 'activity'; activity: MktgRunActivity[] }
+  | { type: 'storing' }
+  | { type: 'ready'; location: MktgDocumentLocation }
+  | { type: 'failed'; message: string };
 export type MktgReleaseRedraftResponse = { success: true } | { state: 'unknown' };
+/** Private subject-keyed recovery only: the server, not this cache, owns liveness. */
+export interface MktgPendingRedraftIntent {
+  scope: MktgDocumentCommentScope;
+  clientRequestId: string;
+  commentIds: string[];
+  priorVersion: number;
+  updatedAt: string;
+  attempt?: MktgRunAttempt;
+  /** Last primary response proved uncertainty/expiry; never permits releasing an accepted attempt. */
+  releaseAllowed?: boolean;
+}
 
 /** Optional object metadata only: do not put these annotations in hashed revision/agent bytes. */
 export interface MktgRedraftRevisionMetadata {

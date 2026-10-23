@@ -4,6 +4,7 @@
 import { Provider, signal } from '@angular/core';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
+import { MktgDocumentRedraftClientService } from '@services/mktg-document-redraft-client.service';
 import { EMPTY } from 'rxjs';
 
 /** Synthetic role attribution and opaque identifiers only. */
@@ -28,23 +29,36 @@ export function mktgCommentScopeFixture(): MktgDocumentCommentScope {
 
 /** Presentational hosts do not own comment HTTP. Individual comment specs supply the state they exercise. */
 export function provideMktgCommentsStub(overrides: Partial<MktgDocumentCommentsService> = {}): Provider {
-  return {
-    provide: MktgDocumentCommentsService,
-    useValue: {
-      threads: signal<MktgDocumentComment[]>([]),
-      selectedScope: signal<MktgDocumentCommentScope | null>(null),
-      draftScopeKey: signal(''),
-      labelContent: signal<unknown>(null),
-      setLabelContent: () => undefined,
-      loaded: signal(false),
-      loading: signal(false),
-      saving: signal(false),
-      loadError: signal(''),
-      saveError: signal(''),
-      select: () => undefined,
-      refresh: () => undefined,
-      add: () => EMPTY,
-      ...overrides,
+  return [
+    {
+      provide: MktgDocumentRedraftClientService,
+      useValue: {
+        hasIntent: () => false,
+        hasAcceptedAttempt: () => false,
+        canRelease: () => false,
+        resume: () => EMPTY,
+        send: () => EMPTY,
+        release: () => EMPTY,
+      },
     },
-  };
+    {
+      provide: MktgDocumentCommentsService,
+      useValue: {
+        threads: signal<MktgDocumentComment[]>([]),
+        selectedScope: signal<MktgDocumentCommentScope | null>(null),
+        draftScopeKey: signal(''),
+        labelContent: signal<unknown>(null),
+        setLabelContent: () => undefined,
+        loaded: signal(false),
+        loading: signal(false),
+        saving: signal(false),
+        loadError: signal(''),
+        saveError: signal(''),
+        select: () => undefined,
+        refresh: () => undefined,
+        add: () => EMPTY,
+        ...overrides,
+      },
+    },
+  ];
 }
