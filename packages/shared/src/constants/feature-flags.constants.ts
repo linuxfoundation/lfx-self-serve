@@ -231,6 +231,23 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
 /**
+ * Dark-launch gate for the vote detail page (#3913) at `/votes/:id` — the shareable vote permalink and
+ * reminder-email target. On, the URL renders `VoteDetailComponent` and the votes dashboard and group Votes tab navigate to it;
+ * off, it keeps rendering the permalink (My Votes dashboard + drawer). `voteDetailPageGuard` reads it on a
+ * paired route entry, so both directions are a pure LaunchDarkly change and no link changes.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. It never gates the BFF or any
+ * `/api` route: both pages read the same `/api/votes` endpoints behind the same auth, and access is
+ * decided by the vote fetch and the writer checks, never by this flag.
+ */
+export const VOTE_DETAIL_PAGE_FLAG = 'vote-detail-page-enabled';
+/**
+ * What {@link VOTE_DETAIL_PAGE_FLAG} reads as in the browser when LaunchDarkly has not answered. Every read —
+ * `voteDetailPageGuard`, the votes dashboard and the group Votes tab — uses this one value, so a deep link and the in-app entry
+ * points never disagree.
+ */
+export const VOTE_DETAIL_PAGE_DEFAULT = false;
+/**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
  *

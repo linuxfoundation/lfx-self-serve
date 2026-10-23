@@ -1105,6 +1105,37 @@ export interface VotePermalinkState {
   target: VotePermalinkTarget | null;
 }
 
+/** Tabs on the vote detail page (#3913); Overview is the default and is omitted from the `?tab=` query param. */
+export type VoteDetailTab = 'overview' | 'results' | 'comments';
+
+/** One pill in the vote detail page's tab strip. */
+export interface VoteDetailTabOption {
+  key: VoteDetailTab;
+  label: string;
+  /** Font Awesome icon class, e.g. `fa-chart-simple` */
+  icon: string;
+}
+
+/** Single load-state emission for the vote detail page — loading, in-place 404, transient error, or the loaded vote. */
+export interface VoteDetailState {
+  loading: boolean;
+  /** Vote missing or not viewable (400/403/404) — rendered as the shared Not Found page, HTTP 404 under SSR */
+  notFound: boolean;
+  /** Transient failure — retry card, HTTP 200 */
+  error: boolean;
+  vote: Vote | null;
+}
+
+/**
+ * Which voter-side results panel a viewer without write access sees — shared by the results drawer and the vote detail page:
+ * - `not_voted`: active vote, no ballot recorded yet
+ * - `submitted`: active vote, ballot recorded (results stay hidden until close)
+ * - `closed`: ended vote — final results for a participant
+ * - `access_denied`: the viewer was removed from the vote
+ * - `not_participant`: the viewer was never invited
+ */
+export type VoterResultsState = 'not_voted' | 'submitted' | 'closed' | 'access_denied' | 'not_participant';
+
 /** Data passed to the mailing-list picker opened from a votes-table row when the committee has several lists (#3658). */
 export interface VoteMailingListReminderDialogData {
   vote: VoteTableRow;

@@ -12,7 +12,7 @@ import { normalizePollStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
-import { probeCommitteeWriters, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap, throwError } from 'rxjs';
 
@@ -114,35 +114,14 @@ export class VotePermalinkComponent {
   private resolveTarget(vote: Vote): Observable<VotePermalinkTarget> {
     return this.voteService.getMyVoteResponse(vote.uid).pipe(
       switchMap((myResponse) => {
-        const canManage$ = this.isAwaitingBallot(vote, myResponse) ? of(false) : this.resolveCanManage(vote);
+        const canManage$ = this.isAwaitingBallot(vote, myResponse)
+          ? of(false)
+          : resolveVoteCanManage(
+              vote,
+              (slugOrUid) => this.projectService.getProjectStrict(slugOrUid),
+              (uid) => this.committeeService.fetchCommittee(uid)
+            );
         return canManage$.pipe(map((canManage) => this.toTarget(vote, myResponse, canManage)));
-      })
-    );
-  }
-
-  /**
-   * Project writer, then committee writer — the same order writerGuard uses. A failed check is "not a
-   * writer" (the voter view), never not-found: the vote itself already loaded.
-   */
-  private resolveCanManage(vote: Vote): Observable<boolean> {
-    const projectSlugOrUid = resolveEntityWriteSlug(vote, null);
-    const isProjectWriter$ = projectSlugOrUid
-      ? this.projectService.getProjectStrict(projectSlugOrUid).pipe(
-          map((project) => project.writer === true),
-          catchError((error) => {
-            console.error('Failed to check project write access for vote permalink', error);
-            return of(false);
-          })
-        )
-      : of(false);
-
-    return isProjectWriter$.pipe(
-      switchMap((isProjectWriter) => {
-        if (isProjectWriter) return of(true);
-        // probeCommitteeWriters catches per-committee failures, so this never errors.
-        return probeCommitteeWriters(vote.committee_uid ? [vote.committee_uid] : [], (uid) => this.committeeService.fetchCommittee(uid)).pipe(
-          map((result) => result.writer)
-        );
       })
     );
   }

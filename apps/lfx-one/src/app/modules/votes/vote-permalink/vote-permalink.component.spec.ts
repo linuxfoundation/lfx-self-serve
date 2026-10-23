@@ -236,7 +236,7 @@ describe('VotePermalinkComponent', () => {
         await setup();
 
         expect(stateOf()).toEqual({ loading: false, notFound: false, error: false, target: { uid: 'vote-1', drawer: 'results', audience: 'voter' } });
-        expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote permalink', error);
+        expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote', error);
       } finally {
         logError.mockRestore();
       }

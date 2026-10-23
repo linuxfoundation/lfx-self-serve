@@ -5,11 +5,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
@@ -18,7 +19,7 @@ import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -55,6 +56,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let activeContext: WritableSignal<ProjectContext | null>;
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
+  let voteDetailPageEnabled: WritableSignal<boolean>;
   let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
@@ -83,6 +85,7 @@ describe('VotesDashboardComponent personal summary', () => {
     activeContext = signal<ProjectContext | null>(null);
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
+    voteDetailPageEnabled = signal(false);
     hasVotesAwaitingInvitationCount = vi.fn(() => false);
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
@@ -117,6 +120,7 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: ProjectContextService, useValue: { activeContext, canWrite } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => voteDetailPageEnabled) } },
       ],
     });
     // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
@@ -1024,6 +1028,47 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(table.resultsComplete()).toBe(true);
     expect(element('votes-table-empty-state')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain("Votes you've been invited to participate in will appear here.");
+  });
+
+  describe('vote detail page flag', () => {
+    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
+    let navigate: MockInstance<Router['navigate']>;
+
+    beforeEach(() => {
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    });
+
+    it('opens the vote page from a row and from View results when the flag is on', async () => {
+      voteDetailPageEnabled.set(true);
+
+      table.viewVote.emit('soon');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon'], {});
+
+      dashboard['onViewResults']('later');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'later'], { queryParams: { tab: 'results' } });
+      expect(drawers()).toEqual({ cast: false, results: false });
+      expect(dashboard['selectedVoteId']()).toBeNull();
+    });
+
+    it('opens the drawers as today when the flag is off', async () => {
+      table.viewVote.emit('soon');
+      expect(drawers()).toEqual({ cast: true, results: false });
+
+      dashboard['onViewResults']('later');
+      expect(drawers()).toEqual({ cast: false, results: true });
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('never navigates from the dashboard the permalink embeds', async () => {
+      voteDetailPageEnabled.set(true);
+      fixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'results', audience: 'voter' });
+      await settle();
+
+      dashboard['onViewResults']('later');
+
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawers()).toEqual({ cast: false, results: true });
+    });
   });
 
   describe('permalink target', () => {

@@ -14,11 +14,14 @@ import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metr
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
+import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
+import { VotePermalinkComponent } from './modules/votes/vote-permalink/vote-permalink.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
+import { voteDetailPageGuard } from './shared/guards/vote-detail-page.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { LensService } from './shared/services/lens.service';
 
@@ -80,24 +83,46 @@ describe('Personal newsletter route isolation', () => {
 
 describe('Vote permalink route isolation', () => {
   const children = routes[0].children!;
-  const permalink = children.find((route) => route.path === 'votes/:id')!;
+  const voteIdEntries = children.filter((route) => route.path === 'votes/:id');
+  const flat = children.find((route) => route.path === 'votes')!;
+  const resolveEntry = async (component: unknown): Promise<Route> => {
+    for (const route of voteIdEntries) {
+      if ((await route.loadComponent!()) === component) return route;
+    }
+    throw new Error('votes/:id entry not found');
+  };
 
-  it('mounts the auth-only Me permalink ahead of the lens-redirected votes mount', () => {
-    const flat = children.find((route) => route.path === 'votes')!;
+  it('pairs the flagged detail page ahead of the auth-only Me permalink, both ahead of the lens-redirected votes mount', async () => {
+    const page = await resolveEntry(VoteDetailComponent);
+    const permalink = await resolveEntry(VotePermalinkComponent);
+
+    expect(voteIdEntries).toHaveLength(2);
+    expect(children.indexOf(page)).toBeLessThan(children.indexOf(permalink));
+    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+    expect(page).toMatchObject({ pathMatch: 'full', canMatch: [votePermalinkMatchGuard, voteDetailPageGuard], canActivate: [authGuard] });
     expect(permalink).toMatchObject({
       pathMatch: 'full',
       data: { lens: 'me', preload: false },
       canMatch: [votePermalinkMatchGuard],
       canActivate: [authGuard],
     });
-    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+    expect(page.title).toBe(permalink.title);
     expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('keeps the lens the user came from on the detail page — no lens data, no lens redirect', async () => {
+    const page = await resolveEntry(VoteDetailComponent);
+
+    expect(page.data).toEqual({ preload: false });
+    expect(page.canActivate).not.toContain(lensRedirectGuard);
   });
 
   it('leaves /votes/create to the votes module and matches a vote uid', () => {
     const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
-    expect(votePermalinkMatchGuard(permalink, segments('create'))).toBe(false);
-    expect(votePermalinkMatchGuard(permalink, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+    for (const route of voteIdEntries) {
+      expect(votePermalinkMatchGuard(route, segments('create'))).toBe(false);
+      expect(votePermalinkMatchGuard(route, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+    }
   });
 });
 

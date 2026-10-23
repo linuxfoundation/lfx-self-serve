@@ -11,7 +11,7 @@
       [totalRecords]="votes().length"
       [editQueryParamsFallback]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
-      (viewVote)="viewVoteResults($event)"
+      (viewVote)="viewVote($event)"
       (refresh)="refreshVotes()"
       (voteExtended)="onVoteExtended($event)">
       @if (canEdit()) {

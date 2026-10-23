@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PollType } from '../enums/poll.enum';
+import type { VoteDetailTab, VoteDetailTabOption } from '../interfaces/poll.interface';
+
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
 
@@ -77,3 +80,25 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
+export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
+
+/** `?tab=` values the vote detail page accepts; anything else falls back to {@link VOTE_DETAIL_DEFAULT_TAB}. */
+export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab>(['overview', 'results', 'comments']);
+
+/** Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts. */
+export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
+  { key: 'overview', label: 'Overview', icon: 'fa-grid-2' },
+  { key: 'results', label: 'Results', icon: 'fa-chart-simple' },
+  { key: 'comments', label: 'Comments', icon: 'fa-comments' },
+];
+
+/** Display label per voting method — shared by the results drawer and the vote detail page. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+export const VOTE_METHOD_LABELS: Record<PollType, string> = {
+  [PollType.GENERIC]: 'Plurality Vote',
+  [PollType.MAJORITY]: 'Majority Vote',
+  [PollType.CONDORCET_IRV]: 'Ranked Choice (Condorcet IRV)',
+  [PollType.INSTANT_RUNOFF_VOTE]: 'Instant Runoff Vote',
+  [PollType.MEEK_STV]: 'Meek STV',
+};

@@ -12,8 +12,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums';
-import type { PollCommentResponse, PollCommentResult, PollQuestionResult, Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums';
+import type {
+  MyVoteResponse,
+  PollCommentResponse,
+  PollCommentResult,
+  PollQuestionResult,
+  Vote,
+  VoteFormValue,
+  VoteResultsResponse,
+  VoterResultsState,
+} from '../interfaces/poll.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
@@ -22,9 +31,11 @@ import {
   buildRankedQuestionViews,
   buildUpdateVoteRequest,
   buildVoteResultsQuestions,
+  canVoterFetchVoteResults,
   compareVotesByRecency,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  getVoteVisibilityRules,
   isRankedPollType,
   isVoteClosingSoon,
   mapFiltersToEligibility,
@@ -32,6 +43,7 @@ import {
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
   mergeCommentResults,
+  resolveVoterResultsState,
   votePermalinkPath,
 } from './vote.utils';
 
@@ -942,6 +954,111 @@ describe('votePermalinkPath', () => {
 
   it('encodes reserved characters so the uid stays one path segment', () => {
     expect(votePermalinkPath('a/b?c#d')).toBe('/votes/a%2Fb%3Fc%23d');
+  });
+});
+
+describe('voter results helpers', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    ...overrides,
+  });
+  const response = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+    uid: 'synthetic-response',
+    vote_uid: 'synthetic-vote',
+    vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+    ...overrides,
+  });
+  const responded = response({ vote_status: IndexedVoteResponseStatus.RESPONDED });
+
+  describe('resolveVoterResultsState', () => {
+    it.each<[string, Vote | null, MyVoteResponse | null, boolean, boolean, VoteResponseStatus | undefined, VoterResultsState]>([
+      ['no vote loaded yet', null, null, false, false, undefined, 'not_voted'],
+      ['removed voter, even on a closed vote', vote({ status: PollStatus.ENDED }), response({ voter_removed: true }), false, false, undefined, 'access_denied'],
+      ['settled empty response (never invited)', vote({ status: PollStatus.ENDED }), null, false, false, undefined, 'not_participant'],
+      ['empty response still loading', vote(), null, true, false, undefined, 'not_voted'],
+      ['empty response after a failed lookup', vote(), null, false, true, undefined, 'not_voted'],
+      ['closed vote for a participant', vote({ status: PollStatus.ENDED }), responded, false, false, undefined, 'closed'],
+      ['closed vote for an invitee who never voted', vote({ status: PollStatus.ENDED }), response(), false, false, undefined, 'closed'],
+      ['mixed-case Ended status for a participant', vote({ status: 'Ended' as PollStatus }), responded, false, false, undefined, 'closed'],
+      ['upper-case ENDED status for a participant', vote({ status: 'ENDED' as PollStatus }), responded, false, false, undefined, 'closed'],
+      ['active vote with a recorded ballot', vote(), responded, false, false, undefined, 'submitted'],
+      ['active vote, list row says responded', vote(), response(), false, false, VoteResponseStatus.RESPONDED, 'submitted'],
+      ['active vote, vote row says responded', vote({ response_status: VoteResponseStatus.RESPONDED }), response(), false, false, undefined, 'submitted'],
+      [
+        'active vote, list row status wins over the vote row',
+        vote({ response_status: VoteResponseStatus.RESPONDED }),
+        response(),
+        false,
+        false,
+        VoteResponseStatus.AWAITING_RESPONSE,
+        'not_voted',
+      ],
+      ['active vote awaiting a ballot', vote(), response(), false, false, undefined, 'not_voted'],
+    ])('%s', (_label, v, my, loading, error, listStatus, expected) => {
+      expect(resolveVoterResultsState(v, my, loading, error, listStatus)).toBe(expected);
+    });
+  });
+
+  describe('canVoterFetchVoteResults', () => {
+    const ended = vote({ status: PollStatus.ENDED });
+
+    it.each<[string, Vote | null, MyVoteResponse | null, boolean, boolean, boolean]>([
+      ['ended vote with a settled matching response', ended, responded, false, false, true],
+      ['ended vote for an invitee who never voted', ended, response(), false, false, true],
+      ['mixed-case Ended status', vote({ status: 'Ended' as PollStatus }), responded, false, false, true],
+      ['upper-case ENDED status', vote({ status: 'ENDED' as PollStatus }), responded, false, false, true],
+      ['active vote', vote(), responded, false, false, false],
+      ['vote not loaded', null, responded, false, false, false],
+      ['removed voter', ended, response({ voter_removed: true }), false, false, false],
+      ['no response row', ended, null, false, false, false],
+      ['response still loading', ended, responded, true, false, false],
+      ['response lookup failed', ended, responded, false, true, false],
+      ['stale vote from another uid', vote({ uid: 'other-vote', status: PollStatus.ENDED }), responded, false, false, false],
+      ['stale response from another uid', ended, response({ vote_uid: 'other-vote', vote_status: IndexedVoteResponseStatus.RESPONDED }), false, false, false],
+    ])('%s', (_label, v, my, loading, error, expected) => {
+      expect(canVoterFetchVoteResults('synthetic-vote', v, my, loading, error)).toBe(expected);
+    });
+  });
+
+  describe('getVoteVisibilityRules', () => {
+    it.each<['voter' | 'creator', boolean]>([
+      ['creator', true],
+      ['creator', false],
+      ['voter', true],
+      ['voter', false],
+    ])('describes the %s view (closed: %s) without exposing other ballots', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, false, isClosed);
+      expect(rules.length).toBeGreaterThan(0);
+      expect(rules).toContain('No one sees how another voter voted on this page.');
+    });
+
+    it('tells managers they see live totals while voters wait for close', () => {
+      expect(getVoteVisibilityRules('creator', false, false)).toEqual([
+        'As a manager, you can follow live totals and comments until the vote closes.',
+        'Voters see only their own response until the vote closes.',
+        'No one sees how another voter voted on this page.',
+        'Named ballot: each ballot is recorded against the voter who cast it.',
+      ]);
+    });
+
+    it('tells voters totals are hidden until close and shared with invited voters after', () => {
+      expect(getVoteVisibilityRules('voter', false, false)[0]).toBe('You see only your own response. Totals and comments stay hidden until the vote closes.');
+      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe('Invited voters see the final totals and comments.');
+      expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments.');
+    });
+
+    it('names the ballot privacy for named and pseudo-anonymous votes', () => {
+      for (const audience of ['voter', 'creator'] as const) {
+        for (const isClosed of [true, false]) {
+          expect(getVoteVisibilityRules(audience, true, isClosed).at(-1)).toBe('Pseudo-anonymous ballot: results are shown without voter names.');
+          expect(getVoteVisibilityRules(audience, false, isClosed).at(-1)).toBe('Named ballot: each ballot is recorded against the voter who cast it.');
+        }
+      }
+    });
   });
 });
 

@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
+import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
 import {
   MyVoteResponse,
   PollCommentResult,
@@ -15,10 +16,12 @@ import {
   VoteParticipationStats,
   VoteResultsQuestion,
   VoteResultsResponse,
+  VoterResultsState,
 } from '@lfx-one/shared/interfaces';
 import {
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
+  canVoterFetchVoteResults,
   computeVoteParticipationStats,
   daysUntilInTimezone,
   formatVoteDeadline,
@@ -27,6 +30,8 @@ import {
   isRankedPollType,
   isVoteEndedEarly,
   mergeCommentResults,
+  normalizePollStatus,
+  resolveVoterResultsState,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -131,7 +136,7 @@ export class VoteResultsDrawerComponent {
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
   // === Voter-state helpers ===
-  protected readonly voterState: Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied' | 'not_participant'> = this.initVoterState();
+  protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
   protected readonly hasZeroVotes: Signal<boolean> = this.initHasZeroVotes();
   /** Header close-date treatment — countdown chip at ≤ 7 days, absolute date otherwise. */
   protected readonly closeDateDisplay: Signal<{ chip: string; absolute: string; isCountdown: boolean }> = this.initCloseDateDisplay();
@@ -248,15 +253,7 @@ export class VoteResultsDrawerComponent {
       if (!id) return null;
       if (this.audience() === 'creator') return id;
 
-      const vote = this.vote();
-      const response = this.myResponse();
-      const canFetch =
-        vote?.uid === id &&
-        vote.status === PollStatus.ENDED &&
-        response?.vote_uid === id &&
-        !response.voter_removed &&
-        !this.myResponseLoading() &&
-        !this.myResponseError();
+      const canFetch = canVoterFetchVoteResults(id, this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError());
       return canFetch ? id : null;
     });
 
@@ -305,7 +302,7 @@ export class VoteResultsDrawerComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
-      if (v?.status === PollStatus.ENDED) return true;
+      if (normalizePollStatus(v?.status) === PollStatus.ENDED) return true;
 
       // Treat 100% participation as finalized even if the vote hasn't formally ended
       const stats = this.participationStats();
@@ -341,16 +338,8 @@ export class VoteResultsDrawerComponent {
       const v = this.vote();
       if (!v) return '';
 
-      const methodLabels: Record<PollType, string> = {
-        [PollType.GENERIC]: 'Plurality Vote',
-        [PollType.MAJORITY]: 'Majority Vote',
-        [PollType.CONDORCET_IRV]: 'Ranked Choice (Condorcet IRV)',
-        [PollType.INSTANT_RUNOFF_VOTE]: 'Instant Runoff Vote',
-        [PollType.MEEK_STV]: 'Meek STV',
-      };
-
       const pollType = v.poll_type ?? PollType.GENERIC;
-      return methodLabels[pollType] || pollType;
+      return VOTE_METHOD_LABELS[pollType] || pollType;
     });
   }
 
@@ -406,25 +395,11 @@ export class VoteResultsDrawerComponent {
     );
   }
 
-  /** Derives the voter panel state. access_denied is for a removed voter; for voter scope, a loaded-null my-response means a viewer who was never invited (e.g. opened a vote permalink) and routes to the neutral not_participant panel — never to State C, so a deep-link to a closed vote can't leak results. */
-  private initVoterState(): Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied' | 'not_participant'> {
-    return computed(() => {
-      const v = this.vote();
-      if (!v) return 'not_voted';
-      const my = this.myResponse();
-      const isVoter = this.audience() === 'voter';
-      // Access-denied: voter_removed wins.
-      if (my?.voter_removed) return 'access_denied';
-      // Loaded-null row: a viewer who was never invited. A failed my-response call (non-404) must not collapse
-      // into this state — the template shows the error state instead.
-      if (isVoter && !this.myResponseLoading() && !this.myResponseError() && !my) return 'not_participant';
-      const closed = v.status === PollStatus.ENDED;
-      const decoratedResponseStatus = this.listVote()?.response_status ?? v.response_status;
-      const submitted = my?.vote_status === 'responded' || decoratedResponseStatus === VoteResponseStatus.RESPONDED;
-      if (closed) return 'closed';
-      if (submitted) return 'submitted';
-      return 'not_voted';
-    });
+  /** Derives the voter panel state from the shared voter visibility rules (resolveVoterResultsState) — a loaded-null my-response is a viewer who was never invited and routes to the neutral not_participant panel, never to State C, so a deep-link to a closed vote can't leak results. Only rendered in voter scope. */
+  private initVoterState(): Signal<VoterResultsState> {
+    return computed(() =>
+      resolveVoterResultsState(this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError(), this.listVote()?.response_status)
+    );
   }
 
   private initHasZeroVotes(): Signal<boolean> {

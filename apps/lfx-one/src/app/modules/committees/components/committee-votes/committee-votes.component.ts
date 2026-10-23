@@ -5,11 +5,13 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, model, out
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { VOTE_DETAIL_PAGE_DEFAULT, VOTE_DETAIL_PAGE_FLAG } from '@lfx-one/shared/constants';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MessageService } from 'primeng/api';
 import { finalize } from 'rxjs';
@@ -26,6 +28,7 @@ export class CommitteeVotesComponent {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Inputs — votes data is pre-fetched and passed from committee-view so the tab badge count is
   // available before the user first opens this tab.
@@ -59,10 +62,17 @@ export class CommitteeVotesComponent {
   // back to null once the id is cleared or the row leaves the list, instead of the one-time snapshot an
   // effect()-driven write would leave stale (per @cursor).
   public selectedVote: Signal<Vote | null> = this.initSelectedVote();
+  /** Vote detail page (#3913): when on, opening a vote from this tab navigates to /votes/:id instead of opening the drawer. */
+  private readonly voteDetailPageEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(VOTE_DETAIL_PAGE_FLAG, VOTE_DETAIL_PAGE_DEFAULT);
+
+  public viewVote(voteUid: string): void {
+    if (this.openVoteDetailPage(voteUid, null)) return;
+    this.openResultsDrawer(voteUid);
+  }
 
   public viewVoteResults(voteUid: string): void {
-    this.selectedVoteId.set(voteUid);
-    this.resultsDrawerVisible.set(true);
+    if (this.openVoteDetailPage(voteUid, 'results')) return;
+    this.openResultsDrawer(voteUid);
   }
 
   /** votes-table's refresh output, fired after a successful delete — propagates to parent. */
@@ -112,5 +122,18 @@ export class CommitteeVotesComponent {
       if (!id) return null;
       return this.votes().find((v) => v.uid === id) || null;
     });
+  }
+
+  // Private helpers
+  /** Mirrors the votes dashboard: with the vote detail page on, a vote opens on its page. Returns whether it navigated. */
+  private openVoteDetailPage(voteUid: string, tab: 'results' | null): boolean {
+    if (!this.voteDetailPageEnabled()) return false;
+    void this.router.navigate(['/votes', voteUid], tab ? { queryParams: { tab } } : {});
+    return true;
+  }
+
+  private openResultsDrawer(voteUid: string): void {
+    this.selectedVoteId.set(voteUid);
+    this.resultsDrawerVisible.set(true);
   }
 }
