@@ -287,9 +287,13 @@ describe('buildHealthMetricsOverviewBalanceView', () => {
     expect(view.atRiskLabel).toBe('1 member');
   });
 
-  it('is empty when nothing is overdue', () => {
-    expect(buildHealthMetricsOverviewBalanceView({ ...balance, outstandingUsd: 0 }).isEmpty).toBe(true);
-    expect(buildHealthMetricsOverviewBalanceView({ ...balance, measured: false }).isEmpty).toBe(true);
+  it('is empty when nothing is overdue, and paid in full only for a measured zero', () => {
+    const paid = buildHealthMetricsOverviewBalanceView({ ...balance, outstandingUsd: 0 });
+    const unmeasured = buildHealthMetricsOverviewBalanceView({ ...balance, measured: false, outstandingUsd: null });
+
+    expect([paid.isEmpty, paid.isPaidInFull]).toEqual([true, true]);
+    expect([unmeasured.isEmpty, unmeasured.isPaidInFull]).toEqual([true, false]);
+    expect(buildHealthMetricsOverviewBalanceView(balance).isPaidInFull).toBe(false);
   });
 });
 
@@ -497,6 +501,17 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     expect(view.totalLabel).toBe('$4.3M');
     expect(view.items.map((item) => item.key)).toEqual(['E-Learning', 'Instructor Led', 'Bundle']);
     expect(view.goalLabel).toBe('87% of $5M goal');
+  });
+
+  it('shows a program with no figure as unmeasured, last and without a bar', () => {
+    const missing = { ...period, byType: period.byType.map((type) => (type.deliveryType === 'Instructor Led' ? { ...type, revenueUsd: null } : type)) };
+    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, periods: everyPeriod(missing) }, 'YTD', 'revenue');
+
+    expect(view.items.map((item) => [item.key, item.valueLabel, item.shareLabel, item.widthPct])).toEqual([
+      ['E-Learning', '$1.6M', '38%', 100],
+      ['Bundle', '$210K', '5%', expect.closeTo(12.8, 1)],
+      ['Instructor Led', '—', '—', 0],
+    ]);
   });
 
   it('draws no goal outside YTD, where the view models none', () => {

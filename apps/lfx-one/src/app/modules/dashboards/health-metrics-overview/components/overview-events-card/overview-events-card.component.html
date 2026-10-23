@@ -6,7 +6,7 @@
   [heading]="card.title"
   [info]="card.info"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
+  [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-events">
   @if (view(); as view) {
@@ -52,11 +52,12 @@
         </div>
       </div>
 
-      <div class="flex min-w-0 flex-[2_1_480px] flex-col gap-[10px]" data-testid="overview-events-list">
+      <!-- The list shares the card with the KPI panel, so its own width (570px fits the column minima) picks the row layout. -->
+      <div class="@container flex min-w-0 flex-[2_1_480px] flex-col gap-[10px]" data-testid="overview-events-list">
         <span class="text-[13px] font-semibold text-gray-900">{{ view.listTitle }}</span>
         @for (row of visibleRows(); track row.eventId) {
           <div
-            class="grid grid-cols-1 items-center gap-[20px] rounded-[10px] border border-gray-200 px-[14px] py-[12px] md:grid-cols-[minmax(180px,1.2fr)_minmax(160px,1fr)_minmax(160px,1fr)]"
+            class="grid grid-cols-1 items-center gap-[20px] rounded-[10px] border border-gray-200 px-[14px] py-[12px] @[570px]:grid-cols-[minmax(180px,1.2fr)_minmax(160px,1fr)_minmax(160px,1fr)]"
             [class]="row.clickable ? 'cursor-pointer hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500' : ''"
             [attr.role]="row.clickable ? 'button' : null"
             [attr.tabindex]="row.clickable ? 0 : null"

@@ -6,8 +6,8 @@
   [heading]="card.title"
   [info]="card.info"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
-  [emptyCopy]="emptyCopy"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy()"
   testId="overview-balance">
   @if (view(); as view) {
     <div class="flex flex-col gap-[2px]">

@@ -69,4 +69,12 @@ describe('OverviewBalanceCardComponent', () => {
     expect(text('overview-balance-empty')).toContain('All invoices are paid');
     expect(fixture.nativeElement.querySelector('[data-testid="overview-balance-empty"] span').className).toContain('bg-emerald-50');
   });
+
+  it('stays neutral when the balance was never measured', async () => {
+    await render({ ...BALANCE, measured: false, outstandingUsd: null });
+
+    expect(text('overview-balance-empty')).toContain('No balance data yet');
+    expect(text('overview-balance-empty')).not.toContain('All invoices are paid');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-balance-empty"] span').className).toContain('bg-gray-50');
+  });
 });

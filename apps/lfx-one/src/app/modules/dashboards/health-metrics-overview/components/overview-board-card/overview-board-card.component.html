@@ -6,10 +6,10 @@
   [heading]="card.title"
   [info]="card.info"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
+  [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-board">
-  @if (addPastMeetingUrl() && read.status() === 'ready' && !view()?.isEmpty) {
+  @if (addPastMeetingUrl() && read.status() === 'ready' && view()?.isEmpty === false) {
     <span overviewCardAction class="inline-flex items-center gap-[6px] text-[13px] text-gray-700" data-testid="overview-board-add-meeting">
       <i class="fa-light fa-face-thinking text-[14px] text-gray-500" aria-hidden="true"></i>Missing a meeting?
       <a class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" [href]="addPastMeetingUrl()"
@@ -73,7 +73,14 @@
             <div class="flex min-w-0 flex-col gap-[2px]">
               <span class="text-[13px] font-semibold text-gray-900" data-testid="overview-board-name">{{ row.name }}</span>
               @if (row.title) {
-                <span class="truncate text-[12px] text-gray-400" [pTooltip]="row.title" tooltipPosition="top">{{ row.title }}</span>
+                <span
+                  class="truncate text-[12px] text-gray-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  tabindex="0"
+                  tooltipEvent="both"
+                  tooltipPosition="top"
+                  [pTooltip]="row.title"
+                  >{{ row.title }}</span
+                >
               }
             </div>
           </div>
@@ -87,7 +94,14 @@
                 <span class="text-[10px] font-semibold text-gray-600">{{ row.organizationInitial }}</span>
               }
             </span>
-            <span class="truncate text-[13px] text-gray-700" [pTooltip]="row.organization" tooltipPosition="top">{{ row.organization }}</span>
+            <span
+              class="truncate text-[13px] text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              tabindex="0"
+              tooltipEvent="both"
+              tooltipPosition="top"
+              [pTooltip]="row.organization"
+              >{{ row.organization }}</span
+            >
           </div>
           <div class="flex min-w-0 items-center gap-[12px]" role="cell">
             <span class="h-[8px] w-[56px] flex-none overflow-hidden rounded-full bg-gray-100" aria-hidden="true"

@@ -101,6 +101,14 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
   },
 } as const satisfies Record<keyof typeof HEALTH_METRICS_OVERVIEW_CARDS, HealthMetricsOverviewEmptyCopy>;
 
+/** The balance card's empty state when no balance was measured, so the card claims nothing is paid. */
+export const HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY: HealthMetricsOverviewEmptyCopy = {
+  ...EMPTY_NEUTRAL,
+  icon: 'fa-light fa-file-invoice-dollar',
+  title: 'No balance data yet',
+  text: 'Overdue membership invoices appear here once the foundation’s billing data is available.',
+};
+
 /** A card's error state; the read failed, so nothing it would show can be trusted. */
 export const HEALTH_METRICS_OVERVIEW_ERROR_COPY: HealthMetricsOverviewEmptyCopy = {
   ...EMPTY_NEUTRAL,

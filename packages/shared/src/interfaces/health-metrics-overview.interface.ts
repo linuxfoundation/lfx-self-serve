@@ -319,6 +319,8 @@ export interface HealthMetricsOverviewBalanceRowView {
 
 export interface HealthMetricsOverviewBalanceView {
   isEmpty: boolean;
+  /** A measured zero balance; a missing one is unknown, not paid. */
+  isPaidInFull: boolean;
   totalLabel: string;
   overdueMembersLabel: string;
   atRiskLabel: string;

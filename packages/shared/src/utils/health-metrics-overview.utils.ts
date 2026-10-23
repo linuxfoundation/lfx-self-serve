@@ -195,6 +195,7 @@ export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOver
 
   return {
     isEmpty: !balance.measured || !balance.outstandingUsd,
+    isPaidInFull: balance.measured && balance.outstandingUsd === 0,
     totalLabel: formatMoney(balance.outstandingUsd),
     overdueMembersLabel: formatCount(balance.overdueMembers),
     atRiskLabel: formatMembers(highMembers),
@@ -278,9 +279,10 @@ export function buildHealthMetricsOverviewTrainingView(
     .map((type) => ({
       key: type.deliveryType,
       label: getHealthMetricsTrainingDeliveryTypeLabel(type.deliveryType),
-      value: (isRevenue ? type.revenueUsd : type.enrollments) ?? 0,
+      value: (isRevenue ? type.revenueUsd : type.enrollments) ?? null,
     }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    // A program with no figure is unmeasured, not zero, so it sorts last with no bar or share.
+    .sort((a, b) => (b.value ?? -1) - (a.value ?? -1) || a.label.localeCompare(b.label));
   const largest = programs[0]?.value ?? 0;
 
   return {
@@ -295,8 +297,8 @@ export function buildHealthMetricsOverviewTrainingView(
       key: program.key,
       label: program.label,
       valueLabel: format(program.value),
-      widthPct: largest > 0 ? Math.max((program.value / largest) * 100, 1) : 0,
-      shareLabel: total ? formatShare(program.value / total) : NOT_AVAILABLE,
+      widthPct: largest > 0 && program.value !== null ? Math.max((program.value / largest) * 100, 1) : 0,
+      shareLabel: total && program.value !== null ? formatShare(program.value / total) : NOT_AVAILABLE,
     })),
   };
 }

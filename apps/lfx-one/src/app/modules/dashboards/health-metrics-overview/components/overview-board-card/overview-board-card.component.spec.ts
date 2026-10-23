@@ -67,6 +67,15 @@ describe('OverviewBoardCardComponent', () => {
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
+  it('lets the keyboard reach the full organization behind its truncation', async () => {
+    await render();
+
+    const organization = [...(query('overview-board-row-k1')?.querySelectorAll('[role="cell"] span') ?? [])].find(
+      (span) => span.textContent?.trim() === 'Acme Corp'
+    );
+    expect(organization?.getAttribute('tabindex')).toBe('0');
+  });
+
   it('flips a column on each click and switches columns', async () => {
     await render();
 

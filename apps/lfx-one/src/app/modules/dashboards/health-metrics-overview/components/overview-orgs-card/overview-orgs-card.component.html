@@ -6,7 +6,7 @@
   [heading]="card.title"
   [info]="card.info"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
+  [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-orgs">
   @if (view(); as view) {

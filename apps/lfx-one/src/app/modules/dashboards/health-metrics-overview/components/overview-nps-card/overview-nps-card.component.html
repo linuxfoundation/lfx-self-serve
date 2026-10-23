@@ -7,7 +7,7 @@
   [info]="card.info"
   [subtitle]="view()?.subtitle ?? ''"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
+  [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-nps">
   @if (view(); as view) {

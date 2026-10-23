@@ -6,10 +6,10 @@
   [heading]="card.title"
   [info]="card.info"
   [status]="read.status()"
-  [isEmpty]="view()?.isEmpty ?? false"
+  [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-training">
-  @if (read.status() === 'ready' && !view()?.isEmpty) {
+  @if (read.status() === 'ready' && view()?.isEmpty === false) {
     <div overviewCardAction class="flex gap-[2px] rounded-full bg-gray-100 p-[2px]" role="group" aria-label="Measure" data-testid="overview-training-toggle">
       @for (option of metrics; track option.id) {
         <button

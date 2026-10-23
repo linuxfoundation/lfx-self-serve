@@ -20,9 +20,14 @@ export function injectOverviewCardRead<T>(read: (foundationSlug: string) => Obse
   if (!isPlatformBrowser(inject(PLATFORM_ID))) return { data: signal(null), status };
 
   const foundationSlug = computed(() => projectContext.selectedFoundation()?.slug ?? '');
+  // Before the first foundation the card stays loading; once one was seen, a cleared foundation settles as empty.
+  let foundationSeen = false;
   const data = toSignal(
     toObservable(foundationSlug).pipe(
-      tap(() => status.set('loading')),
+      tap((slug) => {
+        foundationSeen ||= !!slug;
+        status.set(slug || !foundationSeen ? 'loading' : 'ready');
+      }),
       // switchMap drops the last foundation's response, so a slow read never paints over the new foundation.
       switchMap((slug) =>
         slug

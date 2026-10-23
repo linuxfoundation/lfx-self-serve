@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject } from '@angular/core';
-import { HEALTH_METRICS_OVERVIEW_CARDS, HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY,
+  HEALTH_METRICS_OVERVIEW_CARDS,
+  HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
+  HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewBalanceView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 
@@ -23,11 +28,14 @@ export class OverviewBalanceCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
 
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.balance;
-  protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.balance;
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewOutstandingBalance({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewBalanceView | null>(() => {
     const data = this.read.data();
     return data ? buildHealthMetricsOverviewBalanceView(data) : null;
   });
+  // Only a measured zero balance is good news; a missing balance is neutral.
+  protected readonly emptyCopy = computed(() =>
+    this.view()?.isPaidInFull ? HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance : HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY
+  );
 }
