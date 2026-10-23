@@ -145,6 +145,14 @@ import {
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingPresence,
   HealthMetricsTrainingPresenceQuery,
+  HealthMetricsOverviewBoard,
+  HealthMetricsOverviewChurn,
+  HealthMetricsOverviewCode,
+  HealthMetricsOverviewEvents,
+  HealthMetricsOverviewNps,
+  HealthMetricsOverviewOutstandingBalance,
+  HealthMetricsOverviewParticipatingOrgs,
+  HealthMetricsOverviewQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
@@ -1515,6 +1523,34 @@ export class AnalyticsService {
     );
   }
 
+  public getOverviewParticipatingOrgs(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewParticipatingOrgs> {
+    return this.getOverviewCard<HealthMetricsOverviewParticipatingOrgs>('overview-participating-orgs', query);
+  }
+
+  public getOverviewNps(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewNps> {
+    return this.getOverviewCard<HealthMetricsOverviewNps>('overview-nps', query);
+  }
+
+  public getOverviewChurn(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewChurn> {
+    return this.getOverviewCard<HealthMetricsOverviewChurn>('overview-churn', query);
+  }
+
+  public getOverviewOutstandingBalance(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewOutstandingBalance> {
+    return this.getOverviewCard<HealthMetricsOverviewOutstandingBalance>('overview-outstanding-balance', query);
+  }
+
+  public getOverviewEvents(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewEvents> {
+    return this.getOverviewCard<HealthMetricsOverviewEvents>('overview-events', query);
+  }
+
+  public getOverviewBoard(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewBoard> {
+    return this.getOverviewCard<HealthMetricsOverviewBoard>('overview-board', query);
+  }
+
+  public getOverviewCode(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewCode> {
+    return this.getOverviewCard<HealthMetricsOverviewCode>('overview-code', query);
+  }
+
   /**
    * Get the health-metrics-overview "Foundation" rail summary
    * @param foundationSlug - Foundation slug for Snowflake filter
@@ -1907,6 +1943,19 @@ export class AnalyticsService {
           });
         })
       );
+  }
+
+  /** One Overview card read; errors propagate so the card shows its error state rather than an empty one. */
+  private getOverviewCard<T>(path: string, query: HealthMetricsOverviewQuery): Observable<T> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
+
+    return this.http.get<T>(`/api/analytics/${path}`, { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error(`[analytics] ${path} failed`, { foundationSlug: query.foundationSlug, status });
+        return throwError(() => error);
+      })
+    );
   }
 
   private buildFoundationParams(foundationSlug: string, classification?: string, period?: string): Record<string, string> {

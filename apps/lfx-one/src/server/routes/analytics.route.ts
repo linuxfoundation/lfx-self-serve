@@ -303,6 +303,15 @@ router.get('/training-presence', requireDashboardAccess, (req, res, next) => ana
 router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
 router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
 
+// Health Metrics Overview cards (#4199); each carries every period, so the period picker never re-reads
+router.get('/overview-participating-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewParticipatingOrgs(req, res, next));
+router.get('/overview-nps', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewNps(req, res, next));
+router.get('/overview-churn', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewChurn(req, res, next));
+router.get('/overview-outstanding-balance', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewOutstandingBalance(req, res, next));
+router.get('/overview-events', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewEvents(req, res, next));
+router.get('/overview-board', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewBoard(req, res, next));
+router.get('/overview-code', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewCode(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

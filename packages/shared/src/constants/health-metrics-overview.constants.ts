@@ -260,3 +260,15 @@ export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', '
 export function buildHealthMetricsOverviewPeriods(): HealthMetricsYearOption[] {
   return buildHealthMetricsYearOptions().slice(-4);
 }
+
+/** The NPS audience the Overview card reports; the Members tab leads with the same one. */
+export const HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE = 'Board';
+
+/** The board attendance cohort the Overview card reports. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_COHORT = 'board';
+
+/** Events read for the Overview list across every period; one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
+
+/** Board members read for the Overview table; one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;

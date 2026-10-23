@@ -15,6 +15,7 @@ import type {
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
 import type { HealthMetricsEventsQueryParams, HealthMetricsEventsSectionKey } from './health-metrics-events.interface';
+import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams, HealthMetricsMembersSectionKey } from './health-metrics-members.interface';
 import type { HealthMetricsNonMembersQueryParams, HealthMetricsNonMembersSectionKey } from './health-metrics-non-members.interface';
 import type { HealthMetricsTrainingQueryParams, HealthMetricsTrainingSectionKey } from './health-metrics-training.interface';
@@ -373,4 +374,185 @@ export interface HealthMetricsOverviewRevenueStreamViewModel {
   /** The model's unrounded share, clamped to 0–100 (0 when unmeasured), for the bar's `[style.width.%]` — rounding each stream first could leave a gap. */
   widthPercent: number;
   valueLabel: string;
+}
+
+/** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
+export interface HealthMetricsOverviewQuery {
+  foundationSlug: string;
+}
+
+/** High / Medium / Low organizations and their 0–1 shares. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsOverviewEngagementSplit {
+  highCount: number | null;
+  mediumCount: number | null;
+  lowCount: number | null;
+  highPct: number | null;
+  mediumPct: number | null;
+  lowPct: number | null;
+}
+
+/** One period of the participating organizations card. */
+export interface HealthMetricsOverviewParticipatingOrgsPeriod {
+  activeMembers: number | null;
+  newMembers: number | null;
+  nonRenewals: number | null;
+  nonMembers: number | null;
+  /** `null` for a period the view does not split by engagement. */
+  memberEngagement: HealthMetricsOverviewEngagementSplit | null;
+  nonMemberEngagement: HealthMetricsOverviewEngagementSplit | null;
+}
+
+/** `GET /api/analytics/overview-participating-orgs`; `measured` is false when the foundation has no row. */
+export interface HealthMetricsOverviewParticipatingOrgs {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewParticipatingOrgsPeriod>;
+}
+
+/** The Board audience's survey as of one period; `responseRatePct` is 0–1. */
+export interface HealthMetricsOverviewNpsPeriod {
+  npsScore: number | null;
+  /** Points since the previous survey wave, named by `previousSurveyQuarter`. */
+  scoreChangePp: number | null;
+  previousSurveyQuarter: string | null;
+  /** The wave the figures come from, e.g. `Q2 2026`. */
+  lastUpdatedQuarter: string | null;
+  recipientsCount: number | null;
+  responsesCount: number | null;
+  responseRatePct: number | null;
+  promotersCount: number | null;
+  passivesCount: number | null;
+  detractorsCount: number | null;
+  noResponseCount: number | null;
+}
+
+/** `GET /api/analytics/overview-nps`; a `null` period had no Board survey sent. */
+export interface HealthMetricsOverviewNps {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewNpsPeriod | null>;
+}
+
+/** The foundation-wide churn figures. Rates are percentages (0–100); the `ChangePct` fields are fractions. */
+export interface HealthMetricsOverviewChurnTotals {
+  churnRatePct: number | null;
+  churnRatePctPriorYear: number | null;
+  /** Percentage points against the year before. */
+  churnRateChangePp: number | null;
+  membershipsLost: number | null;
+  membershipsLostPriorYear: number | null;
+  membershipsLostChangePct: number | null;
+  valueLostUsd: number | null;
+  valueLostUsdPriorYear: number | null;
+  valueLostChangePct: number | null;
+}
+
+/** One membership tier's churn in a period; `churnRatePct` is 0–100. */
+export interface HealthMetricsOverviewChurnTier {
+  tier: string;
+  label: string;
+  churnRatePct: number | null;
+  membershipsLost: number | null;
+  valueLostUsd: number | null;
+}
+
+/** One period of the churn card; `tiers` follow the view's tier rank, then label. */
+export interface HealthMetricsOverviewChurnPeriod {
+  totals: HealthMetricsOverviewChurnTotals | null;
+  tiers: HealthMetricsOverviewChurnTier[];
+}
+
+/** `GET /api/analytics/overview-churn`. */
+export interface HealthMetricsOverviewChurn {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
+}
+
+/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  outstandingUsd: number | null;
+  overdueMembers: number | null;
+  highRiskUsd: number | null;
+  highRiskMembers: number | null;
+  highRiskSharePct: number | null;
+  mediumRiskUsd: number | null;
+  mediumRiskMembers: number | null;
+  mediumRiskSharePct: number | null;
+}
+
+/** One event on the Overview list. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsOverviewEvent {
+  eventId: string;
+  eventName: string;
+  /** `YYYY-MM-DD`. */
+  startDate: string | null;
+  endDate: string | null;
+  city: string | null;
+  registrations: number | null;
+  /** `null` when no goal is set. */
+  registrationsGoal: number | null;
+  /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
+  compScore: string | null;
+  /** Past only: the closed event's goal flag and pace band, as the Events tab's past section reads them. */
+  goalMet: boolean | null;
+  paceStatus: string | null;
+  acceptedTalks: number | null;
+  totalProposals: number | null;
+  /** The call for proposals' stage, e.g. `In Review`. */
+  cfpStatus: string | null;
+  /** Past only: the periods the event was held in. */
+  ranges: HealthMetricsL2Range[];
+}
+
+/** `GET /api/analytics/overview-events` — upcoming events soonest first, past events newest first. */
+export interface HealthMetricsOverviewEvents {
+  upcoming: HealthMetricsOverviewEvent[];
+  past: HealthMetricsOverviewEvent[];
+  /** True when the read hit its row cap, so a list may be short. */
+  truncated: boolean;
+}
+
+/** The board's meetings in one period. Attendance is 0–1; the `ChangePct` fields are fractions. */
+export interface HealthMetricsOverviewBoardPeriod {
+  meetings: number | null;
+  meetingsChangePct: number | null;
+  avgAttendancePct: number | null;
+  avgAttendanceChangePct: number | null;
+}
+
+/** One board member's attendance in a period they were invited to; `attendancePct` is 0–1. */
+export interface HealthMetricsOverviewBoardAttendance {
+  invited: number;
+  attended: number | null;
+  attendancePct: number | null;
+}
+
+/** One board member; `attendance` holds only the periods they were invited in. */
+export interface HealthMetricsOverviewBoardMember {
+  key: string;
+  name: string;
+  jobTitle: string | null;
+  organization: string | null;
+  logoUrl: string | null;
+  /** `YYYY-MM-DD`. */
+  lastAttendedDate: string | null;
+  attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
+}
+
+/** `GET /api/analytics/overview-board`; a `null` period has no board row. */
+export interface HealthMetricsOverviewBoard {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBoardPeriod | null>;
+  members: HealthMetricsOverviewBoardMember[];
+}
+
+/** One period's contributors. */
+export interface HealthMetricsOverviewCodePeriod {
+  contributors: number | null;
+  newContributors: number | null;
+}
+
+/** `GET /api/analytics/overview-code` — contributors per period and the all-time roles. */
+export interface HealthMetricsOverviewCode {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewCodePeriod>;
+  committers: number | null;
+  maintainers: number | null;
+  reviewers: number | null;
 }
