@@ -17,14 +17,12 @@ import {
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
   MKTG_KIT_FAMILIES,
-  MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
 import { MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
-import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -38,11 +36,6 @@ describe('LinkedIn profile and post surface', () => {
   const api = {
     profile: vi.fn(),
     save: vi.fn(),
-    start: vi.fn(),
-    wait: vi.fn(),
-    pending: vi.fn(),
-    rememberShareLink: vi.fn(),
-    answer: vi.fn(),
     startForDocument: vi.fn(),
     setupForDocument: vi.fn(),
   };
@@ -55,9 +48,6 @@ describe('LinkedIn profile and post surface', () => {
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
-    api.pending.mockReset().mockReturnValue(null);
-    api.start.mockReset();
-    api.answer.mockReset().mockReturnValue(of({ success: true }));
     context.set({ uid: 'project-one', slug: 'example-project', name: 'Example project' });
     api.profile.mockReturnValue(of({ profile: null }));
     api.save.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -69,7 +59,6 @@ describe('LinkedIn profile and post surface', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: LinkedinPostService, useValue: api },
-        { provide: MktgDocumentStoreService, useValue: {} },
         { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: () => context()?.uid } },
         { provide: ProjectService, useValue: projects },
         { provide: UserService, useValue: { user: identity } },
@@ -104,7 +93,6 @@ describe('LinkedIn profile and post surface', () => {
     await component['onDraft']();
     expect(component['error']()).toBe('Supply pasted text or one public HTTPS link.');
     expect(component['busy']()).toBe(false);
-    expect(api.start).not.toHaveBeenCalled();
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.generate);
   });
@@ -114,15 +102,12 @@ describe('LinkedIn profile and post surface', () => {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending = intakePending('writing');
     attempts.save(pending);
-    api.pending.mockReturnValue(pending.attempt);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const first = await render();
     expect(navigate).not.toHaveBeenCalled();
     first.destroy();
     await render();
     expect(navigate).not.toHaveBeenCalled();
-    expect(api.pending).not.toHaveBeenCalled();
-    expect(api.wait).not.toHaveBeenCalled();
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
   });
@@ -189,7 +174,6 @@ describe('LinkedIn profile and post surface', () => {
     expect(element.querySelector('[data-testid="mktg-linkedin-source-hint"]')?.textContent).toContain(LINKEDIN_SOURCE_LINK_HINT);
     expect(element.textContent).not.toContain('cannot browse');
     expect(element.querySelector('main, aside')).toBeNull();
-    expect(api.start).not.toHaveBeenCalled();
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
@@ -247,8 +231,8 @@ describe('LinkedIn profile and post surface', () => {
       expect(entries).toHaveLength(failure === 'empty' ? 0 : 1);
       for (const [, value] of entries) expect(JSON.parse(value).request.answers).toEqual({});
       for (const text of ['source.example', 'private-marker', 'private-setup']) expect(JSON.stringify({ ...localStorage })).not.toContain(text);
-      for (const legacy of [api.start, api.wait, api.pending, api.answer, api.rememberShareLink]) expect(legacy).not.toHaveBeenCalled();
-      expect(Object.keys(localStorage).some((key) => key.startsWith(MKTG_PENDING_DOCUMENT_STORAGE_PREFIX))).toBe(false);
+      TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+      expect(Object.keys(localStorage).every((key) => key.startsWith(MKTG_PENDING_RUN_STORAGE_KEY_PREFIX))).toBe(true);
       fixture.detectChanges();
       expect(
         fixture.nativeElement.querySelector(
@@ -287,7 +271,6 @@ describe('LinkedIn profile and post surface', () => {
     );
     http.expectNone(intake.endpoints.result);
     expect(api.startForDocument).not.toHaveBeenCalled();
-    expect(api.wait).not.toHaveBeenCalled();
   });
 
   it.each([undefined, 'text', 'file', 'url', 'bad-value'])(
@@ -315,7 +298,6 @@ describe('LinkedIn profile and post surface', () => {
       }
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
       expect(api.startForDocument).not.toHaveBeenCalled();
-      expect(api.wait).not.toHaveBeenCalled();
       TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
     }
   );
@@ -394,7 +376,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-selected-file"]')).toBeNull();
     await component['onDraft']();
     expect(component['error']()).toContain('Choose a text file');
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it.each(['missing', 'oversized'])('uses the configured byte limit for a %s file without reading or starting a run', async (kind) => {
     const component = (await savedIntake()).componentInstance;
@@ -404,7 +386,7 @@ describe('LinkedIn profile and post surface', () => {
     await component['onDraft']();
     expect(component['error']()).toBe(`Choose a text file up to ${LINKEDIN_SOURCE_MAX_BYTES.toLocaleString('en-US')} bytes.`);
     expect(read).not.toHaveBeenCalled();
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('resets omitted optional fields when cancelled first-run profile edits reopen', async () => {
     const component = (await render()).componentInstance;
@@ -457,7 +439,7 @@ describe('LinkedIn profile and post surface', () => {
     component['profileForm'].controls['tone'].setValue('direct');
     component['onProfileSubmit']();
     expect(api.save).toHaveBeenCalledWith({ setup: expect.objectContaining({ tone: 'direct' }) });
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('opens the saved personal profile in edit mode from the document link without running an agent', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -476,10 +458,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).not.toBeNull();
     expect(fixture.componentInstance['profileForm'].controls['name'].value).toBe('Example author');
     expect(consume).not.toHaveBeenCalled();
-    expect(api.pending).not.toHaveBeenCalled();
-    expect(api.wait).not.toHaveBeenCalled();
     expect(api.startForDocument).not.toHaveBeenCalled();
-    expect(api.start).not.toHaveBeenCalled();
   });
 
   it('pushes profile editing, restores it from the URL, and cancels through browser history', async () => {
@@ -592,7 +571,7 @@ describe('LinkedIn profile and post surface', () => {
     });
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
     expect(api.save).not.toHaveBeenCalled();
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('loads a content source URL, pushes source switches and restores the prior source without another write', async () => {
@@ -610,7 +589,7 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance['source']()).toBe('url');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-content-url"]')).not.toBeNull();
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('prefills the share link from the URL source, preserves an edit, and clears it for other sources', async () => {
     const component = (await render()).componentInstance;
@@ -636,7 +615,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['questions']()).toHaveLength(1);
     expect(component['previousAnswers']()).toEqual({ tendency: 'A clear, technical voice for maintainers.' });
     expect(component['error']()).toContain('kept');
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('shows the safe stale-question server message and keeps the edited answers', async () => {
     const component = (await questionsIntake()).componentInstance;
@@ -647,7 +626,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['error']()).toBe('These questions are no longer available. Reload the run.');
     expect(component['previousAnswers']()).toEqual({ tendency: 'A clear technical voice.' });
     expect(component['questions']()).toHaveLength(1);
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('shows the BFF source refusal so the user knows to paste text instead', async () => {
