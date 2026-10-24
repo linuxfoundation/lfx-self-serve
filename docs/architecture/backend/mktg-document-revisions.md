@@ -145,8 +145,8 @@ checks. Send and the first role decision preserve selection and its attribution.
 The second explicit approval writes both role decisions, the `approvals` entry
 and current selection in one `writeCurrent` CAS. Contention returns 412 without
 retry. A second pending request returns 409; terminal requests cannot be resent
-on the same revision. Changes requested requires an already-prepared comment
-receipt; this seam does not itself create comments or submit agent redrafts.
+on the same revision. Request changes uses the guarded pointer protocol below; this send/approve seam
+cannot bypass its intent with a caller-provided comment receipt.
 
 The policy service owns `project-settings/{project}/sign-off.json` in the same
 private artifact purpose, not the upstream project-service settings. Confirmed
@@ -169,6 +169,30 @@ explains canEnable=false and PUT two-role fails with 409 rather than inventing a
 grant; existing stored modes remain readable, and an authorized writer can switch
 off with missing roles. This settings layer introduces no switch UI or Send/decide
 HTTP activation.
+
+### Request-change pointer protocol (internal)
+
+`changeRequestTransition` owns `prepared` → `starting` intent mutations through
+`writeCurrent` only, never a second approval object. The intent freezes role,
+nonce, bounded verbatim note, startedAt and a server UUID for stale-worker/ABA
+fencing. Public metadata exposes only role/time, not nonce/UUID/pending note.
+All competing decisions (including single-writer approval after switching off)
+refuse an active intent. A fresh start claims it once; absence release and start
+race on the same pointer ETag, and only one can win. There is no timed theft.
+
+Accepted receipt finalization is replayable, even after mode switches off; it
+retains the original role actor and the selected/approved current, and removes
+the intent in one CAS. Only document types without a CR root may use a nullable
+receipt and bounded public note (today FAQ); comment-capable types require a real
+comment and correlated CR submission ID. Legacy annotation shapes remain readable.
+
+Explicit release requires server-verified absent/failed/released CR proof; absence
+can clear only prepared, never starting. Released role/nonces are retained in a
+bounded 32-entry same-pointer ledger, never evicted to make a retry appear fresh.
+Exhaustion fails typed and requires operator follow-up: **Operator recovery for
+exhausted sign-off nonce histories**. Request IDs include the full revision, role
+and a bounded nonce, not an identity hash. This storage layer calls no agent and
+mounts no decide endpoint; CR orchestration is the next additive child.
 
 ### Sign-off checks (read-only)
 
