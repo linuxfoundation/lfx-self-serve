@@ -233,4 +233,9 @@ router.get('/requests', requestsRoute('list'));
 router.post('/requests', blockDuringImpersonation, requestsRoute('create'));
 router.post('/requests/:id/state', blockDuringImpersonation, requestsRoute('changeState'));
 
+// Access is writer-gated by its controller; keep settings dependencies out of unrelated route startup.
+router.get('/access', (req, res, next): void => {
+  void import('../controllers/mktg-access.controller').then(({ MktgAccessController }) => new MktgAccessController().read(req, res, next)).catch(next);
+});
+
 export default router;
