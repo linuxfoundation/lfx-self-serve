@@ -207,7 +207,8 @@ pointer writes are preserved; accepted finalization remains single-shot. There i
 Accepted receipt finalization is replayable, even after mode switches off; it
 retains the original role actor and the selected/approved current, and removes
 the intent in one CAS. Only document types without a CR root may use a nullable
-receipt and bounded public note (today FAQ); comment-capable types require a real
+receipt and bounded public note only with explicit note-only host registration
+(today FAQ, not ICP); comment-capable types require a real
 comment and correlated CR submission ID. Legacy annotation shapes remain readable.
 
 Server-only `unstarted` proof can clear only a still-prepared intent through the
@@ -237,7 +238,11 @@ same-actor recovery or guarded release. The only retry is the store's bounded
 start-CAS recheck; no retry loop around Guild or new POST path is added.
 
 Recovery reuses the frozen note, revision/role/nonce and CR IDs, not replacement
-JSON. Terminal replay must belong to the selected role. Release authorizes the
+JSON. A starting-intent recovery first reads correlated CR proof without release
+authorization: an unbound reserved row remains in-flight at any age. It cannot
+be changed to uncertainty by replay and later released solely because a timeout
+elapsed. An absent row likewise provides no recovery/no-start proof. Terminal
+replay must belong to the selected role. Release authorizes the
 original role actor or a writer of the exact canonical project without changing
 Request identity. While the intent is `prepared`, release uses the store's
 `unstarted` pointer fence without reading CR, even if a CR reservation exists.

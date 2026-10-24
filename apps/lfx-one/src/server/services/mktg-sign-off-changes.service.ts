@@ -31,7 +31,7 @@ export class MktgSignOffChangesService {
   private readonly projects = new ProjectService();
 
   public async requestChanges(req: Request, scope: MktgSignOffChangeScope, note: string, runs: MktgDocumentRunService): Promise<MktgRevisionResponse> {
-    this.actor(req);
+    const actor = this.actor(req);
     const { project, type, documentId, revisionId, role, nonce } = scope;
     const ids = mktgSignOffRequestIds(revisionId, role, nonce);
     if (!ids) throw ServiceValidationError.forField('nonce', 'A stored revision, role and bounded nonce are required.');
@@ -42,6 +42,16 @@ export class MktgSignOffChangesService {
       return prepared.view; // FAQ atomically stores its note, or this exact role's terminal action was replayed.
     }
     const intentId = prepared.intent.id;
+    if (prepared.intent.phase === 'starting') {
+      const proof = await this.comments.signOffSubmissionProof(req, project, type, documentId, {
+        revisionId,
+        requestedBy: actor,
+        requestId: ids.requestId,
+        commentRequestId: ids.commentRequestId,
+      });
+      if (proof.state === 'in-flight' || proof.state === 'absent')
+        throw new ConflictError('The starting redraft has no terminal proof; recovery must remain read-only.', 'MKTG_SIGN_OFF_RELEASE_UNSAFE');
+    }
     const root = MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[type.agentKey as MktgCommentAgentKey];
     if (!root) throw ServiceValidationError.forField('agentKey', 'A prepared CR intent requires a comment root.');
     const receipt = await this.comments.addWithReceipt(req, project, type, documentId, {

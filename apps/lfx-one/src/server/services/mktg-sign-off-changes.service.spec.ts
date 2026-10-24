@@ -136,6 +136,39 @@ describe('internal sign-off request changes', () => {
     expect(f.send.mock.calls[1][4]).toEqual(f.send.mock.calls[0][4]); // Existing CR replay owns dedupe, not a new send implementation.
   });
 
+  it('keeps aged reserved starting recovery read-only and the following release still busy', async () => {
+    const row = { state: 'reserved', runId: null, createdAt: '2020-01-01T00:00:00Z' };
+    f.annotation.mockResolvedValue({ ...annotation, changeRequestIntent: { ...intent, phase: 'starting' } });
+    f.transition.mockResolvedValue({ view, intent: { ...intent, phase: 'starting' } });
+    f.send.mockImplementation(async () => {
+      row.state = 'uncertain';
+      throw new MicroserviceError('Old sender would coerce uncertainty', 503, 'MKTG_REDRAFT_START_UNCERTAIN');
+    });
+    f.proof.mockImplementation(async (...args: unknown[]) => {
+      if (row.state === 'reserved') {
+        if (args[5]) throw new ConflictError('Still starting', 'MKTG_REDRAFT_COMMENTS_BUSY');
+        return { state: 'in-flight', commentId: 'exact-comment' };
+      }
+      return { state: 'released', commentId: 'exact-comment' };
+    });
+    await expect(service.recover(req, scope, runs)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
+    expect(row.state).toBe('reserved');
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.add).not.toHaveBeenCalled();
+    await expect(service.release(req, scope)).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
+    expect(row.state).toBe('reserved');
+    expect(f.transition.mock.calls.map((call) => call[5].operation)).toEqual(['reserve']);
+  });
+
+  it('refuses starting recovery when the CR row is absent instead of fabricating no-start proof', async () => {
+    f.transition.mockResolvedValue({ view, intent: { ...intent, phase: 'starting' } });
+    f.proof.mockResolvedValue({ state: 'absent', commentId: null });
+    await expect(service.requestChanges(req, scope, intent.note, runs)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
+    expect(f.add).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.transition.mock.calls.map((call) => call[5].operation)).toEqual(['reserve']);
+  });
+
   it('reports a final CAS failure without retrying or submitting a second redraft automatically', async () => {
     f.transition.mockImplementation(async (...args: unknown[]) => {
       const command = args[5] as MktgSignOffChangeCommand;
