@@ -598,18 +598,6 @@ export interface MktgRunResultBody {
   project?: string;
 }
 
-/** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
-export interface MktgPendingDocumentRun {
-  /** Optional LFX-side answers needed to resume the pending document. */
-  answers?: Record<string, string>;
-  agentId: string;
-  projectUid: string;
-  documentId: string;
-  sessionId: string;
-  ownerToken: string;
-  savedAt: string;
-}
-
 /** Response of an agent's `generate` endpoint — the session to poll. */
 export interface MktgRunSessionResponse {
   /** Stable destination for a one-off run's document, returned before storage. */
