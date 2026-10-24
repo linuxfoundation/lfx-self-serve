@@ -50,7 +50,7 @@
       }
     </div>
 
-    @if (runAgentId() && !hasAssetView()) {
+    @if (runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"

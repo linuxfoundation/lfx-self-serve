@@ -769,6 +769,62 @@ describe('MktgDocumentViewComponent', () => {
     };
   }
 
+  it.each(['failed', 'questions'] as const)('opens the LinkedIn intake from %s with the document-scoped shared token', async (state) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic one-off registration');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const pending: MktgPendingGeneration = {
+      request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
+      state,
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.load).mockReturnValue(pending);
+    vi.mocked(attempts.prepare).mockReturnValue('generation-synthetic-questions');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    store.getDocument.mockReturnValue(
+      of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [{ ...started(state), agentKey: type.agentKey, documentId }] })
+    );
+    await render(`/documents/linkedin-post/${documentId}?run=${'b'.repeat(64)}`);
+    query('mktg-document-view-intake-link')?.querySelector('button')?.click();
+    await settle();
+    expect(attempts.load).toHaveBeenLastCalledWith(PROJECT.uid, intake.agentId, documentId);
+    expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining([intake.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-questions' }) })
+    );
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it('consumes an accepted one-off only with its exact document scope and resumes the shared poll', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic one-off registration');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const pending: MktgPendingGeneration = {
+      request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
+      attempt: {
+        documentId,
+        runId: 'b'.repeat(64),
+        session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const service = TestBed.inject(MktgAgentRunService);
+    vi.mocked(attempts.consume).mockReturnValue({ subject: subject(), pending });
+    store.getDocument.mockReturnValue(of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [] }));
+    await render(`/documents/linkedin-post/${documentId}?generation=synthetic-accepted`);
+    expect(attempts.consume).toHaveBeenCalledWith('synthetic-accepted', PROJECT.uid, intake.agentId, documentId);
+    expect(service.resume).toHaveBeenCalledExactlyOnceWith(pending);
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    expectNoKitAssetChrome();
+  });
+
   it('keeps a prepared run writing after its first metadata read fails, then resumes polling', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const pending = preparedPending();
