@@ -134,7 +134,11 @@ also mark a deck out of date; revision number alone never determines freshness.
 ### Internal two-role sign-off
 
 The optional `signOff` map on `current.json` freezes opaque directory subjects
-for the ED and TOC chair per revision. Names are resolved at read time. Unknown
+for the ED and TOC chair per revision. Names are resolved at read time. The
+TOC chair's role and per-role approval names come only from the caller-scoped
+role resolver when its visible chair has the same frozen subject and a non-null
+name; otherwise those names are null (render the role label, not a directory
+fallback). The request-cached resolver is shared by both projections. Unknown
 optional shapes are ignored without invalidating the critical pointer. Generation
 and Make current preserve these annotations; sign-off state never substitutes for
 an `approvals` entry when deciding whether content is Approved.
@@ -144,9 +148,13 @@ writer-entitled orchestrator must supply directory-resolved roles and pre-send
 checks. Send and the first role decision preserve selection and its attribution.
 The second explicit approval writes both role decisions, the `approvals` entry
 and current selection in one `writeCurrent` CAS. Contention returns 412 without
-retry. A second pending request returns 409; terminal requests cannot be resent
-on the same revision. Request changes uses the guarded pointer protocol below; this send/approve seam
-cannot bypass its intent with a caller-provided comment receipt.
+retry. A second unapproved pending request returns 409; a stale pending annotation
+on a revision already in `approvals` does not block a new request. Terminal
+requests cannot be resent on the same revision. The explicit close/supersede
+path (NB3) must ship before Send is mounted in the UI; unapproved stale pending
+requests still need that operator-visible path. Request changes uses the guarded
+pointer protocol below; this send/approve seam cannot bypass its intent with a
+caller-provided comment receipt.
 
 The policy service owns `project-settings/{project}/sign-off.json` in the same
 private artifact purpose, not the upstream project-service settings. Confirmed
@@ -158,10 +166,15 @@ an otherwise approved/current no-op. There is no separate publish operation.
 (body `{project, mode}`) share the canonical project-writer boundary. Responses
 contain mode, name-only ED/TOC-chair projections, canEnable and a role/policy reason,
 never subjects, addresses, selector metadata or conditional-write tokens. PUT uses
-the one observed private ETag (or create-if-absent), fails on stale comparison
-with 412 and never retries. Writes are blocked during impersonation and capture
+server-side ETag CAS on the observed snapshot (or create-if-absent); there is no
+client version token. A stale comparison fails with 412 and never retries. Writes are blocked during impersonation and capture
 only the effective opaque subject. Switching off does not erase pending annotations
 or modify any document/approval object.
+
+`MktgSignOffSettingsService.readSettings` and `updateMode` own the snapshot,
+role projection, enable-policy refusal and conditional-write orchestration; the
+controller only validates HTTP inputs, checks canonical writer access and sends
+the service response. The raw write is private to that service.
 
 Enable eligibility checks resolved role subjects, then the explicitly unimplemented
 `approversCanWriteProject` policy seam. Until the approver-access ruling, GET
