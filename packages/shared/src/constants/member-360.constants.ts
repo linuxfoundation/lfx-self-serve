@@ -40,7 +40,10 @@ export const DEFAULT_WEIGHTS: Readonly<Record<(typeof CATEGORY_KEYS)[number], nu
 };
 
 export const ENGAGEMENT_TIERS = ['Champion', 'Engaged', 'Passive', 'At Risk', 'Dormant'] as const;
-/** Workbook spec of record; shared with the result page's risk presentation. */
+/**
+ * Workbook spec of record: renewal red/amber day thresholds and tier tones.
+ * The result page adopts these constants in the header child once both children join the parent branch.
+ */
 export const MEMBER_360_RENEWAL_RED_DAYS = 120;
 export const MEMBER_360_RENEWAL_AMBER_DAYS = 240;
 export const MEMBER_360_TIER_TONES = {
