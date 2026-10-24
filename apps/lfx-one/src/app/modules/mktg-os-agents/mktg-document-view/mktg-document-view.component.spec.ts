@@ -689,12 +689,32 @@ describe('MktgDocumentViewComponent', () => {
       expect(api).toHaveBeenCalledTimes(1);
       pending.error(new HttpErrorResponse({ status: 503 }));
       await settle();
-      expect(query('member-360-notice')?.textContent).toContain('The workbook could not be prepared. Try downloading again.');
+      expect(query('mktg-document-view-workbook-error')?.textContent).toContain('The workbook could not be prepared. Try downloading again.');
       expect(button()?.disabled).toBe(false);
       button()?.click();
       await settle();
-      expect(query('member-360-notice')).toBeNull();
+      expect(query('mktg-document-view-workbook-error')).toBeNull();
       expect(api).toHaveBeenCalledTimes(2);
+    });
+    it('keeps workbook failure and team-copy feedback independently addressable', async () => {
+      const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+      try {
+        vi.mocked(TestBed.inject(Member360Service).download).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        await render('/documents/member-360/run-0123456789abcdef01234567');
+        query('member-360-copy-member-success')?.querySelector('button')?.click();
+        await settle();
+        expect(query('member-360-notice')?.textContent).toContain('Member Success list copied.');
+        button()?.click();
+        await settle();
+        expect(query('mktg-document-view-workbook-error')?.textContent).toContain('The workbook could not be prepared.');
+        expect(query('member-360-notice')?.textContent).toContain('Member Success list copied.');
+        expect(harness.routeNativeElement?.querySelectorAll('[data-testid="member-360-notice"]')).toHaveLength(1);
+        expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-workbook-error"]')).toHaveLength(1);
+      } finally {
+        if (previous) Object.defineProperty(navigator, 'clipboard', previous);
+        else Reflect.deleteProperty(navigator, 'clipboard');
+      }
     });
     it.each(['document', 'project', 'subject'])('never saves a late workbook after a %s change', async (change) => {
       const pending = new Subject<Blob>();
@@ -708,7 +728,7 @@ describe('MktgDocumentViewComponent', () => {
       pending.next(new Blob(['old-scope workbook']));
       pending.complete();
       expect(URL.createObjectURL).not.toHaveBeenCalled();
-      expect(query('member-360-notice')).toBeNull();
+      expect(query('mktg-document-view-workbook-error')).toBeNull();
     });
     it('does not call browser APIs or fetch a workbook during SSR', () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });

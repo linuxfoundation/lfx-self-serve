@@ -38,7 +38,6 @@ export class Member360ResultComponent {
   public readonly envelope = input.required<Member360Envelope>();
   public readonly history = input<MktgDocumentListItem[]>([]);
   public readonly documentId = input.required<string>();
-  public readonly project = input.required<string>();
   protected readonly owners = ACTION_OWNERS;
   protected readonly tierOptions = MEMBER_360_TIER_OPTIONS;
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;

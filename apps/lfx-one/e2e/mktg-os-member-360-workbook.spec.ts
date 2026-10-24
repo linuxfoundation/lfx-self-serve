@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MEMBER_360_WORKBOOK_CONTENT_TYPE } from '@lfx-one/shared/constants/member-360.constants';
+import { MEMBER_360_WORKBOOK_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import { MEMBER_360_PROJECT } from './fixtures/mock-data/member-360.mock';
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
 
@@ -69,15 +69,20 @@ test('workbook failure shows the existing notice and a successful retry clears i
   );
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   const action = page.getByTestId('member-360-download').getByRole('button');
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (_text: string) => undefined } }));
+  await page.getByRole('button', { name: 'Copy Member Success list' }).click();
+  await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   await action.click();
-  await expect(page.getByTestId('member-360-notice')).toContainText('The workbook could not be prepared. Try downloading again.');
+  await expect(page.getByTestId('mktg-document-view-workbook-error')).toContainText('The workbook could not be prepared. Try downloading again.');
+  await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   await expect(action).toBeEnabled();
   await page.screenshot({ path: info.outputPath('workbook-failure.png'), fullPage: true });
   fail = false;
   const download = page.waitForEvent('download');
   await action.click();
   await download;
-  await expect(page.getByTestId('member-360-notice')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-workbook-error')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   await page.screenshot({ path: info.outputPath('workbook-retry-ready.png'), fullPage: true });
 });
 

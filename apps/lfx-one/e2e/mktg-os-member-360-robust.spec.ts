@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_AGENTS } from '@lfx-one/shared/constants/mktg-os-agents.constants';
+import { MKTG_AGENTS } from '@lfx-one/shared/constants';
 
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
 

@@ -29,8 +29,7 @@ describe('Member360ResultComponent', () => {
   });
   function render(envelope = member360Fixture()) {
     const fixture = TestBed.createComponent(Member360ResultComponent);
-    for (const [key, value] of Object.entries({ envelope, documentId: 'run-0123456789abcdef01234567', project: 'sample-project' }))
-      fixture.componentRef.setInput(key, value);
+    for (const [key, value] of Object.entries({ envelope, documentId: 'run-0123456789abcdef01234567' })) fixture.componentRef.setInput(key, value);
     fixture.detectChanges();
     const query = (id: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
     const names = () =>

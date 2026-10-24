@@ -62,7 +62,7 @@
       }
     </div>
     @if (workbookError()) {
-      <lfx-message severity="error" [text]="workbookError()" data-testid="member-360-notice" />
+      <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
     @if (runAgentId() && !hasAssetView()) {
@@ -540,7 +540,7 @@
           @if (historyError()) {
             <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
           }
-          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" [project]="current.project" />
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" />
         }
       }
     }
