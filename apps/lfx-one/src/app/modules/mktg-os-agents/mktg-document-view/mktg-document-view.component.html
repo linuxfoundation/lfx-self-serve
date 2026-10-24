@@ -77,7 +77,7 @@
             }}
           </p>
           @if (runFailure()) {
-            <p class="whitespace-pre-wrap text-sm text-gray-900" data-testid="mktg-document-view-failure-reply">{{ runFailure() }}</p>
+            <p role="alert" class="whitespace-pre-wrap text-sm text-gray-900" data-testid="mktg-document-view-failure-reply">{{ runFailure() }}</p>
           }
           @if (selectedRun()?.state === 'failed') {
             <lfx-button label="Retry" [loading]="retrying()" [disabled]="retrying()" (onClick)="onRetryRun()" data-testid="mktg-document-view-progress-retry" />
@@ -106,7 +106,12 @@
           <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
         }
         @if (runAgentId() && !pausedWithoutAnswers() && (state === 'failed' || state === 'questions')) {
-          <lfx-button label="Open the intake form" [text]="true" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
+          <lfx-button
+            label="Open the intake form"
+            [text]="true"
+            [disabled]="waitingForQuestions()"
+            (onClick)="onOpenIntake()"
+            data-testid="mktg-document-view-intake-link" />
         }
       </section>
     }
@@ -144,6 +149,12 @@
       } @else {
         <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
       }
+    }
+    @if (profileWarning()) {
+      <lfx-message
+        severity="warn"
+        text="Your post is saved, but your profile is not saved. Edit profile to save the settings explicitly when writes are available."
+        data-testid="mktg-linkedin-profile-warning" />
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />

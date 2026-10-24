@@ -323,7 +323,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: Member360Service, useValue: { download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
-        { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
+        { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
       ],
     }).compileComponents();
   });
@@ -495,6 +495,47 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-linkedin-document-author')?.textContent).toContain(`${label} ${name ?? 'name unavailable'}`);
     expect(!!query('mktg-linkedin-document-edit-profile')).toBe(isAuthor);
     expect(query('mktg-document-view-revision-chip')).toBeNull();
+  });
+
+  it('keeps the unsaved-profile warning on the document and hands only its public id to explicit profile editing', async () => {
+    const response = linkedinResponse();
+    await renderLinkedin(response);
+    const intake = MKTG_AGENT_INTAKES[response.type.catalogAgentId ?? ''];
+    if (!intake) throw new Error('Missing synthetic intake');
+    const request = { agentId: intake.agentId, intake, projectUid: PROJECT.uid, documentId: response.documentId, answers: {} };
+    const attempt = {
+      documentId: response.documentId,
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+    };
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['onProgress'](
+      {
+        type: 'document',
+        profileSaved: false,
+        attempt,
+        documentLocation: { agentKey: response.type.agentKey, documentId: response.documentId, revisionId: response.revision.id },
+        run: {
+          agentId: intake.agentId,
+          projectUid: PROJECT.uid,
+          sessionId: 'synthetic-session',
+          ownerToken: 'synthetic-proof',
+          answers: {},
+          versions: [],
+          savedAt: new Date().toISOString(),
+        },
+      },
+      { request, attempt, state: 'writing', updatedAt: new Date().toISOString() }
+    );
+    await settle();
+    expect(query('mktg-linkedin-profile-warning')?.textContent).toContain('Your post is saved, but your profile is not saved.');
+    query('mktg-linkedin-document-edit-profile')?.click();
+    expect(navigate).toHaveBeenLastCalledWith(
+      [intake.agentId],
+      expect.objectContaining({ queryParams: expect.objectContaining({ profile: 'edit', profileDocument: response.documentId }) })
+    );
   });
 
   it('takes only the author to their LinkedIn profile edit page', async () => {
@@ -769,6 +810,77 @@ describe('MktgDocumentViewComponent', () => {
     };
   }
 
+  it.each(['file', 'invalid'])('opens a plain failed document as a public intake hint with only safe source %s', async (source) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing synthetic type');
+    const documentId = 'run-' + 'a'.repeat(24);
+    store.getDocument.mockReturnValue(
+      of({
+        project: PROJECT.uid,
+        type,
+        documentId,
+        revisions: [],
+        approvedCurrent: null,
+        runs: [{ ...started('failed'), agentKey: type.agentKey, documentId }],
+      })
+    );
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.prepare).mockReturnValue('generation-failed-intake');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render(`/documents/linkedin-post/${documentId}?source=${source}&content_text=private-marker`);
+    query('mktg-document-view-intake-link')?.querySelector('button')?.click();
+    await settle();
+    expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ state: 'failed', request: expect.objectContaining({ documentId, answers: {} }) }));
+    const queryParams = navigate.mock.calls.at(-1)?.[1]?.queryParams;
+    expect(queryParams).toMatchObject({ source: source === 'file' ? 'file' : 'text', questions: 'generation-failed-intake' });
+    expect(JSON.stringify(queryParams)).not.toContain('private-marker');
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it.each(['writing', 'questions'] as const)('reconnects an owned %s cache to a server questions pause after a plain-URL return', async (state) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic type');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const attempt = {
+      documentId,
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+    };
+    const pending: MktgPendingGeneration = {
+      request: { agentId: intake.agentId, intake, projectUid: PROJECT.uid, documentId, answers: {} },
+      state,
+      attempt,
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.load).mockReturnValue(pending);
+    vi.mocked(attempts.prepare).mockReturnValue('generation-resumed-questions');
+    const events = new Subject<MktgGenerateProgress>();
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(events);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    store.getDocument.mockReturnValue(
+      of({
+        project: PROJECT.uid,
+        type,
+        documentId,
+        revisions: [],
+        approvedCurrent: null,
+        runs: [{ ...started('questions'), agentKey: type.agentKey, documentId }],
+      })
+    );
+    await render(`/documents/linkedin-post/${documentId}`);
+    expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledExactlyOnceWith(pending);
+    expect(query('mktg-document-view-intake-link')?.querySelector('button')?.disabled).toBe(true);
+    events.next({ type: 'questions', pending: { attempt, questionsId: 'a'.repeat(64), questions: [] } });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining([intake.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-resumed-questions' }) })
+    );
+  });
+
   it.each(['failed', 'questions'] as const)('opens the LinkedIn intake from %s with the document-scoped shared token', async (state) => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
     const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
@@ -776,9 +888,21 @@ describe('MktgDocumentViewComponent', () => {
     const documentId = 'run-' + 'a'.repeat(24);
     const pending: MktgPendingGeneration = {
       request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
-      state,
+      state: state === 'failed' ? 'writing' : state,
+      attempt: {
+        documentId,
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+      },
       updatedAt: new Date().toISOString(),
     };
+    if (state === 'questions' && pending.attempt)
+      pending.pendingQuestions = {
+        attempt: pending.attempt,
+        questionsId: 'a'.repeat(64),
+        questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: '', basis: [] }],
+      };
     const attempts = TestBed.inject(MktgRunAttemptService);
     vi.mocked(attempts.load).mockReturnValue(pending);
     vi.mocked(attempts.prepare).mockReturnValue('generation-synthetic-questions');
@@ -787,10 +911,15 @@ describe('MktgDocumentViewComponent', () => {
       of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [{ ...started(state), agentKey: type.agentKey, documentId }] })
     );
     await render(`/documents/linkedin-post/${documentId}?run=${'b'.repeat(64)}`);
+    if (state === 'failed') {
+      expect(query('mktg-document-view-failure-reply')?.getAttribute('role')).toBe('alert');
+      expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.textContent?.trim()).toBe('Retry');
+    }
     query('mktg-document-view-intake-link')?.querySelector('button')?.click();
     await settle();
     expect(attempts.load).toHaveBeenLastCalledWith(PROJECT.uid, intake.agentId, documentId);
     expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
+    if (state === 'failed') expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ state: 'failed', attempt: pending.attempt }));
     expect(navigate).toHaveBeenCalledWith(
       expect.arrayContaining([intake.agentId]),
       expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-questions' }) })

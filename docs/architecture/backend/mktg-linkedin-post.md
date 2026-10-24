@@ -63,20 +63,41 @@ URL in another browser still uses server `detail.runs[]` reconciliation.
 The owned result controller validates the HMAC and LinkedIn body shape before the
 writer lookup, then delegates to `MktgDocumentRunService.ownedOneOffResult` with a
 validated typed `MktgOneOffRunContext`, never the raw HTTP body, for that exact
-project/agent/session and creator. Its shared `agentResult` dispatcher owns the captured link answers, source word
-count and original profile-initialization permission for BOTH owned polls and Documents
+project/agent/session and creator. Its shared `agentResult` dispatcher owns the captured
+link answers, source word count and original profile-initialization permission for BOTH owned polls and Documents
 reconciliation; the controller applies no completion policy. It reuses the fetched record
 and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
 The existing post-write metadata winner confirmation remains unchanged.
 Browser omissions or later source context cannot replace captured values. Legacy untracked
 sessions retain the result-body contract. One server utility classifies repository,
-Smithy timeout and network errors (including status0,408,429 and5xx). A transient tracking
+Smithy timeout and network errors (including status 0, 408, 429 and 5xx). A transient tracking
 read failure logs fixed diagnostic categories and numeric status, never provider text,
 and uses that same legacy creator contract for this poll; authorization failures are
-never softened. Tracking-write failures retain the error under the logger's `err` field. This service method is not a new endpoint or public progress
-projection. `profileSaved: false` remains distinct from
-a successful document receipt in the shared progress event, for the cutover's existing
+never softened. Tracking-write failures retain the error under the logger's `err` field.
+This service method is not a new endpoint or public progress projection.
+`profileSaved: false` remains distinct from a successful document receipt in the shared progress event, for the cutover's existing
 profile-persistence warning.
+
+## Dedicated-form transport extension
+
+`LinkedinPostService.startForDocument` uses the same Generate request implementation
+as the legacy client, but writes no legacy pending storage. It retains original setup
+only in creator/project/document-bound live memory for explicit profile editing after
+an unsaved-profile warning; a new browser/client instance cannot recover that setup.
+The legacy intake keeps using its existing API until the separate cutover layer.
+
+The receiver carries only an allow-listed `source=text|file|url` navigation hint; absent
+or invalid values become `text`. It never puts source text, a source URL, filename or
+setup in a navigation URL. Its existing submitted handler replaces an accepted
+one-off generation token with the public run selector, so reload uses the saved run.
+The same prepared map can carry failed-intake re-entry, including a public hint with
+no session capability when another authorized browser opens a failed document.
+That hint grants neither Generate provenance nor result-poll authority. Server failure
+wins over a still-writing private cache. An owner's valid capability also reconnects a
+server questions pause after reload, when private question text was not retained; the
+intake action waits for those private details rather than opening an empty form. The cutover's dedicated intake consumes the
+hint for source/setup re-entry; unsupported Member questions retain their separate
+bounded-pause policy and no intake link.
 
 ## Terminal Guild failures
 

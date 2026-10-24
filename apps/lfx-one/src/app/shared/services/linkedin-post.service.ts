@@ -35,6 +35,7 @@ export class LinkedinPostService {
   private readonly platform = inject(PLATFORM_ID);
   private readonly user = inject(UserService);
   private readonly answeredRounds = new WeakMap<LinkedinGeneration, string>();
+  private readonly unsavedSetup = new Map<string, { setup: LinkedinSetup; savedAt: number }>();
 
   public profile(): Observable<{ profile: LinkedinStoredProfile | null }> {
     return this.http.get<{ profile: LinkedinStoredProfile | null }>(`${LINKEDIN_API}/profile`).pipe(
@@ -47,14 +48,31 @@ export class LinkedinPostService {
   public save(body: { setup?: LinkedinSetup; profile?: LinkedinProfile }): Observable<{ profile: LinkedinStoredProfile }> {
     return this.http.put<{ profile: LinkedinStoredProfile }>(`${LINKEDIN_API}/profile`, body).pipe(take(1));
   }
-  public start(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
-    const owner = this.user.user()?.sub;
-    return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}) }).pipe(
-      take(1),
-      map((run) => ({ ...run, retryInputs: { answers: { ...answers }, ...(setup ? { setup: { ...setup } } : {}) } })),
+  public startForDocument(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
+    return this.create(intake, project, answers, setup).pipe(
       tap((run) => {
-        if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
-          throw new Error('The run belongs to a different user or has no document destination.');
+        if (setup) this.unsavedSetup.set(this.setupKey(project, run.documentId), { setup: { ...setup }, savedAt: Date.now() });
+      })
+    );
+  }
+
+  /** Explicit profile editing only. A new client/browser cannot recover private setup. */
+  public setupForDocument(project: string, documentId: string): LinkedinSetup | null {
+    if (!isPlatformBrowser(this.platform) || !this.user.user()?.sub) return null;
+    const key = this.setupKey(project, documentId);
+    const value = this.unsavedSetup.get(key);
+    if (!value || Date.now() - value.savedAt > MKTG_RUN_STORAGE_TTL_MS) {
+      this.unsavedSetup.delete(key);
+      return null;
+    }
+    return { ...value.setup };
+  }
+
+  /** @deprecated Removed with legacy pending/wait/cache APIs in the deletion-only L5 child. New forms use startForDocument. */
+  public start(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
+    const owner = this.user.user()?.sub ?? '';
+    return this.create(intake, project, answers, setup).pipe(
+      tap((run) => {
         const pending: LinkedinPendingRun = {
           ...run,
           agentId: intake.agentId,
@@ -71,7 +89,7 @@ export class LinkedinPostService {
       })
     );
   }
-  /** Resume the latest unfinished run for this user/project; sweep expired capabilities. */
+  /** @deprecated Removed in the deletion-only L5 child; new forms use shared document-scoped attempts. */
   public pending(intake: MktgAgentIntake, project: string): LinkedinPendingRun | null {
     const owner = this.user.user()?.sub;
     if (!owner || !isPlatformBrowser(this.platform)) return null;
@@ -110,7 +128,7 @@ export class LinkedinPostService {
     }
     return latest;
   }
-  /** Refresh an existing pending capability's answers only; never recreate a completed capability. */
+  /** @deprecated Removed in the deletion-only L5 child; link editing now belongs to the document. */
   public rememberShareLink(project: string, run: LinkedinGeneration, link: string): void {
     const owner = this.user.user()?.sub;
     if (!owner || !isPlatformBrowser(this.platform)) return;
@@ -124,6 +142,7 @@ export class LinkedinPostService {
     }
   }
 
+  /** @deprecated Removed in the deletion-only L5 child; answers use the shared run service. */
   public answer(
     intake: MktgAgentIntake,
     project: string,
@@ -150,6 +169,7 @@ export class LinkedinPostService {
       );
   }
 
+  /** @deprecated Removed in the deletion-only L5 child; new forms never poll results. */
   public wait(intake: MktgAgentIntake, project: string, run: LinkedinGeneration, onProgress?: (result: LinkedinResult) => void): Observable<LinkedinResult> {
     const owner = this.user.user()?.sub;
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
@@ -217,6 +237,22 @@ export class LinkedinPostService {
       ...pending,
       retryInputs: { answers, requiresSource: !!retry.requiresSource || !!retry.answers['content_source'] },
     });
+  }
+
+  private setupKey(project: string, documentId: string): string {
+    return `${this.user.user()?.sub ?? ''}:${project}:${documentId}`;
+  }
+
+  private create(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
+    const owner = this.user.user()?.sub;
+    return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}) }).pipe(
+      take(1),
+      map((run) => ({ ...run, retryInputs: { answers: { ...answers }, ...(setup ? { setup: { ...setup } } : {}) } })),
+      tap((run) => {
+        if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
+          throw new Error('The run belongs to a different user or has no document destination.');
+      })
+    );
   }
 
   private prefix(owner: string): string {

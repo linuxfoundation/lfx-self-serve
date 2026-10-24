@@ -109,6 +109,21 @@ describe('MktgRunAttemptService', () => {
     expect(service.load(request.projectUid, accepted.agentId)).toBeNull();
   });
 
+  it('uses the same map for a failed public intake hint after reload without granting Generate provenance', () => {
+    const failed = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
+    service.save({ request: failed, state: 'failed', updatedAt: new Date().toISOString() });
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.prepare({ ...failed, documentId: 'living' }, true)).toBe('');
+    expect(restored.prepare({ ...failed, documentId: 'invalid' }, true)).toBe('');
+    const token = restored.prepare(failed, true);
+    const hint = restored.consumeQuestions(token, failed.projectUid, failed.agentId)?.pending;
+    expect(hint?.state).toBe('failed');
+    expect(hint?.attempt).toBeUndefined();
+    if (!hint) throw new Error('Missing synthetic hint');
+    expect(restored.takeFreshDraft(hint)).toBe(false);
+    expect(restored.consumeQuestions(token, failed.projectUid, failed.agentId)).toBeNull();
+  });
+
   it('consumes a one-off questions handoff on the intake using its retained destination and subject', () => {
     const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, answers: {} };
     const documentId = 'run-' + 'a'.repeat(24);
