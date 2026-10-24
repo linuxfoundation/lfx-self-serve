@@ -131,25 +131,6 @@ The existing `latestRevision` response field carries that approved identity, or
 null when none is approved (no stale badge). Selecting older approved content can
 also mark a deck out of date; revision number alone never determines freshness.
 
-### Sign-off checks (read-only)
-
-`GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks?project=<uid>`
-uses the same canonical project-writer boundary as document reads. It returns
-`{ checks: [{ id, label, status, detail }] }` with five findings: verbatim tagline,
-goal/audience coverage, avoid-list phrases, word limits and unanswered FAQ.
-Stored agent findings add a sixth row when available. No role decision or write
-occurs; this endpoint does not activate Send or decide authorization policy.
-
-Checks use the selected stored JSON (kit chapters come from its sidecar), not
-Markdown rendering or browser-supplied content. Dependent checks read only the
-approved-current framework through the existing store seam; failed reads remain
-errors, while confirmed absence produces explained `n/a` findings. A missing or
-empty applicable goal/word-limit/FAQ structure does not pass by an empty loop.
-Counts are recomputed, not trusted from agent sidecar counts. Avoid-list scanning
-uses escaped, Unicode-aware phrase boundaries on explicit prose fields, excluding
-definitions, SVG bytes, URLs, input records and source labels. No approved-current
-selection, immutable bytes, comment thread or redraft is mutated by this read.
-
 ### Internal two-role sign-off
 
 The optional `signOff` map on `current.json` freezes opaque directory subjects
@@ -182,11 +163,51 @@ path (NB3) must ship before Send is mounted in the UI; unapproved stale pending
 requests still need that operator-visible path. Changes requested requires an already-prepared comment
 receipt; this seam does not itself create comments or submit agent redrafts.
 
-A read-only policy reader checks `project-settings/{project}/sign-off.json`.
-Confirmed absence means `single-writer`; malformed or failed policy reads fail
-closed. Existing Approve refuses with 409 when persisted mode is `two-role`,
-including an otherwise approved/current no-op. No settings-write API or sign-off
-UI is introduced by this storage layer. There is no separate publish operation.
+The policy service owns `project-settings/{project}/sign-off.json` in the same
+private artifact purpose, not the upstream project-service settings. Confirmed
+absence means `single-writer`; malformed or failed policy reads fail closed.
+Existing Approve refuses with 409 when persisted mode is `two-role`, including
+an otherwise approved/current no-op. There is no separate publish operation.
+
+`GET /api/mktg-agents/sign-off/settings?project=<uid>` and `PUT /api/mktg-agents/sign-off/settings`
+(body `{project, mode}`) share the canonical project-writer boundary. Responses
+contain mode, name-only ED/TOC-chair projections, canEnable and a role/policy reason,
+never subjects, addresses, selector metadata or conditional-write tokens. PUT uses
+server-side ETag CAS on the observed snapshot (or create-if-absent); there is no
+client version token. A stale comparison fails with 412 and never retries. Writes are blocked during impersonation and capture
+only the effective opaque subject. Switching off does not erase pending annotations
+or modify any document/approval object.
+
+`MktgSignOffSettingsService.readSettings` and `updateMode` own the snapshot,
+role projection, enable-policy refusal and conditional-write orchestration; the
+controller only validates HTTP inputs, checks canonical writer access and sends
+the service response. The raw write is private to that service.
+
+Enable eligibility checks resolved role subjects, then the explicitly unimplemented
+`approversCanWriteProject` policy seam. Until the approver-access ruling, GET
+explains canEnable=false and PUT two-role fails with 409 rather than inventing a
+grant; existing stored modes remain readable, and an authorized writer can switch
+off with missing roles. This settings layer introduces no switch UI or Send/decide
+HTTP activation.
+
+### Sign-off checks (read-only)
+
+`GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks?project=<uid>`
+uses the same canonical project-writer boundary as document reads. It returns
+`{ checks: [{ id, label, status, detail }] }` with five findings: verbatim tagline,
+goal/audience coverage, avoid-list phrases, word limits and unanswered FAQ.
+Stored agent findings add a sixth row when available. No role decision or write
+occurs; this endpoint does not activate Send or decide authorization policy.
+
+Checks use the selected stored JSON (kit chapters come from its sidecar), not
+Markdown rendering or browser-supplied content. Dependent checks read only the
+approved-current framework through the existing store seam; failed reads remain
+errors, while confirmed absence produces explained `n/a` findings. A missing or
+empty applicable goal/word-limit/FAQ structure does not pass by an empty loop.
+Counts are recomputed, not trusted from agent sidecar counts. Avoid-list scanning
+uses escaped, Unicode-aware phrase boundaries on explicit prose fields, excluding
+definitions, SVG bytes, URLs, input records and source labels. No approved-current
+selection, immutable bytes, comment thread or redraft is mutated by this read.
 
 ### Family exports
 
