@@ -112,6 +112,7 @@ export class MktgDocumentStoreService {
   private readonly artifactService = new MktgArtifactService();
   private readonly signOffSettings = new MktgSignOffSettingsService();
   private readonly projectRoles = new MktgProjectRolesService();
+  private readonly revisionSubjects = new WeakMap<Request, Map<string, Map<string, string | null>>>();
   private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
 
   /** A per-generation context only; never change the visiting Request or share an override across runs. */
@@ -509,7 +510,6 @@ export class MktgDocumentStoreService {
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
     let record = snapshot.record;
-    let current = await this.currentSelection(req, record);
     if (!view.revision.latest) {
       const committed = await this.writeCurrent(
         req,
@@ -522,10 +522,9 @@ export class MktgDocumentStoreService {
       );
       if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
       record = committed;
-      current = await this.currentSelection(req, committed);
     }
     const revisions = view.revisions.map((entry) => ({ ...entry, latest: entry.id === view.revision.id }));
-    const updated = await this.withApprovals(req, { project, type, documentId, revisions, current, approvedCurrent: null }, record);
+    const updated = await this.withApprovals(req, { project, type, documentId, revisions, current: null, approvedCurrent: null }, record);
     return { detail: updated, revision: { ...view.revision, latest: true } };
   }
 
@@ -568,7 +567,7 @@ export class MktgDocumentStoreService {
         type,
         documentId,
         revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === view.revision.id })),
-        current: await this.currentSelection(req, committed),
+        current: null,
         approvedCurrent: null,
       },
       committed
@@ -601,10 +600,10 @@ export class MktgDocumentStoreService {
     if (!view) return null;
     if (parseMktgLegacyRevisionId(revisionId)) throw ServiceValidationError.forField('revisionId', 'Sign-off requires a stored revision.');
     const signOff = this.signOffOf(snapshot.record?.signOff);
+    const approvals = this.approvalsOf(snapshot.record?.approvals);
     const at = new Date().toISOString();
     let annotation = signOff[revisionId];
     if ('roles' in action) {
-      const approvals = this.approvalsOf(snapshot.record?.approvals);
       if (Object.entries(signOff).some(([id, entry]) => entry.state === 'pending' && !Object.hasOwn(approvals, id))) {
         throw new ConflictError('This document already has a pending sign-off request.', 'MKTG_SIGN_OFF_PENDING');
       }
@@ -613,7 +612,8 @@ export class MktgDocumentStoreService {
       annotation = { state: 'pending', requestedAt: at, requestedBy: by, roles: { ed: action.roles.ed, tocChair: action.roles.tocChair }, decisions: {} };
     } else {
       if (action.role !== 'ed' && action.role !== 'tocChair') throw ServiceValidationError.forField('role', 'Unknown sign-off role');
-      if (!annotation || annotation.state !== 'pending') throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
+      if (!annotation || annotation.state !== 'pending' || Object.hasOwn(approvals, revisionId))
+        throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
       if (!by || annotation.roles[action.role] !== by) throw new AuthorizationError('Only the frozen approver may decide for this role');
       if (annotation.decisions[action.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
       if (action.decision !== 'approved' && action.decision !== 'changes-requested') throw ServiceValidationError.forField('decision', 'Unknown decision');
@@ -658,7 +658,7 @@ export class MktgDocumentStoreService {
       req,
       {
         ...view,
-        current: await this.currentSelection(req, committed),
+        current: null,
         revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
       },
       committed
@@ -860,18 +860,12 @@ export class MktgDocumentStoreService {
       eligibleCount++;
     });
     if (entries.length) {
-      const summaries: MktgRevisionSummary[] = [];
-      // Directory lookups share the metadata/body read bound, including serial project listings.
-      for (let offset = 0; offset < entries.length; offset += readConcurrency) {
-        summaries.push(
-          ...(await Promise.all(
-            entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
-              ...this.summary(entry, offset + index + 1),
-              author: await this.authors.resolveAuthor(req, entry.metadata?.['author-id']),
-            }))
-          ))
-        );
-      }
+      const subjects = this.revisionAuthorSubjects(req, project, type, documentId);
+      // Keep IDs request-private; defer all names to the final snapshot's shared attribution projection.
+      const summaries = entries.map((entry, index) => {
+        subjects.set(entry.id, entry.metadata?.['author-id'] ?? null);
+        return this.summary(entry, index + 1);
+      });
       const numberById = new Map(summaries.map((summary) => [summary.id, summary.number]));
       summaries.forEach((summary, index) => {
         summary.latest = summary.id === (snapshot.record?.revisionId ?? entries.at(-1)?.id);
@@ -884,7 +878,7 @@ export class MktgDocumentStoreService {
         type,
         documentId,
         revisions: summaries.reverse(),
-        current: await this.currentSelection(req, snapshot.record),
+        current: null,
         approvedCurrent: null,
       };
       return this.withApprovals(req, detail, snapshot.record, readConcurrency);
@@ -1039,6 +1033,34 @@ export class MktgDocumentStoreService {
     return result;
   }
 
+  /** Never attach opaque author IDs to DTOs; cloned transition summaries reuse this request/document scope. */
+  private revisionAuthorSubjects(req: Request, project: string, type: MktgDocumentType, documentId: string): Map<string, string | null> {
+    let documents = this.revisionSubjects.get(req);
+    if (!documents) {
+      documents = new Map();
+      this.revisionSubjects.set(req, documents);
+    }
+    const key = buildMktgDocumentPrefix(project, type.agentKey, documentId);
+    let subjects = documents.get(key);
+    if (!subjects) {
+      subjects = new Map();
+      documents.set(key, subjects);
+    }
+    return subjects;
+  }
+
+  /** The single gate for EVERY attribution alias, including ordinary fields holding a frozen chair subject. */
+  private async projectRecordAuthor(
+    req: Request,
+    subject: string | null | undefined,
+    chairSubjects: ReadonlySet<string>,
+    readChair: () => Promise<MktgProjectRole | null>
+  ): Promise<MktgRevisionAuthor | null> {
+    if (!subject) return null;
+    if (chairSubjects.has(subject)) return this.visibleChairAuthor(await readChair(), subject);
+    return this.authors.resolveAuthor(req, subject);
+  }
+
   /** Roster visibility and the frozen identity must both match; never fall back to directory names. */
   private visibleChairAuthor(chair: MktgProjectRole | null, subject: string | null): MktgRevisionAuthor | null {
     if (!subject) return null;
@@ -1046,18 +1068,17 @@ export class MktgDocumentStoreService {
   }
 
   private async resolveSignOffAttribution(
-    req: Request,
     attribution: MktgDocumentApprovalAnnotation['signOff'],
-    chair: MktgProjectRole | null
+    resolveAuthor: (subject: string | null | undefined) => Promise<MktgRevisionAuthor | null>
   ): Promise<MktgRevisionApproval['signOff']> {
     if (!attribution) return undefined;
     return {
-      ed: { at: attribution.ed.at, by: await this.authors.resolveAuthor(req, attribution.ed.by) },
-      tocChair: { at: attribution.tocChair.at, by: this.visibleChairAuthor(chair, attribution.tocChair.by) },
+      ed: { at: attribution.ed.at, by: await resolveAuthor(attribution.ed.by) },
+      tocChair: { at: attribution.tocChair.at, by: await resolveAuthor(attribution.tocChair.by) },
     };
   }
 
-  /** Resolve public approval metadata from the caller's one current snapshot, never another GET. */
+  /** One final-snapshot projection for every author alias; directory and roster lookups remain request-scoped. */
   private async withApprovals(
     req: Request,
     detail: MktgDocumentDetailResponse,
@@ -1066,8 +1087,20 @@ export class MktgDocumentStoreService {
   ): Promise<MktgDocumentDetailResponse> {
     const approvals = detail.type.kind === 'living' ? this.approvalsOf(record?.approvals) : {};
     const signOff = detail.type.kind === 'living' ? this.signOffOf(record?.signOff) : {};
-    const needsChair = Object.keys(signOff).length > 0 || Object.values(approvals).some((entry) => entry.signOff);
-    const chair = needsChair ? (await this.projectRoles.rolesOf(req, detail.project)).tocChair : null;
+    const chairSubjects = new Set<string>();
+    for (const entry of Object.values(record?.signOff ?? {})) {
+      if (entry.roles.tocChair) chairSubjects.add(entry.roles.tocChair);
+    }
+    for (const entry of Object.values(record?.approvals ?? {})) {
+      if (entry.signOff?.tocChair.by) chairSubjects.add(entry.signOff.tocChair.by);
+    }
+    let chair: Promise<MktgProjectRole | null> | undefined;
+    const readChair = () => {
+      if (!chair) chair = this.projectRoles.rolesOf(req, detail.project).then((roles) => roles.tocChair);
+      return chair;
+    };
+    const resolveAuthor = (subject: string | null | undefined) => this.projectRecordAuthor(req, subject, chairSubjects, readChair);
+    const subjects = this.revisionAuthorSubjects(req, detail.project, detail.type, detail.documentId);
     const revisions: MktgRevisionSummary[] = [];
     for (let offset = 0; offset < detail.revisions.length; offset += concurrency) {
       revisions.push(
@@ -1076,8 +1109,8 @@ export class MktgDocumentStoreService {
             const annotation = Object.hasOwn(approvals, revision.id) ? approvals[revision.id] : null;
             let approval: MktgRevisionApproval | null = null;
             if (annotation) {
-              const attribution = await this.resolveSignOffAttribution(req, annotation.signOff, chair);
-              approval = { approvedAt: annotation.approvedAt, approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy) };
+              const attribution = await this.resolveSignOffAttribution(annotation.signOff, resolveAuthor);
+              approval = { approvedAt: annotation.approvedAt, approvedBy: await resolveAuthor(annotation.approvedBy) };
               if (attribution) approval.signOff = attribution;
             }
             const request = Object.hasOwn(signOff, revision.id) ? signOff[revision.id] : null;
@@ -1085,23 +1118,28 @@ export class MktgDocumentStoreService {
               ? {
                   state: request.state,
                   requestedAt: request.requestedAt,
-                  requestedBy: await this.authors.resolveAuthor(req, request.requestedBy),
+                  requestedBy: await resolveAuthor(request.requestedBy),
                   roles: {
-                    ed: { name: (await this.authors.resolveAuthor(req, request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
+                    ed: { name: (await resolveAuthor(request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
                     tocChair: {
-                      name: this.visibleChairAuthor(chair, request.roles.tocChair)?.name ?? null,
+                      name: (await resolveAuthor(request.roles.tocChair))?.name ?? null,
                       decision: request.decisions.tocChair?.decision,
                     },
                   },
                 }
               : null;
-            return { ...revision, approval, ...(request ? { signOff: names } : {}) };
+            return { ...revision, author: await resolveAuthor(subjects.get(revision.id)), approval, ...(request ? { signOff: names } : {}) };
           })
         ))
       );
     }
     const current = revisions.find((revision) => revision.latest && revision.approval);
-    return { ...detail, revisions, approvedCurrent: current ? { revisionId: current.id, number: current.number } : null };
+    return {
+      ...detail,
+      current: await this.currentSelection(record, resolveAuthor),
+      revisions,
+      approvedCurrent: current ? { revisionId: current.id, number: current.number } : null,
+    };
   }
 
   /** Publish the full manifest via CAS, optionally preserving the caller's observed selection and attribution. */
@@ -1150,9 +1188,12 @@ export class MktgDocumentStoreService {
   }
 
   /** Resolve selection attribution without leaking the stored subject or revision manifest. */
-  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
+  private async currentSelection(
+    record: MktgDocumentCurrentRecord | null,
+    resolveAuthor: (subject: string | null | undefined) => Promise<MktgRevisionAuthor | null>
+  ): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.authors.resolveAuthor(req, record.changedBy) };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await resolveAuthor(record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
