@@ -86,10 +86,10 @@ export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
- * LF teams holding plain `auditor` on every `b2b_org` — `lf-staff` only. ADR-0042 fixes this set; it
- * mirrors member-service `B2BOrgAuditorTeamNames` and the reconciler's `orgAuditorTeams`, which write
- * those grants. Org Lens search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which
- * includes this list.
+ * LF teams holding plain `auditor` on every `b2b_org`: `lf-staff` plus `global-org-auditors`, a
+ * hand-picked read-only team whose membership is managed in sso-tools. This set mirrors the reconciler's
+ * `orgAuditorTeams`, which writes those grants; member-service also writes the `lf-staff` one. Org Lens
+ * search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which includes this list.
  * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
  * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
  * deleted by lfx-self-serve#2814 Release 2. `lf-staff`'s own org-wide grant is unaffected.
@@ -98,7 +98,7 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
  * Never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly,
  * so an explicitly-granted contractor still reads that org — this list only drives the affordance.
  */
-export const LF_TEAM_IDS = ['lf-staff'] as const;
+export const LF_TEAM_IDS = ['lf-staff', 'global-org-auditors'] as const;
 
 /**
  * #3077 — teams that read every organization through the `global_org_admin` relation (`writer`, hence
@@ -110,7 +110,7 @@ export const LF_TEAM_IDS = ['lf-staff'] as const;
  *
  * Both lists stay plain literals so the browser bundle drops them: Org Lens search combines them
  * server-side only (`ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`). A new company-wide team
- * joins `LF_TEAM_IDS` (plain `auditor`, e.g. #2842) or this list.
+ * joins `LF_TEAM_IDS` (plain `auditor`) or this list.
  */
 export const ORG_ADMIN_TEAM_IDS = ['global_org_admin'] as const;
 
