@@ -31,7 +31,6 @@ const row: MktgRequest = {
   state: 'open',
   stateChangedAt: '2026-10-23T12:00:00.000Z',
   note: null,
-  resultRevisionId: null,
   isRequester: false,
 };
 const request = (value?: unknown, query: unknown = body.project, id: unknown = token): Request =>
@@ -121,6 +120,15 @@ describe('MktgRequestsController', () => {
     await controller.changeState(request(invalid), response(), next);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     expect(fake.project).not.toHaveBeenCalled();
+  });
+
+  it('accepts an explicit withdrawal without a caller-owned state or note', async () => {
+    const withdraw = { project: body.project, clientRequestId: token, withdraw: true };
+    const req = request(withdraw);
+    const next = vi.fn();
+    await controller.changeState(req, response(), next);
+    expect(MktgRequestsService.prototype.changeState).toHaveBeenCalledWith(req, 'server-project', token, withdraw);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it.each(['../unsafe', '', ['id']])('rejects unsafe request id %j', async (id) => {

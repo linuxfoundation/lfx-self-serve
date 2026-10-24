@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { MktgCreateRequest, MktgRequestsRecord, MktgRequestState } from '@lfx-one/shared/interfaces';
-import { MKTG_REQUESTS_STORE_MAX_BYTES } from '@lfx-one/shared/constants/mktg-requests.constants';
+import { MKTG_REQUESTS_STORE_MAX_BYTES, MKTG_REQUEST_WITHDRAWN_NOTE } from '@lfx-one/shared/constants';
 
 const fake = vi.hoisted(() => ({
   body: null as string | null,
@@ -35,10 +35,19 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: () => fake.subject, is
 
 import { MktgRequestsService } from './mktg-requests.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
-import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError } from '../errors';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ConflictError,
+  MicroserviceError,
+  PreconditionFailedError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+} from '../errors';
 
 const project = 'synthetic-project';
 const req = {} as Request;
+const result = { agentKey: 'faq', documentId: 'living', revisionId: `000002-${'b'.repeat(64)}` };
 const createBody = (overrides: Partial<MktgCreateRequest> = {}): MktgCreateRequest => ({
   project,
   kind: 'asset',
@@ -111,6 +120,23 @@ describe('MktgRequestsService', () => {
     expect(JSON.stringify(fake.debug.mock.calls)).not.toContain(body.text);
     fake.subject = 'oidc|another-writer';
     expect((await service.list(req, project)).requests[0]?.isRequester).toBe(false);
+  });
+
+  it('lists and mutates historical targets after catalog retirement without blocking new requests', async () => {
+    const created = await service.create(req, project, createBody());
+    const stored = record();
+    const target = { familyId: 'retired-family', assetId: 'retired-asset', agentKey: 'retired-agent', documentId: 'living' };
+    stored.requests = stored.requests.map((row) => ({ ...row, kind: 'change', target }));
+    save(stored);
+    const listing = await service.list(req, project);
+    expect(listing.requests[0]?.target).toEqual(target);
+    expect(listing.openCount).toBe(1);
+    const historicalResult = { ...result, agentKey: target.agentKey };
+    expect(
+      await service.changeState(req, project, created.id, { project, state: 'done', result: historicalResult, clientRequestId: randomUUID() })
+    ).toMatchObject({ result: historicalResult });
+    await service.create(req, project, createBody());
+    expect(record().requests).toHaveLength(2);
   });
 
   it('deduplicates create before the cap and rejects changed content or caller', async () => {
@@ -241,14 +267,52 @@ describe('MktgRequestsService', () => {
 
   it('checks withdrawal ownership and open state on the server', async () => {
     const row = await service.create(req, project, createBody());
-    const withdraw = { project, state: 'declined' as const, note: 'withdrawn', clientRequestId: randomUUID() };
+    const withdraw = { project, withdraw: true as const, clientRequestId: randomUUID() };
     fake.subject = 'oidc|other';
     await expect(service.changeState(req, project, row.id, withdraw)).rejects.toBeInstanceOf(AuthorizationError);
     fake.subject = 'oidc|synthetic-writer';
-    await expect(service.changeState(req, project, row.id, { ...withdraw, state: 'done' })).rejects.toBeInstanceOf(ConflictError);
-    expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined', note: 'withdrawn' });
+    expect(() => service.readState({ ...withdraw, state: 'done' })).toThrow(ServiceValidationError);
+    expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined', note: MKTG_REQUEST_WITHDRAWN_NOTE });
+    expect(record().requests[0]?.stateChanges[0]).toMatchObject({ withdraw: true, note: MKTG_REQUEST_WITHDRAWN_NOTE });
     expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined' });
+    await expect(
+      service.changeState(req, project, row.id, { project, state: 'declined', note: MKTG_REQUEST_WITHDRAWN_NOTE, clientRequestId: withdraw.clientRequestId })
+    ).rejects.toBeInstanceOf(ConflictError);
     await expect(service.changeState(req, project, row.id, { ...withdraw, clientRequestId: randomUUID() })).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it.each(['withdrawn', 'Withdrawn', 'withdrawn.'])('allows another writer to decline with ordinary note %s', async (note) => {
+    const row = await service.create(req, project, createBody());
+    fake.subject = 'oidc|another-writer';
+    expect(await service.changeState(req, project, row.id, { project, state: 'declined', note, clientRequestId: randomUUID() })).toMatchObject({
+      note,
+      state: 'declined',
+    });
+    expect(record().requests[0]?.stateChanges[0]?.withdraw).toBe(false);
+  });
+  it('keeps a complete asset completion reference in storage, receipt, public response and replay', async () => {
+    const row = await service.create(req, project, createBody());
+    const done = { project, state: 'done' as const, result, clientRequestId: randomUUID() };
+    expect(await service.changeState(req, project, row.id, done)).toMatchObject({ result });
+    expect(await service.changeState(req, project, row.id, done)).toMatchObject({ result });
+    expect(record().requests[0]).toMatchObject({ result, stateChanges: [{ result, state: 'done' }] });
+  });
+  it('rejects a completion reference to another document on a change request', async () => {
+    const row = await service.create(
+      req,
+      project,
+      createBody({ kind: 'change', target: { familyId: 'positioning-brand', agentKey: 'faq', documentId: 'living' } })
+    );
+    fake.put.mockClear();
+    for (const wrong of [
+      { ...result, agentKey: 'brand-kit' },
+      { ...result, documentId: `run-${'c'.repeat(24)}` },
+    ])
+      await expect(service.changeState(req, project, row.id, { project, state: 'done', result: wrong, clientRequestId: randomUUID() })).rejects.toBeInstanceOf(
+        ServiceValidationError
+      );
+    expect(fake.put).not.toHaveBeenCalled();
+    expect(await service.changeState(req, project, row.id, { project, state: 'done', result, clientRequestId: randomUUID() })).toMatchObject({ result });
   });
 
   it('retains state receipts across later changes, conflicts on reuse, and never leaks them', async () => {

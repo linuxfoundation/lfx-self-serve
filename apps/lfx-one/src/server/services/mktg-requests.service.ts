@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants/mktg-artifact.constants';
-import { MKTG_DOCUMENT_WRITE_ATTEMPTS, MKTG_DOCUMENT_READ_CONCURRENCY } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import {
+  MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_WRITE_ATTEMPTS,
+  MKTG_DOCUMENT_READ_CONCURRENCY,
+  MKTG_REQUEST_WITHDRAWN_NOTE,
   MKTG_REQUESTS_SCHEMA,
   MKTG_REQUESTS_MAX,
   MKTG_REQUEST_OPEN_STATES,
   MKTG_REQUESTS_STORE_MAX_BYTES,
   MKTG_REQUEST_MAX_STATE_CHANGES,
-} from '@lfx-one/shared/constants/mktg-requests.constants';
+} from '@lfx-one/shared/constants';
 import { mktgCreateRequestSchema, mktgRequestStateSchema, mktgRequestsRecordSchema } from '@lfx-one/shared/server';
 import type {
   MktgCreateRequest,
@@ -20,6 +22,7 @@ import type {
   MktgRequestsResponse,
   MktgRequestsSnapshot,
   MktgRequestsMutation,
+  MktgRequestStateChange,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -38,7 +41,7 @@ export class MktgRequestsService {
   public readCreate(value: unknown): MktgCreateRequest {
     const parsed = mktgCreateRequestSchema.safeParse(value);
     if (!parsed.success) throw ServiceValidationError.forField(String(parsed.error.issues[0]?.path[0] ?? 'body'), 'Invalid request field.');
-    return parsed.data as MktgCreateRequest;
+    return parsed.data;
   }
 
   public readState(value: unknown): MktgChangeRequestStateRequest {
@@ -74,7 +77,6 @@ export class MktgRequestsService {
       stateChangedAt: createdAt,
       stateChangedBy: requestedBy,
       note: null,
-      resultRevisionId: null,
       stateChanges: [],
     };
     const stored = await this.change(req, project, (record) => {
@@ -98,11 +100,13 @@ export class MktgRequestsService {
   public async changeState(req: Request, project: string, id: string, value: MktgChangeRequestStateRequest): Promise<MktgRequest> {
     const body = this.readState(value);
     const changedBy = this.authors.captureAuthorId(req);
-    const change = {
+    const state = body.withdraw === true ? 'declined' : body.state;
+    const change: MktgRequestStateChange = {
       clientRequestId: body.clientRequestId,
-      state: body.state,
-      note: body.note ?? null,
-      resultRevisionId: body.resultRevisionId ?? null,
+      state,
+      note: body.withdraw === true ? MKTG_REQUEST_WITHDRAWN_NOTE : (body.note ?? null),
+      ...(body.result ? { result: body.result } : {}),
+      withdraw: body.withdraw === true,
       changedBy,
     };
     const stored = await this.change(req, project, (record) => {
@@ -113,21 +117,22 @@ export class MktgRequestsService {
         if (!isDeepStrictEqual(receipt, change)) throw this.conflict('The state token was already used differently.');
         return { record: null, result: row };
       }
-      if (body.note === 'withdrawn') {
+      if (body.withdraw === true) {
         if (!changedBy || row.requestedBy !== changedBy) throw new AuthorizationError('Only the requester can withdraw their own request.');
-        if (row.state !== 'open' || body.state !== 'declined') throw this.conflict('Only an open request can be withdrawn into declined.');
+        if (row.state !== 'open') throw this.conflict('Only an open request can be withdrawn.');
       }
+      if (change.result && row.kind === 'change' && (change.result.agentKey !== row.target.agentKey || change.result.documentId !== row.target.documentId))
+        throw ServiceValidationError.forField('result', 'A change request result must refer to the requested document.');
       const allowed =
-        (row.state === 'open' && ['in-progress', 'done', 'declined'].includes(body.state)) ||
-        (row.state === 'in-progress' && ['done', 'declined'].includes(body.state));
+        (row.state === 'open' && ['in-progress', 'done', 'declined'].includes(state)) || (row.state === 'in-progress' && ['done', 'declined'].includes(state));
       if (!allowed) throw this.conflict('This request cannot move to that state.');
       const updated: MktgStoredRequest = {
         ...row,
-        state: body.state,
+        state,
         stateChangedAt: new Date().toISOString(),
         stateChangedBy: changedBy,
         note: change.note,
-        resultRevisionId: change.resultRevisionId,
+        ...(change.result ? { result: change.result } : {}),
         stateChanges: [...row.stateChanges, change],
       };
       return { record: { ...record, requests: record.requests.map((entry) => (entry.id === id ? updated : entry)) }, result: updated };
@@ -161,7 +166,7 @@ export class MktgRequestsService {
       )
         throw this.corrupt();
       const parsed = mktgRequestsRecordSchema.safeParse(value);
-      if (parsed.success && parsed.data.project === project) return { record: value as MktgRequestsRecord, etag: object.etag };
+      if (parsed.success && parsed.data.project === project) return { record: parsed.data, etag: object.etag };
     } catch {
       /* Never repair malformed JSON by overwriting it. */
     }
@@ -195,7 +200,7 @@ export class MktgRequestsService {
       state: row.state,
       stateChangedAt: row.stateChangedAt,
       note: row.note,
-      resultRevisionId: row.resultRevisionId,
+      ...(row.result ? { result: row.result } : {}),
       requestedBy,
       stateChangedBy,
       isRequester: !!row.requestedBy && row.requestedBy === getEffectiveSub(req),

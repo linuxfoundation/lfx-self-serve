@@ -19,5 +19,11 @@ Subjects are opaque effective-user keys; committee IDs remain empty pending the 
 roles resolver. Public responses whitelist fields, replace subjects with directory-resolved
 names and compute `isRequester` for the caller. Author lookups use the same request-memoized
 `MktgDocumentAuthorService` resolver as document revisions/comments, bounded to four in-flight directory calls per response.
-Request text is not logged. The provisional withdrawal convention is an own open request
-moving to declined with note `withdrawn`; ownership is enforced again on the server.
+Request text is not logged. Withdrawal is an explicit `withdraw: true` action on one's
+own open request; the server sets declined and `MKTG_REQUEST_WITHDRAWN_NOTE`. Ordinary
+decline notes have no reserved meaning. The receipt binds the action as well as payload.
+
+Only create targets are validated against the live catalog. Stored targets and result
+references are structural so catalog retirement cannot disable existing history.
+A completion result is `{ agentKey, documentId, revisionId }`, allowed only on done;
+for change requests it must name the original target document.
