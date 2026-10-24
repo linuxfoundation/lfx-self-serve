@@ -9,30 +9,50 @@ export type MktgRequestState = (typeof MKTG_REQUEST_STATES)[number];
 export interface MktgRequestTarget {
   familyId: string;
   assetId?: string;
-  agentKey?: MktgDocumentAgentKey;
+  /** Historical identifiers remain readable after catalog changes. */
+  agentKey?: string;
   documentId?: string;
   revisionId?: string;
+}
+export interface MktgCreateRequestTarget extends MktgRequestTarget {
+  agentKey?: MktgDocumentAgentKey;
+}
+export interface MktgRequestResult {
+  agentKey: string;
+  documentId: string;
+  revisionId: string;
 }
 export interface MktgCreateRequest {
   project: string;
   kind: MktgRequestKind;
-  target: MktgRequestTarget;
+  target: MktgCreateRequestTarget;
   text: string;
   clientRequestId: string;
 }
-export interface MktgChangeRequestStateRequest {
+export interface MktgUpdateRequestStateRequest {
   project: string;
   state: MktgRequestState;
   note?: string;
-  resultRevisionId?: string;
+  result?: MktgRequestResult;
   clientRequestId: string;
+  withdraw?: never;
 }
+export interface MktgWithdrawRequestStateRequest {
+  project: string;
+  clientRequestId: string;
+  withdraw: true;
+  state?: 'declined';
+  note?: never;
+  result?: never;
+}
+export type MktgChangeRequestStateRequest = MktgUpdateRequestStateRequest | MktgWithdrawRequestStateRequest;
 /** At most two transitions per request; receipts make retries safe even after a later transition. */
 export interface MktgRequestStateChange {
   clientRequestId: string;
   state: MktgRequestState;
   note: string | null;
-  resultRevisionId: string | null;
+  result?: MktgRequestResult;
+  withdraw: boolean;
   changedBy: string | null;
 }
 export interface MktgStoredRequest {
@@ -48,7 +68,7 @@ export interface MktgStoredRequest {
   stateChangedAt: string;
   stateChangedBy: string | null;
   note: string | null;
-  resultRevisionId: string | null;
+  result?: MktgRequestResult;
   stateChanges: MktgRequestStateChange[];
 }
 export interface MktgRequestsRecord {
