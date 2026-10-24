@@ -71,6 +71,15 @@ describe('Marketing OS approval route', () => {
     route?.stack[0].handle(req, res, next);
     expect(comments.read).toHaveBeenCalledWith(req, res, next);
   });
+
+  it.each(['/requests', '/requests/:id/state'])('blocks request mutation %s before its controller', (path) => {
+    const layer = router.stack.find((entry) => entry.route?.path === path && entry.route?.stack[0]?.method === 'post');
+    expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    layer?.route?.stack[0].handle({ path, method: 'POST', impersonationActive: true } as Request, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
+
   it.each(['start', 'advance', 'result'])('guards rebuild %s before invoking its controller', (method) => {
     const layer = router.stack.find((entry) => entry.route?.path === `/rebuild/${method}`);
     expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
