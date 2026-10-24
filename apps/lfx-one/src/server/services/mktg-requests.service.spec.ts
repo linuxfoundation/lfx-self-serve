@@ -125,18 +125,22 @@ describe('MktgRequestsService', () => {
   it('lists and mutates historical targets after catalog retirement without blocking new requests', async () => {
     const created = await service.create(req, project, createBody());
     const stored = record();
-    const target = { familyId: 'retired-family', assetId: 'retired-asset', agentKey: 'retired-agent', documentId: 'living' };
-    stored.requests = stored.requests.map((row) => ({ ...row, kind: 'change', target }));
+    const target = { familyId: 'retired-family', assetId: 'retired-asset' };
+    stored.requests = stored.requests.flatMap((row) => [
+      { ...row, target },
+      { ...row, id: randomUUID(), clientRequestId: randomUUID(), target: { ...target, agentKey: 'retired-agent', documentId: 'living' } },
+    ]);
     save(stored);
     const listing = await service.list(req, project);
-    expect(listing.requests[0]?.target).toEqual(target);
-    expect(listing.openCount).toBe(1);
-    const historicalResult = { ...result, agentKey: target.agentKey };
+    expect(listing.requests.find((row) => row.id === created.id)?.target).toEqual(target);
+    expect(listing.requests.some((row) => row.target.agentKey === 'retired-agent')).toBe(true);
+    expect(listing.openCount).toBe(2);
+    const historicalResult = result;
     expect(
       await service.changeState(req, project, created.id, { project, state: 'done', result: historicalResult, clientRequestId: randomUUID() })
     ).toMatchObject({ result: historicalResult });
     await service.create(req, project, createBody());
-    expect(record().requests).toHaveLength(2);
+    expect(record().requests).toHaveLength(3);
   });
 
   it('deduplicates create before the cap and rejects changed content or caller', async () => {
@@ -272,7 +276,7 @@ describe('MktgRequestsService', () => {
     await expect(service.changeState(req, project, row.id, withdraw)).rejects.toBeInstanceOf(AuthorizationError);
     fake.subject = 'oidc|synthetic-writer';
     expect(() => service.readState({ ...withdraw, state: 'done' })).toThrow(ServiceValidationError);
-    expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined', note: MKTG_REQUEST_WITHDRAWN_NOTE });
+    expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined', note: MKTG_REQUEST_WITHDRAWN_NOTE, withdrawn: true });
     expect(record().requests[0]?.stateChanges[0]).toMatchObject({ withdraw: true, note: MKTG_REQUEST_WITHDRAWN_NOTE });
     expect(await service.changeState(req, project, row.id, withdraw)).toMatchObject({ state: 'declined' });
     await expect(
@@ -287,9 +291,19 @@ describe('MktgRequestsService', () => {
     expect(await service.changeState(req, project, row.id, { project, state: 'declined', note, clientRequestId: randomUUID() })).toMatchObject({
       note,
       state: 'declined',
+      withdrawn: false,
     });
     expect(record().requests[0]?.stateChanges[0]?.withdraw).toBe(false);
   });
+  it.each(['retired-agent', 'brand-kit'])('rejects result agent %s for an asset pinned to faq', async (agentKey) => {
+    const row = await service.create(req, project, createBody({ target: { familyId: 'positioning-brand', agentKey: 'faq' } }));
+    fake.put.mockClear();
+    await expect(
+      service.changeState(req, project, row.id, { project, state: 'done', result: { ...result, agentKey }, clientRequestId: randomUUID() })
+    ).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(fake.put).not.toHaveBeenCalled();
+  });
+
   it('keeps a complete asset completion reference in storage, receipt, public response and replay', async () => {
     const row = await service.create(req, project, createBody());
     const done = { project, state: 'done' as const, result, clientRequestId: randomUUID() };

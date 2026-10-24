@@ -17,13 +17,14 @@ different payload conflicts. Done and declined are terminal.
 
 Subjects are opaque effective-user keys; committee IDs remain empty pending the shared
 roles resolver. Public responses whitelist fields, replace subjects with directory-resolved
-names and compute `isRequester` for the caller. Author lookups use the same request-memoized
+names and compute `isRequester` for the caller and `withdrawn` from the latest action. Author lookups use the same request-memoized
 `MktgDocumentAuthorService` resolver as document revisions/comments, bounded to four in-flight directory calls per response.
 Request text is not logged. Withdrawal is an explicit `withdraw: true` action on one's
 own open request; the server sets declined and `MKTG_REQUEST_WITHDRAWN_NOTE`. Ordinary
 decline notes have no reserved meaning. The receipt binds the action as well as payload.
 
-Only create targets are validated against the live catalog. Stored targets and result
-references are structural so catalog retirement cannot disable existing history.
+Create targets and new result agents are checked against the live catalog. Stored
+targets and result references remain structural so catalog retirement cannot disable history.
 A completion result is `{ agentKey, documentId, revisionId }`, allowed only on done;
-for change requests it must name the original target document.
+for change requests it must name the original target document. An asset target with an
+agent key requires the same result agent.

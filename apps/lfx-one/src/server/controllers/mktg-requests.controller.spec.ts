@@ -32,6 +32,7 @@ const row: MktgRequest = {
   stateChangedAt: '2026-10-23T12:00:00.000Z',
   note: null,
   isRequester: false,
+  withdrawn: false,
 };
 const request = (value?: unknown, query: unknown = body.project, id: unknown = token): Request =>
   ({ path: '/requests', body: value, query: { project: query }, params: { id } }) as unknown as Request;

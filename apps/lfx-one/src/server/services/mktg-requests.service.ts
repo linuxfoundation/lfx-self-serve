@@ -123,6 +123,8 @@ export class MktgRequestsService {
       }
       if (change.result && row.kind === 'change' && (change.result.agentKey !== row.target.agentKey || change.result.documentId !== row.target.documentId))
         throw ServiceValidationError.forField('result', 'A change request result must refer to the requested document.');
+      if (change.result && row.kind === 'asset' && row.target.agentKey && change.result.agentKey !== row.target.agentKey)
+        throw ServiceValidationError.forField('result', 'An asset request result must use the requested agent.');
       const allowed =
         (row.state === 'open' && ['in-progress', 'done', 'declined'].includes(state)) || (row.state === 'in-progress' && ['done', 'declined'].includes(state));
       if (!allowed) throw this.conflict('This request cannot move to that state.');
@@ -204,6 +206,7 @@ export class MktgRequestsService {
       requestedBy,
       stateChangedBy,
       isRequester: !!row.requestedBy && row.requestedBy === getEffectiveSub(req),
+      withdrawn: row.stateChanges.at(-1)?.withdraw === true,
     };
   }
 
