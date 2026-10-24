@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@playwright/test';
-import { MKTG_AGENTS } from '../../../packages/shared/src/constants/mktg-os-agents.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 
@@ -73,19 +72,17 @@ test.describe('Marketing OS absolute breadcrumbs', () => {
       });
     }
 
-    test(`${mount}: generic run shows its catalog name and fixed family links`, async ({ page }) => {
+    test(`${mount}: generic run shows its asset label and fixed family links`, async ({ page }) => {
       await setupKit(page);
       await openKit(page, '/foundation-setup', mount);
       await expect(page.getByTestId('mktg-agent-run-page')).toBeVisible();
-      const agent = MKTG_AGENTS.find((entry) => entry.id === 'foundation-setup');
-      expect(agent).toBeDefined();
-      await expect(page.getByTestId('mktg-breadcrumb-current')).toHaveText(agent?.name ?? '');
+      await expect(page.getByTestId('mktg-breadcrumb-current')).toHaveText('Messaging framework');
       await expect(page.getByTestId('mktg-breadcrumb-link-0')).toHaveAttribute('href', root + project);
       await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', family);
       await page.getByTestId('mktg-breadcrumb-link-1').click();
       await expect(page).toHaveURL(new URL(family, page.url()).href);
       await page.goBack();
-      await expect(page.getByTestId('mktg-breadcrumb-current')).toHaveText(agent?.name ?? '');
+      await expect(page.getByTestId('mktg-breadcrumb-current')).toHaveText('Messaging framework');
     });
   }
 });

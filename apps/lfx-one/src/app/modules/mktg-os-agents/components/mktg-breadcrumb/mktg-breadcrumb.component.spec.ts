@@ -43,6 +43,11 @@ describe('Marketing kit breadcrumb', () => {
       expect(root.querySelectorAll('[aria-current="page"]')).toHaveLength(page.kind === 'kit' ? 0 : 1);
       expect(root.querySelectorAll('[data-testid="mktg-breadcrumb-current"]')).toHaveLength(page.kind === 'kit' ? 0 : 1);
       if (page.kind === 'kit') expect(root.querySelector('nav')).toBeNull();
+      if (page.kind === 'run') {
+        const living = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === page.agentId && type.kind === 'living');
+        const agent = MKTG_AGENTS.find((entry) => entry.id === page.agentId);
+        expect(root.querySelector('[data-testid="mktg-breadcrumb-current"]')?.textContent).toBe(living?.itemLabel ?? agent?.name ?? 'Agent');
+      }
     });
   }
 

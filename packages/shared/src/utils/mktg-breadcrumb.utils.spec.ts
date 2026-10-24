@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
+import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import { MKTG_KIT_TABS } from '../constants/mktg-kit.constants';
 import type { MktgBreadcrumbPage } from '../interfaces/mktg-breadcrumb.interface';
 import { buildMktgBreadcrumbs } from './mktg-breadcrumb.utils';
@@ -68,10 +69,11 @@ describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadc
         'qtrly-plan': ['Plan, committee & measurement', 'plan-committee-measurement'],
       };
       const family = families[agent.id];
+      const living = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agent.id && type.kind === 'living');
       return {
         route: `/${agent.id}`,
         page: { kind: 'run' as const, agentId: agent.id },
-        labels: ['Synthetic kit', family?.[0] ?? 'Documents', agent.name],
+        labels: ['Synthetic kit', family?.[0] ?? 'Documents', living?.itemLabel ?? agent.name],
         parents: [[root], family ? [root, 'families', family[1]] : [root, 'documents']],
       };
     }),
@@ -84,9 +86,9 @@ describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadc
     if (crumbs.length) expect(crumbs.at(-1)?.route).toBeUndefined();
   });
   it('uses one neutral unresolved-project label and allows a run label override', () => {
-    expect(buildMktgBreadcrumbs({ kind: 'run', agentId: 'unknown', label: 'Run custom' }, root, '')).toEqual([
+    expect(buildMktgBreadcrumbs({ kind: 'run', agentId: 'foundation-setup', label: 'Run custom' }, root, '')).toEqual([
       { label: 'Marketing kit', route: [root] },
-      { label: 'Documents', route: [root, 'documents'] },
+      { label: 'Positioning & brand', route: [root, 'families', 'positioning-brand'] },
       { label: 'Run custom' },
     ]);
   });

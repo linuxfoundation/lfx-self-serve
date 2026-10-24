@@ -6,7 +6,7 @@ import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_KIT_TABS } from
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import type { MktgBreadcrumbItem, MktgBreadcrumbPage } from '../interfaces/mktg-breadcrumb.interface';
 
-/** Absolute, fixed parents: reaching an asset from Documents never changes its family. */
+/** Fixed, absolute parents. Living run pages are named after the asset they build, as drawn. */
 export function buildMktgBreadcrumbs(page: MktgBreadcrumbPage, kitRootPath: string, projectName: string): MktgBreadcrumbItem[] {
   if (page.kind === 'kit') return [];
   const root: MktgBreadcrumbItem = { label: projectName ? `${projectName} kit` : 'Marketing kit', route: [kitRootPath] };
@@ -24,7 +24,8 @@ export function buildMktgBreadcrumbs(page: MktgBreadcrumbPage, kitRootPath: stri
   );
   // ICP is a legacy Documents asset, but its navigation parent remains Positioning & brand.
   const parent = family ?? (key === 'icp' ? MKTG_KIT_FAMILIES.find((entry) => entry.id === MKTG_KIT_POSITIONING_FAMILY_ID) : undefined);
-  const defaultLabel = page.kind === 'asset' ? (type?.itemLabel ?? 'Document') : (MKTG_AGENTS.find((agent) => agent.id === key)?.name ?? 'Agent');
+  let defaultLabel = page.kind === 'asset' ? (type?.itemLabel ?? 'Document') : (MKTG_AGENTS.find((agent) => agent.id === key)?.name ?? 'Agent');
+  if (page.kind === 'run' && type?.kind === 'living' && type.catalogAgentId === page.agentId) defaultLabel = type.itemLabel;
   return [
     root,
     parent ? { label: parent.name, route: [kitRootPath, 'families', parent.id] } : { label: 'Documents', route: [kitRootPath, 'documents'] },
