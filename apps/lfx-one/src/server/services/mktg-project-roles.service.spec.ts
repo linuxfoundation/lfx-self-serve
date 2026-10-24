@@ -128,11 +128,11 @@ describe('MktgProjectRolesService', () => {
   });
 
   it.each([
-    [],
-    [{ ...committee, category: 'Technical Steering Committee' }],
-    [{ ...committee, project_uid: 'foreign-project' }],
-    [committee, { ...committee, uid: 'second-toc' }],
-  ])('refuses an absent or ambiguous exact-project TOC', async (committees) => {
+    { committees: [] },
+    { committees: [{ ...committee, category: 'Technical Steering Committee' }] },
+    { committees: [{ ...committee, project_uid: 'foreign-project' }] },
+    { committees: [committee, { ...committee, uid: 'second-toc' }] },
+  ])('refuses an absent or ambiguous exact-project TOC', async ({ committees }) => {
     mocks.committees.mockResolvedValue(committees);
     expect((await service.rolesOf(req, project)).tocChair).toBeNull();
     expect(mocks.members).not.toHaveBeenCalled();
@@ -144,12 +144,12 @@ describe('MktgProjectRolesService', () => {
   });
 
   it.each([
-    [{ ...chair, status: CommitteeMemberStatus.INACTIVE }],
-    [{ ...chair, role: { name: CommitteeMemberRole.NONE } }],
-    [{ ...chair, role: null }],
-    [{ ...chair, committee_uid: 'foreign-committee' }],
-    [chair, { ...chair, uid: 'second-chair' }],
-  ])('leaves an ineligible or multiple-chair roster unresolved', async (members) => {
+    { members: [{ ...chair, status: CommitteeMemberStatus.INACTIVE }] },
+    { members: [{ ...chair, role: { name: CommitteeMemberRole.NONE } }] },
+    { members: [{ ...chair, role: null }] },
+    { members: [{ ...chair, committee_uid: 'foreign-committee' }] },
+    { members: [chair, { ...chair, uid: 'second-chair' }] },
+  ])('leaves an ineligible or multiple-chair roster unresolved', async ({ members }) => {
     mocks.members.mockResolvedValue(members);
     expect((await service.rolesOf(req, project)).tocChair).toBeNull();
     expect(mocks.subject).not.toHaveBeenCalledWith(req, chair.email);
