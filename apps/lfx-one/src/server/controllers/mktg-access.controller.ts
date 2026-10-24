@@ -9,8 +9,8 @@ import { MktgAccessService } from '../services/mktg-access.service';
 import { ProjectService } from '../services/project.service';
 
 export class MktgAccessController {
-  private readonly access = new MktgAccessService();
   private readonly projects = new ProjectService();
+  private readonly access = new MktgAccessService(this.projects);
 
   public async read(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_access_read';

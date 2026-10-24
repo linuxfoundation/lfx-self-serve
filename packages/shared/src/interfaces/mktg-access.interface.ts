@@ -11,5 +11,7 @@ export interface MktgAccessPerson {
 export interface MktgAccessResponse {
   writers: MktgAccessPerson[];
   executiveDirector: MktgAccessPerson | null;
+  /** Reserved for the shared project-roles resolver; null until it is connected. */
+  tocChair: MktgAccessPerson | null;
   warnings: string[];
 }

@@ -3,15 +3,28 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
-const fake = vi.hoisted(() => ({ project: vi.fn(), access: vi.fn(), start: vi.fn(() => 0), success: vi.fn() }));
+const fake = vi.hoisted(() => ({
+  project: vi.fn(),
+  access: vi.fn(),
+  projectConstruct: vi.fn(),
+  accessConstruct: vi.fn(),
+  start: vi.fn(() => 0),
+  success: vi.fn(),
+}));
 vi.mock('../services/project.service', () => ({
   ProjectService: class {
     public getProjectById = fake.project;
+    public constructor() {
+      fake.projectConstruct(this);
+    }
   },
 }));
 vi.mock('../services/mktg-access.service', () => ({
   MktgAccessService: class {
     public read = fake.access;
+    public constructor(projects: unknown) {
+      fake.accessConstruct(projects);
+    }
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: fake.start, success: fake.success } }));
@@ -22,11 +35,16 @@ describe('MktgAccessController', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     fake.project.mockResolvedValue({ uid: 'server-project', writer: true });
-    fake.access.mockResolvedValue({ writers: [], executiveDirector: null, warnings: [] });
+    fake.access.mockResolvedValue({ writers: [], executiveDirector: null, tocChair: null, warnings: [] });
   });
   const req = (project: unknown): Request => ({ query: { project }, path: '/access' }) as unknown as Request;
   const res = (): Response => ({ json: vi.fn() }) as unknown as Response;
 
+  it('shares its sole ProjectService with the Access service', () => {
+    new MktgAccessController();
+    expect(fake.projectConstruct).toHaveBeenCalledOnce();
+    expect(fake.accessConstruct).toHaveBeenCalledExactlyOnceWith(fake.projectConstruct.mock.calls[0]?.[0]);
+  });
   it('gates with access annotation and reads the SERVER-resolved project only', async () => {
     const request = req('client-project');
     const response = res();
@@ -34,7 +52,7 @@ describe('MktgAccessController', () => {
     await new MktgAccessController().read(request, response, next);
     expect(fake.project).toHaveBeenCalledWith(request, 'client-project', true);
     expect(fake.access).toHaveBeenCalledWith(request, 'server-project');
-    expect(response.json).toHaveBeenCalledWith({ writers: [], executiveDirector: null, warnings: [] });
+    expect(response.json).toHaveBeenCalledWith({ writers: [], executiveDirector: null, tocChair: null, warnings: [] });
     expect(next).not.toHaveBeenCalled();
     expect(fake.success).toHaveBeenCalledTimes(1);
   });

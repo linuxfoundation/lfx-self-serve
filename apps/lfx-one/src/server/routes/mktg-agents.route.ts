@@ -7,6 +7,7 @@ import express, { NextFunction, raw, Request, RequestHandler, Response, Router }
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
+import type { MktgAccessController } from '../controllers/mktg-access.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import type { MktgRequestsController } from '../controllers/mktg-requests.controller';
@@ -234,8 +235,11 @@ router.post('/requests', blockDuringImpersonation, requestsRoute('create'));
 router.post('/requests/:id/state', blockDuringImpersonation, requestsRoute('changeState'));
 
 // Access is writer-gated by its controller; keep settings dependencies out of unrelated route startup.
+let mktgAccessController: MktgAccessController | undefined;
 router.get('/access', (req, res, next): void => {
-  void import('../controllers/mktg-access.controller').then(({ MktgAccessController }) => new MktgAccessController().read(req, res, next)).catch(next);
+  void import('../controllers/mktg-access.controller')
+    .then(({ MktgAccessController }) => (mktgAccessController ??= new MktgAccessController()).read(req, res, next))
+    .catch(next);
 });
 
 export default router;
