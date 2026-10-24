@@ -3,6 +3,7 @@
 
 // Server-only entry point: schema construction must never enter the browser utils barrel.
 export * from './member-360-schema.utils';
+export * from './mktg-requests.schema';
 export * from './member-360.utils';
 export * from './member-360-redaction.utils';
 export * from './member-360-terminal.utils';
