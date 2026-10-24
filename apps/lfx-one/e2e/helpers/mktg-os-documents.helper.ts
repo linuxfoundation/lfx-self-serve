@@ -9,7 +9,14 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentRunProgress, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import type {
+  MktgDocumentDetailResponse,
+  MktgDocumentType,
+  MktgDocumentsResponse,
+  MktgDocumentRunProgress,
+  MktgRevisionSummary,
+  Project,
+} from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
@@ -99,6 +106,7 @@ export async function setupDocuments(
     revisionAuthorName?: string;
     runs?: MktgDocumentRunProgress[];
     progressUnavailable?: boolean;
+    documentType?: MktgDocumentType;
   } = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
@@ -135,7 +143,8 @@ export async function setupDocuments(
       lens,
     });
   });
-  let detail = { ...documentFixture(options.revisionCount, options.currentRevisionNumber), runs: options.runs ?? [] };
+  const fixtureType = options.documentType ?? DOCUMENT_TYPE;
+  let detail = { ...documentFixture(options.revisionCount, options.currentRevisionNumber), type: fixtureType, runs: options.runs ?? [] };
   if (options.revisionAuthorName !== undefined) {
     const name = options.revisionAuthorName;
     detail = {
@@ -188,7 +197,7 @@ export async function setupDocuments(
         groups: MKTG_DOCUMENT_TYPES.map((type) => ({
           type,
           documents:
-            !options.empty && type.agentKey === DOCUMENT_TYPE.agentKey
+            !options.empty && type.agentKey === fixtureType.agentKey
               ? [
                   {
                     agentKey: type.agentKey,

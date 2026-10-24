@@ -10,6 +10,8 @@ import {
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
   MKTG_RUN_QUESTIONS_ID_REGEX,
+  MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_DOCUMENT_COMMENT_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -17,6 +19,8 @@ import {
   MktgPendingGeneration,
   MktgPreparedGeneration,
   MktgStoredPendingGeneration,
+  MktgPendingRedraftIntent,
+  MktgDocumentCommentScope,
   MktgRunSessionResponse,
 } from '@lfx-one/shared/interfaces';
 import { UserService } from './user.service';
@@ -31,6 +35,7 @@ export class MktgRunAttemptService {
   private readonly inputMemory = new Map<string, MktgPendingGeneration>();
   private readonly prepared = new Map<string, MktgPreparedGeneration>();
   private readonly freshDrafts = new WeakMap<MktgPendingGeneration, string>();
+  private readonly redrafts = new Map<string, MktgPendingRedraftIntent>();
 
   public subject(): string {
     return this.user.user()?.sub ?? '';
@@ -119,6 +124,94 @@ export class MktgRunAttemptService {
     const prepared = this.prepared.get(token);
     if (prepared) this.freshDrafts.delete(prepared.pending);
     this.prepared.delete(token);
+  }
+
+  /** Persist the exact ID-only nonce before POST. Restoring it NEVER grants a new session/automatic send. */
+  public saveRedraft(value: MktgPendingRedraftIntent, subject = this.subject()): void {
+    if (!isPlatformBrowser(this.platformId) || !subject || subject !== this.subject()) return;
+    const key = this.redraftKey(value.scope, subject);
+    const frozen = { ...value, scope: { ...value.scope }, commentIds: [...value.commentIds] };
+    this.redrafts.set(key, frozen);
+    try {
+      window.localStorage.setItem(key, JSON.stringify(frozen));
+    } catch {
+      /* Memory retains the same nonce; never regenerate after uncertain POST. */
+    }
+  }
+
+  public loadRedraft(scope: MktgDocumentCommentScope): MktgPendingRedraftIntent | null {
+    if (!isPlatformBrowser(this.platformId) || !this.subject()) return null;
+    const key = this.redraftKey(scope, this.subject());
+    try {
+      const raw = this.redrafts.get(key) ?? (JSON.parse(window.localStorage.getItem(key) ?? 'null') as MktgPendingRedraftIntent | null);
+      if (!raw) return null;
+      const same =
+        raw.scope?.projectUid === scope.projectUid &&
+        raw.scope?.agentKey === scope.agentKey &&
+        raw.scope?.documentId === scope.documentId &&
+        raw.scope?.revisionId === scope.revisionId;
+      const age = typeof raw.updatedAt === 'string' ? Date.now() - Date.parse(raw.updatedAt) : NaN;
+      const stale = !Number.isFinite(age) || age < 0 || age > MKTG_RUN_STORAGE_TTL_MS;
+      const valid =
+        same &&
+        Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, scope.agentKey) &&
+        typeof raw.clientRequestId === 'string' &&
+        MKTG_DOCUMENT_COMMENT_ID_REGEX.test(raw.clientRequestId) &&
+        Array.isArray(raw.commentIds) &&
+        raw.commentIds.length > 0 &&
+        raw.commentIds.length <= MKTG_DOCUMENT_COMMENT_LIMITS[scope.agentKey] &&
+        raw.commentIds.every((id) => typeof id === 'string' && MKTG_DOCUMENT_COMMENT_ID_REGEX.test(id)) &&
+        new Set(raw.commentIds).size === raw.commentIds.length &&
+        Number.isSafeInteger(raw.priorVersion) &&
+        raw.priorVersion > 0 &&
+        raw.priorVersion < Number.MAX_SAFE_INTEGER;
+      if (
+        !valid ||
+        (!stale &&
+          raw.attempt &&
+          (!MKTG_STARTED_RUN_ID_REGEX.test(raw.attempt.runId ?? '') ||
+            typeof raw.attempt.session?.sessionId !== 'string' ||
+            !raw.attempt.session.sessionId ||
+            typeof raw.attempt.session.ownerToken !== 'string' ||
+            !raw.attempt.session.ownerToken ||
+            raw.attempt.priorVersion !== raw.priorVersion))
+      ) {
+        this.clearRedraft(scope);
+        return null;
+      }
+      if (stale) {
+        const retained: MktgPendingRedraftIntent = {
+          scope: { ...raw.scope },
+          clientRequestId: raw.clientRequestId,
+          commentIds: [...raw.commentIds],
+          priorVersion: raw.priorVersion,
+          updatedAt: Number.isFinite(age) ? raw.updatedAt : new Date(0).toISOString(),
+          releaseAllowed: raw.releaseAllowed === true,
+        };
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          /* Memory still retains the ID-only recovery. */
+        }
+        this.saveRedraft(retained);
+        return retained;
+      }
+      return raw;
+    } catch {
+      this.clearRedraft(scope);
+      return null;
+    }
+  }
+
+  public clearRedraft(scope: MktgDocumentCommentScope, subject = this.subject()): void {
+    if (!isPlatformBrowser(this.platformId) || !subject) return;
+    const key = this.redraftKey(scope, subject);
+    this.redrafts.delete(key);
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* No cross-visit recovery if unavailable. */
+    }
   }
 
   public reserve(request: MktgGenerateRequest): MktgPendingGeneration {
@@ -247,6 +340,10 @@ export class MktgRunAttemptService {
     } catch {
       /* No cross-visit restore when storage is disabled. */
     }
+  }
+
+  private redraftKey(scope: MktgDocumentCommentScope, subject: string): string {
+    return `${MKTG_PENDING_RUN_STORAGE_KEY_PREFIX}:redraft:${subject}:${scope.projectUid}:${scope.agentKey}:${scope.documentId}:${scope.revisionId}`;
   }
 
   private key(project: string, agentId: string, subject: string, documentId?: string): string {

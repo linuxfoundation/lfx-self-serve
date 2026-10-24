@@ -334,6 +334,7 @@
               class="block min-w-0"
               [projectName]="projectName()"
               [asset]="boilerplatesAsset"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
@@ -356,6 +357,7 @@
             <lfx-brand-kit-web-view
               class="block min-w-0"
               [kit]="kit"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
@@ -395,6 +397,13 @@
         </section>
 
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
+          @if (commentScope(); as scope) {
+            <lfx-mktg-comments-panel
+              [scope]="scope"
+              [content]="commentContent()"
+              [priorVersion]="current.revision.draftVersion ?? null"
+              (ready)="onRedraftReady(scope, $event)" />
+          }
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>

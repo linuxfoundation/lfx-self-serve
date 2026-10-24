@@ -81,7 +81,7 @@ export function renderNewsletterInviteEmail(context: NewsletterInviteEmailContex
     <a href="${acceptUrl}" class="btn" style="color:#ffffff!important;">Accept invitation</a>
     <p class="btn-note">If the button above doesn't work, paste this into your browser: <a href="${acceptUrl}">${acceptUrl}</a></p>
 
-    <p>You can also invite coworkers from My Newsletters in LFX once you&#39;ve joined.</p>
+    <p>You can also invite coworkers from Newsletters in LFX once you&#39;ve joined.</p>
 
     <p class="signoff">Thanks,<br><strong>The LFX Team</strong></p>
 
@@ -106,7 +106,7 @@ export function renderNewsletterInviteEmail(context: NewsletterInviteEmailContex
     '',
     `Accept invitation: ${context.accept_url}`,
     '',
-    "You can also invite coworkers from My Newsletters in LFX once you've joined.",
+    "You can also invite coworkers from Newsletters in LFX once you've joined.",
     '',
     'Thanks,',
     'The LFX Team',

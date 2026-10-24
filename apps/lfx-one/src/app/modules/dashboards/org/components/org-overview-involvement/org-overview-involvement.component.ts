@@ -6,7 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, ORG_INVOLVEMENT_METRICS } from '@lfx-one/shared/constants';
-import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
+import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -358,7 +358,9 @@ export class OrgOverviewInvolvementComponent {
       subtitle: 'Training courses enrolled this year',
       chartOptions: this.createLineChartOptions('Training enrollments'),
       chartData: {
-        labels: data.dailyData.map((row) => parseLocalDateString(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })),
+        labels: data.dailyData.map(
+          (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
+        ),
         datasets: [
           {
             data: data.dailyData.map((row) => row.cumulativeCount),

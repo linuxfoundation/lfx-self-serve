@@ -40,7 +40,7 @@
           <span>
             You're viewing this {{ mailingListLabel.singular | lowercase }} in its {{ scopeLabel }} context:
             <span class="font-medium text-gray-800">{{ ml.project_name }}</span
-            >. Some options may differ from your personal My {{ mailingListLabel.plural }} view.
+            >. Some options may differ from your personal {{ mailingListLabel.plural }} view.
           </span>
           <button
             type="button"
@@ -48,7 +48,7 @@
             (click)="goBack()"
             data-testid="mailing-list-view-context-notice-back">
             <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
-            Back to My {{ mailingListLabel.plural }}
+            Back to {{ mailingListLabel.plural }}
           </button>
         </div>
       }

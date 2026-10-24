@@ -537,6 +537,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
               // shown as this invalidation's date/reason. The producer's refresh supplies the real ones.
               invalidatedAt: undefined,
               invalidatedBy: undefined,
+              invalidatedByDisplay: undefined,
               invalidationReason: undefined,
             }
           : ack
@@ -707,7 +708,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   private formatInvalidatedTooltip(ack: OrgClaContributorAcknowledgment): string {
     const parts: string[] = [];
-    if (ack.invalidatedBy) parts.push(`Invalidated by ${ack.invalidatedBy}`);
+    const who = ack.invalidatedByDisplay?.trim() || ack.invalidatedBy;
+    if (who) parts.push(`Invalidated by ${who}`);
     if (ack.invalidationReason) parts.push(`Reason: ${ack.invalidationReason}`);
     return parts.join(' · ');
   }

@@ -3,7 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn() }));
+const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn(), resolveProject: vi.fn() }));
+const redraftMocks = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock('../services/mktg-document-redraft.service', () => ({
+  MktgDocumentRedraftService: class {
+    public send = redraftMocks.send;
+  },
+}));
+const commentMocks = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), release: vi.fn(), terminal: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const storeMocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
@@ -24,9 +31,13 @@ const loggerMocks = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils')),
+}));
 vi.mock('../services/mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public listDocuments = storeMocks.listDocuments;
@@ -41,12 +52,21 @@ vi.mock('../services/mktg-document-run.service', async () => {
   return {
     MktgDocumentRunService: class {
       public readProgress = runMocks.readProgress;
+      public resolveProject = runMocks.resolveProject;
       public retry = runMocks.retry;
       public refreshFailure = runMocks.refreshFailure;
       public detailWithProgress = actual.MktgDocumentRunService.prototype.detailWithProgress;
     },
   };
 });
+vi.mock('../services/mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public list = commentMocks.list;
+    public add = commentMocks.add;
+    public release = commentMocks.release;
+    public isRedraftTerminal = commentMocks.terminal;
+  },
+}));
 vi.mock('../services/project.service', () => ({
   ProjectService: class {
     public getProjectById = projectMocks.getProjectById;
@@ -81,7 +101,7 @@ function buildReq(params: Record<string, string> = {}, query: Record<string, unk
 }
 
 function buildRes(): Response & { json: ReturnType<typeof vi.fn> } {
-  return { json: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
+  return { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
 }
 
 describe('MktgDocumentsController', () => {
@@ -91,11 +111,152 @@ describe('MktgDocumentsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    runMocks.resolveProject.mockResolvedValue(PROJECT);
     runMocks.readProgress.mockResolvedValue({ runs: [] });
     runMocks.retry.mockResolvedValue(undefined);
     runMocks.refreshFailure.mockResolvedValue(null);
     controller = new MktgDocumentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it('starts a redraft only after writer/readiness authorization and uses its canonical project', async () => {
+    const body = { project: PROJECT, revisionId: REVISION_ID, commentIds: ['synthetic-comment'], clientRequestId: 'send-one' };
+    const res = buildRes();
+    runMocks.resolveProject.mockResolvedValue('canonical-project');
+    redraftMocks.send.mockResolvedValue({ runId: 'd'.repeat(64) });
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, body), res, next);
+    expect(redraftMocks.send).toHaveBeenCalledWith(
+      expect.anything(),
+      'canonical-project',
+      expect.objectContaining({ agentKey: 'brand-kit' }),
+      'living',
+      body,
+      expect.anything()
+    );
+    expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(redraftMocks.send.mock.invocationCallOrder[0]);
+    expect(next).not.toHaveBeenCalled();
+  });
+  it('denies redraft without writer access or with caller-authored previous JSON', async () => {
+    const body = { project: PROJECT, revisionId: REVISION_ID, commentIds: ['synthetic-comment'], clientRequestId: 'send-one' };
+    runMocks.resolveProject.mockRejectedValueOnce(new AuthorizationError('Synthetic denied'));
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, body), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(redraftMocks.send).not.toHaveBeenCalled();
+    next.mockClear();
+    runMocks.resolveProject.mockClear();
+    await controller.revise(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, {}, { ...body, previous: {} }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(runMocks.resolveProject).not.toHaveBeenCalled();
+    expect(redraftMocks.send).not.toHaveBeenCalled();
+  });
+
+  it('releases only after writer authorization and keeps creator checks in the ledger', async () => {
+    commentMocks.release.mockResolvedValue({ success: true });
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer: true });
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'send-one' }, {}, { project: PROJECT });
+    const res = buildRes();
+    await controller.releaseRedraft(req, res, next);
+    expect(commentMocks.release).toHaveBeenCalledWith(req, 'resolved-project', expect.objectContaining({ agentKey: 'brand-kit' }), 'living', 'send-one');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    commentMocks.release.mockClear();
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    await controller.releaseRedraft(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(commentMocks.release).not.toHaveBeenCalled();
+  });
+
+  it('returns an unknown release without manufacturing a reservation', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    commentMocks.release.mockResolvedValue({ state: 'unknown' });
+    const res = buildRes();
+    await controller.releaseRedraft(buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'unknown-send' }, {}, { project: PROJECT }), res, next);
+    expect(res.json).toHaveBeenCalledWith({ state: 'unknown' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('reads only creator terminal proof after canonical writer authorization (writer=%s)', async (writer) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer });
+    commentMocks.terminal.mockResolvedValue(true);
+    const res = buildRes();
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', requestId: 'send-one' }, { project: PROJECT, revision: REVISION_ID });
+    await controller.redraftState(req, res, next);
+    if (writer) {
+      expect(commentMocks.terminal).toHaveBeenCalledWith(
+        req,
+        'resolved-project',
+        expect.objectContaining({ agentKey: 'brand-kit' }),
+        'living',
+        'send-one',
+        REVISION_ID
+      );
+      expect(res.json).toHaveBeenCalledWith({ terminal: true });
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    } else {
+      expect(commentMocks.terminal).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    }
+  });
+
+  it('lists comments only after writer authorization, using the server project uid', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', writer: true });
+    commentMocks.list.mockResolvedValue({ revisionId: REVISION_ID, threads: [] });
+    const res = buildRes();
+    await controller.listComments(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: REVISION_ID }), res, next);
+    expect(commentMocks.list).toHaveBeenCalledWith(
+      expect.anything(),
+      'resolved-project',
+      expect.objectContaining({ agentKey: 'brand-kit' }),
+      'living',
+      REVISION_ID
+    );
+    expect(res.json).toHaveBeenCalledWith({ revisionId: REVISION_ID, threads: [] });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('adds a comment for a writer without logging the body', async () => {
+    commentMocks.add.mockResolvedValue({ revisionId: REVISION_ID, threads: [] });
+    const body = {
+      project: PROJECT,
+      revisionId: REVISION_ID,
+      anchor: { kind: 'field', key: 'mf.tagline' },
+      text: 'Synthetic private comment',
+      clientRequestId: 'opaque-request',
+    };
+    const res = buildRes();
+    await controller.addComment(buildReq({ agentKey: 'foundation-message', documentId: 'living' }, {}, body), res, next);
+    expect(commentMocks.add).toHaveBeenCalledWith(expect.anything(), PROJECT, expect.objectContaining({ agentKey: 'foundation-message' }), 'living', body);
+    expect(JSON.stringify(loggerMocks.startOperation.mock.calls.map((call) => call.slice(1)))).not.toContain(body.text);
+    expect(JSON.stringify(loggerMocks.success.mock.calls.map((call) => call.slice(1)))).not.toContain(body.text);
+  });
+
+  it.each(['list', 'add'])('denies comment %s without a writer grant before storage', async (action) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    const req = buildReq(
+      { agentKey: 'brand-kit', documentId: 'living' },
+      { project: PROJECT, revision: REVISION_ID },
+      { project: PROJECT, revisionId: REVISION_ID }
+    );
+    if (action === 'list') await controller.listComments(req, buildRes(), next);
+    else await controller.addComment(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(commentMocks.list).not.toHaveBeenCalled();
+    expect(commentMocks.add).not.toHaveBeenCalled();
+  });
+
+  it.each(['list', 'add'])('rejects malformed comment scope before authorization (%s)', async (action) => {
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: 'latest' }, { project: PROJECT, revisionId: 'latest' });
+    if (action === 'list') await controller.listComments(req, buildRes(), next);
+    else await controller.addComment(req, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+  });
+
+  it('forwards comment storage failures without a controller error log', async () => {
+    const error = new MicroserviceError('Store unavailable', 503, 'STORE_UNAVAILABLE');
+    commentMocks.list.mockRejectedValueOnce(error);
+    await controller.listComments(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, revision: REVISION_ID }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
   it('lists the documents of the SERVER-resolved project for a writer', async () => {
