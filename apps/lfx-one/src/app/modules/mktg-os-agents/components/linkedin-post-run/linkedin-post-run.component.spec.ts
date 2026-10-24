@@ -18,6 +18,7 @@ import {
   LINKEDIN_SOURCE_MAX_BYTES,
   MKTG_KIT_FAMILIES,
   MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
+  MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
 import { MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
@@ -192,50 +193,72 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
-  it('hands an accepted Generate to the document once, retries navigation without generation, and never uses legacy cache/poll APIs', async () => {
-    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
-    const session = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' };
-    api.startForDocument.mockReturnValue(of(session));
-    const attempts = TestBed.inject(MktgRunAttemptService);
-    const accept = vi.spyOn(attempts, 'prepareAccepted');
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValueOnce(false).mockResolvedValue(true);
-    TestBed.inject(ActivatedRoute).snapshot.queryParams = {
-      source: 'url',
-      content_text: 'private-marker',
-      content_url: 'https://private.example/raw',
-      setup: 'private-setup',
-    };
-    const fixture = await render();
-    fixture.componentInstance['source'].set('url');
-    fixture.componentInstance['contentForm'].controls.url.setValue('https://source.example/content');
-    fixture.componentInstance['contentForm'].controls.share_link.setValue('https://share.example/post');
-    await fixture.componentInstance['onDraft']();
-    await fixture.whenStable();
-    expect(accept).toHaveBeenCalledOnce();
-    await fixture.componentInstance['onDraft']();
-    expect(api.startForDocument).toHaveBeenCalledExactlyOnceWith(
-      LINKEDIN_POST_INTAKE,
-      'project-one',
-      { content_source: 'url', content_url: 'https://source.example/content', share_link: 'https://share.example/post' },
-      undefined
-    );
-    const query = navigate.mock.calls.at(-1)?.[1]?.queryParams;
-    expect(query).toMatchObject({ source: 'url', profile: null });
-    for (const text of ['private-marker', 'private.example', 'private-setup', 'source.example', 'share.example', session.ownerToken])
-      expect(JSON.stringify(query)).not.toContain(text);
-    expect(navigate).toHaveBeenLastCalledWith(
-      expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, session.documentId]),
-      expect.objectContaining({ queryParams: expect.objectContaining({ generation: expect.stringMatching(/^generation-/) }) })
-    );
-    for (const legacy of [api.start, api.wait, api.pending, api.answer, api.rememberShareLink]) expect(legacy).not.toHaveBeenCalled();
-    expect(Object.keys(localStorage).some((key) => key.startsWith(MKTG_PENDING_DOCUMENT_STORAGE_PREFIX))).toBe(false);
-    fixture.detectChanges();
-    expect(
-      fixture.nativeElement.querySelector(
-        '[data-testid="mktg-linkedin-results"], [data-testid="mktg-linkedin-generating"], [data-testid="mktg-linkedin-open-document"]'
-      )
-    ).toBeNull();
-  });
+  it.each(['false', 'throw', 'empty'] as const)(
+    'keeps acceptance after %s navigation/token failure; Open never Generates and edits allow a new run',
+    async (failure) => {
+      api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+      const session = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' };
+      api.startForDocument.mockReturnValue(of(session));
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const accept = vi.spyOn(attempts, 'prepareAccepted');
+      if (failure === 'empty') accept.mockReturnValueOnce('');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      if (failure === 'false') navigate.mockResolvedValueOnce(false);
+      if (failure === 'throw') navigate.mockRejectedValueOnce(new Error('Synthetic navigation failure'));
+      TestBed.inject(ActivatedRoute).snapshot.queryParams = {
+        source: 'url',
+        content_text: 'private-marker',
+        content_url: 'https://private.example/raw',
+        setup: 'private-setup',
+      };
+      const fixture = await render();
+      fixture.componentInstance['source'].set('url');
+      fixture.componentInstance['contentForm'].controls.url.setValue('https://source.example/content');
+      fixture.componentInstance['contentForm'].controls.share_link.setValue('https://share.example/post');
+      await fixture.componentInstance['onDraft']();
+      await fixture.whenStable();
+      expect(accept).toHaveBeenCalledOnce();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]').textContent).toContain(
+        'Your draft was started — open it to follow progress.'
+      );
+      expect(fixture.componentInstance['error']()).toBe('');
+      await fixture.componentInstance['onDraft']();
+      fixture.componentInstance['onOpenAccepted']();
+      await fixture.whenStable();
+      expect(api.startForDocument).toHaveBeenCalledExactlyOnceWith(
+        LINKEDIN_POST_INTAKE,
+        'project-one',
+        { content_source: 'url', content_url: 'https://source.example/content', share_link: 'https://share.example/post' },
+        undefined
+      );
+      const query = navigate.mock.calls.at(-1)?.[1]?.queryParams;
+      expect(query).toMatchObject({ source: 'url', profile: null });
+      for (const text of ['private-marker', 'private.example', 'private-setup', 'source.example', 'share.example', session.ownerToken])
+        expect(JSON.stringify(query)).not.toContain(text);
+      expect(navigate).toHaveBeenLastCalledWith(
+        expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, session.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ generation: null }) })
+      );
+      const entries = Object.entries(localStorage).filter(([key]) => key.startsWith(MKTG_PENDING_RUN_STORAGE_KEY_PREFIX));
+      expect(entries).toHaveLength(failure === 'empty' ? 0 : 1);
+      for (const [, value] of entries) expect(JSON.parse(value).request.answers).toEqual({});
+      for (const text of ['source.example', 'private-marker', 'private-setup']) expect(JSON.stringify({ ...localStorage })).not.toContain(text);
+      for (const legacy of [api.start, api.wait, api.pending, api.answer, api.rememberShareLink]) expect(legacy).not.toHaveBeenCalled();
+      expect(Object.keys(localStorage).some((key) => key.startsWith(MKTG_PENDING_DOCUMENT_STORAGE_PREFIX))).toBe(false);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="mktg-linkedin-results"], [data-testid="mktg-linkedin-generating"], [data-testid="mktg-linkedin-open-document"]'
+        )
+      ).toBeNull();
+      fixture.componentInstance['contentForm'].controls.url.setValue('https://source.example/changed');
+      expect(fixture.componentInstance['acceptedRequest']()).toBeNull();
+      await fixture.componentInstance['onDraft']();
+      expect(api.startForDocument).toHaveBeenCalledTimes(2);
+      expect(api.startForDocument.mock.calls.at(-1)?.[2]).toMatchObject({ content_url: 'https://source.example/changed' });
+    }
+  );
 
   it('consumes shared questions and returns on the same-session answers ACK without polling on the form', async () => {
     const intake = LINKEDIN_POST_INTAKE;
@@ -302,6 +325,11 @@ describe('LinkedIn profile and post surface', () => {
     fixture.componentInstance['onProfileSubmit']();
     expect(api.save).toHaveBeenCalledWith({ setup: expect.objectContaining({ name: profile.about.name }) });
     expect(api.startForDocument).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['explicitProfileSave']()).toBe(true);
+    context.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance['explicitProfileSave']()).toBe(false);
   });
 
   it('composes one breadcrumb with the main kit family route and catalog name', async () => {

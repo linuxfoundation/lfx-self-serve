@@ -37,6 +37,12 @@
           }
         </div>
       }
+      @if (acceptedRequest() && !busy()) {
+        <div role="status" class="flex flex-wrap items-center gap-3" data-testid="mktg-linkedin-accepted">
+          <p>Your draft was started — open it to follow progress.</p>
+          <lfx-button label="Open draft" (onClick)="onOpenAccepted()" data-testid="mktg-linkedin-open-accepted" />
+        </div>
+      }
       @if (!writer() && !error()) {
         <p class="rounded-lg border border-gray-200 bg-white p-6" data-testid="mktg-linkedin-no-access">
           You need write access to this project to draft LinkedIn posts.
@@ -124,7 +130,7 @@
           </section>
           <div class="flex flex-wrap items-center gap-3">
             <lfx-button
-              [label]="saved() || explicitProfileSave ? 'Save profile' : 'Continue to draft a post'"
+              [label]="saved() || explicitProfileSave() ? 'Save profile' : 'Continue to draft a post'"
               type="submit"
               [loading]="busy()"
               [disabled]="busy()"
@@ -188,7 +194,7 @@
               @if (file(); as selected) {
                 <div class="flex items-center gap-3" data-testid="mktg-linkedin-selected-file">
                   <span class="min-w-0 break-words">{{ selected.name }}</span>
-                  <lfx-button label="Remove file" [text]="true" [disabled]="busy()" (onClick)="file.set(null)" data-testid="mktg-linkedin-remove-file" />
+                  <lfx-button label="Remove file" [text]="true" [disabled]="busy()" (onClick)="onFile()" data-testid="mktg-linkedin-remove-file" />
                 </div>
               } @else {
                 <lfx-file-upload
@@ -200,8 +206,8 @@
                   [disabled]="busy()"
                   chooseLabel="Choose a file"
                   (onSelect)="onFile($event)"
-                  (onRemove)="file.set(null)"
-                  (onClear)="file.set(null)"
+                  (onRemove)="onFile()"
+                  (onClear)="onFile()"
                   dataTest="mktg-linkedin-file" />
               }
               <p class="text-sm text-gray-500">UTF-8 {{ fileTypesLabel }} · up to 1 MB. LFX turns the file into text.</p>
@@ -243,7 +249,7 @@
               type="button"
               (onClick)="onDraft()"
               [loading]="busy()"
-              [disabled]="busy()"
+              [disabled]="busy() || acceptedRequest() !== null"
               data-testid="mktg-linkedin-draft" />
             <p class="text-sm text-gray-500">About a minute. Each draft is stored under LinkedIn posts as its own run.</p>
           </div>

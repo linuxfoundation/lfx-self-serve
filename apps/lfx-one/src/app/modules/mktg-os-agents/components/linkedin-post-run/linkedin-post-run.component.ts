@@ -122,6 +122,8 @@ export class LinkedinPostRunComponent {
   protected readonly previousAnswers = signal<Record<string, string>>({});
   protected readonly answering = signal(false);
   protected readonly linkError = signal('');
+  protected readonly explicitProfileSave = signal(false);
+  protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly agent = computed(() => MKTG_AGENTS.find((entry) => entry.id === this.intake().agentId));
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
@@ -131,8 +133,6 @@ export class LinkedinPostRunComponent {
   private scopeVersion = 0;
   private sourceReentry = '';
   private questionsPending: MktgPendingGeneration | null = null;
-  private acceptedRequest: MktgGenerateRequest | null = null;
-  protected explicitProfileSave = false;
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) return;
@@ -156,6 +156,12 @@ export class LinkedinPostRunComponent {
       .subscribe((source) => {
         if (source !== this.source()) this.applySource(source);
       });
+    this.contentForm.valueChanges
+      .pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.acceptedRequest.set(null));
     this.contentForm.controls.url.valueChanges.pipe(takeUntilDestroyed()).subscribe((url) => {
       if (this.source() === 'url' && !this.contentForm.controls.share_link.dirty) this.contentForm.controls.share_link.setValue(url);
     });
@@ -167,7 +173,8 @@ export class LinkedinPostRunComponent {
           this.sourceReentry = '';
           this.generation?.unsubscribe();
           this.questionsPending = null;
-          this.acceptedRequest = null;
+          this.acceptedRequest.set(null);
+          this.explicitProfileSave.set(false);
           this.questions.set([]);
           this.previousAnswers.set({});
           this.answering.set(false);
@@ -209,8 +216,8 @@ export class LinkedinPostRunComponent {
         const params = this.route.snapshot.queryParamMap;
         const editProfile = params.get('profile') === 'edit';
         const profileDocument = params.get('profileDocument');
-        this.explicitProfileSave = editProfile && !!profileDocument;
-        if (this.explicitProfileSave && !response.profile) {
+        this.explicitProfileSave.set(editProfile && !!profileDocument);
+        if (this.explicitProfileSave() && !response.profile) {
           this.setup.set(this.api.setupForDocument(this.context.activeContextUid(), profileDocument ?? ''));
           if (!this.setup()) this.error.set("Your setup answers aren't kept in the browser — enter them again to draft");
         }
@@ -272,7 +279,7 @@ export class LinkedinPostRunComponent {
       return;
     }
     this.error.set('');
-    if (!this.saved() && !this.explicitProfileSave) {
+    if (!this.saved() && !this.explicitProfileSave()) {
       this.setup.set(answers);
       this.finishEditing(false);
       this.error.set(this.sourceReentry);
@@ -303,17 +310,15 @@ export class LinkedinPostRunComponent {
       queryParamsHandling: 'merge',
     });
   }
-  protected onFile(event: FileSelectEvent): void {
-    this.file.set(event.files[0] ?? null);
+  protected onFile(event?: FileSelectEvent): void {
+    this.acceptedRequest.set(null);
+    this.file.set(event?.files[0] ?? null);
     this.error.set('');
   }
   protected async onDraft(): Promise<void> {
     const project = this.context.activeContextUid();
     if (!project || !this.writer() || this.busy() || this.editing() || this.questions().length || this.answering()) return;
-    if (this.acceptedRequest) {
-      void this.returnToDocument(this.acceptedRequest);
-      return;
-    }
+    if (this.acceptedRequest()) return;
     this.busy.set(true);
     this.error.set('');
     const version = this.scopeVersion;
@@ -339,13 +344,8 @@ export class LinkedinPostRunComponent {
         .subscribe({
           next: (session) => {
             const request = { agentId: this.intake().agentId, intake: this.intake(), projectUid: project, documentId: session.documentId, answers };
-            const token = this.attempts.prepareAccepted(request, session);
-            if (!token) {
-              this.failedRun();
-              return;
-            }
-            this.acceptedRequest = request;
-            void this.returnToDocument(request, token);
+            this.acceptedRequest.set(request);
+            void this.returnToDocument(request, this.attempts.prepareAccepted(request, session));
           },
           error: (error: unknown) => this.failedRun(error),
         });
@@ -370,7 +370,7 @@ export class LinkedinPostRunComponent {
           if (progress.type !== 'submitted') return;
           this.questions.set([]);
           this.answering.set(false);
-          this.acceptedRequest = pending.request;
+          this.acceptedRequest.set(pending.request);
           void this.returnToDocument(pending.request);
         },
         error: (error: unknown) => {
@@ -382,14 +382,19 @@ export class LinkedinPostRunComponent {
       });
   }
 
-  private async returnToDocument(request: MktgGenerateRequest, generation = this.attempts.prepare(request, true)): Promise<void> {
-    if (!request.documentId || !generation) {
-      this.failedRun();
+  protected onOpenAccepted(): void {
+    const request = this.acceptedRequest();
+    if (request && !this.busy()) void this.returnToDocument(request, null); // Public server record needs no browser capability.
+  }
+
+  private async returnToDocument(request: MktgGenerateRequest, generation: string | null = this.attempts.prepare(request, true)): Promise<void> {
+    if (!request.documentId || generation === '') {
+      this.busy.set(false);
       return;
     }
     this.busy.set(true);
     try {
-      const navigated = await this.router.navigate([mktgKitRootPath(this.router.url), 'documents', request.agentId, request.documentId], {
+      await this.router.navigate([mktgKitRootPath(this.router.url), 'documents', request.agentId, request.documentId], {
         queryParams: {
           project: this.context.activeContext()?.slug ?? null,
           ...MKTG_RUN_RESUME_QUERY_CLEAR,
@@ -399,12 +404,14 @@ export class LinkedinPostRunComponent {
           generation,
         },
       });
-      if (!navigated) this.failedRun();
     } catch {
-      this.failedRun();
+      // Acceptance is durable; expose Open rather than pretending the server run failed.
+    } finally {
+      if (!this.destroyRef.destroyed && this.acceptedRequest() === request) this.busy.set(false);
     }
   }
   private applySource(source: LinkedinContentSource): void {
+    if (source !== this.source()) this.acceptedRequest.set(null);
     this.sourceReentry = '';
     if (source !== this.source()) this.file.set(null);
     this.source.set(source);
