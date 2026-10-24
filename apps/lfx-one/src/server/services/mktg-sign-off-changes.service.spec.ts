@@ -200,7 +200,7 @@ describe('internal sign-off request changes', () => {
     f.actor.mockReturnValue('auth0|project-writer');
     f.proof.mockImplementation(async (...args: unknown[]) => {
       if (typeof args[5] === 'function') await args[5]();
-      return { state, commentId: state === 'absent' ? null : 'exact-comment' };
+      return { state, commentId: 'exact-comment' };
     });
     await service.release(req, scope);
     expect(f.proof).toHaveBeenCalledWith(req, scope.project, scope.type, 'living', expect.objectContaining({ requestedBy: 'auth0|ed' }), expect.any(Function));
