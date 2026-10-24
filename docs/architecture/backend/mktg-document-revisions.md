@@ -468,7 +468,9 @@ server-generated passage marker is `Whole asset`, not a fabricated quote from a
 leaf; other agents retain their existing root field adapter. The private descriptor
 and result echo use the unchanged upstream field/passage contract. Caption helpers
 accept document scope explicitly; existing field/passage controls and captions are
-unchanged. This adds no switch, sign-off button or decide endpoint.
+unchanged. Public add rejects document anchors until the UI passes `anchor.kind`
+to its label helper; only the internal exact-receipt API accepts that scope now.
+This adds no switch, sign-off button or decide endpoint.
 
 `addWithReceipt` is a server-only exact-ID receipt over the same add/dedupe CAS;
 ordinary POST add responses remain unchanged. Correlation includes author, revision,
