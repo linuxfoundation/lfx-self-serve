@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEMBER_360_MAX_TRACKER_COLUMNS, MEMBER_360_MAX_TRACKER_ROWS, ENGAGEMENT_TIERS } from '@lfx-one/shared/constants/member-360.constants';
-import { lfxColors } from '@lfx-one/shared/constants/colors.constants';
+import { MEMBER_360_MAX_TRACKER_COLUMNS, MEMBER_360_MAX_TRACKER_ROWS, ENGAGEMENT_TIERS, lfxColors } from '@lfx-one/shared/constants';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
@@ -194,6 +193,17 @@ describe('Member 360 workbook and tracker round trips', () => {
     const priorities = [...xml.matchAll(/<cfRule[^>]+priority="(\d+)"/g)].map((match) => match[1]);
     expect(new Set(priorities).size).toBe(priorities.length);
     const styles = await zip.file('xl/styles.xml')?.async('string');
+    const dxfs = styles?.match(/<dxf>[\s\S]*?<\/dxf>/g) ?? [];
+    const rules = [...xml.matchAll(/<cfRule\b([^>]+)>([\s\S]*?)<\/cfRule>/g)];
+    const fills = ENGAGEMENT_TIERS.map((tier) => {
+      const rule = rules.find((entry) => entry[2].includes(`<formula>H2=&quot;${tier}&quot;</formula>`));
+      const id = rule?.[1].match(/\bdxfId="(\d+)"/)?.[1];
+      return dxfs[Number(id)]?.match(/<fgColor rgb="([^"]+)"\/>/)?.[1];
+    });
+    expect(fills).toEqual(
+      [lfxColors.emerald[100], lfxColors.emerald[50], lfxColors.amber[50], lfxColors.red[50], lfxColors.red[100]].map((color) => `FF${color.replace('#', '')}`)
+    );
+    expect(new Set(fills).size).toBe(5);
     for (const color of [lfxColors.red[50], lfxColors.red[800], lfxColors.amber[50], lfxColors.amber[800], lfxColors.emerald[50], lfxColors.emerald[800]]) {
       expect(styles).toContain(`rgb="FF${color.replace('#', '')}"`);
     }
@@ -211,6 +221,16 @@ describe('Member 360 workbook and tracker round trips', () => {
     const output = new ExcelJS.Workbook();
     await output.xlsx.load(await buildMember360Workbook(envelope));
     expect(days.map((_, index) => output.getWorksheet('Member Ranking')?.getCell(`F${index + 2}`).value)).toEqual(days);
+  });
+  it('keeps dates compact and sizes merged project text using its actual columns', async () => {
+    const envelope = member360Fixture();
+    envelope.tabs.summary.project_name = 'Synthetic project '.padEnd(77, 'x');
+    const output = new ExcelJS.Workbook();
+    await output.xlsx.load(await buildMember360Workbook(envelope));
+    const sheet = output.getWorksheet('Summary');
+    expect(sheet?.getRow(4).height).toBe(22);
+    expect(sheet?.getRow(2).height).toBeGreaterThan(22);
+    expect(sheet?.getCell('C2').text).toHaveLength(77);
   });
   it('lays out the QBR blocks and optional signed movers while preserving watchlist order', async () => {
     const envelope = member360Fixture();

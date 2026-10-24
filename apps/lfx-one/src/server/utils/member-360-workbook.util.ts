@@ -12,14 +12,22 @@ import {
   MEMBER_360_MAX_ZIP_ENTRIES,
   PRIORITIES,
   ENGAGEMENT_TIERS,
-} from '@lfx-one/shared/constants/member-360.constants';
-import type { Member360Envelope, Member360Tracker } from '@lfx-one/shared/interfaces/member-360.interface';
-import { trackerSchema } from '@lfx-one/shared/server/member-360.utils';
-import { rankMember360Rows } from '@lfx-one/shared/utils/member-360-ranking.utils';
+  MEMBER_360_RENEWAL_RED_DAYS,
+  MEMBER_360_RENEWAL_AMBER_DAYS,
+  MEMBER_360_TIER_TONES,
+} from '@lfx-one/shared/constants';
+import type { Member360Envelope, Member360Tracker } from '@lfx-one/shared/interfaces';
+import { trackerSchema, rankMember360Rows } from '@lfx-one/shared/server';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { ServiceValidationError } from '../errors';
-import { MEMBER_360_WORKBOOK_COLORS, MEMBER_360_WORKBOOK_FORMATS as formats, MEMBER_360_SUMMARY_WIDTHS } from '../constants/member-360-workbook.constants';
+import {
+  MEMBER_360_WORKBOOK_COLORS,
+  MEMBER_360_WORKBOOK_FORMATS as formats,
+  MEMBER_360_SUMMARY_WIDTHS,
+  MEMBER_360_SUMMARY_TIER_HEADER_ROW,
+  MEMBER_360_WORKBOOK_TIER_FILLS,
+} from '../constants/member-360-workbook.constants';
 import { addMember360SummaryChart } from './member-360-chart.util';
 
 function trackerError(message: string): ServiceValidationError {
@@ -257,19 +265,19 @@ function addExpression(sheet: ExcelJS.Worksheet, ref: string, formula: string, s
 function addRiskFormats(sheet: ExcelJS.Worksheet, days: string, tier: string, priority?: string, first = 2, last = sheet.rowCount): void {
   if (last < first) return;
   const range = (column: string) => `${column}${first}:${column}${last}`;
-  const style = (tone: keyof Omit<typeof MEMBER_360_WORKBOOK_COLORS, 'heat'>): Partial<ExcelJS.Style> => ({
-    fill: { type: 'pattern', pattern: 'solid', fgColor: argb(MEMBER_360_WORKBOOK_COLORS[tone].fill) },
+  const style = (
+    tone: keyof Omit<typeof MEMBER_360_WORKBOOK_COLORS, 'heat'>,
+    fill: string = MEMBER_360_WORKBOOK_COLORS[tone].fill
+  ): Partial<ExcelJS.Style> => ({
+    fill: { type: 'pattern', pattern: 'solid', fgColor: argb(fill) },
     font: { color: argb(MEMBER_360_WORKBOOK_COLORS[tone].text) },
   });
   for (let row = first; row <= last; row++) sheet.getCell(`${days}${row}`).numFmt = formats.integer;
   const cell = `${days}${first}`;
-  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}<=120)`, style('red'));
-  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}>120,${cell}<=240)`, style('amber'));
+  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}<=${MEMBER_360_RENEWAL_RED_DAYS})`, style('red'));
+  addExpression(sheet, range(days), `AND(ISNUMBER(${cell}),${cell}>${MEMBER_360_RENEWAL_RED_DAYS},${cell}<=${MEMBER_360_RENEWAL_AMBER_DAYS})`, style('amber'));
   for (const value of ENGAGEMENT_TIERS) {
-    let tone: keyof Omit<typeof MEMBER_360_WORKBOOK_COLORS, 'heat'> = 'red';
-    if (value === 'Champion' || value === 'Engaged') tone = 'emerald';
-    if (value === 'Passive') tone = 'amber';
-    addExpression(sheet, range(tier), `${tier}${first}="${value}"`, style(tone));
+    addExpression(sheet, range(tier), `${tier}${first}="${value}"`, style(MEMBER_360_TIER_TONES[value], MEMBER_360_WORKBOOK_TIER_FILLS[value]));
   }
   if (priority) addExpression(sheet, range(priority), `${priority}${first}="High"`, style('red'));
 }
@@ -337,7 +345,7 @@ function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs
   sheet.getCell('A6').value = 'Tier distribution';
   table(
     'Tiers',
-    7,
+    MEMBER_360_SUMMARY_TIER_HEADER_ROW,
     ['Tier', 'Count'],
     ENGAGEMENT_TIERS.map((tier) => [tier, summary.tier_distribution[tier]])
   );
@@ -359,7 +367,7 @@ function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs
     }
     row += 6;
   }
-  heading(row++, 'Watchlist · renewal within 120 days');
+  heading(row++, `Watchlist · renewal within ${MEMBER_360_RENEWAL_RED_DAYS} days`);
   const first = row + 1;
   table(
     'Watchlist',
@@ -386,13 +394,24 @@ function addSummary(workbook: ExcelJS.Workbook, summary: Member360Envelope['tabs
     if (!sources.length) merged(`A${row}:F${row++}`, `${label}: None`);
     for (const source of sources) merged(`A${row}:F${row++}`, `${label}: ${source}`);
   }
+  const mergeWidths = new Map(
+    sheet.model.merges.map((range) => {
+      const [start, end] = range.split(':');
+      const first = sheet.getCell(start).fullAddress.col;
+      const last = sheet.getCell(end).fullAddress.col;
+      return [start, MEMBER_360_SUMMARY_WIDTHS.slice(first - 1, last).reduce((sum, width) => sum + width, 0)] as const;
+    })
+  );
   sheet.eachRow((entry) => {
     let height = 22;
     entry.eachCell((cell) => {
       cell.alignment = { wrapText: true, vertical: 'middle' };
       if (typeof cell.value === 'number' && (!cell.numFmt || cell.numFmt === 'General')) cell.numFmt = formats.integer;
-      const width = cell.isMerged ? 90 : (sheet.getColumn(cell.col).width ?? 14);
-      height = Math.max(height, Math.ceil(cell.text.length / Math.max(width - 2, 1)) * 15);
+      // Dates/numbers occupy one display line; merged proxies share their master.
+      if (typeof cell.value !== 'string' || cell.type === ExcelJS.ValueType.Merge) return;
+      const width = mergeWidths.get(cell.address) ?? sheet.getColumn(cell.col).width ?? 14;
+      const lines = cell.value.split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / Math.max(width - 2, 1))), 0);
+      height = Math.max(height, lines * 15);
     });
     entry.height = height;
   });

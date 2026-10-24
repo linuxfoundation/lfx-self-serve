@@ -4,7 +4,7 @@
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { ENGAGEMENT_TIERS } from '@lfx-one/shared/constants/member-360.constants';
+import { ENGAGEMENT_TIERS } from '@lfx-one/shared/constants';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 import { addMember360SummaryChart } from './member-360-chart.util';
 import { buildMember360Workbook } from './member-360-workbook.util';
@@ -18,7 +18,7 @@ async function xml(zip: JSZip, path: string): Promise<string> {
 describe('native Member 360 Summary chart package', () => {
   it('links sheet, drawing and chart with preserved table rels, native ranges and cached values', async () => {
     const envelope = member360Fixture();
-    envelope.tabs.summary.tier_distribution = { Champion: 7, Engaged: 3, Passive: 2, 'At Risk': 1, Dormant: 0 };
+    envelope.tabs.summary.tier_distribution = { Champion: 1250, Engaged: 3, Passive: 2, 'At Risk': 1, Dormant: 0 };
     const bytes = await buildMember360Workbook(envelope);
     const zip = await JSZip.loadAsync(bytes);
     const sheet = await xml(zip, 'xl/worksheets/sheet1.xml');
@@ -41,6 +41,12 @@ describe('native Member 360 Summary chart package', () => {
     expect(types).toContain('PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"');
     expect(types).toContain('PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"');
     expect(chart).toContain('<c:barDir val="bar"/>');
+    expect(chart).toContain('<c:autoTitleDeleted val="1"/>');
+    expect(chart).toContain('<c:varyColors val="0"/>');
+    expect(chart.match(/<c:delete val="0"\/>/g)).toHaveLength(2);
+    expect(chart).not.toContain('<c:majorUnit');
+    expect(chart).toContain('<c:min val="0"/>');
+    expect(chart).toContain('<c:numFmt formatCode="0" sourceLinked="0"/>');
     expect(chart).toContain("<c:f>'Summary'!$A$8:$A$12</c:f>");
     expect(chart).toContain("<c:f>'Summary'!$B$8:$B$12</c:f>");
     for (const [index, tier] of ENGAGEMENT_TIERS.entries()) {
@@ -57,7 +63,7 @@ describe('native Member 360 Summary chart package', () => {
     const reloaded = new ExcelJS.Workbook();
     await expect(reloaded.xlsx.load(bytes)).resolves.toBeDefined();
     expect(reloaded.getWorksheet('Summary')?.getTables()).toHaveLength(3);
-    expect(reloaded.getWorksheet('Summary')?.getCell('B8').value).toBe(7);
+    expect(reloaded.getWorksheet('Summary')?.getCell('B8').value).toBe(1250);
     for (const entry of Object.values(zip.files)) {
       expect(entry.date.getTime()).toBe(new Date(`${envelope.run_date}T00:00:00Z`).getTime());
     }

@@ -40,6 +40,16 @@ export const DEFAULT_WEIGHTS: Readonly<Record<(typeof CATEGORY_KEYS)[number], nu
 };
 
 export const ENGAGEMENT_TIERS = ['Champion', 'Engaged', 'Passive', 'At Risk', 'Dormant'] as const;
+/** Workbook spec of record; shared with the result page's risk presentation. */
+export const MEMBER_360_RENEWAL_RED_DAYS = 120;
+export const MEMBER_360_RENEWAL_AMBER_DAYS = 240;
+export const MEMBER_360_TIER_TONES = {
+  Champion: 'emerald',
+  Engaged: 'emerald',
+  Passive: 'amber',
+  'At Risk': 'red',
+  Dormant: 'red',
+} as const;
 export const ACTION_OWNERS = ['Marketing', 'Member Success', 'Sales'] as const;
 export const MEMBER_360_TIER_OPTIONS = [{ label: 'All', value: '' }, ...ENGAGEMENT_TIERS.map((value) => ({ label: value, value }))];
 export const MEMBER_360_OWNER_OPTIONS = [{ label: 'All', value: '' }, ...ACTION_OWNERS.map((value) => ({ label: value, value }))];

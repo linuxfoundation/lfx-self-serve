@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ENGAGEMENT_TIERS } from '@lfx-one/shared/constants/member-360.constants';
-import type { Member360Envelope } from '@lfx-one/shared/interfaces/member-360.interface';
+import { ENGAGEMENT_TIERS } from '@lfx-one/shared/constants';
+import type { Member360Envelope } from '@lfx-one/shared/interfaces';
 import JSZip from 'jszip';
 
-import { MEMBER_360_CHART_NAMESPACES as ns } from '../constants/member-360-workbook.constants';
+import { MEMBER_360_CHART_NAMESPACES as ns, MEMBER_360_SUMMARY_TIER_HEADER_ROW } from '../constants/member-360-workbook.constants';
 import { MicroserviceError } from '../errors';
 
 /** ExcelJS has no chart writer. Add one native chart to its known Summary sheet. */
@@ -20,20 +20,22 @@ export async function addMember360SummaryChart(zip: JSZip, distribution: Member3
     });
   }
   // Category labels are catalog constants, counts are validated numbers. No user
-  // strings become chart markup or range formulas. The caches mirror A8:B12.
+  // strings become chart markup or range formulas. Caches mirror the tier table.
+  const first = MEMBER_360_SUMMARY_TIER_HEADER_ROW + 1;
+  const last = MEMBER_360_SUMMARY_TIER_HEADER_ROW + ENGAGEMENT_TIERS.length;
   const labels = ENGAGEMENT_TIERS.map((tier, i) => `<c:pt idx="${i}"><c:v>${tier}</c:v></c:pt>`).join('');
   const values = ENGAGEMENT_TIERS.map((tier, i) => `<c:pt idx="${i}"><c:v>${distribution[tier]}</c:v></c:pt>`).join('');
   zip.file(
     'xl/charts/chart1.xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="${ns.chart}" xmlns:a="${ns.drawing}" xmlns:r="${ns.relationships}">
-<c:chart><c:plotArea><c:layout/><c:barChart><c:barDir val="bar"/><c:grouping val="clustered"/>
+<c:chart><c:autoTitleDeleted val="1"/><c:plotArea><c:layout/><c:barChart><c:barDir val="bar"/><c:grouping val="clustered"/><c:varyColors val="0"/>
 <c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Member count</c:v></c:tx>
-<c:cat><c:strRef><c:f>'Summary'!$A$8:$A$12</c:f><c:strCache><c:ptCount val="5"/>${labels}</c:strCache></c:strRef></c:cat>
-<c:val><c:numRef><c:f>'Summary'!$B$8:$B$12</c:f><c:numCache><c:formatCode>0</c:formatCode><c:ptCount val="5"/>${values}</c:numCache></c:numRef></c:val>
+<c:cat><c:strRef><c:f>'Summary'!$A$${first}:$A$${last}</c:f><c:strCache><c:ptCount val="${ENGAGEMENT_TIERS.length}"/>${labels}</c:strCache></c:strRef></c:cat>
+<c:val><c:numRef><c:f>'Summary'!$B$${first}:$B$${last}</c:f><c:numCache><c:formatCode>0</c:formatCode><c:ptCount val="${ENGAGEMENT_TIERS.length}"/>${values}</c:numCache></c:numRef></c:val>
 </c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart>
-<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="maxMin"/></c:scaling><c:axPos val="l"/><c:tickLblPos val="nextTo"/><c:crossAx val="2"/><c:crosses val="max"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx>
-<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/><c:min val="0"/></c:scaling><c:axPos val="b"/><c:numFmt formatCode="0" sourceLinked="0"/><c:tickLblPos val="nextTo"/><c:crossAx val="1"/><c:crosses val="autoZero"/><c:crossBetween val="between"/><c:majorUnit val="1"/></c:valAx>
+<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="maxMin"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:tickLblPos val="nextTo"/><c:crossAx val="2"/><c:crosses val="max"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx>
+<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/><c:min val="0"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="0" sourceLinked="0"/><c:tickLblPos val="nextTo"/><c:crossAx val="1"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>
 </c:plotArea><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>`
   );
   zip.file(
