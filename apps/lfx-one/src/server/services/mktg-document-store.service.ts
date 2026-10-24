@@ -701,7 +701,8 @@ export class MktgDocumentStoreService {
       if (!view) return null;
       const signOff = this.signOffOf(snapshot.record?.signOff, type);
       const annotation = signOff[revisionId];
-      if (!annotation) throw new ConflictError('No sign-off request exists.', 'MKTG_SIGN_OFF_NOT_PENDING');
+      if (!annotation || Object.hasOwn(this.approvalsOf(snapshot.record?.approvals), revisionId))
+        throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
       if (!by || by !== annotation.roles[command.role]) {
         if (!authorizeWriter || (command.operation !== 'finish' && command.operation !== 'release'))
           throw new AuthorizationError('Only the frozen role actor may request changes.');
@@ -801,7 +802,6 @@ export class MktgDocumentStoreService {
       const updated = await this.signOffResult(req, view, committed);
       return updated ? { view: updated, intent: annotation.changeRequestIntent ? { ...annotation.changeRequestIntent } : null } : null;
     }
-
   }
 
   /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
