@@ -444,7 +444,7 @@ export class LinkedinPostRunComponent {
     this.busy.set(true);
     try {
       // Replace the entry before pushing its accepted document: Back must not restore mode=new.
-      await this.consumeFreshMode();
+      if (this.freshMode()) await this.consumeFreshMode();
       if (this.destroyRef.destroyed || version !== this.scopeVersion) return;
       await this.router.navigate([mktgKitRootPath(this.router.url), 'documents', request.agentId, request.documentId], {
         queryParams: {

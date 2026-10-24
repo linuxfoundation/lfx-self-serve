@@ -67,13 +67,13 @@ describe('LinkedIn profile and post surface', () => {
       ],
     }).compileComponents();
     history.lastIntake.mockReset().mockReturnValue(of(null));
-    vi.spyOn(TestBed.inject(MktgAgentRunService), 'lastIntake').mockImplementation(history.lastIntake);
   });
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     vi.restoreAllMocks();
   });
   async function render() {
+    vi.spyOn(TestBed.inject(MktgAgentRunService), 'lastIntake').mockImplementation(history.lastIntake);
     const fixture = TestBed.createComponent(LinkedinPostRunComponent);
     fixture.componentRef.setInput('intake', LINKEDIN_POST_INTAKE);
     fixture.detectChanges();
