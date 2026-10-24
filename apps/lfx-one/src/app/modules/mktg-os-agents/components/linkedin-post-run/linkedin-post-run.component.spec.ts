@@ -28,7 +28,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 
@@ -201,6 +201,7 @@ describe('LinkedIn profile and post surface', () => {
       api.startForDocument.mockReturnValue(of(session));
       const attempts = TestBed.inject(MktgRunAttemptService);
       const accept = vi.spyOn(attempts, 'prepareAccepted');
+      const opening = new Subject<boolean>();
       if (failure === 'empty') accept.mockReturnValueOnce('');
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       if (failure === 'false') navigate.mockResolvedValueOnce(false);
@@ -218,12 +219,14 @@ describe('LinkedIn profile and post surface', () => {
       await fixture.componentInstance['onDraft']();
       await fixture.whenStable();
       expect(accept).toHaveBeenCalledOnce();
+      if (failure !== 'empty') expect(navigate.mock.calls[0]?.[1]?.queryParams?.['generation']).toMatch(/^generation-/);
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]').textContent).toContain(
         'Your draft was started — open it to follow progress.'
       );
       expect(fixture.componentInstance['error']()).toBe('');
       await fixture.componentInstance['onDraft']();
+      navigate.mockReturnValueOnce(firstValueFrom(opening));
       fixture.componentInstance['onOpenAccepted']();
       await fixture.whenStable();
       expect(api.startForDocument).toHaveBeenCalledExactlyOnceWith(
@@ -252,11 +255,15 @@ describe('LinkedIn profile and post surface', () => {
           '[data-testid="mktg-linkedin-results"], [data-testid="mktg-linkedin-generating"], [data-testid="mktg-linkedin-open-document"]'
         )
       ).toBeNull();
-      fixture.componentInstance['contentForm'].controls.url.setValue('https://source.example/changed');
-      expect(fixture.componentInstance['acceptedRequest']()).toBeNull();
+      fixture.componentInstance['applySource']('text');
+      fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic changed source.');
+      opening.next(false);
+      await fixture.whenStable();
+      expect(fixture.componentInstance['busy']()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"]')).toBeNull();
       await fixture.componentInstance['onDraft']();
       expect(api.startForDocument).toHaveBeenCalledTimes(2);
-      expect(api.startForDocument.mock.calls.at(-1)?.[2]).toMatchObject({ content_url: 'https://source.example/changed' });
+      expect(api.startForDocument.mock.calls.at(-1)?.[2]).toMatchObject({ content_text: 'Synthetic changed source.' });
     }
   );
 

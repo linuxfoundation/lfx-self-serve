@@ -392,6 +392,7 @@ export class LinkedinPostRunComponent {
       this.busy.set(false);
       return;
     }
+    const version = this.scopeVersion;
     this.busy.set(true);
     try {
       await this.router.navigate([mktgKitRootPath(this.router.url), 'documents', request.agentId, request.documentId], {
@@ -407,7 +408,7 @@ export class LinkedinPostRunComponent {
     } catch {
       // Acceptance is durable; expose Open rather than pretending the server run failed.
     } finally {
-      if (!this.destroyRef.destroyed && this.acceptedRequest() === request) this.busy.set(false);
+      if (!this.destroyRef.destroyed && version === this.scopeVersion) this.busy.set(false);
     }
   }
   private applySource(source: LinkedinContentSource): void {
