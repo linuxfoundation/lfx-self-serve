@@ -7,6 +7,7 @@ import {
   MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS,
   MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL,
   MKTG_DOCUMENT_COMMENT_ID_REGEX,
+  MKTG_SIGN_OFF_REQUEST_PREFIX,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_MAX_CHARS,
   MKTG_DOCUMENT_COMMENT_PATH_REGEX,
@@ -43,8 +44,8 @@ function id(value: unknown): value is string {
   return typeof value === 'string' && MKTG_DOCUMENT_COMMENT_ID_REGEX.test(value);
 }
 
-/** Public send shape contains IDs only, never caller-authored previous JSON/routing/identity. */
-export function readMktgRedraftRequest(value: unknown): MktgReviseDocumentRequest | null {
+/** Public IDs only. The namespace opt-in is server-prepared, never read from the HTTP body. */
+export function readMktgRedraftRequest(value: unknown, allowSignOffNamespace = false): MktgReviseDocumentRequest | null {
   if (
     !record(value) ||
     !onlyKeys(value, MKTG_REDRAFT_REQUEST_KEYS) ||
@@ -53,6 +54,7 @@ export function readMktgRedraftRequest(value: unknown): MktgReviseDocumentReques
     typeof value['revisionId'] !== 'string' ||
     !MKTG_REVISION_ID_REGEX.test(value['revisionId']) ||
     !id(value['clientRequestId']) ||
+    (!allowSignOffNamespace && value['clientRequestId'].startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX)) ||
     !Array.isArray(value['commentIds']) ||
     !value['commentIds'].length ||
     value['commentIds'].length > Math.max(...Object.values(MKTG_DOCUMENT_COMMENT_LIMITS)) ||
