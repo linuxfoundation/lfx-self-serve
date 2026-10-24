@@ -91,6 +91,17 @@ describe('Marketing OS approval route', () => {
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
   });
 
+  it('registers settings GET without mutation and blocks settings PUT before controller lookup while impersonating', () => {
+    const get = router.stack.find((entry) => entry.route?.path === '/sign-off/settings' && entry.route?.stack[0].method === 'get');
+    const put = router.stack.find((entry) => entry.route?.path === '/sign-off/settings' && entry.route?.stack[0].method === 'put');
+    expect(get?.route?.stack[0].method).toBe('get');
+    expect(get?.route?.stack[0].handle).not.toBe(blockDuringImpersonation);
+    expect(put?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    put?.route?.stack[0].handle({ path: '/sign-off/settings', method: 'PUT', impersonationActive: true } as Request, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
+
   it('registers revision sign-off checks as a read-only route without a write guard', () => {
     const layer = router.stack.find((entry) => entry.route?.path === '/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks');
     expect(layer?.route?.stack[0].method).toBe('get');
