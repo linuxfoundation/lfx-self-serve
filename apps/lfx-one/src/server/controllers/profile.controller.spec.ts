@@ -707,6 +707,38 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
   });
 
+  it('unlinks only, without rejecting the CDP row, when the removed address is the account primary', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ email: 'Dev@Example.com' }, { params: { identityId: 'cdp-primary' }, path: '/api/profile/identities/cdp-primary' }),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('still rejects the CDP row when the removed address is not the account primary', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ email: 'alt@example.com' }, { params: { identityId: 'cdp-alt' }, path: '/api/profile/identities/cdp-alt' }),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledWith(expect.anything(), 'testuser', 'cdp-alt');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
     withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
@@ -1890,10 +1922,10 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     profileData: { email: primary },
   };
 
-  async function fetchIdentities(): Promise<any[]> {
+  async function fetchIdentities(oidcUser: Record<string, unknown> = { sub: 'auth0|dev-user', email: primary }): Promise<any[]> {
     const res = buildRes();
     const next = vi.fn();
-    await controller.getIdentities(buildReq({ path: '/api/profile/identities', oidc: { user: { sub: 'auth0|dev-user' } } }), res, next);
+    await controller.getIdentities(buildReq({ path: '/api/profile/identities', oidc: { user: oidcUser } }), res, next);
     expect(next).not.toHaveBeenCalled();
     return res.json.mock.calls[0][0];
   }
@@ -2055,15 +2087,57 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     expect(byId(rows, 'primary-email')).toEqual(expect.objectContaining({ value: primary, displayState: 'verified', isPrimary: true }));
   });
 
-  it('shows the primary as unverified when it differs from the verified session email', async () => {
+  it('trusts a primary changed mid-session while the session still holds the old verified email', async () => {
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'new-primary@example.com', alternate_emails: [] });
     cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
     expect(byId(rows, 'primary-email')).toEqual(
-      expect.objectContaining({ value: 'new-primary@example.com', verified: false, displayState: 'unverified', isPrimary: true })
+      expect.objectContaining({ value: 'new-primary@example.com', verified: true, displayState: 'verified', isPrimary: true })
     );
+  });
+
+  it('keeps an unverified session email as an unverified primary when the auth-service read fails', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities({ sub: 'auth0|dev-user', email: 'Unverified@example.com', email_verified: false });
+
+    expect(byId(rows, 'primary-email')).toEqual(
+      expect.objectContaining({ value: 'Unverified@example.com', verified: false, displayState: 'unverified', isPrimary: true })
+    );
+  });
+
+  it("falls back to the impersonation target's email, never the impersonator's, when the auth-service read fails", async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities({ sub: 'auth0|admin', email: 'admin@example.com', email_verified: true });
+
+    expect(rows.filter((row) => row.isPrimary)).toEqual([expect.objectContaining({ id: 'primary-email', value: 'target@example.com' })]);
+  });
+
+  it('shows one row for a linked login that case-variant CDP rows both match', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-lower', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: lfid }),
+      cdpRow({ id: 'cdp-upper', platform: 'email', type: 'email', value: 'DEV@example.com', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.type === 'email')).toEqual([
+      expect.objectContaining({ id: 'cdp-lower', auth0UserId: 'email|1', isPrimary: true }),
+    ]);
+    expect(byId(rows, 'cdp-upper').displayState).toBe('hidden');
   });
 
   it('marks the primary without any CDP writes while impersonating', async () => {

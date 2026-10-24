@@ -83,9 +83,11 @@
             <div class="h-px flex-1 bg-slate-200"></div>
           </div>
           <!-- Warning text -->
-          <p class="text-xs text-slate-500">
-            You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.
-          </p>
+          @if (hasActionableUnverified()) {
+            <p class="text-xs text-slate-500" data-testid="unverified-identities-warning">
+              You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.
+            </p>
+          }
           <!-- Unverified card -->
           <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="unverified-identities-section">
             <div class="flex flex-col gap-0 divide-y divide-slate-100">
@@ -97,7 +99,11 @@
                     </div>
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                     @if (identity.isPrimary) {
-                      <span class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">Primary</span>
+                      <span
+                        class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700"
+                        data-testid="identity-primary-badge"
+                        >Primary</span
+                      >
                     }
                   </div>
                   @if (!identity.isPrimary) {
@@ -155,7 +161,11 @@
                     </div>
                     <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                     @if (identity.isPrimary) {
-                      <span class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">Primary</span>
+                      <span
+                        class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700"
+                        data-testid="identity-primary-badge"
+                        >Primary</span
+                      >
                     }
                   </div>
                   @if (!identity.isPrimary || identity.auth0UserId) {

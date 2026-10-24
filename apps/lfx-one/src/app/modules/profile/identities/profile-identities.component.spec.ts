@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { EnrichedIdentity } from '@lfx-one/shared/interfaces';
@@ -111,7 +111,8 @@ function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdenti
 
 async function setupWithIdentities(
   identities: EnrichedIdentity[],
-  invite: { email: string | null } | 'error'
+  invite: { email: string | null } | 'error',
+  renderTemplate = false
 ): Promise<ComponentFixture<ProfileIdentitiesComponent>> {
   const userServiceMock = {
     impersonating: signal(false),
@@ -131,8 +132,12 @@ async function setupWithIdentities(
       { provide: DialogService, useValue: { open: vi.fn() } },
     ],
   });
-  // Empty template: exercise menuItemsMap without the full panel/dialog child graph.
-  TestBed.overrideComponent(ProfileIdentitiesComponent, { set: { template: '', imports: [] } });
+  // Empty template: exercise menuItemsMap without the full panel/dialog child graph. When rendering,
+  // keep the real template but leave the lfx-* children as inert custom elements.
+  TestBed.overrideComponent(
+    ProfileIdentitiesComponent,
+    renderTemplate ? { set: { imports: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] } } : { set: { template: '', imports: [] } }
+  );
 
   const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
   fixture.detectChanges();
@@ -212,5 +217,69 @@ describe('ProfileIdentitiesComponent — primary email row (#4123)', () => {
     );
 
     expect(fixture.componentInstance.isEmpty()).toBe(true);
+  });
+});
+
+/**
+ * Renders the real template for primary-email rows (#4123): an unverified primary gets the support
+ * hint instead of Verify / "This is not me", and a verified primary keeps the Remove menu only when
+ * it is backed by a linked login.
+ */
+describe('ProfileIdentitiesComponent — primary email row template (#4123)', () => {
+  const query = (fixture: ComponentFixture<ProfileIdentitiesComponent>, testId: string): Element | null =>
+    fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('shows the support hint instead of Verify and "This is not me" for an unverified primary, without the verify prompt', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', verified: false, displayState: 'unverified', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'primary-email-hint')).not.toBeNull();
+    expect(query(fixture, 'identity-primary-badge')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-primary-email')).toBeNull();
+    expect(query(fixture, 'reject-identity-btn')).toBeNull();
+    expect(query(fixture, 'unverified-identities-warning')).toBeNull();
+  });
+
+  it('keeps the verify prompt and actions for a non-primary unverified row beside an unverified primary', async () => {
+    const fixture = await setupWithIdentities(
+      [
+        makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', verified: false, displayState: 'unverified', isPrimary: true }),
+        makeIdentity({ id: 'cdp-alt', type: 'email', value: 'alt@example.com', verified: false, displayState: 'unverified' }),
+      ],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'unverified-identities-warning')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-cdp-alt')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-primary-email')).toBeNull();
+  });
+
+  it('shows no Remove menu for a verified display-only primary', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'identity-primary-badge')).not.toBeNull();
+    expect(query(fixture, 'identity-menu-primary-email')).toBeNull();
+  });
+
+  it('keeps the Remove menu for a primary backed by a linked login', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'cdp-primary', type: 'email', value: 'dev@example.com', inAuth0: true, auth0UserId: 'email|1', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'identity-menu-cdp-primary')).not.toBeNull();
   });
 });

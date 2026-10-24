@@ -1529,6 +1529,10 @@ export class ProfileController {
         // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
         if (identityId.startsWith('auth0:')) {
           logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
+        } else if (isEmailIdentity && emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)) {
+          // Removing a login on the account's own primary address only unlinks it — rejecting the
+          // CDP row would mark the user's primary email "not me" (#4123).
+          logger.debug(req, 'reject_identity', 'Primary email address — unlink only, skipping CDP rejection', { identity_id: identityId });
         } else {
           await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
         }
@@ -2582,6 +2586,8 @@ export class ProfileController {
    *
    * Email-type values match case-insensitively between auth-service and CDP (identityMatchKey);
    * username values (e.g. GitHub) match exactly. Values written to CDP keep their original casing.
+   * When several CDP rows match one auth-service login (e.g. case variants), only the first is
+   * shown; the rest are HIDDEN so each login has a single row and Remove menu.
    */
   private reconcileIdentities(
     req: Request,
@@ -2612,6 +2618,10 @@ export class ProfileController {
     // Check if there are multiple LFID identities (indicates merged CDP profiles)
     const lfidCount = cdpIdentities.filter((id) => id.platform === 'lfid').length;
     const hasMultiLfid = lfidCount > 1;
+
+    // Auth-service logins already shown by an earlier CDP row — case-variant CDP rows (dev@ / DEV@)
+    // match the same login, which must appear once with one Remove menu.
+    const claimedAuthUserIds = new Set<string>();
 
     // Process CDP identities
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
@@ -2655,6 +2665,10 @@ export class ProfileController {
             });
           });
         }
+        if (claimedAuthUserIds.has(authIdentity.user_id)) {
+          return { ...cdp, displayState: 'hidden', inAuth0: true };
+        }
+        claimedAuthUserIds.add(authIdentity.user_id);
         // If a Google OAuth identity matched a CDP email entry, show it as a Google identity
         const isGoogleCrossMatch = cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2';
         return {
@@ -2773,20 +2787,25 @@ export class ProfileController {
 
   /**
    * The account's primary email for the identities list: auth-service `primary_email` (keyed on
-   * the LFID username), falling back to the session email. Verified only when it equals
-   * `getEffectiveEmail(req)` — the session email that passed the IdP `email_verified` check, or
-   * the stored target email while impersonating. Stricter than `resolveVerifiedUserEmails`, which
-   * trusts `primary_email` whenever any verified session email exists. A failed auth-service read
-   * falls back rather than failing the endpoint; returns null when neither source resolves an address.
+   * the LFID username), falling back to the session email for display even when the IdP hasn't
+   * verified it (the target's stored email while impersonating). Verification follows
+   * `resolveVerifiedUserEmails`: the session must hold an IdP-verified email
+   * (`getEffectiveEmail(req)`), and then the auth-service primary is trusted even when it differs
+   * from that session email — auth-service only promotes verified addresses, and the session claim
+   * stays stale after a mid-session primary change. A session-only fallback is verified only when
+   * it is that verified email. A failed auth-service read falls back rather than failing the
+   * endpoint; returns null when neither source resolves an address.
    */
   private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string): Promise<IdentitiesPrimaryEmail | null> {
     const sessionEmail = getEffectiveEmail(req);
+    const sessionDisplayEmail = isImpersonating(req) ? sessionEmail : (req.oidc?.user?.['email'] as string | undefined)?.trim() || null;
     const emails = await this.emailVerificationService.getUserEmails(req, lfid).catch(() => null);
-    const email = emails?.primary_email?.trim() || sessionEmail;
+    const authServicePrimary = emails?.primary_email?.trim();
+    const email = authServicePrimary || sessionDisplayEmail;
     if (!email) {
       return null;
     }
-    return { email, verified: emailsEqual(email, sessionEmail) };
+    return { email, verified: !!sessionEmail && (!!authServicePrimary || emailsEqual(email, sessionEmail)) };
   }
 
   /**
