@@ -3,6 +3,9 @@
 
 import type { MktgCommentAgentKey, MktgDocumentCommentLabelGroup } from '../interfaces/mktg-document-comments.interface';
 
+/** Reserved for the internal sign-off orchestrator, never public comment/revise/release IDs. */
+export const MKTG_SIGN_OFF_REQUEST_PREFIX = 'so-';
+
 /** Labels are contract-specific, not a UI catalog; other agents extend their own entry. */
 export const MKTG_DOCUMENT_COMMENT_LABELS: Partial<Record<MktgCommentAgentKey, Record<string, string>>> = {
   'brand-kit': {
@@ -96,7 +99,10 @@ export const MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES = {
 export const MKTG_DOCUMENT_COMMENT_STATUSES = ['open', 'sent', 'resolved'] as const;
 export const MKTG_DOCUMENT_COMMENT_STATUS_LABELS = { open: 'Open', sent: 'Sent to the agent', resolved: 'Resolved by the agent' } as const;
 export const MKTG_DOCUMENT_COMMENT_SUBMISSION_STATES = ['reserved', 'started', 'completed', 'failed', 'uncertain'] as const;
-export const MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS = ['field', 'passage'] as const;
+export const MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS = ['field', 'passage', 'document'] as const;
+/** Whole-asset scope uses existing agent field/passage adapters, not a new upstream payload. */
+export const MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS = { 'foundation-message': 'mf', 'brand-kit': 'chapters', boilerplates: 'bp' } as const;
+export const MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL = 'Whole asset';
 /** Bound whole-object reads/writes without discarding revision history. */
 export const MKTG_DOCUMENT_COMMENT_MAX_THREADS = 500;
 export const MKTG_DOCUMENT_COMMENT_STORE_MAX_BYTES = 2_000_000;

@@ -4,7 +4,10 @@
 import { MKTG_ARTIFACT_PARTITION_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL,
   MKTG_DOCUMENT_COMMENT_ID_REGEX,
+  MKTG_SIGN_OFF_REQUEST_PREFIX,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_MAX_CHARS,
   MKTG_DOCUMENT_COMMENT_PATH_REGEX,
@@ -41,8 +44,8 @@ function id(value: unknown): value is string {
   return typeof value === 'string' && MKTG_DOCUMENT_COMMENT_ID_REGEX.test(value);
 }
 
-/** Public send shape contains IDs only, never caller-authored previous JSON/routing/identity. */
-export function readMktgRedraftRequest(value: unknown): MktgReviseDocumentRequest | null {
+/** Public IDs only. The namespace opt-in is server-prepared, never read from the HTTP body. */
+export function readMktgRedraftRequest(value: unknown, allowSignOffNamespace = false): MktgReviseDocumentRequest | null {
   if (
     !record(value) ||
     !onlyKeys(value, MKTG_REDRAFT_REQUEST_KEYS) ||
@@ -51,6 +54,7 @@ export function readMktgRedraftRequest(value: unknown): MktgReviseDocumentReques
     typeof value['revisionId'] !== 'string' ||
     !MKTG_REVISION_ID_REGEX.test(value['revisionId']) ||
     !id(value['clientRequestId']) ||
+    (!allowSignOffNamespace && value['clientRequestId'].startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX)) ||
     !Array.isArray(value['commentIds']) ||
     !value['commentIds'].length ||
     value['commentIds'].length > Math.max(...Object.values(MKTG_DOCUMENT_COMMENT_LIMITS)) ||
@@ -114,12 +118,13 @@ function checkedContext(value: unknown): Record<string, unknown> | null {
     if (
       !record(anchor) ||
       !onlyKeys(anchor, MKTG_REDRAFT_ANCHOR_KEYS) ||
-      anchor['kind'] !== (agent === 'brand-kit' ? 'passage' : 'field') ||
+      (anchor['kind'] !== 'document' && anchor['kind'] !== (agent === 'brand-kit' ? 'passage' : 'field')) ||
       typeof anchor['key'] !== 'string' ||
       anchor['key'].length > MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS ||
       !MKTG_DOCUMENT_COMMENT_PATH_REGEX.test(anchor['key'])
     )
       return null;
+    if (anchor['kind'] === 'document' && anchor['key'] !== MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent]) return null;
     const parts = anchor['key'].match(MKTG_DOCUMENT_COMMENT_PATH_PART_REGEX) ?? [];
     if (
       !(MKTG_DOCUMENT_COMMENT_ROOTS[agent] as readonly string[]).includes(parts[0] ?? '') ||
@@ -129,6 +134,7 @@ function checkedContext(value: unknown): Record<string, unknown> | null {
     if (agent === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor['key'])) return null;
     if (agent === 'brand-kit') {
       if (typeof anchor['passage'] !== 'string' || !anchor['passage'].trim()) return null;
+      if (anchor['kind'] === 'document' && anchor['passage'] !== MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL) return null;
     } else if (anchor['passage'] !== undefined) return null;
   }
   return value;

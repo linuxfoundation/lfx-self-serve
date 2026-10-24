@@ -3,7 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_RUN_POLL } from '../constants/mktg-run.constants';
-import { MKTG_DOCUMENT_COMMENT_LIMITS } from '../constants/mktg-document-comments.constants';
+import {
+  MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL,
+} from '../constants/mktg-document-comments.constants';
 import type { MktgCommentAgentKey } from '../interfaces/mktg-document-comments.interface';
 import { redraftContextFixture } from './__fixtures__/mktg-redraft-context.fixture';
 import {
@@ -55,6 +59,13 @@ describe('ID-only redraft request', () => {
     clientRequestId: 'request-one',
     commentIds: ['comment-one'],
   });
+  it('reserves sign-off IDs from public sends and ignores a forged body opt-in', () => {
+    const value = { ...request(), clientRequestId: 'so-internal-r' };
+    expect(readMktgRedraftRequest(value)).toBeNull();
+    expect(readMktgRedraftRequest({ ...value, allowSignOffNamespace: true })).toBeNull();
+    expect(readMktgRedraftRequest(value, true)).toEqual(value);
+  });
+
   it('copies the bounded IDs and rejects caller-supplied capabilities, routing or content', () => {
     const value = request();
     expect(readMktgRedraftRequest(value)).toEqual(value);
@@ -73,6 +84,30 @@ describe('ID-only redraft request', () => {
 });
 
 describe('private immutable redraft context', () => {
+  it.each(Object.keys(MKTG_DOCUMENT_COMMENT_LIMITS) as MktgCommentAgentKey[])(
+    'adapts a whole %s asset through its unchanged field/passage echo contract',
+    (agent) => {
+      const context = redraftContextFixture(agent);
+      context.comments[0].anchor = {
+        kind: 'document',
+        key: MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent],
+        ...(agent === 'brand-kit' ? { passage: MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL } : {}),
+      };
+      expect(readMktgRedraftContext(context)).toEqual(context);
+      const envelope = result(agent);
+      const echo = envelope.revision.comments[0];
+      if ('passage' in echo) echo.passage = MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL;
+      else echo.field = MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent];
+      expect(validateMktgRedraftResult(context, envelope).valid).toBe(true);
+      context.comments[0].anchor.key += '.not-a-root';
+      expect(readMktgRedraftContext(context)).toBeNull();
+    }
+  );
+  it('requires the server whole-asset marker for a document-scoped kit passage', () => {
+    const context = redraftContextFixture('brand-kit');
+    context.comments[0].anchor = { kind: 'document', key: 'chapters', passage: 'Caller invented text' };
+    expect(readMktgRedraftContext(context)).toBeNull();
+  });
   it.each(Object.keys(MKTG_DOCUMENT_COMMENT_LIMITS) as MktgCommentAgentKey[])('validates the %s snapshot and its exact per-send cap', (agent) => {
     const context = redraftContextFixture(agent);
     const first = context.comments[0];

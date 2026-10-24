@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_AGENTS, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+// Main-owned service: untouched specs mock the constants barrel with explicit leaf lists.
+import { MKTG_SIGN_OFF_REQUEST_PREFIX } from '@lfx-one/shared/constants/mktg-document-comments.constants';
 import type { MktgDocumentType, MktgPreparedRedraft, MktgRedraftStartResponse } from '@lfx-one/shared/interfaces';
 import { readMktgRedraftRequest, isMktgRedraftSubmissionBusy } from '@lfx-one/shared/utils';
 import { redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
@@ -32,9 +34,10 @@ export class MktgDocumentRedraftService {
     type: MktgDocumentType,
     documentId: string,
     raw: unknown,
-    runs: MktgDocumentRunService
+    runs: MktgDocumentRunService,
+    beforeStart?: () => void | Promise<void>
   ): Promise<MktgRedraftStartResponse> {
-    const input = readMktgRedraftRequest(raw);
+    const input = readMktgRedraftRequest(raw, typeof beforeStart === 'function');
     if (!input) throw ServiceValidationError.forField('redraft', 'Only a stored base, unique comment IDs and request ID are accepted.');
     const creator = this.authors.captureAuthorId(req);
     if (!creator) throw new AuthenticationError('A signed-in subject is required to own the redraft.');
@@ -50,7 +53,11 @@ export class MktgDocumentRedraftService {
     });
     if (!reservation.fresh) {
       if (reservation.submission.state === 'failed') throw this.comments.failedRequest();
-      if (reservation.submission.state === 'reserved' && reservation.submission.runId === null && isMktgRedraftSubmissionBusy(reservation.submission))
+      if (
+        reservation.submission.state === 'reserved' &&
+        reservation.submission.runId === null &&
+        (input.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX) || isMktgRedraftSubmissionBusy(reservation.submission))
+      )
         throw this.uncertain();
       try {
         const runId = reservation.submission.runId;
@@ -70,13 +77,26 @@ export class MktgDocumentRedraftService {
         return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId, priorVersion: context.priorVersion };
       } catch (error) {
         logger.warning(req, 'mktg_document_redraft', 'Redraft replay could not be confirmed', { agent: agent.id, err: error });
-        if (reservation.submission.state === 'started') throw this.uncertain();
+        if (
+          reservation.submission.state === 'started' ||
+          (reservation.submission.state === 'reserved' && input.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
+        )
+          throw this.uncertain();
         return this.failUncertain(req, project, type, documentId, input.clientRequestId);
       }
     }
     let sessionExists = false;
+    let barrierRejected = false;
     try {
       if (!prepared) throw ServiceValidationError.forField('redraft', 'The stored input could not be prepared.');
+      if (beforeStart) {
+        try {
+          await beforeStart();
+        } catch (error) {
+          barrierRejected = true;
+          throw error;
+        }
+      }
       const session = await this.guild.createSession(req, { message: prepared.message, handle: agent.guildAgentHandle });
       if (typeof session !== 'string' || !session.trim()) throw new MicroserviceError('Guild returned no session ID.', 502, 'guild_invalid_response');
       sessionExists = true;
@@ -91,7 +111,7 @@ export class MktgDocumentRedraftService {
       return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId, priorVersion: prepared.context.priorVersion };
     } catch (error) {
       logger.warning(req, 'mktg_document_redraft', 'Redraft start failed; no automatic resubmission', { agent: agent.id, err: error });
-      const rejected = redraftWasNotAccepted(error, sessionExists);
+      const rejected = barrierRejected || redraftWasNotAccepted(error, sessionExists);
       if (rejected) {
         await this.comments.endStart(req, project, type, documentId, input.clientRequestId, false);
         throw error;

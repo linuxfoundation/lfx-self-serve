@@ -77,6 +77,26 @@ export interface MktgDocumentCommentsResponse {
   revisionId: string;
   threads: MktgDocumentComment[];
 }
+/** Internal exact receipt; the ordinary add endpoint still returns only response. */
+export interface MktgDocumentCommentReceipt {
+  commentId: string;
+  response: MktgDocumentCommentsResponse;
+}
+/** Private mutation result, not an HTTP DTO. */
+export interface MktgStoredDocumentCommentReceipt {
+  commentId: string;
+  record: MktgDocumentCommentsRecord;
+}
+/** Server-prepared correlation from a frozen sign-off intent, never client-deserialized. */
+export interface MktgSignOffCommentScope {
+  revisionId: string;
+  requestId: string;
+  commentRequestId: string;
+  requestedBy: string;
+}
+export type MktgSignOffSubmissionProof =
+  | { state: 'absent'; commentId: null }
+  | { state: 'accepted' | 'failed' | 'uncertain' | 'released' | 'in-flight'; commentId: string };
 
 export interface MktgAddDocumentCommentRequest {
   project: string;

@@ -5,6 +5,8 @@ import { BRAND_KIT_CHAPTERS } from '../constants/brand-kit.constants';
 import {
   MKTG_BOILERPLATES_COMMENT_FIELD_REGEX,
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_LABELS,
   MKTG_DOCUMENT_COMMENT_LABEL_GROUPS,
@@ -43,6 +45,10 @@ export function mktgDocumentCommentAnchorKind(agentKey: MktgCommentAgentKey): Mk
 
 /** Validate the stored asset's field, not a sorted display-row index or caller-supplied passage. */
 export function isMktgDocumentCommentAnchor(agentKey: MktgCommentAgentKey, source: unknown, anchor: MktgDocumentCommentAnchor): boolean {
+  if (anchor.kind === 'document') {
+    const field = readMktgDocumentCommentField(source, anchor.key);
+    return anchor.key === MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agentKey] && field !== null && field.value !== null && typeof field.value === 'object';
+  }
   if (anchor.kind !== mktgDocumentCommentAnchorKind(agentKey)) return false;
   const root = anchor.key.match(/^[a-zA-Z][a-zA-Z0-9_]*/)?.[0] ?? '';
   if (!(MKTG_DOCUMENT_COMMENT_ROOTS[agentKey] as readonly string[]).includes(root)) return false;
@@ -58,8 +64,14 @@ export function mktgDocumentCommentTab(agentKey: MktgCommentAgentKey, key: strin
 }
 
 /** Same human field caption for inline pins, controls and the panel; no UI agent list. */
-export function describeMktgDocumentCommentField(agentKey: MktgCommentAgentKey | undefined, key: string, content?: unknown): string {
+export function describeMktgDocumentCommentField(
+  agentKey: MktgCommentAgentKey | undefined,
+  key: string,
+  content?: unknown,
+  kind?: MktgDocumentCommentAnchorKind
+): string {
   if (!agentKey) return key;
+  if (kind === 'document' && key === MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agentKey]) return MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL;
   const normalized = key.replace(/\[\d+\]/g, '[]');
   const base = MKTG_DOCUMENT_COMMENT_LABELS[agentKey]?.[normalized] ?? key;
   const match = /^(.+?)\[(\d+)\]/.exec(key);

@@ -52,7 +52,15 @@ import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
-import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ConflictError,
+  MicroserviceError,
+  PreconditionFailedError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+} from '../errors';
 import { logger } from './logger.service';
 
 const req = {} as Request;
@@ -139,6 +147,57 @@ describe('private field comment store', () => {
     expect(logger.info).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(req, 'mktg_document_comment_add', 'Stored a field comment', { agent: 'foundation-message' });
     expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(request().text);
+  });
+
+  it('rejects public sign-off namespace comment and release IDs before any ledger access', async () => {
+    const store = service();
+    await expect(store.add(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }))).rejects.toMatchObject({ statusCode: 400 });
+    await expect(store.release(req, project, type, 'living', 'so-internal-r')).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.revision).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
+    expect(flows.put).not.toHaveBeenCalled();
+    const receipt = await store.addWithReceipt(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }));
+    expect(receipt.commentId).toBe(record().threads[0].id);
+    expect(record().threads[0].clientRequestId).toBe('so-internal-c');
+  });
+
+  it('returns the exact created/replayed comment ID without changing the public add response', async () => {
+    const store = service();
+    const a = await store.addWithReceipt(req, project, type, 'living', request());
+    await store.add(req, project, type, 'living', request({ clientRequestId: 'another', text: request().text }));
+    const replay = await store.addWithReceipt(req, project, type, 'living', request());
+    expect(replay.commentId).toBe(a.commentId);
+    expect(replay.response.threads).toHaveLength(2);
+    expect(await store.add(req, project, type, 'living', request())).toEqual(replay.response);
+    expect(replay.response).not.toHaveProperty('commentId');
+  });
+
+  it('keeps whole-document anchors off the public add path until kind-aware controls exist', async () => {
+    await expect(service().add(req, project, type, 'living', request({ anchor: { kind: 'document', key: 'mf' } }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.revision).not.toHaveBeenCalled();
+    expect(flows.put).not.toHaveBeenCalled();
+  });
+
+  it('stores a whole-kit marker rather than inventing a leaf passage or accepting caller passage bytes', async () => {
+    const kit = { ...type, agentKey: 'brand-kit' } as MktgDocumentType;
+    flows.revision.mockResolvedValue({
+      revision: { id: revisionId, format: 'markdown' },
+      markdown: '# Kit',
+      sidecar: { chapters: { voice: { line: 'Open mesh' } } },
+    });
+    const result = await service().addWithReceipt(req, project, kit, 'living', request({ anchor: { kind: 'document', key: 'chapters' } }));
+    expect(result.response.threads[0].anchor).toEqual({ kind: 'document', key: 'chapters', passage: 'Whole asset' });
+    await expect(
+      service().add(req, project, kit, 'living', request({ clientRequestId: 'wrong-root', anchor: { kind: 'document', key: 'chapters.voice.line' } }))
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('does not silently reuse a nonce with another anchor kind at the same root', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request({ anchor: { kind: 'field', key: 'mf' } }));
+    await expect(store.addWithReceipt(req, project, type, 'living', request({ anchor: { kind: 'document', key: 'mf' } }))).rejects.toMatchObject({
+      code: 'MKTG_COMMENT_REQUEST_CONFLICT',
+    });
   });
 
   it('retries a contention comparison and does not lose concurrent comments', async () => {
@@ -553,6 +612,31 @@ describe('private field comment store', () => {
     await expect(store.bindRun(req, project, type, 'living', 'send-one', runId)).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('refuses an ordinary fresh send selecting an internal sign-off comment inside the reserve CAS', async () => {
+    const store = service();
+    const receipt = await store.addWithReceipt(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }));
+    const before = objects.get(key)?.body;
+    flows.put.mockClear();
+    await expect(
+      store.reserve(req, project, type, 'living', {
+        project,
+        revisionId,
+        commentIds: [receipt.commentId],
+        clientRequestId: 'ordinary-fresh-send',
+      })
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.put).not.toHaveBeenCalled();
+    expect(objects.get(key)?.body).toBe(before);
+    expect(record().submissions).toEqual([]);
+    const reserved = await store.reserve(req, project, type, 'living', {
+      project,
+      revisionId,
+      commentIds: [receipt.commentId],
+      clientRequestId: 'so-internal-r',
+    });
+    expect(reserved.fresh).toBe(true);
+  });
+
   it('rejects foreign, busy, duplicate or over-cap input IDs without another reservation', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
@@ -571,6 +655,114 @@ describe('private field comment store', () => {
     await expect(store.reserve(req, project, type, 'living', { ...body, commentIds: ['comment-0'], clientRequestId: 'different-send' })).rejects.toBeInstanceOf(
       ConflictError
     );
+  });
+
+  describe('server-only sign-off submission proof/release', () => {
+    async function seeded(state: MktgDocumentCommentsRecord['submissions'][number]['state'], descriptor = false) {
+      const store = service();
+      const receipt = await store.addWithReceipt(req, project, type, 'living', request());
+      const scope = { revisionId, requestedBy: 'opaque-user-one', requestId: 'sign-off-send', commentRequestId: 'request-one' };
+      await store.reserve(req, project, type, 'living', { project, revisionId, commentIds: [receipt.commentId], clientRequestId: scope.requestId });
+      const saved = record();
+      saved.submissions[0].state = state;
+      saved.submissions[0].createdAt = '2020-01-01T00:00:00Z';
+      saved.submissions[0].runId = descriptor || state === 'started' || state === 'completed' ? 'c'.repeat(64) : null;
+      replace(saved);
+      if (descriptor) {
+        const thread = saved.threads[0];
+        const context = {
+          ...redraftContextFixture(),
+          project,
+          requestId: scope.requestId,
+          basedOnId: revisionId,
+          comments: [{ id: thread.id, anchor: thread.anchor, text: thread.text, createdAt: thread.createdAt }],
+        };
+        objects.set(`document-redrafts/${context.runId}.json`, { body: JSON.stringify(context), etag: 'descriptor', metadata: {} });
+      }
+      flows.put.mockClear();
+      return { store, scope, id: receipt.commentId };
+    }
+    it('reports absence without fabricating a ledger row, a terminal status or a no-start guarantee', async () => {
+      const scope = { revisionId, requestedBy: 'opaque-user-one', requestId: 'missing-send', commentRequestId: 'missing-comment' };
+      expect(await service().signOffSubmissionProof(req, project, type, 'living', scope)).toEqual({ state: 'absent', commentId: null });
+      expect(flows.put).not.toHaveBeenCalled();
+    });
+    it.each(['started', 'completed', 'failed'] as const)('projects confirmed %s without modifying its ledger', async (state) => {
+      const { store, scope, id } = await seeded(state);
+      const proof = await store.signOffSubmissionProof(req, project, type, 'living', scope, async () => {});
+      expect(proof).toEqual({ state: state === 'failed' ? 'failed' : 'accepted', commentId: id });
+      expect(JSON.stringify(proof)).not.toContain(scope.requestedBy);
+      expect(flows.put).not.toHaveBeenCalled();
+    });
+    it('treats a matching immutable descriptor as accepted, not releasable uncertainty', async () => {
+      const { store, scope, id } = await seeded('uncertain', true);
+      expect(await store.signOffSubmissionProof(req, project, type, 'living', scope, async () => {})).toEqual({ state: 'accepted', commentId: id });
+      expect(record().submissions[0].state).toBe('uncertain');
+      expect(flows.put).not.toHaveBeenCalled();
+    });
+    it('inspects uncertainty read-only and releases only after explicit authorization, preserving the original creator', async () => {
+      const { store, scope, id } = await seeded('uncertain');
+      expect(await store.signOffSubmissionProof(req, project, type, 'living', scope)).toEqual({ state: 'uncertain', commentId: id });
+      expect(flows.put).not.toHaveBeenCalled();
+      flows.subject.mockReturnValue('opaque-project-writer');
+      const authorize = vi.fn(async () => {});
+      expect(await store.signOffSubmissionProof(req, project, type, 'living', scope, authorize)).toEqual({ state: 'released', commentId: id });
+      expect(authorize).toHaveBeenCalledTimes(1);
+      expect(record().submissions[0]).toMatchObject({ state: 'failed', requestedBy: scope.requestedBy });
+      expect(flows.subject()).toBe('opaque-project-writer');
+      expect(record().threads[0]).toMatchObject({ status: 'open', authorId: scope.requestedBy });
+    });
+    it('re-evaluates an accepted concurrent start after a lost release CAS rather than overwriting it', async () => {
+      const { store, scope, id } = await seeded('uncertain');
+      flows.put.mockImplementationOnce(async () => {
+        const accepted = record();
+        accepted.submissions[0].state = 'started';
+        accepted.submissions[0].runId = 'c'.repeat(64);
+        replace(accepted);
+        return false;
+      });
+      expect(await store.signOffSubmissionProof(req, project, type, 'living', scope, () => Promise.resolve())).toEqual({ state: 'accepted', commentId: id });
+      expect(record().submissions[0].state).toBe('started');
+      expect(flows.put).toHaveBeenCalledTimes(1);
+    });
+    it('does not infer release permission from nonce knowledge', async () => {
+      const { store, scope } = await seeded('uncertain');
+      const denied = new AuthorizationError('Release denied');
+      await expect(
+        store.signOffSubmissionProof(req, project, type, 'living', scope, async () => {
+          throw denied;
+        })
+      ).rejects.toBe(denied);
+      expect(flows.put).not.toHaveBeenCalled();
+      expect(record().submissions[0].state).toBe('uncertain');
+    });
+    it('refuses even an old unbound reservation instead of time-based release or theft', async () => {
+      const { store, scope, id } = await seeded('reserved');
+      expect(await store.signOffSubmissionProof(req, project, type, 'living', scope)).toEqual({ state: 'in-flight', commentId: id });
+      await expect(store.signOffSubmissionProof(req, project, type, 'living', scope, async () => {})).rejects.toMatchObject({
+        code: 'MKTG_REDRAFT_COMMENTS_BUSY',
+      });
+      expect(flows.put).not.toHaveBeenCalled();
+    });
+    it.each([{ requestedBy: 'another-actor' }, { revisionId: resultId }, { commentRequestId: 'another-comment' }])(
+      'rejects a mismatched frozen correlation %j',
+      async (override) => {
+        const { store, scope } = await seeded('uncertain');
+        await expect(store.signOffSubmissionProof(req, project, type, 'living', { ...scope, ...override }, async () => {})).rejects.toMatchObject({
+          code: 'MKTG_SIGN_OFF_CORRELATION_CONFLICT',
+        });
+        expect(flows.put).not.toHaveBeenCalled();
+      }
+    );
+    it('never uses a descriptor from another request as acceptance proof', async () => {
+      const { store, scope } = await seeded('uncertain', true);
+      const key = `document-redrafts/${'c'.repeat(64)}.json`;
+      const context = JSON.parse(objects.get(key)?.body ?? '{}');
+      context.requestId = 'another-request';
+      objects.set(key, { body: JSON.stringify(context), etag: 'descriptor', metadata: {} });
+      await expect(store.signOffSubmissionProof(req, project, type, 'living', scope)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_CORRELATION_CONFLICT' });
+      expect(flows.put).not.toHaveBeenCalled();
+    });
   });
 
   it('bounds comparison retries instead of spinning indefinitely', async () => {

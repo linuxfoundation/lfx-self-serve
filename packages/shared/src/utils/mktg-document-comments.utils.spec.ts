@@ -79,6 +79,24 @@ describe('comment field paths', () => {
     expect(isMktgDocumentCommentAnchor('brand-kit', kit, { kind: 'field', key: 'kit.font' })).toBe(false);
   });
 
+  it.each([
+    { agent: 'foundation-message', source: SOURCE, root: 'mf' },
+    { agent: 'brand-kit', source: { chapters: { voice: { line: 'Open mesh' } } }, root: 'chapters' },
+    { agent: 'boilerplates', source: { bp: [] }, root: 'bp' },
+  ] as const)('allows a document anchor only at the registered stored root for $agent', ({ agent, source, root }) => {
+    expect(isMktgDocumentCommentAnchor(agent, source, { kind: 'document', key: root })).toBe(true);
+    for (const key of ['report', root + '.line', root + '.__proto__', root + '[0]'])
+      expect(isMktgDocumentCommentAnchor(agent, source, { kind: 'document', key })).toBe(false);
+    expect(isMktgDocumentCommentAnchor(agent, {}, { kind: 'document', key: root })).toBe(false);
+    expect(isMktgDocumentCommentAnchor(agent, { [root]: null }, { kind: 'document', key: root })).toBe(false);
+    expect(describeMktgDocumentCommentField(agent, root, source, 'document')).toBe('Whole asset');
+  });
+
+  it('keeps existing field/passage caption behavior when document kind is not supplied', () => {
+    expect(describeMktgDocumentCommentField('foundation-message', 'mf', SOURCE)).toBe('mf');
+    expect(mktgDocumentCommentAnchorKind('brand-kit')).toBe('passage');
+  });
+
   it('allows only the boilerplates contract fields', () => {
     const source = { bp: Array.from({ length: 4 }, () => ({ t: 'Synthetic copy', max: 15 })) };
     for (const key of ['bp', 'bp[0]', 'bp[3].t']) expect(isMktgDocumentCommentAnchor('boilerplates', source, { kind: 'field', key })).toBe(true);
