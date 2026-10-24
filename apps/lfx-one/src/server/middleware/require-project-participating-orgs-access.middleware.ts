@@ -1,16 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
-  PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN,
-  PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
-} from '@lfx-one/shared/constants';
+import { PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN, PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { AccessCheckService } from '../services/access-check.service';
-import { LaunchDarklyServerService } from '../services/launchdarkly-server.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 
@@ -23,23 +18,16 @@ const projectService = new ProjectService();
 
 /**
  * Gate for every `/api/projects/:slug/participating-orgs*` route, in order:
- * 1. the `project-lens-participating-orgs` rollout flag, evaluated per user and failing closed (off → 404, as if
- *    the route did not exist);
- * 2. the slug format (400);
- * 3. slug → v2 project uid (unknown or `not_found` reply → 404; a NATS timeout or other lookup error → 503).
+ * 1. the slug format (400);
+ * 2. slug → v2 project uid (unknown or `not_found` reply → 404; a NATS timeout or other lookup error → 503).
  *    `getProjectIdBySlug` reports NATS no-responders (`503`) as "not found", so only that outage answers 404;
- * 4. strict FGA `project#viewer` (false → 403; authorizer failure → 503, never a silent denial).
+ * 3. strict FGA `project#viewer` (false → 403; authorizer failure → 503, never a silent denial).
  *
  * The data reads stay keyed by slug: the warehouse tables carry Salesforce project ids, not v2 uids, so
  * the slug is the one key both sides share (one slug, one project, on both).
  */
 export async function requireProjectParticipatingOrgsAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
-    const enabled = await LaunchDarklyServerService.getInstance().isFlagEnabled(req, PROJECT_LENS_PARTICIPATING_ORGS_FLAG, false);
-    if (!enabled) {
-      throw new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation: OPERATION });
-    }
-
     const slug = req.params['slug'];
     if (typeof slug !== 'string' || !PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN.test(slug)) {
       throw ServiceValidationError.forField('slug', 'Invalid project slug format', { operation: OPERATION });

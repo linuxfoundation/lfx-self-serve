@@ -17,6 +17,7 @@ import { MktgFamilyExportActionsComponent } from './mktg-family-export-actions.c
 
 describe('Family export slot', () => {
   const writer = signal(true);
+  const activeContext = signal({ uid: 'synthetic-project', name: 'Synthetic project' });
   let run: Subject<MktgFamilyExportRunUpdate>;
   const lookup = (): MktgFamilyExportLastResponse => ({
     last: null,
@@ -29,6 +30,7 @@ describe('Family export slot', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
+    activeContext.set({ uid: 'synthetic-project', name: 'Synthetic project' });
     run = new Subject();
     api.last.mockReturnValue(of(lookup()));
     api.running.mockReturnValue(null);
@@ -39,7 +41,7 @@ describe('Family export slot', () => {
       imports: [MktgFamilyExportActionsComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'synthetic-project', name: 'Synthetic project' }), canWrite: writer } },
+        { provide: ProjectContextService, useValue: { activeContext, canWrite: writer } },
         { provide: MktgFamilyExportService, useValue: api },
         { provide: MktgPrintService, useValue: print },
       ],
@@ -133,6 +135,27 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(root.textContent).toContain('Synthetic export failure.');
     expect(button('slides')?.disabled).toBe(false);
+  });
+
+  it.each(['family', 'project', 'writer'])('clears an incomplete deck link when the %s scope changes', async (scope) => {
+    const { fixture, root, button } = await setup();
+    const link = familyExportRecord().link;
+    button('slides')?.click();
+    run.next({
+      mode: 'create',
+      skippedMembers: [],
+      logoNote: null,
+      result: { status: 'failed', failure: 'google', message: 'Synthetic export failure.', deckLink: link },
+    });
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-partial"]')?.getAttribute('href')).toBe(link);
+
+    if (scope === 'family') fixture.componentRef.setInput('familyId', 'synthetic-unsupported-family');
+    if (scope === 'project') activeContext.set({ uid: 'synthetic-other-project', name: 'Synthetic other project' });
+    if (scope === 'writer') writer.set(false);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-partial"]')).toBeNull();
+    expect(root.textContent).not.toContain('Synthetic export failure.');
   });
 
   it.each(['FAMILY_NOTHING_APPROVED', 'FAMILY_ASSET_UNREADABLE'])('shows the family-specific 409 message for %s', async (code) => {

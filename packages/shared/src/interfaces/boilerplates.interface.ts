@@ -95,13 +95,15 @@ export interface BoilerplatesEnvelope {
   agent: BoilerplatesAgentProvenance;
 }
 
-/**
- * The agent's draft form (`boilerplates_intake_form`, src/form.ts) as the
- * BFF builds it: the project, the website whose domain ends the 100-word
- * version, the notes, and the messaging framework's content. A redraft and a
- * check (comments, a hand edit) are later work, so the form carries no
- * revision.
- */
+/** Comments-only redraft of the server-loaded stored boilerplates. */
+export interface BoilerplatesRedraftRevision {
+  mode: 'redraft';
+  prior_version: number;
+  previous: BoilerplatesContent;
+  comments: { field: string; comment: string }[];
+}
+
+/** The agent's form, rendered as text; absent revision means a new draft. */
 export interface BoilerplatesFormPayload {
   type: typeof BOILERPLATES_FORM_TYPE;
   project_name: string;
@@ -111,6 +113,7 @@ export interface BoilerplatesFormPayload {
   notes?: string;
   /** The framework's content (`{mf, icp, mh, nums}`), unwrapped from the stored envelope. */
   messaging_framework?: Record<string, unknown>;
+  revision?: BoilerplatesRedraftRevision;
 }
 
 /** What the form payload takes besides the answers. */
@@ -119,6 +122,7 @@ export interface BoilerplatesFormInputs {
   projectUid?: string;
   /** The run date, YYYY-MM-DD; today (UTC) when absent. */
   runDate?: string;
+  revision?: BoilerplatesRedraftRevision;
 }
 
 /** Request body for `POST /api/mktg-agents/boilerplates/generate`. */

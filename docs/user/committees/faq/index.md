@@ -20,7 +20,7 @@ Two things cause this: either you're not currently on that group's list, or you 
 
 ## How do I add members to a committee?
 
-Open the group from the **My Groups** page, navigate to the members section, and use the add member option to search and add by name or email.
+Open the group from the **Groups** page, navigate to the members section, and use the add member option to search and add by name or email.
 
 ## Can I add many members at once?
 

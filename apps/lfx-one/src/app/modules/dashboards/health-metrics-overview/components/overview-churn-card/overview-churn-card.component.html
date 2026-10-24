@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-churn">
+  @if (view(); as view) {
+    <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-churn-kpis" />
+
+    <div class="flex flex-col overflow-x-auto" role="table" aria-label="Churn by membership tier" data-testid="overview-churn-tiers">
+      <div
+        class="grid min-w-[520px] grid-cols-[minmax(90px,0.8fr)_minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(90px,0.8fr)] gap-[16px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
+        role="row">
+        <span role="columnheader">Tier</span>
+        <span role="columnheader">Churn rate</span>
+        <span class="text-right" role="columnheader">Memberships lost</span>
+        <span class="text-right" role="columnheader">Value lost</span>
+      </div>
+      @for (tier of view.tiers; track tier.key) {
+        <div
+          class="grid min-w-[520px] grid-cols-[minmax(90px,0.8fr)_minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(90px,0.8fr)] items-center gap-[16px] border-b border-gray-100 py-[10px] text-[13px] text-gray-900"
+          role="row"
+          [attr.data-testid]="'overview-churn-tier-' + tier.key">
+          <span class="font-medium" role="cell">{{ tier.label }}</span>
+          <div class="flex items-center gap-[10px]" role="cell">
+            <span class="relative h-[8px] flex-1 rounded-full bg-gray-100" aria-hidden="true">
+              <span class="block h-full rounded-full bg-blue-500" [style.width.%]="tier.rateWidthPct"></span>
+              <span
+                class="absolute bottom-[-4px] top-[-4px] w-[2px] rounded-[1px] bg-gray-700"
+                [style.left.%]="view.overallPct"
+                [attr.title]="view.overallLabel"></span>
+            </span>
+            <span class="w-[36px] flex-none text-right">{{ tier.rateLabel }}</span>
+          </div>
+          <span class="text-right" role="cell">{{ tier.lostLabel }}</span>
+          <span class="text-right" role="cell">{{ tier.valueLabel }}</span>
+        </div>
+      }
+    </div>
+
+    <div class="mt-auto flex">
+      <lfx-overview-explore-link [link]="link" testId="overview-churn-explore" />
+    </div>
+  }
+</lfx-overview-card>

@@ -202,6 +202,7 @@ export class MktgFamilyExportActionsComponent {
           this.lookup.set(null);
           this.completed.set(null);
           this.phase.set('idle');
+          this.partialLink.set(null);
           this.message.set('');
           this.lookupError.set('');
           if (!target || !writer) {

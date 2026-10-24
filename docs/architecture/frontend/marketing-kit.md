@@ -187,7 +187,7 @@ uses `replaceUrl: true`. Main's generic run renders result and questions inline.
 No-project branches are defensive and unit-covered, not stable route-level e2e states:
 `projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`
 selects an available project or sends an empty lens to Me through `handleEmptyLensResponse`.
-A no-cookie/empty-nav e2e therefore reaches My Dashboard, not an unselected kit.
+A no-cookie/empty-nav e2e therefore reaches the Me lens Dashboard, not an unselected kit.
 
 Content/robust Playwright pairs stub synthetic listing and revision data, including a
 Boilerplates document and framework source report. They pin the local flag and project grants,

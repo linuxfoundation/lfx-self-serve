@@ -38,10 +38,12 @@ import {
   MktgDocumentRunCoverage,
   MktgRunResultResponse,
   MktgStartedRunRecord,
+  MktgDocumentRedraftContext,
   MktgStoredDocumentRunState,
   MktgStoredStartedRun,
   MktgGenerationAttribution,
   MktgOneOffRunContext,
+  MktgDocumentRunStartOptions,
   MktgRunActivity,
   ObjectStoreListEntry,
 } from '@lfx-one/shared/interfaces';
@@ -75,6 +77,8 @@ import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
+import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 
 /** Private session-keyed starts. Existing metadata operations only; the terminal cache is disposable. */
 export class MktgDocumentRunService {
@@ -82,6 +86,8 @@ export class MktgDocumentRunService {
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
   private readonly guild = new GuildService();
+  private readonly redrafts = new MktgDocumentRedraftContextService();
+  private readonly comments = new MktgDocumentCommentsService();
 
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     const uid = typeof raw === 'string' ? raw.trim() : '';
@@ -174,7 +180,7 @@ export class MktgDocumentRunService {
   public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));
     if (!type) throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
-    return this.start(req, project, type.agentKey, sessionId, 0, 'initial', context ?? {});
+    return this.start(req, project, type.agentKey, sessionId, 0, 'initial', { oneOff: context ?? {} });
   }
 
   /**
@@ -189,15 +195,17 @@ export class MktgDocumentRunService {
     sessionId: string,
     priorVersion = 0,
     attemptId = 'initial',
-    oneOff?: MktgOneOffRunContext
+    options: MktgDocumentRunStartOptions = {}
   ): Promise<string> {
+    const { oneOff, basedOnId } = options;
     if (
       !findMktgRunIntake(agentKey, true) ||
       !sessionId ||
       !Number.isInteger(priorVersion) ||
       priorVersion < 0 ||
       !isMktgRunAttemptId(attemptId) ||
-      (oneOff !== undefined && !this.validContext(oneOff))
+      (oneOff !== undefined && !this.validContext(oneOff)) ||
+      (basedOnId !== undefined && !MKTG_REVISION_ID_REGEX.test(basedOnId))
     ) {
       throw ServiceValidationError.forField('run', 'Invalid document run.');
     }
@@ -229,7 +237,7 @@ export class MktgDocumentRunService {
       state: 'writing',
       result: null,
     };
-    const priorRevision = existing?.record.result?.revisionId ?? existing?.record.priorRevisionId;
+    const priorRevision = existing?.record.result?.revisionId ?? existing?.record.priorRevisionId ?? basedOnId;
     const written = await this.put(
       req,
       key,
@@ -467,6 +475,30 @@ export class MktgDocumentRunService {
     return mktgRunProgress(record, result.failureText ?? result.reply);
   }
 
+  /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */
+  public async knownRedraftSession(
+    req: Request,
+    project: string,
+    agentKey: string,
+    documentId: string,
+    runId: string,
+    requestId: string,
+    creator: string
+  ): Promise<string | null> {
+    if (!MKTG_STARTED_RUN_ID_REGEX.test(runId) || !isMktgRunAttemptId(requestId)) throw ServiceValidationError.forField('run', 'Invalid redraft binding.');
+    const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
+    if (!stored) return null;
+    if (
+      stored.record.agentKey !== agentKey ||
+      stored.record.documentId !== documentId ||
+      stored.record.attemptId !== requestId ||
+      stored.record.creatorSubject !== creator
+    ) {
+      throw new AuthorizationError('The recorded session does not match this creator and redraft request.');
+    }
+    return stored.record.sessionId;
+  }
+
   public async retry(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state === 'failed') {
@@ -517,6 +549,12 @@ export class MktgDocumentRunService {
                 older.record.documentId === record.documentId &&
                 (olderAt < currentAt || (olderAt === currentAt && older.record.runId < record.runId))
               ) {
+                await this.settleRedraft(
+                  req,
+                  older.record,
+                  { status: 'failed', failureText: 'A newer run superseded this send.' },
+                  await this.redrafts.forSession(req, older.record.sessionId)
+                );
                 await this.mark(req, older, 'superseded');
               }
             } catch (err) {
@@ -538,6 +576,13 @@ export class MktgDocumentRunService {
     if (staleReceipt) {
       result = { status: 'pending' };
     }
+    const context = await this.redrafts.forSession(req, run.sessionId);
+    if (context && (result.status === 'questions' || run.state === 'questions')) {
+      const failureText = 'The agent asked questions on a comments-only redraft.';
+      await this.settleRedraft(req, run, { status: 'failed', failureText }, context);
+      return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, run.persistRetries, failureText);
+    }
+    if (result.status === 'ready' || result.status === 'failed' || result.status === 'refused') await this.settleRedraft(req, run, result, context);
     if (result.status === 'ready') {
       if (location && result.persistence?.project === run.project && location.agentKey === run.agentKey && location.documentId === run.documentId) {
         return this.mark(req, stored, 'completed', run.retryAt, location.revisionId);
@@ -546,18 +591,10 @@ export class MktgDocumentRunService {
         return run;
       }
       const retries = run.state === 'storing' ? (run.persistRetries ?? 0) + 1 : 0;
-      return retries >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS
-        ? this.mark(
-            req,
-            stored,
-            'failed',
-            run.retryAt,
-            undefined,
-            run.answeredQuestionsId,
-            retries,
-            'The asset was generated but its revision could not be stored. Retry checks it again.'
-          )
-        : this.mark(req, stored, 'storing', run.retryAt, undefined, run.answeredQuestionsId, retries);
+      if (retries < MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) return this.mark(req, stored, 'storing', run.retryAt, undefined, run.answeredQuestionsId, retries);
+      const failureText = 'The asset was generated but its revision could not be stored. Retry checks it again.';
+      await this.settleRedraft(req, run, { status: 'failed', failureText }, context);
+      return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, retries, failureText);
     }
     if (run.state === 'failed') {
       return run;
@@ -597,9 +634,21 @@ export class MktgDocumentRunService {
     const deadlineReason = staleReceipt
       ? 'The run produced no new revision before its writing deadline.'
       : 'The run did not finish before its writing deadline.';
-    return Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs
-      ? this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, 0, deadlineReason)
-      : run;
+    if (Date.now() - Date.parse(run.retryAt ?? run.startedAt) <= MKTG_RUN_POLL.timeoutMs) return run;
+    await this.settleRedraft(req, run, { status: 'failed', failureText: deadlineReason }, context);
+    return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, 0, deadlineReason);
+  }
+
+  private async settleRedraft(
+    req: Request,
+    run: MktgStartedRunRecord,
+    result: MktgRunResultResponse,
+    context: MktgDocumentRedraftContext | null
+  ): Promise<void> {
+    if (!context) return;
+    this.redrafts.assertScope(context, run.project, run.agentKey);
+    if (context.requestId !== run.attemptId) throw ServiceValidationError.forField('run', 'The redraft attempt changed.');
+    await this.comments.settle(req, context, result);
   }
 
   private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
