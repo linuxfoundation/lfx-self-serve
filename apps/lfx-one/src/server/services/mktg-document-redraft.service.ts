@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_AGENTS, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+// Main-owned service: untouched specs mock the constants barrel with explicit leaf lists.
+import { MKTG_SIGN_OFF_REQUEST_PREFIX } from '@lfx-one/shared/constants/mktg-document-comments.constants';
 import type { MktgDocumentType, MktgPreparedRedraft, MktgRedraftStartResponse } from '@lfx-one/shared/interfaces';
 import { readMktgRedraftRequest, isMktgRedraftSubmissionBusy } from '@lfx-one/shared/utils';
 import { redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
@@ -51,7 +53,11 @@ export class MktgDocumentRedraftService {
     });
     if (!reservation.fresh) {
       if (reservation.submission.state === 'failed') throw this.comments.failedRequest();
-      if (reservation.submission.state === 'reserved' && reservation.submission.runId === null && isMktgRedraftSubmissionBusy(reservation.submission))
+      if (
+        reservation.submission.state === 'reserved' &&
+        reservation.submission.runId === null &&
+        (input.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX) || isMktgRedraftSubmissionBusy(reservation.submission))
+      )
         throw this.uncertain();
       try {
         const runId = reservation.submission.runId;
