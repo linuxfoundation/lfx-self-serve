@@ -22,7 +22,13 @@ export class LinkedinPostService {
     if (!isPlatformBrowser(this.platform)) return;
     try {
       for (const key of Object.keys(localStorage)) {
-        if (key.startsWith(this.legacyStoragePrefix)) localStorage.removeItem(key);
+        if (!key.startsWith(this.legacyStoragePrefix)) continue;
+        try {
+          const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null');
+          if (value && typeof value === 'object' && 'agentId' in value && value.agentId === 'linkedin-post') localStorage.removeItem(key);
+        } catch {
+          // Preserve unrecognized legacy records; another agent may still own them.
+        }
       }
     } catch {
       // Unavailable browser storage must not block profile reads or accepted-run transport.
