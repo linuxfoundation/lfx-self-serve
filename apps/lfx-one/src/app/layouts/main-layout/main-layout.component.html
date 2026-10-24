@@ -22,26 +22,40 @@
       [(selectorPanelOpen)]="selectorPanelOpen"></lfx-navbar>
   </div>
 
-  <!-- Navbar - Mobile Drawer -->
-  <p-drawer
-    [visible]="showMobileSidebar()"
-    (visibleChange)="onDrawerVisibilityChange($event)"
-    position="left"
-    [modal]="true"
-    [dismissible]="true"
-    [showCloseIcon]="false"
-    styleClass="lg:hidden mobile-navbar-drawer"
+  <!-- Navbar - Mobile Drawer. A layout-owned panel, not PrimeNG's p-drawer: its Angular-animation lifecycle (re-parenting
+       the panel to <body> on enter, tearing down on leave) could leave the panel invisible or stripped on iOS WebKit while
+       the state said open. The panel always exists and slides with a CSS transition bound to the state, so what is shown
+       can't drift from it. The navbar mounts on first open and then stays. -->
+  @if (showMobileSidebar()) {
+    <div
+      class="lg:hidden fixed inset-0 z-[998] bg-black/40 touch-none mobile-navbar-backdrop"
+      (click)="closeMobileSidebar()"
+      aria-hidden="true"
+      data-testid="mobile-sidebar-backdrop"></div>
+  }
+  <div
+    #mobileDrawer
+    class="lg:hidden fixed top-0 left-0 z-[999] flex h-full w-[296px] flex-col outline-none mobile-navbar-drawer"
+    [class.is-open]="showMobileSidebar()"
+    [attr.inert]="showMobileSidebar() ? null : ''"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Navigation"
+    tabindex="-1"
+    pFocusTrap
+    [pFocusTrapDisabled]="!showMobileSidebar()"
     data-testid="mobile-sidebar-drawer">
-    <ng-template #headless>
+    @if (mobileNavbarMounted()) {
+      <!-- The drawer's lens tabs preview a lens's menu without switching the page's (#4208), so its selectors follow the menu lens. -->
       <lfx-navbar
         [items]="sidebarItems()"
-        [showMeSelector]="activeLens() === 'me'"
-        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-        [showOrgSelector]="activeLens() === 'org'"
+        [showMeSelector]="menuLens() === 'me'"
+        [showProjectSelector]="menuLens() === 'project' || menuLens() === 'foundation'"
+        [showOrgSelector]="menuLens() === 'org'"
         [(selectorPanelOpen)]="selectorPanelOpen"
         [mobile]="true"></lfx-navbar>
-    </ng-template>
-  </p-drawer>
+    }
+  </div>
 
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
   @if (selectorPanelOpen()) {
@@ -63,10 +77,12 @@
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
       [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating() }">
       <button
+        #mobileMenuButton
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
-        (click)="toggleMobileSidebar()"
-        aria-label="Toggle menu"
+        (click)="openMobileSidebar()"
+        aria-label="Open menu"
+        [attr.aria-expanded]="showMobileSidebar()"
         data-testid="mobile-menu-button">
         <i class="fa-light fa-bars text-gray-600 text-xl"></i>
       </button>

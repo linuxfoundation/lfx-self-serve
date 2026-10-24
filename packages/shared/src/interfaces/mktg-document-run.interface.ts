@@ -16,6 +16,12 @@ export interface MktgOneOffRunContext {
   initializeProfile?: boolean;
 }
 
+/** Distinct server start contexts; a revision id must never be interpreted as one-off completion data. */
+export interface MktgDocumentRunStartOptions {
+  oneOff?: MktgOneOffRunContext;
+  basedOnId?: string;
+}
+
 /** Terminal runtime evidence, without treating arbitrary agent text as a document. */
 export interface MktgSessionOutcome {
   ended: boolean;

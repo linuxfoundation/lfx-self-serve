@@ -18,7 +18,7 @@ This article explains how to view your recurring donation details and how to can
 ## View recurring donation details
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
+2. Select **Crowdfunding → Donations** from the left navigation sidebar.
 3. Find the recurring donation in the recurring donations list.
 4. Select the donation name to open its detail page.
 
