@@ -15,7 +15,19 @@ export class LinkedinPostService {
   private readonly http = inject(HttpClient);
   private readonly platform = inject(PLATFORM_ID);
   private readonly user = inject(UserService);
+  private readonly legacyStoragePrefix = 'lfx-mktg-pending-document:';
   private readonly unsavedSetup = new Map<string, { setup: LinkedinSetup; savedAt: number }>();
+
+  public constructor() {
+    if (!isPlatformBrowser(this.platform)) return;
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith(this.legacyStoragePrefix)) localStorage.removeItem(key);
+      }
+    } catch {
+      // Unavailable browser storage must not block profile reads or accepted-run transport.
+    }
+  }
 
   public profile(): Observable<{ profile: LinkedinStoredProfile | null }> {
     return this.http.get<{ profile: LinkedinStoredProfile | null }>(`${LINKEDIN_API}/profile`).pipe(

@@ -3,9 +3,9 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { LINKEDIN_POST_INTAKE } from '@lfx-one/shared/constants';
+import { LINKEDIN_POST_INTAKE, MKTG_PENDING_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
 import { UserService } from './user.service';
 import { LinkedinPostService } from './linkedin-post.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +24,29 @@ describe('LinkedIn document transport', () => {
     localStorage.clear();
     TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: UserService, useValue: { user } }] });
   });
+  it.each(['browser', 'server'])('sweeps stale legacy owner tokens only in the browser, preserving current attempts (%s)', (platform) => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
+    const legacyKey = 'lfx-mktg-pending-document:synthetic-subject:synthetic-project:synthetic-document';
+    const currentKey = `${MKTG_PENDING_RUN_STORAGE_KEY_PREFIX}:synthetic-subject:synthetic-project:synthetic-agent:synthetic-document`;
+    const legacy = JSON.stringify({ ownerToken: 'synthetic-retired-token', sessionId: 'synthetic-retired-session' });
+    for (const key of [legacyKey, `${legacyKey}-another`]) localStorage.setItem(key, legacy);
+    localStorage.setItem(currentKey, 'synthetic-current-proof');
+    TestBed.inject(LinkedinPostService);
+    for (const key of [legacyKey, `${legacyKey}-another`]) expect(localStorage.getItem(key)).toBe(platform === 'browser' ? null : legacy);
+    expect(localStorage.getItem(currentKey)).toBe('synthetic-current-proof');
+  });
+
+  it('does not block the live transport when browser storage is unavailable', () => {
+    const storage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('Synthetic storage denial');
+    });
+    try {
+      expect(() => TestBed.inject(LinkedinPostService)).not.toThrow();
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
   it('starts a document without legacy storage and keeps setup only in creator/project/document-bound live memory', () => {
     const service = TestBed.inject(LinkedinPostService);
     const http = TestBed.inject(HttpTestingController);
