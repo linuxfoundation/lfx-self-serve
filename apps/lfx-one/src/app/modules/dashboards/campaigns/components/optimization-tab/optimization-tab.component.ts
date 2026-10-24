@@ -43,6 +43,7 @@ import type {
   NegativeKeywordCampaignPlatform,
   RedditAccountOption,
   RedditActionItem,
+  RedditKeywordNegativeTarget,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -339,6 +340,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly redditKeywordsReload = signal(0);
   /** The brief's Reddit campaign names by Reddit campaign id, for the Reddit keyword table's Campaign column. */
   protected readonly redditCampaignNames: Signal<Record<string, string>> = this.initRedditCampaignNames();
+  /**
+   * The brief's Reddit campaigns that offer negative keywords right now (the rows whose editor is
+   * available), by Reddit campaign id, for the Reddit keyword table's "Add as negative". A Reddit id
+   * held by more than one row maps to neither: the table must not choose between them.
+   */
+  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget>> = this.initRedditNegativeTargets();
 
   /**
    * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
@@ -2204,6 +2211,26 @@ export class OptimizationTabComponent implements OnInit {
         }
       }
       return names;
+    });
+  }
+
+  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget>> {
+    return computed(() => {
+      const targets: Record<string, RedditKeywordNegativeTarget> = {};
+      const ambiguous = new Set<string>();
+      for (const row of this.campaignRows() ?? []) {
+        const redditId = row.campaign.platform_campaign_id;
+        if (row.negativeKeywordsPlatform !== 'reddit-ads' || !row.negativeKeywordsAvailable || typeof redditId !== 'string' || redditId === '') {
+          continue;
+        }
+        if (Object.hasOwn(targets, redditId) || ambiguous.has(redditId)) {
+          ambiguous.add(redditId);
+          delete targets[redditId];
+          continue;
+        }
+        targets[redditId] = { campaignId: row.campaign.id, campaignName: row.campaign.campaign_name };
+      }
+      return targets;
     });
   }
 
