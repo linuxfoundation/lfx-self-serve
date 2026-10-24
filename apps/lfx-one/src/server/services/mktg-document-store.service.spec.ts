@@ -758,6 +758,44 @@ describe('MktgDocumentStoreService', () => {
       expect(read().approvals[draft.id]).toBeDefined();
     });
 
+    it.each(['brand-kit', 'faq'])(
+      'refuses request-changes reserve on an already approved stale %s request after a newer Send without writing',
+      async (agentKey) => {
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+        if (!type) throw new Error('Missing synthetic document type');
+        const old = await service.recordGeneration(req, type, PROJECT, envelope('# Old approved'), 'old-approved');
+        mode();
+        await service.transitionSignOff(req, PROJECT, type, 'living', old.id, { roles });
+        mode('single-writer');
+        await service.approveRevision(req, PROJECT, type, 'living', old.id);
+        const newer = await service.recordGeneration(req, type, PROJECT, envelope('# New pending'), 'new-pending');
+        mode();
+        await service.transitionSignOff(req, PROJECT, type, 'living', newer.id, { roles });
+        const pointerKey = `documents/${PROJECT}/${type.agentKey}/living/current.json`;
+        const before = storedObject(pointerKey).body;
+        const selected = JSON.parse(before).revisionId;
+        store.conditionalWrites = [];
+        for (const role of ['ed', 'tocChair'] as const) {
+          await expect(
+            service.changeRequestTransition(asRole(roles[role]), PROJECT, type, 'living', old.id, {
+              operation: 'reserve',
+              role,
+              nonce: 'blocked-changes',
+              note: 'Must not revise approved content.',
+            })
+          ).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_SIGN_OFF_NOT_PENDING' });
+        }
+        expect(store.conditionalWrites).toEqual([]);
+        expect(storedObject(pointerKey).body).toBe(before);
+        const pointer = JSON.parse(storedObject(pointerKey).body);
+        expect(pointer.revisionId).toBe(selected);
+        expect(pointer.signOff[old.id].state).toBe('pending');
+        expect(pointer.signOff[old.id].changeRequestIntent).toBeUndefined();
+        expect(pointer.signOff[newer.id].state).toBe('pending');
+        expect(pointer.approvals[old.id]).toBeDefined();
+      }
+    );
+
     it('refuses another pending request on this or another revision', async () => {
       const { draft } = await pending();
       const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Newer draft'), 'newer');
