@@ -80,6 +80,18 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     return fixture;
   }
+  it.each(['text', 'url'] as const)('rejects empty pasted text and non-HTTPS URLs without a Generate POST (%s)', async (source) => {
+    const component = (await savedIntake()).componentInstance;
+    component['onSource'](source);
+    if (source === 'url') component['contentForm'].controls.url.setValue('http://source.example/not-https');
+    component['contentForm'].controls.share_link.setValue(''); // Test the source guard, not optional-link validation.
+    await component['onDraft']();
+    expect(component['error']()).toBe('Supply pasted text or one public HTTPS link.');
+    expect(component['busy']()).toBe(false);
+    expect(api.start).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.generate);
+  });
+
   async function questionsIntake() {
     const fixture = await savedIntake();
     const component = fixture.componentInstance;

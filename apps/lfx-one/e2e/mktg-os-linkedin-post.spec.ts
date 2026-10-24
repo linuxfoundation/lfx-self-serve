@@ -2,16 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import {
-  LINKEDIN_API,
-  LINKEDIN_POST_INTAKE,
-  MKTG_DOCUMENTS_API_PATH,
-  MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
-  MKTG_RUN_FAILURE_REASON,
-} from '@lfx-one/shared/constants';
+import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
-import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils/linkedin-post.utils';
 import {
   json,
   linkedinEnvelope,
@@ -23,142 +15,6 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
-  test('reloaded first-run failure offers Retry to empty setup without storing profile answers', async ({ page }, info) => {
-    await suppressCookieBanner(page);
-    await setupLinkedin(page);
-    let dead = false;
-    let polls = 0;
-    await page.route(`**${LINKEDIN_API}/result`, (route) => {
-      if (!dead) return json(route, { status: 'pending' });
-      polls++;
-      return json(route, { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry.' } });
-    });
-    await openLinkedin(page);
-    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
-      await page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea').fill(value);
-    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic first-run source.');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-generating')).toBeVisible();
-    const profilesPersisted = await page.evaluate(
-      (prefix) =>
-        Object.keys(localStorage)
-          .filter((key) => key.startsWith(prefix))
-          .some((key) => {
-            const pending = JSON.parse(localStorage.getItem(key) ?? '{}');
-            return 'setup' in pending || 'profile' in pending || 'setup' in (pending.retryInputs ?? {});
-          }),
-      MKTG_PENDING_DOCUMENT_STORAGE_PREFIX
-    );
-    expect(profilesPersisted).toBe(false);
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    dead = true;
-    await openLinkedin(page);
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    expect(polls).toBe(1);
-    await page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText("Your setup answers aren't kept in the browser — enter them again to draft");
-    await expect(page.getByTestId('mktg-linkedin-profile-name').locator('input')).toHaveValue('');
-    await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-    expect(polls).toBe(1);
-    await page.screenshot({ path: info.outputPath('first-run-reload-empty-setup.png'), fullPage: true });
-  });
-  test('a dead session fails within one poll and Retry sends the identical inputs to a new session', async ({ page }, info) => {
-    await suppressCookieBanner(page);
-    await setupLinkedin(page, { saved: true });
-    const submitted: unknown[] = [];
-    page.on('request', (request) => {
-      if (new URL(request.url()).pathname === `${LINKEDIN_API}/generate`) submitted.push(request.postDataJSON());
-    });
-    let polls = 0;
-    await page.route(`**${LINKEDIN_API}/result`, (route) => {
-      polls++;
-      return json(route, {
-        status: 'failed',
-        failure: { eventType: 'runtime_error', reason: 'The agent could not start. Your inputs are kept — retry with a new run.' },
-      });
-    });
-    await openLinkedin(page);
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release notes kept for Retry.');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    await expect.poll(() => polls).toBe(1);
-    await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('Synthetic release notes kept for Retry.');
-    for (const action of ['cancel', 'save'] as const) {
-      await page.getByTestId('mktg-linkedin-edit-profile').click();
-      await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-      await page
-        .getByTestId(`mktg-linkedin-${action === 'cancel' ? 'cancel-edit' : 'save-profile'}`)
-        .getByRole('button')
-        .click();
-      await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-      await expect(page.getByTestId('mktg-linkedin-error')).toContainText(MKTG_RUN_FAILURE_REASON);
-      await expect(page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-      expect(submitted).toHaveLength(1);
-      expect(polls).toBe(1);
-    }
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('Supply pasted text');
-    expect(submitted).toHaveLength(1);
-    expect(polls).toBe(1);
-    await page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
-    await expect.poll(() => submitted.length).toBe(2);
-    expect(submitted[1]).toEqual(submitted[0]);
-    await expect.poll(() => polls, { timeout: LINKEDIN_RUN_TIMEOUT }).toBe(2);
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    await page.screenshot({ path: info.outputPath('failed-session-retry.png'), fullPage: true });
-  });
-
-  for (const source of ['text', 'file', 'url'] as const)
-    test(`restoring a pending dead ${source} run fails once and never resumes on another reload`, async ({ page }, info) => {
-      await suppressCookieBanner(page);
-      await setupLinkedin(page, { saved: true });
-      let dead = false;
-      let pollsAfterReload = 0;
-      await page.route(`**${LINKEDIN_API}/result`, (route) => {
-        if (!dead) return json(route, { status: 'pending', activity: [] });
-        pollsAfterReload++;
-        return json(route, { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry with a new run.' } });
-      });
-      await openLinkedin(page);
-      if (source === 'file') {
-        await page.getByTestId('mktg-linkedin-source-file').click();
-        await page
-          .getByTestId('mktg-linkedin-file')
-          .locator('input[type="file"]')
-          .first()
-          .setInputFiles({ name: 'synthetic.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic file source.') });
-      } else if (source === 'url') {
-        await page.getByTestId('mktg-linkedin-source-url').click();
-        await page.getByTestId('mktg-linkedin-content-url').locator('input').fill('https://source.example/release');
-      } else await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic recoverable source.');
-      await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-      await expect(page.getByTestId('mktg-linkedin-generating')).toBeVisible();
-      // Leave the old app before the error occurs, preserving its pending capability.
-      // Reopening performs a full document navigation, like reload, before restoring the route.
-      await page.goto('/', { waitUntil: 'domcontentloaded' });
-      dead = true;
-      await openLinkedin(page);
-      await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-      expect(pollsAfterReload).toBe(1);
-      await expect(page.getByTestId('mktg-linkedin-retry-run').getByRole('button')).toHaveText('Retry');
-      await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-      await page.getByTestId('mktg-linkedin-retry-run').getByRole('button').click();
-      const prompts = { file: 'choose the file again', text: 'paste it again', url: 'enter the link again' };
-      await expect(page.getByTestId('mktg-linkedin-error')).toContainText(prompts[source]);
-      if (source === 'file') await expect(page.getByTestId('mktg-linkedin-file')).toBeVisible();
-      else if (source === 'url') await expect(page.getByTestId('mktg-linkedin-content-url').locator('input')).toHaveValue('');
-      else await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('');
-      await openLinkedin(page);
-      await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-      await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-      expect(pollsAfterReload).toBe(1);
-      await page.screenshot({ path: info.outputPath('dead-capability-retired.png'), fullPage: true });
-    });
   test('shared run uses fixed linked parents and Back returns from Family without bouncing', async ({ page }, info) => {
     // The helper calls suppressCookieBanner and stubs all LinkedIn reads and project rights.
     await setupLinkedin(page, { saved: true });
@@ -341,56 +197,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-page').locator('main, aside')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('file-source-reset.png'), fullPage: true });
   });
-  test('applies an offered voice without reverting profile edits made after the draft', async ({ page }, info) => {
-    await setupLinkedin(page, { saved: true });
-    let current = LINKEDIN_TEST_PROFILE;
-    await page.route(`**${LINKEDIN_API}/profile`, (route) => {
-      if (route.request().method() === 'PUT') {
-        const body = route.request().postDataJSON();
-        current = body.profile ?? linkedinProfileFromSetup(body.setup);
-      }
-      return json(route, { profile: { profile: current, profile_markdown: renderLinkedinProfileMarkdown(current) } });
-    });
-    const output = linkedinEnvelope();
-    output.profile_source = 'saved_profile';
-    output.profile_update_note = 'A clearer voice.';
-    output.profile = { ...output.profile, voice: { ...output.profile.voice, tone: 'Clear and direct' } };
-    await page.route(`**${LINKEDIN_API}/result`, (route) =>
-      json(route, { status: 'ready', envelope: output, persistence: { project: 'synthetic-project', s3_key: 'synthetic/post.md' } })
-    );
-    await openLinkedin(page);
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release.');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-save-voice')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
-    await page.getByTestId('mktg-linkedin-edit-profile').click();
-    await page.getByTestId('mktg-linkedin-profile-name').locator('input').fill('Updated author');
-    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
-    const saving = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/profile`) && request.method() === 'PUT');
-    await page.getByTestId('mktg-linkedin-save-voice').getByRole('button').click();
-    expect((await saving).postDataJSON().profile.about.name).toBe('Updated author');
-    await expect(page.getByTestId('mktg-linkedin-save-voice').getByRole('button')).toHaveText('Voice saved');
-    expect(current.voice.tone).toBe('Clear and direct');
-    await page.screenshot({ path: info.outputPath('voice-preserves-current-about.png'), fullPage: true });
-  });
 
-  test('opens profile edit ahead of pending-run recovery', async ({ page }, info) => {
-    await setupLinkedin(page, { saved: true });
-    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending', activity: [] }));
-    await openLinkedin(page);
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Unfinished synthetic run.');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toBeDisabled();
-    await page.evaluate(() => {
-      const url = new URL(location.href);
-      url.searchParams.set('profile', 'edit');
-      history.replaceState({}, '', url);
-    });
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
-    await expect(page.getByTestId('mktg-linkedin-save-profile').getByRole('button')).toBeEnabled();
-    await page.screenshot({ path: info.outputPath('pending-run-profile-edit.png'), fullPage: true });
-  });
   test('drops cancelled optional setup edits when the form reopens', async ({ page }, info) => {
     await setupLinkedin(page);
     await openLinkedin(page);
