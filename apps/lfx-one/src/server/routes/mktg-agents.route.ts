@@ -10,6 +10,7 @@ import { Member360WorkbookController } from '../controllers/member-360-workbook.
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
+import type { MktgSignOffChecksController } from '../controllers/mktg-sign-off-checks.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -177,6 +178,17 @@ router.get('/documents/:agentKey/:documentId', (req, res, next) => mktgDocuments
 
 // GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid> - one revision with its Markdown
 router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, next) => mktgDocumentsController.getRevision(req, res, next));
+
+// Read-only writer-gated checks; lazy like the dedicated form routes to avoid unrelated startup dependencies.
+let signOffChecks: MktgSignOffChecksController | undefined;
+router.get('/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks', (req, res, next) => {
+  void import('../controllers/mktg-sign-off-checks.controller')
+    .then(({ MktgSignOffChecksController }) => {
+      signOffChecks ??= new MktgSignOffChecksController();
+      return signOffChecks.getChecks(req, res, next);
+    })
+    .catch(next);
+});
 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/approve?project=<uid>
 router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', blockDuringImpersonation, (req, res, next) =>
