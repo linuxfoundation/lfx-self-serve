@@ -558,13 +558,58 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
-  it('explicitly drops the profile-edit marker when drafting another post', async () => {
+  it('explicitly drops profile-edit and fresh-entry mode when drafting another post', async () => {
     await renderLinkedin(linkedinResponse());
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
     expect(navigate).toHaveBeenCalledWith(
       ['linkedin-post'],
-      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null, mode: null }, queryParamsHandling: 'merge' })
+    );
+  });
+
+  it.each(['document', 'persisted'] as const)('keeps entry mode out of LinkedIn $event completion navigation', async (event) => {
+    const response = linkedinResponse();
+    await renderLinkedin(response);
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    const intake = MKTG_AGENT_INTAKES['linkedin-post'];
+    if (!component || !intake) throw new Error('Missing synthetic LinkedIn receiver');
+    expect(component['runAgainParams']().mode).toBe('new');
+    const location = { agentKey: 'linkedin-post' as const, documentId: response.documentId, revisionId: response.revision.id };
+    const run: MktgStoredAgentRun = {
+      agentId: intake.agentId,
+      projectUid: PROJECT.uid,
+      sessionId: 'synthetic-session',
+      ownerToken: 'synthetic-proof',
+      answers: {},
+      savedAt: new Date().toISOString(),
+      versions: [{ version: 1, document: '# Synthetic post', createdAt: new Date().toISOString(), documentLocation: location }],
+    };
+    const pending: MktgPendingGeneration = {
+      request: { agentId: intake.agentId, intake, projectUid: PROJECT.uid, documentId: response.documentId, answers: {} },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onProgress'](mktgRunProgressFixture(event, run, 1), pending);
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(
+      expect.arrayContaining(['documents', 'linkedin-post', response.documentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ mode: null, revision: response.revision.id }) })
+    );
+  });
+
+  it('clears fresh-entry mode on stored-draft Document navigation', async () => {
+    await render('/documents/brand-kit/living?mode=new');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing synthetic redraft receiver');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onRedraftReady'](
+      { projectUid: PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id },
+      { agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id }
+    );
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(
+      expect.arrayContaining(['documents', 'brand-kit', 'living']),
+      expect.objectContaining({ queryParams: expect.objectContaining({ mode: null, revision: OLDER.id }) })
     );
   });
 

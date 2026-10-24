@@ -104,6 +104,17 @@ describe('LinkedIn profile and post surface', () => {
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
     if (source === 'file') expect(fixture.nativeElement.textContent).toContain('choose it again');
   });
+  it.each(['', 'https://share.example/previous'])('keeps the restored share link %s when the URL source is edited', async (share) => {
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: 'url', content_url: 'https://source.example/previous', share_link: share }, documentCount: 0, logoCount: 0 })
+    );
+    const fixture = await fresh();
+    const form = fixture.componentInstance['contentForm'];
+    expect(form.controls.share_link.dirty).toBe(true);
+    form.controls.url.setValue('https://source.example/edited');
+    expect(form.controls.share_link.value).toBe(share);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
   it('replaces fresh entry mode before pushing the accepted Document, without an in-page resume', async () => {
     const session = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' };
     api.startForDocument.mockReturnValue(of(session));

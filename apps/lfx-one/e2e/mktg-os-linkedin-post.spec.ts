@@ -398,6 +398,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(page).not.toHaveURL(/[?&]mode=/);
     await expect(page.getByTestId('mktg-linkedin-notes')).toContainText('Verify handles');
     await expect(page.getByTestId('mktg-linkedin-add-link')).toHaveCount(3);
     await expect(page.getByTestId('mktg-linkedin-post-text').first()).not.toContainText('[LINK]');
@@ -619,6 +620,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release.');
     await page.getByTestId('mktg-linkedin-draft').click();
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+    await expect(page).not.toHaveURL(/[?&]mode=/);
     const documentUrl = page.url();
     await page.getByTestId('mktg-linkedin-document-edit-profile').click();
     await expect(page).toHaveURL(/[?&]profile=edit/);
@@ -633,7 +635,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page).toHaveURL(documentUrl);
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
     await page.getByTestId('mktg-linkedin-draft-another').click();
-    await expect(page).not.toHaveURL(/[?&]profile=edit/);
+    await expect(page).not.toHaveURL(/[?&](profile=edit|mode=)/);
+    await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('');
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
     await page.reload();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();

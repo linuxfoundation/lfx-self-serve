@@ -732,7 +732,7 @@ export class MktgDocumentViewComponent {
     this.dependencyService.notifyDocumentsChanged(scope.projectUid);
     const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
+      queryParams: { ...this.runAgainParams(), mode: null, revision: location.revisionId, ...(tab ? { tab } : {}) },
     });
   }
 
@@ -911,7 +911,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: { profile: null, revision: null, type: null },
+      queryParams: { profile: null, revision: null, type: null, mode: null },
       queryParamsHandling: 'merge',
     });
   }
@@ -1174,7 +1174,7 @@ export class MktgDocumentViewComponent {
       if (location) {
         this.localProgress.set(null);
         void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-          queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+          queryParams: { ...this.runAgainParams(), mode: null, revision: location.revisionId },
         });
       } else {
         this.localProgress.set('storing');

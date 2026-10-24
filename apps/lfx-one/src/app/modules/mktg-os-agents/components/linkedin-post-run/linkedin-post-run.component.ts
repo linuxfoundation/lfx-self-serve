@@ -520,6 +520,8 @@ export class LinkedinPostRunComponent {
           { text: answers['content_text'] ?? '', url: answers['content_url'] ?? '', share_link: answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '' },
           { emitEvent: false }
         );
+        if (source === 'url' && this.contentForm.controls.share_link.value !== this.contentForm.controls.url.value)
+          this.contentForm.controls.share_link.markAsDirty();
         if (source === 'file') this.lastIntakeNote.set('The last run used a file — choose it again to draft.');
         else if (source === 'text' && !Object.hasOwn(answers, 'content_text'))
           this.lastIntakeNote.set('Last source text was not kept — paste it again to draft.');
