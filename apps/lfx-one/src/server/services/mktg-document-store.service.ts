@@ -55,6 +55,10 @@ import {
   MktgRevisionSummary,
   MktgRunPersistReceipt,
   MktgStoredRevision,
+  MktgDocumentSignOffAnnotation,
+  MktgSignOffAction,
+  MktgSignOffAttribution,
+  MktgSignOffWrite,
 } from '@lfx-one/shared/interfaces';
 import {
   buildMktgArtifactObjectKey,
@@ -79,12 +83,13 @@ import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
-import { ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
+import { MktgSignOffSettingsService } from './mktg-sign-off-settings.service';
 import { ObjectStoreService } from './object-store.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
@@ -101,6 +106,7 @@ export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly artifactService = new MktgArtifactService();
+  private readonly signOffSettings = new MktgSignOffSettingsService();
   private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
 
   /** A per-generation context only; never change the visiting Request or share an override across runs. */
@@ -527,6 +533,9 @@ export class MktgDocumentStoreService {
     revisionId: string
   ): Promise<MktgRevisionResponse | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Approve is not available for one-off run documents.');
+    if ((await this.signOffSettings.modeOf(req, project)) === 'two-role') {
+      throw new ConflictError('This project requires two-role sign-off.', 'MKTG_SIGN_OFF_REQUIRED');
+    }
     const snapshot = await this.readCurrent(req, project, type, documentId);
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
@@ -561,6 +570,95 @@ export class MktgDocumentStoreService {
     );
     const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
     return revision ? { ...updated, revision, approval: revision.approval, markdown: view.markdown, sidecar: view.sidecar } : null;
+  }
+
+  /**
+   * Internal transition seam: the later HTTP orchestrator supplies resolved roles or a prepared comment receipt.
+   * It must enforce project-writer entitlement and pre-send checks; no client may supply frozen identities.
+   */
+  public async transitionSignOff(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    revisionId: string,
+    action: MktgSignOffAction
+  ): Promise<MktgRevisionResponse | null> {
+    if (isImpersonating(req)) throw new AuthorizationError('Sign-off is not available while impersonating a user');
+    const by = this.author(req);
+    if (type.kind !== 'living') throw ServiceValidationError.forField('documentId', 'Sign-off is only available for living documents.');
+    if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role') {
+      throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
+    }
+    const snapshot = await this.readCurrent(req, project, type, documentId);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot);
+    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+    if (!view) return null;
+    if (parseMktgLegacyRevisionId(revisionId)) throw ServiceValidationError.forField('revisionId', 'Sign-off requires a stored revision.');
+    const signOff = this.signOffOf(snapshot.record?.signOff);
+    const at = new Date().toISOString();
+    let annotation = signOff[revisionId];
+    if ('roles' in action) {
+      if (Object.values(signOff).some((entry) => entry.state === 'pending')) {
+        throw new ConflictError('This document already has a pending sign-off request.', 'MKTG_SIGN_OFF_PENDING');
+      }
+      if (annotation || view.approval) throw new ConflictError('Send requires a new Draft revision.', 'MKTG_SIGN_OFF_TERMINAL');
+      if (!action.roles.ed?.trim() || !action.roles.tocChair?.trim()) throw ServiceValidationError.forField('roles', 'Both sign-off roles must resolve.');
+      annotation = { state: 'pending', requestedAt: at, requestedBy: by, roles: { ed: action.roles.ed, tocChair: action.roles.tocChair }, decisions: {} };
+    } else {
+      if (action.role !== 'ed' && action.role !== 'tocChair') throw ServiceValidationError.forField('role', 'Unknown sign-off role');
+      if (!annotation || annotation.state !== 'pending') throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
+      if (!by || annotation.roles[action.role] !== by) throw new AuthorizationError('Only the frozen approver may decide for this role');
+      if (annotation.decisions[action.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
+      if (action.decision !== 'approved' && action.decision !== 'changes-requested') throw ServiceValidationError.forField('decision', 'Unknown decision');
+      const change = action.changeRequest;
+      if (
+        action.decision === 'changes-requested' &&
+        (!change ||
+          typeof change.commentId !== 'string' ||
+          !change.commentId.trim() ||
+          (change.submissionId !== null && (typeof change.submissionId !== 'string' || !change.submissionId.trim())))
+      ) {
+        throw ServiceValidationError.forField('changeRequest', 'Request changes requires a prepared comment receipt.');
+      }
+      annotation.decisions[action.role] = { at, by, decision: action.decision };
+      if (action.decision === 'changes-requested' && change) {
+        annotation = { ...annotation, state: 'changes-requested', changeRequest: { commentId: change.commentId, submissionId: change.submissionId } };
+      } else if (annotation.decisions.ed?.decision === 'approved' && annotation.decisions.tocChair?.decision === 'approved') {
+        annotation = { ...annotation, state: 'approved', approvedAt: at };
+      }
+    }
+    signOff[revisionId] = annotation;
+    const ed = annotation.decisions.ed;
+    const tocChair = annotation.decisions.tocChair;
+    const approval =
+      annotation.state === 'approved' && ed && tocChair ? { ed: { at: ed.at, by: ed.by }, tocChair: { at: tocChair.at, by: tocChair.by } } : undefined;
+    const selected = approval ? revisionId : (snapshot.record?.revisionId ?? view.revisions.find((entry) => entry.latest)?.id ?? revisionId);
+    const committed = await this.writeCurrent(
+      req,
+      project,
+      type,
+      documentId,
+      snapshot,
+      selected,
+      view.revisions.map((entry) => entry.id),
+      !!approval,
+      !approval,
+      { signOff, approval }
+    );
+    if (!committed) throw new PreconditionFailedError('The document changed during sign-off. Reload and try again.');
+    logger.info(req, 'mktg_document_sign_off', 'Committed sign-off transition', { state: annotation.state });
+    const updated = await this.withApprovals(
+      req,
+      {
+        ...view,
+        current: await this.currentSelection(req, committed),
+        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
+      },
+      committed
+    );
+    const revision = updated.revisions.find((entry) => entry.id === revisionId);
+    return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
   }
 
   /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
@@ -850,7 +948,7 @@ export class MktgDocumentStoreService {
       if (!record || !Array.isArray(record.revisionIds) || !record.revisionIds.includes(record.revisionId)) {
         throw this.corruptDocument('Invalid current record');
       }
-      return { record: { ...record, approvals: this.approvalsOf(record.approvals) }, etag: object.etag };
+      return { record: { ...record, approvals: this.approvalsOf(record.approvals), signOff: this.signOffOf(record.signOff) }, etag: object.etag };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
       throw this.corruptDocument('Current record is not valid JSON');
@@ -867,9 +965,72 @@ export class MktgDocumentStoreService {
       const { approvedAt, approvedBy } = annotation;
       if (typeof approvedAt !== 'string' || !Number.isFinite(Date.parse(approvedAt))) continue;
       if (approvedBy !== null && (typeof approvedBy !== 'string' || !approvedBy.trim())) continue;
-      approvals[id] = { approvedAt, approvedBy };
+      const source = annotation['signOff'] as Record<string, unknown> | null | undefined;
+      const ed = this.signOffAttributionOf(source?.['ed']);
+      const tocChair = this.signOffAttributionOf(source?.['tocChair']);
+      approvals[id] = { approvedAt, approvedBy, ...(ed && tocChair ? { signOff: { ed, tocChair } } : {}) };
     }
     return approvals;
+  }
+
+  private signOffAttributionOf(value: unknown): MktgSignOffAttribution | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const { at, by } = value as Record<string, unknown>;
+    return typeof at === 'string' && Number.isFinite(Date.parse(at)) && (by === null || (typeof by === 'string' && !!by.trim())) ? { at, by } : null;
+  }
+
+  /** Unknown optional shapes are ignored; they never corrupt the otherwise valid pointer. */
+  private signOffOf(value: unknown): Record<string, MktgDocumentSignOffAnnotation> {
+    const result: Record<string, MktgDocumentSignOffAnnotation> = Object.create(null);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+    for (const [id, raw] of Object.entries(value)) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const entry = raw as Partial<MktgDocumentSignOffAnnotation>;
+      if (!this.signOffAttributionOf({ at: entry.requestedAt, by: entry.requestedBy })) continue;
+      if (!entry.roles || typeof entry.roles !== 'object' || Array.isArray(entry.roles)) continue;
+      const { ed, tocChair } = entry.roles;
+      if ([ed, tocChair].some((subject) => subject !== null && (typeof subject !== 'string' || !subject.trim()))) continue;
+      if (!entry.decisions || typeof entry.decisions !== 'object' || Array.isArray(entry.decisions)) continue;
+      const decisions: MktgDocumentSignOffAnnotation['decisions'] = {};
+      let valid = true;
+      for (const role of ['ed', 'tocChair'] as const) {
+        const decision = entry.decisions[role];
+        if (decision === undefined) continue;
+        const attribution = this.signOffAttributionOf(decision);
+        if (!attribution || !attribution.by || attribution.by !== entry.roles[role] || !['approved', 'changes-requested'].includes(decision.decision)) {
+          valid = false;
+          break;
+        }
+        decisions[role] = { ...attribution, decision: decision.decision };
+      }
+      if (!valid) continue;
+      const both = decisions.ed?.decision === 'approved' && decisions.tocChair?.decision === 'approved';
+      const changes = Object.values(decisions).some((decision) => decision.decision === 'changes-requested');
+      if (entry.state !== 'pending' && entry.state !== 'approved' && entry.state !== 'changes-requested') continue;
+      if (entry.state === 'pending' && (both || changes)) continue;
+      if (entry.state === 'approved' && !both) continue;
+      if (entry.state === 'changes-requested' && !changes) continue;
+      if (entry.state === 'approved' && (typeof entry.approvedAt !== 'string' || !Number.isFinite(Date.parse(entry.approvedAt)))) continue;
+      const change = entry.changeRequest;
+      if (
+        entry.state === 'changes-requested' &&
+        (!change ||
+          typeof change.commentId !== 'string' ||
+          !change.commentId.trim() ||
+          (change.submissionId !== null && (typeof change.submissionId !== 'string' || !change.submissionId.trim())))
+      )
+        continue;
+      result[id] = {
+        state: entry.state,
+        requestedAt: entry.requestedAt as string,
+        requestedBy: entry.requestedBy ?? null,
+        roles: { ed, tocChair },
+        decisions,
+        ...(entry.state === 'approved' ? { approvedAt: entry.approvedAt } : {}),
+        ...(entry.state === 'changes-requested' ? { changeRequest: change } : {}),
+      };
+    }
+    return result;
   }
 
   /** Resolve public approval metadata from the caller's one current snapshot, never another GET. */
@@ -880,16 +1041,44 @@ export class MktgDocumentStoreService {
     concurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse> {
     const approvals = detail.type.kind === 'living' ? this.approvalsOf(record?.approvals) : {};
+    const signOff = detail.type.kind === 'living' ? this.signOffOf(record?.signOff) : {};
     const revisions: MktgRevisionSummary[] = [];
     for (let offset = 0; offset < detail.revisions.length; offset += concurrency) {
       revisions.push(
         ...(await Promise.all(
           detail.revisions.slice(offset, offset + concurrency).map(async (revision) => {
             const annotation = Object.hasOwn(approvals, revision.id) ? approvals[revision.id] : null;
+            const attribution = annotation?.signOff;
             const approval = annotation
-              ? { approvedAt: annotation.approvedAt, approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy) }
+              ? {
+                  approvedAt: annotation.approvedAt,
+                  approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy),
+                  ...(attribution
+                    ? {
+                        signOff: {
+                          ed: { at: attribution.ed.at, by: await this.authors.resolveAuthor(req, attribution.ed.by) },
+                          tocChair: { at: attribution.tocChair.at, by: await this.authors.resolveAuthor(req, attribution.tocChair.by) },
+                        },
+                      }
+                    : {}),
+                }
               : null;
-            return { ...revision, approval };
+            const request = Object.hasOwn(signOff, revision.id) ? signOff[revision.id] : null;
+            const names = request
+              ? {
+                  state: request.state,
+                  requestedAt: request.requestedAt,
+                  requestedBy: await this.authors.resolveAuthor(req, request.requestedBy),
+                  roles: {
+                    ed: { name: (await this.authors.resolveAuthor(req, request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
+                    tocChair: {
+                      name: (await this.authors.resolveAuthor(req, request.roles.tocChair))?.name ?? null,
+                      decision: request.decisions.tocChair?.decision,
+                    },
+                  },
+                }
+              : null;
+            return { ...revision, approval, ...(request ? { signOff: names } : {}) };
           })
         ))
       );
@@ -908,7 +1097,8 @@ export class MktgDocumentStoreService {
     revisionId: string,
     revisionIds: string[],
     approve = false,
-    keepSelection = false
+    keepSelection = false,
+    signOffWrite?: MktgSignOffWrite
   ): Promise<MktgDocumentCurrentRecord | null> {
     const existingIds = snapshot.record
       ? snapshot.record.revisionIds
@@ -918,13 +1108,20 @@ export class MktgDocumentStoreService {
     const kept = keepSelection ? snapshot.record : null;
     const changedAt = kept ? kept.changedAt : new Date().toISOString();
     const changedBy = kept ? kept.changedBy : this.author(req);
-    if (approve && !approvals[revisionId]) approvals[revisionId] = { approvedAt: changedAt, approvedBy: changedBy };
+    const signOff = signOffWrite?.signOff ?? this.signOffOf(snapshot.record?.signOff);
+    if (approve && !approvals[revisionId])
+      approvals[revisionId] = {
+        approvedAt: signOff[revisionId]?.approvedAt ?? changedAt,
+        approvedBy: changedBy,
+        ...(signOffWrite?.approval ? { signOff: signOffWrite.approval } : {}),
+      };
     const record: MktgDocumentCurrentRecord = {
       revisionId: kept ? kept.revisionId : revisionId,
       revisionIds: committedIds,
       changedAt,
       changedBy,
       ...(Object.keys(approvals).length ? { approvals } : {}),
+      ...(Object.keys(signOff).length ? { signOff } : {}),
     };
     const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', this.currentKey(project, type, documentId), {
       body: Buffer.from(JSON.stringify(record)),
