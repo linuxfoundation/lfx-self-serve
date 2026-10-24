@@ -310,6 +310,7 @@ describe('Member360ResultComponent', () => {
     );
     expect(cell).toBeDefined();
     for (const name of classes.split(' ')) expect(cell?.classList.contains(name)).toBe(true);
+    expect(view.query('member-360-ranking').textContent).toContain('red ≤120, amber 121–240.');
   });
   it('copies team actions and reports clipboard denial', async () => {
     const view = render();
