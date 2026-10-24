@@ -18,6 +18,7 @@ const f = vi.hoisted(() => ({
   view: vi.fn(),
   remember: vi.fn(),
   context: vi.fn(),
+  descriptor: vi.fn(),
   known: vi.fn(),
   scope: vi.fn(),
   create: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('./mktg-document-redraft-context.service', () => ({
   MktgDocumentRedraftContextService: class {
     public create = f.create;
     public forSession = f.context;
+    public forRun = f.descriptor;
     public assertScope = f.scope;
     public static runId() {
       return 'c'.repeat(64);
@@ -368,6 +370,88 @@ describe('reserved redraft delivery', () => {
     expect(f.state).toBe('uncertain');
     expect(f.end).toHaveBeenLastCalledWith(req, context.project, type, 'living', context.requestId, true);
   });
+  it('preserves a bound reserved sign-off during concurrent replay, refuses release, and completes the original plus ACK recovery', async () => {
+    const { MktgDocumentCommentsService } = await vi.importActual<typeof import('./mktg-document-comments.service')>('./mktg-document-comments.service');
+    const ledger = new MktgDocumentCommentsService();
+    const requestId = 'so-bound-r';
+    const signOffContext = { ...context, requestId };
+    const input = { ...body, clientRequestId: requestId };
+    const key = `document-comments/${context.project}/${context.agentKey}/living.json`;
+    const initial: MktgDocumentCommentsRecord = {
+      schema: MKTG_DOCUMENT_COMMENTS_SCHEMA,
+      project: context.project,
+      agentKey: context.agentKey,
+      documentId: 'living',
+      submissions: [],
+      threads: context.comments.map((row) => ({
+        ...row,
+        clientRequestId: 'so-bound-c',
+        authorId: 'opaque-creator',
+        revisionId: context.basedOnId,
+        status: 'open',
+        sentInRun: null,
+        resultRevisionId: null,
+        resolution: null,
+      })),
+    };
+    f.records.set(key, { body: JSON.stringify(initial), metadata: {}, etag: 'seed' });
+    const record = () => JSON.parse(f.records.get(key)?.body ?? '{}') as MktgDocumentCommentsRecord;
+    f.view.mockResolvedValue({
+      revision: { id: context.basedOnId, format: 'json' },
+      markdown: JSON.stringify({ mf: { tagline: 'Stored line' } }),
+      sidecar: null,
+    });
+    f.prepare.mockResolvedValue({ context: signOffContext, message: 'synthetic canonical form', framework: null });
+    f.reserve.mockImplementation(ledger.reserve.bind(ledger));
+    f.bind.mockImplementation(ledger.bindRun.bind(ledger));
+    f.end.mockImplementation(ledger.endStart.bind(ledger));
+    f.descriptor.mockResolvedValue(null);
+    let resume: (() => void) | undefined;
+    f.create.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resume = resolve;
+      })
+    );
+    const sender = new MktgDocumentRedraftService();
+    const barrier = vi.fn();
+    const original = sender.send(req, context.project, type, 'living', input, runs, barrier);
+    await vi.waitFor(() => expect(f.create).toHaveBeenCalledTimes(1));
+    expect(record().submissions[0]).toMatchObject({ state: 'reserved', runId: 'c'.repeat(64) });
+    const paused = f.records.get(key)?.body;
+    await expect(sender.send(req, context.project, type, 'living', input, runs, barrier)).rejects.toMatchObject({ code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+    expect(f.end).not.toHaveBeenCalled();
+    expect(f.records.get(key)?.body).toBe(paused);
+    await expect(
+      ledger.signOffSubmissionProof(
+        req,
+        context.project,
+        type,
+        'living',
+        {
+          revisionId: context.basedOnId,
+          requestedBy: 'opaque-creator',
+          requestId,
+          commentRequestId: 'so-bound-c',
+        },
+        () => Promise.resolve()
+      )
+    ).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
+    expect(f.records.get(key)?.body).toBe(paused);
+    if (!resume) throw new Error('Missing synthetic pause resolver');
+    resume();
+    await original;
+    expect(record().submissions[0].state).toBe('started');
+    expect(f.guild).toHaveBeenCalledTimes(1);
+    expect(barrier).toHaveBeenCalledTimes(1);
+    f.known.mockResolvedValue('synthetic-session');
+    f.context.mockResolvedValue(signOffContext);
+    const recovered = await sender.send(req, context.project, type, 'living', input, runs, barrier);
+    expect(recovered.sessionId).toBe('synthetic-session');
+    expect(record().submissions[0].state).toBe('started');
+    expect(f.guild).toHaveBeenCalledTimes(1);
+    expect(f.end).not.toHaveBeenCalled();
+  });
+
   it.each(['ready', 'failed'] as const)('interleaves a live same-ID replay, then binds and really settles every thread on %s', async (status) => {
     const { MktgDocumentCommentsService } = await vi.importActual<typeof import('./mktg-document-comments.service')>('./mktg-document-comments.service');
     const ledger = new MktgDocumentCommentsService();
