@@ -75,7 +75,7 @@ const updateStateSchema = z
     project: projectSchema,
     state: z.enum(MKTG_REQUEST_STATES),
     note: textSchema.optional(),
-    result: resultSchema.optional(),
+    result: resultSchema.extend({ agentKey: currentAgentSchema }).optional(),
     clientRequestId: tokenSchema,
   })
   .refine((body) => body.state !== 'declined' || !!body.note, { path: ['note'] })

@@ -89,6 +89,7 @@ export interface MktgRequest extends Omit<MktgStoredRequest, 'clientRequestId' |
   stateChangedBy: MktgRevisionAuthor | null;
   /** A display hint only; withdrawal ownership is rechecked at the write boundary. */
   isRequester: boolean;
+  withdrawn: boolean;
 }
 export interface MktgRequestsResponse {
   requests: MktgRequest[];

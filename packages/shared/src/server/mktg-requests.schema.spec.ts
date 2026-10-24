@@ -94,7 +94,12 @@ describe('Marketing requests input schemas', () => {
     expect(mktgRequestStateSchema.parse({ ...state, result })).toMatchObject({ state: 'done', result });
     for (const value of ['open', 'in-progress', 'declined'])
       expect(mktgRequestStateSchema.safeParse({ ...state, state: value, note: 'Synthetic note', result }).success).toBe(false);
-    for (const invalid of [{ revisionId: result.revisionId }, { ...result, documentId: '../bad' }, { ...result, revisionId: 'bad' }])
+    for (const invalid of [
+      { revisionId: result.revisionId },
+      { ...result, documentId: '../bad' },
+      { ...result, revisionId: 'bad' },
+      { ...result, agentKey: 'retired-agent' },
+    ])
       expect(mktgRequestStateSchema.safeParse({ ...state, result: invalid }).success).toBe(false);
   });
   it('uses an explicit withdrawal action, not free-text note semantics', () => {
