@@ -136,7 +136,8 @@ describe('Member 360 workbook and tracker round trips', () => {
       const cells: ExcelJS.Cell[] = [];
       output.getWorksheet(name)?.eachRow((row) =>
         row.eachCell((cell) => {
-          if (cell.value === formula) cells.push(cell);
+          // Merged Summary cells reference their master; count the stored string once.
+          if (cell.value === formula && cell.type !== ExcelJS.ValueType.Merge) cells.push(cell);
         })
       );
       expect(cells).toHaveLength(1);
