@@ -41,9 +41,9 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000 },
   change: { enrollments: 0.1, certifications: 0.004, revenueUsd: -0.2 },
   byType: [
-    { deliveryType: 'E-Learning', isListed: true, enrollments: 2900, revenueUsd: 0 },
-    { deliveryType: 'Certification Exam', isListed: true, enrollments: 620, revenueUsd: 70000 },
-    { deliveryType: 'Instructor Led', isListed: true, enrollments: 330, revenueUsd: 30000 },
+    { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 2900, revenueUsd: 0 },
+    { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 620, revenueUsd: 70000 },
+    { deliveryType: 'Instructor Led', isListed: true, isListedRevenue: true, enrollments: 330, revenueUsd: 30000 },
   ],
 };
 
@@ -57,6 +57,7 @@ function withPeriod(overrides: Partial<HealthMetricsTrainingEnrollmentPeriod> = 
       { year: 2026, enrollments: 3850 },
       { year: 2025, enrollments: 3400 },
     ],
+    goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
   };
 }
 
@@ -154,7 +155,7 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
 
   it('sorts a type with unmeasured revenue last', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
-      withPeriod({ byType: [{ deliveryType: 'MicroCourse', isListed: false, enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
+      withPeriod({ byType: [{ deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
       'YTD',
       'revenue'
     );
@@ -173,9 +174,9 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
   it('lists only the types the model lists, with enrollments, and leaves edX off the revenue list', () => {
     const byType = [
       ...PERIOD.byType,
-      { deliveryType: 'Bundle', isListed: false, enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'edX', isListed: true, enrollments: 500, revenueUsd: 0 },
-      { deliveryType: 'MicroCourse', isListed: false, enrollments: 3154, revenueUsd: 0 },
+      { deliveryType: 'Bundle', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'edX', isListed: true, isListedRevenue: true, enrollments: 500, revenueUsd: 0 },
+      { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 3154, revenueUsd: 0 },
     ];
 
     const enrollments = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'enrollments');
@@ -192,8 +193,8 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     );
     const byType = [
       ...PERIOD.byType,
-      { deliveryType: 'Bundle', isListed: false, enrollments: 0, revenueUsd: 90000 },
-      { deliveryType: 'MicroCourse', isListed: false, enrollments: 3154, revenueUsd: 0 },
+      { deliveryType: 'Bundle', isListed: false, isListedRevenue: false, enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'MicroCourse', isListed: false, isListedRevenue: false, enrollments: 3154, revenueUsd: 0 },
     ];
     expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'revenue').typeCountLabel).toBe('3 delivery types');
   });

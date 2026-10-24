@@ -133,7 +133,8 @@ export class CommitteeService {
    * batched `groupsio_mailing_list` lookup below for callers (e.g. the create picker's lazy
    * children fan-out) that only need identity/project/writer fields and never render
    * `has_mailing_list` — every such call otherwise paid for a query-service round trip whose
-   * result was immediately discarded.
+   * result was immediately discarded. `requireComplete` enables failOnPartial: a later-page failure
+   * throws instead of returning a truncated list when absence/uniqueness must be authoritative.
    */
   public async getCommittees(
     req: Request,
