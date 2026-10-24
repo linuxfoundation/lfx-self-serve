@@ -612,6 +612,31 @@ describe('private field comment store', () => {
     await expect(store.bindRun(req, project, type, 'living', 'send-one', runId)).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('refuses an ordinary fresh send selecting an internal sign-off comment inside the reserve CAS', async () => {
+    const store = service();
+    const receipt = await store.addWithReceipt(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }));
+    const before = objects.get(key)?.body;
+    flows.put.mockClear();
+    await expect(
+      store.reserve(req, project, type, 'living', {
+        project,
+        revisionId,
+        commentIds: [receipt.commentId],
+        clientRequestId: 'ordinary-fresh-send',
+      })
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.put).not.toHaveBeenCalled();
+    expect(objects.get(key)?.body).toBe(before);
+    expect(record().submissions).toEqual([]);
+    const reserved = await store.reserve(req, project, type, 'living', {
+      project,
+      revisionId,
+      commentIds: [receipt.commentId],
+      clientRequestId: 'so-internal-r',
+    });
+    expect(reserved.fresh).toBe(true);
+  });
+
   it('rejects foreign, busy, duplicate or over-cap input IDs without another reservation', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request());
