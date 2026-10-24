@@ -233,14 +233,19 @@ whole-document comment through `addWithReceipt`, invokes the existing CR sender
 with the fresh-only start-barrier callback, then records the accepted receipt
 through the final pointer CAS. It returns only the document view, never a Guild
 session/owner token. A failed or uncertain start leaves the intent for explicit
-same-actor recovery or guarded release; no retry loop or new POST path is added.
+same-actor recovery or guarded release. The only retry is the store's bounded
+start-CAS recheck; no retry loop around Guild or new POST path is added.
 
 Recovery reuses the frozen note, revision/role/nonce and CR IDs, not replacement
 JSON. Terminal replay must belong to the selected role. Release authorizes the
 original role actor or a writer of the exact canonical project without changing
-Request identity. It uses correlated CR proof: accepted work settles rather than
-releases; absence/failed/explicitly released uncertainty goes through the pointer
-fence; reserved/in-flight refuses. FAQ's note-only atomic result never calls CR.
+Request identity. While the intent is `prepared`, release uses the store's
+`unstarted` pointer fence without reading CR, even if a CR reservation exists.
+Once `starting`, correlated accepted work settles; failed or explicitly released
+proof releases through the pointer fence, while absent or reserved/in-flight
+proof refuses. The legacy store `absent` proof is equivalent to `unstarted` only
+while prepared; the orchestration uses `unstarted` there, never CR absence as
+no-start evidence after starting. FAQ's note-only atomic result never calls CR.
 Future HTTP handlers must resolve the canonical writer scope and the open approver
 policy first; this internal orchestration mounts no decide/recovery/release route
 and does not settle B1–B3/B6 or activate a sign-off UI.
