@@ -70,7 +70,6 @@ import {
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
-import { Member360Service } from '@services/member-360.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';

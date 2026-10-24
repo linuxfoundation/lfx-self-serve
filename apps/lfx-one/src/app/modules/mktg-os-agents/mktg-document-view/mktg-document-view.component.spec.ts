@@ -326,7 +326,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
-        { provide: Member360Service, useValue: run },
+        { provide: Member360Service, useValue: { ...run, download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
       ],

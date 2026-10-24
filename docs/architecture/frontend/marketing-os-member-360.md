@@ -94,9 +94,8 @@ optional movers, the complete watchlist, team action counts and data coverage;
 large watchlists continue vertically. Ranking dates are real date cells; values,
 scores and contact counts remain numbers with currency/decimal/integer formats.
 A single category-block heat scale accompanies engagement, renewal, tier and
-priority highlighting. The workbook reads renewal thresholds and tier tones from
-shared constants. The result page adopts these constants in the header child only
-after both children join the parent branch. Widths, formats, LFX fill shades and
+priority highlighting. The workbook and result page read renewal thresholds and
+tier tones from shared constants. Widths, formats, LFX fill shades and
 chart layout stay in server-side presentation constants. ExcelJS has no chart API, so JSZip injects native DrawingML parts,
 relationships and content-type overrides after writing. This writer requires
 Summary to be the first worksheet and to contain table parts; an unexpected layout

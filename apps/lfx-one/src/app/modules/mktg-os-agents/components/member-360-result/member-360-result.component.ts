@@ -20,6 +20,9 @@ import {
   MEMBER_360_SORT_COLUMNS,
   MEMBER_360_OWNER_OPTIONS,
   MEMBER_360_TIER_OPTIONS,
+  MEMBER_360_RENEWAL_RED_DAYS,
+  MEMBER_360_RENEWAL_AMBER_DAYS,
+  MEMBER_360_TIER_TONES,
 } from '@lfx-one/shared/constants';
 import { rankMember360Rows, mktgKitRootPath, mktgRunRouteFor } from '@lfx-one/shared/utils';
 import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360SummaryCard, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
@@ -42,6 +45,7 @@ export class Member360ResultComponent {
   protected readonly tierOptions = MEMBER_360_TIER_OPTIONS;
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;
   protected readonly columns = MEMBER_360_SORT_COLUMNS;
+  protected readonly renewalLegend = `Renewal days: red ≤${MEMBER_360_RENEWAL_RED_DAYS}, amber ${MEMBER_360_RENEWAL_RED_DAYS + 1}–${MEMBER_360_RENEWAL_AMBER_DAYS}.`;
   protected readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   public readonly filters = new FormGroup({
@@ -65,7 +69,9 @@ export class Member360ResultComponent {
     return scores.length ? `${Math.min(...scores)} to ${Math.max(...scores)}` : '—';
   });
   protected readonly renewals = computed(() =>
-    this.envelope().tabs.member_ranking.filter((row) => row.days_to_renewal !== null && row.days_to_renewal >= 0 && row.days_to_renewal <= 120)
+    this.envelope().tabs.member_ranking.filter(
+      (row) => row.days_to_renewal !== null && row.days_to_renewal >= 0 && row.days_to_renewal <= MEMBER_360_RENEWAL_RED_DAYS
+    )
   );
   protected readonly renewalValue = computed(() => this.renewals().reduce((sum, row) => sum + (row.annual_value ?? 0), 0));
   protected readonly tierDistribution = computed(() =>
@@ -173,7 +179,7 @@ export class Member360ResultComponent {
       { key: 'scores', label: 'Score range · tiers', value: this.scoreRange(), note: this.tierDistribution() },
       {
         key: 'renewals',
-        label: 'Renewals within 120 days',
+        label: `Renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days`,
         value: String(this.renewals().length),
         note: `${this.currency(this.renewalValue())} at list price`,
       },
@@ -232,13 +238,14 @@ export class Member360ResultComponent {
   private renewalClass(days: number | null): string {
     if (days === null) return 'text-gray-500';
     // Renewal colours follow the workbook spec of record, including boundary days.
-    if (days <= 120) return 'font-bold text-red-700';
-    if (days <= 240) return 'font-semibold text-amber-700';
+    if (days <= MEMBER_360_RENEWAL_RED_DAYS) return 'font-bold text-red-700';
+    if (days <= MEMBER_360_RENEWAL_AMBER_DAYS) return 'font-semibold text-amber-700';
     return 'text-gray-700';
   }
-  private tierClass(tier: string): string {
-    if (tier === 'Champion' || tier === 'Engaged') return 'bg-emerald-50 text-emerald-800';
-    if (tier === 'Passive') return 'bg-amber-50 text-amber-800';
+  private tierClass(tier: Member360RankingRow['engagement_tier']): string {
+    const tone = MEMBER_360_TIER_TONES[tier];
+    if (tone === 'emerald') return 'bg-emerald-50 text-emerald-800';
+    if (tone === 'amber') return 'bg-amber-50 text-amber-800';
     return 'bg-red-50 text-red-800';
   }
 }
