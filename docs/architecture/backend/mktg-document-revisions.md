@@ -496,6 +496,12 @@ never allowed; redrafts append ordinary Drafts through the existing writer.
 
 ### Internal sign-off hand-off seams
 
+The `so-` request-ID namespace is reserved for the internal sign-off orchestrator.
+Public comment adds, revise requests and explicit redraft releases reject that
+prefix with typed validation errors. Only server-prepared exact-receipt adds and
+sends carrying the internal start barrier may create these correlated rows; a
+body property cannot opt into the namespace. Ordinary request IDs are unchanged.
+
 `MktgDocumentRedraftService.send` optionally takes a server-only `beforeStart`
 callback, invoked after a fresh reservation/preflight and before any Guild POST.
 It is absent by default and never runs on replay. Rejection retires the existing

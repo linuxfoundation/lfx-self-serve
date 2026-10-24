@@ -59,6 +59,13 @@ describe('ID-only redraft request', () => {
     clientRequestId: 'request-one',
     commentIds: ['comment-one'],
   });
+  it('reserves sign-off IDs from public sends and ignores a forged body opt-in', () => {
+    const value = { ...request(), clientRequestId: 'so-internal-r' };
+    expect(readMktgRedraftRequest(value)).toBeNull();
+    expect(readMktgRedraftRequest({ ...value, allowSignOffNamespace: true })).toBeNull();
+    expect(readMktgRedraftRequest(value, true)).toEqual(value);
+  });
+
   it('copies the bounded IDs and rejects caller-supplied capabilities, routing or content', () => {
     const value = request();
     expect(readMktgRedraftRequest(value)).toEqual(value);
