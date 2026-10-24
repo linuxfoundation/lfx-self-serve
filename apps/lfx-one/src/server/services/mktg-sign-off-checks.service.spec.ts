@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
-import { findMktgDocumentType } from '@lfx-one/shared/utils/mktg-document-store.utils';
-const mocks = vi.hoisted(() => ({ revision: vi.fn(), approved: vi.fn() }));
+import { findMktgDocumentType } from '@lfx-one/shared/utils';
+const mocks = vi.hoisted(() => ({ revision: vi.fn(), approved: vi.fn(), debug: vi.fn() }));
+vi.mock('./logger.service', () => ({ logger: { debug: mocks.debug } }));
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public getRevision = mocks.revision;
@@ -38,6 +40,7 @@ describe('MktgSignOffChecksService', () => {
     const type = typeFor('foundation-message');
     const result = await service.checksFor(req, 'canonical-project', type, 'living', 'selected-id');
     expect(mocks.revision).toHaveBeenCalledWith(req, 'canonical-project', type, 'living', 'selected-id');
+    expect(mocks.debug).toHaveBeenCalledWith(req, 'mktg_sign_off_checks_read', 'Evaluating stored-asset checks', { agentKey: type.agentKey });
     expect(result.checks).toHaveLength(5);
     expect(result.checks.find((row) => row.id === 'tagline')?.status).toBe('pass');
     expect(mocks.approved).not.toHaveBeenCalled();
