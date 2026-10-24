@@ -778,21 +778,6 @@ export class MktgDocumentStoreService {
     return updated ? { view: updated, intent: annotation.changeRequestIntent ? { ...annotation.changeRequestIntent } : null } : null;
   }
 
-  /** Same-snapshot public projection; never expose the internal intent input/UUID/nonce. */
-  private async signOffResult(req: Request, view: MktgRevisionResponse, committed: MktgDocumentCurrentRecord): Promise<MktgRevisionResponse | null> {
-    const updated = await this.withApprovals(
-      req,
-      {
-        ...view,
-        current: await this.currentSelection(req, committed),
-        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
-      },
-      committed
-    );
-    const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
-    return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
-  }
-
   /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
   public async assertRedraftScope(req: Request, spec: MktgArtifactSpec, sessionId: string, projectUid?: string): Promise<MktgDocumentRedraftContext | null> {
     const context = await this.redrafts.forSession(req, sessionId);
@@ -1621,6 +1606,21 @@ export class MktgDocumentStoreService {
 
   private author(req: Request): string | null {
     return this.authors.captureAuthorId(req);
+  }
+
+  /** Same-snapshot public projection; never expose the internal intent input/UUID/nonce. */
+  private async signOffResult(req: Request, view: MktgRevisionResponse, committed: MktgDocumentCurrentRecord): Promise<MktgRevisionResponse | null> {
+    const updated = await this.withApprovals(
+      req,
+      {
+        ...view,
+        current: await this.currentSelection(req, committed),
+        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
+      },
+      committed
+    );
+    const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
+    return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
   }
 
   private sha256(value: string): string {

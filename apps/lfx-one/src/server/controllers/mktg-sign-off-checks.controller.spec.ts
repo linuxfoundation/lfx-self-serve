@@ -19,7 +19,10 @@ import { MicroserviceError } from '../errors';
 import { MktgSignOffChecksController } from './mktg-sign-off-checks.controller';
 
 const revisionId = `000001-${'a'.repeat(64)}`;
-function request(query: Record<string, unknown> = { project: 'input-project' }, params: Record<string, string> = {}): Request {
+function request(
+  query: Record<string, unknown> = { project: 'input-project' },
+  params: Partial<Record<'agentKey' | 'documentId' | 'revisionId', string>> = {}
+): Request {
   return {
     path: '/api/mktg-agents/documents',
     query,
