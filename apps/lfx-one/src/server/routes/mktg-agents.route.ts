@@ -11,6 +11,7 @@ import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import type { MktgSignOffChecksController } from '../controllers/mktg-sign-off-checks.controller';
+import type { MktgSignOffSettingsController } from '../controllers/mktg-sign-off-settings.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -169,6 +170,20 @@ router.post('/faq/result', (req, res, next) => mktgAgentsController.faqResult(re
 
 // GET /api/mktg-agents/foundation-message/stored - approved current plain/sidecar bytes or 404; true pre-revision plain fallback only (writer-entitled).
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
+
+let signOffSettings: MktgSignOffSettingsController | undefined;
+function signOffSettingsRoute(method: keyof MktgSignOffSettingsController): RequestHandler {
+  return (req, res, next): void => {
+    void import('../controllers/mktg-sign-off-settings.controller')
+      .then(({ MktgSignOffSettingsController }) => {
+        signOffSettings ??= new MktgSignOffSettingsController();
+        return signOffSettings[method](req, res, next);
+      })
+      .catch(next);
+  };
+}
+router.get('/sign-off/settings', signOffSettingsRoute('getSettings'));
+router.put('/sign-off/settings', blockDuringImpersonation, signOffSettingsRoute('updateSettings'));
 
 // GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)
 router.get('/documents', (req, res, next) => mktgDocumentsController.listDocuments(req, res, next));

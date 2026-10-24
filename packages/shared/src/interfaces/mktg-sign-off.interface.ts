@@ -52,3 +52,19 @@ export interface MktgProjectSignOffSettings {
   changedAt: string;
   changedBy: string | null;
 }
+/** Server-only conditional policy snapshot, never an HTTP DTO. */
+export interface MktgProjectSignOffSettingsSnapshot {
+  record: MktgProjectSignOffSettings | null;
+  etag?: string;
+}
+export interface MktgProjectSignOffSettingsResponse {
+  mode: MktgProjectSignOffSettings['mode'];
+  roles: Record<MktgSignOffRole, MktgRevisionAuthor | null>;
+  canEnable: boolean;
+  /** Role/policy reason only; never an address or stored subject. */
+  reason?: string;
+}
+export interface MktgUpdateProjectSignOffSettingsRequest {
+  project: string;
+  mode: MktgProjectSignOffSettings['mode'];
+}
