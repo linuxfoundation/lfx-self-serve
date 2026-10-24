@@ -3,6 +3,10 @@
 
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity } from './mktg-run.interface';
+import type { Member360FailureReason } from './member-360.interface';
+
+/** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
+export type MktgRunFailureReason = Member360FailureReason;
 
 /** Private completion context, captured by the validated one-off generate path, never a public projection. */
 export interface MktgOneOffRunContext {
@@ -48,6 +52,8 @@ export interface MktgDocumentRunProgress {
   activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
   failureText?: string;
+  /** Server-classified failure code, independent of private agent text. */
+  failureReason?: MktgRunFailureReason;
 }
 
 /** Public rows only; read unavailability is not evidence of active work or current selection. */
@@ -91,6 +97,7 @@ export interface MktgStartedRunRecord {
   answeredQuestionsId?: string;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
+  failureReason?: MktgRunFailureReason;
   /** Separate bounded retries once a valid asset is ready but its revision write has not landed. */
   persistRetries?: number;
   /** Prior attempt's revision cannot complete a renewed same-session turn. */

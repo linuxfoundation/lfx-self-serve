@@ -58,6 +58,7 @@ import {
   mktgRunIdFromKey,
   mktgRunRenewAt,
   normalizeLinkedinShareAnswers,
+  isMktgRunFailureReason,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
@@ -547,7 +548,17 @@ export class MktgDocumentRunService {
       return run;
     }
     if (result.status === 'failed' || result.status === 'refused') {
-      return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, run.persistRetries, result.failureText ?? result.reply ?? '');
+      return this.mark(
+        req,
+        stored,
+        'failed',
+        run.retryAt,
+        undefined,
+        run.answeredQuestionsId,
+        run.persistRetries,
+        result.failureText ?? result.reply ?? '',
+        result.failureReason
+      );
     }
     const unsupportedPause = !findMktgRunIntake(run.agentKey, true)?.endpoints.answers && (run.state === 'questions' || result.status === 'questions');
     if (unsupportedPause && Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs) {
@@ -635,7 +646,8 @@ export class MktgDocumentRunService {
     revisionId?: string,
     questionsId = stored.record.answeredQuestionsId,
     persistRetries = stored.record.persistRetries,
-    failureText = stored.record.failureText
+    failureText = stored.record.failureText,
+    failureReason = stored.record.failureReason
   ): Promise<MktgStartedRunRecord> {
     const run = stored.record;
     const written = await this.put(
@@ -654,6 +666,7 @@ export class MktgDocumentRunService {
         ...(questionsId && { 'answered-questions-id': questionsId }),
         ...(persistRetries !== undefined && { 'persist-retries': String(persistRetries) }),
         ...(failureText !== undefined && { 'failure-text': this.snapshot(failureText) }),
+        ...(isMktgRunFailureReason(failureReason) && { 'failure-reason': failureReason }),
       },
       (metadata) => {
         const current = metadata['state'] as MktgStoredDocumentRunState;
@@ -829,6 +842,7 @@ export class MktgDocumentRunService {
           priorRevisionId: m['prior-revision-id'],
           persistRetries: Number(m['persist-retries'] ?? 0),
           failureText: m['failure-text'] === undefined ? undefined : Buffer.from(m['failure-text'], 'base64').toString('utf8'),
+          failureReason: isMktgRunFailureReason(m['failure-reason']) ? m['failure-reason'] : undefined,
           result: revisionId ? { agentKey: record.agentKey, documentId: record.documentId, revisionId } : null,
         },
       };
