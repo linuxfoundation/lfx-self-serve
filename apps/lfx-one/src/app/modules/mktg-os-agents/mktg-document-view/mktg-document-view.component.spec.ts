@@ -341,6 +341,17 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
   }
 
+  it('names the route asset in the crumb before its loading or generating document arrives', async () => {
+    store.getDocument.mockReturnValue(new Subject<MktgDocumentDetailResponse>());
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing loading asset receiver');
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+    component['generating'].set(true);
+    await settle();
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+  });
+
   it('renders stored LinkedIn options and its saved link with the shared copy cards', async () => {
     const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
     if (!type) throw new Error('Missing LinkedIn test document type');

@@ -104,7 +104,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
   });
 
-  test('direct Boilerplates questions select recorded progress and Back skips the form and questions', async ({ page }, info) => {
+  test('direct Boilerplates questions keep run-page progress then land the revision and Back skips the form and questions', async ({ page }, info) => {
     test.setTimeout(60_000);
     const fixture = await setupQuestionsNavigation(page);
     try {
@@ -119,11 +119,13 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       await expect(page).not.toHaveURL(/\/documents\//);
       await page.screenshot({ path: info.outputPath('direct-boilerplates-questions.png'), fullPage: true });
       await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-      await expect(page).toHaveURL(new RegExp('run=' + fixture.runId));
-      for (const key of ['generation', 'questions', 'revision', 'mode']) expect.soft(new URL(page.url()).searchParams.has(key), key).toBe(false);
-      await expect(page.getByTestId('mktg-document-view-run')).toContainText('Started');
-      await page.screenshot({ path: info.outputPath('direct-boilerplates-recorded-progress.png'), fullPage: true });
+      await expect(page).toHaveURL(new RegExp('/' + fixture.intake.agentId + '\\?'));
+      await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+      await expect(page.getByTestId('mktg-run-activity')).toContainText('Writing your Boilerplates');
+      await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath('direct-boilerplates-run-progress.png'), fullPage: true });
       fixture.finish();
+      await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
       await expect(page.getByTestId('mktg-document-view-boilerplates')).toBeVisible();
       await page.screenshot({ path: info.outputPath('direct-boilerplates-landed.png'), fullPage: true });
       await page.goBack();

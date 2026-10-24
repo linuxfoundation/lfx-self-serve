@@ -1077,7 +1077,7 @@ export class MktgDocumentViewComponent {
   private initCrumbs(): Signal<MktgBreadcrumbItem[]> {
     return computed(() => {
       const view = this.view();
-      let label = view?.type.itemLabel ?? 'Document';
+      let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
       if (view?.type.agentKey === 'aeo-geo' && view.revision.createdAt) {
         label += ` · ${formatDate(view.revision.createdAt, 'd MMM y', 'en-US', 'UTC')}`;
       }
