@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_COMMENT_MAX_CHARS } from './mktg-document-comments.constants';
+import type { MktgDocumentAgentKey } from '../interfaces/mktg-document-store.interface';
+
+/** Explicit host capability registration, never inferred from absence of a CR comment root. */
+export const MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS: ReadonlySet<MktgDocumentAgentKey> = new Set<MktgDocumentAgentKey>(['faq']);
 
 /** Leaves room for the full revision ID and role in bounded CR request IDs. */
 export const MKTG_SIGN_OFF_NONCE_REGEX = /^[A-Za-z0-9_-]{1,36}$/;

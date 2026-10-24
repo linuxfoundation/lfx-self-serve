@@ -169,10 +169,11 @@ import type {
   MktgDocumentType,
   MktgRevisionRecord,
   MktgRevisionRecordFields,
+  MktgSignOffChangeCommand,
 } from '@lfx-one/shared/interfaces';
 import type { Request, Response } from 'express';
 
-import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 // This main-owned spec mocks shared barrels with explicit leaf lists; read new feature exports directly.
 import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
@@ -1143,6 +1144,79 @@ describe('MktgDocumentStoreService', () => {
       expect(authorize).toHaveBeenCalledTimes(1);
       expect(settled?.view.revision.signOff?.state).toBe('changes-requested');
       expect(read().signOff[draft.id].decisions.ed.by).toBe(roles.ed);
+    });
+
+    it.each(['reserve', 'start'] as const)('denies a non-frozen writer and the other role on %s even with a writer callback', async (operation) => {
+      const nonce = `denied-${operation}`;
+      const { draft, intent } = await changeIntent(nonce);
+      const authorize = vi.fn(() => Promise.resolve());
+      const command: MktgSignOffChangeCommand =
+        operation === 'reserve' ? { operation, role: 'ed', nonce, note: 'Frozen note.' } : { operation, role: 'ed', nonce, intentId: intent.id };
+      const before = storedObject(key).body;
+      store.conditionalWrites = [];
+      for (const subject of ['auth0|non-actor-writer', roles.tocChair]) {
+        await expect(service.changeRequestTransition(asRole(subject), PROJECT, BRAND_KIT, 'living', draft.id, command, authorize)).rejects.toMatchObject({
+          statusCode: 403,
+        });
+      }
+      expect(authorize).not.toHaveBeenCalled();
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(key).body).toBe(before);
+    });
+
+    it.each(['finish', 'release'] as const)('denies non-actor %s without writer proof and propagates writer-proof denial without writes', async (operation) => {
+      const nonce = `denied-${operation}`;
+      const { draft, intent } = await changeIntent(nonce);
+      const ids = mktgSignOffRequestIds(draft.id, 'ed', nonce);
+      if (!ids) throw new Error('Missing synthetic correlation');
+      const command: MktgSignOffChangeCommand =
+        operation === 'finish'
+          ? { operation, role: 'ed', nonce, intentId: intent.id, receipt: { commentId: 'synthetic-accepted', submissionId: ids.requestId } }
+          : { operation, role: 'ed', nonce, intentId: intent.id, proof: 'unstarted' };
+      const before = storedObject(key).body;
+      const caller = asRole('auth0|non-writer');
+      store.conditionalWrites = [];
+      await expect(service.changeRequestTransition(caller, PROJECT, BRAND_KIT, 'living', draft.id, command)).rejects.toMatchObject({ statusCode: 403 });
+      const denied = new AuthorizationError('Synthetic writer access denied');
+      const authorize = vi.fn(() => Promise.reject(denied));
+      await expect(service.changeRequestTransition(caller, PROJECT, BRAND_KIT, 'living', draft.id, command, authorize)).rejects.toBe(denied);
+      expect(authorize).toHaveBeenCalledTimes(1);
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(key).body).toBe(before);
+    });
+
+    it('denies impersonation and a missing subject before any request-changes write', async () => {
+      const { draft } = await pending();
+      const before = storedObject(key).body;
+      const command = { operation: 'reserve', role: 'ed', nonce: 'denied-identity', note: 'No identity override.' } as const;
+      store.conditionalWrites = [];
+      await expect(
+        service.changeRequestTransition({ ...asRole(roles.ed), impersonationActive: true } as Request, PROJECT, BRAND_KIT, 'living', draft.id, command)
+      ).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.changeRequestTransition(asRole(''), PROJECT, BRAND_KIT, 'living', draft.id, command)).rejects.toMatchObject({ statusCode: 401 });
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(key).body).toBe(before);
+    });
+
+    it('refuses ICP rather than inferring note-only capability from a missing CR root', async () => {
+      const icp = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'icp');
+      if (!icp) throw new Error('Missing registered synthetic ICP');
+      const revision = await service.recordGeneration(req, icp, PROJECT, envelope('# Synthetic ICP'), 'icp-unsupported');
+      mode();
+      await service.transitionSignOff(req, PROJECT, icp, 'living', revision.id, { roles });
+      const pointerKey = `documents/${PROJECT}/icp/living/current.json`;
+      const before = storedObject(pointerKey).body;
+      store.conditionalWrites = [];
+      await expect(
+        service.changeRequestTransition(asRole(roles.ed), PROJECT, icp, 'living', revision.id, {
+          operation: 'reserve',
+          role: 'ed',
+          nonce: 'icp-note',
+          note: 'Must not become terminal without a workflow.',
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(pointerKey).body).toBe(before);
     });
 
     it('supports note-only FAQ receipts, but never nullable receipts on comment-capable assets', async () => {

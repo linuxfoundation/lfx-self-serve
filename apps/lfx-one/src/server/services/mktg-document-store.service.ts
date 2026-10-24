@@ -93,6 +93,7 @@ import {
   MKTG_SIGN_OFF_NONCE_REGEX,
   MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT,
   MKTG_SIGN_OFF_UUID_REGEX,
+  MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS,
 } from '@lfx-one/shared/constants/mktg-sign-off.constants';
 import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
 import { isDeepStrictEqual } from 'node:util';
@@ -725,6 +726,8 @@ export class MktgDocumentStoreService {
       }
       if (annotation.state !== 'pending') throw new ConflictError('This sign-off request is terminal.', 'MKTG_SIGN_OFF_TERMINAL');
       const commentCapable = Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey);
+      if (!commentCapable && !MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS.has(type.agentKey))
+        throw ServiceValidationError.forField('agentKey', 'This asset has no registered request-changes workflow.');
       const at = new Date().toISOString();
       if (command.operation === 'reserve') {
         if (typeof command.note !== 'string' || !command.note.trim() || command.note.length > MKTG_SIGN_OFF_NOTE_MAX_CHARS)
@@ -1151,7 +1154,12 @@ export class MktgDocumentStoreService {
       const change = entry.changeRequest;
       const note = change?.note;
       const validNote = typeof note === 'string' && !!note.trim() && note.length <= MKTG_SIGN_OFF_NOTE_MAX_CHARS;
-      const noteOnly = !Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey) && change?.commentId === null && change.submissionId === null && validNote;
+      const noteOnly =
+        MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS.has(type.agentKey) &&
+        !Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey) &&
+        change?.commentId === null &&
+        change.submissionId === null &&
+        validNote;
       if (
         entry.state === 'changes-requested' &&
         (!change ||
