@@ -165,10 +165,15 @@ an otherwise approved/current no-op. There is no separate publish operation.
 (body `{project, mode}`) share the canonical project-writer boundary. Responses
 contain mode, name-only ED/TOC-chair projections, canEnable and a role/policy reason,
 never subjects, addresses, selector metadata or conditional-write tokens. PUT uses
-the one observed private ETag (or create-if-absent), fails on stale comparison
-with 412 and never retries. Writes are blocked during impersonation and capture
+server-side ETag CAS on the observed snapshot (or create-if-absent); there is no
+client version token. A stale comparison fails with 412 and never retries. Writes are blocked during impersonation and capture
 only the effective opaque subject. Switching off does not erase pending annotations
 or modify any document/approval object.
+
+`MktgSignOffSettingsService.readSettings` and `updateMode` own the snapshot,
+role projection, enable-policy refusal and conditional-write orchestration; the
+controller only validates HTTP inputs, checks canonical writer access and sends
+the service response. The raw write is private to that service.
 
 Enable eligibility checks resolved role subjects, then the explicitly unimplemented
 `approversCanWriteProject` policy seam. Until the approver-access ruling, GET
