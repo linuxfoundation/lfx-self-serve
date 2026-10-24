@@ -3,13 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
-import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums/committee-member.enum';
+import { CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 
 const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
   subject: vi.fn(),
   committees: vi.fn(),
   members: vi.fn(),
+  detail: vi.fn(),
   warning: vi.fn(),
 }));
 vi.mock('./project.service', () => ({
@@ -22,7 +23,17 @@ vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommittees = mocks.committees;
     public getCommitteeMembers = mocks.members;
+    public getCommitteeById = mocks.detail;
   },
+}));
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/committees.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-project-roles.constants')),
+}));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/committee.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/email.utils')),
 }));
 vi.mock('./logger.service', () => ({ logger: { warning: mocks.warning } }));
 
@@ -53,19 +64,20 @@ describe('MktgProjectRolesService', () => {
     mocks.subject.mockImplementation(async (_req: Request, email: string) => (email === 'ed@example.test' ? 'auth0|opaque-ed' : 'auth0|opaque-chair'));
     mocks.committees.mockResolvedValue([committee]);
     mocks.members.mockResolvedValue([chair]);
+    mocks.detail.mockResolvedValue({ ...committee, member_visibility: CommitteeMemberVisibility.BASIC_PROFILE });
   });
 
-  it('resolves display names and directory subjects from existing services, not usernames or invented IDs', async () => {
+  it('resolves opaque identity independently from request-local display names and usernames', async () => {
     expect(await service.rolesOf(req, project)).toEqual({
-      ed: { name: 'Executive director', subject: 'auth0|opaque-ed' },
-      tocChair: { name: 'TOC chair', subject: 'auth0|opaque-chair' },
+      ed: { name: 'Executive director', username: 'synthetic-ed', subject: 'auth0|opaque-ed' },
+      tocChair: { name: 'TOC chair', username: 'synthetic-chair', subject: 'auth0|opaque-chair' },
     });
     expect(mocks.settings).toHaveBeenCalledWith(req, project);
     expect(mocks.committees).toHaveBeenCalledWith(req, { tags: `project_uid:${project}` }, { skipMailingListEnrichment: true, requireComplete: true });
     expect(mocks.members).toHaveBeenCalledWith(req, committee.uid, { require_complete: 'true' });
     expect(mocks.subject).toHaveBeenCalledWith(req, chair.email);
     expect(JSON.stringify(await service.rolesOf(req, project))).not.toContain('@');
-    expect(JSON.stringify(await service.rolesOf(req, project))).not.toContain('synthetic-chair');
+    expect(mocks.detail).toHaveBeenCalledWith(req, committee.uid, { includeAuditor: true });
   });
 
   it('coalesces concurrent calls for one request and project', async () => {
@@ -99,8 +111,8 @@ describe('MktgProjectRolesService', () => {
     mocks.settings.mockResolvedValue({ executive_director: { name: 'Executive director', username: 'synthetic-ed' } });
     mocks.members.mockResolvedValue([{ ...chair, email: '' }]);
     expect(await service.rolesOf(req, project)).toEqual({
-      ed: { name: 'Executive director', subject: null },
-      tocChair: { name: 'TOC chair', subject: null },
+      ed: { name: 'Executive director', username: 'synthetic-ed', subject: null },
+      tocChair: { name: 'TOC chair', username: 'synthetic-chair', subject: null },
     });
     expect(mocks.subject).not.toHaveBeenCalled();
   });
@@ -149,10 +161,41 @@ describe('MktgProjectRolesService', () => {
     { members: [{ ...chair, role: null }] },
     { members: [{ ...chair, committee_uid: 'foreign-committee' }] },
     { members: [chair, { ...chair, uid: 'second-chair' }] },
+    {
+      members: [
+        { ...chair, role: { name: CommitteeMemberRole.VICE_CHAIR } },
+        { ...chair, uid: 'second-vice', role: { name: CommitteeMemberRole.VICE_CHAIR } },
+      ],
+    },
   ])('leaves an ineligible or multiple-chair roster unresolved', async ({ members }) => {
     mocks.members.mockResolvedValue(members);
     expect((await service.rolesOf(req, project)).tocChair).toBeNull();
     expect(mocks.subject).not.toHaveBeenCalledWith(req, chair.email);
+  });
+
+  it('prefers the unique active Chair when a Vice Chair is also active', async () => {
+    mocks.members.mockResolvedValue([chair, { ...chair, uid: 'vice', email: 'vice@example.test', role: { name: CommitteeMemberRole.VICE_CHAIR } }]);
+    expect((await service.rolesOf(req, project)).tocChair?.username).toBe('synthetic-chair');
+    expect(mocks.subject).not.toHaveBeenCalledWith(req, 'vice@example.test');
+  });
+
+  it.each([
+    { member_visibility: CommitteeMemberVisibility.HIDDEN, writer: false, auditor: false, display: false },
+    { member_visibility: undefined, writer: false, auditor: false, display: false },
+    { member_visibility: CommitteeMemberVisibility.HIDDEN, writer: true, auditor: false, display: true },
+    { member_visibility: CommitteeMemberVisibility.HIDDEN, writer: false, auditor: true, display: true },
+    { member_visibility: CommitteeMemberVisibility.BASIC_PROFILE, writer: false, auditor: false, display: true },
+  ])('gates display fields by authoritative roster visibility, never the opaque subject: %j', async ({ display, ...visibility }) => {
+    mocks.detail.mockResolvedValue({ ...committee, ...visibility });
+    const person = (await service.rolesOf(req, project)).tocChair;
+    expect(person?.subject).toBe('auth0|opaque-chair');
+    expect(person?.name).toBe(display ? 'TOC chair' : null);
+    expect(person?.username).toBe(display ? 'synthetic-chair' : undefined);
+  });
+
+  it('hides display fields if the visibility lookup fails but retains the resolved subject', async () => {
+    mocks.detail.mockRejectedValue(new MicroserviceError('Unavailable', 503, 'UNAVAILABLE'));
+    expect((await service.rolesOf(req, project)).tocChair).toEqual({ name: null, subject: 'auth0|opaque-chair' });
   });
 
   it('does not infer a unique TOC from a failed complete committee listing', async () => {
@@ -176,8 +219,8 @@ describe('MktgProjectRolesService', () => {
     expect(mocks.warning).toHaveBeenCalledTimes(1);
   });
 
-  it('validates the project before any source lookup', () => {
-    expect(() => service.rolesOf(req, '../unsafe')).toThrow();
+  it('rejects an invalid project before any source lookup', async () => {
+    await expect(service.rolesOf(req, '../unsafe')).rejects.toThrow();
     expect(mocks.settings).not.toHaveBeenCalled();
     expect(mocks.committees).not.toHaveBeenCalled();
   });
