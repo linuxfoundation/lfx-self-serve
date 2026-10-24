@@ -1,9 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants/mktg-artifact.constants';
-import { MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX } from '@lfx-one/shared/constants/mktg-document-store.constants';
-import { findMktgDocumentType } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX } from '@lfx-one/shared/constants';
+import { findMktgDocumentType } from '@lfx-one/shared/utils';
 import type { Request, Response, NextFunction } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';

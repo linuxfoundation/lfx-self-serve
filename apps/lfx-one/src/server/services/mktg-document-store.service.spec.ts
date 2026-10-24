@@ -39,6 +39,12 @@ const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
+const roleMocks = vi.hoisted(() => ({ rolesOf: vi.fn() }));
+vi.mock('./mktg-project-roles.service', () => ({
+  MktgProjectRolesService: class {
+    public rolesOf = roleMocks.rolesOf;
+  },
+}));
 const directoryMocks = vi.hoisted(() => ({ getUserInfo: vi.fn() }));
 vi.mock('./user.service', () => ({
   UserService: class {
@@ -265,6 +271,7 @@ describe('MktgDocumentStoreService', () => {
       data: { name: userId === 'auth0|selector' ? 'The selector' : 'The writer' },
     }));
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    roleMocks.rolesOf.mockReset().mockResolvedValue({ ed: null, tocChair: { subject: 'auth0|toc-chair', name: 'Visible chair' } });
     service = new MktgDocumentStoreService();
   });
 
@@ -570,7 +577,7 @@ describe('MktgDocumentStoreService', () => {
       const record = read();
       expect(record.revisionId).toBe(first.id);
       expect(record.signOff[draft.id]).toMatchObject({ state: 'pending', roles, requestedBy: 'auth0|not-the-lfid', decisions: {} });
-      expect(sent?.revision.signOff).toMatchObject({ state: 'pending', roles: { ed: { name: 'The writer' }, tocChair: { name: 'The writer' } } });
+      expect(sent?.revision.signOff).toMatchObject({ state: 'pending', roles: { ed: { name: 'The writer' }, tocChair: { name: 'Visible chair' } } });
       expect(sent?.approval).toBeNull();
       expect(sent?.approvedCurrent?.revisionId).toBe(first.id);
       expect(JSON.stringify(sent)).not.toContain('auth0|');
@@ -609,6 +616,62 @@ describe('MktgDocumentStoreService', () => {
       expect(revisionKeys().map((key) => storedObject(key).body)).toEqual(bytes);
       expect((await service.readLatest(req, SPEC, PROJECT))?.documentMarkdown).toBe('# Draft');
       expect((await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {}))?.revision.id).toBe(draft.id);
+    });
+
+    it.each([
+      { label: 'no roster visibility', chair: { subject: roles.tocChair, name: null }, name: null },
+      { label: 'visible matching chair', chair: { subject: roles.tocChair, name: 'Visible chair' }, name: 'Visible chair' },
+      { label: 'visible different chair', chair: { subject: 'auth0|replacement-chair', name: 'Replacement chair' }, name: null },
+      { label: 'unresolved chair', chair: null, name: null },
+    ])('gates pending and approved chair names on document and revision reads: $label', async ({ chair, name }) => {
+      const { draft } = await pending();
+      const viewer = { ...req } as Request;
+      roleMocks.rolesOf.mockImplementation(async (caller: Request) => ({ ed: null, tocChair: caller === viewer ? chair : null }));
+      const document = await service.getDocument(viewer, PROJECT, BRAND_KIT, 'living');
+      const revision = await service.getRevision(viewer, PROJECT, BRAND_KIT, 'living', draft.id);
+      for (const entry of [document?.revisions.find((entry) => entry.id === draft.id), revision?.revision]) {
+        expect(entry?.signOff?.roles.tocChair.name).toBe(name);
+        expect(entry?.signOff?.roles.ed.name).toBe('The writer');
+      }
+      await decide(draft.id, 'ed');
+      await decide(draft.id, 'tocChair');
+      const approvedDocument = await service.getDocument(viewer, PROJECT, BRAND_KIT, 'living');
+      const approvedRevision = await service.getRevision(viewer, PROJECT, BRAND_KIT, 'living', draft.id);
+      for (const entry of [approvedDocument?.revisions.find((entry) => entry.id === draft.id), approvedRevision?.revision]) {
+        expect(entry?.signOff?.roles.tocChair.name).toBe(name);
+        expect(entry?.approval?.signOff?.tocChair.by).toEqual({ name });
+        expect(entry?.approval?.signOff?.ed.by).toEqual({ name: 'The writer' });
+      }
+      expect(roleMocks.rolesOf).toHaveBeenCalledWith(viewer, PROJECT);
+    });
+
+    it('resolves the chair once per projection even when both role and approval attribution need it', async () => {
+      const { draft } = await pending();
+      await decide(draft.id, 'ed');
+      await decide(draft.id, 'tocChair');
+      roleMocks.rolesOf.mockClear();
+      await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(roleMocks.rolesOf).toHaveBeenCalledExactlyOnceWith(req, PROJECT);
+    });
+
+    it('does not look up committee roles on ordinary legacy or single-writer reads', async () => {
+      const saved = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Ordinary'), 'ordinary');
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', saved.id);
+      await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      await service.getRevision(req, PROJECT, BRAND_KIT, 'living', saved.id);
+      expect(roleMocks.rolesOf).not.toHaveBeenCalled();
+    });
+
+    it('does not let a stale pending annotation on an already approved revision block a new Send', async () => {
+      const { draft } = await pending();
+      mode('single-writer');
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', draft.id);
+      const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# New request'), 'new-request');
+      mode();
+      const sent = await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', newer.id, { roles });
+      expect(sent?.revision.signOff?.state).toBe('pending');
+      expect(read().approvals[draft.id]).toBeDefined();
+      expect(read().signOff[draft.id].state).toBe('pending');
     });
 
     it('refuses another pending request on this or another revision', async () => {
