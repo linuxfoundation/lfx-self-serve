@@ -1,22 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, type Page } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { MKTG_AGENTS } from '../../../packages/shared/src/constants/mktg-os-agents.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { kitTest as test, KIT_PROJECT, openKit, setupKit as setupKitRoutes } from './helpers/mktg-kit.helper';
-
-async function setupKit(page: Page, options: Parameters<typeof setupKitRoutes>[1] = {}): Promise<void> {
-  await setupKitRoutes(page, options);
-  // The merged asset page reads comments; keep that read synthetic without weakening the kit safety net.
-  await page.route('**/api/mktg-agents/documents/foundation-message/living/comments?*', async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    const params = new URL(route.request().url()).searchParams;
-    expect(params.get('project')).toBe(KIT_PROJECT.uid);
-    expect(params.get('revision')).toBeTruthy();
-    await route.fulfill({ json: { revisionId: params.get('revision'), threads: [] } });
-  });
-}
+import { kitTest as test, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing OS absolute breadcrumbs', () => {
   test.beforeEach(async ({ page }) => {
