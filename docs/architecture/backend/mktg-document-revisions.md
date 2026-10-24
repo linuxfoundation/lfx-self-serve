@@ -194,6 +194,25 @@ exhausted sign-off nonce histories**. Request IDs include the full revision, rol
 and a bounded nonce, not an identity hash. This storage layer calls no agent and
 mounts no decide endpoint; CR orchestration is the next additive child.
 
+### Request-change orchestration (internal)
+
+`MktgSignOffChangesService` reserves the frozen pointer intent, adds one exact
+whole-document comment through `addWithReceipt`, invokes the existing CR sender
+with the fresh-only start-barrier callback, then records the accepted receipt
+through the final pointer CAS. It returns only the document view, never a Guild
+session/owner token. A failed or uncertain start leaves the intent for explicit
+same-actor recovery or guarded release; no retry loop or new POST path is added.
+
+Recovery reuses the frozen note, revision/role/nonce and CR IDs, not replacement
+JSON. Terminal replay must belong to the selected role. Release authorizes the
+original role actor or a writer of the exact canonical project without changing
+Request identity. It uses correlated CR proof: accepted work settles rather than
+releases; absence/failed/explicitly released uncertainty goes through the pointer
+fence; reserved/in-flight refuses. FAQ's note-only atomic result never calls CR.
+Future HTTP handlers must resolve the canonical writer scope and the open approver
+policy first; this internal orchestration mounts no decide/recovery/release route
+and does not settle B1–B3/B6 or activate a sign-off UI.
+
 ### Sign-off checks (read-only)
 
 `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks?project=<uid>`
