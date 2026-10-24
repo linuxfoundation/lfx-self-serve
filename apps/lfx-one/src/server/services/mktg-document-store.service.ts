@@ -62,6 +62,8 @@ import {
   MktgSignOffAction,
   MktgSignOffAttribution,
   MktgSignOffWrite,
+  MktgSignOffChangeCommand,
+  MktgSignOffChangeResult,
 } from '@lfx-one/shared/interfaces';
 import {
   buildMktgArtifactObjectKey,
@@ -83,7 +85,17 @@ import {
 } from '@lfx-one/shared/utils';
 import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+// Main-owned service: untouched specs mock shared barrels with explicit leaf lists.
+import { MKTG_DOCUMENT_COMMENT_ROOTS } from '@lfx-one/shared/constants/mktg-document-comments.constants';
+import {
+  MKTG_SIGN_OFF_NOTE_MAX_CHARS,
+  MKTG_SIGN_OFF_NONCE_REGEX,
+  MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT,
+  MKTG_SIGN_OFF_UUID_REGEX,
+  MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS,
+} from '@lfx-one/shared/constants/mktg-sign-off.constants';
+import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
 import { isDeepStrictEqual } from 'node:util';
 
 import { AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -541,6 +553,7 @@ export class MktgDocumentStoreService {
       throw new ConflictError('This project requires two-role sign-off.', 'MKTG_SIGN_OFF_REQUIRED');
     }
     const snapshot = await this.readCurrent(req, project, type, documentId);
+    if (snapshot.record?.signOff?.[revisionId]?.changeRequestIntent) throw new ConflictError('A change request is in progress.', 'MKTG_SIGN_OFF_CHANGE_BUSY');
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
@@ -577,7 +590,7 @@ export class MktgDocumentStoreService {
   }
 
   /**
-   * Internal transition seam: the later HTTP orchestrator supplies resolved roles or a prepared comment receipt.
+   * Internal send/approve seam; request changes uses the guarded intent seam below.
    * It must enforce project-writer entitlement and pre-send checks; no client may supply frozen identities.
    */
   public async transitionSignOff(
@@ -599,7 +612,7 @@ export class MktgDocumentStoreService {
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
     if (parseMktgLegacyRevisionId(revisionId)) throw ServiceValidationError.forField('revisionId', 'Sign-off requires a stored revision.');
-    const signOff = this.signOffOf(snapshot.record?.signOff);
+    const signOff = this.signOffOf(snapshot.record?.signOff, type);
     const approvals = this.approvalsOf(snapshot.record?.approvals);
     const at = new Date().toISOString();
     let annotation = signOff[revisionId];
@@ -616,21 +629,10 @@ export class MktgDocumentStoreService {
         throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
       if (!by || annotation.roles[action.role] !== by) throw new AuthorizationError('Only the frozen approver may decide for this role');
       if (annotation.decisions[action.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
-      if (action.decision !== 'approved' && action.decision !== 'changes-requested') throw ServiceValidationError.forField('decision', 'Unknown decision');
-      const change = action.changeRequest;
-      if (
-        action.decision === 'changes-requested' &&
-        (!change ||
-          typeof change.commentId !== 'string' ||
-          !change.commentId.trim() ||
-          (change.submissionId !== null && (typeof change.submissionId !== 'string' || !change.submissionId.trim())))
-      ) {
-        throw ServiceValidationError.forField('changeRequest', 'Request changes requires a prepared comment receipt.');
-      }
+      if (annotation.changeRequestIntent) throw new ConflictError('A change request is in progress.', 'MKTG_SIGN_OFF_CHANGE_BUSY');
+      if (action.decision !== 'approved') throw ServiceValidationError.forField('decision', 'Request changes requires the intent workflow.');
       annotation.decisions[action.role] = { at, by, decision: action.decision };
-      if (action.decision === 'changes-requested' && change) {
-        annotation = { ...annotation, state: 'changes-requested', changeRequest: { commentId: change.commentId, submissionId: change.submissionId } };
-      } else if (annotation.decisions.ed?.decision === 'approved' && annotation.decisions.tocChair?.decision === 'approved') {
+      if (annotation.decisions.ed?.decision === 'approved' && annotation.decisions.tocChair?.decision === 'approved') {
         annotation = { ...annotation, state: 'approved', approvedAt: at };
       }
     }
@@ -654,17 +656,155 @@ export class MktgDocumentStoreService {
     );
     if (!committed) throw new PreconditionFailedError('The document changed during sign-off. Reload and try again.');
     logger.info(req, 'mktg_document_sign_off', 'Committed sign-off transition', { state: annotation.state });
-    const updated = await this.withApprovals(
-      req,
-      {
-        ...view,
-        current: null,
-        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
-      },
-      committed
-    );
-    const revision = updated.revisions.find((entry) => entry.id === revisionId);
-    return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
+    return this.signOffResult(req, view, committed);
+  }
+
+  /** Server-only frozen metadata; caller supplies canonical scope/access, never expose this through HTTP. */
+  public async signOffAnnotation(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    revisionId: string
+  ): Promise<MktgDocumentSignOffAnnotation | null> {
+    if (typeof project !== 'string' || !MKTG_ARTIFACT_PARTITION_REGEX.test(project) || type.kind !== 'living' || documentId !== MKTG_LIVING_DOCUMENT_ID)
+      throw ServiceValidationError.forField('document', 'A canonical living document is required.');
+    const snapshot = await this.readCurrent(req, project, type, documentId);
+    return snapshot.record?.revisionIds.includes(revisionId) ? (snapshot.record.signOff?.[revisionId] ?? null) : null;
+  }
+
+  /** All intent/terminal mutations share the existing writeCurrent CAS. Callback is server authorization, not a client flag. */
+  public async changeRequestTransition(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    revisionId: string,
+    command: MktgSignOffChangeCommand,
+    authorizeWriter?: () => void | Promise<void>
+  ): Promise<MktgSignOffChangeResult | null> {
+    if (isImpersonating(req)) throw new AuthorizationError('Sign-off is unavailable while impersonating.');
+    const by = this.author(req);
+    const ids = mktgSignOffRequestIds(revisionId, command.role, command.nonce);
+    if (
+      !ids ||
+      !['reserve', 'start', 'finish', 'release'].includes(command.operation) ||
+      type.kind !== 'living' ||
+      documentId !== MKTG_LIVING_DOCUMENT_ID ||
+      typeof project !== 'string' ||
+      !MKTG_ARTIFACT_PARTITION_REGEX.test(project)
+    )
+      throw ServiceValidationError.forField('changeRequest', 'A canonical stored revision, role and bounded nonce are required.');
+    for (let attempt = 0; ; attempt++) {
+      const snapshot = await this.readCurrent(req, project, type, documentId);
+      const detail = await this.readDocument(req, project, type, documentId, snapshot);
+      const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+      if (!view) return null;
+      const signOff = this.signOffOf(snapshot.record?.signOff, type);
+      const annotation = signOff[revisionId];
+      if (!annotation || Object.hasOwn(this.approvalsOf(snapshot.record?.approvals), revisionId))
+        throw new ConflictError('There is no pending request for this revision.', 'MKTG_SIGN_OFF_NOT_PENDING');
+      if (!by || by !== annotation.roles[command.role]) {
+        if (!authorizeWriter || (command.operation !== 'finish' && command.operation !== 'release'))
+          throw new AuthorizationError('Only the frozen role actor may request changes.');
+        await authorizeWriter();
+      }
+      const intent = annotation.changeRequestIntent;
+      if (
+        annotation.state === 'changes-requested' &&
+        annotation.changeRequestNonce === command.nonce &&
+        annotation.decisions[command.role]?.decision === 'changes-requested'
+      ) {
+        if (command.operation === 'reserve' && annotation.changeRequest?.note === command.note) return { view, intent: null };
+        if (
+          command.operation === 'finish' &&
+          annotation.changeRequestId === command.intentId &&
+          annotation.changeRequest?.commentId === command.receipt.commentId &&
+          annotation.changeRequest?.submissionId === command.receipt.submissionId
+        )
+          return { view, intent: null };
+      }
+      if (annotation.state !== 'pending') throw new ConflictError('This sign-off request is terminal.', 'MKTG_SIGN_OFF_TERMINAL');
+      const commentCapable = Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey);
+      if (!commentCapable && !MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS.has(type.agentKey))
+        throw ServiceValidationError.forField('agentKey', 'This asset has no registered request-changes workflow.');
+      const at = new Date().toISOString();
+      if (command.operation === 'reserve') {
+        if (typeof command.note !== 'string' || !command.note.trim() || command.note.length > MKTG_SIGN_OFF_NOTE_MAX_CHARS)
+          throw ServiceValidationError.forField('note', 'A bounded nonblank note is required.');
+        if (intent) {
+          if (intent.role !== command.role || intent.nonce !== command.nonce || intent.note !== command.note)
+            throw new ConflictError('Another change request owns this intent.', 'MKTG_SIGN_OFF_CHANGE_BUSY');
+          return { view, intent: { ...intent } }; // Same actor/input recovery; mode may have changed since send.
+        }
+        const released = annotation.releasedChangeRequests ?? [];
+        if (released.some((entry) => entry.role === command.role && entry.nonce === command.nonce))
+          throw new ConflictError('This nonce was released; use an explicit new request.', 'MKTG_SIGN_OFF_REQUEST_RELEASED');
+        if (released.length >= MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
+          throw new ConflictError('Change-request history is full; operator recovery is required.', 'MKTG_SIGN_OFF_RELEASE_HISTORY_FULL');
+        if (annotation.decisions[command.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
+        if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role')
+          throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
+        if (commentCapable)
+          annotation.changeRequestIntent = { id: randomUUID(), role: command.role, nonce: command.nonce, startedAt: at, phase: 'prepared', note: command.note };
+        else {
+          annotation.state = 'changes-requested';
+          annotation.changeRequestNonce = command.nonce;
+          annotation.changeRequestId = randomUUID();
+          annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
+          annotation.changeRequest = { commentId: null, submissionId: null, note: command.note };
+        }
+      } else {
+        if (!intent || intent.id !== command.intentId || intent.role !== command.role || intent.nonce !== command.nonce)
+          throw new ConflictError('The change-request intent changed.', 'MKTG_SIGN_OFF_INTENT_CHANGED');
+        if (command.operation === 'start') {
+          if (intent.phase !== 'prepared') throw new ConflictError('This intent already crossed the start barrier.', 'MKTG_SIGN_OFF_START_CLAIMED');
+          if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role')
+            throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
+          intent.phase = 'starting';
+        } else if (command.operation === 'finish') {
+          const receipt = command.receipt;
+          if (!commentCapable || !receipt || typeof receipt.commentId !== 'string' || !receipt.commentId.trim() || receipt.submissionId !== ids.requestId)
+            throw ServiceValidationError.forField('receipt', 'A correlated accepted comment redraft is required.');
+          annotation.state = 'changes-requested';
+          annotation.changeRequestNonce = command.nonce;
+          annotation.changeRequestId = intent.id;
+          annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
+          annotation.changeRequest = { commentId: receipt.commentId, submissionId: receipt.submissionId, note: intent.note };
+          delete annotation.changeRequestIntent;
+        } else {
+          if (
+            !['unstarted', 'absent', 'failed', 'released'].includes(command.proof) ||
+            ((command.proof === 'absent' || command.proof === 'unstarted') && intent.phase !== 'prepared')
+          )
+            throw new ConflictError('No definitive release proof exists.', 'MKTG_SIGN_OFF_RELEASE_UNSAFE');
+          const released = annotation.releasedChangeRequests ?? [];
+          if (released.length < MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
+            annotation.releasedChangeRequests = [...released, { role: command.role, nonce: command.nonce }];
+          delete annotation.changeRequestIntent;
+        }
+      }
+      const committed = await this.writeCurrent(
+        req,
+        project,
+        type,
+        documentId,
+        snapshot,
+        snapshot.record?.revisionId ?? revisionId,
+        view.revisions.map((row) => row.id),
+        false,
+        true,
+        { signOff }
+      );
+      if (!committed) {
+        // Only a definitive start comparison loss is retryable; each pass reloads and rechecks the frozen intent.
+        if (command.operation === 'start' && attempt + 1 < MKTG_DOCUMENT_WRITE_ATTEMPTS) continue;
+        throw new PreconditionFailedError('The change-request intent changed. Reload and recover the same request.');
+      }
+      logger.info(req, 'mktg_sign_off_change', 'Committed change-request transition', { operation: command.operation });
+      const updated = await this.signOffResult(req, view, committed);
+      return updated ? { view: updated, intent: annotation.changeRequestIntent ? { ...annotation.changeRequestIntent } : null } : null;
+    }
   }
 
   /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
@@ -948,7 +1088,7 @@ export class MktgDocumentStoreService {
       if (!record || !Array.isArray(record.revisionIds) || !record.revisionIds.includes(record.revisionId)) {
         throw this.corruptDocument('Invalid current record');
       }
-      return { record: { ...record, approvals: this.approvalsOf(record.approvals), signOff: this.signOffOf(record.signOff) }, etag: object.etag };
+      return { record: { ...record, approvals: this.approvalsOf(record.approvals), signOff: this.signOffOf(record.signOff, type) }, etag: object.etag };
     } catch (error) {
       if (error instanceof MicroserviceError) throw error;
       throw this.corruptDocument('Current record is not valid JSON');
@@ -980,7 +1120,7 @@ export class MktgDocumentStoreService {
   }
 
   /** Unknown optional shapes are ignored; they never corrupt the otherwise valid pointer. */
-  private signOffOf(value: unknown): Record<string, MktgDocumentSignOffAnnotation> {
+  private signOffOf(value: unknown, type: MktgDocumentType): Record<string, MktgDocumentSignOffAnnotation> {
     const result: Record<string, MktgDocumentSignOffAnnotation> = Object.create(null);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
     for (const [id, raw] of Object.entries(value)) {
@@ -1012,12 +1152,51 @@ export class MktgDocumentStoreService {
       if (entry.state === 'changes-requested' && !changes) continue;
       if (entry.state === 'approved' && (typeof entry.approvedAt !== 'string' || !Number.isFinite(Date.parse(entry.approvedAt)))) continue;
       const change = entry.changeRequest;
+      const note = change?.note;
+      const validNote = typeof note === 'string' && !!note.trim() && note.length <= MKTG_SIGN_OFF_NOTE_MAX_CHARS;
+      const noteOnly =
+        MKTG_SIGN_OFF_NOTE_ONLY_AGENT_KEYS.has(type.agentKey) &&
+        !Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey) &&
+        change?.commentId === null &&
+        change.submissionId === null &&
+        validNote;
       if (
         entry.state === 'changes-requested' &&
         (!change ||
-          typeof change.commentId !== 'string' ||
-          !change.commentId.trim() ||
+          (!noteOnly && (typeof change.commentId !== 'string' || !change.commentId.trim())) ||
           (change.submissionId !== null && (typeof change.submissionId !== 'string' || !change.submissionId.trim())))
+      )
+        continue;
+      const released = entry.releasedChangeRequests;
+      if (
+        released !== undefined &&
+        (!Array.isArray(released) ||
+          released.length > MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT ||
+          released.some(
+            (row) => !row || (row.role !== 'ed' && row.role !== 'tocChair') || typeof row.nonce !== 'string' || !MKTG_SIGN_OFF_NONCE_REGEX.test(row.nonce)
+          ) ||
+          new Set(released.map((row) => `${row.role}:${row.nonce}`)).size !== released.length)
+      )
+        continue;
+      const intent = entry.changeRequestIntent;
+      if (
+        intent !== undefined &&
+        (!intent ||
+          typeof intent !== 'object' ||
+          Array.isArray(intent) ||
+          entry.state !== 'pending' ||
+          !Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey) ||
+          !mktgSignOffRequestIds(id, intent.role, intent.nonce) ||
+          typeof intent.id !== 'string' ||
+          !MKTG_SIGN_OFF_UUID_REGEX.test(intent.id) ||
+          typeof intent.startedAt !== 'string' ||
+          !Number.isFinite(Date.parse(intent.startedAt)) ||
+          !entry.roles[intent.role] ||
+          decisions[intent.role] ||
+          (intent.phase !== 'prepared' && intent.phase !== 'starting') ||
+          typeof intent.note !== 'string' ||
+          !intent.note.trim() ||
+          intent.note.length > MKTG_SIGN_OFF_NOTE_MAX_CHARS)
       )
         continue;
       result[id] = {
@@ -1027,7 +1206,28 @@ export class MktgDocumentStoreService {
         roles: { ed, tocChair },
         decisions,
         ...(entry.state === 'approved' ? { approvedAt: entry.approvedAt } : {}),
-        ...(entry.state === 'changes-requested' ? { changeRequest: change } : {}),
+        ...(entry.state === 'changes-requested' && change
+          ? { changeRequest: { commentId: change.commentId, submissionId: change.submissionId, ...(validNote ? { note } : {}) } }
+          : {}),
+        ...(typeof entry.changeRequestNonce === 'string' && MKTG_SIGN_OFF_NONCE_REGEX.test(entry.changeRequestNonce)
+          ? { changeRequestNonce: entry.changeRequestNonce }
+          : {}),
+        ...(typeof entry.changeRequestId === 'string' && MKTG_SIGN_OFF_UUID_REGEX.test(entry.changeRequestId)
+          ? { changeRequestId: entry.changeRequestId }
+          : {}),
+        ...(intent
+          ? {
+              changeRequestIntent: {
+                id: intent.id,
+                role: intent.role,
+                nonce: intent.nonce,
+                phase: intent.phase,
+                startedAt: intent.startedAt,
+                note: intent.note,
+              },
+            }
+          : {}),
+        ...(released ? { releasedChangeRequests: released.map((row) => ({ role: row.role, nonce: row.nonce })) } : {}),
       };
     }
     return result;
@@ -1086,7 +1286,7 @@ export class MktgDocumentStoreService {
     concurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse> {
     const approvals = detail.type.kind === 'living' ? this.approvalsOf(record?.approvals) : {};
-    const signOff = detail.type.kind === 'living' ? this.signOffOf(record?.signOff) : {};
+    const signOff = detail.type.kind === 'living' ? this.signOffOf(record?.signOff, detail.type) : {};
     const chairSubjects = new Set<string>();
     for (const entry of Object.values(record?.signOff ?? {})) {
       if (entry.roles.tocChair) chairSubjects.add(entry.roles.tocChair);
@@ -1119,6 +1319,10 @@ export class MktgDocumentStoreService {
                   state: request.state,
                   requestedAt: request.requestedAt,
                   requestedBy: await resolveAuthor(request.requestedBy),
+                  ...(request.changeRequestIntent
+                    ? { changeRequestIntent: { role: request.changeRequestIntent.role, startedAt: request.changeRequestIntent.startedAt } }
+                    : {}),
+                  ...(request.changeRequest?.commentId === null && request.changeRequest.note ? { note: request.changeRequest.note } : {}),
                   roles: {
                     ed: { name: (await resolveAuthor(request.roles.ed))?.name ?? null, decision: request.decisions.ed?.decision },
                     tocChair: {
@@ -1163,7 +1367,7 @@ export class MktgDocumentStoreService {
     const kept = keepSelection ? snapshot.record : null;
     const changedAt = kept ? kept.changedAt : new Date().toISOString();
     const changedBy = kept ? kept.changedBy : this.author(req);
-    const signOff = signOffWrite?.signOff ?? this.signOffOf(snapshot.record?.signOff);
+    const signOff = signOffWrite?.signOff ?? this.signOffOf(snapshot.record?.signOff, type);
     if (approve && !approvals[revisionId])
       approvals[revisionId] = {
         approvedAt: signOff[revisionId]?.approvedAt ?? changedAt,
@@ -1488,6 +1692,21 @@ export class MktgDocumentStoreService {
 
   private author(req: Request): string | null {
     return this.authors.captureAuthorId(req);
+  }
+
+  /** Same-snapshot public projection; never expose the internal intent input/UUID/nonce. */
+  private async signOffResult(req: Request, view: MktgRevisionResponse, committed: MktgDocumentCurrentRecord): Promise<MktgRevisionResponse | null> {
+    const updated = await this.withApprovals(
+      req,
+      {
+        ...view,
+        current: null, // withApprovals owns the final-snapshot attribution projection, including current.
+        revisions: view.revisions.map((entry) => ({ ...entry, latest: entry.id === committed.revisionId })),
+      },
+      committed
+    );
+    const revision = updated.revisions.find((entry) => entry.id === view.revision.id);
+    return revision ? { ...view, ...updated, revision, approval: revision.approval } : null;
   }
 
   private sha256(value: string): string {
