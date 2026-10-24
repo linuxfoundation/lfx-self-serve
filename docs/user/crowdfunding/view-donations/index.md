@@ -36,7 +36,7 @@ A paginated table lists all your donations in chronological order, including bot
 
 Select **Explore Initiatives** in the page header to open the initiative catalog in the separate [LFX Crowdfunding product](https://crowdfunding.linuxfoundation.org) in a new tab. When your **Donation History** is empty, it also offers **Explore Initiatives**.
 
-You can browse the catalog without having made a previous donation. Choose an initiative there to learn more and donate; donations happen in LFX Crowdfunding, not in LFX Self Serve. Return to **My Donations** to review your giving history and manage recurring contributions.
+You can browse the catalog without having made a previous donation. Choose an initiative there to learn more and donate; donations happen in LFX Crowdfunding, not in LFX Self Serve. Return to **Donations** to review your giving history and manage recurring contributions.
 
 ## Before you begin
 
@@ -46,7 +46,7 @@ You can browse the catalog without having made a previous donation. Choose an in
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
+2. Select **Crowdfunding → Donations** from the left navigation sidebar.
 3. Review the stats bar for an overview of your contribution activity.
 4. Scroll down to the recurring donations list to see your active subscriptions.
 5. Scroll further to the donation history table to see all past contributions.

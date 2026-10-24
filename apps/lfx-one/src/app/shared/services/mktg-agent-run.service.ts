@@ -32,6 +32,7 @@ import {
   MktgRunPersistReceipt,
   MktgRunResultBody,
   MktgRunResultResponse,
+  MktgObservedRunResult,
   MktgRunSessionResponse,
   MktgRunVersion,
   MktgRunAppendResult,
@@ -110,6 +111,25 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+
+  /** Observe an already accepted redraft. Never Generate/chat/append fake intake answers or overwrite a stored form run. */
+  public observeAccepted(intake: MktgAgentIntake, attempt: MktgRunAttempt, projectUid: string): Observable<MktgObservedRunResult> {
+    return defer(() => {
+      if (!isPlatformBrowser(this.platformId)) return EMPTY;
+      const subject = this.attempts.subject();
+      return this.pollForOutcome(intake, attempt.session, attempt.priorVersion, projectUid).pipe(
+        concatMap((event) =>
+          concat(
+            of(event),
+            event.terminal && event.result.status === 'ready'
+              ? this.persistenceResults(intake, projectUid, attempt.session, event.result).pipe(map((result) => ({ result, terminal: true })))
+              : EMPTY
+          )
+        ),
+        tap(() => this.assertSubject(subject))
+      );
+    });
+  }
 
   /** Writer-gated history read only; callers distinguish unavailable history from absence. */
   public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
@@ -596,18 +616,36 @@ export class MktgAgentRunService {
     result: MktgRunResultResponse,
     version: number
   ): Observable<MktgGenerateProgress> {
-    if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
-      return EMPTY;
-    }
-    const body = this.resultBody(attempt.session, request.projectUid);
     const subject = this.attempts.subject();
+    return this.persistenceResults(request.intake, request.projectUid, attempt.session, result).pipe(
+      map((response): MktgGenerateProgress => {
+        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
+        return {
+          type: 'persisted',
+          run,
+          attempt: run ? attempt : null,
+          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
+        };
+      })
+    );
+  }
+
+  /** Same receipt/version/payload budget for both ordinary intakes and accepted comments-only runs. */
+  private persistenceResults(
+    intake: MktgAgentIntake,
+    projectUid: string,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse
+  ): Observable<MktgRunResultResponse> {
+    if (!intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
+    const body = this.resultBody(session, projectUid);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
     return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http
-          .post<MktgRunResultResponse>(request.intake.endpoints.result, body)
+          .post<MktgRunResultResponse>(intake.endpoints.result, body)
           // A failed retry poll spends one attempt like any other; the next
           // interval tries again within the budget.
           .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
@@ -622,16 +660,7 @@ export class MktgAgentRunService {
       // on the same session must not rewrite an earlier version's location.
       // Inclusive takeWhile emits that matching response and then completes.
       takeWhile((response) => !matches(response), true),
-      filter(matches),
-      map((response): MktgGenerateProgress => {
-        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
-        return {
-          type: 'persisted',
-          run,
-          attempt: run ? attempt : null,
-          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
-        };
-      })
+      filter(matches)
     );
   }
 

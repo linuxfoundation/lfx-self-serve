@@ -73,6 +73,39 @@ test.describe('Marketing family content', () => {
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
     await expect(page.getByTestId('mktg-family-exports')).toContainText("Exports use the family's approved current assets.");
   });
+  test('family breadcrumb returns to the kit instead of the last stored asset', async ({ page }) => {
+    await setupKit(page, { loaded: true });
+    await openKit(page, '/families/positioning-brand');
+    await expect(page.getByTestId('mktg-family-open-boilerplates')).toBeVisible();
+    await page.getByTestId('mktg-breadcrumb-link-0').click();
+    await expect(page).toHaveURL(/\/mktg-os-agents\?project=kit-synthetic-project$/);
+    await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('family-breadcrumb-kit.png'), fullPage: true });
+  });
+  test('clicking a non-last row outside its link opens that row’s document', async ({ page }) => {
+    await setupKit(page, { loaded: true });
+    await openKit(page, '/families/positioning-brand');
+    await expect(page.getByTestId('mktg-family-open-boilerplates')).toBeVisible();
+    const state = page.getByTestId('mktg-family-state-messaging-framework');
+    await state.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+    const cell = await state.boundingBox();
+    if (!cell) throw new Error('Missing visible framework state cell');
+    // The stretched anchor intentionally receives clicks on the non-link cell area.
+    await page.mouse.click(cell.x + cell.width / 2, cell.y + cell.height / 2);
+    await expect(page).toHaveURL(/\/documents\/foundation-message\/living\?project=kit-synthetic-project/);
+    await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('family-row-framework.png'), fullPage: true });
+  });
+  test('clicking the family title does not open an asset', async ({ page }) => {
+    await setupKit(page, { loaded: true });
+    await openKit(page, '/families/positioning-brand');
+    await expect(page.getByTestId('mktg-family-open-boilerplates')).toBeVisible();
+    const familyUrl = page.url();
+    await page.getByTestId('mktg-family-title').click();
+    await expect(page).toHaveURL(familyUrl);
+    await expect(page.getByTestId('mktg-family-assets')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('family-title-inert.png'), fullPage: true });
+  });
   test('stored asset opens its document view, preserving project scope', async ({ page }) => {
     await setupKit(page, { loaded: true });
     await openKit(page, '/families/positioning-brand');

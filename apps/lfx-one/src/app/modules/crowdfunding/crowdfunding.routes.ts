@@ -12,7 +12,7 @@ export const CROWDFUNDING_ROUTES: Routes = [
   },
   {
     path: 'initiatives',
-    title: 'My Initiatives',
+    title: 'Initiatives',
     loadComponent: () => import('./my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
   },
   {
@@ -22,7 +22,7 @@ export const CROWDFUNDING_ROUTES: Routes = [
   },
   {
     path: 'donations',
-    title: 'My Donations',
+    title: 'Donations',
     loadComponent: () => import('./my-donations/my-donations.component').then((m) => m.MyDonationsComponent),
   },
   {

@@ -82,7 +82,12 @@ export class Member360Service {
       ...(prior && { prior_run: prior }),
     });
     logger.debug(req, 'member_360_generate', 'Starting entitled form-only run', { project: project.uid, comparison: !!prior });
-    const sessionId = await this.guild.createSession(req, { handle: agent.guildAgentHandle, message: renderMember360FormMessage(payload) });
+    // The agent requires an exact intake header line; an inline mention makes its scope guard refuse data reads.
+    const sessionId = await this.guild.createSession(req, {
+      handle: agent.guildAgentHandle,
+      message: renderMember360FormMessage(payload),
+      mentionOnOwnLine: true,
+    });
     return { sessionId, documentId: buildMktgRunDocumentId(sessionId) };
   }
 

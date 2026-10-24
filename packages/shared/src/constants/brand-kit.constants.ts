@@ -34,6 +34,7 @@ export const BRAND_KIT_INSPECT_LOGOS_TOOL = 'inspect_logo_files';
 
 /** Payload discriminator of the agent's draft form (`src/form.ts` DRAFT_FORM_TYPE). */
 export const BRAND_KIT_FORM_TYPE = 'brand_kit_intake_form';
+export const BRAND_KIT_REVISE_FORM_TYPE = 'brand_kit_revise_form';
 
 /** What produced a revision. */
 export const BRAND_KIT_MODES = ['draft', 'redraft', 'check'] as const;
@@ -47,6 +48,12 @@ export const BRAND_KIT_MODES = ['draft', 'redraft', 'check'] as const;
 
 /** First line of the rendered draft form — the marker the agent's finalize tool parses back. */
 export const BRAND_KIT_DRAFT_HEADER = 'BATCH INTAKE SUBMISSION (Brand Kit — DRAFT)';
+export const BRAND_KIT_REDRAFT_HEADER = 'BATCH INTAKE SUBMISSION (Brand Kit — REDRAFT)';
+export const BRAND_KIT_REDRAFT_INSTRUCTIONS = [
+  'The reviewer commented on passages of the stored kit below. Apply EVERY comment,',
+  'keep everything else exactly as stored, and return the full kit again with one',
+  'resolution per comment (see REDRAFT in your instructions). Ask NOTHING.',
+] as const;
 
 /** The fixed lines of the rendered draft form, by what they say. */
 export const BRAND_KIT_FORM_LINES = {

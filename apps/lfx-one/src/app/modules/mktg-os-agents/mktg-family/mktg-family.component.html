@@ -90,25 +90,24 @@
       <lfx-mktg-family-export-actions [familyId]="definition.id" />
     } @else if (family(); as family) {
       @if (family.live) {
-        <!-- Family board: 1280px leaves ~876px host; 800px side-column threshold reserves ~60px headroom; 600px stacks the mobile table. -->
+        <!-- Family board: 1280px leaves ~876px host; 800px side-column threshold reserves ~60px headroom; 600px stacks the mobile rows. -->
         <div class="grid min-w-0 grid-cols-1 gap-5 @[800px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" data-testid="mktg-family-layout">
           <section class="min-w-0" aria-label="Family assets">
-            <table class="block w-full border-separate border-spacing-y-3 text-left text-sm @[600px]:table" data-testid="mktg-family-assets">
-              <thead class="hidden @[600px]:table-header-group">
-                <tr class="text-xs uppercase tracking-wide text-gray-500">
-                  <th scope="col" class="p-2">Asset</th>
-                  <th scope="col" class="p-2">State</th>
-                  <th scope="col" class="p-2">Current</th>
-                  <th scope="col" class="p-2">Made by</th>
-                </tr>
-              </thead>
-              <tbody class="flex flex-col gap-3 @[600px]:table-row-group">
+            <div class="grid grid-cols-2 gap-y-3 py-3 text-left text-sm @[600px]:grid-cols-[minmax(0,2fr)_max-content_max-content_minmax(0,1.2fr)]">
+              <div class="col-span-full hidden grid-cols-subgrid text-xs uppercase tracking-wide text-gray-500 @[600px]:grid" aria-hidden="true">
+                <div class="p-2">Asset</div>
+                <div class="p-2">State</div>
+                <div class="p-2">Current</div>
+                <div class="p-2">Made by</div>
+              </div>
+              <ul role="list" class="col-span-full grid grid-cols-subgrid gap-y-3" data-testid="mktg-family-assets">
                 @for (row of family.rows; track row.asset.id) {
-                  <tr
-                    class="relative grid grid-cols-2 rounded-lg border border-gray-200 bg-white align-top @[600px]:table-row @[600px]:border-0"
+                  <!-- Block rows contain stretched links in WebKit too; table rows do not. -->
+                  <li
+                    class="relative col-span-full grid grid-cols-subgrid rounded-lg border border-gray-200 bg-white"
                     [class.hover:shadow-md]="!!row.document"
                     [attr.data-testid]="'mktg-family-asset-' + row.asset.id">
-                    <th scope="row" class="col-span-2 rounded-l-lg border-gray-200 bg-white p-3 font-normal @[600px]:border-y @[600px]:border-l">
+                    <div class="col-span-2 min-w-0 p-3 @[600px]:col-span-1">
                       @if (row.document; as document) {
                         <a
                           [routerLink]="['../../documents', row.asset.agentKey, document.documentId]"
@@ -142,6 +141,7 @@
                           </span>
                         } @else {
                           <lfx-button
+                            class="relative z-10"
                             [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
                             [text]="true"
                             size="small"
@@ -151,12 +151,12 @@
                             [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
                         }
                       }
-                    </th>
-                    <td class="whitespace-nowrap border-gray-200 bg-white p-3 @[600px]:border-y" [attr.data-testid]="'mktg-family-state-' + row.asset.id">
-                      <span class="block text-xs text-gray-500 @[600px]:hidden">State</span><lfx-mktg-kit-status [row]="row" />
-                    </td>
-                    <td class="whitespace-nowrap border-gray-200 bg-white p-3 @[600px]:border-y" [attr.data-testid]="'mktg-family-current-' + row.asset.id">
-                      <span class="block text-xs text-gray-500 @[600px]:hidden">Current</span>
+                    </div>
+                    <div class="whitespace-nowrap p-3" [attr.data-testid]="'mktg-family-state-' + row.asset.id">
+                      <span class="block text-xs text-gray-500 @[600px]:sr-only">State</span><lfx-mktg-kit-status [row]="row" />
+                    </div>
+                    <div class="whitespace-nowrap p-3" [attr.data-testid]="'mktg-family-current-' + row.asset.id">
+                      <span class="block text-xs text-gray-500 @[600px]:sr-only">Current</span>
                       @if (row.document; as document) {
                         @if (row.monthlyCount !== null) {
                           {{ (document.createdAt | date: 'd MMM') ?? '—' }}
@@ -173,15 +173,15 @@
                       } @else {
                         —
                       }
-                    </td>
-                    <td class="col-span-2 rounded-r-lg border-gray-200 bg-white p-3 text-gray-500 @[600px]:border-y @[600px]:border-r">
+                    </div>
+                    <div class="col-span-2 min-w-0 p-3 text-gray-500 @[600px]:col-span-1">
                       <!-- SEAM: append approved-by name / comment count only when approval/comments read metadata lands; never infer an author. -->
-                      <span class="block text-xs @[600px]:hidden">Made by</span>{{ row.madeBy }}
-                    </td>
-                  </tr>
+                      <span class="block text-xs @[600px]:sr-only">Made by</span>{{ row.madeBy }}
+                    </div>
+                  </li>
                 }
-              </tbody>
-            </table>
+              </ul>
+            </div>
           </section>
           <aside class="min-w-0 self-start" data-testid="mktg-family-exports">
             <lfx-mktg-family-export-actions [familyId]="family.family.id" />
