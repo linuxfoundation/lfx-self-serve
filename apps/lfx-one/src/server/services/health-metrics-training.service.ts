@@ -44,7 +44,10 @@ export function isSupportedTrainingRange(range: string): range is HealthMetricsL
 }
 
 /** Upper-cased Snowflake keys; each period's columns carry the range as a suffix (e.g. `ENROLLMENTS_YTD`). */
-type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null } & Record<string, unknown>;
+type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null; IS_LISTED_REVENUE_DELIVERY_TYPE?: boolean | null } & Record<
+  string,
+  unknown
+>;
 
 interface YearRow {
   ENROLLMENT_YEAR: number;
@@ -110,10 +113,15 @@ export class HealthMetricsTrainingService {
       SELECT
         delivery_type,
         is_listed_delivery_type,
+        is_listed_revenue_delivery_type,
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
-        revenue_change_pct
+        revenue_change_pct,
+        enrollment_goal,
+        enrollment_goal_progress_ytd,
+        revenue_goal_usd,
+        revenue_goal_progress_ytd
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
@@ -143,6 +151,13 @@ export class HealthMetricsTrainingService {
       measured: true,
       periods,
       trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
+      // Goals ride on the `All` row only; a goal of zero or less is no goal.
+      goals: {
+        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
+        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
+        enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
+        revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
+      },
     };
   }
 
@@ -245,6 +260,7 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
     .map((row) => ({
       deliveryType: row.DELIVERY_TYPE,
       isListed: row.IS_LISTED_DELIVERY_TYPE === true,
+      isListedRevenue: row.IS_LISTED_REVENUE_DELIVERY_TYPE === true,
       enrollments: toNullableNumber(row[`ENROLLMENTS_${range}`]),
       revenueUsd: toNullableNumber(row[`REVENUE_USD_${range}`]),
     }));
@@ -264,6 +280,11 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toPositiveOrNull(value: unknown): number | null {
+  const number = toNullableNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function toNullableNumber(value: unknown): number | null {

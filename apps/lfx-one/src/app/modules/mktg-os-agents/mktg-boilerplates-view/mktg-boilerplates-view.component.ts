@@ -18,18 +18,18 @@ import { MessageService } from 'primeng/api';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 
 // The Boilerplates view: the asset's own app page inside the mktg-os-agents
 // module, in the framework view's look (full width, a tab bar, white cards).
 // The Boilerplates tab shows the four lengths — the one-liner and the 25, 50
 // and 100-word versions — each with its word count against its limit and a
 // Copy button; the reviewer's notes and the finalize tool's findings sit
-// under them. The Sources and gaps tab shows the run's report. Read only:
-// review by comments on each length is a later item. Purely presentational:
-// the run page and the Documents area feed it.
+// under them. The Sources and gaps tab shows the run's report. The document
+// host enables per-length comments on stored assets; previews stay read-only.
 @Component({
   selector: 'lfx-mktg-boilerplates-view',
-  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent],
+  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent, MktgFieldCommentsComponent],
   templateUrl: './mktg-boilerplates-view.component.html',
 })
 export class MktgBoilerplatesViewComponent {
@@ -50,6 +50,7 @@ export class MktgBoilerplatesViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
 
   // === Signals ===

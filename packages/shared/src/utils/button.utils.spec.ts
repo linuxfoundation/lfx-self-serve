@@ -46,6 +46,14 @@ describe('resolveButtonAriaPt', () => {
     expect(resolveButtonAriaPt(undefined, true, 'menu')).toEqual({ root: { 'aria-expanded': true, 'aria-haspopup': 'menu' } });
   });
 
+  it('forwards description idrefs alone and alongside toggle/popup state', () => {
+    expect(resolveButtonAriaPt(undefined, undefined, undefined, undefined, 'reason-one')).toEqual({ root: { 'aria-describedby': 'reason-one' } });
+    expect(resolveButtonAriaPt(true, false, 'menu', 'synthetic-form', 'reason-one')).toEqual({
+      root: { 'aria-pressed': true, 'aria-expanded': false, 'aria-haspopup': 'menu', 'aria-controls': 'synthetic-form', 'aria-describedby': 'reason-one' },
+    });
+    expect(resolveButtonAriaPt(undefined, undefined, undefined, undefined)).toBeUndefined();
+  });
+
   it('still returns undefined when only the popup kind is left off', () => {
     expect(resolveButtonAriaPt(undefined, undefined, undefined)).toBeUndefined();
   });

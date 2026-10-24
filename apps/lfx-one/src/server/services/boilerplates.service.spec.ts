@@ -11,6 +11,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // envelope, session-event and activity utils, re-exported from their real
 // (Angular-free) source modules so the spec exercises the real rendering and
 // validation.
+const redraftScope = vi.hoisted(() => vi.fn());
+const settlement = vi.hoisted(() => vi.fn());
+vi.mock('./mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public settle = settlement;
+  },
+}));
 const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   sendFollowUp: vi.fn(),
@@ -28,7 +35,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const envelope = await vi.importActual('../../../../../packages/shared/src/utils/mktg-envelope.utils');
   const sessionEvent = await vi.importActual('../../../../../packages/shared/src/utils/mktg-session-event.utils');
   const activity = await vi.importActual('../../../../../packages/shared/src/utils/mktg-run-activity.utils');
-  return { ...(foundationMessage as object), ...(boilerplates as object), ...(envelope as object), ...(sessionEvent as object), ...(activity as object) };
+  const redraft = await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils');
+  return {
+    ...(foundationMessage as object),
+    ...(boilerplates as object),
+    ...(envelope as object),
+    ...(sessionEvent as object),
+    ...(activity as object),
+    ...redraft,
+  };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -46,6 +61,7 @@ vi.mock('./guild.service', () => ({
 // The document store has its own spec; here it records what the service asks it to store.
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
+    public assertRedraftScope = redraftScope;
     public persistJsonGeneration = documentStoreMocks.persistJsonGeneration;
     public captureFramework = documentStoreMocks.captureFramework;
     public rememberGenerationFramework = documentStoreMocks.rememberGenerationFramework;
@@ -58,6 +74,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { BoilerplatesService } from './boilerplates.service';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 
 const req = { path: '/api/mktg-agents/boilerplates/result' } as unknown as Request;
 
@@ -231,6 +248,20 @@ describe('BoilerplatesService.sendAnswers', () => {
 });
 
 describe('BoilerplatesService.getResult', () => {
+  it('settles a mismatched redraft echo as failed immediately without a revision write', async () => {
+    const context = redraftContextFixture('boilerplates');
+    redraftScope.mockResolvedValueOnce(context);
+    guildMocks.getRawEventPayloads.mockResolvedValue([finalizePayload(AGENT_ENVELOPE)]);
+    expect(await new BoilerplatesService().getResult(req, 'synthetic-redraft', 'synthetic-project')).toMatchObject({ status: 'failed' });
+    expect(settlement).toHaveBeenCalledWith(req, context, expect.objectContaining({ status: 'failed' }));
+    expect(documentStoreMocks.persistJsonGeneration).not.toHaveBeenCalled();
+  });
+  it('refuses a foreign bound scope before reading or writing a result', async () => {
+    redraftScope.mockRejectedValueOnce(new Error('Synthetic scope refusal'));
+    await expect(new BoilerplatesService().getResult(req, 'synthetic-redraft', 'other-project')).rejects.toThrow('Synthetic scope refusal');
+    expect(guildMocks.getRawEventPayloads).not.toHaveBeenCalled();
+    expect(documentStoreMocks.persistJsonGeneration).not.toHaveBeenCalled();
+  });
   let service: BoilerplatesService;
 
   beforeEach(() => {

@@ -46,11 +46,12 @@
     [pFocusTrapDisabled]="!showMobileSidebar()"
     data-testid="mobile-sidebar-drawer">
     @if (mobileNavbarMounted()) {
+      <!-- The drawer's lens tabs preview a lens's menu without switching the page's (#4208), so its selectors follow the menu lens. -->
       <lfx-navbar
         [items]="sidebarItems()"
-        [showMeSelector]="activeLens() === 'me'"
-        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-        [showOrgSelector]="activeLens() === 'org'"
+        [showMeSelector]="menuLens() === 'me'"
+        [showProjectSelector]="menuLens() === 'project' || menuLens() === 'foundation'"
+        [showOrgSelector]="menuLens() === 'org'"
         [(selectorPanelOpen)]="selectorPanelOpen"
         [mobile]="true"></lfx-navbar>
     }

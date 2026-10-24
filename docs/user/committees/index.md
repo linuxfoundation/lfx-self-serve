@@ -10,11 +10,11 @@ intercom_collection: Committees
 
 This page applies to users with **contributor**, **maintainer**, **board-member**, or **executive-director** personas. Contributors can view committee information but cannot create or manage committees.
 
-In LFX Self Serve, committees are displayed as **Groups**. Navigate to **My Groups** at `/groups` to see your committee memberships. Committees are formal groups that govern project decisions, including Technical Steering Committees (TSCs), boards, and other working groups.
+In LFX Self Serve, committees are displayed as **Groups**. Navigate to **Groups** at `/groups` to see your committee memberships. Committees are formal groups that govern project decisions, including Technical Steering Committees (TSCs), boards, and other working groups.
 
-## My Groups
+## Groups
 
-My Groups is your personal membership inventory across foundations and projects. Contributor, Maintainer, Board Member, and Executive Director personas use the same inventory; it does not grant new management or voting permissions.
+Groups is your personal membership inventory across foundations and projects. Contributor, Maintainer, Board Member, and Executive Director personas use the same inventory; it does not grant new management or voting permissions.
 
 - Use category buttons, search, and the **Voting capability** filter to narrow your groups. Search includes group names, descriptions, and categories and settles after a short delay.
 - **Foundation** and **Project** filters appear when your persona and available membership scopes support them. Selecting or removing a Foundation clears Project; removing Project keeps Foundation selected. Project choices are constrained to the selected Foundation.

@@ -42,7 +42,7 @@ There's no passcode field you enter manually. **Private** meetings do have a pas
 
 ## Why can't I see a meeting I was invited to?
 
-Make sure you're in the right lens: your personal **My Meetings** view (Me lens) shows meetings across all your projects, while a project's **Meetings** page (Project lens) only shows that project's meetings. Use the lens switcher to move between them. If you only have the join link, you can open it directly in your browser — no account or project context needed, unless the meeting is restricted.
+Make sure you're in the right lens: your personal **Meetings** view (Me lens) shows meetings across all your projects, while a project's **Meetings** page (Project lens) only shows that project's meetings. Use the lens switcher to move between them. If you only have the join link, you can open it directly in your browser — no account or project context needed, unless the meeting is restricted.
 
 ## Can I register myself for a meeting I wasn't invited to?
 
@@ -50,7 +50,7 @@ Yes, if the meeting is **public and not restricted** — but you need to be **si
 
 ## Can I RSVP to a meeting I'm invited to?
 
-Yes, if you're **signed in** and the meeting collects RSVPs. Choose **Yes**, **Maybe**, or **No**. For a recurring meeting, choose **This date only**, **All dates**, or **This date and all following dates**. Your response and its scope are shown afterward. Select a different answer at any time to change your response. Choosing No does not remove the meeting from My Meetings: use **All meetings** or **Not going** to find it.
+Yes, if you're **signed in** and the meeting collects RSVPs. Choose **Yes**, **Maybe**, or **No**. For a recurring meeting, choose **This date only**, **All dates**, or **This date and all following dates**. Your response and its scope are shown afterward. Select a different answer at any time to change your response. Choosing No does not remove the meeting from Meetings: use **All meetings** or **Not going** to find it.
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 

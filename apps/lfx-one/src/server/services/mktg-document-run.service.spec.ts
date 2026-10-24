@@ -13,6 +13,18 @@ import {
   MKTG_STARTED_RUN_FAILURE_BYTES,
 } from '@lfx-one/shared/constants';
 
+const redraft = vi.hoisted(() => ({ forSession: vi.fn(), assertScope: vi.fn(), settle: vi.fn() }));
+vi.mock('./mktg-document-redraft-context.service', () => ({
+  MktgDocumentRedraftContextService: class {
+    public forSession = redraft.forSession;
+    public assertScope = redraft.assertScope;
+  },
+}));
+vi.mock('./mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public settle = redraft.settle;
+  },
+}));
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
@@ -147,6 +159,7 @@ describe('MktgDocumentRunService core', () => {
     vi.setSystemTime('2026-10-19T12:00:00Z');
     vi.clearAllMocks();
     objects.clear();
+    redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
@@ -269,6 +282,107 @@ describe('MktgDocumentRunService core', () => {
     expect(results[0].status).toBe('fulfilled');
     expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'DOCUMENT_RUN_STORAGE_UNAVAILABLE' } });
     expect(JSON.parse(stored().body).agentKey).toBe(types[0].agentKey);
+  });
+
+  it('returns only an exact known creator binding and does not revive its completed ACK', async () => {
+    const actor = { ...req, oidc: { user: { sub: 'opaque-creator' } } } as unknown as Request;
+    const agent = types[0].agentKey;
+    const runId = hash(session);
+    expect(await service.knownRedraftSession(actor, project, agent, 'living', runId, 'send-one', 'opaque-creator')).toBeNull();
+    await service.start(actor, project, agent, session, 1, 'send-one');
+    expect(await service.knownRedraftSession(actor, project, agent, 'living', runId, 'send-one', 'opaque-creator')).toBe(session);
+    await expect(service.knownRedraftSession(actor, project, agent, 'living', runId, 'send-one', 'foreign-creator')).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.knownRedraftSession(actor, project, agent, 'living', runId, 'other-send', 'opaque-creator')).rejects.toBeInstanceOf(
+      AuthorizationError
+    );
+    await service.recordResult(actor, session, ready(agent), project);
+    const before = structuredClone(stored());
+    await service.start(actor, project, agent, session, 1, 'send-one');
+    expect(stored()).toEqual(before);
+  });
+  it('settles only conclusive results, including a later agent failure after a local timeout', async () => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-one');
+    const context = { project, agentKey: agent, requestId: 'send-one' };
+    redraft.forSession.mockResolvedValue(context);
+    stored().metadata['state'] = 'failed';
+    await service.recordResult(req, session, { status: 'pending' }, project);
+    expect(redraft.settle).not.toHaveBeenCalled();
+    const failure = { status: 'failed' as const, failureText: 'Conclusive synthetic failure' };
+    flows.result.mockResolvedValueOnce(failure);
+    await service.recordResult(req, session, failure, project);
+    expect(redraft.settle).toHaveBeenCalledWith(req, context, failure);
+  });
+  it.each([
+    [false, false],
+    [true, false],
+    [true, true],
+  ])('questions fail only bound redrafts, including an existing pause (bound=%s paused=%s)', async (bound, paused) => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-one');
+    const context = { project, agentKey: agent, requestId: 'send-one' };
+    redraft.forSession.mockResolvedValue(bound ? context : null);
+    if (paused) stored().metadata['state'] = 'questions';
+    const result = { status: 'questions' as const, questionsId: 'unexpected-block' };
+    flows.result.mockResolvedValue(paused ? { status: 'pending' } : result);
+    redraft.forSession.mockClear();
+    await service.recordResult(req, session, result, project);
+    expect(redraft.forSession).toHaveBeenCalledTimes(1);
+    if (bound) {
+      expect(redraft.settle).toHaveBeenCalledWith(req, context, { status: 'failed', failureText: 'The agent asked questions on a comments-only redraft.' });
+      expect(stored().metadata['state']).toBe('failed');
+      expect(Buffer.from(stored().metadata['failure-text'], 'base64').toString()).toBe('The agent asked questions on a comments-only redraft.');
+      await service.recordResult(req, session, result, project);
+      expect(stored().metadata['state']).toBe('failed');
+    } else {
+      expect(stored().metadata['state']).toBe('questions');
+      expect(redraft.settle).not.toHaveBeenCalled();
+    }
+  });
+  it('settles failed when a ready redraft exhausts the existing persistence retry budget', async () => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-one');
+    const context = { project, agentKey: agent, requestId: 'send-one' };
+    redraft.forSession.mockResolvedValue(context);
+    const result = { status: 'ready' as const, version: 2, documentMarkdown: '# Synthetic unstored result' };
+    flows.result.mockResolvedValue(result);
+    for (let attempt = 0; attempt <= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS; attempt++) await service.recordResult(req, session, result, project);
+    expect(stored().metadata['state']).toBe('failed');
+    expect(redraft.settle).toHaveBeenLastCalledWith(req, context, expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('settles an older redraft before a second send or Generate supersedes it', async () => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-a');
+    const context = { project, agentKey: agent, requestId: 'send-a' };
+    redraft.forSession.mockResolvedValue(context);
+    vi.advanceTimersByTime(1);
+    await service.start(req, project, agent, 'synthetic-second-session', 0, 'generate-b');
+    await vi.waitFor(() => {
+      expect(redraft.settle).toHaveBeenCalledWith(
+        req,
+        context,
+        expect.objectContaining({ status: 'failed', failureText: 'A newer run superseded this send.' })
+      );
+      expect(stored().metadata['state']).toBe('superseded');
+    });
+  });
+  it('releases a bound send when the authoritative Run writing deadline expires without resubmitting', async () => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-a');
+    const context = { project, agentKey: agent, requestId: 'send-a' };
+    redraft.forSession.mockResolvedValue(context);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
+    await service.readProgress(req, project, agent, 'living');
+    expect(redraft.settle).toHaveBeenCalledWith(req, context, expect.objectContaining({ status: 'failed' }));
+    expect(stored().metadata['state']).toBe('failed');
+  });
+
+  it('does not treat the selected base receipt as completion of a fresh redraft', async () => {
+    const agent = types[0].agentKey;
+    await service.start(req, project, agent, session, 1, 'send-one', location(agent).revision_id);
+    await service.recordResult(req, session, ready(agent), project);
+    expect(stored().metadata['state']).toBe('writing');
   });
 
   it('requires writer scope and usable tracking storage before generation', async () => {

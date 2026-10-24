@@ -26,6 +26,7 @@ import {
   renderBoilerplatesAnswersText,
   renderBoilerplatesFormText,
   validateBoilerplatesEnvelope,
+  validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -33,6 +34,7 @@ import { Request } from 'express';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 
 /**
  * Boilerplates generation flow (boilerplates-output/v1; Guild
@@ -72,6 +74,7 @@ export class BoilerplatesService {
 
   /** The Marketing OS document store: every validated result is a revision of the project's Boilerplates document. */
   private readonly documentStore: MktgDocumentStoreService;
+  private readonly comments = new MktgDocumentCommentsService();
 
   /** The Boilerplates' knobs for the shared persistence layer: the document type and the log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['boilerplates'];
@@ -138,6 +141,7 @@ export class BoilerplatesService {
    * it, writer entitlement is checked before persistence.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BoilerplatesResultResponse> {
+    const context = await this.documentStore.assertRedraftScope(req, this.artifactSpec, sessionId, projectUid);
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
@@ -158,6 +162,11 @@ export class BoilerplatesService {
       return { status: 'pending', activity };
     }
 
+    if (context && !validateMktgRedraftResult(context, envelope).valid) {
+      const failure = { status: 'failed' as const, failureText: 'The agent result did not match the frozen redraft input.', activity };
+      await this.comments.settle(req, context, failure);
+      return failure;
+    }
     logger.info(req, 'boilerplates_result', 'Boilerplates ready', {
       project: envelope.project,
       version: envelope.version,

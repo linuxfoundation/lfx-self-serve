@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (href()) {
+  <a [href]="href()" target="_blank" rel="noopener noreferrer" [class]="linkClass" [attr.data-testid]="testId()"
+    >{{ label() }}<i class="fa-light fa-arrow-up-right-from-square text-[12px]" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span></a
+  >
+} @else if (link(); as link) {
+  <a
+    [routerLink]="link.commands"
+    [fragment]="link.fragment"
+    [queryParams]="link.queryParams"
+    queryParamsHandling="merge"
+    [class]="linkClass"
+    [attr.data-testid]="testId()"
+    >{{ link.label }}<i class="fa-light fa-angle-right text-[12px]" aria-hidden="true"></i
+  ></a>
+}

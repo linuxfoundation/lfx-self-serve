@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, effect, input, output } from '@angular/core';
+import { Component, computed, effect, input, linkedSignal, output, WritableSignal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { AriaHaspopup, ButtonProps } from '@lfx-one/shared/interfaces';
 import { resolveButtonAriaPt } from '@lfx-one/shared/utils';
@@ -53,6 +53,8 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
+  /** Native button/link description idrefs; the p-button branch has the same tooltip/PT conflict as ariaPressed. */
+  public readonly ariaDescribedBy = input<string | undefined>(undefined);
   /**
    * Toggle/pressed state for buttons that act as a binary on/off control (e.g. a view-mode switcher).
    * Only meaningful on the default `<p-button>` branch (no `href`) — `aria-pressed` is valid only on
@@ -97,9 +99,14 @@ export class ButtonComponent {
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
 
-  // Merged aria-pressed/aria-expanded `pt` for the `<p-button>` branch, hoisted to a computed so the template doesn't hand PrimeNG a fresh object per change-detection pass. `undefined` when `tooltip` is set — the Tooltip directive on this host consumes the same `pt` binding for its own `role="tooltip"` container, and the aria attributes must not leak onto it. Typed via the shared `ButtonRootPassThrough` (not PrimeNG's `ButtonPassThrough`) because the single `[pt]` binding type-checks against both `<p-button>` and `pTooltip`.
+  // PrimeNG only removes a bound attribute when its key remains present with null.
+  private readonly descriptionIdrefs = this.initDescriptionIdrefs();
+
+  // Merged accessibility `pt` for the `<p-button>` branch, hoisted to a computed so the template doesn't hand PrimeNG a fresh object per change-detection pass. `undefined` when `tooltip` is set — the Tooltip directive on this host consumes the same `pt` binding for its own `role="tooltip"` container, and the aria attributes must not leak onto it. Typed via the shared `ButtonRootPassThrough` (not PrimeNG's `ButtonPassThrough`) because the single `[pt]` binding type-checks against both `<p-button>` and `pTooltip`.
   protected readonly ariaPt = computed(() =>
-    this.tooltip() ? undefined : resolveButtonAriaPt(this.ariaPressed(), this.ariaExpanded(), this.ariaHaspopup(), this.ariaControls())
+    this.tooltip()
+      ? undefined
+      : resolveButtonAriaPt(this.ariaPressed(), this.ariaExpanded(), this.ariaHaspopup(), this.ariaControls(), this.descriptionIdrefs())
   );
 
   public constructor() {
@@ -107,10 +114,14 @@ export class ButtonComponent {
       effect(() => {
         if (
           this.tooltip() &&
-          (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined || this.ariaHaspopup() !== undefined || this.ariaControls() !== undefined)
+          (this.ariaPressed() !== undefined ||
+            this.ariaExpanded() !== undefined ||
+            this.ariaHaspopup() !== undefined ||
+            this.ariaControls() !== undefined ||
+            (this.ariaDescribedBy() !== undefined && !this.href() && !this.routerLink()))
         ) {
           console.warn(
-            '<lfx-button>: `ariaPressed`/`ariaExpanded`/`ariaHaspopup`/`ariaControls` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding.'
+            '<lfx-button>: `ariaPressed`/`ariaExpanded`/`ariaHaspopup`/`ariaControls`/`ariaDescribedBy` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding.'
           );
         }
         if (this.href() && this.ariaPressed() !== undefined) {
@@ -143,5 +154,15 @@ export class ButtonComponent {
 
   protected handleBlur(event: FocusEvent): void {
     this.onBlur.emit(event);
+  }
+
+  private initDescriptionIdrefs(): WritableSignal<string | null | undefined> {
+    return linkedSignal({
+      source: this.ariaDescribedBy,
+      computation: (value, previous) => {
+        if (value === undefined && previous?.value !== undefined) return null;
+        return value;
+      },
+    });
   }
 }

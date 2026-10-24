@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // into this app's vitest config with Angular-free resolution, so shared runtime
 // collaborators are mocked — the catalog constants are re-exported from their
 // real (Angular-free) source module so the routing lookups stay real.
+const redraftContext = vi.hoisted(() => vi.fn());
+vi.mock('../services/mktg-document-redraft-context.service', () => ({
+  MktgDocumentRedraftContextService: class {
+    public forSession = redraftContext;
+  },
+}));
 const runMocks = vi.hoisted(() => ({
   resolveProject: vi.fn(),
   resolveCatalogProject: vi.fn(),
@@ -264,6 +270,7 @@ describe('MktgAgentsController', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    redraftContext.mockResolvedValue(null);
     // Every accepted Generate must finish even when the optional snapshot never settles.
     lastIntakeMocks.recordStartBestEffort.mockReset().mockImplementation(() => new Promise<void>(() => undefined));
     runMocks.resolveProject.mockReset().mockResolvedValue('proj-uid-1');
@@ -360,6 +367,15 @@ describe('MktgAgentsController', () => {
     ['boilerplatesAnswers', boilerplatesMocks],
     ['faqAnswers', faqMocks],
   ] as const) {
+    it(`${method}: refuses free-text answers on a redraft-bound SID after owner proof`, async () => {
+      redraftContext.mockResolvedValue({ runId: 'c'.repeat(64) });
+      const req = answersRequest();
+      await controller[method](req, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+      expect(tokenMocks.verifySessionOwnerToken.mock.invocationCallOrder[0]).toBeLessThan(redraftContext.mock.invocationCallOrder[0]);
+    });
     it(`${method}: resolves canonical scope before answers and resumes only after accepted send`, async () => {
       runMocks.resolveProject.mockResolvedValueOnce('resolved-project');
       const req = answersRequest();
@@ -384,6 +400,20 @@ describe('MktgAgentsController', () => {
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
     });
   }
+
+  it.each([false, true])('checks redraft binding after owner proof and preserves ordinary chat (bound=%s)', async (bound) => {
+    redraftContext.mockResolvedValue(bound ? { runId: 'd'.repeat(64) } : null);
+    await controller.chat(chatRequest(true), buildRes(), next);
+    expect(tokenMocks.verifySessionOwnerToken.mock.invocationCallOrder[0]).toBeLessThan(redraftContext.mock.invocationCallOrder[0]);
+    if (bound) {
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+      expect(guildMocks.sendFollowUp).not.toHaveBeenCalled();
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+    } else {
+      expect(next).not.toHaveBeenCalled();
+      expect(guildMocks.sendFollowUp).toHaveBeenCalledTimes(1);
+    }
+  });
 
   it.each([false, true])('chat tracks a new session/follow-up (%s) only after preflight and accepted Guild send', async (followUp) => {
     tokenMocks.createSessionOwnerToken.mockReturnValue('synthetic-proof');

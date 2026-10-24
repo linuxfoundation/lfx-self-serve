@@ -37,13 +37,13 @@ A **Private** meeting is joinable by anyone with the link, which carries the mee
 
 The left navigation label for this section depends on which lens you're in:
 
-- **Me lens** (your personal view): the sidebar item is **My Meetings**, at route `/meetings`. This shows meetings across all of your projects, but does not include a way to create a new meeting.
+- **Me lens** (your personal view): the sidebar item is **Meetings**, at route `/meetings`. This shows meetings across all of your projects, but does not include a way to create a new meeting.
 - **Foundation or Project lens**: the sidebar item is **Meetings**, scoped to that foundation or project. This is where the **Create Meeting** button appears, if you have write access.
 - **Org lens**: the sidebar item is also labeled **Meetings**, but it opens a meeting analytics view for the org rather than the shared meetings dashboard — there's no Create Meeting button here.
 
 Me, Foundation, and Project lenses share the same dashboard, scoped differently. **Upcoming** and **Past** answer when the meeting happens. Upcoming is selected by default; Past shows your meeting history, including meetings organized by other people.
 
-In My Meetings, response filters sit below the Upcoming/Past tabs:
+In Meetings, response filters sit below the Upcoming/Past tabs:
 
 - **All meetings** — every upcoming meeting in your list, including declined meetings and meetings without RSVP tracking.
 - **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date. A meeting where you have no active registration is left out, because a response can't be submitted until you're registered.
@@ -59,15 +59,15 @@ Declining does not remove a meeting from **All meetings**. To hide meetings you 
 
 All response filters and **Organized by me** show their upcoming-meeting count in parentheses only when it is greater than zero. Counts are hidden while loading and describe upcoming meetings before search, foundation, project, meeting-type, response, organizer, or hide-declined filters. **Hide meetings declined for all dates** is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
 
-At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
+At the top of Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
 
 Completely removing yourself from a meeting ends your registration and discards its saved response. If you register again, the new registration starts unanswered; an old response cannot return from cached data. A failed removal keeps your registration and response unchanged.
 
 If only some of your registrations can be removed, you'll see **Removal incomplete**. You stay invited, the response on the registration that remains is kept, and you can try removing yourself again.
 
-Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list. Switching away from My Meetings clears personal rows while the scoped list loads; inactive personal updates do not replace scoped results.
+Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list. Switching away from Meetings clears personal rows while the scoped list loads; inactive personal updates do not replace scoped results.
 
-Responses saved in a Foundation or Project view invalidate your personal meeting list without loading it in the background. Returning to My Meetings or your personal dashboard fetches that list again. Login and impersonation identity changes discard personal meeting caches using the canonical account identifier, even when the display alias is unchanged or absent.
+Responses saved in a Foundation or Project view invalidate your personal meeting list without loading it in the background. Returning to Meetings or your personal dashboard fetches that list again. Login and impersonation identity changes discard personal meeting caches using the canonical account identifier, even when the display alias is unchanged or absent.
 
 Empty states differ by lens:
 

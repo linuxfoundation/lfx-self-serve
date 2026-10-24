@@ -1,0 +1,71 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [subtitle]="view()?.subtitle ?? ''"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-nps">
+  @if (view(); as view) {
+    <div class="flex items-center gap-[20px]">
+      <svg width="132" height="112" viewBox="0 0 132 112" class="flex-none" role="img" [attr.aria-label]="view.ariaLabel" data-testid="overview-nps-gauge">
+        @for (segment of view.segments; track segment.key) {
+          <path
+            fill="none"
+            stroke-width="8"
+            stroke-linecap="round"
+            [attr.d]="segment.path"
+            [attr.stroke]="segment.stroke"
+            [attr.stroke-opacity]="segment.opacity"
+            [attr.data-testid]="'overview-nps-segment-' + segment.key"></path>
+        }
+        @if (view.needle; as needle) {
+          <line x1="66" y1="66" stroke-width="2" stroke-linecap="round" [attr.stroke]="strokes.needle" [attr.x2]="needle.x" [attr.y2]="needle.y"></line>
+          <circle cx="66" cy="66" r="3.5" [attr.fill]="strokes.needle"></circle>
+        }
+      </svg>
+      <div class="flex flex-col gap-[4px]">
+        <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900" data-testid="overview-nps-score">{{ view.scoreLabel }}</span>
+        @if (view.delta; as delta) {
+          <span
+            class="inline-flex items-center gap-[3px] text-[12px] font-medium"
+            [class]="delta.good ? 'text-emerald-700' : 'text-red-700'"
+            data-testid="overview-nps-delta">
+            <i class="text-[10px]" [class]="delta.direction === 'up' ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'" aria-hidden="true"></i>
+            <span class="sr-only">{{ delta.direction === 'up' ? 'Up' : 'Down' }}</span
+            >{{ delta.label }}
+          </span>
+        }
+      </div>
+    </div>
+
+    <div class="flex flex-col" data-testid="overview-nps-rows">
+      @for (row of view.rows; track row.key) {
+        <div
+          class="grid grid-cols-[1fr_auto_auto] items-center gap-[12px] border-b border-gray-100 py-[7px] text-[13px]"
+          [attr.data-testid]="'overview-nps-' + row.key">
+          <span class="inline-flex items-center gap-[8px] font-medium text-gray-900"
+            ><span class="h-[8px] w-[8px] flex-none rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}
+            <span class="text-[11px] font-normal text-gray-400">scored {{ row.range }}</span></span
+          >
+          <span class="text-gray-900">{{ row.countLabel }}</span>
+          <span class="w-[40px] text-right text-gray-500">{{ row.pctLabel }}</span>
+        </div>
+      }
+      <div class="flex items-center justify-between py-[7px] text-[13px] text-gray-400" data-testid="overview-nps-no-response">
+        <span class="inline-flex items-center gap-[8px]"
+          ><span class="h-[8px] w-[8px] flex-none rounded-full bg-gray-300" aria-hidden="true"></span>No response</span
+        >
+        <span>{{ view.noResponseLabel }}</span>
+      </div>
+    </div>
+
+    <div class="mt-auto flex">
+      <lfx-overview-explore-link [link]="link" testId="overview-nps-explore" />
+    </div>
+  }
+</lfx-overview-card>

@@ -48,7 +48,6 @@ export class InitiativeDetailComponent {
   // organization's address): go back there.
   private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
   private readonly isNavLens = NAV_LENSES.includes(this.lens as NavLens);
-  protected readonly isLensPage = this.isNavLens || this.lens === 'org';
   protected readonly backLink: string | string[] = this.initBackLink();
   protected readonly backQueryParams: Record<string, string> = this.isNavLens ? this.route.snapshot.queryParams : {};
 

@@ -13,6 +13,7 @@ import {
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
+  isLocalDateOnlyString,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -353,6 +354,23 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// Gates which cached Snowflake `Date`s skip ISO normalization (server `isoDateReplacer`): only a bare
+// DATE may pass; every timestamp shape, including Snowflake's own output format, must not.
+describe('isLocalDateOnlyString', () => {
+  it.each([
+    ['2030-03-04', true],
+    ['2030-03-04T00:00:00.000Z', false],
+    ['2026-10-21 16:12:33.000 -0700', false],
+    ['2030-3-4', false],
+    ['', false],
+    [null, false],
+    [undefined, false],
+    [20300304, false],
+  ])('isLocalDateOnlyString(%s) → %s', (value, expected) => {
+    expect(isLocalDateOnlyString(value)).toBe(expected);
   });
 });
 

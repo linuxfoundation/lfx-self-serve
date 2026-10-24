@@ -15,6 +15,9 @@ export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
  */
 export const MEETING_GROUP_SOURCES: MyDocumentSource[] = ['file', 'recording', 'transcript', 'summary'];
 
+/** Sources whose name is the meeting's own (e.g. "Recording", the meeting topic), so every occurrence reads the same without its date. */
+export const MEETING_DATED_NAME_SOURCES: MyDocumentSource[] = ['recording', 'transcript', 'summary'];
+
 /** Tag configuration for each My Documents source type. */
 export const MY_DOCUMENT_SOURCE_TAGS: Record<MyDocumentSource, { value: string; severity: TagSeverity; icon: string; iconClass: string }> = {
   link: { value: 'Link', severity: 'success', icon: 'fa-light fa-link', iconClass: 'text-gray-400' },

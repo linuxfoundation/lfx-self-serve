@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from './health-metrics-overview.constants';
-
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
@@ -157,36 +155,36 @@ export const HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE: readonly HealthMetricsFoot
   { text: ' is projected from comparable events, which is why its range is wider.' },
 ];
 
-/** The verdict banner per tone, with the Overview's urgency icons and colours; `none` is the design's untinted grey Summary. */
+/** The verdict banner per tone, with its urgency icon and colours; `none` is the design's untinted grey Summary. */
 export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
   Record<HealthMetricsEventsForecastVerdictTone, HealthMetricsEventsForecastVerdictToneStyle>
 > = {
   ok: {
     label: 'Healthy',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.textClass,
+    icon: 'fa-light fa-circle-check',
+    accentClass: 'border-l-emerald-500',
+    textClass: 'text-emerald-600',
     tintClass: 'bg-emerald-50/50',
   },
   watch: {
     label: 'Needs attention',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.textClass,
+    icon: 'fa-light fa-triangle-exclamation',
+    accentClass: 'border-l-amber-500',
+    textClass: 'text-amber-600',
     tintClass: 'bg-amber-50/50',
   },
   act: {
     label: 'Needs action',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.textClass,
+    icon: 'fa-light fa-circle-exclamation',
+    accentClass: 'border-l-red-500',
+    textClass: 'text-red-600',
     tintClass: 'bg-red-50/50',
   },
   none: {
     label: 'Summary',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.textClass,
+    icon: 'fa-light fa-circle-info',
+    accentClass: 'border-l-gray-400',
+    textClass: 'text-gray-500',
     tintClass: '',
   },
 };

@@ -59,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),

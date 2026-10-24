@@ -5,7 +5,7 @@
  * Me-lens Profile Navigation E2E — LFXV2-2741.
  *
  * Covers the redesigned Me-lens profile entry points added in PR #1136:
- *   1. Navbar "me card" — its "My Profile & Account" action links to /profile.
+ *   1. Navbar "me card" — its "Profile & Account" action links to /profile.
  *   2. Navbar account menu — the "Settings" action (→ /profile/settings) and the
  *      "Profile & Account" action (→ /profile), each of which also activates the Me lens.
  *
@@ -191,7 +191,7 @@ test.describe('Me-lens profile card', () => {
     await suppressCookieBanner(page);
   });
 
-  test('S1: My Profile & Account navigates to /profile', async ({ page }) => {
+  test('S1: Profile & Account navigates to /profile', async ({ page }) => {
     // Start on a different Me-lens tab so the assertion proves the click *changed* the route — not
     // just that we were already somewhere under /profile.
     await gotoProfileAndWaitForCard(page, '/profile/identities');
@@ -199,7 +199,7 @@ test.describe('Me-lens profile card', () => {
     await page.getByTestId('me-card-link').click();
 
     // The action links to /profile, which redirects to the canonical first tab.
-    await expect(page, 'My Profile & Account should navigate to the default Profile tab').toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
+    await expect(page, 'Profile & Account should navigate to the default Profile tab').toHaveURL(PROFILE_DEFAULT_URL, { timeout: ELEMENT_TIMEOUT });
   });
 });
 

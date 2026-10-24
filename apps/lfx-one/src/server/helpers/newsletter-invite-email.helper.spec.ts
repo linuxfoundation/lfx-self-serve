@@ -43,7 +43,7 @@ describe('newsletter invite email', () => {
     for (const part of [email.html, email.text]) {
       expect(part).toContain('Get everything you need to know about open source every week');
       expect(part).toContain('create an LFID (Linux Foundation ID) and confirm your company email address');
-      expect(part).toContain('You can also invite coworkers from My Newsletters');
+      expect(part).toContain('You can also invite coworkers from Newsletters');
     }
     expect(email.text).toContain('Accept invitation: https://app.lfx.example/login');
     expect(email.html).toContain('The LFX Team');

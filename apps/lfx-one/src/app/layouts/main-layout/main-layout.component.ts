@@ -54,6 +54,8 @@ export class MainLayoutComponent {
 
   // Active lens from service
   protected readonly activeLens = this.lensService.activeLens;
+  // The lens the mobile drawer's menu shows — the active lens, or the one its lens tabs preview (#4208)
+  protected readonly menuLens = this.lensService.menuLens;
 
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;

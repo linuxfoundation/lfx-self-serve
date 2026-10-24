@@ -387,6 +387,8 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
+    expect(() => service.preflight('synthetic_redraft')).toThrow('Guild API is not configured.');
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(service.createSession(req, { message: 'hi', handle: 'foundation-message' })).rejects.toMatchObject({
       code: 'guild_not_configured',
       message: 'Guild API is not configured. Missing environment variable: GUILD_API_KEY.',

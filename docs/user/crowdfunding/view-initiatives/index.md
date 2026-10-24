@@ -44,7 +44,7 @@ When you have no initiatives, the empty list also offers **New Initiative**. If 
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Initiatives** from the left navigation sidebar.
+2. Select **Crowdfunding → Initiatives** from the left navigation sidebar.
 3. Review the stats bar for an overview of your fundraising activity.
 4. Select a status filter pill (**Active**, **Pending**, or **Archived**) to narrow the list.
 5. Select an initiative card to open its detail page.
@@ -56,4 +56,4 @@ The initiative detail page opens, where you can review financials and manage the
 ## Related
 
 - [Manage Initiatives](../manage-initiatives/) — edit settings, archive, or activate an initiative from its detail page
-- [My Initiatives](../my-initiatives/) — overview of the My Initiatives section
+- [Initiatives](../my-initiatives/) — overview of the Initiatives section

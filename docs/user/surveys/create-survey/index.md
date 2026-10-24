@@ -17,14 +17,14 @@ Confirm you have the correct project selected in the lens switcher. The new surv
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **My Surveys** from the left navigation.
+2. Select **Surveys** from the left navigation.
 3. Select the option to create a new survey.
 4. Fill in the survey details, including title, description, questions, and any date or audience settings.
 5. Save or publish the survey to make it available to respondents.
 
 ## After creation
 
-The survey appears on the My Surveys page. Respondents can access it via the survey link.
+The survey appears on the Surveys page. Respondents can access it via the survey link.
 
 ## Permissions
 

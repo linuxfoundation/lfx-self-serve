@@ -112,3 +112,8 @@ export interface ApiGatewayUserProfile {
   /** User's username/handle */
   Username: string;
 }
+
+export interface ApiGatewayUserSearchPage {
+  Data?: Partial<ApiGatewayUserProfile>[];
+  Metadata?: { TotalSize?: number };
+}

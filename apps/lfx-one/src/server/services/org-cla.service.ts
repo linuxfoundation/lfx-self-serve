@@ -12,6 +12,7 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
+  SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
   classifyOrgClaDesigneeRefusal,
@@ -26,6 +27,9 @@ import {
   validateOrgClaApprovalValue,
 } from '@lfx-one/shared/utils';
 import type {
+  ApiGatewayUserEmail,
+  ApiGatewayUserProfile,
+  ApiGatewayUserSearchPage,
   ClaGroupOption,
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
@@ -78,7 +82,9 @@ import type {
   EasyClaSignatureApprovalLists,
   EasyClaSignedDocument,
 } from '../types/cla.types';
+import { ORG_CLA_INVALIDATOR_LOOKUP_BATCH, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS, ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE } from '../constants';
 import { MicroserviceError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -1412,6 +1418,8 @@ export class OrgClaService {
       });
     }
 
+    await attachInvalidatorDisplays(req, mapped);
+
     return {
       signatureId,
       list: mapped,
@@ -2220,6 +2228,131 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
     actor,
     summary,
   };
+}
+
+async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAcknowledgment[]): Promise<void> {
+  const usernames = [...new Set(rows.flatMap((row) => (row.invalidatedBy ? [row.invalidatedBy] : [])))];
+  if (usernames.length === 0) return;
+
+  let baseUrl: string;
+  try {
+    baseUrl = getUserServiceBaseUrl('org_cla_resolve_invalidator', SERVICE);
+  } catch {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup skipped', { count: usernames.length });
+    return;
+  }
+
+  const bearerToken = isImpersonating(req) ? req.bearerToken : undefined;
+  const displays = new Map<string, string>();
+  let failed = 0;
+  let budgetSpent = false;
+  const lookups = (async () => {
+    for (let index = 0; index < usernames.length && !budgetSpent; index += ORG_CLA_INVALIDATOR_LOOKUP_BATCH) {
+      const batch = usernames.slice(index, index + ORG_CLA_INVALIDATOR_LOOKUP_BATCH);
+      await Promise.all(
+        batch.map(async (username) => {
+          try {
+            const display = await lookupInvalidatorDisplay(req, baseUrl, username, bearerToken);
+            if (display) displays.set(username, display);
+          } catch {
+            failed += 1;
+          }
+        })
+      );
+    }
+  })();
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<void>((resolve) => {
+    budgetTimer = setTimeout(() => {
+      budgetSpent = true;
+      resolve();
+    }, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS);
+  });
+  // gatewayFetch takes no caller abort signal, so a batch already in flight when the budget expires is
+  // left to settle on its own (at most one batch, each call capped by the gateway timeout). Late results
+  // are not used and late failures are not counted in the log below.
+  await Promise.race([lookups, budget]);
+  clearTimeout(budgetTimer);
+
+  if (budgetSpent) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup ran out of time', {
+      budget_ms: ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS,
+      resolved: displays.size,
+      looked_up: usernames.length,
+    });
+  }
+  if (failed > 0) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup failed', {
+      failed,
+      looked_up: usernames.length,
+    });
+  }
+
+  for (const row of rows) {
+    const username = row.invalidatedBy;
+    if (!username) continue;
+    const display = displays.get(username);
+    if (display) row.invalidatedByDisplay = display;
+  }
+}
+
+async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string, bearerToken: string | undefined): Promise<string | undefined> {
+  const query = new URLSearchParams({ username, pageSize: ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE.toString(), offset: '0' });
+  const page = await gatewayFetch<ApiGatewayUserSearchPage>(req, `${baseUrl}/users?${query}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+    bearerToken,
+  });
+
+  const rows = page?.Data;
+  if (!Array.isArray(rows) || rows.length !== 1 || page?.Metadata?.TotalSize !== 1) return undefined;
+  const row = rows[0];
+  if (!row || directoryText(row.Username) !== username) return undefined;
+
+  const fromList = invalidatorDisplayFromPerson(row);
+  if (fromList) return fromList;
+
+  const id = directoryText(row.ID);
+  if (!SALESFORCE_ID_PATTERN.test(id)) return undefined;
+
+  const profile = await gatewayFetch<Partial<ApiGatewayUserProfile>>(req, `${baseUrl}/users/${encodeURIComponent(id)}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator profile lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+    bearerToken,
+  });
+  const profileUsername = directoryText(profile?.Username);
+  if (profileUsername && profileUsername !== username) return undefined;
+  return invalidatorDisplayFromPerson(profile);
+}
+
+function invalidatorDisplayFromPerson(person: Partial<ApiGatewayUserProfile> | null | undefined): string | undefined {
+  const name = directoryText(person?.Name);
+  if (name) return name;
+  const combined = [directoryText(person?.FirstName), directoryText(person?.LastName)].filter((part) => part.length > 0).join(' ');
+  if (combined) return combined;
+  return primaryVerifiedEmail(person?.Emails);
+}
+
+function primaryVerifiedEmail(emails: unknown): string | undefined {
+  if (!Array.isArray(emails)) return undefined;
+  for (const entry of emails) {
+    if (!entry || typeof entry !== 'object') continue;
+    const email = entry as Partial<ApiGatewayUserEmail>;
+    if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted !== false) continue;
+    const address = directoryText(email.EmailAddress);
+    if (address) return address;
+  }
+  return undefined;
+}
+
+function directoryText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 /**

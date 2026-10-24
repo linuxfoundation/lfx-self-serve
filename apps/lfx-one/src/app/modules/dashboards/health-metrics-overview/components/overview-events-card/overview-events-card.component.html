@@ -1,0 +1,125 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-events">
+  @if (view(); as view) {
+    <div class="flex flex-wrap gap-x-[32px] gap-y-[24px]">
+      <div class="flex min-w-0 flex-[1_1_260px] flex-col gap-[12px]">
+        <div class="grid grid-cols-2 border-y border-gray-200" data-testid="overview-events-kpis">
+          <div class="flex min-w-0 flex-col gap-[2px] py-[14px] pr-[16px]" data-testid="overview-events-total">
+            <span class="text-[13px] font-medium text-gray-500">{{ view.total.label }}</span>
+            <div class="flex flex-wrap items-baseline gap-x-[8px]">
+              <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900">{{ view.total.value }}</span>
+              @if (view.total.delta; as delta) {
+                <span
+                  class="inline-flex items-center gap-[3px] whitespace-nowrap text-[12px] font-medium"
+                  [class]="delta.good ? 'text-emerald-700' : 'text-red-700'"
+                  data-testid="overview-events-total-delta">
+                  <i class="text-[10px]" [class]="delta.direction === 'up' ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'" aria-hidden="true"></i>
+                  <span class="sr-only">{{ delta.direction === 'up' ? 'Up' : 'Down' }}</span
+                  >{{ delta.label }}
+                </span>
+              }
+            </div>
+            <span class="text-[11px] text-gray-400">{{ view.total.note }}</span>
+          </div>
+          <div class="flex min-w-0 flex-col gap-[6px] border-l border-gray-200 py-[14px] pl-[20px] pr-[16px]" data-testid="overview-events-sponsorship">
+            <span class="text-[13px] font-medium text-gray-500">Sponsorship</span>
+            <div class="flex flex-wrap items-baseline gap-x-[8px]">
+              <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900">{{ view.sponsorship.valueLabel }}</span>
+              @if (view.sponsorship.hasGoal) {
+                <span class="whitespace-nowrap text-[12px] text-gray-500">of {{ view.sponsorship.goalLabel }} goal</span>
+              }
+            </div>
+            @if (view.sponsorship.hasGoal) {
+              <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                ><span class="block h-full rounded-full bg-emerald-500" [style.width.%]="view.sponsorship.widthPct"></span
+              ></span>
+            }
+            <span class="text-[11px] text-gray-400">{{ view.sponsorship.progressLabel }}</span>
+          </div>
+        </div>
+        <div class="mt-auto flex flex-wrap gap-[8px]">
+          <lfx-overview-explore-link [link]="pastLink" testId="overview-events-explore-past" />
+          <lfx-overview-explore-link [link]="speakersLink" testId="overview-events-explore-speakers" />
+        </div>
+      </div>
+
+      <!-- The list shares the card with the KPI panel, so its own width (570px fits the column minima) picks the row layout. -->
+      <div class="@container flex min-w-0 flex-[2_1_480px] flex-col gap-[10px]" data-testid="overview-events-list">
+        <span class="text-[13px] font-semibold text-gray-900">{{ view.listTitle }}</span>
+        @for (row of visibleRows(); track row.eventId) {
+          <div
+            class="grid grid-cols-1 items-center gap-[20px] rounded-[10px] border border-gray-200 px-[14px] py-[12px] @[570px]:grid-cols-[minmax(180px,1.2fr)_minmax(160px,1fr)_minmax(160px,1fr)]"
+            [class]="row.clickable ? 'cursor-pointer hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500' : ''"
+            [attr.role]="row.clickable ? 'button' : null"
+            [attr.tabindex]="row.clickable ? 0 : null"
+            [attr.aria-label]="row.clickable ? 'Show the registration trend for ' + row.name : null"
+            [attr.data-testid]="'overview-events-row-' + row.eventId"
+            (click)="openTrend(row)"
+            (keydown.enter)="openTrend(row)"
+            (keydown.space)="$event.preventDefault(); openTrend(row)">
+            <div class="flex min-w-0 flex-col gap-[2px]">
+              <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
+              <span class="text-[12px] text-gray-400">{{ row.meta }}</span>
+            </div>
+
+            <div class="flex min-w-0 flex-col gap-[5px]" [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
+              <div class="flex items-center justify-between gap-[6px]">
+                <span class="text-[11px] text-gray-500">Registrations</span>
+                @if (row.registrations.badge; as badge) {
+                  <span class="rounded-full px-[7px] py-[1px] text-[11px] font-medium" [class]="badge.className">{{ badge.label }}</span>
+                }
+              </div>
+              @if (row.registrations.hasGoal) {
+                <span class="text-[13px] text-gray-900"
+                  ><span class="font-semibold">{{ row.registrations.countLabel }}</span>
+                  <span class="text-gray-400">&nbsp;/ {{ row.registrations.goalLabel }} · {{ row.registrations.pctLabel }}</span></span
+                >
+                <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                  ><span class="block h-full rounded-full" [class]="row.registrations.barClass" [style.width.%]="row.registrations.widthPct"></span
+                ></span>
+              } @else {
+                <span class="text-[13px] text-gray-900"
+                  ><span class="font-semibold">{{ row.registrations.countLabel }}</span> <span class="text-gray-400">&nbsp;· no goal set</span></span
+                >
+              }
+            </div>
+
+            <div class="flex min-w-0 flex-col gap-[5px]" [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
+              <span class="text-[11px] text-gray-500">Accepted talks</span>
+              @if (row.talks.hasProposals) {
+                <span class="text-[13px] text-gray-900"
+                  ><span class="font-semibold">{{ row.talks.acceptedLabel }}</span> <span class="text-gray-400">&nbsp;/ {{ row.talks.totalLabel }}</span></span
+                >
+                <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                  ><span class="block h-full rounded-full bg-red-400" [style.width.%]="row.talks.widthPct"></span
+                ></span>
+              } @else {
+                <span class="text-[13px] text-gray-500">{{ row.talks.note }}</span>
+              }
+            </div>
+          </div>
+        }
+        @if (hasMore()) {
+          <div class="flex">
+            <button
+              type="button"
+              class="inline-flex h-[30px] items-center gap-[6px] rounded-full border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              data-testid="overview-events-load-more"
+              (click)="showMore()">
+              Load more
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</lfx-overview-card>

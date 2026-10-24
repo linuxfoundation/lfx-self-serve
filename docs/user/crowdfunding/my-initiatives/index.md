@@ -1,5 +1,5 @@
 ---
-title: My Initiatives
+title: Initiatives
 description: View and manage the crowdfunding initiatives you have created in LFX Self Serve.
 audience: [all]
 product_area: Crowdfunding
@@ -8,7 +8,7 @@ last_updated: 2026-06-16
 intercom_collection: Crowdfunding
 ---
 
-The My Initiatives page lists all crowdfunding initiatives you have created, grouped by their current status. You can monitor funding progress, view initiative details, edit settings, and archive or activate initiatives from this section.
+The Initiatives page lists all crowdfunding initiatives you have created, grouped by their current status. You can monitor funding progress, view initiative details, edit settings, and archive or activate initiatives from this section.
 
 ## What you can do
 
@@ -18,7 +18,7 @@ The My Initiatives page lists all crowdfunding initiatives you have created, gro
 
 ## Navigation
 
-Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives) or select **Crowdfunding → My Initiatives** from the left navigation sidebar.
+Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives) or select **Crowdfunding → Initiatives** from the left navigation sidebar.
 
 ## Sub-pages
 
@@ -27,4 +27,4 @@ Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/in
 
 ## Related
 
-- [My Donations](../my-donations/) — track your contribution history and manage payment methods
+- [Donations](../my-donations/) — track your contribution history and manage payment methods

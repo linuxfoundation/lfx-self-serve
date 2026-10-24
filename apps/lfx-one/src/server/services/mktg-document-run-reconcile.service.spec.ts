@@ -17,6 +17,7 @@ import {
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
+  settle: vi.fn(),
   attribution: vi.fn(),
   project: vi.fn(),
   ensure: vi.fn(),
@@ -28,11 +29,17 @@ const flows = vi.hoisted(() => ({
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
 }));
 vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
+vi.mock('./mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public settle = flows.settle;
+  },
+}));
 vi.mock('./brand-kit.service', () => ({
   BrandKitService: class {
     public getResult = flows.result;

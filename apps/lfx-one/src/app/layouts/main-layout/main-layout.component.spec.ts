@@ -44,7 +44,12 @@ const createLayout = async (): Promise<LayoutHarness> => {
       { provide: ActivatedRoute, useValue: route },
       {
         provide: LensService,
-        useValue: { activeLens: signal('org'), availableLenses: signal([ALL_LENSES.me, ALL_LENSES.org]), setLens: vi.fn(() => true) },
+        useValue: {
+          activeLens: signal('org'),
+          menuLens: signal('org'),
+          availableLenses: signal([ALL_LENSES.me, ALL_LENSES.org]),
+          setLens: vi.fn(() => true),
+        },
       },
       { provide: ProjectContextService, useValue: { setRouteLensKind: vi.fn() } },
       { provide: SidebarNavService, useValue: { sidebarItems: signal([]) } },

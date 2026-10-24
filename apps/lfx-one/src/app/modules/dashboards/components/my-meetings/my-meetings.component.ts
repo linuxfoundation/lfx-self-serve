@@ -49,7 +49,7 @@ export class MyMeetingsComponent {
   protected readonly overlappingNextCount: Signal<number> = this.initOverlappingNextCount();
 
   // Text based on lens
-  protected readonly sectionTitle = computed(() => (this.activeLens() === 'me' ? 'My Meetings' : 'Meetings'));
+  protected readonly sectionTitle = 'Meetings';
   protected readonly emptyPastText = computed(() => (this.activeLens() === 'me' ? 'Your past meetings will appear here.' : 'No past meetings found.'));
   protected readonly emptyUpcomingText = computed(() =>
     this.activeLens() === 'me' ? 'Your scheduled meetings will appear here.' : 'No upcoming meetings found.'

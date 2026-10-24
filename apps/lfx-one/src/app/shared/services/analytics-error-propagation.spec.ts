@@ -235,6 +235,48 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
     },
     {
+      name: 'getOverviewParticipatingOrgs',
+      url: '/api/analytics/overview-participating-orgs',
+      // A swallowed failure would read as no participating organizations.
+      call: () => service.getOverviewParticipatingOrgs({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewNps',
+      url: '/api/analytics/overview-nps',
+      // A swallowed failure would read as a foundation never surveyed.
+      call: () => service.getOverviewNps({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewChurn',
+      url: '/api/analytics/overview-churn',
+      // A swallowed failure would read as a foundation with no churn.
+      call: () => service.getOverviewChurn({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewOutstandingBalance',
+      url: '/api/analytics/overview-outstanding-balance',
+      // A swallowed failure would read as a foundation with nothing overdue.
+      call: () => service.getOverviewOutstandingBalance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewEvents',
+      url: '/api/analytics/overview-events',
+      // A swallowed failure would read as a foundation with no events.
+      call: () => service.getOverviewEvents({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewBoard',
+      url: '/api/analytics/overview-board',
+      // A swallowed failure would read as a board that never met.
+      call: () => service.getOverviewBoard({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewCode',
+      url: '/api/analytics/overview-code',
+      // A swallowed failure would read as a foundation with no contributors.
+      call: () => service.getOverviewCode({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'loadFoundationProjectsDetailGrouped',
       url: '/api/analytics/foundation-projects-detail-grouped',
       // A swallowed failure would read as a foundation with no projects to select.

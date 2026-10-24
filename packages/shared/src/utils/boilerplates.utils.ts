@@ -35,6 +35,7 @@ import {
   BOILERPLATES_MODES,
   BOILERPLATES_PROJECT_SLUG_REGEX,
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
+  BOILERPLATES_REDRAFT_HEADER,
   BOILERPLATES_REFUSAL_CLAUSES,
   BOILERPLATES_REFUSAL_OPENINGS,
   BOILERPLATES_SHA256_REGEX,
@@ -239,6 +240,7 @@ export function buildBoilerplatesFormPayload(answers: Record<string, string>, in
   if (framework !== null) {
     payload.messaging_framework = framework;
   }
+  if (inputs.revision) payload.revision = inputs.revision;
   return payload;
 }
 
@@ -256,8 +258,8 @@ export function guardBoilerplatesText(text: string): string {
 }
 
 /**
- * Render the draft form into the one text message the agent receives — a
- * mirror of the agent's own `renderFormMessage` for a draft (marketing-os-agents
+ * Render the draft or redraft into the one text message the agent receives — a
+ * mirror of the agent's own `renderFormMessage` (marketing-os-agents
  * `agents/boilerplates/src/form.ts`), byte-identical for the same payload;
  * boilerplates.utils.spec.ts pins renderings produced by that renderer. The
  * marker lines are load-bearing: the agent's tools parse the project name,
@@ -269,7 +271,7 @@ export function guardBoilerplatesText(text: string): string {
 export function renderBoilerplatesFormText(payload: BoilerplatesFormPayload, now: Date = new Date()): string {
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
   const lines: string[] = [
-    BOILERPLATES_DRAFT_HEADER,
+    payload.revision ? BOILERPLATES_REDRAFT_HEADER : BOILERPLATES_DRAFT_HEADER,
     `PROJECT NAME: ${payload.project_name}`,
     `RUN DATE: ${runDate}`,
     `LFX PROJECT UID: ${payload.project_uid ?? BOILERPLATES_FORM_LINES.uidNotSupplied}`,
@@ -294,7 +296,24 @@ export function renderBoilerplatesFormText(payload: BoilerplatesFormPayload, now
     );
   }
   lines.push('');
-  lines.push(BOILERPLATES_FORM_LINES.revisionNone);
+  const revision = payload.revision;
+  if (!revision) {
+    lines.push(BOILERPLATES_FORM_LINES.revisionNone);
+  } else {
+    lines.push(
+      `REVISION: redraft — stored version ${revision.prior_version}; finalize as version ${revision.prior_version + 1}; apply every comment below and keep every other length exactly as it is`,
+      `COMMENTS: ${revision.comments.length} — apply every one`
+    );
+    revision.comments.forEach((comment, index) => {
+      const number = index + 1;
+      lines.push(`--- COMMENT ${number} ---`, `FIELD: ${comment.field}`, 'COMMENT:', guardBoilerplatesText(comment.comment), `--- END COMMENT ${number} ---`);
+    });
+    lines.push(
+      `--- PREVIOUS (JSON, stored version ${revision.prior_version}) ---`,
+      guardBoilerplatesText(JSON.stringify(revision.previous, null, 2)),
+      '--- END PREVIOUS ---'
+    );
+  }
   return lines.join('\n');
 }
 

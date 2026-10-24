@@ -8,7 +8,7 @@ last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
 
-Your saved payment methods are listed at the bottom of the My Donations page. Each entry shows the card brand, the last four digits, and the expiry date. You can add a new card or remove an existing one at any time.
+Your saved payment methods are listed at the bottom of the Donations page. Each entry shows the card brand, the last four digits, and the expiry date. You can add a new card or remove an existing one at any time.
 
 ## Before you begin
 
@@ -18,7 +18,7 @@ Your saved payment methods are listed at the bottom of the My Donations page. Ea
 ## Add a payment method
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
+2. Select **Crowdfunding → Donations** from the left navigation sidebar.
 3. Scroll to the **Payment Methods** section at the bottom of the page.
 4. Select **Add Payment Method**.
 5. Enter your card number, expiry date, and CVC (the 3-digit security code on the back of the card) in the dialog that appears.
@@ -33,7 +33,7 @@ The new card appears in your payment methods list immediately and can be used fo
 > **Before deleting:** If you delete a card that is linked to an active recurring donation, that donation will fail on the next billing cycle because there is no longer a valid payment method to charge. To avoid a missed charge, cancel the recurring donation before removing the card — see [Manage Recurring Donations](../manage-recurring-donations/).
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
+2. Select **Crowdfunding → Donations** from the left navigation sidebar.
 3. Scroll to the **Payment Methods** section at the bottom of the page.
 4. Select **Delete** next to the card you want to remove.
 5. Confirm the deletion.

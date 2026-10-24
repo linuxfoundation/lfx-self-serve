@@ -40,6 +40,7 @@ import { UserService } from '@services/user.service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
+import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { MessageService } from 'primeng/api';
 import { filter, firstValueFrom, NEVER, of, take } from 'rxjs';
@@ -116,6 +117,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     const activeContext = signal<ProjectContext | null>(project);
     await TestBed.configureTestingModule({
       providers: [
+        provideMktgCommentsStub(),
         provideRouter(
           ['project', 'foundation'].map((lens) => ({
             path: `${lens}/mktg-os-agents`,

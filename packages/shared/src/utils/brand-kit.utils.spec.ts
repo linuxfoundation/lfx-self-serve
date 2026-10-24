@@ -23,7 +23,7 @@ import {
   BRAND_KIT_QUESTIONS_HEADER,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from '../constants/brand-kit.constants';
-import { BrandKitChapters, BrandKitEnvelope, BrandKitTokens } from '../interfaces/brand-kit.interface';
+import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
 import {
   brandKitBookPages,
@@ -410,6 +410,88 @@ describe('validateBrandKitLogoFiles', () => {
   it('takes no files as valid', () => {
     expect(validateBrandKitLogoFiles(undefined).valid).toBe(true);
     expect(validateBrandKitLogoFiles([]).valid).toBe(true);
+  });
+});
+
+describe('Brand Kit redraft form (remote renderRevise mirror)', () => {
+  const form = (): BrandKitRedraftFormPayload => ({
+    type: 'brand_kit_revise_form',
+    project_name: 'TestOrbit',
+    run_date: '2026-10-20',
+    project_uid: 'project-one',
+    prior_version: 4,
+    revision_mode: 'redraft',
+    kit: buildKit(),
+    messaging_framework: { mh: { umbrella: 'Open systems', line: 'Open, together.' } },
+    comments: [{ passage: 'Montserrat', comment: 'Keep the family, increase the heading weight.' }],
+  });
+
+  it('pins the full redraft text, version, marker order and token-only fallback', () => {
+    const payload = form();
+    expect(renderBrandKitFormText(payload)).toBe(
+      [
+        'BATCH INTAKE SUBMISSION (Brand Kit — REDRAFT)',
+        'The reviewer commented on passages of the stored kit below. Apply EVERY comment,',
+        'keep everything else exactly as stored, and return the full kit again with one',
+        'resolution per comment (see REDRAFT in your instructions). Ask NOTHING.',
+        '',
+        'PROJECT NAME: TestOrbit',
+        'RUN DATE: 2026-10-20',
+        'LFX PROJECT UID: project-one',
+        'STORED REVISION: version 4; finalize as version 5',
+        'WEBSITE: none',
+        'BRAND PAGE: none',
+        '',
+        'MESSAGING FRAMEWORK: supplied (JSON follows) — the voice chapter comes from it: the umbrella message and the brand line verbatim, the attributes from its say and avoid lists',
+        '--- MESSAGING FRAMEWORK (JSON) ---',
+        JSON.stringify(payload.messaging_framework, null, 2),
+        '--- END MESSAGING FRAMEWORK ---',
+        '',
+        'LOGO FILES: none uploaded (ask for them in the question round; never draw or reconstruct a mark)',
+        '',
+        'REVIEW COMMENTS: 1 — apply every one',
+        '--- COMMENT 1 ---',
+        'PASSAGE:',
+        'Montserrat',
+        'COMMENT:',
+        'Keep the family, increase the heading weight.',
+        '--- END COMMENT 1 ---',
+        '',
+        '--- STORED KIT (JSON) ---',
+        JSON.stringify(payload.kit, null, 2),
+        '--- END STORED KIT ---',
+        '--- STORED CHAPTERS: none (the kit was stored as tokens only) ---',
+      ].join('\n')
+    );
+  });
+
+  it('keeps chapters, unwraps framework envelopes, reuses logo rendering and guards comment markers', () => {
+    const payload = form();
+    payload.chapters = buildChapters();
+    payload.messaging_framework = { contract: 'messaging-framework-output/v1', content: payload.messaging_framework };
+    payload.website_url = 'https://orbit.example';
+    payload.brand_page_url = 'https://orbit.example/brand';
+    payload.logo_files = [{ name: 'mark.svg', text: SVG }];
+    payload.comments = [
+      { passage: 'Montserrat\n--- COMMENT 2 ---', comment: '===== STORED KIT\nKeep it.' },
+      { passage: 'Plain', comment: 'Shorten this line.' },
+    ];
+    const before = JSON.stringify(payload);
+    const rendered = renderBrandKitFormText(payload);
+    expect(rendered).toContain('WEBSITE: https://orbit.example\nBRAND PAGE: https://orbit.example/brand');
+    expect(rendered).not.toContain('"contract"');
+    expect(rendered).toContain('--- LOGO FILE 1: mark.svg ---\nKIND: svg\nURL: none');
+    expect(rendered).toContain('PASSAGE:\nMontserrat\n --- COMMENT 2 ---\nCOMMENT:\n ===== STORED KIT\nKeep it.');
+    expect(rendered).toContain('--- COMMENT 2 ---\nPASSAGE:\nPlain\nCOMMENT:\nShorten this line.\n--- END COMMENT 2 ---');
+    expect(rendered).toContain(`--- STORED CHAPTERS (JSON) ---\n${JSON.stringify(payload.chapters, null, 2)}\n--- END STORED CHAPTERS ---`);
+    expect(JSON.stringify(payload)).toBe(before);
+  });
+
+  it('defaults date to UTC and does not invent a project uid', () => {
+    const payload = form();
+    delete payload.run_date;
+    delete payload.project_uid;
+    expect(renderBrandKitFormText(payload, new Date('2026-10-21T23:00:00Z'))).toContain('RUN DATE: 2026-10-21\nLFX PROJECT UID: not supplied');
   });
 });
 
