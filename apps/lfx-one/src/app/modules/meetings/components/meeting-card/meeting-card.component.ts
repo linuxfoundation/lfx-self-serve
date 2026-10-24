@@ -315,6 +315,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
+  public readonly groupNames: Signal<string[]> = this.initGroupNames();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -1262,6 +1263,11 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meeting();
       return occurrence?.title || meeting.title || '';
     });
+  }
+
+  /** Names of the groups (committees) the meeting belongs to; a group with no resolved name is left out rather than shown blank. */
+  private initGroupNames(): Signal<string[]> {
+    return computed(() => (this.meeting().committees ?? []).map((committee) => committee.name?.trim()).filter((name): name is string => !!name));
   }
 
   private denyEdit(): void {

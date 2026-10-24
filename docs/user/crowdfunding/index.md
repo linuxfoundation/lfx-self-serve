@@ -8,7 +8,7 @@ last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
 
-The Crowdfunding section lets you manage the fundraising initiatives you own and track the donations you have made to Linux Foundation projects. It is organized into two areas: **My Initiatives** for initiative owners and **My Donations** for contributors.
+The Crowdfunding section lets you manage the fundraising initiatives you own and track the donations you have made to Linux Foundation projects. It is organized into two areas: **Initiatives** for initiative owners and **Donations** for contributors.
 
 ## What you can do
 
@@ -20,11 +20,11 @@ The Crowdfunding section lets you manage the fundraising initiatives you own and
 
 ## Who this applies to
 
-All authenticated users can access the Crowdfunding section. **My Initiatives** is relevant to users who have created or submitted crowdfunding initiatives. **My Donations** is relevant to users who have contributed to any initiative.
+All authenticated users can access the Crowdfunding section. **Initiatives** is relevant to users who have created or submitted crowdfunding initiatives. **Donations** is relevant to users who have contributed to any initiative.
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **My Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **My Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
+Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
 
 ## Key concepts
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   AKRITES_ENABLED_FLAG,
@@ -17,7 +17,6 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
-  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -38,11 +37,11 @@ import { SidebarNavService } from './sidebar-nav.service';
 
 describe('SidebarNavService', () => {
   const activeLens = signal<Lens>('foundation');
+  // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
+  const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
-  // On by default: the other project-lens ordering tests expect the entry in place.
-  const participatingOrgsEnabled = signal(true);
   const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const akritesEnabled = signal(false);
@@ -84,12 +83,12 @@ describe('SidebarNavService', () => {
 
   beforeEach(() => {
     activeLens.set('foundation');
+    menuLensPreview.set(null);
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
-    participatingOrgsEnabled.set(true);
     orgSegment.set(null);
     mentorshipEnabled.set(false);
     akritesEnabled.set(false);
@@ -126,7 +125,6 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
-              if (key === PROJECT_LENS_PARTICIPATING_ORGS_FLAG) return participatingOrgsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
@@ -137,7 +135,7 @@ describe('SidebarNavService', () => {
             }),
           },
         },
-        { provide: LensService, useValue: { activeLens } },
+        { provide: LensService, useValue: { activeLens, menuLens: computed(() => menuLensPreview() ?? activeLens()) } },
         {
           provide: PersonaService,
           useValue: {
@@ -162,9 +160,9 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            canWrite,
-            activeProjectStage,
-            activeProjectStageResolved,
+            menuCanWrite: canWrite,
+            menuProjectStage: activeProjectStage,
+            menuProjectStageResolved: activeProjectStageResolved,
             formationOverviewAllowedSlug,
           },
         },
@@ -190,6 +188,19 @@ describe('SidebarNavService', () => {
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
     });
+  });
+
+  it('builds the menu for the lens the mobile drawer previews, and returns to the active lens once the preview ends (#4208)', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('me');
+    const meItems = service.sidebarItems();
+
+    menuLensPreview.set('project');
+    expect(service.sidebarItems().some((item) => item.routerLink?.startsWith('/project/'))).toBe(true);
+    expect(service.sidebarItems()).not.toEqual(meItems);
+
+    menuLensPreview.set(null);
+    expect(service.sidebarItems()).toEqual(meItems);
   });
 
   it('hides Marketing OS on foundation lens when the flag is off', () => {
@@ -284,14 +295,11 @@ describe('SidebarNavService', () => {
     }
   });
 
-  it('shows Participating organizations right after Documents on the project lens only while its flag is on, for non-writers too, and not on the foundation lens', () => {
+  it('shows Participating organizations right after Documents on the project lens, for non-writers too, and not on the foundation lens', () => {
     const service = TestBed.inject(SidebarNavService);
     activeLens.set('project');
     canWrite.set(false);
-    participatingOrgsEnabled.set(false);
-    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
 
-    participatingOrgsEnabled.set(true);
     const items = service.sidebarItems();
     const itemLabels = labels(items);
     expect(findByLink(items, '/project/participating-orgs')).toEqual(
@@ -415,7 +423,7 @@ describe('SidebarNavService', () => {
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toBeUndefined();
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toBeUndefined();
     expect(findByLink(items, '/formations')).toBeUndefined();
   });
 
@@ -424,10 +432,10 @@ describe('SidebarNavService', () => {
     formationEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagementLinks = sectionItems(items, 'My Engagement').map((item) => item.routerLink);
+    const engagementLinks = sectionItems(items, 'Engagement').map((item) => item.routerLink);
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toEqual(
-      expect.objectContaining({ label: 'My Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toEqual(
+      expect.objectContaining({ label: 'Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
     );
     expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
     expect(engagementLinks).not.toContain('/documents');

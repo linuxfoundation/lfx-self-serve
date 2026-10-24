@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { PLATFORM_ID } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgBoilerplatesAsset } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgBoilerplatesViewComponent } from './mktg-boilerplates-view.component';
@@ -48,6 +49,11 @@ describe('MktgBoilerplatesViewComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: messageService },
+        provideMktgCommentsStub({
+          loaded: signal(true),
+          selectedScope: signal({ ...mktgCommentScopeFixture(), agentKey: 'boilerplates' }),
+          labelContent: signal(asset.content),
+        }),
       ],
     }).compileComponents();
     await TestBed.inject(Router).navigateByUrl(url);
@@ -61,6 +67,24 @@ describe('MktgBoilerplatesViewComponent', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('opts stored assets into one field pin per original length, preserving copy text and excluding reports', async () => {
+    const before = JSON.stringify(ASSET);
+    await render();
+    expect(host().querySelector('lfx-mktg-field-comments')).toBeNull();
+    fixture.componentRef.setInput('commentsEnabled', true);
+    await fixture.whenStable();
+    const pins = Array.from(host().querySelectorAll('[data-mktg-comment-field]'));
+    expect(pins.map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['bp[0].t', 'bp[1].t', 'bp[2].t', 'bp[3].t']);
+    pins.forEach((pin, index) => {
+      expect(pin.parentElement?.textContent).toContain(ASSET.content.bp[index].t);
+      expect(pin.querySelector('button')?.getAttribute('aria-label')).toContain(ASSET.content.bp[index].l);
+    });
+    query('mktg-boilerplates-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(host().querySelector('lfx-mktg-field-comments')).toBeNull();
+    expect(JSON.stringify(ASSET)).toBe(before);
   });
 
   it('loads its URL tab and pushes one history entry per user switch', async () => {

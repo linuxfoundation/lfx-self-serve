@@ -27,6 +27,7 @@ import {
   renderBrandKitAnswersText,
   renderBrandKitFormText,
   validateBrandKitEnvelope,
+  validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -34,6 +35,7 @@ import { Request } from 'express';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 
 /**
  * Brand Kit generation flow (brand-kit-output/v2; Guild
@@ -82,6 +84,7 @@ export class BrandKitService {
    * whose approved current is what plain and sidecar stored reads serve.
    */
   private readonly documentStore: MktgDocumentStoreService;
+  private readonly comments = new MktgDocumentCommentsService();
 
   /** Brand Kit knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['brand-kit'];
@@ -154,6 +157,7 @@ export class BrandKitService {
    * stored; with it, writer entitlement is checked before persistence.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BrandKitResultResponse> {
+    const context = await this.documentStore.assertRedraftScope(req, this.artifactSpec, sessionId, projectUid);
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
@@ -175,6 +179,11 @@ export class BrandKitService {
       return { status: 'pending', activity };
     }
 
+    if (context && !validateMktgRedraftResult(context, envelope).valid) {
+      const failure = { status: 'failed' as const, failureText: 'The agent result did not match the frozen redraft input.', activity };
+      await this.comments.settle(req, context, failure);
+      return failure;
+    }
     logger.info(req, 'brand_kit_result', 'Brand Kit ready', {
       project: envelope.project,
       version: envelope.version,
@@ -252,7 +261,8 @@ export class BrandKitService {
    * Persist the validated envelope and record it as a new revision of the
    * project's Brand Kit document. Every refusal and storage failure degrades
    * to null at WARN — the kit still reaches the user, without a receipt, and
-   * the next poll retries the idempotent write.
+   * the next poll retries the idempotent write. The pre-compatibility redraft
+   * gate also degrades to null at WARN; an invalid echo is settled before this call.
    */
   private async persistEnvelope(req: Request, envelope: BrandKitEnvelope, sessionId: string, projectUid?: string): Promise<BrandKitPersistReceipt | null> {
     return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);

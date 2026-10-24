@@ -263,6 +263,11 @@ export class GuildService {
     return payloads;
   }
 
+  /** Local readiness only, before committing a comments reservation; no external request. */
+  public preflight(operation: string): void {
+    this.assertConfigured(operation);
+  }
+
   /** One best-effort outcome step, after authorization and before result logging/persistence. */
   public async resolveRunOutcome<T extends MktgRunOutcomeSource>(
     req: Request,
