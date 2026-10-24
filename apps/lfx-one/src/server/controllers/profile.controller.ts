@@ -1529,9 +1529,13 @@ export class ProfileController {
         // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
         if (identityId.startsWith('auth0:')) {
           logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
-        } else if (isEmailIdentity && emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)) {
-          // Removing a login on the account's own primary address only unlinks it — rejecting the
-          // CDP row would mark the user's primary email "not me" (#4123).
+        } else if (
+          isEmailIdentity &&
+          (provider === 'email' || provider === 'google') &&
+          emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)
+        ) {
+          // Only email/Google rows can represent the account's primary address (applyPrimaryEmail).
+          // Removing that login only unlinks it; LinkedIn rows must still be rejected in CDP (#4123).
           logger.debug(req, 'reject_identity', 'Primary email address — unlink only, skipping CDP rejection', { identity_id: identityId });
         } else {
           await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
@@ -2602,7 +2606,7 @@ export class ProfileController {
     // returned identities are unchanged either way.
     const skipCdpMutations = isImpersonating(req);
 
-    // Build a map of "platform:value" → Auth0Identity for matching
+    // Build a map of "platform:type:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
       const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
@@ -2811,10 +2815,11 @@ export class ProfileController {
   /**
    * Key for matching auth-service identities against CDP identities. Email values are trimmed and
    * lowercased so a casing difference doesn't split one owned address into two rows; username
-   * values (e.g. GitHub) match exactly.
+   * values (e.g. GitHub) match exactly. Include the type so unsupported username rows cannot claim
+   * a linked email identity with the same value.
    */
   private identityMatchKey(platform: string, type: CdpIdentityType, value: string): string {
-    return `${platform}:${type === 'email' ? value.trim().toLowerCase() : value}`;
+    return `${platform}:${type}:${type === 'email' ? value.trim().toLowerCase() : value}`;
   }
 
   /**

@@ -607,9 +607,10 @@ export interface EnrichedIdentity extends CdpIdentity {
 
 /**
  * The account's primary email as reconciled into the identities list.
- * `verified` reflects the IdP `email_verified` assertion only (while impersonating, a match with the
- * stored target email) — being the primary address or appearing in CDP never grants verified status
- * on its own.
+ * `verified` requires an IdP-verified session email (`getEffectiveEmail`); the auth-service primary
+ * is then trusted even if it differs from that possibly stale session claim. A session-only fallback
+ * is verified only when it matches that verified email (the target's stored email while impersonating).
+ * Display-only — never written to CDP.
  */
 export interface IdentitiesPrimaryEmail {
   email: string;

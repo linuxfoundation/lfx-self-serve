@@ -707,20 +707,41 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
   });
 
-  it('unlinks only, without rejecting the CDP row, when the removed address is the account primary', async () => {
+  it.each(['email', 'google'])('preserves the primary CDP row when removing a %s identity on that address', async (provider) => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
     const res = buildRes();
     const next = vi.fn();
 
     await controller.rejectIdentity(
-      buildRejectReq({ email: 'Dev@Example.com' }, { params: { identityId: 'cdp-primary' }, path: '/api/profile/identities/cdp-primary' }),
+      buildRejectReq({ provider, email: 'Dev@Example.com' }, { params: { identityId: 'cdp-primary' }, path: '/api/profile/identities/cdp-primary' }),
       res,
       next
     );
 
     expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a LinkedIn CDP row even when its email matches the account primary', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq(
+        { provider: 'linkedin', email: 'Dev@Example.com' },
+        { params: { identityId: 'cdp-linkedin' }, path: '/api/profile/identities/cdp-linkedin' }
+      ),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledWith(expect.anything(), 'testuser', 'cdp-linkedin');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('still rejects the CDP row when the removed address is not the account primary', async () => {
@@ -2138,6 +2159,27 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-lower', auth0UserId: 'email|1', isPrimary: true }),
     ]);
     expect(byId(rows, 'cdp-upper').displayState).toBe('hidden');
+  });
+
+  it('keeps a linked LinkedIn email visible when a username row with the same value comes first', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-linkedin-username', platform: 'linkedin', type: 'username', value: primary }),
+      cdpRow({ id: 'cdp-linkedin-email', platform: 'linkedin', type: 'email', value: primary }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.platform === 'linkedin')).toEqual([
+      expect.objectContaining({ id: 'cdp-linkedin-email', type: 'email', displayState: 'verified', auth0UserId: 'linkedin|1' }),
+    ]);
+    expect(byId(rows, 'cdp-linkedin-username')).toBeUndefined();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-linkedin-username', lfid);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
   });
 
   it('marks the primary without any CDP writes while impersonating', async () => {
