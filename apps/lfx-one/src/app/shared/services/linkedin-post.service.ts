@@ -49,13 +49,17 @@ export class LinkedinPostService {
   public startForDocument(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
     return this.create(intake, project, answers, setup).pipe(
       tap((run) => {
-        if (setup) this.unsavedSetup.set(this.setupKey(project, run.documentId), { setup: { ...setup }, savedAt: Date.now() });
+        if (setup) {
+          const value = { setup: { ...setup }, savedAt: Date.now() };
+          this.unsavedSetup.set(this.setupKey(project, run.documentId), value);
+          this.unsavedSetup.set(this.setupKey(project), value);
+        }
       })
     );
   }
 
-  /** Explicit profile editing only. A new client/browser cannot recover private setup. */
-  public setupForDocument(project: string, documentId: string): LinkedinSetup | null {
+  /** Same-visit intake/profile editing only. A new client/browser cannot recover private setup. */
+  public setupForDocument(project: string, documentId?: string): LinkedinSetup | null {
     if (!isPlatformBrowser(this.platform) || !this.user.user()?.sub) return null;
     const key = this.setupKey(project, documentId);
     const value = this.unsavedSetup.get(key);
@@ -66,7 +70,7 @@ export class LinkedinPostService {
     return { ...value.setup };
   }
 
-  private setupKey(project: string, documentId: string): string {
+  private setupKey(project: string, documentId = ''): string {
     return `${this.user.user()?.sub ?? ''}:${project}:${documentId}`;
   }
 

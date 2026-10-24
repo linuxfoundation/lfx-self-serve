@@ -16,6 +16,57 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
+    await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
+    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
+    let generates = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith(`${LINKEDIN_API}/generate`)) generates++;
+    });
+    await openLinkedin(page);
+    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
+      await page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea').fill(value);
+    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic first-run source.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
+      await expect(page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea')).toHaveValue(value);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is being written on its document page');
+    await expect(page.getByTestId('mktg-linkedin-open-pending').getByRole('button')).toHaveAccessibleName('Open the document');
+    expect(generates).toBe(1);
+    await page.screenshot({ path: info.outputPath('walk-L2b-prefilled-setup-pending-notice.png'), fullPage: true });
+  });
+
+  test('Back then Forward to consumed questions restores the waiting draft without another Generate', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true, questions: true }); // suppressCookieBanner is applied by the helper.
+    let generates = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith(`${LINKEDIN_API}/generate`)) generates++;
+    });
+    await openLinkedin(page);
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic question source.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    const questionsUrl = page.url();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(questionsUrl);
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is waiting for your answers on its document page');
+    await page.screenshot({ path: info.outputPath('walk-L5c2-restored-questions.png'), fullPage: true });
+    await page.getByTestId('mktg-linkedin-open-pending').getByRole('button').click();
+    await expect(page).toHaveURL(/\/documents\/linkedin-post\/run-/);
+    await expect(page).not.toHaveURL(/questions=/);
+    await expect(page.getByTestId('mktg-document-view-live-state')).toContainText('Waiting for your answers.');
+    expect(generates).toBe(1);
+    await page.screenshot({ path: info.outputPath('walk-L5c2-navigation-only-document.png'), fullPage: true });
+  });
+
   test('an accepted draft whose handoff cannot open offers Open without another Generate', async ({ page }, info) => {
     const runs = createLinkedinRuns();
     const documentId = 'run-' + 'a'.repeat(24);

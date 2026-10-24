@@ -124,6 +124,7 @@ export class LinkedinPostRunComponent {
   protected readonly linkError = signal('');
   protected readonly explicitProfileSave = signal(false);
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
+  protected readonly pendingNotice = signal<ReturnType<MktgRunAttemptService['latestPending']>>(null);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly agent = computed(() => MKTG_AGENTS.find((entry) => entry.id === this.intake().agentId));
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
@@ -174,6 +175,7 @@ export class LinkedinPostRunComponent {
           this.generation?.unsubscribe();
           this.questionsPending = null;
           this.acceptedRequest.set(null);
+          this.pendingNotice.set(null);
           this.explicitProfileSave.set(false);
           this.questions.set([]);
           this.previousAnswers.set({});
@@ -220,14 +222,23 @@ export class LinkedinPostRunComponent {
         if (this.explicitProfileSave() && !response.profile) {
           this.setup.set(this.api.setupForDocument(this.context.activeContextUid(), profileDocument ?? ''));
           if (!this.setup()) this.error.set("Your setup answers aren't kept in the browser — enter them again to draft");
+        } else if (!response.profile) {
+          this.setup.set(this.api.setupForDocument(this.context.activeContextUid()));
         }
         this.fillProfile();
         this.editing.set(!response.profile || editProfile);
         const token = params.get('questions');
         const prepared = token && !editProfile ? this.attempts.consumeQuestions(token, this.context.activeContextUid(), this.intake().agentId) : null;
-        if (prepared?.pending.pendingQuestions) {
-          this.questionsPending = prepared.pending;
-          this.questions.set(prepared.pending.pendingQuestions.questions);
+        const latest = !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
+        this.pendingNotice.set(latest);
+        const pending =
+          prepared?.pending ??
+          (latest?.state === 'questions' && latest.questions?.length
+            ? this.attempts.load(this.context.activeContextUid(), this.intake().agentId, latest.documentId)
+            : null);
+        if (pending?.pendingQuestions) {
+          this.questionsPending = pending;
+          this.questions.set(pending.pendingQuestions.questions);
           this.editing.set(false);
         } else if (prepared?.pending.state === 'failed') {
           let action = 'paste it again';
@@ -236,6 +247,7 @@ export class LinkedinPostRunComponent {
           this.sourceReentry = `Your source isn't kept in the browser — ${action} to draft`;
           this.error.set(this.sourceReentry);
           if (!response.profile) {
+            this.setup.set(null);
             this.profileForm.reset();
             this.error.set(`${this.sourceReentry}. Your setup answers aren't kept in the browser — enter them again to draft`);
           }
@@ -370,6 +382,7 @@ export class LinkedinPostRunComponent {
           if (progress.type !== 'submitted') return;
           this.questions.set([]);
           this.answering.set(false);
+          this.pendingNotice.set(null);
           this.acceptedRequest.set(pending.request);
           void this.returnToDocument(pending.request);
         },
@@ -380,6 +393,20 @@ export class LinkedinPostRunComponent {
           );
         },
       });
+  }
+
+  protected onOpenPending(): void {
+    const pending = this.pendingNotice();
+    if (!pending || !this.writer() || this.busy()) return;
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', this.intake().agentId, pending.documentId], {
+      queryParams: {
+        project: this.context.activeContext()?.slug ?? null,
+        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+        profile: null,
+        profileDocument: null,
+      },
+      replaceUrl: true,
+    });
   }
 
   protected onOpenAccepted(): void {

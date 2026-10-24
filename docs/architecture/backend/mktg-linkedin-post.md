@@ -106,6 +106,7 @@ and returns the accepted session, public runId and exact documentId. Call `prepa
 and open that Document with `generation`; the existing receiver replaces it with public
 `run`, resumes the saved run and handles registered result/answers endpoints. Do not use
 shared fresh-Generate or add another registry/poller; private owner proof stays out of URLs.
+A one-off intake may read `latestPending(project, agent)` for advisory same-visit UI only; it reads existing memory, never storage or Generate provenance.
 
 ## Terminal Guild failures
 

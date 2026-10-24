@@ -43,6 +43,23 @@
           <lfx-button label="Open draft" (onClick)="onOpenAccepted()" data-testid="mktg-linkedin-open-accepted" />
         </div>
       }
+      @if (writer() && pendingNotice(); as pending) {
+        @if (!acceptedRequest()) {
+          <div
+            class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-gray-700"
+            data-testid="mktg-linkedin-pending-notice">
+            <p role="status">
+              @if (pending.state === 'questions') {
+                Your draft is waiting for your answers on its document page
+              } @else {
+                Your draft is being written on its document page
+              }
+              —
+            </p>
+            <lfx-button label="Open the document" (onClick)="onOpenPending()" data-testid="mktg-linkedin-open-pending" />
+          </div>
+        }
+      }
       @if (!writer() && !error()) {
         <p class="rounded-lg border border-gray-200 bg-white p-6" data-testid="mktg-linkedin-no-access">
           You need write access to this project to draft LinkedIn posts.

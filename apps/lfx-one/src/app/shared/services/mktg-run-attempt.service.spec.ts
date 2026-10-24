@@ -25,6 +25,37 @@ describe('MktgRunAttemptService', () => {
     service = TestBed.inject(MktgRunAttemptService);
   });
 
+  it('reads only the newest live same-subject/project/agent pending document from memory for advisory UI', () => {
+    expect(service.latestPending(request.projectUid, LINKEDIN_POST_INTAKE.agentId)).toBeNull();
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24) };
+    const save = (documentId: string, state: 'writing' | 'questions' | 'failed' | 'draft' = 'writing') =>
+      service.save({ request: { ...accepted, documentId }, state, updatedAt: new Date().toISOString() });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-24T10:00:00Z'));
+    try {
+      save(accepted.documentId);
+      vi.advanceTimersByTime(1);
+      const newer = 'run-' + 'b'.repeat(24);
+      save(newer, 'questions');
+      save('run-' + 'c'.repeat(24), 'failed');
+      save('run-' + 'd'.repeat(24), 'draft');
+      save('living');
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toEqual({ documentId: newer, state: 'questions' });
+      expect(service.latestPending('other-project', accepted.agentId)).toBeNull();
+      expect(service.latestPending(request.projectUid, 'other-agent')).toBeNull();
+      user.set({ sub: 'other-subject' } as User);
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toBeNull();
+      user.set({ sub: 'synthetic-subject' } as User);
+      const fresh = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+      expect(fresh.latestPending(request.projectUid, accepted.agentId)).toBeNull(); // No storage scan.
+      vi.advanceTimersByTime(MKTG_RUN_STORAGE_TTL_MS + 1);
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
   it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
     const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
     const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };

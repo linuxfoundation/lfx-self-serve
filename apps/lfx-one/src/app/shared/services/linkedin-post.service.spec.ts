@@ -64,11 +64,16 @@ describe('LinkedIn document transport', () => {
     http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
     expect(localStorage.length).toBe(0);
     expect(service.setupForDocument('project-one', run.documentId)).toEqual(setup);
+    expect(service.setupForDocument('project-one')).toEqual(setup);
+    expect(service.setupForDocument('other-project')).toBeNull();
     expect(service.setupForDocument('other-project', run.documentId)).toBeNull();
     expect(service.setupForDocument('project-one', 'run-' + 'b'.repeat(24))).toBeNull();
-    expect(TestBed.runInInjectionContext(() => new LinkedinPostService()).setupForDocument('project-one', run.documentId)).toBeNull();
+    const fresh = TestBed.runInInjectionContext(() => new LinkedinPostService());
+    expect(fresh.setupForDocument('project-one', run.documentId)).toBeNull();
+    expect(fresh.setupForDocument('project-one')).toBeNull();
     user.set({ sub: 'another-subject' });
     expect(service.setupForDocument('project-one', run.documentId)).toBeNull();
+    expect(service.setupForDocument('project-one')).toBeNull();
     http.verify();
   });
 
