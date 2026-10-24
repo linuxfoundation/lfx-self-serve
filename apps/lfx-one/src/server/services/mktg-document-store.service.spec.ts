@@ -562,10 +562,10 @@ describe('MktgDocumentStoreService', () => {
         lastModified: new Date(),
       });
     }
-    async function pending() {
+    async function pending(authorRequest: Request = req) {
       const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Approved'), 'first');
       await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
-      const draft = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Draft'), 'draft');
+      const draft = await service.recordGeneration(authorRequest, BRAND_KIT, PROJECT, envelope('# Draft'), 'draft');
       mode();
       const sent = await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', draft.id, { roles });
       return { first, draft, sent };
@@ -637,26 +637,76 @@ describe('MktgDocumentStoreService', () => {
       { label: 'visible matching chair', chair: { subject: roles.tocChair, name: 'Visible chair' }, name: 'Visible chair' },
       { label: 'visible different chair', chair: { subject: 'auth0|replacement-chair', name: 'Replacement chair' }, name: null },
       { label: 'unresolved chair', chair: null, name: null },
-    ])('gates pending and approved chair names on document and revision reads: $label', async ({ chair, name }) => {
-      const { draft } = await pending();
+    ])('gates every chair attribution alias with the chair deciding second: $label', async ({ chair, name }) => {
+      roleMocks.rolesOf.mockResolvedValue({ ed: null, tocChair: chair });
+      directoryMocks.getUserInfo.mockImplementation(async (_caller: Request, subject: string) => ({
+        success: true,
+        data: { name: subject === roles.tocChair ? 'Directory-only chair' : 'The writer' },
+      }));
+      const { draft, sent } = await pending(asRole(roles.tocChair));
+      expect(sent?.revision.author).toEqual({ name }); // First Send must not reuse the earlier directory name.
+      expect(JSON.stringify(sent)).not.toContain('Directory-only chair');
       const viewer = { ...req } as Request;
-      roleMocks.rolesOf.mockImplementation(async (caller: Request) => ({ ed: null, tocChair: caller === viewer ? chair : null }));
       const document = await service.getDocument(viewer, PROJECT, BRAND_KIT, 'living');
       const revision = await service.getRevision(viewer, PROJECT, BRAND_KIT, 'living', draft.id);
       for (const entry of [document?.revisions.find((entry) => entry.id === draft.id), revision?.revision]) {
         expect(entry?.signOff?.roles.tocChair.name).toBe(name);
         expect(entry?.signOff?.roles.ed.name).toBe('The writer');
+        expect(entry?.author).toEqual({ name });
       }
       await decide(draft.id, 'ed');
-      await decide(draft.id, 'tocChair');
+      const approved = await decide(draft.id, 'tocChair');
       const approvedDocument = await service.getDocument(viewer, PROJECT, BRAND_KIT, 'living');
       const approvedRevision = await service.getRevision(viewer, PROJECT, BRAND_KIT, 'living', draft.id);
-      for (const entry of [approvedDocument?.revisions.find((entry) => entry.id === draft.id), approvedRevision?.revision]) {
+      for (const response of [approvedDocument, approvedRevision, approved]) {
+        const entry = response?.revisions.find((entry) => entry.id === draft.id);
         expect(entry?.signOff?.roles.tocChair.name).toBe(name);
         expect(entry?.approval?.signOff?.tocChair.by).toEqual({ name });
         expect(entry?.approval?.signOff?.ed.by).toEqual({ name: 'The writer' });
+        expect(entry?.approval?.approvedBy).toEqual({ name });
+        expect(entry?.author).toEqual({ name });
+        expect(response?.current?.changedBy).toEqual({ name });
+        expect(response?.approvedCurrent).toEqual({ revisionId: draft.id, number: 2 });
+        expect(JSON.stringify(response)).not.toContain('Directory-only chair');
       }
+      expect(approved?.approval?.approvedBy).toEqual({ name });
+      expect(approvedRevision?.revision.author).toEqual({ name });
+      const current = await service.readApprovedCurrentSummary(viewer, PROJECT, BRAND_KIT, 'living');
+      expect(current?.approval?.approvedBy).toEqual({ name });
+      expect(current?.author).toEqual({ name });
       expect(roleMocks.rolesOf).toHaveBeenCalledWith(viewer, PROJECT);
+    });
+
+    it('gates ED/requester aliases too when one frozen person holds both roles', async () => {
+      roleMocks.rolesOf.mockResolvedValue({ ed: null, tocChair: { subject: roles.ed, name: null } });
+      const actor = asRole(roles.ed);
+      const draft = await service.recordGeneration(actor, BRAND_KIT, PROJECT, envelope('# Dual role privacy'), 'dual-privacy');
+      mode();
+      const sent = await service.transitionSignOff(actor, PROJECT, BRAND_KIT, 'living', draft.id, { roles: { ed: roles.ed, tocChair: roles.ed } });
+      expect(sent?.revision.author).toEqual({ name: null });
+      expect(sent?.revision.signOff?.requestedBy).toEqual({ name: null });
+      expect(sent?.current?.changedBy).toEqual({ name: null });
+      expect(sent?.revision.signOff?.roles.ed.name).toBeNull();
+      await decide(draft.id, 'ed');
+      const approved = await decide(draft.id, 'tocChair', roles.ed);
+      expect(approved?.approval?.approvedBy).toEqual({ name: null });
+      expect(approved?.approval?.signOff?.ed.by).toEqual({ name: null });
+      expect(approved?.approval?.signOff?.tocChair.by).toEqual({ name: null });
+      expect(approved?.current?.changedBy).toEqual({ name: null });
+    });
+
+    it('also gates chair aliases identified only by legacy per-role approval metadata', async () => {
+      const { draft } = await pending();
+      await decide(draft.id, 'ed');
+      await decide(draft.id, 'tocChair');
+      const pointer = read();
+      delete pointer.signOff;
+      store.objects.set(key, { ...storedObject(key), body: JSON.stringify(pointer) });
+      roleMocks.rolesOf.mockResolvedValue({ ed: null, tocChair: { subject: roles.tocChair, name: null } });
+      const view = await service.getRevision({ ...req } as Request, PROJECT, BRAND_KIT, 'living', draft.id);
+      expect(view?.approval?.approvedBy).toEqual({ name: null });
+      expect(view?.approval?.signOff?.tocChair.by).toEqual({ name: null });
+      expect(view?.current?.changedBy).toEqual({ name: null });
     });
 
     it('resolves the chair once per projection even when both role and approval attribution need it', async () => {
@@ -686,6 +736,26 @@ describe('MktgDocumentStoreService', () => {
       expect(sent?.revision.signOff?.state).toBe('pending');
       expect(read().approvals[draft.id]).toBeDefined();
       expect(read().signOff[draft.id].state).toBe('pending');
+    });
+
+    it('refuses both role decisions on an already approved stale request after a newer Send, without any write', async () => {
+      const { draft } = await pending();
+      mode('single-writer');
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', draft.id);
+      const newer = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Newer pending'), 'newer-pending');
+      mode();
+      await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', newer.id, { roles });
+      const before = storedObject(key).body;
+      const selected = read().revisionId;
+      store.conditionalWrites = [];
+      for (const role of ['ed', 'tocChair'] as const) {
+        await expect(decide(draft.id, role)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_SIGN_OFF_NOT_PENDING' });
+      }
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(key).body).toBe(before);
+      expect(read().revisionId).toBe(selected);
+      expect(read().signOff[newer.id].state).toBe('pending');
+      expect(read().approvals[draft.id]).toBeDefined();
     });
 
     it('refuses another pending request on this or another revision', async () => {
