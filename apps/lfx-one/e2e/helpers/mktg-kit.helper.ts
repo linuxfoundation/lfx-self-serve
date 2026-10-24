@@ -283,6 +283,13 @@ export async function setupKit(
     (url) => url.pathname === documentPath,
     (route) => (isProjectRead(route) ? kitJson(route, framework) : rejectUnexpected(route))
   );
+  await page.route(
+    (url) => url.pathname === `${documentPath}/comments`,
+    (route) => {
+      if (!isProjectRead(route) || new URL(route.request().url()).searchParams.get('revision') !== framework.revision.id) return rejectUnexpected(route);
+      return kitJson(route, { revisionId: framework.revision.id, threads: [] });
+    }
+  );
   // The framework asset view specifically reads the optional print-brand revision.
   await page.route(
     (url) => url.pathname === '/api/mktg-agents/brand-kit/stored',
