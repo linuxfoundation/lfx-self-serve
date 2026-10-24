@@ -28,9 +28,6 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
-  HealthMetricsOverviewFindingsByRange,
-  HealthMetricsOverviewKpisByRange,
-  HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
   OrgContributorsMonthlyResponse,
   OrgContributorsProjectDistributionResponse,
@@ -56,7 +53,6 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   FlywheelConversionResponse,
-  HealthMetricsOverviewFoundationSummary,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
@@ -145,12 +141,16 @@ import {
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingPresence,
   HealthMetricsTrainingPresenceQuery,
+  HealthMetricsOverviewBoard,
+  HealthMetricsOverviewChurn,
+  HealthMetricsOverviewCode,
+  HealthMetricsOverviewEvents,
+  HealthMetricsOverviewNps,
+  HealthMetricsOverviewOutstandingBalance,
+  HealthMetricsOverviewParticipatingOrgs,
+  HealthMetricsOverviewQuery,
 } from '@lfx-one/shared/interfaces';
-import {
-  DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
-  HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-} from '@lfx-one/shared/constants';
+import { DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
@@ -1007,7 +1007,7 @@ export class AnalyticsService {
 
   /**
    * Get one page of the Health Metrics Engagement "Group attendance" table
-   * @param query - Foundation, project scope, group-type cut, period and page
+   * @param query - Foundation, group-type cut, period and page
    * @returns Observable of the page, already ranked dormant-first by the server
    */
   public getEngagementGroupAttendance(query: HealthMetricsEngagementGroupQuery): Observable<HealthMetricsEngagementGroupAttendance> {
@@ -1018,9 +1018,6 @@ export class AnalyticsService {
       page: String(query.page),
       size: String(query.size),
     };
-    if (query.projectSlug) {
-      params['projectSlug'] = query.projectSlug;
-    }
 
     // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
     // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1034,7 +1031,7 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Meeting participation" roll-up and meeting-type table
-   * @param query - Foundation, project scope and period
+   * @param query - Foundation and period
    * @returns Observable of the roll-up row plus one row per meeting-type group
    */
   public getEngagementMeetingParticipation(query: HealthMetricsEngagementParticipationQuery): Observable<HealthMetricsEngagementMeetingParticipation> {
@@ -1042,9 +1039,6 @@ export class AnalyticsService {
       foundationSlug: query.foundationSlug,
       range: query.range,
     };
-    if (query.projectSlug) {
-      params['projectSlug'] = query.projectSlug;
-    }
 
     // Errors propagate: a null total renders "no participation data for this foundation", so a
     // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1058,14 +1052,11 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Attendance trend" months
-   * @param query - Foundation and project scope; the trend always covers the last twelve months
+   * @param query - Foundation scope; the trend always covers the last twelve months
    * @returns Observable of the trailing twelve months, oldest first
    */
   public getEngagementAttendanceTrend(query: HealthMetricsEngagementAttendanceTrendQuery): Observable<HealthMetricsEngagementAttendanceTrend> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-    if (query.projectSlug) {
-      params['projectSlug'] = query.projectSlug;
-    }
 
     // Errors propagate: no months renders "no meeting attendance in the last twelve months", so a
     // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1079,14 +1070,11 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Organization participation" table
-   * @param query - Foundation and project scope; the period, search and lapsed cut all resolve client-side
+   * @param query - Foundation scope; the period, search and lapsed cut all resolve client-side
    * @returns Observable of every organization with all four periods and the caption counts
    */
   public getEngagementOrgParticipation(query: HealthMetricsEngagementOrgQuery): Observable<HealthMetricsEngagementOrgParticipation> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-    if (query.projectSlug) {
-      params['projectSlug'] = query.projectSlug;
-    }
 
     // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1118,14 +1106,11 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Representatives" table
-   * @param query - Foundation and project scope; the period pill, the filter cut and search all resolve client-side
+   * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
    * @returns Observable of every representative with all four periods and the per-period caption counts
    */
   public getEngagementRepresentatives(query: HealthMetricsEngagementRepQuery): Observable<HealthMetricsEngagementRepresentatives> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-    if (query.projectSlug) {
-      params['projectSlug'] = query.projectSlug;
-    }
 
     // Errors propagate: an empty table renders "no representatives", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1530,19 +1515,32 @@ export class AnalyticsService {
     );
   }
 
-  /**
-   * Get the health-metrics-overview "Foundation" rail summary
-   * @param foundationSlug - Foundation slug for Snowflake filter
-   * @returns Observable of the foundation profile summary
-   */
-  public getFoundationProfileSummary(foundationSlug: string): Observable<HealthMetricsOverviewFoundationSummary> {
-    const params: Record<string, string> = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] foundation-profile-summary failed', { foundationSlug, error });
-        return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
-      })
-    );
+  public getOverviewParticipatingOrgs(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewParticipatingOrgs> {
+    return this.getOverviewCard<HealthMetricsOverviewParticipatingOrgs>('overview-participating-orgs', query);
+  }
+
+  public getOverviewNps(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewNps> {
+    return this.getOverviewCard<HealthMetricsOverviewNps>('overview-nps', query);
+  }
+
+  public getOverviewChurn(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewChurn> {
+    return this.getOverviewCard<HealthMetricsOverviewChurn>('overview-churn', query);
+  }
+
+  public getOverviewOutstandingBalance(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewOutstandingBalance> {
+    return this.getOverviewCard<HealthMetricsOverviewOutstandingBalance>('overview-outstanding-balance', query);
+  }
+
+  public getOverviewEvents(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewEvents> {
+    return this.getOverviewCard<HealthMetricsOverviewEvents>('overview-events', query);
+  }
+
+  public getOverviewBoard(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewBoard> {
+    return this.getOverviewCard<HealthMetricsOverviewBoard>('overview-board', query);
+  }
+
+  public getOverviewCode(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewCode> {
+    return this.getOverviewCard<HealthMetricsOverviewCode>('overview-code', query);
   }
 
   /**
@@ -1755,51 +1753,6 @@ export class AnalyticsService {
     );
   }
 
-  /**
-   * Fetches every selectable period's revenue summary in one call — `HEALTH_OVERVIEW_REVENUE` carries
-   * the period as a column suffix, so the period selector projects this map instead of refetching.
-   */
-  public getHealthOverviewRevenue(foundationSlug: string): Observable<HealthMetricsOverviewRevenueByRange> {
-    const params = { foundationSlug };
-    // Empty map on failure: callers index by the selected range and fall back to the zero-filled
-    // default for a missing key, so an absent entry already means "no data for this period".
-    return this.http.get<HealthMetricsOverviewRevenueByRange>('/api/analytics/health-overview-revenue', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-revenue failed', { foundationSlug, error });
-        return of({});
-      })
-    );
-  }
-
-  /**
-   * Fetches the live area-state rows for every tile, for every selectable period in one call. Engagement
-   * is read from `ENGAGEMENT_GROUP_ATTENDANCE`, the other five from `HEALTH_OVERVIEW_KPIS`. Degrades to an
-   * empty map on failure — the caller then renders a neutral no-data placeholder, never fixture numbers.
-   */
-  public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
-    const params = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
-        return of({});
-      })
-    );
-  }
-
-  /**
-   * Fetches the Overview findings for every selectable period in one call. Degrades to an empty map on
-   * failure, which the list renders as "not available yet" rather than an all-clear.
-   */
-  public getHealthOverviewSignals(foundationSlug: string): Observable<HealthMetricsOverviewFindingsByRange> {
-    const params = { foundationSlug };
-    return this.http.get<HealthMetricsOverviewFindingsByRange>('/api/analytics/health-overview-signals', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] health-overview-signals failed', { foundationSlug, error });
-        return of({});
-      })
-    );
-  }
-
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {
     const params = { foundationSlug };
     return this.http.get<OutstandingBalanceSummaryResponse>('/api/analytics/outstanding-balance-summary', { params }).pipe(
@@ -1922,6 +1875,19 @@ export class AnalyticsService {
           });
         })
       );
+  }
+
+  /** One Overview card read; errors propagate so the card shows its error state rather than an empty one. */
+  private getOverviewCard<T>(path: string, query: HealthMetricsOverviewQuery): Observable<T> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
+
+    return this.http.get<T>(`/api/analytics/${path}`, { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error(`[analytics] ${path} failed`, { foundationSlug: query.foundationSlug, status });
+        return throwError(() => error);
+      })
+    );
   }
 
   private buildFoundationParams(foundationSlug: string, classification?: string, period?: string): Record<string, string> {

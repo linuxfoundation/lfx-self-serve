@@ -11,9 +11,13 @@ import {
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_LAST_INTAKE_API,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
+  MktgLastIntake,
+  MktgLastIntakeResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgGenerateProgress,
@@ -28,6 +32,7 @@ import {
   MktgRunPersistReceipt,
   MktgRunResultBody,
   MktgRunResultResponse,
+  MktgObservedRunResult,
   MktgRunSessionResponse,
   MktgRunVersion,
   MktgRunAppendResult,
@@ -106,6 +111,45 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+
+  /** Observe an already accepted redraft. Never Generate/chat/append fake intake answers or overwrite a stored form run. */
+  public observeAccepted(intake: MktgAgentIntake, attempt: MktgRunAttempt, projectUid: string): Observable<MktgObservedRunResult> {
+    return defer(() => {
+      if (!isPlatformBrowser(this.platformId)) return EMPTY;
+      const subject = this.attempts.subject();
+      return this.pollForOutcome(intake, attempt.session, attempt.priorVersion, projectUid).pipe(
+        concatMap((event) =>
+          concat(
+            of(event),
+            event.terminal && event.result.status === 'ready'
+              ? this.persistenceResults(intake, projectUid, attempt.session, event.result).pipe(map((result) => ({ result, terminal: true })))
+              : EMPTY
+          )
+        ),
+        tap(() => this.assertSubject(subject))
+      );
+    });
+  }
+
+  /** Writer-gated history read only; callers distinguish unavailable history from absence. */
+  public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.catalogAgentId === agentId);
+    if (!type) return of(null);
+    return this.http
+      .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {
+        params: { project: projectUid },
+        transferCache: false,
+      })
+      .pipe(
+        map((response) => response.intake),
+        take(1),
+        catchError((error: unknown) => {
+          console.error('Failed to load Marketing OS intake history', error instanceof HttpErrorResponse ? { status: error.status } : {});
+          return throwError(() => error);
+        })
+      );
+  }
+
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
@@ -143,7 +187,13 @@ export class MktgAgentRunService {
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
     } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
+      // Failed-session Retry must never chat on that failed session. Like an
+      // intake's Generate resubmit, it starts a new session with priorVersion.
+      // Fresh Sources preserve that history contract, but omit old feedback.
       attempt$ = this.resubmitRun(request, stored);
+    } else if (request.newRun) {
+      // appendVersion keeps the new session's v1 distinct from existing history.
+      attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);
     }
@@ -317,7 +367,7 @@ export class MktgAgentRunService {
       return this.startRun(request);
     }
     const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
-    if (request.feedback?.trim()) {
+    if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
     return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
@@ -566,18 +616,36 @@ export class MktgAgentRunService {
     result: MktgRunResultResponse,
     version: number
   ): Observable<MktgGenerateProgress> {
-    if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
-      return EMPTY;
-    }
-    const body = this.resultBody(attempt.session, request.projectUid);
     const subject = this.attempts.subject();
+    return this.persistenceResults(request.intake, request.projectUid, attempt.session, result).pipe(
+      map((response): MktgGenerateProgress => {
+        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
+        return {
+          type: 'persisted',
+          run,
+          attempt: run ? attempt : null,
+          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
+        };
+      })
+    );
+  }
+
+  /** Same receipt/version/payload budget for both ordinary intakes and accepted comments-only runs. */
+  private persistenceResults(
+    intake: MktgAgentIntake,
+    projectUid: string,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse
+  ): Observable<MktgRunResultResponse> {
+    if (!intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
+    const body = this.resultBody(session, projectUid);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
     return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http
-          .post<MktgRunResultResponse>(request.intake.endpoints.result, body)
+          .post<MktgRunResultResponse>(intake.endpoints.result, body)
           // A failed retry poll spends one attempt like any other; the next
           // interval tries again within the budget.
           .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
@@ -592,16 +660,7 @@ export class MktgAgentRunService {
       // on the same session must not rewrite an earlier version's location.
       // Inclusive takeWhile emits that matching response and then completes.
       takeWhile((response) => !matches(response), true),
-      filter(matches),
-      map((response): MktgGenerateProgress => {
-        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
-        return {
-          type: 'persisted',
-          run,
-          attempt: run ? attempt : null,
-          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
-        };
-      })
+      filter(matches)
     );
   }
 
@@ -661,16 +720,15 @@ export class MktgAgentRunService {
     const version: MktgRunVersion = {
       source,
       documentLocation: result.persistence?.project === request.projectUid ? mktgDocumentLocationOfReceipt(result.persistence) : undefined,
-      // The envelope's own version is authoritative. awaitOutcome reaches this
-      // only for a result that is not `questions`, which pollForOutcome's
-      // isDocument gate let through with its document and version present, so
-      // the fallbacks only narrow the type. A fresh-run intake's envelope
-      // always says version 1, so the run numbers its own history instead.
-      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
+      // source.version retains the envelope version. Local history must remain
+      // unique across fresh sessions, including a resumed request without newRun.
+      // Dedicated fresh-run intakes always number locally; other intakes also
+      // retain a higher authoritative envelope version when one is supplied.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : Math.max(lastVersion + 1, result.version ?? 0),
       document: result.documentMarkdown ?? '',
       // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
-      feedback: request.feedback,
+      feedback: request.newRun ? undefined : request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is
       // the one whose README fetch matters, and it is what the result note

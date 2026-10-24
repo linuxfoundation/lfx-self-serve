@@ -63,6 +63,15 @@ describe('Marketing kit plan of record', () => {
     expect(keys).not.toContain('icp');
     expect(MKTG_KIT_FAMILIES[0].agentIds).toEqual(['foundation-setup', 'boilerplates', 'faq', 'brand-kit']);
   });
+  it('keeps board Run wording separate from catalog agent identities and row headings', () => {
+    expect(MKTG_KIT_FAMILIES[0].assets.filter((asset) => asset.runName !== undefined).map((asset) => [asset.label, asset.runName])).toEqual([
+      ['Messaging framework', 'messaging framework'],
+      ['Boilerplates', 'boilerplates'],
+      ['FAQ', 'FAQ'],
+      ['Brand kit', 'brand kit'],
+    ]);
+  });
+
   it('keeps legacy ICP documents out of the kit and its summary', () => {
     const families = resolveMktgKit(listing([document('icp')]));
     expect(families.flatMap((family) => family.rows).some((row) => row.asset.agentKey === 'icp')).toBe(false);

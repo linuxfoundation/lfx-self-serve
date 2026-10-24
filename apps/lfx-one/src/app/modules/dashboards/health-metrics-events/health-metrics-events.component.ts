@@ -9,7 +9,6 @@ import {
   HEALTH_METRICS_EVENTS_DATA_SECTIONS,
   HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
   HEALTH_METRICS_EVENTS_SECTIONS,
-  HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -61,7 +60,6 @@ export class HealthMetricsEventsComponent {
   protected readonly sections = HEALTH_METRICS_EVENTS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_EVENTS_DATA_SECTIONS;
-  protected readonly crossReference = HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE;
 
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');

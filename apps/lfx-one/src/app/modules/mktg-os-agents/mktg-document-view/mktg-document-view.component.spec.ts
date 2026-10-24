@@ -5,8 +5,9 @@ import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
+import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
@@ -31,6 +32,7 @@ import {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -38,6 +40,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
@@ -306,6 +309,7 @@ describe('MktgDocumentViewComponent', () => {
 
     await TestBed.configureTestingModule({
       providers: [
+        provideMktgCommentsStub(),
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
         provideRouter([
           { path: 'documents/:agentKey/:documentId', component: MktgDocumentViewComponent },
@@ -831,13 +835,13 @@ describe('MktgDocumentViewComponent', () => {
     async (state) => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started(state)] }));
-      await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+      await render('/documents/brand-kit/living?run=' + 'b'.repeat(64) + '&type=drop&profile=drop');
       expect(query('mktg-document-view-run')).not.toBeNull();
       expect(query('mktg-document-view-revision-chip')).toBeNull();
       const action = query('mktg-document-view-run-again');
       const run = query('mktg-document-view-run');
       if (!action || !run) throw new Error('Missing first-run actions');
-      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
+      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
       expect(action.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
       expect(query('brand-kit-web-view-header')).toBeNull();
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed' || state === 'questions');
@@ -1146,6 +1150,15 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')).toBeNull();
   });
 
+  it('retains the route project scope for Run again while active context is temporarily null', async () => {
+    await render('/documents/brand-kit/living?project=route-synthetic&profile=drop');
+    const instance: unknown = harness.routeDebugElement?.componentInstance;
+    if (!(instance instanceof MktgDocumentViewComponent)) throw new Error('Missing routed document instance');
+    activeContext.set(null);
+    await settle();
+    expect(instance['runAgainParams']()).toMatchObject({ project: 'route-synthetic', mode: 'new' });
+  });
+
   it.each(['brand-kit', 'foundation-message', 'boilerplates'])('keeps malformed %s assets out of Markdown fallback without hiding history', async (key) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
     if (!type) throw new Error('Missing synthetic structured type');
@@ -1155,7 +1168,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     await render(`/documents/${key}/living`);
     expect(query('mktg-document-view-unsupported-asset')).not.toBeNull();
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit&mode=new');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-revisions')).not.toBeNull();
   });
@@ -1172,7 +1185,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'icp', 'living', false);
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'icp', 'living', LATEST.id, true);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit ICP');
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit&mode=new');
     expect(harness.routeNativeElement?.querySelectorAll('h1')).toHaveLength(1);
     expect(query('mktg-document-view-document')?.querySelector('h2')?.textContent).toBe('Revision 2');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
@@ -1328,7 +1341,7 @@ describe('MktgDocumentViewComponent', () => {
     const download = query('brand-kit-web-view-download-pdf');
     if (!download) throw new Error('Missing kit download');
     expect(action.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
+    expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
@@ -1362,8 +1375,65 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
   });
 
-  it('renders a Messaging Framework revision with its report and a right-hand Revisions/Downstream column', async () => {
+  it('lands on the exact redraft receipt without approving or selecting whichever revision is current', async () => {
     useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const id = `000003-${'c'.repeat(64)}`;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    panel.ready.emit({ agentKey: 'foundation-message', documentId: 'living', revisionId: id });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', 'foundation-message', 'living'], {
+      queryParams: expect.objectContaining({ revision: id }),
+    });
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'voice'])('keeps the reader tab or pinned chapter %s when a kit redraft lands', async (pinnedTab) => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+    await render('/documents/brand-kit/living?tab=color');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const id = `000003-${'c'.repeat(64)}`;
+    panel.ready.emit({ agentKey: 'brand-kit', documentId: 'living', revisionId: id, tab: pinnedTab });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', 'brand-kit', 'living'], {
+      queryParams: expect.objectContaining({ revision: id, tab: pinnedTab ?? 'color' }),
+    });
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+  });
+
+  it('reports a stored Draft whose landing is rejected instead of silently losing the result', async () => {
+    useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    if (!panel) throw new Error('Missing synthetic comments panel');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    panel.ready.emit({ agentKey: 'boilerplates', documentId: 'living', revisionId: `000003-${'c'.repeat(64)}` });
+    await settle();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-notice')?.textContent).toContain('A new Draft was stored; open it from Revisions');
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  });
+
+  it('clears comments while a different historical revision is still loading', async () => {
+    useFrameworkRevision();
+    const select = vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'select');
+    await render('/documents/foundation-message/living');
+    store.getRevision.mockReturnValue(NEVER);
+    await TestBed.inject(Router).navigateByUrl('/documents/foundation-message/living?revision=' + OLDER.id);
+    await settle();
+    expect(query('mktg-comments-panel')).toBeNull();
+    expect(select).toHaveBeenLastCalledWith(null);
+  });
+
+  it('renders the framework with its report and revision-scoped Comments sidebar', async () => {
+    useFrameworkRevision();
+    const selectComments = vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'select');
 
     await render('/documents/foundation-message/living');
 
@@ -1376,12 +1446,16 @@ describe('MktgDocumentViewComponent', () => {
     if (!exportAction) throw new Error('Missing framework export');
     expect(exportAction.compareDocumentPosition(runAgain) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(runAgain.getAttribute('href')).toBe(
-      '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit'
+      '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit&mode=new'
     );
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
     expectContentColumn('mktg-framework-view');
     expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
+    expect(query('mktg-comments-panel')).not.toBeNull();
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.parentElement?.className).toContain('@[800px]:grid-cols');
+    expect(selectComments).toHaveBeenLastCalledWith({ projectUid: PROJECT.uid, agentKey: 'foundation-message', documentId: 'living', revisionId: LATEST.id });
 
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-framework-view-tab-sources"]')?.click();
     await settle();
@@ -1641,11 +1715,11 @@ describe('MktgDocumentViewComponent', () => {
   it('renders the catalog Run again href for both the framework and native FAQ', async () => {
     useFrameworkRevision();
     await render('/project/mktg-os-agents/documents/foundation-message/living?project=testorbit');
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit&mode=new');
     store.getRevision.mockReturnValue(of(faqResponse()));
     await harness.navigateByUrl(`/project/mktg-os-agents/documents/faq/living?project=testorbit&revision=${LATEST.id}`);
     await settle();
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit&mode=new');
   });
 
   it('blocks a second approval after navigation until the first write finalizes', async () => {
@@ -1869,12 +1943,17 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/brand-kit/living');
 
     expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    expect(panel?.scope()).toEqual({ projectUid: PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id });
+    expect(panel?.content()).toMatchObject({ chapters: kitSidecar()['chapters'], kit: kitSidecar()['kit'] });
     expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(false);
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
     expect(query('mktg-document-view-framework')).toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
     expectContentColumn('brand-kit-web-view');
     expect(query('brand-kit-web-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('mktg-document-view-brand-kit')?.parentElement?.parentElement?.className).toContain('@[800px]:grid-cols');
     expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
     // Only a framework's print reads the project's kit: the kit is its own brand.
     expect(resolveBrandKit).not.toHaveBeenCalled();
@@ -2001,10 +2080,14 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-boilerplates-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v3');
     const runAgain = expectHeaderRunAgain('mktg-boilerplates-view-header', 'mktg-boilerplates-view-actions');
-    expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit');
+    expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit&mode=new');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
+    const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
+    expect(panel?.scope()).toEqual({ projectUid: PROJECT.uid, agentKey: 'boilerplates', documentId: 'living', revisionId: jsonRevision.id });
+    expect(panel?.content()).toEqual(content);
     expectContentColumn('mktg-boilerplates-view');
+    expect(query('mktg-comments-panel')?.closest('[aria-label="Revision details"]')).not.toBeNull();
 
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-boilerplates-view-tab-sources"]')?.click();
     await settle();
@@ -2064,6 +2147,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-faq-view-title')).toBeNull();
+    expect(query('mktg-comments-panel')).toBeNull();
     expect(query('mktg-faq-view-metadata')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');

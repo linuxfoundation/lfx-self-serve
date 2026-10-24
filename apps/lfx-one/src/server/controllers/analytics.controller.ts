@@ -51,6 +51,7 @@ import type {
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsOverviewQuery,
   HealthMetricsTrainingCoursesType,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -69,6 +70,7 @@ import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../s
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
+import { HealthMetricsOverviewService } from '../services/health-metrics-overview.service';
 import { HealthMetricsTrainingService, isSupportedTrainingRange } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
@@ -127,6 +129,7 @@ export class AnalyticsController {
   private readonly healthMetricsEventsService: HealthMetricsEventsService;
   private readonly healthMetricsMembersService: HealthMetricsMembersService;
   private readonly healthMetricsNonMembersService: HealthMetricsNonMembersService;
+  private readonly healthMetricsOverviewService: HealthMetricsOverviewService;
   private readonly healthMetricsTrainingService: HealthMetricsTrainingService;
 
   public constructor() {
@@ -138,6 +141,7 @@ export class AnalyticsController {
     this.healthMetricsEventsService = new HealthMetricsEventsService();
     this.healthMetricsMembersService = new HealthMetricsMembersService();
     this.healthMetricsNonMembersService = new HealthMetricsNonMembersService();
+    this.healthMetricsOverviewService = new HealthMetricsOverviewService();
     this.healthMetricsTrainingService = new HealthMetricsTrainingService();
   }
 
@@ -837,42 +841,6 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         total_members: response.totalMembers,
         monthly_data_points: response.monthlyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/foundation-profile-summary
-   * Get the health-metrics-overview "Foundation" rail summary
-   * Query params: foundationSlug (required)
-   */
-  public async getFoundationProfileSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_foundation_profile_summary');
-
-    try {
-      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-
-      if (!foundationSlug) {
-        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
-          operation: 'get_foundation_profile_summary',
-        });
-      }
-
-      if (!SLUG_PATTERN.test(foundationSlug)) {
-        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
-          operation: 'get_foundation_profile_summary',
-        });
-      }
-
-      const response = await this.projectService.getFoundationProfileSummary(foundationSlug);
-
-      logger.success(req, 'get_foundation_profile_summary', startTime, {
-        foundation_slug: foundationSlug,
-        projects: response.projects,
       });
 
       res.json(response);
@@ -2883,115 +2851,6 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /api/analytics/health-overview-revenue
-   * Get Health Metrics Overview "Foundation Revenue" rail data for a foundation, keyed by period
-   * Query params: foundationSlug (required)
-   */
-  public async getHealthOverviewRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_health_overview_revenue');
-
-    try {
-      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-
-      if (!foundationSlug) {
-        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
-          operation: 'get_health_overview_revenue',
-        });
-      }
-
-      if (!SLUG_PATTERN.test(foundationSlug)) {
-        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
-          operation: 'get_health_overview_revenue',
-        });
-      }
-
-      // No `range` param: one read covers every selectable period, so the client projects by range.
-      const response = await this.projectService.getHealthOverviewRevenue(foundationSlug);
-
-      logger.success(req, 'get_health_overview_revenue', startTime, {
-        foundation_slug: foundationSlug,
-        range_count: Object.keys(response).length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/health-overview-kpis
-   * Get Health Metrics Overview KPI tile-strip data for a foundation, keyed by period
-   * Query params: foundationSlug (required)
-   */
-  public async getHealthOverviewKpis(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_health_overview_kpis');
-
-    try {
-      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-
-      if (!foundationSlug) {
-        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
-          operation: 'get_health_overview_kpis',
-        });
-      }
-
-      if (!SLUG_PATTERN.test(foundationSlug)) {
-        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
-          operation: 'get_health_overview_kpis',
-        });
-      }
-
-      // No `range` param: one read covers every selectable period, so the client projects by range.
-      const response = await this.projectService.getHealthOverviewKpis(foundationSlug);
-
-      logger.success(req, 'get_health_overview_kpis', startTime, {
-        foundation_slug: foundationSlug,
-        range_count: Object.keys(response).length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/health-overview-signals
-   * The Overview findings list for every selectable period, keyed by range
-   */
-  public async getHealthOverviewSignals(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_health_overview_signals');
-
-    try {
-      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-
-      if (!foundationSlug) {
-        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
-          operation: 'get_health_overview_signals',
-        });
-      }
-
-      if (!SLUG_PATTERN.test(foundationSlug)) {
-        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
-          operation: 'get_health_overview_signals',
-        });
-      }
-
-      const response = await this.projectService.getHealthOverviewSignals(foundationSlug);
-
-      logger.success(req, 'get_health_overview_signals', startTime, {
-        foundation_slug: foundationSlug,
-        range_count: Object.keys(response).length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * GET /api/analytics/event-growth
    * Get event growth metrics (total attendees, top events by attendance/revenue)
    */
@@ -4432,6 +4291,131 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/overview-participating-orgs` — members and non-members in every period, for the Overview card. */
+  public async getOverviewParticipatingOrgs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_participating_orgs',
+      (query) => this.healthMetricsOverviewService.getParticipatingOrgs(req, query),
+      (response) => ({
+        measured: response.measured,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-nps` — the Board audience's survey in every period. */
+  public async getOverviewNps(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_nps',
+      (query) => this.healthMetricsOverviewService.getNps(req, query),
+      (response) => ({
+        surveyed_period_count: Object.values(response.periods).filter(Boolean).length,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-churn` — the foundation's churn and each tier's in every period. */
+  public async getOverviewChurn(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_churn',
+      (query) => this.healthMetricsOverviewService.getChurn(req, query),
+      (response) => ({
+        measured: response.periods.YTD.totals !== null,
+        tier_count: response.periods.YTD.tiers.length,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-outstanding-balance` — overdue membership invoices today. */
+  public async getOverviewOutstandingBalance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_outstanding_balance',
+      (query) => this.healthMetricsOverviewService.getOutstandingBalance(req, query),
+      (response) => ({
+        measured: response.measured,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-events` — upcoming events and every period's past events. */
+  public async getOverviewEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_events',
+      (query) => this.healthMetricsOverviewService.getEvents(req, query),
+      (response) => ({
+        upcoming_count: response.upcoming.length,
+        past_count: response.past.length,
+        truncated: response.truncated,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-board` — board meetings, average attendance and members in every period. */
+  public async getOverviewBoard(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_board',
+      (query) => this.healthMetricsOverviewService.getBoard(req, query),
+      (response) => ({
+        member_count: response.members.length,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-code` — contributors in every period and the all-time roles. */
+  public async getOverviewCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_code',
+      (query) => this.healthMetricsOverviewService.getCode(req, query),
+      (response) => ({
+        measured: response.measured,
+      })
+    );
+  }
+
+  /** One Overview card read: validate the foundation, read every period, log counts only. */
+  private async readOverviewCard<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    operation: string,
+    read: (query: HealthMetricsOverviewQuery) => Promise<T>,
+    summarize: (response: T) => Record<string, unknown>
+  ): Promise<void> {
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, operation);
+
+      const response = await read({ foundationSlug });
+
+      logger.success(req, operation, startTime, { foundation_slug: foundationSlug, ...summarize(response) });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');
@@ -4448,7 +4432,7 @@ export class AnalyticsController {
   /** An optional, well-formed `projectSlug` query param; `null` is the all-projects scope. */
   private getOptionalProjectSlug(req: Request, operation: string): string | null {
     const projectSlug = getStringQueryParam(req, 'projectSlug');
-    // Same shape the client accepts, so a slug the selector sends never 400s here.
+    // The page no longer sends one; the filter stays until Engagement moves to its new models.
     if (projectSlug && !HEALTH_METRICS_PROJECT_SLUG_PATTERN.test(projectSlug)) {
       throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation });
     }

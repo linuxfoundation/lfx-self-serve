@@ -27,6 +27,9 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_RUN_NEW_MODE,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -44,6 +47,9 @@ import {
   MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgPendingGeneration,
+  MktgDocumentCommentScope,
+  MktgRedraftLanding,
+  MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -96,6 +102,7 @@ import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-brea
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
+import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
@@ -122,7 +129,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  // Excluding layout gutters: 800px leaves classic-scrollbar headroom.
+  // The host measures the main two-column layout; each asset owns its inner screen grids.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
@@ -139,6 +146,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
+    MktgCommentsPanelComponent,
     TooltipModule,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
@@ -214,6 +222,7 @@ export class MktgDocumentViewComponent {
     { initialValue: { agentKey: '', documentId: '' } }
   );
   private readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
+  private readonly routeProject = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('project'))), { initialValue: null });
 
   // === Computed ===
   protected readonly writePending = computed(() => this.submittingGeneration() || this.approvingId() !== null || this.restoringId() !== null);
@@ -262,6 +271,7 @@ export class MktgDocumentViewComponent {
     }
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
+  protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -288,6 +298,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  /** Label context uses the stored content shape, never the transformed display rows. */
+  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -301,7 +313,11 @@ export class MktgDocumentViewComponent {
     const key = this.view()?.type.agentKey ?? this.runDetail()?.type.agentKey ?? this.params().agentKey;
     return key ? mktgRunRouteFor(key, mktgKitRootPath(this.router.url)) : undefined;
   });
-  protected readonly runAgainParams = computed(() => ({ project: this.projectContext.activeContext()?.slug ?? null }));
+  protected readonly runAgainParams = computed(() => ({
+    project: this.projectContext.activeContext()?.slug || this.routeProject(),
+    mode: MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === this.runAgentId()) ? MKTG_RUN_NEW_MODE : null,
+    ...MKTG_RUN_RESUME_QUERY_CLEAR,
+  }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
   protected readonly approvedFramework = computed(() => {
@@ -701,6 +717,27 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgRedraftLanding): void {
+    const view = this.view();
+    if (
+      !this.writer() ||
+      !view ||
+      view.project !== scope.projectUid ||
+      view.revision.id !== scope.revisionId ||
+      this.projectContext.activeContextUid() !== scope.projectUid ||
+      this.params().agentKey !== location.agentKey ||
+      this.params().documentId !== location.documentId
+    ) {
+      this.notice.set('A new Draft was stored; open it from Revisions');
+      return;
+    }
+    this.dependencyService.notifyDocumentsChanged(scope.projectUid);
+    const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
+      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
+    });
+  }
+
   protected onRetryRun(): void {
     const run = this.selectedRun();
     const project = this.projectContext.activeContextUid();
@@ -748,7 +785,7 @@ export class MktgDocumentViewComponent {
     const pending = project ? this.attempts.load(project, agentId) : null;
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
-      queryParams: { ...this.runAgainParams(), questions: token },
+      queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
     });
   }
 
@@ -950,6 +987,15 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
+    return computed(() => {
+      const view = this.view();
+      if (!view || !this.commentContent() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
+      if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
+      return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
+    });
+  }
+
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {
     return computed(() => {
       const runs = this.runDetail()?.runs ?? [];
@@ -1126,7 +1172,7 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);
       void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
-        queryParams: { ...this.runAgainParams(), questions: token },
+        queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
       });
     }
   }

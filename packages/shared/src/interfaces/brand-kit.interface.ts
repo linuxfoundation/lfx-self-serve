@@ -347,6 +347,24 @@ export interface BrandKitFormPayload {
   messaging_framework?: Record<string, unknown>;
 }
 
+/** Agent's separate revise form; UI exposes only comment-driven redraft, not check. */
+export interface BrandKitRedraftFormPayload {
+  type: 'brand_kit_revise_form';
+  project_name: string;
+  run_date?: string;
+  project_uid?: string;
+  prior_version: number;
+  revision_mode: 'redraft';
+  kit: BrandKitTokens;
+  chapters?: BrandKitChapters;
+  website_url?: string;
+  brand_page_url?: string;
+  logo_files?: BrandKitLogoFile[];
+  /** Required by the agent even though its schema permits an omitted framework. */
+  messaging_framework: Record<string, unknown>;
+  comments: { passage: string; comment: string }[];
+}
+
 /** What the BFF layers onto the validated answers to build the form. */
 export interface BrandKitFormInputs {
   /** The uploaded logo files, as the agent takes them. */

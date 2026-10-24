@@ -300,6 +300,29 @@ export interface OccurrenceScopedAttachment {
 export type AttachmentScopeOverrides = ReadonlyMap<string, string>;
 
 /**
+ * Attachments added to and removed from one live meeting in this session, before a read shows them.
+ * @description Reads come from the query service, which indexes asynchronously, so a read right after a save can still
+ * return the list as it was.
+ */
+export interface MeetingAttachmentChanges {
+  /** Attachments created in this session, newest last */
+  added: MeetingAttachment[];
+  /** UIDs of attachments deleted in this session */
+  deletedUids: ReadonlySet<string>;
+}
+
+/** What a save adds to and removes from {@link MeetingAttachmentChanges}; either side may be omitted. */
+export interface MeetingAttachmentChangeInput {
+  /** Attachments that were created */
+  added?: MeetingAttachment[];
+  /** UIDs of attachments that were deleted */
+  deletedUids?: string[];
+}
+
+/** {@link MeetingAttachmentChanges} keyed by meeting id */
+export type MeetingAttachmentChangesByMeeting = ReadonlyMap<string, MeetingAttachmentChanges>;
+
+/**
  * Outcome of one staged upload in the materials drawer
  * @description Keyed by the pending attachment's id; `result` is null when the upload failed.
  */

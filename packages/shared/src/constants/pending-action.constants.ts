@@ -12,7 +12,7 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   RSVP: 'warn', // amber — most common row + matches the row's amber background tint
   Vote: 'info', // blue
   Survey: 'warn', // amber — pending survey, action needed
-  Agenda: 'secondary', // gray — informational read-before-meeting cue
+  Agenda: 'secondary', // gray — informational; no longer emitted (#3311)
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
   JoinApplication: 'warn', // amber — awaiting a manager decision
@@ -48,12 +48,12 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
 
 /**
  * Maps each pending-action type to its drawer section. Total over `PendingActionType` —
- * `Submitted`/`BriefAction` never reach the dashboard drawer today (they're committee-overview
- * surfaces) but stay mapped so the grouping computed never needs a fallback.
+ * `Submitted`/`BriefAction` (committee-overview surfaces) and `Agenda` (no longer emitted by the
+ * server, #3311) never reach the dashboard drawer today but stay mapped so the grouping computed never needs a fallback.
  */
 export const PENDING_ACTION_SECTION: Record<PendingActionType, PendingActionSection> = {
   RSVP: 'meetings',
-  Agenda: 'meetings', // informational read-before-meeting cue groups with the meeting RSVPs
+  Agenda: 'meetings', // no longer emitted (#3311); would group with the meeting RSVPs
   Vote: 'votes',
   Survey: 'surveys',
   Submitted: 'surveys', // completed-survey acknowledgement; closest kin if it ever reaches the drawer

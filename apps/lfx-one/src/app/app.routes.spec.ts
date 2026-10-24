@@ -58,10 +58,10 @@ describe('Personal newsletter route isolation', () => {
   it('mounts the auth-only Me reader ahead of permalink and publisher matches', async () => {
     const children = routes[0].children!;
     const personal = findRoute(routes, 'newsletters/my')!;
-    expect(personal).toMatchObject({ pathMatch: 'full', title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(personal).toMatchObject({ pathMatch: 'full', title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await personal.loadComponent!()).toBe(MyNewsletterFoundationsComponent);
     const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
-    expect(foundation).toMatchObject({ title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
       expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));

@@ -104,6 +104,9 @@ router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
 router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
 router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
 
+// GET /api/mktg-agents/intakes/:agentKey/last - private scalar history; the service resolves writer access.
+router.get('/intakes/:agentKey/last', (req, res, next) => mktgAgentsController.getLastIntake(req, res, next));
+
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
 
@@ -178,6 +181,19 @@ router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/approve?project=<uid>
 router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', blockDuringImpersonation, (req, res, next) =>
   mktgDocumentsController.approveRevision(req, res, next)
+);
+
+// GET revision-scoped field comments; requires project writer access.
+router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.listComments(req, res, next));
+// POST a field comment; requires project writer access and a stored revision.
+router.post('/documents/:agentKey/:documentId/comments', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.addComment(req, res, next));
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revise - ID-only comments redraft; project writer access; creator-bound ACK.
+router.post('/documents/:agentKey/:documentId/revise', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.revise(req, res, next));
+// GET creator-owned terminal recovery proof; no private ledger/session fields or mutation.
+router.get('/documents/:agentKey/:documentId/revise/:requestId/state', (req, res, next) => mktgDocumentsController.redraftState(req, res, next));
+// POST release an uncertain/expired reservation; requires project writer access AND the original send creator.
+router.post('/documents/:agentKey/:documentId/revise/:requestId/release', blockDuringImpersonation, (req, res, next) =>
+  mktgDocumentsController.releaseRedraft(req, res, next)
 );
 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision

@@ -82,9 +82,20 @@ The Family page links the real asset view `documents/:agentKey/:documentId`, pre
 lens/project context. The first declared agent is runnable only with an active catalog entry;
 unregistered agents keep a disabled button with catalog-independent pending copy from the
 family constants. Member 360 explains that its page is on its way, without a disabled tooltip;
-its button automatically enables once an active catalog entry lands.
-Missing rows offer a Run link only for an active, non-excluded catalog agent, keeping query
-params and leaving the header Run button unchanged.
+its button automatically enables once an active catalog entry lands. Family Run action
+wording uses the matching asset's board `runName` (or row label), not the catalog's agent
+name; header pending copy remains a fallback. Catalog identity still controls routing and
+availability. Row headings and the Agents grid's catalog names are not renamed.
+Every available living row offers Run for its active, non-excluded catalog agent with a
+registered intake, whether Missing, Draft, Approved or Needs rebuild. Coming-soon and one-off
+rows do not gain this action. Required approved-document dependencies still disable row actions
+with the same reason as the run page. The header keeps its state-driven priority: Rebuild what
+is stale, otherwise Run next agent for the first missing asset, otherwise the lead agent.
+Adding built-row actions does not change which missing asset the header selects.
+Living header/row Run and asset Run again open `?mode=new`,
+clearing old questions/generation/revision/run selectors; the Sources page still waits for
+explicit Start. This per-row action is a provisional addition: the Family board depicts only
+the header framework Run. Dedicated one-off routing/availability and breadcrumbs stay unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
@@ -156,7 +167,7 @@ uses `replaceUrl: true`. Main's generic run renders result and questions inline.
 No-project branches are defensive and unit-covered, not stable route-level e2e states:
 `projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`
 selects an available project or sends an empty lens to Me through `handleEmptyLensResponse`.
-A no-cookie/empty-nav e2e therefore reaches My Dashboard, not an unselected kit.
+A no-cookie/empty-nav e2e therefore reaches the Me lens Dashboard, not an unselected kit.
 
 Content/robust Playwright pairs stub synthetic listing and revision data, including a
 Boilerplates document and framework source report. They pin the local flag and project grants,
