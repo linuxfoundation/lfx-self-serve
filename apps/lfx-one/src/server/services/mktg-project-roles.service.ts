@@ -58,9 +58,18 @@ export class MktgProjectRolesService {
       if (toc.length !== 1) return null;
       const committee = toc[0];
       const members = await this.committeeService.getCommitteeMembers(req, committee.uid, { require_complete: 'true' });
-      const chairs = members.filter(
-        (member) => member.committee_uid === committee.uid && member.status === CommitteeMemberStatus.ACTIVE && CHAIR_ROLES.has(member.role?.name ?? '')
-      );
+      const now = Date.now();
+      const chairs = members.filter((member) => {
+        const start = member.role?.start_date;
+        const end = member.role?.end_date;
+        return (
+          member.committee_uid === committee.uid &&
+          member.status === CommitteeMemberStatus.ACTIVE &&
+          CHAIR_ROLES.has(member.role?.name ?? '') &&
+          (start === undefined || start === null || (typeof start === 'string' && Date.parse(start) <= now)) &&
+          (end === undefined || end === null || (typeof end === 'string' && now < Date.parse(end)))
+        );
+      });
       const primary = chairs.filter((member) => member.role?.name === CommitteeMemberRole.CHAIR);
       const preferred = primary.length ? primary : chairs;
       if (preferred.length !== 1) return null;

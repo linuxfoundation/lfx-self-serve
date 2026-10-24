@@ -43,6 +43,8 @@ export interface HealthMetricsTrainingEnrollmentType {
   deliveryType: string;
   /** PCC's listed types (`is_listed_delivery_type`); MicroCourse and Bundle count in the totals but are not listed. */
   isListed: boolean;
+  /** Listed on the revenue view (`is_listed_revenue_delivery_type`), which adds Bundle. */
+  isListedRevenue: boolean;
   enrollments: number | null;
   revenueUsd: number | null;
 }
@@ -70,11 +72,20 @@ export interface HealthMetricsTrainingEnrollmentPeriod {
   byType: HealthMetricsTrainingEnrollmentType[];
 }
 
+/** The foundation's yearly goals; progress (0–1) is modelled for YTD only. `null` is no goal set. */
+export interface HealthMetricsTrainingEnrollmentGoals {
+  enrollments: number | null;
+  revenueUsd: number | null;
+  enrollmentsProgressYtd: number | null;
+  revenueProgressYtd: number | null;
+}
+
 /** The Enrollment & revenue section: every L2 period, plus the period-independent yearly trend. */
 export interface HealthMetricsTrainingEnrollment {
   measured: boolean;
   periods: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentPeriod>;
   trend: HealthMetricsTrainingEnrollmentYear[];
+  goals: HealthMetricsTrainingEnrollmentGoals;
 }
 
 /** What the by-type list ranks by; the trend always shows enrollments. */
