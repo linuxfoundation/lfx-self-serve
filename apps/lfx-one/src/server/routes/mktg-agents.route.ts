@@ -9,6 +9,7 @@ import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
+import type { MktgRequestsController } from '../controllers/mktg-requests.controller';
 import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
@@ -215,5 +216,21 @@ router.post('/slides-export/result', (req, res, next) => mktgSlidesExportControl
 
 // GET /api/mktg-agents/slides-export/last - last export plus approved-current identity for freshness (null when none approved), not byte selection.
 router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
+
+// Requests are writer-gated; lazy loading keeps their dependencies out of unrelated route startup.
+let mktgRequestsController: MktgRequestsController | undefined;
+function requestsRoute(method: keyof MktgRequestsController): RequestHandler {
+  return (req, res, next): void => {
+    void import('../controllers/mktg-requests.controller')
+      .then(({ MktgRequestsController }) => {
+        mktgRequestsController ??= new MktgRequestsController();
+        return mktgRequestsController[method](req, res, next);
+      })
+      .catch(next);
+  };
+}
+router.get('/requests', requestsRoute('list'));
+router.post('/requests', blockDuringImpersonation, requestsRoute('create'));
+router.post('/requests/:id/state', blockDuringImpersonation, requestsRoute('changeState'));
 
 export default router;
