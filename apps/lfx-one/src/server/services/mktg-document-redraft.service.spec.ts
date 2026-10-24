@@ -100,7 +100,7 @@ const type = MKTG_DOCUMENT_TYPES.find((row) => row.agentKey === MKTG_KIT_FRAMEWO
 if (!type) throw new Error('Missing registered synthetic target');
 const body = { project: context.project, revisionId: context.basedOnId, commentIds: context.comments.map((row) => row.id), clientRequestId: context.requestId };
 const runs = { knownRedraftSession: f.known, start: f.start } as unknown as MktgDocumentRunService;
-const send = () => new MktgDocumentRedraftService().send(req, context.project, type, 'living', body, runs);
+const send = (beforeStart?: () => void | Promise<void>) => new MktgDocumentRedraftService().send(req, context.project, type, 'living', body, runs, beforeStart);
 describe('reserved redraft delivery', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -127,7 +127,7 @@ describe('reserved redraft delivery', () => {
       return { fresh, comments: context.comments, submission: { runId: f.hash, state: f.state, createdAt: new Date().toISOString() } };
     });
   });
-  it('reserves first, ACKs the authoritative sidecar version, then only replays the creator ACK', async () => {
+  it('without a hook preserves reservation/start ordering, sidecar version and creator-only replay', async () => {
     f.view.mockResolvedValue({ revision: { id: context.basedOnId, draftVersion: 1 } });
     const first = await send();
     expect(first.priorVersion).toBe(context.priorVersion);
@@ -150,6 +150,32 @@ describe('reserved redraft delivery', () => {
       context.requestId,
       context.basedOnId
     );
+  });
+  it('runs the optional barrier only after fresh reservation/preflight and before any Guild POST, never on replay', async () => {
+    const barrier = vi.fn(async () => {
+      expect(f.guild).not.toHaveBeenCalled();
+    });
+    await send(barrier);
+    expect(f.reserve.mock.invocationCallOrder[0]).toBeLessThan(barrier.mock.invocationCallOrder[0]);
+    expect(f.prepare.mock.invocationCallOrder[0]).toBeLessThan(barrier.mock.invocationCallOrder[0]);
+    expect(barrier.mock.invocationCallOrder[0]).toBeLessThan(f.guild.mock.invocationCallOrder[0]);
+    f.known.mockResolvedValue('synthetic-session');
+    await send(barrier);
+    expect(barrier).toHaveBeenCalledTimes(1);
+    expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+  it('treats a failed barrier as definitive no-start and retires its reservation without a POST replay', async () => {
+    const failure = new MicroserviceError('Pointer barrier unavailable', 503, 'UNAVAILABLE');
+    const barrier = vi.fn().mockRejectedValue(failure);
+    await expect(send(barrier)).rejects.toBe(failure);
+    expect(f.guild).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.start).not.toHaveBeenCalled();
+    expect(f.end).toHaveBeenCalledWith(req, context.project, type, 'living', context.requestId, false);
+    expect(f.state).toBe('failed');
+    await expect(send(barrier)).rejects.toMatchObject({ code: 'MKTG_REDRAFT_REQUEST_FAILED' });
+    expect(barrier).toHaveBeenCalledTimes(1);
+    expect(f.guild).not.toHaveBeenCalled();
   });
   it.each([400, 401, 409, 501])('records definitive Guild %s failure and replays that failure without another SDK call', async (status) => {
     const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic', 'guild_create_session');

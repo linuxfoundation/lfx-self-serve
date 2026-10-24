@@ -450,6 +450,18 @@ a stable JSON field key internally and captures its verbatim stored string as
 the agent's passage; caller-supplied passages, authors and timestamps are
 rejected. Framework and Boilerplates use their contract's field paths.
 
+An additive `document` anchor targets only the registered whole-asset root
+(`mf`, `chapters`, or `bp`). It cannot target an arbitrary field/report. The kit's
+server-generated passage marker is `Whole asset`, not a fabricated quote from a
+leaf; other agents retain their existing root field adapter. The private descriptor
+and result echo use the unchanged upstream field/passage contract. Caption helpers
+accept document scope explicitly; existing field/passage controls and captions are
+unchanged. This adds no switch, sign-off button or decide endpoint.
+
+`addWithReceipt` is a server-only exact-ID receipt over the same add/dedupe CAS;
+ordinary POST add responses remain unchanged. Correlation includes author, revision,
+anchor kind/key/passage and verbatim text; replay cannot silently change scope.
+
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different
 content or an effective author conflicts. Concurrent adds preserve both entries.
@@ -469,6 +481,26 @@ inventing an error. Explicit public projection excludes subjects, request IDs
 and the private send ledger. Bodies
 and attribution are not logged. Direct asset editing and revision overwrite are
 never allowed; redrafts append ordinary Drafts through the existing writer.
+
+### Internal sign-off hand-off seams
+
+`MktgDocumentRedraftService.send` optionally takes a server-only `beforeStart`
+callback, invoked after a fresh reservation/preflight and before any Guild POST.
+It is absent by default and never runs on replay. Rejection retires the existing
+reservation as definitive non-acceptance; no second send path or automatic POST
+retry is introduced. The caller's pointer CAS is the planned start barrier, not
+an inference from a missing comment ledger row.
+
+`signOffSubmissionProof` is internal, not an HTTP endpoint. It binds canonical
+project/document/base, original actor, request nonce and the exact comment nonce/ID.
+It projects only proof state/comment ID, never a ledger, session or owner token.
+Accepted state or a matching descriptor must settle sign-off rather than release.
+Uncertainty is read-only unless a server-supplied release-authorization callback
+succeeds; explicit closure uses the existing comments CAS helper and retains the
+original creator without changing Request identity. A reserved/in-flight row cannot
+be released here at any age. An absent result writes nothing and is NOT proof that
+a start cannot race: sign-off must serialize release against its same-pointer
+prepared/starting barrier. These seams alone do not activate that orchestration.
 
 ## Reserved comment sends and release
 

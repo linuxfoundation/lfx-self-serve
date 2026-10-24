@@ -46,17 +46,28 @@ import {
   readMktgDocumentCommentField,
   validateMktgDocumentCommentBatch,
 } from '@lfx-one/shared/utils';
+import { MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL } from '@lfx-one/shared/constants/mktg-document-comments.constants';
+import { MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants/mktg-artifact.constants';
+import type {
+  MktgDocumentCommentReceipt,
+  MktgStoredDocumentCommentReceipt,
+  MktgSignOffCommentScope,
+  MktgSignOffSubmissionProof,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 
 /** Writer authorization and canonical project resolution are the existing Documents controller's boundary. */
 export class MktgDocumentCommentsService {
   private readonly store = new ObjectStoreService();
+  private readonly contexts = new MktgDocumentRedraftContextService();
   private readonly authors = new MktgDocumentAuthorService();
   private readonly documents = new MktgDocumentStoreService(undefined, this.authors);
 
@@ -105,13 +116,19 @@ export class MktgDocumentCommentsService {
   }
 
   public async add(req: Request, project: string, type: MktgDocumentType, documentId: string, raw: unknown): Promise<MktgDocumentCommentsResponse> {
+    return (await this.addWithReceipt(req, project, type, documentId, raw)).response;
+  }
+
+  /** Internal exact ID receipt over the SAME add/dedupe CAS, never a second comment write path. */
+  public async addWithReceipt(req: Request, project: string, type: MktgDocumentType, documentId: string, raw: unknown): Promise<MktgDocumentCommentReceipt> {
     const agentKey = this.commentAgent(type);
     const input = this.input(raw);
     const revision = await this.requireRevision(req, project, type, documentId, input.revisionId);
     const anchor = { ...input.anchor };
     const source = this.source(revision, agentKey);
     if (!isMktgDocumentCommentAnchor(agentKey, source, anchor)) throw this.invalid('anchor', 'The field is not in this stored asset.');
-    if (agentKey === 'brand-kit') {
+    if (agentKey === 'brand-kit' && anchor.kind === 'document') Object.assign(anchor, { passage: MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL });
+    else if (agentKey === 'brand-kit') {
       const field = readMktgDocumentCommentField(source, anchor.key);
       // A logo ref, colour value, type sample or voice line is prose, not its field path.
       if (!field || typeof field.value !== 'string' || !field.value.trim()) throw this.invalid('anchor', 'Choose a text or value field of the kit.');
@@ -131,25 +148,27 @@ export class MktgDocumentCommentsService {
       resultRevisionId: null,
       resolution: null,
     };
-    const stored = await this.change(req, project, agentKey, documentId, (record) => {
+    const stored = await this.change<MktgStoredDocumentCommentReceipt>(req, project, agentKey, documentId, (record) => {
       const duplicate = record.threads.find((entry) => entry.clientRequestId === input.clientRequestId);
       if (duplicate) {
         if (
           duplicate.authorId !== authorId ||
           duplicate.revisionId !== input.revisionId ||
           duplicate.anchor.key !== anchor.key ||
+          duplicate.anchor.kind !== anchor.kind ||
+          duplicate.anchor.passage !== anchor.passage ||
           duplicate.text !== input.text
         ) {
           throw new ConflictError('This comment request was already used for a different comment.', 'MKTG_COMMENT_REQUEST_CONFLICT');
         }
-        return { record: null, result: record };
+        return { record: null, result: { record, commentId: duplicate.id } };
       }
       if (record.threads.length >= MKTG_DOCUMENT_COMMENT_MAX_THREADS) throw this.invalid('comments', 'The comment history is full; no comments were removed.');
       const next = { ...record, threads: [...record.threads, thread] };
-      return { record: next, result: next };
+      return { record: next, result: { record: next, commentId: thread.id } };
     });
     logger.debug(req, 'mktg_document_comment_add', 'Stored a field comment', { agent: agentKey });
-    return this.project(req, stored, input.revisionId);
+    return { commentId: stored.commentId, response: await this.project(req, stored.record, input.revisionId) };
   }
 
   /** Only a fresh committed reservation may invoke Guild. Preflight may read/render, NEVER mutate or send; CAS can repeat it. */
@@ -320,6 +339,76 @@ export class MktgDocumentCommentsService {
     const submission = await this.endStart(req, project, type, documentId, requestId, false, true);
     return submission ? { success: true } : { state: 'unknown' };
   }
+  /**
+   * Internal sign-off correlation/proof only. Caller resolves canonical access first; optional authorizeRelease
+   * must enforce role-actor/project-writer release permission. Absence is NOT a start fence: the pointer CAS is.
+   * Never expose this method/ledger through HTTP, impersonate the original creator, or expire a reservation here.
+   */
+  public async signOffSubmissionProof(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    input: MktgSignOffCommentScope,
+    authorizeRelease?: () => void | Promise<void>
+  ): Promise<MktgSignOffSubmissionProof> {
+    if (
+      !MKTG_ARTIFACT_PARTITION_REGEX.test(project) ||
+      documentId !== 'living' ||
+      !MKTG_REVISION_ID_REGEX.test(input.revisionId) ||
+      !input.requestedBy?.trim() ||
+      !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(input.requestId) ||
+      !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(input.commentRequestId)
+    )
+      throw this.invalid('signOff', 'Invalid sign-off correlation.');
+    await authorizeRelease?.();
+    return this.change<MktgSignOffSubmissionProof>(req, project, this.commentAgent(type), documentId, async (record) => {
+      const row = record.submissions.find((entry) => entry.id === input.requestId);
+      if (!row) return { record: null, result: { state: 'absent', commentId: null } };
+      const thread = record.threads.find(
+        (entry) => entry.clientRequestId === input.commentRequestId && entry.authorId === input.requestedBy && entry.revisionId === input.revisionId
+      );
+      if (
+        !thread ||
+        row.requestedBy !== input.requestedBy ||
+        row.baseRevisionId !== input.revisionId ||
+        row.commentIds.length !== 1 ||
+        row.commentIds[0] !== thread.id
+      )
+        throw new ConflictError('Sign-off correlation does not match this submission.', 'MKTG_SIGN_OFF_CORRELATION_CONFLICT');
+      const context = row.runId ? await this.contexts.forRun(req, row.runId) : null;
+      if (
+        context &&
+        (context.project !== project ||
+          context.agentKey !== type.agentKey ||
+          context.documentId !== documentId ||
+          context.requestId !== input.requestId ||
+          context.basedOnId !== input.revisionId ||
+          !isDeepStrictEqual(context.comments, this.frozen(record, row)))
+      )
+        throw new ConflictError('The redraft descriptor does not match this sign-off.', 'MKTG_SIGN_OFF_CORRELATION_CONFLICT');
+      if (context || row.state === 'started' || row.state === 'completed') return { record: null, result: { state: 'accepted', commentId: thread.id } };
+      if (row.state === 'failed') return { record: null, result: { state: 'failed', commentId: thread.id } };
+      if (row.state !== 'uncertain') {
+        if (authorizeRelease) throw new ConflictError('The redraft is still starting. Recover it before releasing.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+        return { record: null, result: { state: 'in-flight', commentId: thread.id } };
+      }
+      if (!authorizeRelease) return { record: null, result: { state: 'uncertain', commentId: thread.id } };
+      return {
+        record: {
+          ...record,
+          submissions: record.submissions.map((entry) => (entry.id === row.id ? { ...entry, state: 'failed' as const } : entry)),
+          threads: record.threads.map((entry) =>
+            entry.id === thread.id && this.owns(record, row, entry)
+              ? { ...entry, status: 'open' as const, sentInRun: null, resultRevisionId: null, resolution: null }
+              : entry
+          ),
+        },
+        result: { state: 'released', commentId: thread.id },
+      };
+    });
+  }
+
   public failedRequest(): ConflictError {
     return new ConflictError('This send failed or was released. Send explicitly with a NEW request ID.', 'MKTG_REDRAFT_REQUEST_FAILED');
   }

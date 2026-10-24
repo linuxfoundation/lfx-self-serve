@@ -32,7 +32,8 @@ export class MktgDocumentRedraftService {
     type: MktgDocumentType,
     documentId: string,
     raw: unknown,
-    runs: MktgDocumentRunService
+    runs: MktgDocumentRunService,
+    beforeStart?: () => void | Promise<void>
   ): Promise<MktgRedraftStartResponse> {
     const input = readMktgRedraftRequest(raw);
     if (!input) throw ServiceValidationError.forField('redraft', 'Only a stored base, unique comment IDs and request ID are accepted.');
@@ -75,8 +76,17 @@ export class MktgDocumentRedraftService {
       }
     }
     let sessionExists = false;
+    let barrierRejected = false;
     try {
       if (!prepared) throw ServiceValidationError.forField('redraft', 'The stored input could not be prepared.');
+      if (beforeStart) {
+        try {
+          await beforeStart();
+        } catch (error) {
+          barrierRejected = true;
+          throw error;
+        }
+      }
       const session = await this.guild.createSession(req, { message: prepared.message, handle: agent.guildAgentHandle });
       if (typeof session !== 'string' || !session.trim()) throw new MicroserviceError('Guild returned no session ID.', 502, 'guild_invalid_response');
       sessionExists = true;
@@ -91,7 +101,7 @@ export class MktgDocumentRedraftService {
       return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId, priorVersion: prepared.context.priorVersion };
     } catch (error) {
       logger.warning(req, 'mktg_document_redraft', 'Redraft start failed; no automatic resubmission', { agent: agent.id, err: error });
-      const rejected = redraftWasNotAccepted(error, sessionExists);
+      const rejected = barrierRejected || redraftWasNotAccepted(error, sessionExists);
       if (rejected) {
         await this.comments.endStart(req, project, type, documentId, input.clientRequestId, false);
         throw error;

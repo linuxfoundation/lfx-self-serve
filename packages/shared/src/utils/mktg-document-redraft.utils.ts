@@ -4,6 +4,8 @@
 import { MKTG_ARTIFACT_PARTITION_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS,
+  MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL,
   MKTG_DOCUMENT_COMMENT_ID_REGEX,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_MAX_CHARS,
@@ -114,12 +116,13 @@ function checkedContext(value: unknown): Record<string, unknown> | null {
     if (
       !record(anchor) ||
       !onlyKeys(anchor, MKTG_REDRAFT_ANCHOR_KEYS) ||
-      anchor['kind'] !== (agent === 'brand-kit' ? 'passage' : 'field') ||
+      (anchor['kind'] !== 'document' && anchor['kind'] !== (agent === 'brand-kit' ? 'passage' : 'field')) ||
       typeof anchor['key'] !== 'string' ||
       anchor['key'].length > MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS ||
       !MKTG_DOCUMENT_COMMENT_PATH_REGEX.test(anchor['key'])
     )
       return null;
+    if (anchor['kind'] === 'document' && anchor['key'] !== MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent]) return null;
     const parts = anchor['key'].match(MKTG_DOCUMENT_COMMENT_PATH_PART_REGEX) ?? [];
     if (
       !(MKTG_DOCUMENT_COMMENT_ROOTS[agent] as readonly string[]).includes(parts[0] ?? '') ||
@@ -129,6 +132,7 @@ function checkedContext(value: unknown): Record<string, unknown> | null {
     if (agent === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor['key'])) return null;
     if (agent === 'brand-kit') {
       if (typeof anchor['passage'] !== 'string' || !anchor['passage'].trim()) return null;
+      if (anchor['kind'] === 'document' && anchor['passage'] !== MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL) return null;
     } else if (anchor['passage'] !== undefined) return null;
   }
   return value;
