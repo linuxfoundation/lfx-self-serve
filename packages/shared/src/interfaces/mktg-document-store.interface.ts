@@ -19,6 +19,7 @@ import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.in
 import type { Member360Envelope } from './member-360.interface';
 import type { MktgDocumentRunSnapshot, MktgDocumentRunState } from './mktg-document-run.interface';
 import type { MktgAssetViewKind } from './mktg-run.interface';
+import type { MktgDocumentSignOffAnnotation, MktgRevisionSignOff, MktgSignOffAttribution, MktgSignOffRole } from './mktg-sign-off.interface';
 
 /** The stored structured views extend registered intake assets with the Brand Kit view. */
 export type MktgDocumentStructuredView = MktgAssetViewKind | 'brand-kit';
@@ -56,11 +57,13 @@ export interface MktgRevisionAuthor {
 export interface MktgDocumentApprovalAnnotation {
   approvedAt: string;
   approvedBy: string | null;
+  signOff?: Record<MktgSignOffRole, MktgSignOffAttribution>;
 }
 
 export interface MktgRevisionApproval {
   approvedAt: string;
   approvedBy: MktgRevisionAuthor | null;
+  signOff?: Record<MktgSignOffRole, { at: string; by: MktgRevisionAuthor | null }>;
 }
 
 export interface MktgApprovedCurrent {
@@ -78,6 +81,8 @@ export interface MktgDocumentCurrentRecord {
   revisionIds: string[];
   /** Optional for all records written before approval support. Unknown shapes mean no approvals. */
   approvals?: Record<string, MktgDocumentApprovalAnnotation>;
+  /** Optional private role decisions; approvals remains the only Approved source. */
+  signOff?: Record<string, MktgDocumentSignOffAnnotation>;
 }
 
 /** Server-only stored record and compare-and-swap token; never an API response. */
@@ -214,6 +219,7 @@ export interface MktgRevisionSummary {
   /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
   approval: MktgRevisionApproval | null;
+  signOff?: MktgRevisionSignOff | null;
   author?: MktgRevisionAuthor | null;
   draftVersion?: number;
   basedOnNumber?: number | null;

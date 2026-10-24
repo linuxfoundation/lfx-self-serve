@@ -191,6 +191,16 @@ describe('CommitteeService — mailing_lists enrichment', () => {
     service = new CommitteeService();
   });
 
+  it.each([undefined, false, true])('keeps best-effort committee paging unless requireComplete=%j opts into failure', async (requireComplete) => {
+    const failure = new MicroserviceError('Later committee page failed', 400, 'BAD_REQUEST');
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'c1', name: 'Synthetic TOC' }], 'next')).mockRejectedValue(failure);
+    const result = service.getCommittees(req, { tags: 'project_uid:project-1' }, { skipMailingListEnrichment: true, requireComplete });
+    if (requireComplete) await expect(result).rejects.toBe(failure);
+    else await expect(result).resolves.toMatchObject([{ uid: 'c1' }]);
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'committee', tags: 'project_uid:project-1' });
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
+  });
+
   it('getMyCommittees attaches a deduplicated list of refs per committee, and an empty array when there are none', async () => {
     routeUpstream([
       // Same committee referenced twice on one list, and the list also shared with c2.

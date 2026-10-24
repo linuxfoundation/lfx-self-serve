@@ -150,6 +150,36 @@ uses escaped, Unicode-aware phrase boundaries on explicit prose fields, excludin
 definitions, SVG bytes, URLs, input records and source labels. No approved-current
 selection, immutable bytes, comment thread or redraft is mutated by this read.
 
+### Internal two-role sign-off
+
+The optional `signOff` map on `current.json` freezes opaque directory subjects
+for the ED and TOC chair per revision. Names are resolved at read time. The
+TOC chair's role and per-role approval names come only from the caller-scoped
+role resolver when its visible chair has the same frozen subject and a non-null
+name; otherwise those names are null (render the role label, not a directory
+fallback). The request-cached resolver is shared by both projections. Unknown
+optional shapes are ignored without invalidating the critical pointer. Generation
+and Make current preserve these annotations; sign-off state never substitutes for
+an `approvals` entry when deciding whether content is Approved.
+
+`transitionSignOff` is an internal store seam, not an HTTP endpoint. A future
+writer-entitled orchestrator must supply directory-resolved roles and pre-send
+checks. Send and the first role decision preserve selection and its attribution.
+The second explicit approval writes both role decisions, the `approvals` entry
+and current selection in one `writeCurrent` CAS. Contention returns 412 without
+retry. A second unapproved pending request returns 409; a stale pending annotation
+on a revision already in `approvals` does not block a new request. Terminal
+requests cannot be resent on the same revision. The explicit close/supersede
+path (NB3) must ship before Send is mounted in the UI; unapproved stale pending
+requests still need that operator-visible path. Changes requested requires an already-prepared comment
+receipt; this seam does not itself create comments or submit agent redrafts.
+
+A read-only policy reader checks `project-settings/{project}/sign-off.json`.
+Confirmed absence means `single-writer`; malformed or failed policy reads fail
+closed. Existing Approve refuses with 409 when persisted mode is `two-role`,
+including an otherwise approved/current no-op. No settings-write API or sign-off
+UI is introduced by this storage layer. There is no separate publish operation.
+
 ### Family exports
 
 Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
