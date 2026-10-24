@@ -16,6 +16,34 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  test('an accepted draft whose handoff cannot open offers Open without another Generate', async ({ page }, info) => {
+    const runs = createLinkedinRuns();
+    const documentId = 'run-' + 'a'.repeat(24);
+    runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
+    await setupLinkedin(page, { saved: true, runs }); // Synthetic SERVER record survives the incomplete acknowledgement.
+    let starts = 0;
+    await page.route(`**${LINKEDIN_API}/generate`, (route) => {
+      starts++;
+      return json(route, {
+        documentId,
+        sessionId: 'synthetic-session-1',
+        ownerToken: 'synthetic-proof',
+        source: { label: 'synthetic-source', words: 3, fetched: false },
+      }); // No public runId: preparation declines.
+    });
+    await openLinkedin(page);
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic accepted source.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect(page.getByTestId('mktg-linkedin-accepted')).toHaveText(/Your draft was started — open it to follow progress./);
+    await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toBeDisabled();
+    await page.getByTestId('mktg-linkedin-open-accepted').getByRole('button', { name: 'Open draft' }).click();
+    await expect(page).toHaveURL(new RegExp(`/documents/linkedin-post/${documentId}`));
+    await expect(page).not.toHaveURL(/generation=/);
+    await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
+    expect(starts).toBe(1);
+    await page.screenshot({ path: info.outputPath('accepted-open-document.png'), fullPage: true });
+  });
   test('a fresh browser lands a plain document URL after its creator leaves early', async ({ page, browser }, info) => {
     const runs = createLinkedinRuns();
     await setupLinkedin(page, { saved: true, runs });
