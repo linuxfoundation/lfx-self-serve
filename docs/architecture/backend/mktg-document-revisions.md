@@ -207,7 +207,8 @@ pointer writes are preserved; accepted finalization remains single-shot. There i
 Accepted receipt finalization is replayable, even after mode switches off; it
 retains the original role actor and the selected/approved current, and removes
 the intent in one CAS. Only document types without a CR root may use a nullable
-receipt and bounded public note (today FAQ); comment-capable types require a real
+receipt and bounded public note only with explicit note-only host registration
+(today FAQ, not ICP); comment-capable types require a real
 comment and correlated CR submission ID. Legacy annotation shapes remain readable.
 
 Server-only `unstarted` proof can clear only a still-prepared intent through the
@@ -216,9 +217,43 @@ a successful start. Absence likewise clears only prepared, never starting; after
 the start barrier, release needs failed/released CR proof or accepted settlement. Released role/nonces are retained in a
 bounded 32-entry same-pointer ledger, never evicted to make a retry appear fresh.
 Exhaustion fails typed and requires operator follow-up: **Operator recovery for
-exhausted sign-off nonce histories**. Request IDs include the full revision, role
+exhausted sign-off nonce histories**. Once starting, an in-flight CR without a
+settle/release proof remains unreleasable; age is not evidence of no session.
+A released request may leave its note comment open: **Close or resolve the note
+comment of a released sign-off request** is a separate follow-up, not silent
+comment deletion. Request IDs include the full revision, role
 and a bounded nonce, not an identity hash. This storage layer calls no agent and
-mounts no decide endpoint; CR orchestration is the next additive child.
+mounts no decide endpoint. `MktgSignOffChangesService` now orchestrates that
+protocol internally through the existing CR sender; HTTP activation still waits
+for the open policy rulings.
+
+### Request-change orchestration (internal)
+
+`MktgSignOffChangesService` reserves the frozen pointer intent, adds one exact
+whole-document comment through `addWithReceipt`, invokes the existing CR sender
+with the fresh-only start-barrier callback, then records the accepted receipt
+through the final pointer CAS. It returns only the document view, never a Guild
+session/owner token. A failed or uncertain start leaves the intent for explicit
+same-actor recovery or guarded release. The only retry is the store's bounded
+start-CAS recheck; no retry loop around Guild or new POST path is added.
+
+Recovery reuses the frozen note, revision/role/nonce and CR IDs, not replacement
+JSON. A starting-intent recovery first reads correlated CR proof without release
+authorization: an unbound reserved row remains in-flight at any age. It cannot
+be changed to uncertainty by replay and later released solely because a timeout
+elapsed. An absent row likewise provides no recovery/no-start proof. Terminal
+replay must belong to the selected role. Release authorizes the
+original role actor or a writer of the exact canonical project without changing
+Request identity. While the intent is `prepared`, release uses the store's
+`unstarted` pointer fence without reading CR, even if a CR reservation exists.
+Once `starting`, correlated accepted work settles; failed or explicitly released
+proof releases through the pointer fence, while absent or reserved/in-flight
+proof refuses. The legacy store `absent` proof is equivalent to `unstarted` only
+while prepared; the orchestration uses `unstarted` there, never CR absence as
+no-start evidence after starting. FAQ's note-only atomic result never calls CR.
+Future HTTP handlers must resolve the canonical writer scope and the open approver
+policy first; this internal orchestration mounts no decide/recovery/release route
+and does not settle B1–B3/B6 or activate a sign-off UI.
 
 ### Sign-off checks (read-only)
 
@@ -506,9 +541,10 @@ server-generated passage marker is `Whole asset`, not a fabricated quote from a
 leaf; other agents retain their existing root field adapter. The private descriptor
 and result echo use the unchanged upstream field/passage contract. Caption helpers
 accept document scope explicitly; existing field/passage controls and captions are
-unchanged. Public add rejects document anchors until the UI passes `anchor.kind`
-to its label helper; only the internal exact-receipt API accepts that scope now.
-This adds no switch, sign-off button or decide endpoint.
+unchanged. Public add rejects document anchors; only the internal exact-receipt
+API accepts that scope now. The UI child must pass `anchor.kind` to
+`describeMktgDocumentCommentField` before exposing whole-document controls. This
+adds no switch, sign-off button or decide endpoint.
 
 `addWithReceipt` is a server-only exact-ID receipt over the same add/dedupe CAS;
 ordinary POST add responses remain unchanged. Correlation includes author, revision,
@@ -546,8 +582,9 @@ body property cannot opt into the namespace. Ordinary request IDs are unchanged.
 callback, invoked after a fresh reservation/preflight and before any Guild POST.
 It is absent by default and never runs on replay. Rejection retires the existing
 reservation as definitive non-acceptance; no second send path or automatic POST
-retry is introduced. The caller's pointer CAS is the planned start barrier, not
-an inference from a missing comment ledger row.
+retry is introduced. The internal orchestration uses its pointer CAS as the
+start barrier, with bounded rechecks on an unrelated comparison loss; it never
+infers no-start safety from a missing comment ledger row.
 
 `signOffSubmissionProof` is internal, not an HTTP endpoint. It binds canonical
 project/document/base, original actor, request nonce and the exact comment nonce/ID.
@@ -556,9 +593,11 @@ Accepted state or a matching descriptor must settle sign-off rather than release
 Uncertainty is read-only unless a server-supplied release-authorization callback
 succeeds; explicit closure uses the existing comments CAS helper and retains the
 original creator without changing Request identity. A reserved/in-flight row cannot
-be released here at any age. An absent result writes nothing and is NOT proof that
-a start cannot race: sign-off must serialize release against its same-pointer
-prepared/starting barrier. These seams alone do not activate that orchestration.
+be released by this CR proof seam at any age. An absent result writes nothing and
+is NOT a no-start guarantee. The sign-off orchestration serializes start against
+release through its same-pointer prepared/starting CAS. While still prepared it
+uses the store's `unstarted` fence without consulting a possibly reserved CR row;
+once starting it requires accepted settlement or definitive failed/released proof.
 
 ## Reserved comment sends and release
 
@@ -595,7 +634,8 @@ failures to `503 MKTG_REDRAFT_START_UNCERTAIN`, never a definitive primary 4xx.
 A failed uncertainty write is logged and still returns 503 to preserve recovery.
 The creator can explicitly release
 uncertainty to failed/open, retaining the old hash without rebinding it. Any expired
-reserved send can also be released by its creator.
+ordinary reserved send can also be released by its creator. This age-based
+public release never accepts the reserved `so-` sign-off namespace.
 Uncertain/failed and unbound reserved sends older than the existing Run timeout
 are not busy. Late bind/release/result work cannot touch a newer reservation.
 No recovery path automatically resubmits to Guild.
