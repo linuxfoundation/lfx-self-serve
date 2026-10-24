@@ -946,12 +946,88 @@ describe('MktgDocumentViewComponent', () => {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const service = TestBed.inject(MktgAgentRunService);
     vi.mocked(attempts.consume).mockReturnValue({ subject: subject(), pending });
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate');
     store.getDocument.mockReturnValue(of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [] }));
     await render(`/documents/linkedin-post/${documentId}?generation=synthetic-accepted`);
     expect(attempts.consume).toHaveBeenCalledWith('synthetic-accepted', PROJECT.uid, intake.agentId, documentId);
+    expect(router.url).toContain(`run=${'b'.repeat(64)}`);
+    expect(router.url).not.toContain('generation=');
+    expect(navigate).toHaveBeenCalledExactlyOnceWith([], expect.objectContaining({ replaceUrl: true, queryParams: { run: 'b'.repeat(64), generation: null } }));
+    expect(store.getDocument).toHaveBeenCalledTimes(1);
+    expect(service.resume).toHaveBeenCalledExactlyOnceWith(pending);
+    await settle(); // The token-to-run URL replacement must not start a second read/resume cycle.
+    expect(store.getDocument).toHaveBeenCalledTimes(1);
     expect(service.resume).toHaveBeenCalledExactlyOnceWith(pending);
     expect(query('mktg-document-view-run')).not.toBeNull();
     expectNoKitAssetChrome();
+  });
+
+  it.each([false, true])('does not synchronously replace a one-off handoff without a run id (attempt present: %s)', async (hasAttempt) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic one-off registration');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const pending: MktgPendingGeneration = {
+      ...preparedPending(),
+      request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
+    };
+    if (hasAttempt)
+      pending.attempt = { documentId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-unaccepted', ownerToken: 'synthetic-proof' } };
+    vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    store.getDocument.mockReturnValue(of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [] }));
+    await render(`/documents/linkedin-post/${documentId}?generation=synthetic-unaccepted`);
+    expect(TestBed.inject(Router).url).toContain('generation=synthetic-unaccepted');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledExactlyOnceWith(pending);
+  });
+
+  it('does not synchronously replace a living generation token even with an accepted run id', async () => {
+    const pending = preparedPending();
+    pending.attempt = {
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: pending.request.agentId, sessionId: 'synthetic-living', ownerToken: 'synthetic-proof' },
+    };
+    vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [] }));
+    await render('/documents/brand-kit/living?generation=synthetic-living');
+    expect(TestBed.inject(Router).url).toContain('generation=synthetic-living');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledExactlyOnceWith(pending);
+  });
+
+  it('does not overwrite another cached one-off attempt with the selected server run failure', async () => {
+    const response = linkedinResponse();
+    const intake = MKTG_AGENT_INTAKES[response.type.catalogAgentId ?? ''];
+    if (!intake) throw new Error('Missing synthetic one-off intake');
+    const pending: MktgPendingGeneration = {
+      request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId: response.documentId, answers: {} },
+      attempt: {
+        documentId: response.documentId,
+        runId: 'c'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: intake.agentId, sessionId: 'synthetic-newer', ownerToken: 'synthetic-proof' },
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.load).mockReturnValue(pending);
+    vi.mocked(attempts.prepare).mockReturnValue('generation-other-run');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    store.getDocument.mockReturnValue(
+      of({ ...response, revisions: [], runs: [{ ...started('failed'), agentKey: response.type.agentKey, documentId: response.documentId }] })
+    );
+    await render(`/documents/linkedin-post/${response.documentId}?run=${'b'.repeat(64)}`);
+    query('mktg-document-view-intake-link')?.querySelector('button')?.click();
+    await settle();
+    expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
+    expect(navigate).toHaveBeenCalled();
+    expect(attempts.save).not.toHaveBeenCalled();
+    expect(pending.state).toBe('writing');
   });
 
   it('keeps a prepared run writing after its first metadata read fails, then resumes polling', async () => {

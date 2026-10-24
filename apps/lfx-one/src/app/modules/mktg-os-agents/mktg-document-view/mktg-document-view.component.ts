@@ -782,7 +782,7 @@ export class MktgDocumentViewComponent {
     const oneOff = MKTG_AGENT_INTAKES[agentId]?.oneOffDocument;
     let pending = project ? this.attempts.load(project, agentId, oneOff ? this.params().documentId : undefined) : null;
     const intake = MKTG_AGENT_INTAKES[agentId];
-    if (pending && oneOff && this.selectedRun()?.state === 'failed' && pending.state !== 'failed') {
+    if (pending && oneOff && this.selectedRun()?.state === 'failed' && pending.attempt?.runId === this.selectedRun()?.runId && pending.state !== 'failed') {
       pending = { ...pending, state: 'failed', pendingQuestions: undefined };
       this.attempts.save(pending); // The server is authoritative even before the private poll has settled.
     }
