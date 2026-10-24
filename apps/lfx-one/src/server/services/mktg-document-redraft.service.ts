@@ -77,7 +77,11 @@ export class MktgDocumentRedraftService {
         return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId, priorVersion: context.priorVersion };
       } catch (error) {
         logger.warning(req, 'mktg_document_redraft', 'Redraft replay could not be confirmed', { agent: agent.id, err: error });
-        if (reservation.submission.state === 'started') throw this.uncertain();
+        if (
+          reservation.submission.state === 'started' ||
+          (reservation.submission.state === 'reserved' && input.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
+        )
+          throw this.uncertain();
         return this.failUncertain(req, project, type, documentId, input.clientRequestId);
       }
     }
