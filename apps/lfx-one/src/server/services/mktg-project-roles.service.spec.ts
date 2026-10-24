@@ -180,6 +180,34 @@ describe('MktgProjectRolesService', () => {
   });
 
   it.each([
+    { start: '2026-01-01', end: '2026-10-23', vice: true },
+    { start: undefined, end: '2026-10-24T12:00:00Z', vice: true },
+    { start: '2026-10-24T12:00:00.001Z', end: undefined, vice: true },
+    { start: '2026-10-24T12:00:00Z', end: '2026-10-25', vice: false },
+    { start: undefined, end: undefined, vice: false },
+    { start: undefined, end: '2026-10-25', vice: false },
+    { start: '2026-01-01', end: undefined, vice: false },
+    { start: 'invalid-date', end: undefined, vice: true },
+  ])('filters role terms before precedence (start=$start,end=$end,vice=$vice)', async ({ start, end, vice }) => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T12:00:00Z'));
+    try {
+      mocks.members.mockResolvedValue([
+        { ...chair, role: { name: CommitteeMemberRole.CHAIR, start_date: start, end_date: end } },
+        {
+          ...chair,
+          uid: 'vice',
+          username: 'synthetic-vice',
+          email: 'vice@example.test',
+          role: { name: CommitteeMemberRole.VICE_CHAIR, start_date: '2026-01-01', end_date: '2027-01-01' },
+        },
+      ]);
+      expect((await service.rolesOf(req, project)).tocChair?.username).toBe(vice ? 'synthetic-vice' : 'synthetic-chair');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each([
     { member_visibility: CommitteeMemberVisibility.HIDDEN, writer: false, auditor: false, display: false },
     { member_visibility: undefined, writer: false, auditor: false, display: false },
     { member_visibility: CommitteeMemberVisibility.HIDDEN, writer: true, auditor: false, display: true },
