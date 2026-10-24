@@ -48,6 +48,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
 | [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
 | [Marketing Requests](./mktg-requests.md)                              | CAS ledger, historical targets, completion references and withdrawal actions    |
+| [Marketing Access](./mktg-access.md)                                  | Writer-gated project settings projection and private role matching              |
 | [Marketing OS Downstream Rebuild](./mktg-rebuild.md)                  | Current-revision staleness, ordered rebuild sessions, questions and Drafts      |
 | [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
 | [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
