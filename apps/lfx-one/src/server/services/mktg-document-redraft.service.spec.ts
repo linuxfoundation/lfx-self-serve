@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import type { MktgDocumentCommentsRecord, MktgRunResultResponse, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
-import { MKTG_DOCUMENT_COMMENTS_SCHEMA } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_COMMENTS_SCHEMA, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
 import type { MktgDocumentRunService } from './mktg-document-run.service';
 import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FRAMEWORK_KEY } from '@lfx-one/shared/constants';
@@ -214,6 +214,74 @@ describe('reserved redraft delivery', () => {
     await expect(send()).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_REDRAFT_START_UNCERTAIN' });
     expect(f.state).toBe('uncertain');
   });
+  it('keeps an aged reserved sign-off replay read-only so a subsequent release still refuses', async () => {
+    const { MktgDocumentCommentsService } = await vi.importActual<typeof import('./mktg-document-comments.service')>('./mktg-document-comments.service');
+    const ledger = new MktgDocumentCommentsService();
+    const key = `document-comments/${context.project}/${context.agentKey}/living.json`;
+    const requestId = 'so-claimed-r';
+    const initial: MktgDocumentCommentsRecord = {
+      schema: MKTG_DOCUMENT_COMMENTS_SCHEMA,
+      project: context.project,
+      agentKey: context.agentKey,
+      documentId: 'living',
+      threads: context.comments.map((row) => ({
+        ...row,
+        clientRequestId: 'so-claimed-c',
+        authorId: 'opaque-creator',
+        revisionId: context.basedOnId,
+        status: 'open',
+        sentInRun: null,
+        resultRevisionId: null,
+        resolution: null,
+      })),
+      submissions: [
+        {
+          id: requestId,
+          requestedBy: 'opaque-creator',
+          createdAt: new Date(Date.now() - MKTG_RUN_POLL.timeoutMs - 1).toISOString(),
+          baseRevisionId: context.basedOnId,
+          commentIds: context.comments.map((row) => row.id),
+          state: 'reserved',
+          runId: null,
+          resultRevisionId: null,
+        },
+      ],
+    };
+    f.records.set(key, { body: JSON.stringify(initial), metadata: {}, etag: 'seed' });
+    f.view.mockResolvedValue({
+      revision: { id: context.basedOnId, format: 'json' },
+      markdown: JSON.stringify({ mf: { tagline: 'Stored line' } }),
+      sidecar: null,
+    });
+    f.reserve.mockImplementation(ledger.reserve.bind(ledger));
+    f.end.mockImplementation(ledger.endStart.bind(ledger));
+    const before = f.records.get(key)?.body;
+    const barrier = vi.fn();
+    await expect(
+      new MktgDocumentRedraftService().send(req, context.project, type, 'living', { ...body, clientRequestId: requestId }, runs, barrier)
+    ).rejects.toMatchObject({ code: 'MKTG_REDRAFT_START_UNCERTAIN' });
+    expect(f.records.get(key)?.body).toBe(before);
+    expect(f.end).not.toHaveBeenCalled();
+    expect(f.guild).not.toHaveBeenCalled();
+    expect(barrier).not.toHaveBeenCalled();
+    await expect(
+      ledger.signOffSubmissionProof(
+        req,
+        context.project,
+        type,
+        'living',
+        {
+          revisionId: context.basedOnId,
+          requestedBy: 'opaque-creator',
+          requestId,
+          commentRequestId: 'so-claimed-c',
+        },
+        () => Promise.resolve()
+      )
+    ).rejects.toMatchObject({ code: 'MKTG_REDRAFT_COMMENTS_BUSY' });
+    expect(f.records.get(key)?.body).toBe(before);
+  });
+
   it.each(['create', 'start', 'bind'] as const)('keeps a real ledger uncertain after a session and %s validation/conflict failures', async (stage) => {
     const { MktgDocumentCommentsService } = await vi.importActual<typeof import('./mktg-document-comments.service')>('./mktg-document-comments.service');
     for (const error of [

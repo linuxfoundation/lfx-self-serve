@@ -192,6 +192,12 @@ export class MktgDocumentCommentsService {
     let rejection: unknown;
     const reservation = await this.change<MktgRedraftReservation>(req, project, agent, documentId, async (record) => {
       rejected = false;
+      const selected = input.commentIds.map((id) => record.threads.find((entry) => entry.id === id));
+      if (
+        !input.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX) &&
+        selected.some((entry) => entry?.clientRequestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
+      )
+        throw this.invalid('commentIds', 'Sign-off comments require the internal start-barrier send.');
       const existing = record.submissions.find((entry) => entry.id === input.clientRequestId);
       if (existing) {
         if (
@@ -206,7 +212,6 @@ export class MktgDocumentCommentsService {
       if (record.submissions.some((entry) => this.busy(entry) && entry.commentIds.some((id) => input.commentIds.includes(id)))) {
         throw new ConflictError('Some comments are already reserved for another send.', 'MKTG_REDRAFT_COMMENTS_BUSY');
       }
-      const selected = input.commentIds.map((id) => record.threads.find((entry) => entry.id === id));
       if (
         selected.some(
           (entry) => !entry || entry.status !== 'open' || entry.revisionId !== input.revisionId || !isMktgDocumentCommentAnchor(agent, source, entry.anchor)
