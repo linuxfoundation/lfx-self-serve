@@ -111,14 +111,15 @@ project and drop stale questions/generation/revision/run selectors. Living actio
 `?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
 null: its run page's window/compare/tracker inputs are not registered as a last-intake
 allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
-follow-up. LinkedIn Family and document Run again use `mode=new` through the same
-`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. The dedicated source form restores
+follow-up. LinkedIn Family Run again uses `mode=new` through the shared
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. LinkedIn's Document keeps its
+own Draft another post entry rather than rendering the generic Run again control. The dedicated source form restores
 writer-gated last text/URL and share-link scalars before any run navigation, preserving
 explicit blanks; files require reattachment and oversized pasted text requires re-entry.
-A live project/subject-bound pending run takes precedence over old scalar history and
-resumes even from a fresh Family entry. After an accepted start (or pending recovery),
-entry-only `mode=new` is consumed with a replacement URL update, so reload resumes the
-same run rather than starting another. New generation still requires explicit Draft.
+The source form does not resume a run on load: the Document receiver owns accepted-run
+progress and cross-browser recovery. Immediately before accepted-start navigation pushes
+the Document, entry-only `mode=new` is consumed with a replacement URL update so Back
+does not restore fresh mode. New generation still requires explicit Draft.
 Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
 scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer

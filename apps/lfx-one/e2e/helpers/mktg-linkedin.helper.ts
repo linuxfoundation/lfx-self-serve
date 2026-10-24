@@ -13,7 +13,7 @@ import {
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
 import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '@lfx-one/shared/utils/linkedin-post-run.utils';
-import type { LinkedinEnvelope, MktgRevisionResponse, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import type { LinkedinEnvelope, MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils/linkedin-post.utils';
 import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
@@ -56,6 +56,10 @@ export function linkedinEnvelope(): LinkedinEnvelope {
 export function json(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
+/** Synthetic server-side starts shared by separate browser contexts; no browser capability is copied. */
+export function createLinkedinRuns() {
+  return new Map<string, { documentId: string; shareLink: string; answered: boolean; polls: number; reads: number; completed: boolean; failed: boolean }>();
+}
 export async function setupLinkedin(
   page: Page,
   options: {
@@ -66,18 +70,25 @@ export async function setupLinkedin(
     recordedCase?: string;
     questions?: boolean;
     live?: boolean;
+    failed?: boolean;
+    profileSaved?: boolean;
+    output?: LinkedinEnvelope;
+    runs?: ReturnType<typeof createLinkedinRuns>;
   } = {}
 ): Promise<void> {
+  await suppressCookieBanner(page);
   const project = LINKEDIN_TEST_PROJECT;
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+  if (!type) throw new Error('LinkedIn document type is not registered');
   const recorded = options.recordedCase ? LINKEDIN_RECORDED_CASES.find((item) => item.name.endsWith(`/${options.recordedCase}`)) : undefined;
-  const output: LinkedinEnvelope = recorded ? JSON.parse(JSON.stringify(recorded.envelope)) : linkedinEnvelope();
-  const selectedProfile = recorded ? output.profile : LINKEDIN_TEST_PROFILE;
+  const output: LinkedinEnvelope = JSON.parse(JSON.stringify(options.output ?? recorded?.envelope ?? linkedinEnvelope()));
+  let selectedProfile = recorded ? output.profile : LINKEDIN_TEST_PROFILE;
+  let hasProfile = options.saved ?? false;
   const turn = parseLinkedinQuestions(LINKEDIN_RECORDED_QUESTIONS);
   const events = LINKEDIN_RECORDED_PROGRESS.map((event, index) =>
     JSON.stringify({ ...event, created_at: new Date(Date.now() - 10000 + index * 1000).toISOString() })
   );
-  let generation = 0;
-  const runs = new Map<string, { documentId: string; shareLink: string; answered: boolean; polls: number }>();
+  const runs = options.runs ?? createLinkedinRuns();
   mockProjects[project.slug] = {
     ...project,
     description: 'Synthetic project for post drafting.',
@@ -130,28 +141,37 @@ export async function setupLinkedin(
     }
   );
   await page.route(`**${LINKEDIN_API}/profile`, (route) => {
-    if (route.request().method() === 'PUT')
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON();
+      selectedProfile = body.profile ?? linkedinProfileFromSetup(body.setup);
+      hasProfile = true;
       return json(route, { profile: { profile: selectedProfile, profile_markdown: renderLinkedinProfileMarkdown(selectedProfile) } });
+    }
     return json(
       route,
-      { profile: options.saved ? { profile: selectedProfile, profile_markdown: renderLinkedinProfileMarkdown(selectedProfile) } : null },
+      { profile: hasProfile ? { profile: selectedProfile, profile_markdown: renderLinkedinProfileMarkdown(selectedProfile) } : null },
       options.profileError ? 503 : 200
     );
   });
   await page.route(`**${LINKEDIN_API}/generate`, (route) => {
     const supplied = route.request().postDataJSON().answers?.share_link;
-    const sessionId = `synthetic-session-${++generation}`;
+    const generation = runs.size + 1;
+    const sessionId = `synthetic-session-${generation}`;
     const run = {
       documentId: `run-${generation.toString(16).padStart(24, '0')}`,
       shareLink: typeof supplied === 'string' ? supplied : '',
       answered: false,
       polls: 0,
+      reads: 0,
+      completed: false,
+      failed: options.failed ?? false,
     };
     runs.set(sessionId, run);
     return json(route, {
       sessionId,
       ownerToken: `synthetic-owner-token-${generation}`,
       documentId: run.documentId,
+      runId: generation.toString(16).padStart(64, '0'),
       source: { label: 'example release', words: 50, fetched: true },
       answers: { share_link: run.shareLink },
     });
@@ -167,6 +187,7 @@ export async function setupLinkedin(
   await page.route(`**${LINKEDIN_API}/result`, (route) => {
     const run = runs.get(route.request().postDataJSON().sessionId);
     if (!run) return json(route, { error: 'Unknown synthetic session' }, 404);
+    if (run.failed) return json(route, { status: 'failed', failureText: 'The synthetic run could not complete.' });
     if (options.live && ++run.polls === 1) return json(route, { status: 'pending', activity: linkedinRunActivity(events) });
     if (options.questions && !run.answered && turn)
       return json(route, {
@@ -176,12 +197,25 @@ export async function setupLinkedin(
         questionsProject: turn.project,
         activity: linkedinRunActivity(events),
       });
+    run.completed = true;
+    if (output.profile_source === 'first_run_setup' && options.profileSaved !== false) {
+      selectedProfile = output.profile;
+      hasProfile = true;
+    }
     return json(route, {
       status: 'ready',
+      version: output.version,
+      documentMarkdown: output.document_markdown,
       envelope: output,
       activity: linkedinRunActivity(events, true),
-      persistence: { project: project.uid, content_sha256: output.content_sha256, s3_key: 'synthetic/document.md', version: output.version },
-      profileSaved: true,
+      persistence: {
+        project: project.uid,
+        content_sha256: output.content_sha256,
+        s3_key: 'synthetic/document.md',
+        version: output.version,
+        document_location: { agent_key: type.agentKey, document_id: run.documentId, revision_id: revision.id },
+      },
+      profileSaved: options.profileSaved ?? true,
       answers: { share_link: run.shareLink },
     });
   });
@@ -191,17 +225,15 @@ export async function setupLinkedin(
     run.shareLink = route.request().postDataJSON().share_link;
     return json(route, { share_link: run.shareLink });
   });
-  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
-  if (!type) throw new Error('LinkedIn document type is not registered');
   const revision: MktgRevisionSummary = {
-    id: '000001-' + 'a'.repeat(64),
+    id: '000001-' + output.content_sha256,
     number: 1,
     createdAt: '2026-10-15T10:00:00Z',
     origin: 'generated',
     restoredFromNumber: null,
     intakeMode: 'form',
     status: '',
-    contentSha256: 'a'.repeat(64),
+    contentSha256: output.content_sha256,
     format: 'markdown',
     commentCount: 0,
     latest: true,
@@ -221,6 +253,35 @@ export async function setupLinkedin(
   await page.route('**/api/mktg-agents/documents/linkedin-post/**', (route) => {
     const run = [...runs.values()].find((run) => run.documentId === new URL(route.request().url()).pathname.split('/')[5]);
     if (!run) return json(route, { error: 'Unknown synthetic document' }, 404);
+    if (!run.completed) {
+      if (!run.failed && (!options.questions || run.answered) && ++run.reads >= 3) run.completed = true;
+      if (!run.completed) {
+        let state: MktgDocumentRunProgress['state'] = 'writing';
+        if (run.failed) state = 'failed';
+        else if (options.questions && !run.answered) state = 'questions';
+        const sessionId = [...runs].find(([, entry]) => entry === run)?.[0] ?? '';
+        const sequence = Number(sessionId.split('-').at(-1));
+        return json(route, {
+          project: project.uid,
+          type,
+          documentId: run.documentId,
+          revisions: [],
+          approvedCurrent: null,
+          runs: [
+            {
+              project: project.uid,
+              agentKey: type.agentKey,
+              documentId: run.documentId,
+              runId: sequence.toString(16).padStart(64, '0'),
+              state,
+              startedAt: new Date().toISOString(),
+              activity: linkedinRunActivity(events),
+              failureText: run.failed ? 'The synthetic run could not complete.' : undefined,
+            },
+          ],
+        });
+      }
+    }
     return json(route, {
       ...document,
       documentId: run.documentId,

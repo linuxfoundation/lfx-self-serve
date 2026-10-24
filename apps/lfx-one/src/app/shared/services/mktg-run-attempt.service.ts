@@ -22,6 +22,8 @@ import {
   MktgPendingRedraftIntent,
   MktgDocumentCommentScope,
   MktgRunSessionResponse,
+  MktgDocumentRunProgress,
+  MktgRunQuestionsPending,
 } from '@lfx-one/shared/interfaces';
 import { UserService } from './user.service';
 
@@ -46,7 +48,11 @@ export class MktgRunAttemptService {
     if (!isPlatformBrowser(this.platformId) || !this.subject()) {
       return '';
     }
-    if (request.intake.oneOffDocument && (!resume || !request.documentId)) return '';
+    if (
+      request.intake.oneOffDocument &&
+      (!resume || !request.documentId || request.documentId === MKTG_LIVING_DOCUMENT_ID || !MKTG_DOCUMENT_ID_REGEX.test(request.documentId))
+    )
+      return '';
     const pending = (resume ? this.load(request.projectUid, request.agentId, request.documentId) : null) ?? this.reserve(request);
     const token = `generation-${window.crypto.randomUUID()}`;
     this.prepared.set(token, { subject: this.subject(), pending });
@@ -93,7 +99,11 @@ export class MktgRunAttemptService {
       prepared.pending.request.projectUid !== projectUid ||
       prepared.pending.request.agentId !== agentId ||
       (prepared.pending.request.intake.oneOffDocument &&
-        (!documentId || prepared.pending.request.documentId !== documentId || prepared.pending.attempt?.documentId !== documentId)) ||
+        (!documentId ||
+          documentId === MKTG_LIVING_DOCUMENT_ID ||
+          !MKTG_DOCUMENT_ID_REGEX.test(documentId) ||
+          prepared.pending.request.documentId !== documentId ||
+          (prepared.pending.attempt ? prepared.pending.attempt.documentId !== documentId : prepared.pending.state !== 'failed'))) ||
       !Number.isFinite(Date.parse(prepared.pending.updatedAt)) ||
       Date.now() - Date.parse(prepared.pending.updatedAt) > MKTG_RUN_STORAGE_TTL_MS
     ) {
@@ -103,10 +113,10 @@ export class MktgRunAttemptService {
     return prepared;
   }
 
-  /** Intake questions use the destination retained in the same opaque handoff, not another URL parameter. */
+  /** Questions OR failed-intake re-entry use this same destination-bound map; a failed public hint grants no Generate/poll capability. */
   public consumeQuestions(token: string, projectUid: string, agentId: string): MktgPreparedGeneration | null {
     const pending = this.prepared.get(token)?.pending;
-    if (pending?.state !== 'questions' || !pending.pendingQuestions) return null;
+    if (!pending || (pending.state !== 'failed' && (pending.state !== 'questions' || !pending.pendingQuestions))) return null;
     return this.consume(token, projectUid, agentId, pending.request.documentId);
   }
 
@@ -274,6 +284,37 @@ export class MktgRunAttemptService {
     return value.request;
   }
 
+  /** Advisory same-visit UI only: no storage scan, owner proof, or Generate provenance. */
+  public latestPending(
+    project: string,
+    agentId: string
+  ): (Pick<MktgDocumentRunProgress, 'documentId'> & Pick<MktgPendingGeneration, 'state'> & Partial<Pick<MktgRunQuestionsPending, 'questions'>>) | null {
+    if (!this.subject() || !isPlatformBrowser(this.platformId)) return null;
+    let latest: MktgPendingGeneration | null = null;
+    for (const [key, pending] of this.memory) {
+      const documentId = pending.request.documentId;
+      const age = Date.now() - Date.parse(pending.updatedAt);
+      if (
+        !documentId ||
+        documentId === MKTG_LIVING_DOCUMENT_ID ||
+        !MKTG_DOCUMENT_ID_REGEX.test(documentId) ||
+        key !== this.key(project, agentId, this.subject(), documentId) ||
+        (pending.state !== 'writing' && pending.state !== 'questions') ||
+        !Number.isFinite(age) ||
+        age < 0 ||
+        age > MKTG_RUN_STORAGE_TTL_MS
+      )
+        continue;
+      if (!latest || Date.parse(pending.updatedAt) >= Date.parse(latest.updatedAt)) latest = pending;
+    }
+    if (!latest?.request.documentId) return null;
+    return {
+      documentId: latest.request.documentId,
+      state: latest.state,
+      ...(latest.pendingQuestions && { questions: [...latest.pendingQuestions.questions] }),
+    };
+  }
+
   public load(project: string, agentId: string, documentId?: string): MktgPendingGeneration | null {
     if (!this.subject() || !isPlatformBrowser(this.platformId)) {
       return null;
@@ -294,7 +335,10 @@ export class MktgRunAttemptService {
         parsed.request.agentId !== agentId ||
         parsed.request.documentId !== documentId ||
         (MKTG_AGENT_INTAKES[agentId]?.oneOffDocument &&
-          (!documentId || !MKTG_DOCUMENT_ID_REGEX.test(documentId) || parsed.attempt?.documentId !== documentId)) ||
+          (!documentId ||
+            documentId === MKTG_LIVING_DOCUMENT_ID ||
+            !MKTG_DOCUMENT_ID_REGEX.test(documentId) ||
+            (parsed.attempt ? parsed.attempt.documentId !== documentId : parsed.state !== 'failed'))) ||
         !parsed.request.answers ||
         !MKTG_AGENT_INTAKES[agentId] ||
         !Number.isFinite(Date.parse(parsed.updatedAt)) ||
