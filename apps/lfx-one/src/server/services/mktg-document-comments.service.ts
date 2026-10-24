@@ -23,6 +23,7 @@ import type {
   MktgAddDocumentCommentRequest,
   MktgCommentAgentKey,
   MktgDocumentCommentAnchorKind,
+  MktgDocumentCommentAnchor,
   MktgDocumentCommentsRecord,
   MktgDocumentCommentsResponse,
   MktgDocumentCommentsSnapshot,
@@ -124,7 +125,7 @@ export class MktgDocumentCommentsService {
     const agentKey = this.commentAgent(type);
     const input = this.input(raw);
     const revision = await this.requireRevision(req, project, type, documentId, input.revisionId);
-    const anchor = { ...input.anchor };
+    const anchor: MktgDocumentCommentAnchor = { ...input.anchor };
     const source = this.source(revision, agentKey);
     if (!isMktgDocumentCommentAnchor(agentKey, source, anchor)) throw this.invalid('anchor', 'The field is not in this stored asset.');
     if (agentKey === 'brand-kit' && anchor.kind === 'document') Object.assign(anchor, { passage: MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL });

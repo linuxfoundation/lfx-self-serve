@@ -88,8 +88,9 @@ describe('private immutable redraft context', () => {
       };
       expect(readMktgRedraftContext(context)).toEqual(context);
       const envelope = result(agent);
-      if (agent === 'brand-kit') envelope.revision.comments[0].passage = MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL;
-      else envelope.revision.comments[0].field = MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent];
+      const echo = envelope.revision.comments[0];
+      if ('passage' in echo) echo.passage = MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL;
+      else echo.field = MKTG_DOCUMENT_COMMENT_DOCUMENT_ROOTS[agent];
       expect(validateMktgRedraftResult(context, envelope).valid).toBe(true);
       context.comments[0].anchor.key += '.not-a-root';
       expect(readMktgRedraftContext(context)).toBeNull();
