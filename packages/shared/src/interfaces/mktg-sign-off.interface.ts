@@ -18,7 +18,7 @@ export interface MktgSignOffRoleDecision extends MktgSignOffAttribution {
   decision: MktgSignOffDecision;
 }
 export interface MktgSignOffChangeRequest {
-  /** Prepared by comment-and-revise before recording the terminal decision. */
+  /** CR-prepared comment ID, or null only for note-only receipts on types without a CR comment root. */
   commentId: string | null;
   submissionId: string | null;
   /** Frozen input; a note-only receipt is allowed exclusively without CR roots. */
@@ -52,7 +52,7 @@ export type MktgSignOffChangeCommand = { role: MktgSignOffRole; nonce: string } 
   | { operation: 'reserve'; note: string }
   | { operation: 'start'; intentId: string }
   | { operation: 'finish'; intentId: string; receipt: MktgSignOffChangeRequest }
-  | { operation: 'release'; intentId: string; proof: 'absent' | 'failed' | 'released' }
+  | { operation: 'release'; intentId: string; proof: 'unstarted' | 'absent' | 'failed' | 'released' }
 );
 /** Internal receipt, never spread into an HTTP response. */
 export interface MktgSignOffChangeResult {

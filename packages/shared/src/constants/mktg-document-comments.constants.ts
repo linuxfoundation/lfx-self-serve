@@ -3,6 +3,9 @@
 
 import type { MktgCommentAgentKey, MktgDocumentCommentLabelGroup } from '../interfaces/mktg-document-comments.interface';
 
+/** Reserved for the internal sign-off orchestrator, never public comment/revise/release IDs. */
+export const MKTG_SIGN_OFF_REQUEST_PREFIX = 'so-';
+
 /** Labels are contract-specific, not a UI catalog; other agents extend their own entry. */
 export const MKTG_DOCUMENT_COMMENT_LABELS: Partial<Record<MktgCommentAgentKey, Record<string, string>>> = {
   'brand-kit': {

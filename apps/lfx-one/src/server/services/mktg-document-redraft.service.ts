@@ -35,7 +35,7 @@ export class MktgDocumentRedraftService {
     runs: MktgDocumentRunService,
     beforeStart?: () => void | Promise<void>
   ): Promise<MktgRedraftStartResponse> {
-    const input = readMktgRedraftRequest(raw);
+    const input = readMktgRedraftRequest(raw, typeof beforeStart === 'function');
     if (!input) throw ServiceValidationError.forField('redraft', 'Only a stored base, unique comment IDs and request ID are accepted.');
     const creator = this.authors.captureAuthorId(req);
     if (!creator) throw new AuthenticationError('A signed-in subject is required to own the redraft.');

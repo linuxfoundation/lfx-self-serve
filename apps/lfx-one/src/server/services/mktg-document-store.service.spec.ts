@@ -162,7 +162,7 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, BOILERPLATES_FINALIZE_TOOL } from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_DOCUMENT_WRITE_ATTEMPTS, BOILERPLATES_FINALIZE_TOOL } from '@lfx-one/shared/constants';
 import type {
   MktgArtifactEnvelope,
   MktgArtifactJsonEnvelope,
@@ -174,7 +174,9 @@ import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+// This main-owned spec mocks shared barrels with explicit leaf lists; read new feature exports directly.
 import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
+import { MKTG_SIGN_OFF_UUID_REGEX } from '@lfx-one/shared/constants/mktg-sign-off.constants';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
@@ -568,6 +570,18 @@ describe('MktgDocumentStoreService', () => {
       const sent = await service.transitionSignOff(req, PROJECT, BRAND_KIT, 'living', draft.id, { roles });
       return { first, draft, sent };
     }
+    async function changeIntent(nonce: string) {
+      const { draft } = await pending();
+      const actor = asRole(roles.ed);
+      const result = await service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, {
+        operation: 'reserve',
+        role: 'ed',
+        nonce,
+        note: 'Frozen note.',
+      });
+      if (!result?.intent) throw new Error('Missing synthetic intent');
+      return { draft, actor, intent: result.intent };
+    }
     const read = () => JSON.parse(storedObject(key).body);
     const decide = (id: string, role: 'ed' | 'tocChair', sub = roles[role]) =>
       service.transitionSignOff(asRole(sub), PROJECT, BRAND_KIT, 'living', id, { role, decision: 'approved' });
@@ -803,6 +817,101 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.approveRevision(req, PROJECT, BRAND_KIT, 'living', draft.id)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_CHANGE_BUSY' });
     });
 
+    it.each(['not-a-uuid', '11111111-1111-1111-8111-111111111111', '11111111-1111-4111-1111-111111111111'])(
+      'rejects a non-v4 private intent id without losing the document: %s',
+      async (id) => {
+        const { draft, intent } = await changeIntent('uuid-check');
+        expect(intent.id).toMatch(MKTG_SIGN_OFF_UUID_REGEX);
+        const pointer = read();
+        pointer.signOff[draft.id].changeRequestIntent.id = id;
+        store.objects.set(key, { ...storedObject(key), body: JSON.stringify(pointer) });
+        expect(await service.signOffAnnotation(req, PROJECT, BRAND_KIT, 'living', draft.id)).toBeNull();
+        expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', draft.id))?.markdown).toBe('# Draft');
+      }
+    );
+
+    it('keeps a malformed terminal UUID out of replay metadata and scopes terminal replay to its original role', async () => {
+      const nonce = 'terminal-id';
+      const { draft, actor, intent } = await changeIntent(nonce);
+      const ids = mktgSignOffRequestIds(draft.id, 'ed', nonce);
+      if (!ids) throw new Error('Missing synthetic correlation');
+      const command = { operation: 'finish', role: 'ed', nonce, intentId: intent.id, receipt: { commentId: 'accepted', submissionId: ids.requestId } } as const;
+      await service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, command);
+      expect((await service.signOffAnnotation(req, PROJECT, BRAND_KIT, 'living', draft.id))?.changeRequestId).toMatch(MKTG_SIGN_OFF_UUID_REGEX);
+      await expect(
+        service.changeRequestTransition(asRole(roles.tocChair), PROJECT, BRAND_KIT, 'living', draft.id, {
+          operation: 'reserve',
+          role: 'tocChair',
+          nonce,
+          note: 'Frozen note.',
+        })
+      ).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_TERMINAL' });
+      const pointer = read();
+      pointer.signOff[draft.id].changeRequestId = 'not-a-uuid';
+      store.objects.set(key, { ...storedObject(key), body: JSON.stringify(pointer) });
+      const annotation = await service.signOffAnnotation(req, PROJECT, BRAND_KIT, 'living', draft.id);
+      expect(annotation?.state).toBe('changes-requested');
+      expect(annotation?.changeRequestId).toBeUndefined();
+      await expect(service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, command)).rejects.toMatchObject({
+        code: 'MKTG_SIGN_OFF_TERMINAL',
+      });
+    });
+
+    it('re-reads the same prepared intent after an unrelated pointer CAS loss and preserves the concurrent write', async () => {
+      const nonce = 'pointer-race';
+      const { draft, actor, intent } = await changeIntent(nonce);
+      let concurrentId = '';
+      store.rejectComparisons = true;
+      store.onRejectedComparison = async () => {
+        store.rejectComparisons = false;
+        concurrentId = (await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Concurrent generation'), 'concurrent')).id;
+      };
+      store.conditionalWrites = [];
+      const started = await service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, {
+        operation: 'start',
+        role: 'ed',
+        nonce,
+        intentId: intent.id,
+      });
+      expect(started?.intent).toMatchObject({ id: intent.id, phase: 'starting', note: 'Frozen note.' });
+      expect(concurrentId).not.toBe('');
+      expect(read().revisionIds).toContain(concurrentId);
+      expect(store.conditionalWrites.filter((entry) => entry === key)).toHaveLength(3);
+    });
+
+    it('bounds start-CAS retries without changing the original prepared intent', async () => {
+      const nonce = 'bounded-start';
+      const { draft, actor, intent } = await changeIntent(nonce);
+      store.rejectComparisons = true;
+      store.conditionalWrites = [];
+      await expect(
+        service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, { operation: 'start', role: 'ed', nonce, intentId: intent.id })
+      ).rejects.toMatchObject({ statusCode: 412 });
+      expect(store.conditionalWrites).toHaveLength(MKTG_DOCUMENT_WRITE_ATTEMPTS);
+      expect(read().signOff[draft.id].changeRequestIntent).toMatchObject({ id: intent.id, phase: 'prepared' });
+    });
+
+    it('allows an authorized writer to fence a prepared worker without any CR proof, then refuses that stale start', async () => {
+      const nonce = 'unstarted-release';
+      const { draft, actor, intent } = await changeIntent(nonce);
+      const authorize = vi.fn(() => Promise.resolve());
+      const released = await service.changeRequestTransition(
+        asRole('auth0|project-writer'),
+        PROJECT,
+        BRAND_KIT,
+        'living',
+        draft.id,
+        { operation: 'release', role: 'ed', nonce, intentId: intent.id, proof: 'unstarted' },
+        authorize
+      );
+      expect(authorize).toHaveBeenCalledTimes(1);
+      expect(released?.intent).toBeNull();
+      expect(read().signOff[draft.id].releasedChangeRequests).toContainEqual({ role: 'ed', nonce });
+      await expect(
+        service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, { operation: 'start', role: 'ed', nonce, intentId: intent.id })
+      ).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_INTENT_CHANGED' });
+    });
+
     it('requires the same frozen input, refuses a second start, and fences absent-proof release after starting', async () => {
       const { draft } = await pending();
       const actor = asRole(roles.ed);
@@ -822,15 +931,17 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, start)).rejects.toMatchObject({
         code: 'MKTG_SIGN_OFF_START_CLAIMED',
       });
-      await expect(
-        service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, {
-          operation: 'release',
-          role: 'ed',
-          nonce,
-          intentId: prepared.intent.id,
-          proof: 'absent',
-        })
-      ).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
+      for (const proof of ['absent', 'unstarted'] as const) {
+        await expect(
+          service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, {
+            operation: 'release',
+            role: 'ed',
+            nonce,
+            intentId: prepared.intent.id,
+            proof,
+          })
+        ).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
+      }
       await service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, {
         operation: 'release',
         role: 'ed',
@@ -871,7 +982,7 @@ describe('MktgDocumentStoreService', () => {
       expect(read().signOff[draft.id].releasedChangeRequests).toHaveLength(32);
     });
 
-    it('serializes an absent-nonce release against the fresh start barrier, with exactly one CAS winner', async () => {
+    it.each(['absent', 'unstarted'] as const)('serializes %s release against the fresh start barrier, with exactly one CAS winner', async (proof) => {
       const { draft } = await pending();
       const actor = asRole(roles.ed);
       const nonce = 'race-one';
@@ -885,7 +996,7 @@ describe('MktgDocumentStoreService', () => {
       const base = { role: 'ed', nonce, intentId: prepared.intent.id } as const;
       const results = await Promise.allSettled([
         service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, { ...base, operation: 'start' }),
-        service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, { ...base, operation: 'release', proof: 'absent' }),
+        service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, { ...base, operation: 'release', proof }),
       ]);
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
       expect(read().signOff[draft.id].state).toBe('pending');
@@ -912,7 +1023,9 @@ describe('MktgDocumentStoreService', () => {
         receipt: { commentId: 'accepted-comment', submissionId: ids.requestId },
       } as const;
       store.rejectComparisons = true;
+      store.conditionalWrites = [];
       await expect(service.changeRequestTransition(actor, PROJECT, BRAND_KIT, 'living', draft.id, command)).rejects.toMatchObject({ statusCode: 412 });
+      expect(store.conditionalWrites).toEqual([key]); // Accepted finalization remains single-shot, never a start retry.
       expect(read().signOff[draft.id].changeRequestIntent.id).toBe(prepared.intent.id);
       store.rejectComparisons = false;
       mode('single-writer');

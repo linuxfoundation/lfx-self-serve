@@ -86,8 +86,14 @@ import {
 import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
+// Main-owned service: untouched specs mock shared barrels with explicit leaf lists.
 import { MKTG_DOCUMENT_COMMENT_ROOTS } from '@lfx-one/shared/constants/mktg-document-comments.constants';
-import { MKTG_SIGN_OFF_NOTE_MAX_CHARS, MKTG_SIGN_OFF_NONCE_REGEX, MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT } from '@lfx-one/shared/constants/mktg-sign-off.constants';
+import {
+  MKTG_SIGN_OFF_NOTE_MAX_CHARS,
+  MKTG_SIGN_OFF_NONCE_REGEX,
+  MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT,
+  MKTG_SIGN_OFF_UUID_REGEX,
+} from '@lfx-one/shared/constants/mktg-sign-off.constants';
 import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -688,100 +694,113 @@ export class MktgDocumentStoreService {
       !MKTG_ARTIFACT_PARTITION_REGEX.test(project)
     )
       throw ServiceValidationError.forField('changeRequest', 'A canonical stored revision, role and bounded nonce are required.');
-    const snapshot = await this.readCurrent(req, project, type, documentId);
-    const detail = await this.readDocument(req, project, type, documentId, snapshot);
-    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
-    if (!view) return null;
-    const signOff = this.signOffOf(snapshot.record?.signOff, type);
-    const annotation = signOff[revisionId];
-    if (!annotation) throw new ConflictError('No sign-off request exists.', 'MKTG_SIGN_OFF_NOT_PENDING');
-    if (!by || by !== annotation.roles[command.role]) {
-      if (!authorizeWriter || (command.operation !== 'finish' && command.operation !== 'release'))
-        throw new AuthorizationError('Only the frozen role actor may request changes.');
-      await authorizeWriter();
-    }
-    const intent = annotation.changeRequestIntent;
-    if (annotation.state === 'changes-requested' && annotation.changeRequestNonce === command.nonce) {
-      if (command.operation === 'reserve' && annotation.changeRequest?.note === command.note) return { view, intent: null };
+    for (let attempt = 0; ; attempt++) {
+      const snapshot = await this.readCurrent(req, project, type, documentId);
+      const detail = await this.readDocument(req, project, type, documentId, snapshot);
+      const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+      if (!view) return null;
+      const signOff = this.signOffOf(snapshot.record?.signOff, type);
+      const annotation = signOff[revisionId];
+      if (!annotation) throw new ConflictError('No sign-off request exists.', 'MKTG_SIGN_OFF_NOT_PENDING');
+      if (!by || by !== annotation.roles[command.role]) {
+        if (!authorizeWriter || (command.operation !== 'finish' && command.operation !== 'release'))
+          throw new AuthorizationError('Only the frozen role actor may request changes.');
+        await authorizeWriter();
+      }
+      const intent = annotation.changeRequestIntent;
       if (
-        command.operation === 'finish' &&
-        annotation.changeRequestId === command.intentId &&
-        annotation.changeRequest?.commentId === command.receipt.commentId &&
-        annotation.changeRequest?.submissionId === command.receipt.submissionId
-      )
-        return { view, intent: null };
-    }
-    if (annotation.state !== 'pending') throw new ConflictError('This sign-off request is terminal.', 'MKTG_SIGN_OFF_TERMINAL');
-    const commentCapable = Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey);
-    const at = new Date().toISOString();
-    if (command.operation === 'reserve') {
-      if (typeof command.note !== 'string' || !command.note.trim() || command.note.length > MKTG_SIGN_OFF_NOTE_MAX_CHARS)
-        throw ServiceValidationError.forField('note', 'A bounded nonblank note is required.');
-      if (intent) {
-        if (intent.role !== command.role || intent.nonce !== command.nonce || intent.note !== command.note)
-          throw new ConflictError('Another change request owns this intent.', 'MKTG_SIGN_OFF_CHANGE_BUSY');
-        return { view, intent: { ...intent } }; // Same actor/input recovery; mode may have changed since send.
+        annotation.state === 'changes-requested' &&
+        annotation.changeRequestNonce === command.nonce &&
+        annotation.decisions[command.role]?.decision === 'changes-requested'
+      ) {
+        if (command.operation === 'reserve' && annotation.changeRequest?.note === command.note) return { view, intent: null };
+        if (
+          command.operation === 'finish' &&
+          annotation.changeRequestId === command.intentId &&
+          annotation.changeRequest?.commentId === command.receipt.commentId &&
+          annotation.changeRequest?.submissionId === command.receipt.submissionId
+        )
+          return { view, intent: null };
       }
-      const released = annotation.releasedChangeRequests ?? [];
-      if (released.some((entry) => entry.role === command.role && entry.nonce === command.nonce))
-        throw new ConflictError('This nonce was released; use an explicit new request.', 'MKTG_SIGN_OFF_REQUEST_RELEASED');
-      if (released.length >= MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
-        throw new ConflictError('Change-request history is full; operator recovery is required.', 'MKTG_SIGN_OFF_RELEASE_HISTORY_FULL');
-      if (annotation.decisions[command.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
-      if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role')
-        throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
-      if (commentCapable)
-        annotation.changeRequestIntent = { id: randomUUID(), role: command.role, nonce: command.nonce, startedAt: at, phase: 'prepared', note: command.note };
-      else {
-        annotation.state = 'changes-requested';
-        annotation.changeRequestNonce = command.nonce;
-        annotation.changeRequestId = randomUUID();
-        annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
-        annotation.changeRequest = { commentId: null, submissionId: null, note: command.note };
-      }
-    } else {
-      if (!intent || intent.id !== command.intentId || intent.role !== command.role || intent.nonce !== command.nonce)
-        throw new ConflictError('The change-request intent changed.', 'MKTG_SIGN_OFF_INTENT_CHANGED');
-      if (command.operation === 'start') {
-        if (intent.phase !== 'prepared') throw new ConflictError('This intent already crossed the start barrier.', 'MKTG_SIGN_OFF_START_CLAIMED');
+      if (annotation.state !== 'pending') throw new ConflictError('This sign-off request is terminal.', 'MKTG_SIGN_OFF_TERMINAL');
+      const commentCapable = Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey);
+      const at = new Date().toISOString();
+      if (command.operation === 'reserve') {
+        if (typeof command.note !== 'string' || !command.note.trim() || command.note.length > MKTG_SIGN_OFF_NOTE_MAX_CHARS)
+          throw ServiceValidationError.forField('note', 'A bounded nonblank note is required.');
+        if (intent) {
+          if (intent.role !== command.role || intent.nonce !== command.nonce || intent.note !== command.note)
+            throw new ConflictError('Another change request owns this intent.', 'MKTG_SIGN_OFF_CHANGE_BUSY');
+          return { view, intent: { ...intent } }; // Same actor/input recovery; mode may have changed since send.
+        }
+        const released = annotation.releasedChangeRequests ?? [];
+        if (released.some((entry) => entry.role === command.role && entry.nonce === command.nonce))
+          throw new ConflictError('This nonce was released; use an explicit new request.', 'MKTG_SIGN_OFF_REQUEST_RELEASED');
+        if (released.length >= MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
+          throw new ConflictError('Change-request history is full; operator recovery is required.', 'MKTG_SIGN_OFF_RELEASE_HISTORY_FULL');
+        if (annotation.decisions[command.role]) throw new ConflictError('This role already decided.', 'MKTG_SIGN_OFF_ALREADY_DECIDED');
         if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role')
           throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
-        intent.phase = 'starting';
-      } else if (command.operation === 'finish') {
-        const receipt = command.receipt;
-        if (!commentCapable || !receipt || typeof receipt.commentId !== 'string' || !receipt.commentId.trim() || receipt.submissionId !== ids.requestId)
-          throw ServiceValidationError.forField('receipt', 'A correlated accepted comment redraft is required.');
-        annotation.state = 'changes-requested';
-        annotation.changeRequestNonce = command.nonce;
-        annotation.changeRequestId = intent.id;
-        annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
-        annotation.changeRequest = { commentId: receipt.commentId, submissionId: receipt.submissionId, note: intent.note };
-        delete annotation.changeRequestIntent;
+        if (commentCapable)
+          annotation.changeRequestIntent = { id: randomUUID(), role: command.role, nonce: command.nonce, startedAt: at, phase: 'prepared', note: command.note };
+        else {
+          annotation.state = 'changes-requested';
+          annotation.changeRequestNonce = command.nonce;
+          annotation.changeRequestId = randomUUID();
+          annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
+          annotation.changeRequest = { commentId: null, submissionId: null, note: command.note };
+        }
       } else {
-        if (!['absent', 'failed', 'released'].includes(command.proof) || (command.proof === 'absent' && intent.phase !== 'prepared'))
-          throw new ConflictError('No definitive release proof exists.', 'MKTG_SIGN_OFF_RELEASE_UNSAFE');
-        const released = annotation.releasedChangeRequests ?? [];
-        if (released.length < MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
-          annotation.releasedChangeRequests = [...released, { role: command.role, nonce: command.nonce }];
-        delete annotation.changeRequestIntent;
+        if (!intent || intent.id !== command.intentId || intent.role !== command.role || intent.nonce !== command.nonce)
+          throw new ConflictError('The change-request intent changed.', 'MKTG_SIGN_OFF_INTENT_CHANGED');
+        if (command.operation === 'start') {
+          if (intent.phase !== 'prepared') throw new ConflictError('This intent already crossed the start barrier.', 'MKTG_SIGN_OFF_START_CLAIMED');
+          if ((await this.signOffSettings.modeOf(req, project)) !== 'two-role')
+            throw new ConflictError('Two-role sign-off is switched off.', 'MKTG_SIGN_OFF_DISABLED');
+          intent.phase = 'starting';
+        } else if (command.operation === 'finish') {
+          const receipt = command.receipt;
+          if (!commentCapable || !receipt || typeof receipt.commentId !== 'string' || !receipt.commentId.trim() || receipt.submissionId !== ids.requestId)
+            throw ServiceValidationError.forField('receipt', 'A correlated accepted comment redraft is required.');
+          annotation.state = 'changes-requested';
+          annotation.changeRequestNonce = command.nonce;
+          annotation.changeRequestId = intent.id;
+          annotation.decisions[command.role] = { at, by: annotation.roles[command.role], decision: 'changes-requested' };
+          annotation.changeRequest = { commentId: receipt.commentId, submissionId: receipt.submissionId, note: intent.note };
+          delete annotation.changeRequestIntent;
+        } else {
+          if (
+            !['unstarted', 'absent', 'failed', 'released'].includes(command.proof) ||
+            ((command.proof === 'absent' || command.proof === 'unstarted') && intent.phase !== 'prepared')
+          )
+            throw new ConflictError('No definitive release proof exists.', 'MKTG_SIGN_OFF_RELEASE_UNSAFE');
+          const released = annotation.releasedChangeRequests ?? [];
+          if (released.length < MKTG_SIGN_OFF_RELEASED_NONCE_LIMIT)
+            annotation.releasedChangeRequests = [...released, { role: command.role, nonce: command.nonce }];
+          delete annotation.changeRequestIntent;
+        }
       }
+      const committed = await this.writeCurrent(
+        req,
+        project,
+        type,
+        documentId,
+        snapshot,
+        snapshot.record?.revisionId ?? revisionId,
+        view.revisions.map((row) => row.id),
+        false,
+        true,
+        { signOff }
+      );
+      if (!committed) {
+        // Only a definitive start comparison loss is retryable; each pass reloads and rechecks the frozen intent.
+        if (command.operation === 'start' && attempt + 1 < MKTG_DOCUMENT_WRITE_ATTEMPTS) continue;
+        throw new PreconditionFailedError('The change-request intent changed. Reload and recover the same request.');
+      }
+      logger.info(req, 'mktg_sign_off_change', 'Committed change-request transition', { operation: command.operation });
+      const updated = await this.signOffResult(req, view, committed);
+      return updated ? { view: updated, intent: annotation.changeRequestIntent ? { ...annotation.changeRequestIntent } : null } : null;
     }
-    const committed = await this.writeCurrent(
-      req,
-      project,
-      type,
-      documentId,
-      snapshot,
-      snapshot.record?.revisionId ?? revisionId,
-      view.revisions.map((row) => row.id),
-      false,
-      true,
-      { signOff }
-    );
-    if (!committed) throw new PreconditionFailedError('The change-request intent changed. Reload and recover the same request.');
-    logger.info(req, 'mktg_sign_off_change', 'Committed change-request transition', { operation: command.operation });
-    const updated = await this.signOffResult(req, view, committed);
-    return updated ? { view: updated, intent: annotation.changeRequestIntent ? { ...annotation.changeRequestIntent } : null } : null;
   }
 
   /** Result endpoints call before fetching/persisting any output. Absence only permits ordinary generations. */
@@ -1166,7 +1185,7 @@ export class MktgDocumentStoreService {
           !Object.hasOwn(MKTG_DOCUMENT_COMMENT_ROOTS, type.agentKey) ||
           !mktgSignOffRequestIds(id, intent.role, intent.nonce) ||
           typeof intent.id !== 'string' ||
-          !MKTG_SIGN_OFF_NONCE_REGEX.test(intent.id) ||
+          !MKTG_SIGN_OFF_UUID_REGEX.test(intent.id) ||
           typeof intent.startedAt !== 'string' ||
           !Number.isFinite(Date.parse(intent.startedAt)) ||
           !entry.roles[intent.role] ||
@@ -1190,7 +1209,7 @@ export class MktgDocumentStoreService {
         ...(typeof entry.changeRequestNonce === 'string' && MKTG_SIGN_OFF_NONCE_REGEX.test(entry.changeRequestNonce)
           ? { changeRequestNonce: entry.changeRequestNonce }
           : {}),
-        ...(typeof entry.changeRequestId === 'string' && MKTG_SIGN_OFF_NONCE_REGEX.test(entry.changeRequestId)
+        ...(typeof entry.changeRequestId === 'string' && MKTG_SIGN_OFF_UUID_REGEX.test(entry.changeRequestId)
           ? { changeRequestId: entry.changeRequestId }
           : {}),
         ...(intent

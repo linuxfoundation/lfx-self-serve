@@ -187,11 +187,14 @@ HTTP activation.
 
 `changeRequestTransition` owns `prepared` → `starting` intent mutations through
 `writeCurrent` only, never a second approval object. The intent freezes role,
-nonce, bounded verbatim note, startedAt and a server UUID for stale-worker/ABA
+nonce, bounded verbatim note, startedAt and a validated v4 server UUID for stale-worker/ABA
 fencing. Public metadata exposes only role/time, not nonce/UUID/pending note.
 All competing decisions (including single-writer approval after switching off)
 refuse an active intent. A fresh start claims it once; absence release and start
-race on the same pointer ETag, and only one can win. There is no timed theft.
+race on the same pointer ETag, and only one can win. A definitive start-CAS
+comparison loss retries up to the shared document-write bound, re-reading and
+rechecking the same UUID/role/nonce, prepared phase and mode each time. Unrelated
+pointer writes are preserved; accepted finalization remains single-shot. There is no timed theft.
 
 Accepted receipt finalization is replayable, even after mode switches off; it
 retains the original role actor and the selected/approved current, and removes
@@ -199,8 +202,10 @@ the intent in one CAS. Only document types without a CR root may use a nullable
 receipt and bounded public note (today FAQ); comment-capable types require a real
 comment and correlated CR submission ID. Legacy annotation shapes remain readable.
 
-Explicit release requires server-verified absent/failed/released CR proof; absence
-can clear only prepared, never starting. Released role/nonces are retained in a
+Server-only `unstarted` proof can clear only a still-prepared intent through the
+pointer CAS, even if a CR row was reserved before a worker crash. This cannot race
+a successful start. Absence likewise clears only prepared, never starting; after
+the start barrier, release needs failed/released CR proof or accepted settlement. Released role/nonces are retained in a
 bounded 32-entry same-pointer ledger, never evicted to make a retry appear fresh.
 Exhaustion fails typed and requires operator follow-up: **Operator recovery for
 exhausted sign-off nonce histories**. Request IDs include the full revision, role
@@ -539,6 +544,12 @@ and attribution are not logged. Direct asset editing and revision overwrite are
 never allowed; redrafts append ordinary Drafts through the existing writer.
 
 ### Internal sign-off hand-off seams
+
+The `so-` request-ID namespace is reserved for the internal sign-off orchestrator.
+Public comment adds, revise requests and explicit redraft releases reject that
+prefix with typed validation errors. Only server-prepared exact-receipt adds and
+sends carrying the internal start barrier may create these correlated rows; a
+body property cannot opt into the namespace. Ordinary request IDs are unchanged.
 
 `MktgDocumentRedraftService.send` optionally takes a server-only `beforeStart`
 callback, invoked after a fresh reservation/preflight and before any Guild POST.

@@ -149,6 +149,18 @@ describe('private field comment store', () => {
     expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(request().text);
   });
 
+  it('rejects public sign-off namespace comment and release IDs before any ledger access', async () => {
+    const store = service();
+    await expect(store.add(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }))).rejects.toMatchObject({ statusCode: 400 });
+    await expect(store.release(req, project, type, 'living', 'so-internal-r')).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.revision).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
+    expect(flows.put).not.toHaveBeenCalled();
+    const receipt = await store.addWithReceipt(req, project, type, 'living', request({ clientRequestId: 'so-internal-c' }));
+    expect(receipt.commentId).toBe(record().threads[0].id);
+    expect(record().threads[0].clientRequestId).toBe('so-internal-c');
+  });
+
   it('returns the exact created/replayed comment ID without changing the public add response', async () => {
     const store = service();
     const a = await store.addWithReceipt(req, project, type, 'living', request());

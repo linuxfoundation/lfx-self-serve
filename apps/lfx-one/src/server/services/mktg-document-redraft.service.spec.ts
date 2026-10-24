@@ -127,6 +127,22 @@ describe('reserved redraft delivery', () => {
       return { fresh, comments: context.comments, submission: { runId: f.hash, state: f.state, createdAt: new Date().toISOString() } };
     });
   });
+  it('rejects a public reserved-namespace send before any reservation or Guild call', async () => {
+    await expect(
+      new MktgDocumentRedraftService().send(req, context.project, type, 'living', { ...body, clientRequestId: 'so-internal-r' }, runs)
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.guild).not.toHaveBeenCalled();
+  });
+
+  it('permits the reserved namespace only with the server-prepared start barrier', async () => {
+    const barrier = vi.fn();
+    f.prepare.mockResolvedValue({ context: { ...context, requestId: 'so-internal-r' }, message: 'synthetic canonical form', framework: null });
+    await new MktgDocumentRedraftService().send(req, context.project, type, 'living', { ...body, clientRequestId: 'so-internal-r' }, runs, barrier);
+    expect(barrier).toHaveBeenCalledTimes(1);
+    expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+
   it('without a hook preserves reservation/start ordering, sidecar version and creator-only replay', async () => {
     f.view.mockResolvedValue({ revision: { id: context.basedOnId, draftVersion: 1 } });
     const first = await send();

@@ -36,6 +36,10 @@ import type {
   MktgDocumentRedraftContext,
   MktgRunResultResponse,
   MktgReleaseRedraftResponse,
+  MktgDocumentCommentReceipt,
+  MktgStoredDocumentCommentReceipt,
+  MktgSignOffCommentScope,
+  MktgSignOffSubmissionProof,
 } from '@lfx-one/shared/interfaces';
 import {
   readMktgRedraftRequest,
@@ -47,14 +51,9 @@ import {
   readMktgDocumentCommentField,
   validateMktgDocumentCommentBatch,
 } from '@lfx-one/shared/utils';
-import { MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL } from '@lfx-one/shared/constants/mktg-document-comments.constants';
+// Main-owned service: untouched specs mock shared barrels with explicit leaf lists.
+import { MKTG_DOCUMENT_COMMENT_DOCUMENT_LABEL, MKTG_SIGN_OFF_REQUEST_PREFIX } from '@lfx-one/shared/constants/mktg-document-comments.constants';
 import { MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants/mktg-artifact.constants';
-import type {
-  MktgDocumentCommentReceipt,
-  MktgStoredDocumentCommentReceipt,
-  MktgSignOffCommentScope,
-  MktgSignOffSubmissionProof,
-} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -117,13 +116,14 @@ export class MktgDocumentCommentsService {
   }
 
   public async add(req: Request, project: string, type: MktgDocumentType, documentId: string, raw: unknown): Promise<MktgDocumentCommentsResponse> {
+    this.input(raw); // Public callers cannot pre-create the orchestrator's correlated comment IDs.
     return (await this.addWithReceipt(req, project, type, documentId, raw)).response;
   }
 
   /** Internal exact ID receipt over the SAME add/dedupe CAS, never a second comment write path. */
   public async addWithReceipt(req: Request, project: string, type: MktgDocumentType, documentId: string, raw: unknown): Promise<MktgDocumentCommentReceipt> {
     const agentKey = this.commentAgent(type);
-    const input = this.input(raw);
+    const input = this.input(raw, true);
     const revision = await this.requireRevision(req, project, type, documentId, input.revisionId);
     const anchor: MktgDocumentCommentAnchor = { ...input.anchor };
     const source = this.source(revision, agentKey);
@@ -183,7 +183,7 @@ export class MktgDocumentCommentsService {
   ): Promise<MktgRedraftReservation> {
     const agent = this.commentAgent(type);
     const actor = this.creator(req);
-    const input = readMktgRedraftRequest(raw);
+    const input = readMktgRedraftRequest(raw, true); // Internal ledger reservation; the public send reader denies the reserved namespace.
     if (!input) throw this.invalid('redraft', 'A revision, unique comment IDs and opaque request ID are required.');
     const view = await this.requireRevision(req, project, type, documentId, input.revisionId);
     const source = this.source(view, agent);
@@ -337,6 +337,7 @@ export class MktgDocumentCommentsService {
     });
   }
   public async release(req: Request, project: string, type: MktgDocumentType, documentId: string, requestId: string): Promise<MktgReleaseRedraftResponse> {
+    if (requestId.startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX)) throw this.invalid('requestId', 'This request namespace is reserved for sign-off.');
     const submission = await this.endStart(req, project, type, documentId, requestId, false, true);
     return submission ? { success: true } : { state: 'unknown' };
   }
@@ -520,7 +521,7 @@ export class MktgDocumentCommentsService {
     return type.agentKey as MktgCommentAgentKey;
   }
 
-  private input(raw: unknown): MktgAddDocumentCommentRequest {
+  private input(raw: unknown, allowSignOffNamespace = false): MktgAddDocumentCommentRequest {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw this.invalid('body', 'A comment request is required.');
     const body = raw as Record<string, unknown>;
     if (Object.keys(body).some((key) => !['project', 'revisionId', 'anchor', 'text', 'clientRequestId'].includes(key))) {
@@ -539,6 +540,8 @@ export class MktgDocumentCommentsService {
     if (typeof body['clientRequestId'] !== 'string' || !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(body['clientRequestId'])) {
       throw this.invalid('clientRequestId', 'A bounded opaque request id is required.');
     }
+    if (!allowSignOffNamespace && body['clientRequestId'].startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
+      throw this.invalid('clientRequestId', 'This request namespace is reserved for sign-off.');
     // The controller validates revision/project shape before authorization; preserve text verbatim.
     return {
       project: String(body['project']),
