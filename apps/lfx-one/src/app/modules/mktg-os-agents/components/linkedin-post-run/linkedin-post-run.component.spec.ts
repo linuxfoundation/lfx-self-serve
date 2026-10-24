@@ -208,6 +208,11 @@ describe('LinkedIn profile and post surface', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]').textContent).toContain(
         'Your draft was started — open it to follow progress.'
       );
+      const accepted = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]') as HTMLElement;
+      for (const token of ['rounded-lg', 'border', 'p-4']) expect(accepted.classList.contains(token)).toBe(true);
+      expect(accepted.getAttribute('role')).toBeNull();
+      expect(accepted.querySelector('p')?.getAttribute('role')).toBe('status');
+      expect(accepted.querySelector('[role="status"] button')).toBeNull();
       expect(fixture.componentInstance['error']()).toBe('');
       await fixture.componentInstance['onDraft']();
       navigate.mockReturnValueOnce(firstValueFrom(opening));

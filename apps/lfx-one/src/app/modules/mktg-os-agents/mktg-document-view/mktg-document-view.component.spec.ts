@@ -764,6 +764,27 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
   });
 
+  it.each(
+    MKTG_DOCUMENT_TYPES.filter((type) => type.kind === 'run' && MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active'))
+  )('uses one-off writing and saving wording for $itemLabel', async (type) => {
+    const documentId = 'run-' + 'a'.repeat(24);
+    const progress = { ...started('writing'), agentKey: type.agentKey, documentId };
+    const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [progress] };
+    store.getDocument.mockReturnValue(of(response));
+    await render(`/documents/${type.agentKey}/${documentId}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing…');
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('It will appear here when it is ready.');
+    store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...progress, state: 'storing' }] }));
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['onRefreshProgress']();
+    await settle();
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Written');
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving…');
+    expect(query('mktg-document-view-run-steps')?.textContent).not.toContain('revision');
+  });
+
   it('keeps a Started run with no stored revision in the generating state', async () => {
     const runId = 'b'.repeat(64);
     store.getDocument.mockReturnValue(
@@ -778,7 +799,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getRevision).not.toHaveBeenCalled();
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-run')).not.toBeNull();
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing the asset');
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing the asset…');
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('The revision will appear here when it is ready.');
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Generating the asset.');
     store.getDocument.mockReturnValue(of(detail));
     await harness.navigateByUrl(`/documents/${BRAND_KIT.agentKey}/living?run=${runId}&revision=${LATEST.id}`, MktgDocumentViewComponent);
     await settle();
@@ -917,6 +940,7 @@ describe('MktgDocumentViewComponent', () => {
       of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [{ ...started(state), agentKey: type.agentKey, documentId }] })
     );
     await render(`/documents/linkedin-post/${documentId}?run=${'b'.repeat(64)}`);
+    if (state === 'questions') expect(query('mktg-document-view-live-state')?.textContent).toBe('Waiting for your answers.');
     if (state === 'failed') {
       expect(query('mktg-document-view-failure-reply')?.getAttribute('role')).toBe('alert');
       expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.textContent?.trim()).toBe('Retry');
