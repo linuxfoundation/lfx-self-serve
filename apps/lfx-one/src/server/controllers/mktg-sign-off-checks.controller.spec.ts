@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
 const mocks = vi.hoisted(() => ({ project: vi.fn(), checks: vi.fn(), start: vi.fn(() => 0), success: vi.fn() }));
