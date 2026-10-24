@@ -88,6 +88,7 @@ import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { MktgSourceTextService } from '../services/mktg-source-text.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgDocumentRedraftContextService } from '../services/mktg-document-redraft-context.service';
 import { MktgLastIntakeService } from '../services/mktg-last-intake.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
@@ -103,6 +104,7 @@ export class MktgAgentsController {
   private readonly mktgSourceTextService = new MktgSourceTextService();
   private readonly projectService = new ProjectService();
   private readonly documentRuns = new MktgDocumentRunService();
+  private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly lastIntake = new MktgLastIntakeService();
 
   /** GET /api/mktg-agents/intakes/:agentKey/last?project=<uid> — writer-only scalar prefill. */
@@ -228,6 +230,9 @@ export class MktgAgentsController {
         return;
       }
 
+      if (await this.redrafts.forSession(req, validSessionId)) {
+        throw new AuthorizationError('Generic chat follow-ups are refused on comments-only redraft sessions.');
+      }
       const turnId = randomUUID();
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       if (project) {
@@ -455,6 +460,7 @@ export class MktgAgentsController {
 
     try {
       const project = await this.answersProject(req);
+      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
         await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
@@ -770,6 +776,7 @@ export class MktgAgentsController {
 
     try {
       const project = await this.answersProject(req);
+      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
         await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
@@ -1053,6 +1060,7 @@ export class MktgAgentsController {
 
     try {
       const project = await this.answersProject(req);
+      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
         await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
@@ -1567,6 +1575,7 @@ export class MktgAgentsController {
 
     try {
       const project = await this.answersProject(req);
+      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
         await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);

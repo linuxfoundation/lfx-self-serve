@@ -465,7 +465,7 @@ export class PendingActionsComponent {
             key: 'pending-actions-toast',
             severity: 'error',
             summary: 'Could not load vote',
-            detail: 'Please try again or open it from the My Votes page.',
+            detail: 'Please try again or open it from the Votes page.',
             life: 4000,
           });
         },

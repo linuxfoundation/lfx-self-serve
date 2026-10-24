@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  model,
+  output,
+  PLATFORM_ID,
+  Signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
@@ -19,6 +33,7 @@ import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRo
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
+import { LensService } from '@services/lens.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -41,6 +56,7 @@ export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -75,6 +91,8 @@ export class OrgSelectorComponent {
   public readonly enabled = input<boolean>(true);
   /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
   public readonly variant = input<ContextSelectorVariant>('default');
+  /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
+  public readonly itemSelected = output<OrgItem>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
@@ -317,6 +335,7 @@ export class OrgSelectorComponent {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
+      this.itemSelected.emit(item);
       this.popoverRef()?.hide();
       return;
     }
@@ -344,6 +363,7 @@ export class OrgSelectorComponent {
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
     // re-addressed to the new selection (no-op outside Org Lens).
     this.orgLensNavigation.navigateToSelectedOrg('switch');
+    this.itemSelected.emit(item);
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();
@@ -581,6 +601,12 @@ export class OrgSelectorComponent {
 
   private bootstrapOrgList(): void {
     const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    // Shown only because the mobile drawer previews Org Lens (#4208): load the list without bootstrap semantics, so it
+    // can't default-select an organization, clear one or navigate away — the page underneath is another lens's.
+    if (this.lensService.previewingMenuLens()) {
+      this.orgNavigationService.refreshList(restoredUid);
+      return;
+    }
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 

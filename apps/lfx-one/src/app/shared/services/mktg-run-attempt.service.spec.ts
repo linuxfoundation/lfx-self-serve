@@ -25,6 +25,49 @@ describe('MktgRunAttemptService', () => {
     service = TestBed.inject(MktgRunAttemptService);
   });
 
+  it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    service.saveRedraft(intent);
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+    expect(restored.loadRedraft({ ...scope, revisionId: `000002-${'b'.repeat(64)}` })).toBeNull();
+    user.set({ sub: 'other-synthetic' } as User);
+    expect(restored.loadRedraft(scope)).toBeNull();
+    user.set({ sub: 'synthetic-subject' } as User);
+    service.saveRedraft({
+      ...intent,
+      updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString(),
+      attempt: {
+        runId: 'c'.repeat(64),
+        priorVersion: 1,
+        session: { agentId: request.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-expired-capability' },
+      },
+    });
+    expect(service.loadRedraft(scope)).toMatchObject({ clientRequestId: intent.clientRequestId, commentIds: intent.commentIds });
+    expect(service.loadRedraft(scope)?.attempt).toBeUndefined();
+    expect(Object.values(window.localStorage).join('')).not.toContain('synthetic-expired-capability');
+  });
+
+  it('keeps redraft intents and document-scoped one-off proofs in disjoint namespaces through reload and cleanup', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    service.saveRedraft(intent);
+    const oneOff = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'b'.repeat(24), answers: {} };
+    service.prepareAccepted(oneOff, { documentId: oneOff.documentId, runId: 'c'.repeat(64), sessionId: 'synthetic-oneoff', ownerToken: 'synthetic-proof' });
+    expect(localStorage.length).toBe(2);
+    expect(service['redraftKey'](scope, service.subject())).toContain(':redraft:');
+    expect(service['redraftKey'](scope, service.subject())).not.toBe(service['key'](scope.projectUid, scope.agentKey, service.subject(), scope.documentId));
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+    expect(restored.load(oneOff.projectUid, oneOff.agentId, oneOff.documentId)?.attempt?.session.sessionId).toBe('synthetic-oneoff');
+    restored.clearRedraft(scope);
+    expect(restored.load(oneOff.projectUid, oneOff.agentId, oneOff.documentId)).not.toBeNull();
+    restored.saveRedraft(intent);
+    restored.clear(oneOff.projectUid, oneOff.agentId, restored.subject(), oneOff.documentId);
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+  });
+
   it.each(['a'.repeat(64), 'b'.repeat(8), 'invalid-digest'])('validates a one-off answered digest at save and reload: %s', (digest) => {
     const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
     service.save({
