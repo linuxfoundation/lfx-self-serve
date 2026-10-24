@@ -45,8 +45,8 @@ vi.mock('./project.service', () => ({
     public getProjectById = f.project;
   },
 }));
-import { mktgSignOffRequestIds } from '@lfx-one/shared/utils/mktg-sign-off.utils';
-import { AuthorizationError, MicroserviceError, PreconditionFailedError } from '../errors';
+import { mktgSignOffRequestIds } from '@lfx-one/shared/utils';
+import { AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError } from '../errors';
 import { MktgSignOffChangesService } from './mktg-sign-off-changes.service';
 
 const req = {} as Request;
@@ -60,7 +60,7 @@ const scope: MktgSignOffChangeScope = {
   nonce: 'nonce-one',
 };
 const intent = {
-  id: 'synthetic-intent',
+  id: '11111111-1111-4111-8111-111111111111',
   role: 'ed',
   nonce: scope.nonce,
   startedAt: '2026-10-24T00:00:00Z',
@@ -171,31 +171,47 @@ describe('internal sign-off request changes', () => {
     expect(f.send).not.toHaveBeenCalled();
   });
 
-  it.each(['absent', 'failed', 'released'] as const)(
-    'uses only explicit %s proof to release, preserving the original actor and current Request',
-    async (state) => {
-      f.actor.mockReturnValue('auth0|project-writer');
-      f.proof.mockImplementation(async (...args: unknown[]) => {
-        if (typeof args[5] === 'function') await args[5]();
-        return { state, commentId: state === 'absent' ? null : 'exact-comment' };
-      });
-      await service.release(req, scope);
-      expect(f.proof).toHaveBeenCalledWith(
-        req,
-        scope.project,
-        scope.type,
-        'living',
-        expect.objectContaining({ requestedBy: 'auth0|ed' }),
-        expect.any(Function)
-      );
-      expect(f.transition.mock.calls[0][5]).toMatchObject({ operation: 'release', proof: state, intentId: intent.id });
-      expect(f.actor()).toBe('auth0|project-writer');
-      expect(f.send).not.toHaveBeenCalled();
-      expect(f.add).not.toHaveBeenCalled();
-    }
-  );
+  it('lets a writer release a prepared worker even if its CR reservation would report BUSY', async () => {
+    f.actor.mockReturnValue('auth0|project-writer');
+    f.proof.mockRejectedValue(new ConflictError('Reserved CR', 'MKTG_REDRAFT_COMMENTS_BUSY'));
+    expect(await service.release(req, scope)).toBe(view);
+    expect(f.transition.mock.calls[0][5]).toEqual({
+      operation: 'release',
+      role: scope.role,
+      nonce: scope.nonce,
+      intentId: intent.id,
+      proof: 'unstarted',
+    });
+    expect(f.project).toHaveBeenCalledWith(req, scope.project, true);
+    expect(f.proof).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.actor()).toBe('auth0|project-writer');
+  });
+
+  it('does not turn a lost prepared-release fence into a CR or provider retry', async () => {
+    f.transition.mockRejectedValue(new PreconditionFailedError());
+    await expect(service.release(req, scope)).rejects.toMatchObject({ statusCode: 412 });
+    expect(f.proof).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+  });
+
+  it.each(['failed', 'released'] as const)('uses only explicit %s proof to release, preserving the original actor and current Request', async (state) => {
+    f.annotation.mockResolvedValue({ ...annotation, changeRequestIntent: { ...intent, phase: 'starting' } });
+    f.actor.mockReturnValue('auth0|project-writer');
+    f.proof.mockImplementation(async (...args: unknown[]) => {
+      if (typeof args[5] === 'function') await args[5]();
+      return { state, commentId: state === 'absent' ? null : 'exact-comment' };
+    });
+    await service.release(req, scope);
+    expect(f.proof).toHaveBeenCalledWith(req, scope.project, scope.type, 'living', expect.objectContaining({ requestedBy: 'auth0|ed' }), expect.any(Function));
+    expect(f.transition.mock.calls[0][5]).toMatchObject({ operation: 'release', proof: state, intentId: intent.id });
+    expect(f.actor()).toBe('auth0|project-writer');
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.add).not.toHaveBeenCalled();
+  });
 
   it('settles accepted/descriptor-confirmed work instead of releasing it, without another Guild send', async () => {
+    f.annotation.mockResolvedValue({ ...annotation, changeRequestIntent: { ...intent, phase: 'starting' } });
     f.actor.mockReturnValue('auth0|project-writer');
     f.proof.mockResolvedValue({ state: 'accepted', commentId: 'accepted-comment' });
     await service.release(req, scope);
@@ -204,6 +220,7 @@ describe('internal sign-off request changes', () => {
   });
 
   it('refuses in-flight evidence and a foreign non-writer without changing pointer/ledger state', async () => {
+    f.annotation.mockResolvedValue({ ...annotation, changeRequestIntent: { ...intent, phase: 'starting' } });
     f.proof.mockResolvedValue({ state: 'in-flight', commentId: 'exact-comment' });
     await expect(service.release(req, scope)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
     expect(f.transition).not.toHaveBeenCalled();
@@ -213,6 +230,14 @@ describe('internal sign-off request changes', () => {
     await expect(service.release(req, scope)).rejects.toBeInstanceOf(AuthorizationError);
     expect(f.proof).not.toHaveBeenCalled();
     expect(f.transition).not.toHaveBeenCalled();
+  });
+
+  it('does not treat an absent CR row as no-start proof after the intent has started', async () => {
+    f.annotation.mockResolvedValue({ ...annotation, changeRequestIntent: { ...intent, phase: 'starting' } });
+    f.proof.mockResolvedValue({ state: 'absent', commentId: null });
+    await expect(service.release(req, scope)).rejects.toMatchObject({ code: 'MKTG_SIGN_OFF_RELEASE_UNSAFE' });
+    expect(f.transition).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
   });
 
   it('does not let a writer impersonate the role actor for recovery, or allow impersonation/missing identity', async () => {

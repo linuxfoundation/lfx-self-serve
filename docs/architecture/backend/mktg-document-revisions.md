@@ -208,9 +208,15 @@ a successful start. Absence likewise clears only prepared, never starting; after
 the start barrier, release needs failed/released CR proof or accepted settlement. Released role/nonces are retained in a
 bounded 32-entry same-pointer ledger, never evicted to make a retry appear fresh.
 Exhaustion fails typed and requires operator follow-up: **Operator recovery for
-exhausted sign-off nonce histories**. Request IDs include the full revision, role
+exhausted sign-off nonce histories**. Once starting, an in-flight CR without a
+settle/release proof remains unreleasable; age is not evidence of no session.
+A released request may leave its note comment open: **Close or resolve the note
+comment of a released sign-off request** is a separate follow-up, not silent
+comment deletion. Request IDs include the full revision, role
 and a bounded nonce, not an identity hash. This storage layer calls no agent and
-mounts no decide endpoint; CR orchestration is the next additive child.
+mounts no decide endpoint. `MktgSignOffChangesService` now orchestrates that
+protocol internally through the existing CR sender; HTTP activation still waits
+for the open policy rulings.
 
 ### Request-change orchestration (internal)
 
@@ -517,7 +523,10 @@ server-generated passage marker is `Whole asset`, not a fabricated quote from a
 leaf; other agents retain their existing root field adapter. The private descriptor
 and result echo use the unchanged upstream field/passage contract. Caption helpers
 accept document scope explicitly; existing field/passage controls and captions are
-unchanged. This adds no switch, sign-off button or decide endpoint.
+unchanged. Whole-document creation remains an internal caller until the UI child
+passes `anchor.kind` to `describeMktgDocumentCommentField`; enabling that UI without
+the kind-aware caption is a follow-up, not part of these server seams. This adds
+no switch, sign-off button or decide endpoint.
 
 `addWithReceipt` is a server-only exact-ID receipt over the same add/dedupe CAS;
 ordinary POST add responses remain unchanged. Correlation includes author, revision,
@@ -555,8 +564,9 @@ body property cannot opt into the namespace. Ordinary request IDs are unchanged.
 callback, invoked after a fresh reservation/preflight and before any Guild POST.
 It is absent by default and never runs on replay. Rejection retires the existing
 reservation as definitive non-acceptance; no second send path or automatic POST
-retry is introduced. The caller's pointer CAS is the planned start barrier, not
-an inference from a missing comment ledger row.
+retry is introduced. The internal orchestration uses its pointer CAS as the
+start barrier, with bounded rechecks on an unrelated comparison loss; it never
+infers no-start safety from a missing comment ledger row.
 
 `signOffSubmissionProof` is internal, not an HTTP endpoint. It binds canonical
 project/document/base, original actor, request nonce and the exact comment nonce/ID.
@@ -565,9 +575,11 @@ Accepted state or a matching descriptor must settle sign-off rather than release
 Uncertainty is read-only unless a server-supplied release-authorization callback
 succeeds; explicit closure uses the existing comments CAS helper and retains the
 original creator without changing Request identity. A reserved/in-flight row cannot
-be released here at any age. An absent result writes nothing and is NOT proof that
-a start cannot race: sign-off must serialize release against its same-pointer
-prepared/starting barrier. These seams alone do not activate that orchestration.
+be released by this CR proof seam at any age. An absent result writes nothing and
+is NOT a no-start guarantee. The sign-off orchestration serializes start against
+release through its same-pointer prepared/starting CAS. While still prepared it
+uses the store's `unstarted` fence without consulting a possibly reserved CR row;
+once starting it requires accepted settlement or definitive failed/released proof.
 
 ## Reserved comment sends and release
 
@@ -604,7 +616,8 @@ failures to `503 MKTG_REDRAFT_START_UNCERTAIN`, never a definitive primary 4xx.
 A failed uncertainty write is logged and still returns 503 to preserve recovery.
 The creator can explicitly release
 uncertainty to failed/open, retaining the old hash without rebinding it. Any expired
-reserved send can also be released by its creator.
+ordinary reserved send can also be released by its creator. This age-based
+public release never accepts the reserved `so-` sign-off namespace.
 Uncertain/failed and unbound reserved sends older than the existing Run timeout
 are not busy. Late bind/release/result work cannot touch a newer reservation.
 No recovery path automatically resubmits to Guild.

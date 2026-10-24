@@ -90,7 +90,7 @@ export class MktgSignOffChangesService {
     throw new ConflictError('No matching recoverable intent exists.', 'MKTG_SIGN_OFF_INTENT_CHANGED');
   }
 
-  /** Explicit closure only: accepted proof settles; reserved/unknown-start evidence never permits timed theft. */
+  /** Prepared closure uses the start fence; after starting, require CR proof and never timed theft. */
   public async release(req: Request, scope: MktgSignOffChangeScope): Promise<MktgRevisionResponse> {
     this.actor(req);
     const annotation = await this.annotation(req, scope);
@@ -100,6 +100,23 @@ export class MktgSignOffChangesService {
     if (!intent) return this.view(req, scope); // Already closed; no write and no claim about an unknown CR nonce.
     if (intent.role !== scope.role || intent.nonce !== scope.nonce)
       throw new ConflictError('Another request owns this intent.', 'MKTG_SIGN_OFF_INTENT_CHANGED');
+    if (intent.phase === 'prepared') {
+      // No session can precede a successful start CAS. The store rechecks phase/UUID before fencing this worker.
+      return (
+        await this.transition(
+          req,
+          scope,
+          {
+            operation: 'release',
+            role: scope.role,
+            nonce: scope.nonce,
+            intentId: intent.id,
+            proof: 'unstarted',
+          },
+          authorize
+        )
+      ).view;
+    }
     const ids = mktgSignOffRequestIds(scope.revisionId, scope.role, scope.nonce);
     const originalActor = annotation.roles[scope.role];
     if (!ids || !originalActor) throw ServiceValidationError.forField('intent', 'A correlated original role actor is required.');
@@ -131,7 +148,7 @@ export class MktgSignOffChangesService {
           authorize
         )
       ).view;
-    if (proof.state !== 'absent' && proof.state !== 'failed' && proof.state !== 'released')
+    if (proof.state !== 'failed' && proof.state !== 'released')
       throw new ConflictError('Recover the in-flight redraft before releasing.', 'MKTG_SIGN_OFF_RELEASE_UNSAFE');
     return (
       await this.transition(
