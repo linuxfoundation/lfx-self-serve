@@ -521,7 +521,7 @@ export class MktgDocumentCommentsService {
     return type.agentKey as MktgCommentAgentKey;
   }
 
-  private input(raw: unknown, allowSignOffNamespace = false): MktgAddDocumentCommentRequest {
+  private input(raw: unknown, allowInternalScope = false): MktgAddDocumentCommentRequest {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw this.invalid('body', 'A comment request is required.');
     const body = raw as Record<string, unknown>;
     if (Object.keys(body).some((key) => !['project', 'revisionId', 'anchor', 'text', 'clientRequestId'].includes(key))) {
@@ -534,13 +534,15 @@ export class MktgDocumentCommentsService {
     const value = anchor as Record<string, unknown>;
     if (!(MKTG_DOCUMENT_COMMENT_ANCHOR_KINDS as readonly string[]).includes(String(value['kind'])) || typeof value['key'] !== 'string')
       throw this.invalid('anchor', 'An anchor kind and key are required.');
+    if (!allowInternalScope && value['kind'] === 'document')
+      throw this.invalid('anchor', 'Whole-document anchors are internal until kind-aware comment controls are enabled.');
     if (typeof body['text'] !== 'string' || !body['text'].trim() || body['text'].length > MKTG_DOCUMENT_COMMENT_MAX_CHARS) {
       throw this.invalid('text', 'A comment must contain text within the allowed length.');
     }
     if (typeof body['clientRequestId'] !== 'string' || !MKTG_DOCUMENT_COMMENT_ID_REGEX.test(body['clientRequestId'])) {
       throw this.invalid('clientRequestId', 'A bounded opaque request id is required.');
     }
-    if (!allowSignOffNamespace && body['clientRequestId'].startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
+    if (!allowInternalScope && body['clientRequestId'].startsWith(MKTG_SIGN_OFF_REQUEST_PREFIX))
       throw this.invalid('clientRequestId', 'This request namespace is reserved for sign-off.');
     // The controller validates revision/project shape before authorization; preserve text verbatim.
     return {

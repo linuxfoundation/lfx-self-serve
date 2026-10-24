@@ -523,10 +523,10 @@ server-generated passage marker is `Whole asset`, not a fabricated quote from a
 leaf; other agents retain their existing root field adapter. The private descriptor
 and result echo use the unchanged upstream field/passage contract. Caption helpers
 accept document scope explicitly; existing field/passage controls and captions are
-unchanged. Whole-document creation remains an internal caller until the UI child
-passes `anchor.kind` to `describeMktgDocumentCommentField`; enabling that UI without
-the kind-aware caption is a follow-up, not part of these server seams. This adds
-no switch, sign-off button or decide endpoint.
+unchanged. Public add rejects document anchors; only the internal exact-receipt
+API accepts that scope now. The UI child must pass `anchor.kind` to
+`describeMktgDocumentCommentField` before exposing whole-document controls. This
+adds no switch, sign-off button or decide endpoint.
 
 `addWithReceipt` is a server-only exact-ID receipt over the same add/dedupe CAS;
 ordinary POST add responses remain unchanged. Correlation includes author, revision,

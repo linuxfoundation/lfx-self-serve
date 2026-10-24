@@ -172,6 +172,12 @@ describe('private field comment store', () => {
     expect(replay.response).not.toHaveProperty('commentId');
   });
 
+  it('keeps whole-document anchors off the public add path until kind-aware controls exist', async () => {
+    await expect(service().add(req, project, type, 'living', request({ anchor: { kind: 'document', key: 'mf' } }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.revision).not.toHaveBeenCalled();
+    expect(flows.put).not.toHaveBeenCalled();
+  });
+
   it('stores a whole-kit marker rather than inventing a leaf passage or accepting caller passage bytes', async () => {
     const kit = { ...type, agentKey: 'brand-kit' } as MktgDocumentType;
     flows.revision.mockResolvedValue({
@@ -189,7 +195,7 @@ describe('private field comment store', () => {
   it('does not silently reuse a nonce with another anchor kind at the same root', async () => {
     const store = service();
     await store.add(req, project, type, 'living', request({ anchor: { kind: 'field', key: 'mf' } }));
-    await expect(store.add(req, project, type, 'living', request({ anchor: { kind: 'document', key: 'mf' } }))).rejects.toMatchObject({
+    await expect(store.addWithReceipt(req, project, type, 'living', request({ anchor: { kind: 'document', key: 'mf' } }))).rejects.toMatchObject({
       code: 'MKTG_COMMENT_REQUEST_CONFLICT',
     });
   });
