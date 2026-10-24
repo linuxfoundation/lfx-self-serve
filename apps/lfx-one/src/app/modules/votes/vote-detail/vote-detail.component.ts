@@ -361,25 +361,33 @@ export class VoteDetailComponent {
       return canFetch ? { id, tick } : null;
     });
 
+    // Retain only the current eligible vote's last results while a same-vote refresh is in flight.
+    let loadedFor: string | null = null;
+    let lastResults: VoteResultsResponse | null = null;
+
     return toSignal(
       toObservable(key).pipe(
         distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick),
         switchMap((resultsKey) => {
           if (!resultsKey) {
+            loadedFor = null;
+            lastResults = null;
             this.loadingVoteResults.set(false);
             this.voteResultsError.set(false);
             return of(null);
           }
-          this.loadingVoteResults.set(true);
+          if (loadedFor !== resultsKey.id) lastResults = null;
+          loadedFor = resultsKey.id;
+          this.loadingVoteResults.set(!lastResults);
           this.voteResultsError.set(false);
           return this.voteService.getVoteResults(resultsKey.id).pipe(
             catchError(() => {
               this.voteResultsError.set(true);
               return of(null);
             }),
+            tap((results) => (lastResults = results)),
             finalize(() => this.loadingVoteResults.set(false)),
-            // Never retain another vote's totals or comments while the new request is in flight.
-            startWith(null)
+            startWith(lastResults)
           );
         })
       ),

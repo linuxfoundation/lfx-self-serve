@@ -466,6 +466,71 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('ballot refresh', () => {
+    it.each([
+      { tab: 'overview', region: 'vote-detail-overview-comment' },
+      { tab: 'results', region: 'vote-detail-results' },
+      { tab: 'comments', region: 'vote-detail-comments' },
+    ])('keeps same-vote results visible on $tab during a ballot refresh', async ({ tab, region }) => {
+      const refreshed = new Subject<VoteResultsResponse>();
+      const previousResults: VoteResultsResponse = {
+        ...makeMethodResults(),
+        comment_results: [
+          {
+            prompt: { prompt_id: 'prompt-1', prompt: 'Any concerns?' },
+            responses: [{ vote_id: 'response-1', comment_text: 'Synthetic ballot comment', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false }],
+          },
+        ],
+      };
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      voteService.getVoteResults.mockReturnValueOnce(of(previousResults)).mockReturnValueOnce(refreshed);
+      queryParamMap.next(convertToParamMap({ tab }));
+      const fixture = await setup();
+      expect(testId(fixture, region)).not.toBeNull();
+
+      call(fixture, 'onVoteSubmitted', 'vote-1');
+      TestBed.tick();
+
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+      expect(read(fixture, 'voteResults')).toEqual(previousResults);
+      expect(read(fixture, 'loadingVoteResults')).toBe(false);
+      expect(read(fixture, 'hasLoadedResults')).toBe(true);
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual([3, '75%', 1, 1]);
+      expect(testId(fixture, 'vote-detail-summary')).toHaveProperty('loading', false);
+      expect(testId(fixture, 'vote-detail-results-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-comments-loading')).toBeNull();
+      expect(testId(fixture, region)).not.toBeNull();
+
+      const updatedResults = { ...previousResults, num_votes_cast: 4 };
+      refreshed.next(updatedResults);
+      refreshed.complete();
+      TestBed.tick();
+
+      expect(read(fixture, 'voteResults')).toEqual(updatedResults);
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual([4, '100%', 1, 0]);
+      expect(testId(fixture, region)).not.toBeNull();
+    });
+
+    it('clears retained same-vote results and shows the error when a ballot refresh fails', async () => {
+      const refreshed = new Subject<VoteResultsResponse>();
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getVoteResults.mockReturnValueOnce(of(makeResults())).mockReturnValueOnce(refreshed);
+      const fixture = await setup();
+
+      call(fixture, 'onVoteSubmitted', 'vote-1');
+      TestBed.tick();
+      expect(read(fixture, 'voteResults')).toEqual(makeResults());
+
+      refreshed.error(new HttpErrorResponse({ status: 503 }));
+      TestBed.tick();
+
+      expect(read(fixture, 'voteResults')).toBeNull();
+      expect(read(fixture, 'loadingVoteResults')).toBe(false);
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').every((card) => card.value === '—')).toBe(true);
+    });
+
     it('keeps the body in place while my response reloads after a ballot, then shows the confirmation', async () => {
       const refreshed = new Subject<MyVoteResponse>();
       voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE))).mockReturnValueOnce(refreshed);
@@ -543,6 +608,37 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('cached vote transitions', () => {
+    it('discards retained results after visiting a vote without results access', async () => {
+      const returningResults = new Subject<VoteResultsResponse>();
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id, project_slug: id, status: PollStatus.ENDED })));
+      projectService.getProjectStrict.mockImplementation((slug: string) => of({ writer: slug === 'vote-1' } as Project));
+      voteService.getMyVoteResponse.mockImplementation((id: string) =>
+        of(makeResponse(IndexedVoteResponseStatus.RESPONDED, { vote_uid: id, voter_removed: id === 'vote-2' }))
+      );
+      voteService.getVoteResults.mockReturnValueOnce(of(makeResults())).mockReturnValueOnce(returningResults);
+      const fixture = await setup();
+      expect(read(fixture, 'voteResults')).toEqual(makeResults());
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+
+      expect(read(fixture, 'voteResults')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-access-denied')).not.toBeNull();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1);
+
+      paramMap.next(convertToParamMap({ id: 'vote-1' }));
+      TestBed.tick();
+
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+      expect(read(fixture, 'voteResults')).toBeNull();
+      expect(read(fixture, 'loadingVoteResults')).toBe(true);
+
+      returningResults.next(makeResults());
+      returningResults.complete();
+      TestBed.tick();
+      expect(read(fixture, 'voteResults')).toEqual(makeResults());
+    });
+
     it('uses the emitted ballot ID and ignores a late submission from the previous vote', async () => {
       voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
       voteService.getMyVoteResponse.mockImplementation((id: string) => of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: id })));
