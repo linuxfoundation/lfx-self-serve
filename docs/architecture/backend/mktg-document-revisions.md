@@ -131,6 +131,44 @@ The existing `latestRevision` response field carries that approved identity, or
 null when none is approved (no stale badge). Selecting older approved content can
 also mark a deck out of date; revision number alone never determines freshness.
 
+### Internal two-role sign-off
+
+The optional `signOff` map on `current.json` freezes opaque directory subjects
+for the ED and TOC chair per revision. Names are resolved at read time. The
+frozen TOC chair subject uses one visibility-gated author projection for EVERY
+metadata alias: role/approval attribution, generic `approvedBy`, current
+`changedBy`, requester/ED aliases and revision-author labels. Only the caller's
+visible resolver chair with the same subject supplies a name; otherwise it is
+null, with no directory fallback (render the role label). Per-role approval
+metadata also identifies chair subjects on older records. Revision author IDs
+stay in request/document-private memory, never a DTO; names are reprojected from
+the final snapshot even on the first Send or a transition response. The same
+lazy chair lookup is shared by a projection and request-cached by the resolver;
+no roster lookup occurs unless a chair attribution is actually projected. Unknown
+optional shapes are ignored without invalidating the critical pointer. Generation
+and Make current preserve these annotations; sign-off state never substitutes for
+an `approvals` entry when deciding whether content is Approved.
+
+`transitionSignOff` is an internal store seam, not an HTTP endpoint. A future
+writer-entitled orchestrator must supply directory-resolved roles and pre-send
+checks. Send and the first role decision preserve selection and its attribution.
+The second explicit approval writes both role decisions, the `approvals` entry
+and current selection in one `writeCurrent` CAS. Contention returns 412 without
+retry. A second unapproved pending request returns 409; a stale pending annotation
+on a revision already in `approvals` does not block a new request. Terminal
+requests cannot be resent on the same revision. A stale pending annotation on
+an already approved revision is also closed to decisions: deciding it returns
+409 without a write or a selection change, even after a newer Send. The explicit close/supersede
+path (NB3) must ship before Send is mounted in the UI; unapproved stale pending
+requests still need that operator-visible path. Changes requested requires an already-prepared comment
+receipt; this seam does not itself create comments or submit agent redrafts.
+
+A read-only policy reader checks `project-settings/{project}/sign-off.json`.
+Confirmed absence means `single-writer`; malformed or failed policy reads fail
+closed. Existing Approve refuses with 409 when persisted mode is `two-role`,
+including an otherwise approved/current no-op. No settings-write API or sign-off
+UI is introduced by this storage layer. There is no separate publish operation.
+
 ### Family exports
 
 Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
