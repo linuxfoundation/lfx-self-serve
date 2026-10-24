@@ -91,6 +91,13 @@ describe('Marketing OS approval route', () => {
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
   });
 
+  it('registers revision sign-off checks as a read-only route without a write guard', () => {
+    const layer = router.stack.find((entry) => entry.route?.path === '/documents/:agentKey/:documentId/revisions/:revisionId/sign-off/checks');
+    expect(layer?.route?.stack[0].method).toBe('get');
+    expect(layer?.route?.stack).toHaveLength(1);
+    expect(layer?.route?.stack[0].handle).not.toBe(blockDuringImpersonation);
+  });
+
   it('installs the impersonation guard before the approval handler', () => {
     const layer = router.stack.find((entry) => entry.route?.path === '/documents/:agentKey/:documentId/revisions/:revisionId/approve');
     expect(layer?.route?.stack[0].method).toBe('post');
