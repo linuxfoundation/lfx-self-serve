@@ -183,6 +183,7 @@
               [form]="linkForm"
               control="share_link"
               inputId="linkedin-document-share-link"
+              (keydown.enter)="$event.preventDefault(); onSaveLink()"
               type="url"
               [readonly]="!editingLink() || savingLink()"
               [maxlength]="maxShareLinkChars"

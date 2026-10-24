@@ -410,20 +410,26 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValueOnce(of(response));
     await render(`/documents/linkedin-post/${response.documentId}`);
   }
-  it('preserves other answer keys after a share-link save without adding a nested main landmark', async () => {
+  it('preserves other answer keys after a share-link Enter save without adding a nested main landmark', async () => {
     const response = linkedinResponse('https://public.example/original');
     if (!response.linkedinPost) throw new Error('Expected synthetic LinkedIn cards');
     response.linkedinPost.answers['other_answer'] = 'Retained synthetic value';
     await renderLinkedin(response);
     expect(harness.routeNativeElement?.querySelector('main')).toBeNull();
-    query('mktg-linkedin-edit-link')?.querySelector('button')?.click();
-    await settle();
     const input = query('mktg-linkedin-share-link')?.querySelector('input');
     if (!input) throw new Error('Expected editable link');
+    input.scrollIntoView = vi.fn();
+    query('mktg-linkedin-edit-link')?.querySelector('button')?.click();
+    await settle();
     input.value = 'https://public.example/new';
     input.dispatchEvent(new Event('input'));
-    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(enter);
     await settle();
+    expect(enter.defaultPrevented).toBe(true);
+    expect(store.saveLinkedinShareLink).toHaveBeenCalledTimes(1);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(store.saveLinkedinShareLink).toHaveBeenCalledTimes(1);
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     expect(component['view']()?.linkedinPost?.answers).toEqual({ share_link: 'https://public.example/new', other_answer: 'Retained synthetic value' });
   });
@@ -1015,8 +1021,10 @@ describe('MktgDocumentViewComponent', () => {
       updatedAt: new Date().toISOString(),
     };
     const attempts = TestBed.inject(MktgRunAttemptService);
-    vi.mocked(attempts.load).mockReturnValue(pending);
-    vi.mocked(attempts.prepare).mockReturnValue('generation-other-run');
+    const cache = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    cache.save(pending);
+    vi.mocked(attempts.load).mockImplementation((...args) => cache.load(...args));
+    vi.mocked(attempts.prepare).mockImplementation((...args) => cache.prepare(...args));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     store.getDocument.mockReturnValue(
       of({ ...response, revisions: [], runs: [{ ...started('failed'), agentKey: response.type.agentKey, documentId: response.documentId }] })
@@ -1025,9 +1033,14 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-intake-link')?.querySelector('button')?.click();
     await settle();
     expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
-    expect(navigate).toHaveBeenCalled();
+    const token = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['questions'];
+    expect(typeof token).toBe('string');
     expect(attempts.save).not.toHaveBeenCalled();
-    expect(pending.state).toBe('writing');
+    expect(cache.consume(token, PROJECT.uid, intake.agentId, response.documentId)?.pending).toMatchObject({
+      state: 'writing',
+      attempt: { runId: 'c'.repeat(64) },
+    });
+    cache.clear(PROJECT.uid, intake.agentId, cache.subject(), response.documentId);
   });
 
   it('keeps a prepared run writing after its first metadata read fails, then resumes polling', async () => {

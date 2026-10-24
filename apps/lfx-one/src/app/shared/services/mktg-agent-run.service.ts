@@ -87,8 +87,10 @@ import { MktgRunAttemptService } from './mktg-run-attempt.service';
  * stored or retried. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
- * Each run (session + answers + versions) persists in localStorage, keyed to
- * the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
+ * Living runs (session + answers + versions) persist in localStorage. Personalized
+ * one-off versions remain live-memory only; their server-recorded Document is durable.
+ * Optional pending recovery retains minimal proof, not private one-off inputs/output.
+ * Stored runs are keyed to the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
  * user-keyed invalidation precedent in user.service.ts), so one user's stored
  * session — whose ownerToken is HMAC-bound to their sub — can never be replayed
  * as another's. Persistence is time-bounded (`MKTG_RUN_STORAGE_TTL_MS`): the
