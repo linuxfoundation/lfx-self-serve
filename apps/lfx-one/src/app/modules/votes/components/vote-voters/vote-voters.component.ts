@@ -135,9 +135,6 @@ export class VoteVotersComponent {
   protected readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
   protected readonly roleOptions: Signal<VoteVoterChoiceFilterOption[]> = this.initRoleOptions();
   protected readonly choiceOptions: Signal<VoteVoterChoiceFilterOption[]> = computed(() => buildVoteVoterChoiceFilterOptions(this.vote()));
-  protected readonly hasActiveFilters: Signal<boolean> = computed(
-    () => !!this.searchTerm() || !!this.roleFilter() || !!this.choiceFilter() || this.statusFilter() !== VOTE_VOTERS_ALL_STATUS_FILTER
-  );
 
   public constructor() {
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.tableFirst.set(0));
