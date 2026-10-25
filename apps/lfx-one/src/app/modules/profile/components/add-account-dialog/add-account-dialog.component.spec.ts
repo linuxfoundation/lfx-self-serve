@@ -3,7 +3,12 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_ALREADY_LINKED_MESSAGE, IDENTITY_PROVIDER_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  IDENTITY_PROVIDER_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -72,7 +77,7 @@ describe('AddAccountDialogComponent — email verification outcome (#4253)', () 
     fixture.detectChanges();
 
     expect(userServiceMock.verifyAndLinkEmail).toHaveBeenCalledExactlyOnceWith(email, '123456');
-    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
     expect(close).toHaveBeenCalledExactlyOnceWith({ provider: 'email', identifier: email });
     expect(component.showSupportLink()).toBe(false);
     expect(root.querySelector('[data-testid="add-account-otp-error"]')).toBeNull();

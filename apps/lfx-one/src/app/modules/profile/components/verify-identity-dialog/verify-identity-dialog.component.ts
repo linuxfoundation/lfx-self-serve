@@ -4,7 +4,12 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_ALREADY_CONNECTED_STATUS, IDENTITY_PROVIDER_LABELS } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  IDENTITY_PROVIDER_LABELS,
+} from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
 import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -80,7 +85,7 @@ export class VerifyIdentityDialogComponent {
         if (response.success) {
           // Already part of this account: confirm it rather than implying a new verification.
           if (response.status === EMAIL_ALREADY_CONNECTED_STATUS) {
-            this.messageService.add({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+            this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
           }
           this.ref.close(true);
         } else {

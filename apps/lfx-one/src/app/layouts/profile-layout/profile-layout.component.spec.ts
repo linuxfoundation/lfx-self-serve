@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_CALLBACK_RETRY_MESSAGE,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
@@ -507,7 +508,7 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       { success: 'profile_token_obtained', email_status: 'already_connected' }
     );
 
-    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
     expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings#email-settings', { replaceUrl: true });
   });
@@ -563,22 +564,27 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     });
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already connected' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: EMAIL_ALREADY_CONNECTED_SUMMARY }));
     expect(add).toHaveBeenCalledTimes(2);
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
   });
 
-  it('raises no notice during server rendering', async () => {
-    const { add, refreshUserIdentities } = await setup(
-      '/profile/settings?success=profile_token_obtained&email_status=already_connected',
+  it.each(['already_connected', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
+    const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
+
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      `/profile/settings?success=profile_token_obtained&email_status=${status}#email-settings`,
       {
         success: 'profile_token_obtained',
-        email_status: 'already_connected',
+        email_status: status,
       },
       'server'
     );
 
     expect(add).not.toHaveBeenCalled();
     expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBe(pendingSave);
   });
 });

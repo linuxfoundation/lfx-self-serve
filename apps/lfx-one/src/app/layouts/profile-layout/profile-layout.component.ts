@@ -8,6 +8,7 @@ import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } fr
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_CALLBACK_RETRY_MESSAGE,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
@@ -195,7 +196,8 @@ export class ProfileLayoutComponent {
 
     // Handle Flow C return — restore saved form state and auto-save
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
-      if (params['success'] === 'profile_token_obtained') {
+      // Keep callback markers intact during SSR; server-side query cleanup becomes an HTTP redirect.
+      if (isPlatformBrowser(this.platformId) && params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
         // Only read alongside the authorization flag, which on its own never implies an email outcome.
         this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM]);
@@ -396,7 +398,7 @@ export class ProfileLayoutComponent {
     }
 
     if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
-      this.messageService.add({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+      this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
       this.userService.refreshUserIdentities();
     } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
       this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });

@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE } from '@lfx-one/shared/constants';
+import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_ALREADY_CONNECTED_SUMMARY } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -75,7 +75,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253)',
     fixture.detectChanges();
 
     expect(userServiceMock.verifyAndLinkEmail).toHaveBeenCalledExactlyOnceWith('owned@example.test', '123456');
-    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
     expect(close).toHaveBeenCalledExactlyOnceWith(true);
     expect(root.querySelector('[data-testid="verify-email-error"]')).toBeNull();
   });

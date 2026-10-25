@@ -198,6 +198,9 @@ export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an 
 /** Successful no-op status: the proven address is already connected to the caller's own account. */
 export const EMAIL_ALREADY_CONNECTED_STATUS: EmailVerificationStatus = 'already_connected';
 
+/** Shared toast heading for an address already connected to the caller's account. */
+export const EMAIL_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
 /**
  * Success copy for an address already connected to the caller's account. Deliberately avoids the
  * "already linked" markers, so it can never trigger the linked-to-another-account support link.
