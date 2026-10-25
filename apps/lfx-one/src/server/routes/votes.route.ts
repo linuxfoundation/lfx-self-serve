@@ -63,4 +63,7 @@ router.post('/:uid/reminders', voteWriteRateLimiter, (req, res, next) => voteCon
 // POST /votes/:uid/extend - extend a vote's deadline
 router.post('/:uid/extend', voteWriteRateLimiter, (req, res, next) => voteController.extendVote(req, res, next));
 
+// POST /votes/:uid/summary - send the on-demand close summary to every invited voter (#3662)
+router.post('/:uid/summary', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteSummary(req, res, next));
+
 export default router;
