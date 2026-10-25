@@ -26,8 +26,8 @@ export class VoteRankedQuestionResultsComponent {
   // === Computed Signals ===
   protected readonly isCreator: Signal<boolean> = computed(() => this.variant() === 'creator');
   /** Rank-1 count per choice id — the voters the Voters tab's "First choice" filter lists. */
-  protected readonly firstChoiceCounts: Signal<Map<string, number>> = computed(
-    () => new Map(this.question().choiceDistributions.map((row) => [row.choiceId, row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0]))
+  protected readonly firstChoiceCounts: Signal<Record<string, number>> = computed(() =>
+    Object.fromEntries(this.question().choiceDistributions.map((row) => [row.choiceId, row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0]))
   );
 
   // === Protected Methods ===

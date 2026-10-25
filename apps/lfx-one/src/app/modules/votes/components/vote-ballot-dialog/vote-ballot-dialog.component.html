@@ -102,7 +102,7 @@
         @for (prompt of commentPrompts; track prompt.prompt_id) {
           <div class="flex flex-col gap-1">
             <h3 class="text-sm font-medium text-gray-700">{{ prompt.prompt }}</h3>
-            @if (commentsByPrompt().get(prompt.prompt_id); as comment) {
+            @if (commentsByPrompt()[prompt.prompt_id]; as comment) {
               <p class="text-sm text-gray-800 whitespace-pre-line break-words" [attr.data-testid]="'vote-ballot-dialog-comment-' + prompt.prompt_id">
                 {{ comment }}
               </p>

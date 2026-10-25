@@ -828,9 +828,10 @@ export function canVoterFetchVoteResults(
  * totals and comments; voters see their own response, and totals and comments only after close), never a new rule.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting
- * @param isClosed - Whether the vote has ended. A draft is not closed: it gets the same not-yet-final copy as an open vote.
+ * @param isClosed - Whether the vote has ended. A draft is not closed.
+ * @param ballotsAvailable - Whether the vote is open or ended, so managers can use the Voters tab now
  */
-export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isClosed: boolean): string[] {
+export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isClosed: boolean, ballotsAvailable = true): string[] {
   const rules: string[] = [];
   if (audience === 'creator') {
     rules.push(
@@ -846,7 +847,11 @@ export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnon
   if (pseudoAnonymous) {
     rules.push('No one sees how another voter voted on this page.');
   } else if (audience === 'creator') {
-    rules.push("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+    rules.push(
+      ballotsAvailable
+        ? "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."
+        : "Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."
+    );
   } else {
     rules.push("Vote managers can see each voter's ballot. Other voters can't see yours.");
   }

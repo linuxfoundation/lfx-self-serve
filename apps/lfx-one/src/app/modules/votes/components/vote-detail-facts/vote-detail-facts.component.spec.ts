@@ -92,11 +92,20 @@ describe('VoteDetailFactsComponent', () => {
     expect(rules()).toEqual(getVoteVisibilityRules('creator', true, true));
   });
 
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('keeps the Voters tab available in the manager copy for a named %s vote', (status) => {
+    render(makeVote({ status, pseudo_anonymity: false }), 'creator');
+
+    expect(rules()).toContain("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+    expect(rules().join(' ')).not.toContain('Once voting opens');
+  });
+
   it('never describes a draft as closed', () => {
     render(makeVote({ status: PollStatus.DISABLED }), 'creator');
 
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-close"] dt').textContent.trim()).toBe('Closes');
-    expect(rules()).toEqual(getVoteVisibilityRules('creator', false, false));
+    expect(rules()).toEqual(getVoteVisibilityRules('creator', false, false, false));
+    expect(rules()).toContain("Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+    expect(rules()).not.toContain("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
     expect(rules()).not.toContain('Invited voters now see the final totals and comments.');
     expect(rules().join(' ')).not.toContain('while the vote is open');
   });

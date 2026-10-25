@@ -1055,6 +1055,13 @@ describe('voter results helpers', () => {
       expect(getVoteVisibilityRules('voter', false, true)).not.toContain('No one sees how another voter voted on this page.');
     });
 
+    it('describes draft ballots as available only once voting opens', () => {
+      const rules = getVoteVisibilityRules('creator', false, false, false);
+      expect(rules).toContain("Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+      expect(rules).not.toContain("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+      expect(getVoteVisibilityRules('creator', true, false, false)).toContain('No one sees how another voter voted on this page.');
+    });
+
     it('tells managers they see live totals while voters wait for close', () => {
       expect(getVoteVisibilityRules('creator', false, false)).toEqual([
         'As a manager, you can follow live totals and comments until the vote closes.',

@@ -68,7 +68,14 @@ export class VoteDetailFactsComponent {
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'prompt' : 'prompts'}`;
   });
-  protected readonly visibilityRules: Signal<string[]> = computed(() =>
-    getVoteVisibilityRules(this.audience(), !!this.vote().pseudo_anonymity, this.isEnded())
-  );
+  protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
+
+  // === Private Initializers ===
+  private initVisibilityRules(): Signal<string[]> {
+    return computed(() => {
+      const status = normalizePollStatus(this.vote().status);
+      const ballotsAvailable = status === PollStatus.ACTIVE || status === PollStatus.ENDED;
+      return getVoteVisibilityRules(this.audience(), !!this.vote().pseudo_anonymity, this.isEnded(), ballotsAvailable);
+    });
+  }
 }

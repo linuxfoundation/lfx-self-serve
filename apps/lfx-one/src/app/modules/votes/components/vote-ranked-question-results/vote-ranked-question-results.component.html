@@ -32,7 +32,7 @@
           <p class="text-xs text-slate-500 italic">No rankings recorded yet.</p>
         }
 
-        @let firstChoices = firstChoiceCounts().get(row.choiceId) ?? 0;
+        @let firstChoices = firstChoiceCounts()[row.choiceId];
         @if (showVoterLinks() && firstChoices > 0) {
           <div class="flex justify-end">
             <lfx-button

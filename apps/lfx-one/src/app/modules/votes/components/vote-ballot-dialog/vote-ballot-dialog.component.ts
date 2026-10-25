@@ -40,14 +40,7 @@ export class VoteBallotDialogComponent {
     return current ? buildVoteBallotQuestions(this.vote, current.voter) : [];
   });
   /** The current voter's comment per prompt id; a prompt without one reads "No comment." */
-  protected readonly commentsByPrompt: Signal<Map<string, string>> = computed(
-    () =>
-      new Map(
-        (this.current()?.voter.comment_responses ?? [])
-          .filter((response) => !!response.comment_text?.trim())
-          .map((response) => [response.prompt_id, response.comment_text])
-      )
-  );
+  protected readonly commentsByPrompt: Signal<Record<string, string | null>> = this.initCommentsByPrompt();
   protected readonly hasPrevious: Signal<boolean> = computed(() => this.index() > 0);
   protected readonly hasNext: Signal<boolean> = computed(() => this.index() < this.ballots.length - 1);
 
@@ -62,6 +55,18 @@ export class VoteBallotDialogComponent {
 
   protected close(): void {
     this.ref.close();
+  }
+
+  // === Private Initializers ===
+  private initCommentsByPrompt(): Signal<Record<string, string | null>> {
+    return computed(() => {
+      const comments = new Map(
+        (this.current()?.voter.comment_responses ?? [])
+          .filter((response) => !!response.comment_text?.trim())
+          .map((response) => [response.prompt_id, response.comment_text])
+      );
+      return Object.fromEntries(this.commentPrompts.map((prompt) => [prompt.prompt_id, comments.get(prompt.prompt_id) ?? null]));
+    });
   }
 
   // === Private Helpers ===

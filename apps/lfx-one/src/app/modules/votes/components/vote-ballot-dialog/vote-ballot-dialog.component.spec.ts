@@ -175,6 +175,22 @@ describe('VoteBallotDialogComponent', () => {
     expect(byTestId(fixture, 'vote-ballot-dialog-no-comment-p-1')!.textContent).toContain('No comment.');
   });
 
+  it('keeps missing and blank comments empty, including a prompt whose id matches a prototype key', () => {
+    const vote: Vote = {
+      ...BASE_VOTE,
+      poll_comment_prompts: [
+        { prompt_id: 'p-1', prompt: 'Any concerns?' },
+        { prompt_id: '__proto__', prompt: 'Anything else?' },
+      ],
+    };
+    const { fixture } = mount(vote, [voter({ comment_responses: [{ prompt_id: 'p-1', comment_text: '   ' }] })]);
+    current = fixture;
+
+    expect(byTestId(fixture, 'vote-ballot-dialog-no-comment-p-1')!.textContent).toContain('No comment.');
+    expect(byTestId(fixture, 'vote-ballot-dialog-no-comment-__proto__')!.textContent).toContain('No comment.');
+    expect(byTestId(fixture, 'vote-ballot-dialog-comment-__proto__')).toBeNull();
+  });
+
   it('notes that an open vote shows the current ballot', () => {
     const { fixture } = mount({ ...BASE_VOTE, status: PollStatus.ACTIVE }, [voter()]);
     current = fixture;
