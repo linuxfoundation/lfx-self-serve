@@ -113,8 +113,8 @@ export class VoteDetailComponent {
   protected readonly myResponseError = signal<boolean>(false);
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
-  protected readonly loadingVoteResults = signal<boolean>(false);
-  protected readonly voteResultsError = signal<boolean>(false);
+  /** Results status belongs to its request's vote, just like the retained payload. */
+  private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean }>({ voteId: null, loading: false, error: false });
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
@@ -142,6 +142,8 @@ export class VoteDetailComponent {
    */
   protected readonly accessLoading: Signal<boolean> = computed(() => this.canManage() === null || this.myResponseLoadedFor() !== this.vote()?.uid);
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
+  protected readonly loadingVoteResults: Signal<boolean> = this.initLoadingVoteResults();
+  protected readonly voteResultsError: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().error);
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
 
@@ -316,6 +318,7 @@ export class VoteDetailComponent {
           if (!uid) {
             this.myResponseLoading.set(false);
             this.myResponseError.set(false);
+            this.myResponseLoadedFor.set(null);
             return of(null);
           }
           this.myResponseLoading.set(true);
@@ -390,21 +393,21 @@ export class VoteDetailComponent {
           if (!resultsKey) {
             loadedFor = null;
             lastResults = null;
-            this.loadingVoteResults.set(false);
-            this.voteResultsError.set(false);
+            this.voteResultsStatus.set({ voteId: null, loading: false, error: false });
             return of(null);
           }
           if (loadedFor !== resultsKey.id) lastResults = null;
           loadedFor = resultsKey.id;
-          this.loadingVoteResults.set(!lastResults);
-          this.voteResultsError.set(false);
+          this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
           return this.voteService.getVoteResults(resultsKey.id).pipe(
             catchError(() => {
-              this.voteResultsError.set(true);
+              this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: true });
               return of(null);
             }),
             tap((results) => (lastResults = results)),
-            finalize(() => this.loadingVoteResults.set(false)),
+            finalize(() => {
+              this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
+            }),
             startWith(lastResults),
             map((payload) => ({ id: resultsKey.id, payload }))
           );
@@ -413,6 +416,14 @@ export class VoteDetailComponent {
       { initialValue: null }
     );
     return computed(() => (results()?.id === this.vote()?.uid ? (results()?.payload ?? null) : null));
+  }
+
+  private initLoadingVoteResults(): Signal<boolean> {
+    return computed(() => {
+      const status = this.voteResultsStatus();
+      // Access can settle before the results effect starts: eligible readers are still waiting, not looking at an empty result.
+      return status.voteId === this.vote()?.uid ? status.loading : this.showsResults();
+    });
   }
 
   /** The Comments tab exists only when the vote asks for comments. */

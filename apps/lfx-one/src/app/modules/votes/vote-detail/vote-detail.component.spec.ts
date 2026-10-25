@@ -608,6 +608,87 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('cached vote transitions', () => {
+    it('waits for a fresh response when returning to a vote through a not-found route', async () => {
+      const returningResponse = new Subject<MyVoteResponse>();
+      voteService.fetchVote.mockImplementation((id: string) => (id === 'vote-1' ? of(makeVote({ status: PollStatus.ENDED })) : httpError(404)));
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.RESPONDED))).mockReturnValueOnce(returningResponse);
+      const fixture = await setup();
+      expect(read(fixture, 'accessLoading')).toBe(false);
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1);
+
+      paramMap.next(convertToParamMap({ id: 'vote-missing' }));
+      TestBed.tick();
+      expect(fixture.nativeElement.querySelector('lfx-not-found')).not.toBeNull();
+      expect(read(fixture, 'myResponse')).toBeNull();
+
+      paramMap.next(convertToParamMap({ id: 'vote-1' }));
+      TestBed.tick();
+      expect(read(fixture, 'myResponseLoading')).toBe(true);
+      expect(read(fixture, 'accessLoading')).toBe(true);
+      expect(testId(fixture, 'vote-detail-access-loading')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-not-participant')).toBeNull();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1);
+
+      returningResponse.next(makeResponse(IndexedVoteResponseStatus.RESPONDED));
+      returningResponse.complete();
+      TestBed.tick();
+      expect(read(fixture, 'accessLoading')).toBe(false);
+      expect(testId(fixture, 'vote-detail-access-loading')).toBeNull();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      { previous: 'success', tab: 'results' },
+      { previous: 'error', tab: 'results' },
+      { previous: 'success', tab: 'comments' },
+      { previous: 'error', tab: 'comments' },
+    ])('shows loading, not the previous $previous state, before the next $tab request starts', async ({ previous, tab }) => {
+      let inspectAccess = (): void => undefined;
+      projectService.getProjectStrict.mockImplementation(
+        () =>
+          new Observable<Project>((subscriber) => {
+            subscriber.next({ writer: true } as Project);
+            inspectAccess();
+            subscriber.complete();
+          })
+      );
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      const nextResults = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockImplementation((id: string) => {
+        if (id === 'vote-2') return nextResults;
+        return previous === 'error' ? httpError(503) : of(makeResults());
+      });
+      queryParamMap.next(convertToParamMap({ tab }));
+      const fixture = await setup();
+      expect(read(fixture, 'voteResultsError')).toBe(previous === 'error');
+
+      const snapshots: { accessLoading: boolean; loading: boolean; error: boolean; results: VoteResultsResponse | null }[] = [];
+      inspectAccess = () => {
+        snapshots.push({
+          accessLoading: read(fixture, 'accessLoading'),
+          loading: read(fixture, 'loadingVoteResults'),
+          error: read(fixture, 'voteResultsError'),
+          results: read(fixture, 'voteResults'),
+        });
+      };
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+
+      // The new access result has landed, but the dependent results effect has not run yet.
+      expect(snapshots).toEqual([{ accessLoading: false, loading: true, error: false, results: null }]);
+      expect(testId(fixture, `vote-detail-${tab}-loading`)).not.toBeNull();
+      expect(testId(fixture, `vote-detail-${tab}-error`)).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+
+      nextResults.next(makeResults());
+      nextResults.complete();
+      TestBed.tick();
+      expect(read(fixture, 'loadingVoteResults')).toBe(false);
+      expect(read(fixture, 'voteResultsError')).toBe(false);
+      expect(read(fixture, 'voteResults')).toEqual(makeResults());
+    });
+
     it.each([
       { label: 'manager with a response', writer: true, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
       { label: 'manager without a response', writer: true, response: null },
