@@ -608,6 +608,92 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('cached vote transitions', () => {
+    it.each([
+      { label: 'manager with a response', writer: true, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
+      { label: 'manager without a response', writer: true, response: null },
+      { label: 'voter with a response', writer: false, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
+    ])('hides retained state before dependent effects settle for a $label', async ({ writer, response }) => {
+      let inspectNextVote = (): void => undefined;
+      voteService.fetchVote.mockImplementation(
+        (id: string) =>
+          new Observable<Vote>((subscriber) => {
+            subscriber.next(makeVote({ uid: id, status: PollStatus.ENDED }));
+            if (id === 'vote-2') inspectNextVote();
+            subscriber.complete();
+          })
+      );
+      projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
+      voteService.getMyVoteResponse.mockReturnValueOnce(of(response)).mockReturnValueOnce(of(null));
+      const fixture = await setup();
+      expect(read(fixture, 'accessLoading')).toBe(false);
+      expect(read(fixture, 'voteResults')).not.toBeNull();
+
+      const snapshots: {
+        vote: Vote | null;
+        loading: boolean;
+        manager: boolean | null;
+        response: MyVoteResponse | null;
+        results: VoteResultsResponse | null;
+      }[] = [];
+      inspectNextVote = () => {
+        snapshots.push({
+          vote: read(fixture, 'vote'),
+          loading: read(fixture, 'accessLoading'),
+          manager: read(fixture, 'canManage'),
+          response: read(fixture, 'myResponse'),
+          results: read(fixture, 'voteResults'),
+        });
+      };
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+
+      // The route signal changes before any toObservable effect gets a chance to run.
+      expect(read(fixture, 'accessLoading')).toBe(true);
+      expect(read(fixture, 'vote')).toBeNull();
+      expect(read(fixture, 'voteResults')).toBeNull();
+      TestBed.tick();
+
+      // A cached vote can then emit inside the load effect, before access/response/results effects.
+      expect(snapshots).toEqual([{ vote: makeVote({ uid: 'vote-2', status: PollStatus.ENDED }), loading: true, manager: null, response: null, results: null }]);
+      expect(read(fixture, 'accessLoading')).toBe(false);
+      expect(read(fixture, 'myResponse')).toBeNull();
+    });
+
+    it('starts a new vote on the first comments page even when its prompt ID matches', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+      const commentList = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
+      commentList.triggerEventHandler('pageStateChange', new Map([['prompt-1', { first: 20, rows: 20 }]]));
+      TestBed.tick();
+      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(1);
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+
+      expect(read<Map<string, unknown>>(fixture, 'commentPaginatorState').size).toBe(0);
+      expect(fixture.debugElement.query(By.css('lfx-vote-comment-results')).properties['pageState']).toEqual(new Map());
+    });
+
+    it('preserves the comments page across tab switches and a same-vote refresh', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+      const page = new Map([['prompt-1', { first: 20, rows: 20 }]]);
+      fixture.debugElement.query(By.css('lfx-vote-comment-results')).triggerEventHandler('pageStateChange', page);
+      TestBed.tick();
+
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      TestBed.tick();
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      TestBed.tick();
+      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+
+      call(fixture, 'onVoteSubmitted', 'vote-1');
+      TestBed.tick();
+      expect(read(fixture, 'commentPaginatorState')).toEqual(page);
+    });
+
     it('discards retained results after visiting a vote without results access', async () => {
       const returningResults = new Subject<VoteResultsResponse>();
       voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id, project_slug: id, status: PollStatus.ENDED })));

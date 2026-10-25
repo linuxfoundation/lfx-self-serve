@@ -111,6 +111,8 @@ export class VoteDetailComponent {
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
+  /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
+  private readonly myResponseLoadedFor = signal<string | null>(null);
   protected readonly loadingVoteResults = signal<boolean>(false);
   protected readonly voteResultsError = signal<boolean>(false);
   /** Bumped after a ballot is submitted so my-response and results reload. */
@@ -121,13 +123,13 @@ export class VoteDetailComponent {
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
 
   // === Route Params (toSignal) ===
-  protected readonly voteId: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((m) => m.get('id'))), { initialValue: null });
+  protected readonly voteId: Signal<string | null> = this.initVoteId();
   private readonly requestedTab: Signal<VoteDetailTab> = this.initRequestedTab();
 
   // === Data Signals (Complex — init via private functions) ===
   /** Single load-state stream: loading, not-found, transient error and the loaded vote derive from one emission. */
   protected readonly state: Signal<VoteDetailState> = this.initState();
-  protected readonly vote: Signal<Vote | null> = computed(() => this.state().vote);
+  protected readonly vote: Signal<Vote | null> = computed(() => (this.state().vote?.uid === this.voteId() ? this.state().vote : null));
   /** The viewer's vote_response row; null+loaded means never invited, null+loading means in flight. */
   protected readonly myResponse: Signal<MyVoteResponse | null> = this.initMyResponse();
   /** Write access on the vote; null while the check is running. */
@@ -138,9 +140,7 @@ export class VoteDetailComponent {
    * refresh keeps the previous response until the new one lands, so only the first load shows the skeleton — but only a
    * response for this same vote, never one left over from the previously opened vote.
    */
-  protected readonly accessLoading: Signal<boolean> = computed(
-    () => this.canManage() === null || (this.myResponseLoading() && this.myResponse()?.vote_uid !== this.vote()?.uid)
-  );
+  protected readonly accessLoading: Signal<boolean> = computed(() => this.canManage() === null || this.myResponseLoadedFor() !== this.vote()?.uid);
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
@@ -239,6 +239,17 @@ export class VoteDetailComponent {
   }
 
   // === Private Initializers ===
+  private initVoteId(): Signal<string | null> {
+    return toSignal(
+      this.route.paramMap.pipe(
+        map((params) => params.get('id')),
+        distinctUntilChanged(),
+        tap(() => this.commentPaginatorState.set(new Map()))
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initRequestedTab(): Signal<VoteDetailTab> {
     return toSignal(
       this.route.queryParamMap.pipe(
@@ -298,7 +309,7 @@ export class VoteDetailComponent {
   /** Keyed on the loaded vote uid (null on the server, which never loads one) and the refresh tick. */
   private initMyResponse(): Signal<MyVoteResponse | null> {
     const key = computed(() => ({ uid: this.vote()?.uid ?? null, tick: this.refreshTick() }));
-    return toSignal(
+    const response = toSignal(
       toObservable(key).pipe(
         distinctUntilChanged((a, b) => a.uid === b.uid && a.tick === b.tick),
         switchMap(({ uid }) => {
@@ -315,17 +326,20 @@ export class VoteDetailComponent {
               this.myResponseError.set(true);
               return of(null);
             }),
+            tap(() => this.myResponseLoadedFor.set(uid)),
             finalize(() => this.myResponseLoading.set(false))
           );
         })
       ),
       { initialValue: null }
     );
+    // toObservable effects settle later than vote changes; never expose another vote's retained response.
+    return computed(() => (response()?.vote_uid === this.vote()?.uid ? response() : null));
   }
 
   private initCanManage(): Signal<boolean | null> {
     const voteUid = computed(() => this.vote()?.uid ?? null);
-    return toSignal(
+    const access = toSignal(
       toObservable(voteUid).pipe(
         switchMap((uid) => {
           const vote = this.vote();
@@ -334,11 +348,15 @@ export class VoteDetailComponent {
             vote,
             (slugOrUid) => this.projectService.getProjectStrict(slugOrUid),
             (committeeUid) => this.committeeService.fetchCommittee(committeeUid)
-          ).pipe(startWith(null));
+          ).pipe(
+            map((canManage) => ({ uid, canManage })),
+            startWith(null)
+          );
         })
       ),
       { initialValue: null }
     );
+    return computed(() => (access()?.uid === this.vote()?.uid ? (access()?.canManage ?? null) : null));
   }
 
   /** A ballot cast from this page reads as submitted even while the refreshed response is in flight or still lags behind. */
@@ -365,7 +383,7 @@ export class VoteDetailComponent {
     let loadedFor: string | null = null;
     let lastResults: VoteResultsResponse | null = null;
 
-    return toSignal(
+    const results = toSignal(
       toObservable(key).pipe(
         distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick),
         switchMap((resultsKey) => {
@@ -387,12 +405,14 @@ export class VoteDetailComponent {
             }),
             tap((results) => (lastResults = results)),
             finalize(() => this.loadingVoteResults.set(false)),
-            startWith(lastResults)
+            startWith(lastResults),
+            map((payload) => ({ id: resultsKey.id, payload }))
           );
         })
       ),
       { initialValue: null }
     );
+    return computed(() => (results()?.id === this.vote()?.uid ? (results()?.payload ?? null) : null));
   }
 
   /** The Comments tab exists only when the vote asks for comments. */
