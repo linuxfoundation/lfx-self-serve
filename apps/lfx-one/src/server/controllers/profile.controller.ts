@@ -2265,7 +2265,7 @@ export class ProfileController {
       // Already connected to the caller's own account: a proven, successful no-op. Nothing is
       // linked, synced, or verified — the address is already part of the account.
       if (userManagementToken && this.isEmailAlreadyConnected(otpResponse)) {
-        logger.success(req, 'verify_and_link_email', startTime, { email, status: EMAIL_ALREADY_CONNECTED_STATUS });
+        logger.success(req, 'verify_and_link_email', startTime, { status: EMAIL_ALREADY_CONNECTED_STATUS });
         const response: VerifyAndLinkEmailResponse = { success: true, status: EMAIL_ALREADY_CONNECTED_STATUS, message: EMAIL_ALREADY_CONNECTED_MESSAGE };
         res.json(response);
         return;
@@ -2526,7 +2526,7 @@ export class ProfileController {
     // Resolve the freshly stored user token before replaying the code, so its absence never consumes it.
     const mgmtToken = this.profileAuthService.getManagementToken(req);
     if (!mgmtToken) {
-      logger.warning(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable', { email: pending.email });
+      logger.warning(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable');
       return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
     }
 
@@ -2534,7 +2534,7 @@ export class ProfileController {
       const otpResponse = await this.emailVerificationService.verifyOtp(req, pending.email, pending.otp, mgmtToken);
 
       if (this.isEmailAlreadyConnected(otpResponse)) {
-        logger.info(req, 'profile_auth_callback', 'Pending email already connected to this account', { email: pending.email });
+        logger.info(req, 'profile_auth_callback', 'Pending email already connected to this account');
         return EMAIL_ALREADY_CONNECTED_STATUS;
       }
 

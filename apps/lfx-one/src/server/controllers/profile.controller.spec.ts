@@ -1928,6 +1928,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '123456', 'synthetic-user-mgmt-token');
       expect(res.status).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, status: EMAIL_ALREADY_CONNECTED_STATUS, message: EMAIL_ALREADY_CONNECTED_MESSAGE });
+      expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', expect.any(Number), { status: EMAIL_ALREADY_CONNECTED_STATUS });
       expect(generateM2MTokenMock).not.toHaveBeenCalled();
       expectNoWrites();
     });
@@ -2069,6 +2070,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '654321', 'synthetic-user-mgmt-token');
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${successRedirect}&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_ALREADY_CONNECTED_STATUS}`);
       expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email already connected to this account');
       expectNoWrites();
     });
 
@@ -2103,6 +2105,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
       expect(req.appSession.pendingEmailVerification).toBeUndefined();
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable');
       expectNoWrites();
     });
 
