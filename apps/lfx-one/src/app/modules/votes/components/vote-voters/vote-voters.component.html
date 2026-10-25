@@ -137,21 +137,25 @@
             <td>
               <div class="flex items-center gap-3 min-w-0">
                 <lfx-person-avatar [avatarUrl]="row.voter.profile_picture" [name]="row.displayName" size="sm" />
-                <div class="flex flex-col min-w-0">
+                <div class="flex flex-col min-w-0 max-w-xs">
                   @if (row.hasBallot) {
                     <button
                       type="button"
-                      class="text-left text-sm font-medium text-blue-600 hover:underline truncate"
+                      class="text-left text-sm font-medium text-blue-600 hover:underline whitespace-normal break-words"
                       [attr.aria-label]="'View ballot of ' + row.displayName"
                       (click)="openBallot(row.uid)"
                       [attr.data-testid]="'vote-voters-open-ballot-' + row.uid">
                       {{ row.displayName }}
                     </button>
                   } @else {
-                    <span class="text-sm font-medium text-gray-900 truncate" [attr.data-testid]="'vote-voters-name-' + row.uid">{{ row.displayName }}</span>
+                    <span class="text-sm font-medium text-gray-900 whitespace-normal break-words" [attr.data-testid]="'vote-voters-name-' + row.uid">{{
+                      row.displayName
+                    }}</span>
                   }
                   @if (row.organization) {
-                    <span class="text-xs text-gray-500 truncate">{{ row.organization }}</span>
+                    <span class="text-xs text-gray-500 whitespace-normal break-words" [attr.data-testid]="'vote-voters-organization-' + row.uid">{{
+                      row.organization
+                    }}</span>
                   }
                 </div>
               </div>

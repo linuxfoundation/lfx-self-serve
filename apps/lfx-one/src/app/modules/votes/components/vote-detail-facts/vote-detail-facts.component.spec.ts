@@ -16,6 +16,7 @@ function makeVote(overrides: Partial<Vote> = {}): Vote {
     name: 'Synthetic roadmap approval',
     status: PollStatus.ACTIVE,
     creation_time: '2026-10-08T09:00:00Z',
+    pseudo_anonymity: false,
     end_time: '2026-10-30T16:00:00Z',
     project_uid: 'proj-1',
     committee_name: 'Synthetic Steering Committee',
@@ -90,6 +91,22 @@ describe('VoteDetailFactsComponent', () => {
     render(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }), 'creator');
 
     expect(rules()).toEqual(getVoteVisibilityRules('creator', true, true));
+  });
+
+  it.each<['voter' | 'creator', PollStatus]>([
+    ['creator', PollStatus.ACTIVE],
+    ['creator', PollStatus.ENDED],
+    ['creator', PollStatus.DISABLED],
+    ['voter', PollStatus.ACTIVE],
+    ['voter', PollStatus.ENDED],
+  ])('does not promise ballots to %s when privacy metadata is missing (%s)', (audience, status) => {
+    render(makeVote({ status, pseudo_anonymity: undefined }), audience);
+
+    expect(value('privacy')).toBe('Unavailable');
+    expect(rules()).toContain('No one sees how another voter voted on this page.');
+    expect(rules()).toContain('Ballot privacy information is unavailable.');
+    expect(rules().join(' ')).not.toContain('Voters tab');
+    expect(rules().join(' ')).not.toContain('can see each voter');
   });
 
   it.each([PollStatus.ACTIVE, PollStatus.ENDED])('keeps the Voters tab available in the manager copy for a named %s vote', (status) => {

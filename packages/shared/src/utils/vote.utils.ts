@@ -827,11 +827,16 @@ export function canVoterFetchVoteResults(
  * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
  * totals and comments; voters see their own response, and totals and comments only after close), never a new rule.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
- * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting
+ * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
  * @param ballotsAvailable - Whether the vote is open or ended, so managers can use the Voters tab now
  */
-export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isClosed: boolean, ballotsAvailable = true): string[] {
+export function getVoteVisibilityRules(
+  audience: 'voter' | 'creator',
+  pseudoAnonymous: boolean | undefined,
+  isClosed: boolean,
+  ballotsAvailable = true
+): string[] {
   const rules: string[] = [];
   if (audience === 'creator') {
     rules.push(
@@ -843,8 +848,8 @@ export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnon
       isClosed ? 'Invited voters see the final totals and comments.' : 'You see only your own response. Totals and comments stay hidden until the vote closes.'
     );
   }
-  // Managers read named ballots on the Voters tab (#3914); a pseudo-anonymous vote never shows an individual ballot.
-  if (pseudoAnonymous) {
+  // Only explicitly named votes permit individual ballots; missing privacy metadata fails closed.
+  if (pseudoAnonymous !== false) {
     rules.push('No one sees how another voter voted on this page.');
   } else if (audience === 'creator') {
     rules.push(
@@ -855,9 +860,15 @@ export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnon
   } else {
     rules.push("Vote managers can see each voter's ballot. Other voters can't see yours.");
   }
-  rules.push(
-    pseudoAnonymous ? 'Pseudo-anonymous ballot: results are shown without voter names.' : 'Named ballot: each ballot is recorded against the voter who cast it.'
-  );
+  if (pseudoAnonymous === undefined) {
+    rules.push('Ballot privacy information is unavailable.');
+  } else {
+    rules.push(
+      pseudoAnonymous
+        ? 'Pseudo-anonymous ballot: results are shown without voter names.'
+        : 'Named ballot: each ballot is recorded against the voter who cast it.'
+    );
+  }
   return rules;
 }
 

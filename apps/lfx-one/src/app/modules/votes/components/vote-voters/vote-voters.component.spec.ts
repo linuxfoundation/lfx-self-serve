@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { VOTE_VOTER_STATUS_FILTER_LABELS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType, VoteVoterStatus } from '@lfx-one/shared/enums';
 import { Vote, VoteBallotDialogData, VoteVoter } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
@@ -122,6 +123,39 @@ describe('VoteVotersComponent', () => {
     expect(statusLabels(component)).toEqual(['All (4)', 'Voted (2)', 'Abstained (1)', 'Not voted yet (1)']);
     expect(byTestId(fixture, 'vote-voters-manager-notice')).not.toBeNull();
     expect(byTestId(fixture, 'vote-voters-updated')).not.toBeNull();
+  });
+
+  it('derives status pills in shared configuration order and omits inapplicable abstentions', async () => {
+    const { fixture, component } = await mount({
+      vote: { ...VOTE, allow_abstain: false },
+      voters: () => of(VOTERS.filter((voter) => voter.status !== VoteVoterStatus.ABSTAINED)),
+    });
+    current = fixture;
+
+    expect(component['statusOptions']().map((option) => option.id)).toEqual(
+      Object.keys(VOTE_VOTER_STATUS_FILTER_LABELS).filter((id) => id !== VoteVoterStatus.ABSTAINED)
+    );
+  });
+
+  it('keeps full long voter names and organizations in wrapping, width-bounded labels', async () => {
+    const longName = 'Synthetic Voter With A Very Long Display Name';
+    const longOrganization = 'SyntheticOrganization'.repeat(8);
+    const voters = VOTERS.slice(0, 2).map((voter) => ({ ...voter, user_name: longName, user_org_name: longOrganization }));
+    const { fixture } = await mount({ voters: () => of(voters) });
+    current = fixture;
+
+    for (const uid of ['b-avery', 'b-blake']) {
+      const name = byTestId(fixture, `vote-voters-open-ballot-${uid}`) ?? byTestId(fixture, `vote-voters-name-${uid}`);
+      const organization = byTestId(fixture, `vote-voters-organization-${uid}`);
+      expect(name!.textContent!.trim()).toBe(longName);
+      expect(organization!.textContent!.trim()).toBe(longOrganization);
+      expect(name!.parentElement!.classList.contains('max-w-xs')).toBe(true);
+      for (const label of [name!, organization!]) {
+        expect(label.classList.contains('whitespace-normal')).toBe(true);
+        expect(label.classList.contains('break-words')).toBe(true);
+        expect(label.classList.contains('truncate')).toBe(false);
+      }
+    }
   });
 
   it('lists voters who have not voted first while the vote is open', async () => {

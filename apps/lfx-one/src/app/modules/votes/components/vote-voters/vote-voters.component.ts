@@ -256,7 +256,7 @@ export class VoteVotersComponent {
       const counts = this.statusCounts();
       const showAbstained = !!this.vote().allow_abstain || counts[VoteVoterStatus.ABSTAINED] > 0;
       const notVotedLabel = this.isActive() ? VOTE_VOTER_NOT_VOTED_LABELS.active : VOTE_VOTER_NOT_VOTED_LABELS.closed;
-      const ids: VoteVoterStatusFilter[] = [VOTE_VOTERS_ALL_STATUS_FILTER, VoteVoterStatus.VOTED, VoteVoterStatus.ABSTAINED, VoteVoterStatus.NOT_VOTED];
+      const ids = Object.keys(VOTE_VOTER_STATUS_FILTER_LABELS) as VoteVoterStatusFilter[];
 
       return ids
         .filter((id) => id !== VoteVoterStatus.ABSTAINED || showAbstained)
