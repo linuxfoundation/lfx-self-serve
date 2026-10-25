@@ -69,6 +69,12 @@ export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 /** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
 export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
 
+/** The on-demand close summary (#3662) refuses a vote that has not ended yet with this state-conflict code. */
+export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
+
+/** The on-demand close summary (#3662) failed to send to every recipient; none were emailed. */
+export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
+
 /** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
 export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
 
