@@ -6,6 +6,11 @@ import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_CALLBACK_RETRY_MESSAGE,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
   MY_CLAS_ENABLED_FLAG,
   normalizeTShirtSize,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
@@ -192,6 +197,8 @@ export class ProfileLayoutComponent {
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
+        // Only read alongside the authorization flag, which on its own never implies an email outcome.
+        this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM]);
         this.clearAuthQueryParams();
       }
 
@@ -378,6 +385,24 @@ export class ProfileLayoutComponent {
     });
   }
 
+  /**
+   * Surface the outcome of an email verification the Flow C callback replayed after authorization.
+   * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
+   * neither outcome changes identity state locally — already-connected re-fetches the canonical list.
+   */
+  private handleEmailCallbackStatus(status: unknown): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
+      this.messageService.add({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+      this.userService.refreshUserIdentities();
+    } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
+      this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
+    }
+  }
+
   // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
   // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
   // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
@@ -399,7 +424,7 @@ export class ProfileLayoutComponent {
     };
   }
 
-  // Strip the Flow C query params (success/error) while staying on the current tab.
+  // Strip the Flow C query params (success/error/email_status) while staying on the current tab.
   // Navigating relative to this.route would resolve to the parent /profile route and
   // bounce the user to the default tab — so re-navigate to the current path sans query.
   // Keep the fragment (e.g. #password): router.url serializes as path?query#fragment, so a

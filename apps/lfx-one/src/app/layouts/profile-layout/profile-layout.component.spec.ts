@@ -4,7 +4,12 @@
 import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { OPEN_PROFILE_BANNER_LINK_CLICKED, PENDING_PROFILE_SAVE_KEY } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_CALLBACK_RETRY_MESSAGE,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  PENDING_PROFILE_SAVE_KEY,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -442,5 +447,138 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     await fixture.whenStable();
 
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Guards #4253: the Flow C callback reports a replayed pending email verification as
+ * `email_status=already_connected|retry_required` next to `success=profile_token_obtained`. The
+ * layout owns that notice so it shows once on whichever /profile/* tab the return lands.
+ */
+describe('ProfileLayoutComponent — pending email outcome on Flow C return (#4253)', () => {
+  async function setup(
+    url: string,
+    queryParams: Record<string, string>,
+    platform = 'browser'
+  ): Promise<{ add: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn>; refreshUserIdentities: ReturnType<typeof vi.fn> }> {
+    const add = vi.fn();
+    const navigateByUrl = vi.fn();
+    const refreshUserIdentities = vi.fn();
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: {}, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+      refreshUserIdentities,
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
+        { provide: Router, useValue: { url, navigateByUrl } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    return { add, navigateByUrl, refreshUserIdentities };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('shows one already-connected notice, refreshes identities, and keeps the email-settings fragment', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      '/profile/settings?success=profile_token_obtained&email_status=already_connected#email-settings',
+      { success: 'profile_token_obtained', email_status: 'already_connected' }
+    );
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Already connected', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings#email-settings', { replaceUrl: true });
+  });
+
+  it('shows fixed retry guidance without claiming success or touching identity state', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained&email_status=retry_required', {
+      success: 'profile_token_obtained',
+      email_status: 'retry_required',
+    });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
+  });
+
+  it('infers no email outcome from an ordinary authorization return', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained', {
+      success: 'profile_token_obtained',
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
+  });
+
+  it.each(['linked', 'toString', ''])('ignores an unknown email_status value %j but still clears the query', async (status) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/identities?success=profile_token_obtained', {
+      success: 'profile_token_obtained',
+      email_status: status,
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/identities', { replaceUrl: true });
+  });
+
+  it('ignores an email_status that arrives without the authorization-success flag', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?email_status=already_connected', {
+      email_status: 'already_connected',
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('still replays a pending profile save alongside the email notice', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), avatarPending: true }));
+
+    const { add } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_connected', {
+      success: 'profile_token_obtained',
+      email_status: 'already_connected',
+    });
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Already connected' }));
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
+
+  it('raises no notice during server rendering', async () => {
+    const { add, refreshUserIdentities } = await setup(
+      '/profile/settings?success=profile_token_obtained&email_status=already_connected',
+      {
+        success: 'profile_token_obtained',
+        email_status: 'already_connected',
+      },
+      'server'
+    );
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 });

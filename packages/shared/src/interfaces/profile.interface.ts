@@ -643,16 +643,31 @@ export interface SendEmailVerificationResponse {
 }
 
 /**
- * Response from NATS email OTP verification request
+ * Successful no-op outcome of email OTP verification: the proven address is already connected to
+ * the caller's own account, so nothing is linked.
+ */
+export type EmailVerificationStatus = 'already_connected';
+
+/**
+ * Email outcome appended to the Flow C callback's authorization-success redirect when a pending
+ * email verification was replayed. Presentation-only — it carries no email, code, or token.
+ */
+export type EmailVerificationCallbackStatus = EmailVerificationStatus | 'retry_required';
+
+/**
+ * Response from NATS email OTP verification request. A new-address success carries the identity
+ * token for linking; an own-account success carries only `status` and no tokens.
  */
 export interface VerifyEmailOtpNatsResponse {
   success: boolean;
   data?: {
-    access_token: string;
-    id_token: string;
-    scope: string;
-    expires_in: number;
-    token_type: string;
+    access_token?: string;
+    id_token?: string;
+    scope?: string;
+    expires_in?: number;
+    token_type?: string;
+    /** Upstream value, unvalidated — compare against the exact `EmailVerificationStatus`. */
+    status?: string;
   };
   message?: string;
   error?: string;
@@ -700,6 +715,8 @@ export interface ListIdentitiesNatsResponse {
  */
 export interface VerifyAndLinkEmailResponse {
   success: boolean;
+  /** Set only when the address was already connected to the caller's account; absent on a new link. */
+  status?: EmailVerificationStatus;
   message?: string;
   error?: string;
   authorize_url?: string;

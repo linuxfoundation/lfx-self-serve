@@ -81,18 +81,26 @@ export class EmailVerificationService {
 
   /**
    * Verify an OTP code for an email address
+   *
+   * When the caller's Flow C management token is supplied it is sent as `user.auth_token`, which
+   * lets auth-service recognize an address already connected to that account and reply with a
+   * token-free `data.status: 'already_connected'` success. Only ever pass the user's own Flow C
+   * token here — an M2M token never resolves to the user and can fail the verification instead.
+   * Omit it to keep the legacy tokenless request.
+   *
    * @param req - Express request object for logging
    * @param email - Email address being verified
    * @param otp - The OTP code to verify
-   * @returns Response with identity token on success
+   * @param userManagementToken - Optional Flow C management token identifying the caller
+   * @returns Response with identity token on a new-address success, or a status-only own-account success
    */
-  public async verifyOtp(req: Request, email: string, otp: string): Promise<VerifyEmailOtpNatsResponse> {
+  public async verifyOtp(req: Request, email: string, otp: string, userManagementToken?: string): Promise<VerifyEmailOtpNatsResponse> {
     const codec = this.natsService.getCodec();
 
-    logger.debug(req, 'verify_email_otp', 'Verifying email OTP via NATS', { email });
+    logger.debug(req, 'verify_email_otp', 'Verifying email OTP via NATS', { email, has_user_token: !!userManagementToken });
 
     try {
-      const payload = JSON.stringify({ email, otp });
+      const payload = JSON.stringify(userManagementToken ? { user: { auth_token: userManagementToken }, email, otp } : { email, otp });
       const response = await this.natsService.request(NatsSubjects.EMAIL_VERIFY_OTP, codec.encode(payload), {
         timeout: NATS_CONFIG.REQUEST_TIMEOUT,
       });
@@ -103,6 +111,7 @@ export class EmailVerificationService {
       logger.debug(req, 'verify_email_otp', 'Received OTP verification response', {
         success: parsed.success,
         has_token: !!parsed.data?.id_token,
+        status: parsed.data?.status,
         error: parsed.error,
         message: parsed.message,
         response_keys: Object.keys(parsed),
