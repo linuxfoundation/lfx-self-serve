@@ -70,6 +70,7 @@ describe('EmailVerificationService.verifyOtp', () => {
     expect(natsRequest).toHaveBeenCalledExactlyOnceWith(NatsSubjects.EMAIL_VERIFY_OTP, expect.any(Uint8Array), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
     expect(decodeRequestPayload()).toEqual({ user: { auth_token: USER_MANAGEMENT_TOKEN }, email: EMAIL, otp: OTP });
     expect(loggedPayloads()).not.toContain(USER_MANAGEMENT_TOKEN);
+    expect(loggerMock.debug).toHaveBeenCalledWith(req, 'verify_email_otp', 'Verifying email OTP via NATS', { has_user_token: true });
   });
 
   it.each([undefined, ''])('keeps the legacy tokenless payload when the user token is %j', async (token) => {
@@ -78,6 +79,7 @@ describe('EmailVerificationService.verifyOtp', () => {
     await service.verifyOtp(req, EMAIL, OTP, token);
 
     expect(decodeRequestPayload()).toEqual({ email: EMAIL, otp: OTP });
+    expect(loggerMock.debug).toHaveBeenCalledWith(req, 'verify_email_otp', 'Verifying email OTP via NATS', { has_user_token: false });
   });
 
   it('passes a token-free already-connected success through unchanged', async () => {

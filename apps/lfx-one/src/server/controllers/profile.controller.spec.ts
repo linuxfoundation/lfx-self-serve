@@ -2084,6 +2084,29 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(req, 'synthetic-user-mgmt-token', 'synthetic-identity-token');
       expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
+    });
+
+    it.each([
+      ['gateway token population', (err: Error) => populateApiGatewayTokenMock.mockRejectedValueOnce(err)],
+      ['v1 email sync', (err: Error) => userSvc.syncVerifiedEmailToUserService.mockRejectedValueOnce(err)],
+    ])('keeps a completed link successful when %s fails, without logging the email', async (_label, arrange) => {
+      const err = new Error('synthetic follow-up failure');
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      arrange(err);
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification follow-up sync failed (non-blocking)', {
+        err,
+      });
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+      expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledTimes(1);
+      expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledWith(req, 'user-1');
     });
 
     it('adds no email outcome to an ordinary authorization without a pending verification', async () => {
@@ -2127,6 +2150,8 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledTimes(1);
       expect(req.appSession.pendingEmailVerification).toBeUndefined();
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(logger.warning).mock.calls[0][3]).not.toHaveProperty('email');
       expectNoWrites();
     });
 
@@ -2142,6 +2167,9 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
       expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification link failed', {
+        error: 'email already linked',
+      });
     });
 
     it('never replays the attempt: a second callback finds nothing pending', async () => {

@@ -2540,7 +2540,6 @@ export class ProfileController {
 
       if (!otpResponse.success || !otpResponse.data?.id_token) {
         logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
-          email: pending.email,
           error: otpResponse.error,
           has_token: !!otpResponse.data?.id_token,
         });
@@ -2550,14 +2549,12 @@ export class ProfileController {
       const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
       if (!linkResponse.success) {
         logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
-          email: pending.email,
           error: linkResponse.error,
         });
         return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
       }
     } catch (err) {
       logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
-        email: pending.email,
         err,
       });
       return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
@@ -2573,7 +2570,6 @@ export class ProfileController {
       await this.userService.syncVerifiedEmailToUserService(req, pending.email);
     } catch (err) {
       logger.warning(req, 'profile_auth_callback', 'Pending verification follow-up sync failed (non-blocking)', {
-        email: pending.email,
         err,
       });
     }
@@ -2601,7 +2597,7 @@ export class ProfileController {
         });
     }
 
-    logger.info(req, 'profile_auth_callback', 'Pending email verification completed', { email: pending.email });
+    logger.info(req, 'profile_auth_callback', 'Pending email verification completed');
     return undefined;
   }
 

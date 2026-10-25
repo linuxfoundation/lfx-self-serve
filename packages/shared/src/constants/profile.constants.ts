@@ -212,7 +212,7 @@ export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStat
 
 /** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
 export const EMAIL_CALLBACK_RETRY_MESSAGE =
-  'Email verification did not finish. Try again from Email Settings or Identities; request a new code if the previous code has expired or was already used.';
+  'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
 
 /** Enumeration-safe response shared by accepted and already-linked send-code requests. */
 export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';

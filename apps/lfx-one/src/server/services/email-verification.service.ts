@@ -97,7 +97,7 @@ export class EmailVerificationService {
   public async verifyOtp(req: Request, email: string, otp: string, userManagementToken?: string): Promise<VerifyEmailOtpNatsResponse> {
     const codec = this.natsService.getCodec();
 
-    logger.debug(req, 'verify_email_otp', 'Verifying email OTP via NATS', { email, has_user_token: !!userManagementToken });
+    logger.debug(req, 'verify_email_otp', 'Verifying email OTP via NATS', { has_user_token: !!userManagementToken });
 
     try {
       const payload = JSON.stringify(userManagementToken ? { user: { auth_token: userManagementToken }, email, otp } : { email, otp });
