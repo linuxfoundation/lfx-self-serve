@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PollType } from '../enums/poll.enum';
-import type { VoteDetailTab, VoteDetailTabOption } from '../interfaces/poll.interface';
+import { PollType, VoteVoterStatus } from '../enums/poll.enum';
+import type { VoteDetailTab, VoteDetailTabOption, VoteVoterStatusFilter } from '../interfaces/poll.interface';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -85,14 +85,44 @@ export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
 export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
 
 /** `?tab=` values the vote detail page accepts; anything else falls back to {@link VOTE_DETAIL_DEFAULT_TAB}. */
-export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab>(['overview', 'results', 'comments']);
+export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab>(['overview', 'results', 'comments', 'voters']);
 
-/** Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts. */
+/**
+ * Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts;
+ * the Voters tab (#3914) only to vote managers on a named vote that is open or closed.
+ */
 export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
   { key: 'overview', label: 'Overview', icon: 'fa-grid-2' },
   { key: 'results', label: 'Results', icon: 'fa-chart-simple' },
   { key: 'comments', label: 'Comments', icon: 'fa-comments' },
+  { key: 'voters', label: 'Voters', icon: 'fa-users' },
 ];
+
+/** Default page size for the Voters tab table on the vote detail page (#3914). */
+export const VOTE_VOTERS_PAGE_SIZE = 25;
+
+/** Page-size options for the Voters tab table. Includes the default page size. */
+export const VOTE_VOTERS_ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
+
+/** Status pill shown when no status filter is applied on the Voters tab. */
+export const VOTE_VOTERS_ALL_STATUS_FILTER: VoteVoterStatusFilter = 'all';
+
+/** Status pill labels on the Voters tab. The not-voted pill reads per vote state — see {@link VOTE_VOTER_NOT_VOTED_LABELS}. */
+export const VOTE_VOTER_STATUS_FILTER_LABELS: Record<VoteVoterStatusFilter, string> = {
+  all: 'All',
+  [VoteVoterStatus.VOTED]: 'Voted',
+  [VoteVoterStatus.ABSTAINED]: 'Abstained',
+  [VoteVoterStatus.NOT_VOTED]: 'Not voted yet',
+};
+
+/** A not-voted voter can still vote while the vote is open; after it closes they did not vote. */
+export const VOTE_VOTER_NOT_VOTED_LABELS = { active: 'Not voted yet', closed: 'Did not vote' } as const;
+
+/** Most chips a Choice cell shows per question before collapsing the rest into `+N`. */
+export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
+
+/** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
+export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
 /** Display label per voting method — shared by the results drawer and the vote detail page. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {

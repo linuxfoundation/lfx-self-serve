@@ -34,6 +34,7 @@ import {
   VoteListResponse,
   VoteStatusCounts,
   VoteSummary,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
@@ -332,6 +333,11 @@ export class VoteService {
   /** Eligible voters who have not voted yet — vote managers only (#3769). */
   public getReminderRecipients(voteUid: string): Observable<VoteReminderRecipient[]> {
     return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
+  }
+
+  /** Every invited voter with their status and current ballot — vote managers on named votes only (#3911). */
+  public getVoteVoters(voteUid: string): Observable<VoteVoter[]> {
+    return this.http.get<VoteVoter[]>(`/api/votes/${encodeURIComponent(voteUid)}/voters`).pipe(take(1));
   }
 
   /** Resends the vote email to the given recipients (#3769). */

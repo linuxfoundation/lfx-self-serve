@@ -104,4 +104,27 @@ describe('VoteOptionResultsComponent', () => {
     expect(row('vote-results-voter-option-c2')).toBeTruthy();
     expect(row('vote-results-option-c1')).toBeNull();
   });
+
+  describe('voter links (#3914)', () => {
+    const viewLink = (choiceId: string): HTMLButtonElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="vote-results-option-${choiceId}-view-voters"] button`);
+
+    it('renders no links by default', () => {
+      render([option({ choiceId: 'c1', voteCount: 2, percentage: 100 })], 'final');
+
+      expect(viewLink('c1')).toBeNull();
+    });
+
+    it.each(['live', 'final'] as const)('links each %s option with votes and emits its choice id', (variant) => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render([option({ choiceId: 'c1', voteCount: 1, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
+      const emitted: string[] = [];
+      fixture.componentInstance.viewVoters.subscribe((choiceId) => emitted.push(choiceId));
+
+      expect(viewLink('c1')?.textContent).toContain('View 1 voter');
+      expect(viewLink('c2')).toBeNull();
+      viewLink('c1')!.click();
+      expect(emitted).toEqual(['c1']);
+    });
+  });
 });

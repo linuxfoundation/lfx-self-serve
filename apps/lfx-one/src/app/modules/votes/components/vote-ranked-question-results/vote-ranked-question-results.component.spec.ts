@@ -90,4 +90,27 @@ describe('VoteRankedQuestionResultsComponent', () => {
       expect(text(el)).toBe(squash('Rank the candidates'));
     });
   });
+
+  describe('voter links (#3914)', () => {
+    const viewLink = (choiceId: string): HTMLButtonElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="vote-results-ranked-choice-${choiceId}-view-voters"] button`);
+
+    it('renders no links by default', () => {
+      render(question());
+
+      expect(viewLink('c1')).toBeNull();
+    });
+
+    it('links each choice ranked first by its rank-1 count and emits the question and choice key', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(question());
+      const emitted: string[] = [];
+      fixture.componentInstance.viewVoters.subscribe((key) => emitted.push(key));
+
+      expect(viewLink('c1')?.textContent).toContain('View 3 first-choice voters');
+      expect(viewLink('c2')).toBeNull();
+      viewLink('c1')!.click();
+      expect(emitted).toEqual(['q1:c1']);
+    });
+  });
 });

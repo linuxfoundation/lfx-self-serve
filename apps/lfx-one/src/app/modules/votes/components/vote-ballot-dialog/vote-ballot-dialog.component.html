@@ -1,0 +1,143 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (current(); as ballot) {
+  <div class="flex flex-col gap-5" data-testid="vote-ballot-dialog">
+    <!-- Voter -->
+    <div class="flex flex-col gap-1 border-b border-gray-100 pb-4" data-testid="vote-ballot-dialog-voter">
+      <h2 class="text-base font-semibold text-gray-900" data-testid="vote-ballot-dialog-name">{{ ballot.displayName }}</h2>
+      @if (ballot.voter.user_email) {
+        <span class="text-sm text-gray-600" data-testid="vote-ballot-dialog-email">{{ ballot.voter.user_email }}</span>
+      }
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+        @if (ballot.organization) {
+          <span data-testid="vote-ballot-dialog-organization">{{ ballot.organization }}</span>
+        }
+        @if (ballot.role) {
+          <span data-testid="vote-ballot-dialog-role">{{ ballot.role }}</span>
+        }
+        @if (ballot.committeeRole) {
+          <span data-testid="vote-ballot-dialog-committee-role">{{ ballot.committeeRole }}</span>
+        }
+        @if (ballot.submittedAt) {
+          <span data-testid="vote-ballot-dialog-submitted">Submitted {{ ballot.submittedAt | date: 'MMM d, y, h:mm a' }}</span>
+        }
+      </div>
+    </div>
+
+    @if (isActive) {
+      <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" data-testid="vote-ballot-dialog-active-notice">
+        This is the voter's current ballot. They can change it until the vote closes.
+      </div>
+    }
+
+    @if (isAbstained()) {
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-center gap-2" data-testid="vote-ballot-dialog-abstained">
+        <i class="fa-light fa-circle-minus text-gray-500" aria-hidden="true"></i>
+        <span class="text-sm text-gray-700">This voter abstained.</span>
+      </div>
+    } @else {
+      <!-- Questions -->
+      @for (question of questions(); track question.questionId) {
+        <section class="flex flex-col gap-2" [attr.data-testid]="'vote-ballot-dialog-question-' + question.questionId">
+          <h3 class="text-sm font-semibold text-gray-900">
+            @if (questions().length > 1) {
+              Q{{ question.number }}.
+            }
+            {{ question.prompt }}
+          </h3>
+          @if (question.ranked) {
+            @if (question.rankedChoices.length > 0) {
+              <ol class="flex flex-col gap-1" [attr.data-testid]="'vote-ballot-dialog-ranked-' + question.questionId">
+                @for (choice of question.rankedChoices; track choice.choiceId) {
+                  <li class="flex items-center gap-2 text-sm text-gray-800">
+                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">{{
+                      choice.rank
+                    }}</span>
+                    {{ choice.text }}
+                  </li>
+                }
+              </ol>
+            } @else {
+              <p class="text-sm italic text-gray-500">No choices ranked.</p>
+            }
+            @if (question.unrankedChoices.length > 0) {
+              <p class="text-xs text-gray-500" [attr.data-testid]="'vote-ballot-dialog-unranked-' + question.questionId">
+                Not ranked:
+                @for (choice of question.unrankedChoices; track choice.choiceId; let last = $last) {
+                  {{ choice.text }}{{ last ? '' : ', ' }}
+                }
+              </p>
+            }
+          } @else {
+            <ul class="flex flex-col gap-1" [attr.data-testid]="'vote-ballot-dialog-choices-' + question.questionId">
+              @for (choice of question.choices; track choice.choiceId) {
+                <li
+                  class="flex items-center gap-2 text-sm"
+                  [class.font-medium]="choice.selected"
+                  [class.text-gray-900]="choice.selected"
+                  [class.text-gray-500]="!choice.selected"
+                  [attr.data-testid]="'vote-ballot-dialog-choice-' + choice.choiceId"
+                  [attr.data-selected]="choice.selected">
+                  @if (question.multiple) {
+                    <i [class]="choice.selected ? 'fa-solid fa-square-check text-blue-600' : 'fa-light fa-square text-gray-400'" aria-hidden="true"></i>
+                  } @else {
+                    <i [class]="choice.selected ? 'fa-solid fa-circle-dot text-blue-600' : 'fa-light fa-circle text-gray-400'" aria-hidden="true"></i>
+                  }
+                  <span>{{ choice.text }}</span>
+                  @if (choice.selected) {
+                    <span class="sr-only">(selected)</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+    }
+
+    <!-- Comments -->
+    @if (commentPrompts.length > 0) {
+      <section class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="vote-ballot-dialog-comments">
+        @for (prompt of commentPrompts; track prompt.prompt_id) {
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-medium text-gray-700">{{ prompt.prompt }}</h3>
+            @if (commentsByPrompt().get(prompt.prompt_id); as comment) {
+              <p class="text-sm text-gray-800 whitespace-pre-line break-words" [attr.data-testid]="'vote-ballot-dialog-comment-' + prompt.prompt_id">
+                {{ comment }}
+              </p>
+            } @else {
+              <p class="text-sm italic text-gray-500" [attr.data-testid]="'vote-ballot-dialog-no-comment-' + prompt.prompt_id">No comment.</p>
+            }
+          </div>
+        }
+      </section>
+    }
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between gap-2 border-t border-gray-100 pt-4" data-testid="vote-ballot-dialog-footer">
+      <div class="flex items-center gap-2">
+        <lfx-button
+          icon="fa-light fa-chevron-left"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          ariaLabel="Previous ballot"
+          [disabled]="!hasPrevious()"
+          (onClick)="previous()"
+          data-testid="vote-ballot-dialog-previous" />
+        <span class="text-sm text-gray-600" aria-live="polite" data-testid="vote-ballot-dialog-position">{{ index() + 1 }} of {{ ballots.length }}</span>
+        <lfx-button
+          icon="fa-light fa-chevron-right"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          ariaLabel="Next ballot"
+          [disabled]="!hasNext()"
+          (onClick)="next()"
+          data-testid="vote-ballot-dialog-next" />
+      </div>
+      <lfx-button label="Close" size="small" severity="secondary" (onClick)="close()" data-testid="vote-ballot-dialog-close" />
+    </div>
+  </div>
+}

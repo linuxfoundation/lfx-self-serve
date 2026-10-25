@@ -20,6 +20,16 @@
           @if (response.abstained) {
             <span class="text-slate-400">(Abstained)</span>
           }
+          @if (showBallotLinks()) {
+            <lfx-button
+              label="View ballot"
+              [text]="true"
+              size="small"
+              styleClass="ml-auto"
+              [ariaLabel]="'View ballot of ' + (response.user_name || 'this voter')"
+              (onClick)="viewBallot.emit(response.vote_id)"
+              [attr.data-testid]="'vote-results-comment-view-ballot-' + response.vote_id" />
+          }
         </div>
       </div>
     } @empty {

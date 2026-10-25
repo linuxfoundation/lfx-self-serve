@@ -1,0 +1,213 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="vote-voters">
+  <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-center gap-2" data-testid="vote-voters-manager-notice">
+    <i class="fa-light fa-lock text-gray-500" aria-hidden="true"></i>
+    <p class="text-sm text-gray-700">Only vote managers can see individual ballots.</p>
+  </div>
+
+  @if (isActive()) {
+    <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600" data-testid="vote-voters-updated">
+      <span>
+        @if (updatedAt(); as updated) {
+          Updated {{ updated | date: 'h:mm a' }} · Voters can change their ballot until the vote closes.
+        } @else {
+          Voters can change their ballot until the vote closes.
+        }
+      </span>
+      <lfx-button
+        label="Refresh"
+        icon="fa-light fa-arrow-rotate-right"
+        size="small"
+        [text]="true"
+        [disabled]="loading()"
+        (onClick)="refresh()"
+        data-testid="vote-voters-refresh" />
+    </div>
+  }
+
+  @if (loadError()) {
+    <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="vote-voters-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-red-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-700">We couldn't load the voter list. Please try again.</p>
+      <lfx-button label="Retry" icon="fa-light fa-arrow-rotate-left" size="small" (onClick)="refresh()" data-testid="vote-voters-retry" />
+    </div>
+  } @else {
+    <!-- Toolbar -->
+    <div class="flex flex-col md:flex-row md:items-center gap-3" data-testid="vote-voters-toolbar">
+      <div class="flex-1" data-testid="vote-voters-search">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search by name or organization"
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small" />
+      </div>
+      <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-role-filter">
+        <lfx-select [form]="filterForm" control="role" [options]="roleOptions()" placeholder="All roles" [showClear]="true" styleClass="w-full" size="small" />
+      </div>
+      <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-choice-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="choice"
+          [options]="choiceOptions()"
+          placeholder="All choices"
+          [showClear]="true"
+          styleClass="w-full"
+          size="small" />
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <!-- Counts would read as zero before the list loads, so the pills wait for it. -->
+      @if (loading()) {
+        <div class="flex items-center gap-2" data-testid="vote-voters-status-loading">
+          @for (i of skeletonRows; track i) {
+            <p-skeleton width="5.5rem" height="1.75rem" borderRadius="9999px" />
+          }
+        </div>
+      } @else {
+        <lfx-filter-pills
+          [options]="statusOptions()"
+          [selectedFilter]="statusFilter()"
+          (filterChange)="onStatusFilterChange($event)"
+          data-testid="vote-voters-status-pills" />
+      }
+      @if (isActive() && !loading() && notVotedTotal() > 0) {
+        <lfx-button
+          label="Send reminder"
+          icon="fa-light fa-paper-plane"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="openReminder()"
+          data-testid="vote-voters-send-reminder" />
+      }
+    </div>
+
+    @if (loading()) {
+      <div class="flex flex-col gap-3" data-testid="vote-voters-loading">
+        @for (i of skeletonRows; track i) {
+          <p-skeleton width="100%" height="2.75rem" />
+        }
+      </div>
+    } @else if (rows().length === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-users"
+        title="No invited voters"
+        subtitle="No one has been invited to this vote."
+        [withCard]="false"
+        data-testid="vote-voters-empty" />
+    } @else if (filteredRows().length === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-filter-slash"
+        title="No voters match these filters"
+        subtitle="Try a different search or filter."
+        ctaLabel="Clear filters"
+        [withCard]="false"
+        (ctaClick)="clearFilters()"
+        data-testid="vote-voters-no-matches" />
+    } @else {
+      <lfx-table
+        [value]="filteredRows()"
+        dataKey="uid"
+        [paginator]="filteredRows().length > pageSize"
+        [rows]="pageSize"
+        [first]="tableFirst()"
+        [rowsPerPageOptions]="rowsPerPageOptions"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} voters"
+        styleClass="p-datatable-sm"
+        (onPage)="onPage($event)"
+        data-testid="vote-voters-table">
+        <ng-template #header>
+          <tr>
+            <th><span class="text-sm font-inter text-gray-500">Voter</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Role</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Choice</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Submitted</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'vote-voters-row-' + row.uid">
+            <!-- Voter -->
+            <td>
+              <div class="flex items-center gap-3 min-w-0">
+                <lfx-person-avatar [avatarUrl]="row.voter.profile_picture" [name]="row.displayName" size="sm" />
+                <div class="flex flex-col min-w-0">
+                  @if (row.hasBallot) {
+                    <button
+                      type="button"
+                      class="text-left text-sm font-medium text-blue-600 hover:underline truncate"
+                      [attr.aria-label]="'View ballot of ' + row.displayName"
+                      (click)="openBallot(row.uid)"
+                      [attr.data-testid]="'vote-voters-open-ballot-' + row.uid">
+                      {{ row.displayName }}
+                    </button>
+                  } @else {
+                    <span class="text-sm font-medium text-gray-900 truncate" [attr.data-testid]="'vote-voters-name-' + row.uid">{{ row.displayName }}</span>
+                  }
+                  @if (row.organization) {
+                    <span class="text-xs text-gray-500 truncate">{{ row.organization }}</span>
+                  }
+                </div>
+              </div>
+            </td>
+
+            <!-- Role -->
+            <td>
+              <div class="flex flex-col">
+                <span class="text-sm text-gray-700">{{ row.role || '—' }}</span>
+                @if (row.committeeRole) {
+                  <span class="text-xs text-gray-500">{{ row.committeeRole }}</span>
+                }
+              </div>
+            </td>
+
+            <!-- Choice -->
+            <td [attr.data-testid]="'vote-voters-choice-' + row.uid">
+              @switch (row.status) {
+                @case ('abstained') {
+                  <lfx-tag value="Abstained" severity="secondary" />
+                }
+                @case ('not_voted') {
+                  <span class="text-sm italic text-gray-400">{{ row.statusLabel }}</span>
+                }
+                @default {
+                  <div class="flex flex-col gap-1">
+                    @for (summary of row.choiceSummaries; track summary.questionId) {
+                      <div class="flex flex-wrap items-center gap-1">
+                        @if (summary.questionLabel) {
+                          <span class="text-xs font-medium text-gray-500">{{ summary.questionLabel }}</span>
+                        }
+                        @for (chip of summary.chips; track $index; let last = $last) {
+                          <lfx-tag [value]="chip" severity="info" />
+                          @if (summary.ranked && !last) {
+                            <span class="text-xs text-gray-400" aria-hidden="true">›</span>
+                          }
+                        } @empty {
+                          <span class="text-xs italic text-gray-400">No answer</span>
+                        }
+                        @if (summary.overflow > 0) {
+                          <span class="text-xs text-gray-500">+{{ summary.overflow }}</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            </td>
+
+            <!-- Submitted -->
+            <td>
+              <span class="text-sm text-gray-600">{{ row.submittedAt ? (row.submittedAt | date: 'MMM d, y, h:mm a') : '—' }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  }
+</div>

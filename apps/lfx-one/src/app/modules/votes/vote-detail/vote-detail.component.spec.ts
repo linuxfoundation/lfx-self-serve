@@ -948,13 +948,13 @@ describe('VoteDetailComponent', () => {
       call(fixture, 'switchTab', 'comments');
       expect(router.navigate).toHaveBeenLastCalledWith(
         [],
-        expect.objectContaining({ queryParams: { tab: 'comments' }, queryParamsHandling: 'merge', replaceUrl: true })
+        expect.objectContaining({ queryParams: { tab: 'comments', voters_choice: null, voters_ballot: null }, queryParamsHandling: 'merge', replaceUrl: true })
       );
 
       queryParamMap.next(convertToParamMap({ tab: 'comments' }));
       TestBed.tick();
       call(fixture, 'switchTab', 'overview');
-      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab: null } }));
+      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab: null, voters_choice: null, voters_ballot: null } }));
     });
 
     it('sends View results to the Results tab', async () => {
@@ -962,7 +962,117 @@ describe('VoteDetailComponent', () => {
 
       call(fixture, 'onViewResults');
 
-      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab: 'results' } }));
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'results', voters_choice: null, voters_ballot: null } })
+      );
+    });
+  });
+
+  describe('voters tab (#3914)', () => {
+    const tabKeys = (fixture: ComponentFixture<VoteDetailComponent>): string[] => read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key);
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: false })));
+    });
+
+    it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows the tab to a manager on a named %s vote', async (status) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: false, status })));
+      queryParamMap.next(convertToParamMap({ tab: 'voters' }));
+      const fixture = await setup();
+
+      expect(tabKeys(fixture)).toEqual(['overview', 'results', 'comments', 'voters']);
+      expect(read(fixture, 'activeTab')).toBe('voters');
+      expect(testId(fixture, 'vote-detail-voters')?.querySelector('lfx-vote-voters')).not.toBeNull();
+    });
+
+    it.each([
+      ['a pseudo-anonymous vote', { pseudo_anonymity: true }],
+      ['a vote without the anonymity flag', { pseudo_anonymity: undefined }],
+      ['a draft', { pseudo_anonymity: false, status: PollStatus.DISABLED }],
+    ])('hides the tab on %s and falls back to Overview', async (_label, overrides) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote(overrides as Partial<Vote>)));
+      queryParamMap.next(convertToParamMap({ tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: 'b-1' }));
+      const fixture = await setup();
+
+      expect(tabKeys(fixture)).not.toContain('voters');
+      expect(read(fixture, 'activeTab')).toBe('overview');
+      expect(read(fixture, 'votersChoice')).toBeNull();
+      expect(read(fixture, 'votersBallot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voters')).toBeNull();
+    });
+
+    it('hides the tab from a viewer without write access', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
+      queryParamMap.next(convertToParamMap({ tab: 'voters' }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'showVotersTab')).toBe(false);
+      expect(read(fixture, 'activeTab')).toBe('overview');
+    });
+
+    it('never shows the tab while the access check is running', async () => {
+      projectService.getProjectStrict.mockReturnValue(new Subject<Project>());
+      const fixture = await setup();
+
+      expect(read(fixture, 'canManage')).toBeNull();
+      expect(read(fixture, 'showVotersTab')).toBe(false);
+      expect(tabKeys(fixture)).not.toContain('voters');
+    });
+
+    it('passes the deep-link params to the tab when it is shown', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: 'b-1' }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'votersChoice')).toBe('question-1:choice-yes');
+      expect(read(fixture, 'votersBallot')).toBe('b-1');
+    });
+
+    it('opens the tab from the results and comment links', async () => {
+      const fixture = await setup();
+
+      call(fixture, 'onViewOptionVoters', 'question-1', 'choice-yes');
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: null } })
+      );
+
+      call(fixture, 'onViewAbstainedVoters');
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'status:abstained', voters_ballot: null } })
+      );
+
+      call(fixture, 'onViewBallot', 'b-1');
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: 'b-1' } })
+      );
+    });
+
+    it('ignores the links when the tab is hidden', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
+      const fixture = await setup();
+
+      call(fixture, 'onViewVoters', 'question-1:choice-yes');
+      call(fixture, 'onViewBallot', 'b-1');
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('binds the link inputs to the tab visibility', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
+      const fixture = await setup();
+
+      const options = fixture.debugElement.query(By.css('lfx-vote-option-results'));
+      expect(options.properties['showVoterLinks']).toBe(true);
+
+      options.triggerEventHandler('viewVoters', 'choice-yes');
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: null } })
+      );
     });
   });
 });
