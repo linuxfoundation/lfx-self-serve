@@ -5,9 +5,27 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { loggerCalls } = vi.hoisted(() => ({ loggerCalls: [] as unknown[][] }));
+
+// Every logger call is recorded so a test can assert on what reaches the log, not just on behaviour.
+vi.mock('./logger.service', () => {
+  const record =
+    (returns?: unknown) =>
+    (...args: unknown[]) => {
+      loggerCalls.push(args);
+      return returns;
+    };
+  return {
+    logger: {
+      startOperation: record(0),
+      success: record(),
+      error: record(),
+      warning: record(),
+      debug: record(),
+      info: record(),
+    },
+  };
+});
 
 const { CdpService } = await import('./cdp.service');
 const { CDP_CONFIG } = await import('@lfx-one/shared/constants');
@@ -27,6 +45,7 @@ function requestedUrls(fetchMock: ReturnType<typeof vi.fn>): string[] {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  loggerCalls.length = 0;
   vi.stubEnv('CDP_ACCESS_TOKEN', 'test-token');
   vi.stubEnv('CDP_API_URL', 'https://cdp.test/api');
   fetchMock = vi.fn();
@@ -63,6 +82,18 @@ describe('CdpService.getWorkExperiencesForKnownUser', () => {
     await expect(new CdpService().getWorkExperiencesForKnownUser(undefined, LFID)).resolves.toEqual([]);
 
     expect(requestedUrls(fetchMock)).toHaveLength(1);
+  });
+
+  // #4225 — the caller's LFID is a username. The reader's own log calls drop it, but it also routes
+  // through `resolveMemberId`, whose debug lines used to carry the raw `lfids` (PR #4318 review).
+  // This pins the whole path, so neither site can reintroduce it.
+  it("never writes the caller's LFID into any log line", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404));
+
+    await new CdpService().getWorkExperiencesForKnownUser(undefined, LFID);
+
+    expect(loggerCalls.length).toBeGreaterThan(0);
+    expect(JSON.stringify(loggerCalls)).not.toContain(LFID);
   });
 
   it('reads the work history of a member that already exists', async () => {

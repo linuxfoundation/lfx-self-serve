@@ -1022,7 +1022,10 @@ export class CdpService {
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;
     const requestId = randomUUID();
 
-    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfids, request_id: requestId });
+    // The LFIDs themselves are usernames, so they stay out of the metadata: `request_id` is the
+    // value sent upstream as `X-LFX-Request-ID` and is the correlation key worth having here
+    // (`security/pii-in-logs-and-identifiers`; PR #4318 review).
+    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfid_count: lfids.length, has_emails: !!emails?.length, request_id: requestId });
 
     const body: { lfids: string[]; emails?: string[] } = { lfids };
     if (emails?.length) {
@@ -1045,7 +1048,9 @@ export class CdpService {
       // LFID/emails — treat as "no member" so resolveMember creates one. This is an
       // expected path, so skip reading the body here. Other statuses are genuine failures.
       if (response.status === 404) {
-        logger.debug(req, 'resolve_cdp_member', 'No CDP member found; will create', { lfids, request_id: requestId });
+        // "will create" was only ever true of `resolveMember`; this helper just reports the miss,
+        // and `getWorkExperiencesForKnownUser` deliberately does not create.
+        logger.debug(req, 'resolve_cdp_member', 'No CDP member matched', { lfid_count: lfids.length, request_id: requestId });
         return undefined;
       }
       const errorText = await response.text();
