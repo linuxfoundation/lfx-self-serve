@@ -73,7 +73,10 @@ describe('Marketing family page', () => {
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
         { provide: MktgRebuildService, useValue: { run } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-writer' }), impersonating: signal(false) } },
-        { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'synthetic', name: 'Synthetic project' }), canWrite: writer } },
+        {
+          provide: ProjectContextService,
+          useValue: { activeContext: computed(() => ({ uid: 'synthetic', name: 'Synthetic project', slug: projectSlug() })), canWrite: writer },
+        },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
         provideRouter([
