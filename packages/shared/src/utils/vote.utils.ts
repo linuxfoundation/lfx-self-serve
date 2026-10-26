@@ -215,7 +215,7 @@ function computeParticipationPercent(responses: number, invited: number): number
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
  * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
- * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-header,
  * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
  * hydration — this does not prevent a server/client difference, it just makes the server side
  * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
@@ -245,7 +245,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
 }
 
 /**
- * Computes participation stats for the results drawer from the results API payload
+ * Computes participation stats for the vote detail page from the results API payload
  * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
  * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
  * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
@@ -400,9 +400,9 @@ function isParticipationCount(value: unknown): value is number {
 /**
  * Computes the votes-table participation summary for one vote row
  * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
- * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
+ * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` on the vote detail page.
  * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
- * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
+ * never yields a percent. Use the same completion-aware rounding as the vote detail page: incomplete counts cap at 99%,
  * complete/excess counts at 100%. A just-opened vote whose index row has not reported a positive electorate yet shows
  * COUNTING instead of a false "No one invited" (GH-4078).
  * @param vote - Vote list row from the query-service index or per-vote REST
@@ -759,7 +759,7 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
 
 /**
  * Builds the relative path to a vote's canonical, lens-independent permalink page
- * (`VotePermalinkComponent`, mounted at `/votes/:id`).
+ * (the vote detail page, `VoteDetailComponent`, mounted at `/votes/:id`).
  * Combine with `toAbsoluteUrl` for a shareable/copyable absolute URL.
  * @param voteUid - The vote uid
  * @returns The relative permalink path, e.g. `/votes/abc123`
@@ -769,8 +769,8 @@ export function votePermalinkPath(voteUid: string): string {
 }
 
 /**
- * Voter-side results panel for a viewer without write access — the single copy of the rules the results drawer and the
- * vote detail page share. A removed voter is `access_denied`; a settled, error-free, empty my-response is a viewer who was
+ * Voter-side results panel for a viewer without write access — the single copy of the rules the vote detail page
+ * applies. A removed voter is `access_denied`; a settled, error-free, empty my-response is a viewer who was
  * never invited (`not_participant`), so a deep link to a closed vote can never route a stranger to final results. A failed
  * my-response call must not collapse into `not_participant` — callers render their error state for it instead.
  * @param vote - The loaded vote, or null while loading

@@ -105,7 +105,7 @@
         (viewVote)="onViewVote($event)"
         (viewResults)="onViewResults($event)"
         (refresh)="refreshVotes()"
-        (voteExtended)="onVoteExtended($event)"
+        (voteExtended)="onVoteExtended()"
         (pageChange)="onPageChange($event)"
         (filtersChange)="onFiltersChange($event)"
         data-testid="votes-table-container">
@@ -113,24 +113,3 @@
     }
   }
 </div>
-
-<!-- Vote Results Drawer — passes audience='voter' in Me lens so the drawer renders the
-     LFXV2-1917 blind-results / submitted-confirmation / closed-results panel and skips
-     the creator stats + "As the creator..." note. Creator lens is unchanged. On a vote
-     permalink (/votes/:id) the linked vote uses the permalink's audience instead, so a
-     project or committee writer sees the creator view in the Me lens (#3659). -->
-<lfx-vote-results-drawer
-  [(visible)]="resultsDrawerVisible"
-  [voteId]="selectedVoteId()"
-  [listVote]="selectedListVote()"
-  [audience]="resultsAudience()"
-  (castVoteRequested)="onCastFromResults($event)"
-  data-testid="votes-results-drawer"></lfx-vote-results-drawer>
-
-<!-- Vote Cast Drawer — opens for active GENERIC votes the user has not yet responded to (Me lens). -->
-<lfx-vote-cast-drawer
-  [(visible)]="castDrawerVisible"
-  [voteId]="selectedVoteId()"
-  [listVote]="selectedListVote()"
-  (voteSubmitted)="onVoteSubmitted()"
-  data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>

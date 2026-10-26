@@ -42,7 +42,6 @@ import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
-import { voteDetailPageGuard } from './shared/guards/vote-detail-page.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
@@ -695,37 +694,20 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Vote detail page (#3913) — the first of a paired `votes/:id` entry, behind the
-        // `vote-detail-page-enabled` flag. When `voteDetailPageGuard` doesn't match, the router falls
-        // through to the permalink entry below at the same URL, so the flag flips both ways with no
-        // link change. Same auth, title and `pathMatch` as the permalink, so access never depends on
-        // the flag. No `data.lens` and no `lensRedirectGuard`: opening a vote keeps the lens the user
-        // came from while the URL stays /votes/:id. Access is decided in the component, as below.
-        // SSR always matches this entry (the guard defers to the browser), so a flag-off hard load
-        // paints the stored lens on the server and switches to Me once the permalink entry matches.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
         data: { preload: false },
-        canMatch: [votePermalinkMatchGuard, voteDetailPageGuard],
-        canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
-      },
-      {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`. Rendered only while the detail page entry above doesn't match.
-        path: 'votes/:id',
-        pathMatch: 'full',
-        title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',

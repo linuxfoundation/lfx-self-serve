@@ -13,10 +13,10 @@ export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
 
-/** Page size for the paginated comment-response lists in the vote results drawer. */
+/** Page size for the paginated comment-response lists in the vote comment results. */
 export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
 
-/** Page-size options for the comment-results paginator in the vote results drawer. Includes the default page size. */
+/** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
 export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 
 /**
@@ -124,7 +124,7 @@ export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
 /** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
 export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
-/** Display label per voting method — shared by the results drawer and the vote detail page. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+/** Display label per voting method — shared by the vote detail page's header and facts. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.GENERIC]: 'Plurality Vote',
   [PollType.MAJORITY]: 'Majority Vote',

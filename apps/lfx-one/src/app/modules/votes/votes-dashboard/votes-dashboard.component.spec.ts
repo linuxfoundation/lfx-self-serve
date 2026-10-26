@@ -8,9 +8,8 @@ import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
-import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
+import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
@@ -21,8 +20,6 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
-import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
-import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
 
@@ -56,7 +53,6 @@ describe('VotesDashboardComponent personal summary', () => {
   let activeContext: WritableSignal<ProjectContext | null>;
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
-  let voteDetailPageEnabled: WritableSignal<boolean>;
   let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
@@ -85,7 +81,6 @@ describe('VotesDashboardComponent personal summary', () => {
     activeContext = signal<ProjectContext | null>(null);
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
-    voteDetailPageEnabled = signal(false);
     hasVotesAwaitingInvitationCount = vi.fn(() => false);
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
@@ -120,12 +115,10 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: ProjectContextService, useValue: { activeContext, canWrite } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => voteDetailPageEnabled) } },
       ],
     });
-    // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
+    // Keep the real dashboard, summary and table.
     TestBed.overrideComponent(VotesDashboardComponent, {
-      remove: { imports: [VoteCastDrawerComponent, VoteResultsDrawerComponent] },
       add: { schemas: [NO_ERRORS_SCHEMA] },
     });
     await TestBed.compileComponents();
@@ -622,7 +615,7 @@ describe('VotesDashboardComponent personal summary', () => {
     getMyVotes.mockReturnValueOnce(
       of({ votes: feed.map((item) => (item.uid === 'soon' ? { ...item, response_status: VoteResponseStatus.RESPONDED } : item)), complete: true })
     );
-    dashboard['onVoteSubmitted']();
+    dashboard['refresh$'].next();
     await settle();
     expect(cards()[1].value).toBe(1);
     expect(rows()).toEqual(['later']);
@@ -1030,139 +1023,23 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(fixture.nativeElement.textContent).toContain("Votes you've been invited to participate in will appear here.");
   });
 
-  describe('vote detail page flag', () => {
-    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
+  describe('opening a vote', () => {
     let navigate: MockInstance<Router['navigate']>;
 
     beforeEach(() => {
       navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     });
 
-    it('opens the vote page from a row and from View results when the flag is on', async () => {
-      voteDetailPageEnabled.set(true);
-
+    it("opens the vote page from a row, including a vote awaiting the viewer's ballot", () => {
       table.viewVote.emit('soon');
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon'], {});
 
-      dashboard['onViewResults']('later');
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'later'], { queryParams: { tab: 'results' } });
-      expect(drawers()).toEqual({ cast: false, results: false });
-      expect(dashboard['selectedVoteId']()).toBeNull();
+      expect(navigate).toHaveBeenLastCalledWith(['/votes/soon']);
     });
 
-    it('opens the drawers as today when the flag is off', async () => {
-      table.viewVote.emit('soon');
-      expect(drawers()).toEqual({ cast: true, results: false });
-
-      dashboard['onViewResults']('later');
-      expect(drawers()).toEqual({ cast: false, results: true });
-      expect(navigate).not.toHaveBeenCalled();
-    });
-
-    it('never navigates from the dashboard the permalink embeds', async () => {
-      voteDetailPageEnabled.set(true);
-      fixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'results', audience: 'voter' });
-      await settle();
-
+    it('opens the vote page on the Results tab from View results', () => {
       dashboard['onViewResults']('later');
 
-      expect(navigate).not.toHaveBeenCalled();
-      expect(drawers()).toEqual({ cast: false, results: true });
-    });
-  });
-
-  describe('permalink target', () => {
-    const openTarget = async (target: VotePermalinkTarget | null) => {
-      fixture.componentRef.setInput('permalinkTarget', target);
-      await settle();
-    };
-    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
-
-    it('opens the cast drawer for a cast target', async () => {
-      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
-
-      expect(dashboard['selectedVoteId']()).toBe('soon');
-      expect(drawers()).toEqual({ cast: true, results: false });
-    });
-
-    it('opens an initial target without reporting a close before the first render', () => {
-      const initialFixture = TestBed.createComponent(VotesDashboardComponent);
-      const closed = vi.fn();
-      initialFixture.componentInstance.permalinkClosed.subscribe(closed);
-      initialFixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'cast', audience: 'voter' });
-      try {
-        initialFixture.detectChanges();
-        TestBed.tick();
-
-        expect(initialFixture.componentInstance['castDrawerVisible']()).toBe(true);
-        expect(initialFixture.componentInstance['resultsDrawerVisible']()).toBe(false);
-        expect(closed).not.toHaveBeenCalled();
-      } finally {
-        initialFixture.destroy();
-      }
-    });
-
-    it('tears down permalink visibility subscriptions when the dashboard is destroyed', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
-
-      fixture.destroy();
-      dashboard['castDrawerVisible'].set(false);
-      TestBed.tick();
-
-      expect(closed).not.toHaveBeenCalled();
-    });
-
-    it('opens the results drawer as creator for a results/creator target, in the Me lens', async () => {
-      await openTarget({ uid: 'not-in-feed', drawer: 'results', audience: 'creator' });
-
-      expect(drawers()).toEqual({ cast: false, results: true });
-      expect(dashboard['resultsAudience']()).toBe('creator');
-
-      // Another vote opened from the list falls back to the lens audience.
-      dashboard['onViewResults']('later');
-      expect(dashboard['resultsAudience']()).toBe('voter');
-    });
-
-    it('emits permalinkClosed once when the drawer closes, not when switching results → cast', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
-
-      dashboard['onCastFromResults']('soon');
-      await settle();
-      expect(closed).not.toHaveBeenCalled();
-      expect(drawers()).toEqual({ cast: true, results: false });
-
-      dashboard['castDrawerVisible'].set(false);
-      await settle();
-      expect(closed).toHaveBeenCalledTimes(1);
-
-      // Re-emitting the same target never reopens the drawer, and later closes don't re-emit.
-      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
-      expect(drawers()).toEqual({ cast: false, results: false });
-      dashboard['onViewResults']('later');
-      dashboard['resultsDrawerVisible'].set(false);
-      await settle();
-      expect(closed).toHaveBeenCalledTimes(1);
-    });
-
-    it('leaves the routed dashboard unchanged without a target', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget(null);
-
-      expect(drawers()).toEqual({ cast: false, results: false });
-      expect(dashboard['resultsAudience']()).toBe('voter');
-      dashboard['onViewResults']('later');
-      dashboard['resultsDrawerVisible'].set(false);
-      await settle();
-      expect(closed).not.toHaveBeenCalled();
-
-      activeLens.set('project');
-      await settle();
-      expect(dashboard['resultsAudience']()).toBe('creator');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes/later'], { queryParams: { tab: 'results' } });
     });
   });
 });

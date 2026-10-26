@@ -91,7 +91,7 @@ export class VoteDetailHeaderComponent {
     });
   }
 
-  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the results drawer and votes table. */
+  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the facts card and votes table. */
   private initEndedEarlyNote(): Signal<string | null> {
     return computed(() => {
       const vote = this.vote();

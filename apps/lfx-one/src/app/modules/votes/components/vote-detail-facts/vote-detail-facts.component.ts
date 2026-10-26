@@ -47,7 +47,7 @@ export class VoteDetailFactsComponent {
     const end = this.vote().end_time;
     return end ? formatVoteDeadline(end, this.viewerTimezone) : '—';
   });
-  /** `end_time` stays the scheduled deadline when ITX ends a vote early — the same note as the results drawer and votes table. */
+  /** `end_time` stays the scheduled deadline when ITX ends a vote early — the same note as the page header and votes table. */
   protected readonly endedEarlyNote: Signal<string | null> = computed(() => {
     const vote = this.vote();
     if (!this.isEnded() || !isVoteEndedEarly(vote)) return null;

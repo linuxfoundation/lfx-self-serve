@@ -2,23 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Vote cast drawer — always-visible header (GH-2350).
+ * Vote cast drawer — always-visible header (GH-2350), opened from the vote page.
  *
  * The drawer's header (title + close button) is hoisted above the vote-data conditional so the
- * panel stays closable in EVERY state — before the fix the header only rendered once vote data
- * existed, leaving the drawer unclosable while loading. Coverage (all via the Me-lens votes
- * dashboard, the one host that opens the drawer without a warm vote-detail cache):
- *   - loading: header + close button render while the detail request is still pending (content
- *     skeletons show), then the ballot swaps in once the detail lands
- *   - close during load: the header close button dismisses the drawer with the request in flight
- *   - detail failure: the header + close button survive an upstream 500 (catchError falls back to
- *     the list-row data, so the no-questions fallback renders instead of the error block)
+ * panel stays closable in EVERY state. The vote page (`/votes/:id`, #3913) is the drawer's host for
+ * a voter awaiting their ballot: it auto-opens the drawer once the vote and the viewer's response row
+ * load (#3915). Coverage:
+ *   - auto-open: header, title, close button and the ballot render for an awaiting voter
+ *   - close: the header close button dismisses the drawer and leaves the voter on the page, where
+ *     the header's Cast vote action reopens it
  *
- * The literal "Vote Details" fallback title + vote-cast-drawer-error block are NOT covered: they
- * require listVote=null with a failed detail fetch, and neither host can produce that — the votes
- * dashboard always passes listVote (catchError falls back to it), and the dashboard-cast-drawer-host
- * path pre-fetches through the same 10s shareReplay cache (a prefetch failure shows a toast and
- * never opens the drawer).
+ * The page hands the drawer the full vote it already loaded, so the drawer never shows its
+ * pending-detail skeleton or its detail-failure fallback here. Those null-`listVote` header states
+ * are covered by vote-cast-drawer.component.spec.ts.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -51,16 +47,7 @@ function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-/** Manually gated response so the loading state stays asserted-while-pending instead of racing the fetch. */
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
-/** Me-lens row as decorated by the my-votes BFF — ACTIVE + AWAITING_RESPONSE is what routes the row click to the cast drawer. */
+/** Me-lens row as decorated by the my-votes BFF — an ACTIVE vote awaiting the viewer's ballot. */
 function buildMyVoteRow() {
   return {
     uid: VOTE_UID,
@@ -125,101 +112,65 @@ async function stubShellFeeds(page: Page): Promise<void> {
 }
 
 /**
- * Stubs the Me-lens my-votes feed with a single active/awaiting row, plus empty list/count feeds
- * for the non-Me pipeline. A Playwright `*` glob does not cross `/`, so `**\/api\/votes*` would
- * NOT match `/api/votes/my-votes` — the list/count feed uses a RegExp and my-votes its own route.
- * Both register FIRST so the per-test detail route (registered before gotoMyVotes runs, i.e.
- * consulted after these) still wins — Playwright consults routes in reverse registration order.
+ * Stubs the vote page's reads for a voter awaiting their ballot: the vote detail, the viewer's
+ * response row (what makes the page open the drawer) and a non-writer project, so the page
+ * resolves the voter view.
  */
-async function stubMyVotesFeed(page: Page): Promise<void> {
-  await page.route(/\/api\/votes(\/count)?(\?.*)?$/, (route) => {
+async function stubAwaitingVoter(page: Page): Promise<void> {
+  await page.route(`**/api/votes/${VOTE_UID}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    const { pathname } = new URL(route.request().url());
-    if (pathname === '/api/votes/count') {
-      return fulfillJson(route, { count: 0 });
-    }
-    return fulfillJson(route, { data: [], total: 0, page_size: 0, next_page_token: null });
+    return fulfillJson(route, buildVoteDetail());
   });
-  await page.route('**/api/votes/my-votes*', (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return fulfillJson(route, [buildMyVoteRow()]);
-  });
+  await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) =>
+    fulfillJson(route, { uid: 'r0000000-0000-0000-0000-00000000c501', vote_uid: VOTE_UID, vote_status: 'awaiting_response' })
+  );
+  await page.route(`**/api/projects/${PROJECT_SLUG}*`, (route) =>
+    fulfillJson(route, { uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, writer: false })
+  );
 }
 
-/** Boots the Me-lens votes dashboard with the castable row rendered. */
-async function gotoMyVotes(page: Page): Promise<void> {
+/**
+ * Opens the vote page for the stubbed vote. Enters through the SPA router: a hard navigation to
+ * /votes/:id would fetch the synthetic vote during SSR, which page.route cannot intercept.
+ */
+async function gotoVotePage(page: Page): Promise<void> {
   skipWhenAuthMissing();
   await seedMeLens(page);
   await stubShellFeeds(page);
-  await stubMyVotesFeed(page);
+  await stubAwaitingVoter(page);
 
-  await page.goto('/votes', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId(`votes-cast-${VOTE_UID}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await page.evaluate((url) => {
+    window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, `/votes/${VOTE_UID}`);
+  await expect(page.getByTestId('vote-detail-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 test.describe('Vote cast drawer — always-visible header (GH-2350)', () => {
-  test('keeps the header and close button visible while the detail loads, then renders the ballot', async ({ page }) => {
-    const gate = deferred<null>();
-    await page.route(`**/api/votes/${VOTE_UID}`, async (route) => {
-      await gate.promise;
-      return fulfillJson(route, buildVoteDetail());
-    });
-    await gotoMyVotes(page);
+  test('opens on the vote page for an awaiting voter with the header, close button and ballot', async ({ page }) => {
+    await gotoVotePage(page);
 
-    await page.getByTestId(`votes-cast-${VOTE_UID}`).click();
-
-    // GH-2350 regression shape: header (title from the list row) + close button render while the
-    // detail request is still pending and the content area is skeletons.
     await expect(page.getByTestId('vote-cast-drawer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('vote-cast-drawer-title')).toHaveText(VOTE_NAME);
     await expect(page.getByTestId('vote-cast-drawer-close')).toBeVisible();
-    const content = page.getByTestId('vote-cast-drawer-content');
-    await expect(content.locator('.p-skeleton').first()).toBeVisible();
-
-    // Detail lands → the ballot swaps in and the skeletons clear; the header never re-mounts.
-    gate.resolve(null);
     await expect(page.getByTestId('vote-cast-question-q1')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(content.locator('.p-skeleton')).toHaveCount(0);
-    await expect(page.getByTestId('vote-cast-drawer-title')).toHaveText(VOTE_NAME);
     await expect(page.getByTestId('vote-cast-submit-button')).toBeVisible();
   });
 
-  test('closes from the header close button while the detail request is still pending', async ({ page }) => {
-    const gate = deferred<null>();
-    await page.route(`**/api/votes/${VOTE_UID}`, async (route) => {
-      await gate.promise;
-      return fulfillJson(route, buildVoteDetail());
-    });
-    await gotoMyVotes(page);
+  test('closes from the header close button and reopens from the page Cast vote action', async ({ page }) => {
+    await gotoVotePage(page);
 
-    await page.getByTestId(`votes-cast-${VOTE_UID}`).click();
     await expect(page.getByTestId('vote-cast-drawer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-
-    // The original bug: the close button only existed once vote data loaded, so this click was
-    // impossible while the request was in flight.
     await page.getByTestId('vote-cast-drawer-close').click();
-    await expect(page.getByTestId('vote-cast-drawer-header'), 'drawer should close mid-load').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('vote-cast-drawer-header'), 'drawer should close').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/votes/${VOTE_UID}$`));
+    await expect(page.getByTestId('vote-detail-page')).toBeVisible();
 
-    // Let the in-flight request settle against the already-closed drawer (no crash, no reopen).
-    gate.resolve(null);
-    await expect(page.getByTestId('vote-cast-drawer-header')).toBeHidden({ timeout: ELEMENT_TIMEOUT });
-  });
-
-  test('keeps the header and close button when the detail request fails', async ({ page }) => {
-    await page.route(`**/api/votes/${VOTE_UID}`, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }));
-    await gotoMyVotes(page);
-
-    await page.getByTestId(`votes-cast-${VOTE_UID}`).click();
-
-    // catchError falls back to the list-row data: the header (title + close) must survive the
-    // upstream failure; the row carries no questions, so the no-questions fallback renders.
+    await page.getByTestId('vote-detail-header-cast-vote').getByRole('button').click();
     await expect(page.getByTestId('vote-cast-drawer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('vote-cast-drawer-title')).toHaveText(VOTE_NAME);
-    await expect(page.getByTestId('vote-cast-drawer-close')).toBeVisible();
-    await expect(page.getByTestId('vote-cast-drawer-no-questions')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-
-    await page.getByTestId('vote-cast-drawer-close').click();
-    await expect(page.getByTestId('vote-cast-drawer-header'), 'drawer should close after a failed load').toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('vote-cast-question-q1')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });

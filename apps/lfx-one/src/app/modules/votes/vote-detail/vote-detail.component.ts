@@ -59,15 +59,15 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
- * Vote detail page (#3913). Route: /votes/:id, behind `vote-detail-page-enabled` (`voteDetailPageGuard`); with the
- * flag off the same URL renders `VotePermalinkComponent`.
+ * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and where every
+ * in-app vote link lands (#3915).
  *
  * The manager view follows write access on the vote (project writer, then committee writer — `resolveVoteCanManage`),
- * never the lens. Voters see only what the results drawer shows them today: their own response, and totals and comments
+ * never the lens. Voters see only their own response, and totals and comments
  * after the vote closes (the shared `canVoterFetchVoteResults` / `resolveVoterResultsState` rules). A vote the user can't
  * view (400/403/404) renders the shared not-found page in place with HTTP 404 under SSR, so a missing vote and a
- * forbidden one look identical; any other failure is a retry card. SSR stops after the vote fetch and paints the same
- * skeleton as the permalink; everything else resolves in the browser. An invited voter still awaiting a ballot on an
+ * forbidden one look identical; any other failure is a retry card. SSR stops after the vote fetch and paints the loading
+ * skeleton; everything else resolves in the browser. An invited voter still awaiting a ballot on an
  * active vote gets the cast drawer once on load, as the reminder email intends.
  *
  * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a named vote that is open or
@@ -182,7 +182,7 @@ export class VoteDetailComponent {
   /** Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality layout — see isRankedPollType. */
   protected readonly isGenericPoll: Signal<boolean> = computed(() => !isRankedPollType(this.vote()?.poll_type));
   protected readonly participationStats: Signal<VoteParticipationStats> = computed(() => computeVoteParticipationStats(this.voteResults()));
-  /** Abstain UI follows the data, not just the flag (same rule as the results drawer). */
+  /** Abstain UI follows the data, not just the flag. */
   protected readonly showAbstain: Signal<boolean> = computed(
     () => !this.voteResultsError() && (!!this.vote()?.allow_abstain || this.participationStats().abstainedVoters > 0)
   );
@@ -531,7 +531,7 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Manager-only summary — voters get no stats, matching the results drawer. */
+  /** Manager-only summary — voters get no stats. */
   private initSummaryCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const stats = this.participationStats();

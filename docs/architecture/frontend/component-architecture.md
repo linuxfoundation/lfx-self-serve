@@ -487,8 +487,7 @@ AppComponent
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
-        ├── /votes/:id           → VoteDetailComponent (vote detail page, `vote-detail-page-enabled` flag, keeps the current lens, in-place 404)
-        ├── /votes/:id           → VotePermalinkComponent (shareable permalink while the flag is off, Me lens, in-place 404)
+        ├── /votes/:id           → VoteDetailComponent (vote detail page, keeps the current lens, in-place 404)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
         ├── /settings            → redirects by lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings; other lenses (e.g. org) fall through to SettingsDashboardComponent
         └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)
