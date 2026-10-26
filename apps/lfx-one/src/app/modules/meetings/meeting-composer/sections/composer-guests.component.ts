@@ -11,7 +11,7 @@ import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type {
-  ComposerGuestRemoval,
+  ComposerGuestRemovalBatch,
   ComposerGuestRow,
   CommitteeMember,
   ManualGuestDialogResult,
@@ -72,8 +72,8 @@ export class ComposerGuestsComponent {
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
-  /** Removals since the last add or dismiss, oldest first; Undo puts them all back. */
-  protected readonly removals = signal<ComposerGuestRemoval[]>([]);
+  /** Removals since the last add or dismiss, undone together; see `undoBatch` for when that is still safe. */
+  protected readonly removalBatch = signal<ComposerGuestRemovalBatch | null>(null);
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
@@ -226,31 +226,20 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * The removals Undo can still put back, oldest first; each drops out once putting it back would be wrong.
-   * @description A removed direct guest isn't suppressed, so a group picked afterwards can re-add the
-   * same person; restoring the row on top would queue a duplicate invite. Rows that already shared the
-   * email at removal don't count. A group guest's row also carries the group it came through, which a
-   * change of selected groups can make stale, so Undo is withdrawn for them on any group change.
+   * The removals Undo can still put back; `null` once the list has changed in any other way.
+   * @description Undo restores the list as it was before the first removal, which is only right while
+   * those removals are all that changed it. A group pick, a filter change or an add rewrites rows Undo
+   * would then clobber or duplicate, so any of them withdraws it rather than trying to merge.
    */
-  protected readonly undoableRemovals: Signal<ComposerGuestRemoval[]> = computed(() => {
-    const committeeKey = this.committeeKey();
-    const removals = this.removals();
-    const sameEmail = (left: ComposerGuestRemoval, right: ComposerGuestRemoval): boolean =>
-      !!left.guest.email && left.guest.email.toLowerCase() === right.guest.email?.toLowerCase();
-
-    return removals.filter((removal, i) => {
-      // A later removal of the same email took off a row this baseline still counts as live, so it no
-      // longer is. If that over-counts (a row added after this removal), Undo is only withdrawn sooner.
-      const removedSince = removals.slice(i + 1).filter((later) => sameEmail(later, removal)).length;
-      const baseline = removal.liveSameEmail - removedSince;
-      return this.liveEmailCount(removal.guest.email) <= baseline && !(removal.guest.type === 'committee' && committeeKey !== removal.committeeKey);
-    });
+  protected readonly undoBatch: Signal<ComposerGuestRemovalBatch | null> = computed(() => {
+    const batch = this.removalBatch();
+    return batch && this.isBatchCurrent(batch) ? batch : null;
   });
 
   /** One removal names the guest; more are counted, since Undo brings them all back together. */
   protected readonly undoMessage: Signal<string> = computed(() => {
-    const removals = this.undoableRemovals();
-    return removals.length === 1 ? `${removals[0].label} removed.` : `${removals.length} guests removed.`;
+    const labels = this.undoBatch()?.labels ?? [];
+    return labels.length === 1 ? `${labels[0]} removed.` : `${labels.length} guests removed.`;
   });
 
   /** Each selected group with its voting-status filter: narrowing a filter can drop a group guest as surely as deselecting the group. */
@@ -284,25 +273,24 @@ export class ComposerGuestsComponent {
     this.openManualDialog(null);
   }
 
-  /**
-   * Puts every guest removed since the last add or dismiss back exactly as they were.
-   * @description Newest first, so each never-saved row's recorded position is the list it was taken from.
-   */
+  /** Puts back every guest removed since the last add or dismiss, exactly as the list was before them. */
   protected onUndoRemove(): void {
-    const removals = this.undoableRemovals();
-    this.removals.set([]);
-    if (!removals.length) return;
+    const batch = this.undoBatch();
+    this.removalBatch.set(null);
+    if (!batch) return;
 
-    [...removals].reverse().forEach((removal) => this.restoreRemoval(removal));
+    this.formService.setGuests(batch.before);
+    // Group guests' emails were suppressed as they were removed; without this, reconciliation would keep them out.
+    this.formService.suppressedGuestEmails.set(batch.suppressedBefore);
 
-    const message = removals.length === 1 ? `${removals[0].label} restored to the guest list.` : `${removals.length} guests restored to the guest list.`;
+    const count = batch.labels.length;
+    const message = count === 1 ? `${batch.labels[0]} restored to the guest list.` : `${count} guests restored to the guest list.`;
     void this.liveAnnouncer.announce(message, 'polite');
-    const first = removals[0].guest;
-    this.focusGuestRemoveButton(first.uid || first.tempId || null);
+    this.focusGuestRemoveButton(batch.focusTrackId);
   }
 
   protected onDismissUndo(): void {
-    this.removals.set([]);
+    this.removalBatch.set(null);
     // The dismiss button held focus and is gone with the notice; no row to return to, so the search takes it.
     this.focusGuestRemoveButton(null);
   }
@@ -342,22 +330,16 @@ export class ComposerGuestsComponent {
     this.focusGuestRemoveButton(neighbour?.trackId ?? null);
 
     // Undo only when editing: a removed saved guest there is an invite withdrawn on save. On a create
-    // nobody is invited yet, and picking the person again is the whole way back.
-    if (this.formService.isEditMode()) {
-      const index = this.formService.guests().findIndex((candidate) => (key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key));
-      const original = index === -1 ? guest : this.formService.guests()[index];
-      this.removals.update((current) => [
-        ...current,
-        {
-          guest: original,
-          index: Math.max(index, 0),
-          label,
-          // Counted without the removed row itself, so a guest with no email starts from 0 rather than -1.
-          liveSameEmail: this.liveEmailCount(original.email, original),
-          committeeKey: this.committeeKey(),
-        },
-      ]);
-    }
+    // nobody is invited yet, and picking the person again is the whole way back. A removal joins the
+    // current batch while the list is still as the last one left it; otherwise it starts a new one.
+    const ongoing = this.formService.isEditMode() ? this.undoBatch() : null;
+    const base = ongoing ?? {
+      before: this.formService.guests(),
+      suppressedBefore: new Set(this.formService.suppressedGuestEmails()),
+      committeeKey: this.committeeKey(),
+      labels: [],
+      focusTrackId: key,
+    };
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
     // un-deleting a saved one who is still a member of a selected group. Only group guests are
@@ -388,6 +370,10 @@ export class ComposerGuestsComponent {
         return kept;
       }, [])
     );
+
+    if (this.formService.isEditMode()) {
+      this.removalBatch.set({ ...base, labels: [...base.labels, label], signature: this.guestListSignature() });
+    }
   }
 
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {
@@ -516,43 +502,26 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
-    // Undo restores a row by position and identity, so it is only offered while nothing else has moved.
-    this.removals.set([]);
+    // Undo restores the list as it was before the removals, so it would drop this guest again.
+    this.removalBatch.set(null);
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
   }
 
-  /**
-   * Puts one removed guest back exactly as they were.
-   * @description A saved guest is still in the list marked deleted, so its row is swapped back for the
-   * original; a never-saved one was dropped, so it goes back where it sat. A group guest's email was
-   * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
-   */
-  private restoreRemoval({ guest, index }: ComposerGuestRemoval): void {
-    const key = guest.uid || guest.tempId || null;
-    const email = guest.email?.toLowerCase() ?? '';
-
-    if (guest.type === 'committee') {
-      this.formService.unsuppressGuestEmail(guest.email);
-    }
-
-    this.formService.updateGuests((current) => {
-      // A keyless saved row was replaced by a deleted copy, so the reference is gone; its email is what is left.
-      const at = current.findIndex((candidate) =>
-        key === null ? candidate.state === 'deleted' && candidate.email?.toLowerCase() === email : (candidate.uid || candidate.tempId) === key
-      );
-
-      if (at !== -1) {
-        return current.map((candidate, i) => (i === at ? guest : candidate));
-      }
-
-      return [...current.slice(0, index), guest, ...current.slice(index)];
-    });
+  /** Whether the list is still exactly as the batch's latest removal left it, under the same groups. */
+  private isBatchCurrent(batch: ComposerGuestRemovalBatch): boolean {
+    return batch.signature === this.guestListSignature() && batch.committeeKey === this.committeeKey();
   }
 
-  private liveEmailCount(email: string | null | undefined, excluding?: MeetingRegistrantWithState): number {
-    const target = email?.toLowerCase();
-    if (!target) return 0;
-    return this.formService.guests().filter((guest) => guest !== excluding && guest.state !== 'deleted' && guest.email?.toLowerCase() === target).length;
+  /**
+   * Each row's identity and state, in order.
+   * @description Compared rather than the array itself: group reconciliation rebuilds the array on every
+   * emission even when nothing changed, which would withdraw Undo for no visible reason.
+   */
+  private guestListSignature(): string {
+    return this.formService
+      .guests()
+      .map((guest) => `${guest.uid || guest.tempId || guest.email}:${guest.state}:${guest.type}`)
+      .join('|');
   }
 
   /**

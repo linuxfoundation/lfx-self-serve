@@ -875,23 +875,23 @@ export interface ComposerGuestRow {
 }
 
 /**
- * The composer's last guest removal, kept so it can be undone
- * @description Removal has no confirm step, so this is the way back from a misclick. `guest` is the row
- * exactly as it was, saved `state` included, and `index` is where it sat, for a never-saved guest whose
- * row was dropped rather than marked deleted.
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
  */
-export interface ComposerGuestRemoval {
-  guest: MeetingRegistrantWithState;
-  index: number;
-  /** The name read back in the undo notice and its announcement. */
-  label: string;
-  /**
-   * Live rows already sharing the email when it was removed — a registration for another occurrence,
-   * say. Only rows beyond these are a re-add that Undo would duplicate.
-   */
-  liveSameEmail: number;
-  /** The selected group uids at removal, sorted and joined; a group guest's row is stale once they change. */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
   committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**

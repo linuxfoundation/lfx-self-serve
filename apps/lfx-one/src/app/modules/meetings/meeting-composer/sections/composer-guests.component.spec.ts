@@ -385,7 +385,7 @@ describe('ComposerGuestsComponent', () => {
 
       component['onRemoveGuest'](savedGroupGuest);
 
-      expect(component['removals']()).toEqual([]);
+      expect(component['removalBatch']()).toBeNull();
     });
 
     it('puts a never-saved guest back where it sat', () => {
@@ -399,7 +399,7 @@ describe('ComposerGuestsComponent', () => {
       component['onUndoRemove']();
 
       expect(formService.guests().map((entry) => entry.email)).toEqual(['a@example.com', 'b@example.com']);
-      expect(component['removals']()).toEqual([]);
+      expect(component['removalBatch']()).toBeNull();
       expect(announce).toHaveBeenLastCalledWith('Member One restored to the guest list.', 'polite');
     });
 
@@ -431,7 +431,7 @@ describe('ComposerGuestsComponent', () => {
 
       // A group picked afterwards re-adds the person: removed direct guests are not suppressed.
       reconcile([member]);
-      expect(component['undoableRemovals']()).toEqual([]);
+      expect(component['undoBatch']()).toBeNull();
 
       component['onUndoRemove']();
 
@@ -446,7 +446,7 @@ describe('ComposerGuestsComponent', () => {
 
       component['onRemoveGuest'](thisOccurrence);
 
-      expect(component['undoableRemovals']()).toHaveLength(1);
+      expect(component['undoBatch']()).not.toBeNull();
     });
 
     it('withdraws undo for a group guest once the selected groups change', () => {
@@ -457,14 +457,14 @@ describe('ComposerGuestsComponent', () => {
       const groupGuest = { ...savedGroupGuest, uid: '', tempId: 'temp_1', state: 'new' as const };
       formService.setGuests([groupGuest]);
       component['onRemoveGuest'](groupGuest);
-      expect(component['undoableRemovals']()).toHaveLength(1);
+      expect(component['undoBatch']()).not.toBeNull();
 
       formService
         .form()
         .get('committees')
         ?.setValue([{ uid: 'committee-b' }]);
 
-      expect(component['undoableRemovals']()).toEqual([]);
+      expect(component['undoBatch']()).toBeNull();
     });
 
     it('offers undo for a guest with no email', () => {
@@ -473,7 +473,7 @@ describe('ComposerGuestsComponent', () => {
 
       component['onRemoveGuest'](emailless);
 
-      expect(component['undoableRemovals']()).toHaveLength(1);
+      expect(component['undoBatch']()).not.toBeNull();
     });
 
     it('withdraws undo for a group guest once a voting-status filter narrows', () => {
@@ -483,14 +483,14 @@ describe('ComposerGuestsComponent', () => {
         ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep', 'observer'] }]);
       formService.setGuests([savedGroupGuest]);
       component['onRemoveGuest'](savedGroupGuest);
-      expect(component['undoableRemovals']()).toHaveLength(1);
+      expect(component['undoBatch']()).not.toBeNull();
 
       formService
         .form()
         .get('committees')
         ?.setValue([{ uid: 'committee-a', allowed_voting_statuses: ['voting_rep'] }]);
 
-      expect(component['undoableRemovals']()).toEqual([]);
+      expect(component['undoBatch']()).toBeNull();
     });
 
     it('moves keyboard focus back to the restored row', () => {
@@ -510,7 +510,7 @@ describe('ComposerGuestsComponent', () => {
 
       component['onDismissUndo']();
 
-      expect(component['undoableRemovals']()).toEqual([]);
+      expect(component['undoBatch']()).toBeNull();
       expect(focus).toHaveBeenCalledWith(null);
     });
 
@@ -558,7 +558,7 @@ describe('ComposerGuestsComponent', () => {
       component['onUndoRemove']();
 
       expect(formService.guests()).toEqual([first, second, third]);
-      expect(component['removals']()).toEqual([]);
+      expect(component['removalBatch']()).toBeNull();
       expect(announce).toHaveBeenLastCalledWith('2 guests restored to the guest list.', 'polite');
     });
 
@@ -569,11 +569,46 @@ describe('ComposerGuestsComponent', () => {
       formService.setGuests([a, b]);
       component['onRemoveGuest'](a);
       component['onRemoveGuest'](formService.guests()[1]);
-      expect(component['undoableRemovals']()).toHaveLength(2);
+      expect(component['undoBatch']()?.labels).toHaveLength(2);
 
       reconcile([member]);
 
-      expect(component['undoableRemovals']()).toEqual([]);
+      expect(component['undoBatch']()).toBeNull();
+    });
+
+    it('starts a fresh batch after a group re-add, so undo cannot duplicate the re-added guest', () => {
+      const direct = { ...savedGroupGuest, type: 'direct' as const };
+      formService.setGuests([direct]);
+      component['onRemoveGuest'](direct);
+      reconcile([member]);
+      const groupRow = formService.guests().find((entry) => entry.state === 'new') as MeetingRegistrantWithState;
+
+      component['onRemoveGuest'](groupRow);
+      component['onUndoRemove']();
+
+      const live = formService.guests().filter((entry) => entry.state !== 'deleted' && entry.email === 'member@example.com');
+      expect(live).toHaveLength(1);
+    });
+
+    it('withdraws the whole batch rather than undoing part of it in the wrong place', () => {
+      const make = (n: number) => ({
+        ...savedGroupGuest,
+        uid: '',
+        tempId: `temp_${n}`,
+        email: `g${n}@example.com`,
+        type: 'direct' as const,
+        state: 'new' as const,
+      });
+      const saved = { ...savedGroupGuest, uid: 'saved-c', email: 'c@example.com', type: 'direct' as const };
+      const a = { ...make(1), email: 'member@example.com' };
+      const b = make(2);
+      formService.setGuests([a, b, saved]);
+      component['onRemoveGuest'](b);
+      component['onRemoveGuest'](a);
+
+      reconcile([member]);
+
+      expect(component['undoBatch']()).toBeNull();
     });
 
     it('puts several never-saved guests back in their original order', () => {
@@ -604,7 +639,7 @@ describe('ComposerGuestsComponent', () => {
 
       component['addDirectGuest']({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Byron' });
 
-      expect(component['removals']()).toEqual([]);
+      expect(component['removalBatch']()).toBeNull();
     });
   });
 
