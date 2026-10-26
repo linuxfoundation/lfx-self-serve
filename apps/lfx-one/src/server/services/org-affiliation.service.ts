@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import type { OrgLensAffiliationVerdict, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 // Deep import, never the `utils` barrel: that barrel statically pulls in `@angular/forms`, which
 // throws at import time in a plain Node runtime (docs/architecture/shared/package-architecture.md, GH-2381).
@@ -72,13 +73,44 @@ export class OrgAffiliationService {
     }
 
     try {
-      return { affiliation: await this.resolve(req, username) };
+      return { affiliation: await this.withDeadline(this.resolve(req, username)) };
     } catch (error) {
       logger.warning(req, OPERATION, 'Affiliation lookup failed; reporting the employer verdict as unknown', {
         err: error instanceof Error ? error.message : String(error),
       });
       return { affiliation: UNKNOWN };
     }
+  }
+
+  /**
+   * Caps the whole lookup at {@link ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}, following
+   * `OrganizationService.withCdpTimeout`.
+   *
+   * This enrichment is optional — it only picks between two empty-state wordings — but it rides the
+   * page-blocking role-grants request, so without a deadline a slow CDP or warehouse would hold the
+   * Org Lens page on its skeleton for every grant-less caller, and for CLA-only callers whose page
+   * never reads the verdict. Expiry is reported as the ordinary unknown verdict by the caller's
+   * catch, so the timeout degrades to today's copy rather than to an error.
+   *
+   * The underlying request is not cancelled; it is simply no longer waited on.
+   */
+  private withDeadline(lookup: Promise<OrgLensAffiliationVerdict>): Promise<OrgLensAffiliationVerdict> {
+    return new Promise<OrgLensAffiliationVerdict>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Affiliation lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`)),
+        ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
+      );
+      lookup.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      );
+    });
   }
 
   /**

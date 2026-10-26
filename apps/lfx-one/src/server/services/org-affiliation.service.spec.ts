@@ -13,6 +13,7 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiv
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
 const { OrgAffiliationService } = await import('./org-affiliation.service');
+const { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } = await import('@lfx-one/shared/constants');
 
 const CDEV_ORG = '0b7d6b1e-6a2f-4a1f-9c66-9d9a0f0d1234';
 
@@ -42,9 +43,12 @@ function experience(organizationId: string | undefined, endDate?: string) {
 function service(opts: { experiences?: unknown; account?: unknown } = {}) {
   const cdp = {
     // The read-only reader: it must never be the member-creating `getWorkExperiencesForUser`.
-    getWorkExperiencesForKnownUser: vi
-      .fn()
-      .mockImplementation(() => (opts.experiences instanceof Error ? Promise.reject(opts.experiences) : Promise.resolve(opts.experiences ?? []))),
+    getWorkExperiencesForKnownUser: vi.fn().mockImplementation(() => {
+      if (opts.experiences instanceof Error) return Promise.reject(opts.experiences);
+      // A promise passed through as-is lets a test supply one that never settles.
+      if (opts.experiences instanceof Promise) return opts.experiences;
+      return Promise.resolve(opts.experiences ?? []);
+    }),
     getWorkExperiencesForUser: vi.fn(),
   };
   const organizations = {
@@ -140,6 +144,42 @@ describe('OrgAffiliationService.getRoleGrantAffiliation', () => {
 
     expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'employee');
     expect(cdp.getWorkExperiencesForUser).not.toHaveBeenCalled();
+  });
+});
+
+// Copilot (PR #4318): the enrichment rides a page-blocking request, so a stalled dependency must not
+// hold the Org Lens page on its skeleton — it degrades to the unknown verdict and today's copy.
+describe('OrgAffiliationService deadline', () => {
+  it('gives up on a stalled lookup instead of holding the role-grants response', async () => {
+    vi.useFakeTimers();
+    try {
+      // A dependency that never settles — the whole point of the budget.
+      const { svc } = service({ experiences: new Promise(() => {}) });
+      const pending = svc.getRoleGrantAffiliation(req(), grants());
+
+      await vi.advanceTimersByTimeAsync(ORG_AFFILIATION_LOOKUP_TIMEOUT_MS + 1);
+
+      await expect(pending).resolves.toEqual({
+        affiliation: { hasEmployer: false, employerIsMember: false, lookup: 'failed' },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fire the deadline for a lookup that answers in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const { svc } = service({ experiences: experience(CDEV_ORG), account: { isMember: true } });
+
+      const verdict = await svc.getRoleGrantAffiliation(req(), grants());
+
+      expect(verdict).toEqual({ affiliation: { hasEmployer: true, employerIsMember: true, lookup: 'ok' } });
+      // The timer must be cleared, not left pending, or the process keeps a handle per request.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
