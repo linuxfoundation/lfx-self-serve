@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="mx-auto flex max-w-screen-2xl flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="it-os-agent-page">
+  <a routerLink=".." queryParamsHandling="preserve" class="flex w-fit items-center gap-2 text-sm text-blue-600 hover:underline" data-testid="it-os-agent-back">
+    <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+    All IT agents
+  </a>
+
+  @if (agent; as agent) {
+    <div class="flex items-center gap-3" data-testid="it-os-agent-header">
+      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" [class]="iconClasses[agent.color]" aria-hidden="true">
+        <i [class]="agent.icon"></i>
+      </span>
+      <div class="flex flex-col">
+        <h1 class="text-xl font-semibold text-gray-900" data-testid="it-os-agent-name">{{ agent.name }}</h1>
+        <span class="text-sm text-gray-500">
+          {{ agent.tags.join(' · ') }}
+          @if (agent.via) {
+            · via {{ agent.via }}
+          }
+        </span>
+      </div>
+      <lfx-tag class="ml-auto" value="Prototype · sample data" severity="info" />
+    </div>
+
+    <lfx-card data-testid="it-os-agent-chat-placeholder">
+      <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+        <i class="fa-light fa-comments text-3xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">{{ agent.description }}</p>
+        <p class="text-sm text-gray-500">The chat for this agent is coming soon.</p>
+      </div>
+    </lfx-card>
+  } @else {
+    <lfx-empty-state
+      icon="fa-light fa-robot"
+      title="Agent not found"
+      subtitle="This IT agent doesn't exist or isn't available yet."
+      data-testid="it-os-agent-not-found" />
+  }
+</div>

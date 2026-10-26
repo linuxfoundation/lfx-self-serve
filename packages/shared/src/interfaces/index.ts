@@ -259,6 +259,7 @@ export * from './marketing-impact.interface';
 // Marketing OS Agents interfaces (LFXAI-95 workstream)
 export * from './github-url.interface';
 export * from './mktg-agent.interface';
+export * from './it-os-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-document-store.interface';

@@ -4,6 +4,8 @@
 import {
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  IT_OS_AGENTS_LABEL,
+  IT_OS_AGENTS_ROUTE_SEGMENT,
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
@@ -39,6 +41,7 @@ import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
+import { itOsAgentsEnabledGuard } from './shared/guards/it-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
@@ -623,6 +626,15 @@ export const routes: Routes = [
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mktg-os-agents/mktg-os-agents.routes').then((m) => m.MKTG_OS_AGENTS_ROUTES),
+      },
+      // IT OS agents (#4257) — dark-launched behind `it-os-agents-enabled` (CanMatch); invisible when the flag is off.
+      {
+        path: `project/${IT_OS_AGENTS_ROUTE_SEGMENT}`,
+        title: IT_OS_AGENTS_LABEL.nav,
+        data: { lens: 'project' },
+        canMatch: [itOsAgentsEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/it-os-agents/it-os-agents.routes').then((m) => m.IT_OS_AGENTS_ROUTES),
       },
       {
         path: 'project/votes',

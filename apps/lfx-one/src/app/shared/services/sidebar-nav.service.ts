@@ -13,6 +13,8 @@ import {
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
+  IT_OS_AGENTS_ENABLED_FLAG,
+  IT_OS_AGENTS_LABEL,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -69,6 +71,8 @@ export class SidebarNavService {
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** Dark-launch gate for IT OS (#4257); hides the project-lens nav item when off, matching `itOsAgentsEnabledGuard`. */
+  private readonly isItOsAgentsEnabled = this.featureFlagService.getBooleanFlag(IT_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
   private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
@@ -221,12 +225,14 @@ export class SidebarNavService {
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
+        // IT OS (#4257) is dark-launched the same way and sits directly under Marketing OS.
+        const itOsItems = this.isItOsAgentsEnabled() ? [this.itOsAgentsNavItem] : [];
         // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
         const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
         // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
+        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...initiativesItems, ...mktgOsItems, ...itOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -855,6 +861,14 @@ export class SidebarNavService {
     icon: 'fa-light fa-robot',
     routerLink: '/foundation/mktg-os-agents',
     testId: 'sidebar-foundation-mktg-os-agents',
+  };
+
+  // --- Project — IT OS agents (dark-launched; inserted directly under Marketing OS) ---
+  private readonly itOsAgentsNavItem: SidebarMenuItem = {
+    label: IT_OS_AGENTS_LABEL.nav,
+    icon: 'fa-light fa-server',
+    routerLink: '/project/it-os-agents',
+    testId: 'sidebar-project-it-os-agents',
   };
 
   // --- Project Lens — Governance section (always surfaced under the Project lens) ---
