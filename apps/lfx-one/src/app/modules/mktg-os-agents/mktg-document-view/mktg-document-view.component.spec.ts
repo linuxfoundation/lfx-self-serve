@@ -43,6 +43,9 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
+import { MktgPrintService } from '@services/mktg-print.service';
+
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -91,7 +94,7 @@ describe('MktgDocumentViewComponent', () => {
 
   const projectLookup = vi.fn();
   const impersonating = signal(false);
-  const viewer = signal<{ sub: string } | undefined>({ sub: 'synthetic-writer' });
+  const viewer = signal<{ sub: string } | null | undefined>({ sub: 'synthetic-writer' });
   function started(state: MktgDocumentRunProgress['state']): MktgDocumentRunProgress {
     return {
       project: PROJECT.uid,
@@ -106,6 +109,9 @@ describe('MktgDocumentViewComponent', () => {
 
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
+  const pending = {};
+  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
@@ -279,6 +285,10 @@ describe('MktgDocumentViewComponent', () => {
   beforeEach(async () => {
     run.isPending.mockReturnValue(false);
     subject = linkedSignal(() => viewer()?.sub ?? '');
+    print.print.mockReset().mockResolvedValue(undefined);
+    print.clear.mockClear();
+    print.ensureFontStylesheet.mockClear();
+
     store = {
       listDocuments: vi.fn(() => of({ project: PROJECT.uid, groups: [] })),
       retryRun: vi.fn(() => of(detail)),
@@ -305,7 +315,7 @@ describe('MktgDocumentViewComponent', () => {
     activeContext = signal<ProjectContext | null>(PROJECT);
     projectLookup.mockReturnValue(of({ writer: true }));
     impersonating.set(false);
-    viewer.set({ sub: 'synthetic-writer' });
+    viewer.set({ sub: 'synthetic-sub' });
 
     await TestBed.configureTestingModule({
       providers: [
@@ -329,6 +339,8 @@ describe('MktgDocumentViewComponent', () => {
         { provide: Member360Service, useValue: run },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
+        { provide: MktgPendingDocumentService, useValue: pending },
+        { provide: MktgPrintService, useValue: print },
       ],
     }).compileComponents();
   });
