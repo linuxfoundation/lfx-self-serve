@@ -180,14 +180,19 @@ export async function buildMember360Workbook(envelope: Member360Envelope): Promi
     rankMember360Rows(tabs.member_ranking).map((row) =>
       keys.map((key) => {
         const value = row[key];
-        if (key === 'renewal_date' && typeof value === 'string') return new Date(`${value}T00:00:00.000Z`);
+        if (key === 'renewal_date' && typeof value === 'string') {
+          const date = new Date(`${value}T00:00:00.000Z`);
+          return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : value;
+        }
         return Array.isArray(value) ? value.join('; ') : value;
       })
     )
   );
   const column = (key: (typeof keys)[number]) => ranking.getColumn(keys.indexOf(key) + 1);
   column('annual_value').numFmt = formats.currency;
-  column('renewal_date').numFmt = formats.date;
+  column('renewal_date').eachCell((cell) => {
+    if (cell.value instanceof Date) cell.numFmt = formats.date;
+  });
   column('rank').numFmt = formats.integer;
   column('engaged_contacts').numFmt = formats.contacts;
   column('engagement_score').numFmt = formats.score;

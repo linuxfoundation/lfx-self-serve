@@ -169,6 +169,20 @@ describe('Member 360 workbook and tracker round trips', () => {
     expect(xml).toMatch(/<c r="E2" s="\d+"><v>\d+<\/v><\/c>/);
     expect(xml).toMatch(/<c r="Q2" s="\d+"><v>1<\/v><\/c>/);
   });
+  it.each(['2026-02-29', '2026-13-01'])('preserves the invalid renewal day %s as lossless text without date formatting', async (renewalDate) => {
+    const envelope = member360Fixture();
+    for (const row of envelope.tabs.member_ranking) row.renewal_date = renewalDate;
+    const bytes = await buildMember360Workbook(envelope);
+    const output = new ExcelJS.Workbook();
+    await output.xlsx.load(bytes);
+    const sheet = output.getWorksheet('Member Ranking');
+    for (let row = 2; row <= envelope.tabs.member_ranking.length + 1; row++) {
+      expect(sheet?.getCell(`E${row}`).value).toBe(renewalDate);
+      expect(sheet?.getCell(`E${row}`).type).toBe(ExcelJS.ValueType.String);
+      expect(sheet?.getCell(`E${row}`).numFmt).not.toBe('yyyy-mm-dd');
+    }
+    expect(await buildMember360Workbook(envelope)).toEqual(bytes);
+  });
   it('writes one shared category scale, a separate engagement scale and guarded risk rules', async () => {
     const zip = await JSZip.loadAsync(await buildMember360Workbook(member360Fixture()));
     const xml = (await zip.file('xl/worksheets/sheet2.xml')?.async('string')) ?? '';
