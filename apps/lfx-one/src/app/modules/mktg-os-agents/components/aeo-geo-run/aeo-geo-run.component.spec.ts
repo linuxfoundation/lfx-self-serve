@@ -5,6 +5,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
+import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { provideRouter, Router } from '@angular/router';
 import { AEO_GEO_INTAKE, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgAgentIntake } from '@lfx-one/shared/interfaces';
@@ -148,6 +150,7 @@ describe('AeoGeoRunComponent', () => {
     fixture.detectChanges();
     expect(navigate).not.toHaveBeenCalled();
     expect(query('mktg-run-questions')).not.toBeNull();
+    expect(fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance.allowNonAnswers()).toBe(true);
     fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: questions[0].suggestedAnswer, origin: 'accepted' }]);
     expect(answerQuestions).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }), AEO_GEO_INTAKE, [
       { id: 'audience', text: questions[0].suggestedAnswer, origin: 'accepted' },
@@ -308,6 +311,12 @@ describe('AeoGeoRunComponent', () => {
     fixture.detectChanges();
     expect(query('mktg-aeo-run-error')).toBeNull();
     expect(query('mktg-aeo-run-form')).not.toBeNull();
+  });
+  it('stops loading and asks for project scope when none is selected', async () => {
+    TestBed.overrideProvider(ProjectContextService, { useValue: { activeContext: signal(null), activeContextUid: signal(null) } });
+    await render();
+    expect(query('mktg-aeo-run-loading')).toBeNull();
+    expect(query('mktg-aeo-run-error').textContent).toContain('Select a valid project');
   });
   it('shows no access rather than a runnable form for a non-writer', async () => {
     getProject.mockReturnValue(of({ writer: false }));

@@ -144,6 +144,8 @@ export class AeoGeoRunComponent {
           this.previousError.set('');
           this.previousLoading.set(true);
           if (!context || !sub) {
+            this.loading.set(false);
+            this.error.set('Select a valid project before running an audit.');
             return of(null);
           }
           const type = this.documentType();
