@@ -15,6 +15,8 @@
  * Privacy (spec 050 DR-002 / 053 DR-001): the `no-access` and `wrong-organization` entries stay on
  * "this organization" — they never interpolate an addressed organization's name, because the caller
  * does not hold it. `{orgName}` is accepted only by states rendered to a caller who holds the org.
+ * `{employerName}` (#4314) is a different value and not covered by that rule: it is the caller's own
+ * affiliated employer, read from their own profile, never an organization they addressed.
  */
 
 import { OrgLensEmptyStateCopy, OrgLensEmptyStateName, OrgLensSectionErrorOutcome } from '../interfaces/org-lens-empty-state.interface';
@@ -31,6 +33,18 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     icon: 'fa-light fa-building',
     primary: { label: 'Add an affiliation', route: ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE },
     secondary: { label: 'Already added one? Contact support', action: 'contact-support' },
+  },
+  // #4314 — the caller is affiliated with a company that holds no active LF membership, so there is
+  // no Org Lens behind the affiliation CTA and no administrator to ask. Names the caller's own employer
+  // (`{employerName}`, from their profile), which the FR-017 withholding rule does not cover: it is not
+  // an addressed organization they failed to hold. CLA state is irrelevant here — a CLA manager or
+  // signatory at a non-member company reaches the EasyCLA view before this state is ever considered.
+  'affiliated-non-member': {
+    headline: 'Your affiliated employer is not a member of the Linux Foundation',
+    reason:
+      'The "Organization" section of LFX Self-Serve shows how a company is involved with LF projects. You are affiliated with {employerName}, but this company does not have any active memberships in any of the foundations hosted by the LF. If you are affiliated with a different company that does have an LF membership, update that below.',
+    icon: 'fa-light fa-building',
+    primary: { label: 'Update employer affiliation', route: ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE },
   },
   'no-access': {
     headline: 'You do not have access to this organization',

@@ -8,6 +8,7 @@ import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
+import { OrgLensEmployerAffiliationService } from './org-lens-employer-affiliation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -25,13 +26,22 @@ import { PersonaService } from './persona.service';
  *      AND caller holds nothing loaded                          → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
- *   6. caller holds nothing                                     → `no-organization`
- *   7. otherwise (a selection is pending)                       → `null`
+ *   6. caller holds nothing, and their own employer holds no
+ *      active LF membership                                     → `affiliated-non-member` (#4314)
+ *   7. caller holds nothing                                     → `no-organization`
+ *   8. otherwise (a selection is pending)                       → `null`
  *
  * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
  * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
  * such as key-contact auditors that no list shows, and an organization it admits renders the page even
  * when the roster lists nothing; with nothing selected it is "holds nothing".
+ *
+ * Rule 6 before 7 is #4314: "add an affiliation" is only an answer for someone who has none. A caller
+ * who already has one, at a company with no active membership in any LF-hosted foundation, is told that
+ * instead — there is no Org Lens behind the CTA and no administrator to ask. It keys on a *resolved*
+ * answer from `OrgLensEmployerAffiliationService`: no employer, a member employer, or a lookup that
+ * failed all fall through to rule 7, so an unknown never renders as "not a member". CLA state does not
+ * enter into it — a CLA-only caller is already admitted by rule 1.
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
@@ -51,6 +61,7 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly employerAffiliation = inject(OrgLensEmployerAffiliationService);
 
   /**
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
@@ -93,7 +104,9 @@ export class OrgLensEmptyStateService {
   });
 
   /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  public readonly settled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.employerAffiliation.pending()
+  );
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
@@ -154,10 +167,18 @@ export class OrgLensEmptyStateService {
       return null;
     }
     if (!holdsAnything) {
-      return 'no-organization';
+      return this.employerAffiliation.affiliatedToNonMember() ? 'affiliated-non-member' : 'no-organization';
     }
     return null;
   });
+
+  /**
+   * #4314 — the employer name `affiliated-non-member` interpolates, for pages to pass straight into the
+   * empty state's `values`. `null` for every other state, so a page can bind it unconditionally.
+   */
+  public readonly employerName: Signal<string | null> = computed(() =>
+    this.pageState() === 'affiliated-non-member' ? this.employerAffiliation.employerName() : null
+  );
 
   /** Convenience for templates that only need "is a page-level state replacing the page". */
   public readonly hasPageState: Signal<boolean> = computed(() => this.pageState() !== null);

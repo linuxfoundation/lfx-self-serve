@@ -153,6 +153,23 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
+  // #4314 — the caller's own employer, which is not an addressed organization and so is named.
+  it("interpolates the caller's employer into the non-member state and offers only the affiliation CTA", () => {
+    const fixture = render('affiliated-non-member', { employerName: 'Bank Pekao' });
+
+    expect(byTestId(fixture, 'title')?.textContent?.trim()).toBe('Your affiliated employer is not a member of the Linux Foundation');
+    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Bank Pekao');
+    expect(byTestId(fixture, 'primary')?.textContent).toContain('Update employer affiliation');
+    expect(byTestId(fixture, 'contact-support')).toBeNull();
+  });
+
+  it('falls back to a generic noun when the employer name is missing, rather than leaving the token visible', () => {
+    const text = (render('affiliated-non-member', {}).nativeElement as HTMLElement).textContent ?? '';
+
+    expect(text).toContain('You are affiliated with your employer');
+    expect(text).not.toContain('{employerName}');
+  });
+
   it('interpolates the organization name, noun and period for a held section', () => {
     const fixture = render('section-empty', { orgName: 'Acme Corp', noun: 'meetings', period: 'the last 30 days' });
 
@@ -182,8 +199,10 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
     expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    // #4314 `affiliated-non-member` is also a first-visit state, but its approved copy opens on the
+    // "Organization" section of LFX Self-Serve rather than the FR-002 sentence, so it sits with the rest.
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
-    expect(others).toHaveLength(8);
+    expect(others).toHaveLength(9);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
       expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');

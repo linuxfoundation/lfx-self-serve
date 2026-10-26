@@ -119,8 +119,12 @@ export class OrgLensEmptyStateComponent {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
     const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
+    // #4314 — the caller's own employer. Falls back to the generic noun rather than leaving the token
+    // visible, so a profile that answers late or blank still renders a sentence.
+    const employerName = values.employerName?.trim() || 'your employer';
     return template
       .replace(/\{orgName\}/g, orgName)
+      .replace(/\{employerName\}/g, employerName)
       .replace(/\{noun\}/g, values.noun ?? 'records')
       .replace(/\{period\}/g, values.period ?? 'this period')
       .replace(/\{correlationId\}/g, values.correlationId ?? '—');

@@ -4,6 +4,7 @@
 /** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys). */
 export type OrgLensEmptyStateName =
   | 'no-organization'
+  | 'affiliated-non-member'
   | 'no-access'
   | 'wrong-organization'
   | 'not-found-staff'
@@ -70,6 +71,12 @@ export interface OrgLensEmptyStateCopy {
 /** Resolved values an empty state may interpolate. `orgName` is honoured only for states rendered to a caller who holds the org (FR-019). */
 export interface OrgLensEmptyStateValues {
   orgName?: string | null;
+  /**
+   * #4314 — the caller's *own* affiliated employer, read from their profile. Interpolated by
+   * `affiliated-non-member` only. Unlike `orgName` it never names an organization the caller
+   * addressed but does not hold, so the FR-017 withholding rule does not apply to it.
+   */
+  employerName?: string | null;
   /** FR-013 — the section's plural noun ("meetings", "commits"). */
   noun?: string;
   /** FR-013 — human-readable selected period; absent ⇒ the `noPeriod` wording. */
@@ -79,4 +86,24 @@ export interface OrgLensEmptyStateValues {
   orgList?: { uid: string; name: string }[];
   /** FR-013 — false when no caller-set filter narrows the query, so `section-empty` renders reason-only. Defaults true. */
   filterActive?: boolean;
+}
+
+/**
+ * #4314 — the caller's own employer affiliation as the Org Lens empty states need it:
+ * who their profile says they work for, and whether that company holds any active membership
+ * in an LF-hosted foundation. Answered by `GET /api/profile/employer-affiliation`, which is
+ * deliberately *not* behind the Org Lens read gate — a caller with no grant must be able to
+ * learn why they have none.
+ */
+export interface OrgLensEmployerAffiliation {
+  /** Display name from the caller's profile work history; `null` when they have no current employer. */
+  employerName: string | null;
+  /** Salesforce account the employer resolved to, or `null` when no LF account matches the name. */
+  accountId: string | null;
+  /**
+   * The employer holds at least one active membership in an LF-hosted foundation. `false` is a
+   * resolved answer (no matching account, or an account with no active membership rows), never
+   * "we could not tell" — that case is a failed request, which callers treat as unknown.
+   */
+  hasActiveMembership: boolean;
 }

@@ -7,6 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmployerAffiliationService } from '@services/org-lens-employer-affiliation.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -63,6 +64,11 @@ function setup(): Harness {
       provideRouter([]),
       MessageService,
       OrgLensEmptyStateService,
+      // #4314 — this dead end never renders a rule-6 state, so the probe just stays quiet here.
+      {
+        provide: OrgLensEmployerAffiliationService,
+        useValue: { pending: signal(false), affiliatedToNonMember: signal(false), employerName: signal(null) },
+      },
       {
         provide: OrgNavigationService,
         useValue: {

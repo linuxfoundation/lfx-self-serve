@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
+import { OrgLensEmployerAffiliationService } from './org-lens-employer-affiliation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -36,6 +37,12 @@ interface Harness {
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
   claLookupFailed: WritableSignal<boolean>;
+  /** #4314 — the employer-affiliation probe is owed an answer. */
+  affiliationPending: WritableSignal<boolean>;
+  /** #4314 — a resolved "affiliated with a company that holds no active LF membership". */
+  affiliatedToNonMember: WritableSignal<boolean>;
+  /** #4314 — the caller's own employer name. */
+  affiliationEmployerName: WritableSignal<string | null>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
@@ -70,6 +77,9 @@ function setup(): Harness {
   const hasOrgSelectorAccess = signal(false);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
+  const affiliationPending = signal(false);
+  const affiliatedToNonMember = signal(false);
+  const affiliationEmployerName = signal<string | null>(null);
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
@@ -113,6 +123,10 @@ function setup(): Harness {
       },
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
       {
+        provide: OrgLensEmployerAffiliationService,
+        useValue: { pending: affiliationPending, affiliatedToNonMember, employerName: affiliationEmployerName },
+      },
+      {
         provide: OrgNavigationService,
         useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
       },
@@ -135,6 +149,9 @@ function setup(): Harness {
     hasOrgSelectorAccess,
     claOnlyUids,
     claLookupFailed,
+    affiliationPending,
+    affiliatedToNonMember,
+    affiliationEmployerName,
     refresh,
     listLoaded,
     listLoading,
@@ -233,6 +250,50 @@ describe('OrgLensEmptyStateService.pageState', () => {
   it('renders no-organization for a clean lookup that holds nothing', () => {
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
     expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // #4314 — the rule-6 split. "Add an affiliation" is only an answer for someone who has none.
+  it('renders affiliated-non-member when the caller already has an employer and it holds no LF membership', () => {
+    h.affiliatedToNonMember.set(true);
+    h.affiliationEmployerName.set('Bank Pekao');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
+    expect(h.service.employerName()).toBe('Bank Pekao');
+  });
+
+  it('keeps no-organization when the affiliated employer is an LF member', () => {
+    h.affiliatedToNonMember.set(false);
+    h.affiliationEmployerName.set('ServiceNow');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
+    // The name belongs to the non-member copy only; no other state may interpolate it.
+    expect(h.service.employerName()).toBeNull();
+  });
+
+  it('holds the skeleton until the employer-affiliation probe answers, so no-organization cannot flash first', () => {
+    h.affiliationPending.set(true);
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.affiliationPending.set(false);
+    h.affiliatedToNonMember.set(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
+  });
+
+  it('renders staff-check-failed ahead of affiliated-non-member', () => {
+    h.affiliatedToNonMember.set(true);
+    h.staffCheck.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
+  });
+
+  it('never shows the non-member copy to a caller who holds an organization', () => {
+    h.affiliatedToNonMember.set(true);
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+
+    expect(h.service.pageState()).toBeNull();
   });
 
   it('renders the page while a selection among loaded holdings is pending', () => {
