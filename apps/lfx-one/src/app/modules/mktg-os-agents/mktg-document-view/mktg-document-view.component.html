@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="runAgainParams().project" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-header">
       <div class="flex min-w-0 flex-col gap-1">
         <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">{{ title() }}</h1>
         @if (header(); as meta) {
@@ -48,7 +48,22 @@
           </span>
         }
       }
+      @if (!loading() && view()?.member360; as envelope) {
+        <lfx-button
+          (onClick)="onDownloadWorkbook()"
+          [loading]="downloadingWorkbook()"
+          [disabled]="downloadingWorkbook() || !writer()"
+          label="Download Member360_{{ envelope.project }}_{{ envelope.period.label }}.xlsx"
+          [outlined]="true"
+          severity="secondary"
+          class="min-w-0 max-w-full"
+          styleClass="min-h-12 max-w-full whitespace-normal break-words"
+          data-testid="member-360-download" />
+      }
     </div>
+    @if (workbookError()) {
+      <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
+    }
 
     @if (runAgentId() && !hasAssetView()) {
       <a
@@ -335,6 +350,7 @@
               class="block min-w-0"
               [projectName]="projectName()"
               [asset]="boilerplatesAsset"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
@@ -357,6 +373,7 @@
             <lfx-brand-kit-web-view
               class="block min-w-0"
               [kit]="kit"
+              [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
@@ -396,6 +413,13 @@
         </section>
 
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
+          @if (commentScope(); as scope) {
+            <lfx-mktg-comments-panel
+              [scope]="scope"
+              [content]="commentContent()"
+              [priorVersion]="current.revision.draftVersion ?? null"
+              (ready)="onRedraftReady(scope, $event)" />
+          }
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
@@ -516,7 +540,7 @@
           @if (historyError()) {
             <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
           }
-          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" [project]="current.project" />
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" />
         }
       }
     }

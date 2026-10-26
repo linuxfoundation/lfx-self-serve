@@ -295,16 +295,20 @@ export class ProjectContextService {
     this.formationOverviewAllowed.set(slug);
   }
 
-  public clearFoundation(): void {
+  public clearFoundation(syncUrl = true): void {
     this.foundationSelection.set(null);
     this.persistToCookie(this.foundationStorageKey, null);
-    this.syncProjectQueryParam(null);
+    if (syncUrl) {
+      this.syncProjectQueryParam(null);
+    }
   }
 
-  public clearProject(): void {
+  public clearProject(syncUrl = true): void {
     this.projectSelection.set(null);
     this.persistToCookie(this.projectStorageKey, null);
-    this.syncProjectQueryParam(null);
+    if (syncUrl) {
+      this.syncProjectQueryParam(null);
+    }
   }
 
   /**

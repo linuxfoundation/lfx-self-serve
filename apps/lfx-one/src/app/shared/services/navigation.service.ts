@@ -90,10 +90,12 @@ export class NavigationService {
       skip(1),
       filter((isHybrid) => isHybrid),
       tap(() => {
-        const active = this.lensService.activeLens();
-        if (active === 'foundation' || active === 'project') {
-          const sibling: NavLens = active === 'foundation' ? 'project' : 'foundation';
-          this.preloadSibling(sibling);
+        // The page's nav lens and the one the mobile drawer previews (#4208) both need their sibling: either can be
+        // the merged selector the viewer sees. preloadSibling() skips a list already loaded or in flight.
+        for (const lens of new Set([this.lensService.activeLens(), this.lensService.menuLens()])) {
+          if (lens === 'foundation' || lens === 'project') {
+            this.preloadSibling(lens === 'foundation' ? 'project' : 'foundation');
+          }
         }
       })
     ),

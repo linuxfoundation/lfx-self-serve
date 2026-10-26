@@ -70,6 +70,7 @@ const createLensServiceFake = (lens: Lens, lenses: LensOption[]) => {
     activeLens,
     menuLens,
     previewingMenuLens: computed(() => menuLens() !== activeLens()),
+    menuPickPending: signal(false),
     displayMenuLens: menuLens,
     isHybridPersona: signal(false),
     availableLenses: signal(lenses),

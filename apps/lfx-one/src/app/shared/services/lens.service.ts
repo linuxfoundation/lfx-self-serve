@@ -74,8 +74,18 @@ export class LensService {
    * change while the viewer only looks at another lens's menu (#4208).
    */
   private readonly menuLensPreview: WritableSignal<Lens | null> = signal(null);
-  /** Bumped whenever the drawer drops its preview, so a failed pick never re-arms a preview the drawer has since closed. */
+  /**
+   * Bumped whenever the drawer drops its preview or the viewer picks another lens tab, so a failed pick never re-arms a
+   * preview the drawer has since closed or moved away from.
+   */
   private menuLensPreviewEpoch = 0;
+  /** The menu pick whose navigation is still pending, so a pick that supersedes it inherits what the page had before both. */
+  private readonly pendingMenuPickState: WritableSignal<MenuLensPick | null> = signal(null);
+  /**
+   * True while a pick from the previewed menu is committed but its navigation hasn't landed: the route still describes
+   * the page being left, so the menu's links follow the picked lens, as they did while it was previewed.
+   */
+  public readonly menuPickPending: Signal<boolean> = computed(() => this.pendingMenuPickState() !== null);
   /**
    * The lens the nav menu is built for: the drawer's preview while one stands (and the persona still holds it), otherwise
    * {@link activeLens}. Only the menu stack reads this — the sidebar items, the context selectors and the lens tabs.
@@ -112,13 +122,18 @@ export class LensService {
    * Show a lens's menu in the mobile drawer without switching the page's lens or navigating. Resolves the hybrid
    * 'Projects' entry like {@link switchLens}; choosing the page's own lens ends the preview. A lens the persona may not
    * use is ignored.
+   *
+   * While a pick is still navigating, `activeLens` is that pick's provisional lens, not the page's, so a tab matching it
+   * is kept as an explicit choice: if the pick then fails and the page lens comes back, the drawer still shows the menu
+   * the viewer chose last.
    */
   public previewMenuLens(lens: Lens): void {
     const target = this.switchTarget(lens);
     if (!this.getAllowedLensIds().includes(target)) {
       return;
     }
-    this.menuLensPreview.set(target === this.activeLens() ? null : target);
+    this.menuLensPreviewEpoch += 1;
+    this.menuLensPreview.set(target === this.activeLens() && !this.menuPickPending() ? null : target);
   }
 
   /**
@@ -137,14 +152,23 @@ export class LensService {
       this.menuLensPreview.set(null);
       return;
     }
+    // A pick made while an earlier one's navigation is still pending (it re-previewed and picked again) supersedes it:
+    // neither left the page, so a rollback must return to what the page had before the first, undoing both.
+    const pending = this.pendingMenuPickState();
     const pick: MenuLensPick = {
-      previous: this.activeLens(),
-      previousNavLens: this.navLensSelection(),
+      previous: pending?.previous ?? this.activeLens(),
+      previousNavLens: pending?.previousNavLens ?? this.navLensSelection(),
       committed: lens,
       previewed: this.menuLens(),
       epoch: this.menuLensPreviewEpoch,
-      onRestore,
+      onRestore: pending?.onRestore
+        ? () => {
+            onRestore?.();
+            pending.onRestore?.();
+          }
+        : onRestore,
     };
+    this.pendingMenuPickState.set(pick);
     this.setLens(lens);
     pick.committed = this.activeLens();
     this.menuLensPreview.set(null);
@@ -253,11 +277,14 @@ export class LensService {
         )
       )
       .subscribe((event) => {
-        if (event instanceof NavigationEnd || this.activeLens() !== pick.committed) {
+        if (this.isHandedOver(event) && this.activeLens() === pick.committed) {
+          this.restoreLensIfPickFails(pick);
           return;
         }
-        if (this.isHandedOver(event)) {
-          this.restoreLensIfPickFails(pick);
+        if (this.pendingMenuPickState() === pick) {
+          this.pendingMenuPickState.set(null);
+        }
+        if (event instanceof NavigationEnd || this.activeLens() !== pick.committed) {
           return;
         }
         this.setLens(pick.previous);
@@ -275,7 +302,7 @@ export class LensService {
   }
 
   /** A navigation cancelled only to make way for the next one — a guard's redirect, or a newer navigation superseding it. */
-  private isHandedOver(event: NavigationCancel | NavigationError | NavigationSkipped): boolean {
+  private isHandedOver(event: NavigationEnd | NavigationCancel | NavigationError | NavigationSkipped): boolean {
     return (
       event instanceof NavigationCancel &&
       (event.code === NavigationCancellationCode.Redirect || event.code === NavigationCancellationCode.SupersededByNewNavigation)

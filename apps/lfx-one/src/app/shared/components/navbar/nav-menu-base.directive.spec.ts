@@ -30,6 +30,7 @@ const navMenuServiceStubs = (setProject = vi.fn()): Provider[] => [
       activeLens: signal('project'),
       menuLens: signal('project'),
       previewingMenuLens: signal(false),
+      menuPickPending: signal(false),
       clearMenuLensPreview: vi.fn(),
       isHybridPersona: signal(false),
       availableLenses: signal([{ id: 'project' }]),
@@ -129,7 +130,7 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
   let restorePick: (() => void) | null = null;
   const selectedProject = signal<ProjectContext | null>({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' });
 
-  const createNavMenu = async (url: string, pageLens: Lens, preview: Lens | null, routeKind: 'foundation' | 'project' | null = null) => {
+  const createNavMenu = async (url: string, pageLens: Lens, preview: Lens | null, routeKind: 'foundation' | 'project' | null = null, pickPending = false) => {
     const activeLens = signal<Lens>(pageLens);
     const menuLensPreview = signal<Lens | null>(preview);
     const menuLens = computed(() => menuLensPreview() ?? activeLens());
@@ -137,6 +138,7 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
       activeLens,
       menuLens,
       previewingMenuLens: computed(() => menuLens() !== activeLens()),
+      menuPickPending: signal(pickPending),
       clearMenuLensPreview: vi.fn(() => menuLensPreview.set(null)),
       isHybridPersona: signal(false),
       availableLenses: signal([{ id: 'me' }, { id: 'foundation' }, { id: 'project' }, { id: 'org' }]),
@@ -188,6 +190,16 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     setFoundation.mockClear();
     restorePick = null;
     selectedProject.set({ uid: 'uid-alpha', slug: 'alpha', name: 'Alpha' });
+  });
+
+  it("clears a slot that was empty before the pick without touching the page's address", async () => {
+    selectedProject.set(null);
+    const { navMenu } = await createNavMenu('/meetings', 'me', 'project');
+    selectItem(navMenu, betaItem);
+
+    restorePick?.();
+
+    expect(TestBed.inject(ProjectContextService).clearProject).toHaveBeenCalledWith(false);
   });
 
   it('puts the selected project back when the pick never leaves the page, unless another one was selected since', async () => {
@@ -245,6 +257,8 @@ describe('NavMenuBase — context picks from a previewed lens (#4208)', () => {
     expect(queryParamsOf((await createNavMenu('/foundation/meetings', 'foundation', 'me', 'foundation')).navMenu)).toEqual({});
     // …and a Projects menu previewed over a Me page carries its selector's.
     expect(queryParamsOf((await createNavMenu('/meetings', 'me', 'project')).navMenu)).toEqual({ project: 'alpha' });
+    // A Home pick still navigating off a foundation page: its links still carry no slug, though the route hasn't moved.
+    expect(queryParamsOf((await createNavMenu('/foundation/overview', 'me', null, 'foundation', true)).navMenu)).toEqual({});
   });
 });
 

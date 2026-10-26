@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -14,6 +14,7 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
@@ -27,6 +28,7 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
@@ -36,6 +38,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
+  MktgBreadcrumbItem,
   MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
@@ -46,6 +49,9 @@ import {
   MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgPendingGeneration,
+  MktgDocumentCommentScope,
+  MktgRedraftLanding,
+  MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -89,15 +95,19 @@ import {
   merge,
   throwError,
   timer,
+  TimeoutError,
   Observable,
   shareReplay,
   take,
+  takeUntil,
+  Subject,
 } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
+import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
@@ -124,7 +134,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  // Excluding layout gutters: 800px leaves classic-scrollbar headroom.
+  // The host measures the main two-column layout; each asset owns its inner screen grids.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
@@ -141,6 +151,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
+    MktgCommentsPanelComponent,
     TooltipModule,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
@@ -187,6 +198,9 @@ export class MktgDocumentViewComponent {
   protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
+  protected readonly downloadingWorkbook = signal(false);
+  protected readonly workbookError = signal('');
+  private readonly cancelWorkbookDownload = new Subject<void>();
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
@@ -208,6 +222,7 @@ export class MktgDocumentViewComponent {
   private readonly reloads = signal(0);
   private readonly handoffRunId = signal('');
   private readonly refreshedFailures = new Set<string>();
+  private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
 
@@ -227,9 +242,7 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), this.view()?.type.itemLabel ?? 'Document')
-  );
+  protected readonly crumbs = this.initCrumbs();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -265,6 +278,7 @@ export class MktgDocumentViewComponent {
     }
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
+  protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -291,6 +305,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  /** Label context uses the stored content shape, never the transformed display rows. */
+  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -408,7 +424,12 @@ export class MktgDocumentViewComponent {
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
         .pipe(
-          tap(() => this.writer.set(false)),
+          tap(() => {
+            this.cancelWorkbookDownload.next();
+            this.downloadingWorkbook.set(false);
+            this.workbookError.set('');
+            this.writer.set(false);
+          }),
           switchMap(([request]) => (request.slug ? this.projectService.getProject(request.slug, false) : of(null))),
           takeUntilDestroyed()
         )
@@ -462,6 +483,7 @@ export class MktgDocumentViewComponent {
               this.retrying.set(false);
               this.handoffRunId.set('');
               this.refreshedFailures.clear();
+              this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
               this.notice.set('');
               this.restoringId.set(null);
@@ -492,6 +514,8 @@ export class MktgDocumentViewComponent {
                           this.failureDetails.set(result.message ?? '');
                         }
                       }),
+                      // Keep needs_input out of the stored read while the tap above shows the prompt.
+                      // Polling continues; a later ready/failed emission clears that prompt.
                       filter((result) => result.status !== 'needs_input')
                     )
                 : of(null);
@@ -523,12 +547,16 @@ export class MktgDocumentViewComponent {
                     })
                   );
                 }),
-                catchError((error: HttpErrorResponse) => {
-                  this.errorText.set(
-                    pending
-                      ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                      : this.loadErrorText(error.status, error.error?.code)
-                  );
+                catchError((error: HttpErrorResponse | TimeoutError) => {
+                  if (error instanceof TimeoutError) {
+                    this.errorText.set('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+                  } else {
+                    this.errorText.set(
+                      pending
+                        ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                        : this.loadErrorText(error.status, error.error?.code)
+                    );
+                  }
                   return of(null);
                 })
               );
@@ -548,6 +576,7 @@ export class MktgDocumentViewComponent {
             if (prepared) {
               this.localProgress.set('writing');
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
+              if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
@@ -687,9 +716,17 @@ export class MktgDocumentViewComponent {
                     take(1),
                     switchMap(() => {
                       const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
-                      if (recorded?.state !== 'writing' && recorded?.state !== 'storing') return EMPTY;
-                      this.localProgress.set('writing');
-                      this.handoffRunId.set(recorded.runId);
+                      const active = recorded?.state === 'writing' || recorded?.state === 'storing';
+                      // The accepted run may have finished before this first metadata read. Confirm its
+                      // private result receipt instead of silently treating whichever revision is current as its output.
+                      const finishedBeforeRead =
+                        !recorded &&
+                        !this.preparedRunIds.has(request.runId) &&
+                        request.runId === recoverable.attempt?.runId &&
+                        !!this.runDetail()?.revisions.length;
+                      if (!active && !finishedBeforeRead) return EMPTY;
+                      if (active) this.localProgress.set('writing');
+                      this.handoffRunId.set(recoverable.attempt?.runId ?? '');
                       return resume({ ...recoverable, request: { ...recoverable.request, intake } });
                     })
                   )
@@ -708,6 +745,71 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onRedraftReady(scope: MktgDocumentCommentScope, location: MktgRedraftLanding): void {
+    const view = this.view();
+    if (
+      !this.writer() ||
+      !view ||
+      view.project !== scope.projectUid ||
+      view.revision.id !== scope.revisionId ||
+      this.projectContext.activeContextUid() !== scope.projectUid ||
+      this.params().agentKey !== location.agentKey ||
+      this.params().documentId !== location.documentId
+    ) {
+      this.notice.set('A new Draft was stored; open it from Revisions');
+      return;
+    }
+    this.dependencyService.notifyDocumentsChanged(scope.projectUid);
+    const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
+      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
+    });
+  }
+
+  protected onDownloadWorkbook(): void {
+    const view = this.view();
+    const envelope = view?.member360;
+    if (!isPlatformBrowser(this.platformId) || !view || !envelope || !this.writer() || this.loading() || this.downloadingWorkbook()) return;
+    const selection = this.revisionParam();
+    const subject = this.userService.user()?.sub;
+    const current = () => this.userService.user()?.sub === subject && this.sameView(view.project, view, selection) && this.writer();
+    if (!current()) return;
+    this.downloadingWorkbook.set(true);
+    this.workbookError.set('');
+    this.member360
+      .download(view.project, view.documentId)
+      .pipe(
+        take(1),
+        takeUntil(this.cancelWorkbookDownload),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.downloadingWorkbook.set(false))
+      )
+      .subscribe({
+        next: (blob) => {
+          if (!current()) return;
+          try {
+            const url = URL.createObjectURL(blob);
+            // Cleanup outlives the click, but not the document page.
+            timer(1000)
+              .pipe(
+                takeUntilDestroyed(this.destroyRef),
+                finalize(() => URL.revokeObjectURL(url))
+              )
+              .subscribe();
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Member360_${envelope.project}_${envelope.period.label}.xlsx`;
+            link.click();
+          } catch {
+            this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+          }
+        },
+        error: () => {
+          if (current()) this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+        },
+      });
+  }
+
   protected onRetryRun(): void {
     const run = this.selectedRun();
     const project = this.projectContext.activeContextUid();
@@ -805,7 +907,7 @@ export class MktgDocumentViewComponent {
     if (!this.linkedinContent()?.isAuthor) return;
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       queryParams: { profile: 'edit', revision: null, type: null },
       queryParamsHandling: 'merge',
     });
@@ -869,8 +971,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: { profile: null, revision: null, type: null },
-      queryParamsHandling: 'merge',
+      queryParams: this.runAgainParams(),
     });
   }
 
@@ -957,6 +1058,15 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
+    return computed(() => {
+      const view = this.view();
+      if (!view || !this.commentContent() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
+      if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
+      return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
+    });
+  }
+
   private initSelectedRun(): Signal<MktgDocumentRunProgress | null> {
     return computed(() => {
       const runs = this.runDetail()?.runs ?? [];
@@ -1025,6 +1135,18 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  private initCrumbs(): Signal<MktgBreadcrumbItem[]> {
+    return computed(() => {
+      const view = this.view();
+      let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
+      const createdAt = view?.revision.createdAt;
+      if (view?.type.agentKey === 'aeo-geo' && typeof createdAt === 'string' && createdAt.trim() && !Number.isNaN(Date.parse(createdAt))) {
+        label += ` · ${formatDate(createdAt, 'd MMM y', 'en-US', 'UTC')}`;
+      }
+      return mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), label);
+    });
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
@@ -1083,6 +1205,7 @@ export class MktgDocumentViewComponent {
       const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
+        this.preparedRunIds.add(runId);
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { run: runId, generation: null },
@@ -1117,7 +1240,8 @@ export class MktgDocumentViewComponent {
       if (location) {
         this.localProgress.set(null);
         void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-          queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+          queryParams: { ...this.runAgainParams(), revision: location.revisionId, mode: null },
+          replaceUrl: true,
         });
       } else {
         this.localProgress.set('storing');
@@ -1134,6 +1258,7 @@ export class MktgDocumentViewComponent {
       const token = this.attempts.prepare(pending.request, true);
       void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
         queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
+        replaceUrl: true,
       });
     }
   }
