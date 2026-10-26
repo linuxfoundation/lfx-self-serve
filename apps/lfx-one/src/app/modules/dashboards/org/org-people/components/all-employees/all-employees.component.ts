@@ -56,6 +56,7 @@ import type {
   OrgAllEmployeeStats,
   OrgDropdownOption,
 } from '@lfx-one/shared/interfaces';
+import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
 
@@ -191,6 +192,8 @@ export class AllEmployeesComponent {
     ),
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
   );
+
+  private readonly rosterRows: Signal<OrgAllEmployeeRow[]> = computed(() => this.initRosterRows());
 
   protected readonly stats: Signal<OrgAllEmployeeStats> = computed(() => this.initStats());
 
@@ -354,44 +357,41 @@ export class AllEmployeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...options];
   }
 
-  /** Tiles follow the employment filter: current and former rosters are disjoint, so "All" is their sum. */
+  /** Tiles follow the employment filter. The current view keeps the server's tiles; views with former employees count the reconciled rows. */
   private initStats(): OrgAllEmployeeStats {
-    const current = this.response().stats;
-    const former = this.formerResponse().stats;
-    switch (this.selectedEmployment()) {
-      case 'current':
-        return current;
-      case 'former':
-        return former;
-      case 'all':
-        return {
-          activeInOss: current.activeInOss + former.activeInOss,
-          inGovernance: current.inGovernance + former.inGovernance,
-          codeContributors: current.codeContributors + former.codeContributors,
-          eventAttendees: current.eventAttendees + former.eventAttendees,
-          trainees: current.trainees + former.trainees,
-        };
+    return this.selectedEmployment() === 'current' ? this.response().stats : computeOrgAllEmployeeStats(this.rosterRows());
+  }
+
+  /**
+   * Current and former rows for the selected view, reconciled by LF username. Someone in the former roster can
+   * also arrive from the live roster before the next warehouse build:
+   * - with only Org Lens access, they are still former: show the former row, carrying the access badge;
+   * - with a live seat or key-contact role, they are current again: keep the live row, drop the former one.
+   */
+  private initRosterRows(): OrgAllEmployeeRow[] {
+    const formerRows = this.showFormer() ? this.formerResponse().rows : [];
+    const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
+    const accessOnly = new Map<string, OrgAllEmployeeRow['accessBadge']>();
+    const liveRoles = new Set<string>();
+    for (const row of this.response().rows) {
+      if (!row.lfUsername || !formerUsernames.has(row.lfUsername) || row.sources.includes('snowflake')) continue;
+      if (row.sources.every((source) => source === 'access')) {
+        accessOnly.set(row.lfUsername, row.accessBadge);
+      } else {
+        liveRoles.add(row.lfUsername);
+      }
     }
+    const currentRows = this.showCurrent() ? this.response().rows.filter((row) => !(row.lfUsername && accessOnly.has(row.lfUsername))) : [];
+    const shownFormerRows = formerRows
+      .filter((row) => !(row.lfUsername && liveRoles.has(row.lfUsername)))
+      .map((row) => (row.lfUsername && accessOnly.has(row.lfUsername) ? { ...row, accessBadge: accessOnly.get(row.lfUsername) } : row));
+    return [...currentRows, ...shownFormerRows];
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
     // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
     // on each one, so there is neither a client-side synthetic UNION nor an address join here.
-    // A former employee who still holds Org Lens access also arrives from the live roster as a live-only row; show
-    // them once, as the former row, carrying that access badge.
-    const formerRows = this.showFormer() ? this.formerResponse().rows : [];
-    const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
-    const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
-    for (const row of this.response().rows) {
-      if (row.lfUsername && formerUsernames.has(row.lfUsername) && !row.sources.includes('snowflake')) {
-        liveAccess.set(row.lfUsername, row.accessBadge);
-      }
-    }
-    const currentRows = this.showCurrent() ? this.response().rows.filter((row) => !(row.lfUsername && liveAccess.has(row.lfUsername))) : [];
-    const rows = [
-      ...currentRows,
-      ...formerRows.map((row) => (row.lfUsername && liveAccess.has(row.lfUsername) ? { ...row, accessBadge: liveAccess.get(row.lfUsername) } : row)),
-    ];
+    const rows = this.rosterRows();
     return rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),

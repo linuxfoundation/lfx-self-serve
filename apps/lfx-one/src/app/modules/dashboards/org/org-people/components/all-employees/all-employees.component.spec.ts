@@ -291,7 +291,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   // lfx-self-serve#4311 — former employees are a separate read, shown only when a view that includes them is picked.
   describe('in the browser, with the employment filter', () => {
     const answerCurrent = async (): Promise<void> => {
-      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
       snowflake$.complete();
       await settle();
     };
@@ -360,6 +360,22 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+
+    it('keeps someone with a live seat as current and drops their former row, with tiles counted over the rows shown, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response([row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['committee'] })], 2)
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace', 'org-people-all-employees-row-p-1']);
+      expect(formerTags()).toEqual([]);
+      expect(activeStat()).toContain('2');
     });
   });
 

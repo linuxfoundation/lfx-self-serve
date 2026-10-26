@@ -111,6 +111,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     ...compact,
     ...(await vi.importActual<object>('@lfx-one/shared/utils/org-selector.utils')),
+    ...(await vi.importActual<object>('@lfx-one/shared/utils/org-people-stats.utils')),
     // The real encoder, observed: what goes IN is the independent truth the round-trip test compares
     // the decoded response against. Comparing a hit with a miss alone cannot catch an unfaithful
     // codec, because the miss path returns the decoded envelope too.

@@ -18,7 +18,15 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import {
+  computeOrgAllEmployeeStats,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  splitDisplayName,
+  toColumnar,
+} from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -29,7 +37,7 @@ import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
-import { computeStats, toWireRow } from './org-people-wire.mapper';
+import { toWireRow } from './org-people-wire.mapper';
 import { withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -376,7 +384,7 @@ export class OrgPeopleDirectoryService {
     return {
       accountId,
       rows: merged.map(toWireRow),
-      stats: computeStats(merged),
+      stats: computeOrgAllEmployeeStats(merged),
       // Foundation options stay sourced from Snowflake (authoritative id↔name pairs). Live-only people
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,

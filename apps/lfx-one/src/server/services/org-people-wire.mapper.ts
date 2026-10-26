@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  OrgAllEmployeeRow,
-  OrgAllEmployeeRowInternal,
-  OrgAllEmployeesInternalResponse,
-  OrgAllEmployeesResponse,
-  OrgAllEmployeeStats,
-} from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeRow, OrgAllEmployeeRowInternal, OrgAllEmployeesInternalResponse, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
 
 /**
  * Project an in-memory merge row onto the wire shape. The merge-only field (`emails`)
@@ -52,32 +46,4 @@ export function toWireResponse(response: OrgAllEmployeesInternalResponse): OrgAl
     stats: response.stats,
     foundations: response.foundations,
   };
-}
-
-/**
- * Recompute the 5 stat cards over the merged rows so the headline matches the visible table.
- * `activeInOss` counts only people with at least one engagement signal (governance / code / event /
- * training) — matching the stored model's Definition-2 meaning — so access-only rows merged in for the
- * roster don't inflate the "Employees Active in Open Source" headline. Governance counts a seat count OR
- * a live board/committee provenance — the provenance fallback also catches any seat that arrived without a
- * resolvable count.
- */
-export function computeStats(rows: OrgAllEmployeeRow[]): OrgAllEmployeeStats {
-  let activeInOss = 0;
-  let inGovernance = 0;
-  let codeContributors = 0;
-  let eventAttendees = 0;
-  let trainees = 0;
-  for (const row of rows) {
-    const inGov = row.seatsCount > 0 || row.sources.includes('board') || row.sources.includes('committee');
-    const hasCode = row.commitsCount > 0;
-    const hasEvents = row.eventsCount > 0;
-    const hasTraining = row.coursesCount > 0;
-    if (inGov) inGovernance++;
-    if (hasCode) codeContributors++;
-    if (hasEvents) eventAttendees++;
-    if (hasTraining) trainees++;
-    if (inGov || hasCode || hasEvents || hasTraining) activeInOss++;
-  }
-  return { activeInOss, inGovernance, codeContributors, eventAttendees, trainees };
 }

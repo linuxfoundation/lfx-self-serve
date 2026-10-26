@@ -27,14 +27,23 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import {
+  computeOrgAllEmployeeStats,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  isFilterSafeIdentifier,
+  splitDisplayName,
+  toColumnar,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
-import { computeStats, toWireResponse } from './org-people-wire.mapper';
+import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
@@ -88,6 +97,12 @@ interface EmployeeActivityRaw {
   codeRows: CodeContributionRow[];
   eventRows: EventRow[];
   trainingRows: TrainingRow[];
+}
+
+/** Answer of the keyed former-employee check; `failed` answers are never cached. */
+interface FormerCheck {
+  isFormer: boolean;
+  failed: boolean;
 }
 
 /** No unique identity is available — distinct from a resolved empty lookup. */
@@ -149,7 +164,7 @@ export class OrgLensPeopleService {
       stats: EMPTY_ORG_ALL_EMPLOYEE_STATS,
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     });
-    return { ...response, stats: computeStats(response.rows) };
+    return { ...response, stats: computeOrgAllEmployeeStats(response.rows) };
   }
 
   /**
@@ -361,13 +376,13 @@ export class OrgLensPeopleService {
 
   /**
    * A former employee's company addresses are never read: they left, and the address model covers the
-   * account's current people only. One keyed read per person, cached either way. A failed read
-   * (e.g. before ORG_PEOPLE_FORMER exists) answers `false` and is cached too, so it costs at most one
-   * warehouse round trip per person per TTL and never blocks the address read.
+   * account's current people only. One keyed read per person, cached per person. A failed read answers
+   * `false` so it never blocks the address read, and is not cached, so a warehouse blip cannot drop the
+   * guard for the whole TTL.
    */
   private async isFormerEmployee(accountId: string, identity: { personKey: string } | { username: string }): Promise<boolean> {
     const byPersonKey = 'personKey' in identity;
-    const fetcher = async (): Promise<{ isFormer: boolean }> => {
+    const fetcher = async (): Promise<FormerCheck> => {
       try {
         const result = await this.snowflakeService.execute<{ IS_FORMER: number }>(
           `
@@ -378,17 +393,17 @@ export class OrgLensPeopleService {
           `,
           [accountId, byPersonKey ? identity.personKey : identity.username]
         );
-        return { isFormer: result.rows.length > 0 };
+        return { isFormer: result.rows.length > 0, failed: false };
       } catch (error) {
         logger.info(undefined, 'get_org_lens_people_former_lookup', 'former employee lookup failed', { err: error });
-        return { isFormer: false };
+        return { isFormer: false, failed: true };
       }
     };
     if (byPersonKey && !isFilterSafeIdentifier(identity.personKey)) {
       return (await fetcher()).isFormer;
     }
     const key = byPersonKey ? `people-former-check:${identity.personKey}` : `people-former-check:username:${usernameDigest(identity.username)}`;
-    const { isFormer } = await withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck);
+    const { isFormer } = await withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck, (check) => !check.failed);
     return isFormer;
   }
 
@@ -851,7 +866,7 @@ function isFormerEmployeesRaw(value: unknown): boolean {
 }
 
 function isFormerCheck(value: unknown): boolean {
-  return !!value && typeof value === 'object' && 'isFormer' in value && typeof value.isFormer === 'boolean';
+  return !!value && typeof value === 'object' && 'isFormer' in value && typeof value.isFormer === 'boolean' && 'failed' in value && value.failed === false;
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */

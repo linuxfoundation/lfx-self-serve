@@ -17,6 +17,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-people-stats.utils')),
   // Real, not stubbed: the roster cache encodes and decodes through these on every read/write, so a
   // stub would make the round-trip assertions below vacuous.
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
@@ -114,6 +115,14 @@ beforeEach(() => {
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
   database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
+  // Deployed former-employees model (lfx-self-serve#4311); empty unless a test adds someone who left.
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_FORMER (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT,
+      EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER,
+      COMMITS_COUNT INTEGER, EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
+    )
+  `);
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
@@ -415,13 +424,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
     const formerKey = 'person-former';
 
     beforeEach(() => {
-      database.exec(`
-        CREATE TABLE ORG_PEOPLE_FORMER (
-          ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT,
-          EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER,
-          COMMITS_COUNT INTEGER, EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
-        )
-      `);
       database
         .prepare('INSERT INTO ORG_PEOPLE_FORMER VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(ACCOUNT, formerKey, formerKey, 'leftuser', null, '[[Unknown]]', null, 'left@personal.example', null, 0, 0, 0, 4, 0, 0, '["foundation-two"]');
@@ -451,6 +453,15 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
       expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'LeftUser')).toEqual(UNAVAILABLE);
+    });
+
+    it('does not remember a failed former check, so the next read applies the guard', async () => {
+      addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
+      database.exec('ALTER TABLE ORG_PEOPLE_FORMER RENAME TO SAVED_FORMER');
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).not.toEqual(UNAVAILABLE);
+
+      database.exec('ALTER TABLE SAVED_FORMER RENAME TO ORG_PEOPLE_FORMER');
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
     });
   });
 
