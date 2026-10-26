@@ -2916,6 +2916,30 @@ describe('MktgAgentRunComponent', () => {
         expect(answerQuestions).toHaveBeenCalledTimes(1);
       });
 
+      it('disarms Retry after an acknowledged answers stream errors without starting another Generate', async () => {
+        const progress = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(progress);
+        const startGeneration = vi.spyOn(component as unknown as { startGeneration: () => void }, 'startGeneration');
+        generate.mockClear();
+        const request = component['activeRequest'];
+        await sendWith('Avoid "synergy".');
+        progress.next({ type: 'submitted' });
+        progress.error(new Error('Synthetic post-ACK poll failure'));
+        await fixture.whenStable();
+
+        expect(component['runFailed']()).toBe(false);
+        expect(component['phase']()).toBe('form');
+        expect(component['errorText']()).toContain('check Documents');
+        expect(component['questionsPending']()).toBeNull();
+        expect(component['answersSending']()).toBe(false);
+        expect(component['writingStretch']()).toBe(false);
+        expect(component['activeRequest']).toBe(request);
+        expect(query('mktg-agent-run-retry')).toBeNull();
+        component['onRetryRun']();
+        expect(startGeneration).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
       it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {
         answerQuestions.mockReturnValue(throwError(() => new Error('network')));
 

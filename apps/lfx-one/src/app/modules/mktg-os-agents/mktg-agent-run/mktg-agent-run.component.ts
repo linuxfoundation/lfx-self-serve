@@ -735,7 +735,15 @@ export class MktgAgentRunComponent {
         },
         error: () => {
           if (accepted) {
-            this.onProgress({ type: 'failed', failureText: '' }, request.projectUid, true);
+            // No Retry here: the accepted run may still finish server-side; a Generate would duplicate it.
+            this.discardPendingNavigation();
+            this.navigating.set(false);
+            this.recheckingAttempt.set(false);
+            this.answersSending.set(false);
+            this.writingStretch.set(false);
+            this.clearQuestions();
+            this.runFailed.set(false);
+            this.phase.set('form');
             this.errorText.set('The recorded run could not be confirmed. Your intake is kept — check Documents before trying again.');
             return;
           }
