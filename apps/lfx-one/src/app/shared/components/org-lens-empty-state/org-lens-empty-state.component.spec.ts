@@ -170,6 +170,14 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(text).not.toContain('{employerName}');
   });
 
+  // `String.replace` reads `$&`, `` $` ``, `$'` and `$1` out of a replacement *string*, and these
+  // values come from outside the component. A callback inserts them verbatim.
+  it('inserts a value containing a dollar sequence literally', () => {
+    const fixture = render('affiliated-non-member', { employerName: "Acme $& $' $1 Partners" });
+
+    expect(byTestId(fixture, 'description')?.textContent).toContain("You are affiliated with Acme $& $' $1 Partners");
+  });
+
   it('interpolates the organization name, noun and period for a held section', () => {
     const fixture = render('section-empty', { orgName: 'Acme Corp', noun: 'meetings', period: 'the last 30 days' });
 

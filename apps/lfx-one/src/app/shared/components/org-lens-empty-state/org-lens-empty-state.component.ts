@@ -122,11 +122,15 @@ export class OrgLensEmptyStateComponent {
     // #4314 — the caller's own employer. Falls back to the generic noun rather than leaving the token
     // visible, so a profile that answers late or blank still renders a sentence.
     const employerName = values.employerName?.trim() || 'your employer';
+    // Every replacement goes through a callback, never a replacement string: `String.replace` reads
+    // `$&`, `` $` ``, `$'` and `$1` out of a replacement string, and these values are names and
+    // identifiers from outside this component. A company written "Acme $& Partners" would otherwise
+    // render with the whole match spliced into its own name.
     return template
-      .replace(/\{orgName\}/g, orgName)
-      .replace(/\{employerName\}/g, employerName)
-      .replace(/\{noun\}/g, values.noun ?? 'records')
-      .replace(/\{period\}/g, values.period ?? 'this period')
-      .replace(/\{correlationId\}/g, values.correlationId ?? '—');
+      .replace(/\{orgName\}/g, () => orgName)
+      .replace(/\{employerName\}/g, () => employerName)
+      .replace(/\{noun\}/g, () => values.noun ?? 'records')
+      .replace(/\{period\}/g, () => values.period ?? 'this period')
+      .replace(/\{correlationId\}/g, () => values.correlationId ?? '—');
   }
 }
