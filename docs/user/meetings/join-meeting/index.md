@@ -4,7 +4,7 @@ description: How to join a project meeting via the public LFX meeting link.
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, public, attendee]
-last_updated: 2026-10-11
+last_updated: 2026-10-22
 intercom_collection: Meetings
 ---
 
@@ -13,12 +13,19 @@ Every project meeting hosted in LFX Self Serve has a join page. Opening the link
 ## Steps
 
 1. Open the meeting join link shared by your meeting organizer. The link follows the format: `https://app.lfx.dev/meetings/{meeting-id}`.
-2. The page shows the meeting title, date and time, and a join button (if the meeting is starting soon or already underway). If you're signed in, it also shows who's organizing the meeting. Use the **Copy meeting link** button if you want to save or forward it.
+2. The page shows the meeting title, date and time, and a join button (if the meeting is starting soon or already underway). For a **Private** meeting, the date, time, and other details only appear if you have access — see "No account required (Private meetings)" below. If you're signed in, it also shows who's organizing the meeting. Use the **Copy meeting link** button if you want to save or forward it.
 3. If the meeting is marked **Restricted**, you'll generally need to be signed in and match an existing registrant to see full join details — see "Restricted meetings" below.
 
 ## No account required (Private meetings)
 
-A **Private** meeting's join link carries the meeting's password as a query parameter, so anyone with the link can join without signing in. A **Restricted** meeting works differently — there's no anonymous form to get past it; you'll generally need to sign in as a registrant, or as the organizer or a linked committee member.
+A **Private** meeting's join link carries the meeting's password as a query parameter, so anyone with the link can join without signing in.
+
+A Private meeting's details are only shown to signed-in organizers, invited participants, and members of a linked committee. Everyone else sees the meeting title and a **This is a private meeting** notice; the agenda, materials, and date and time are hidden:
+
+- If you aren't signed in, the page also shows **Sign In** and the guest join form, so you can still join as a guest when you have the meeting password.
+- If you're signed in, the notice asks you to contact the meeting organizer if you believe you should have access.
+
+A **Restricted** meeting works differently — there's no anonymous form to get past it; you'll generally need to sign in as a registrant, or as the organizer or a linked committee member.
 
 ## Meeting not found
 

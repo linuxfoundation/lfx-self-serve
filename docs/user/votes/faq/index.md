@@ -4,7 +4,7 @@ description: Frequently asked questions about votes and polls in LFX Self Serve.
 audience: [all]
 product_area: Votes
 tags: [votes, faq, polls, governance, elections]
-last_updated: 2026-08-17
+last_updated: 2026-10-22
 intercom_collection: Votes
 ---
 
@@ -34,7 +34,7 @@ Vote results are visible within the poll detail view. The display format depends
 
 ## Can a poll be extended after it closes?
 
-Contact your project administrator if you need to reopen or extend a closed poll.
+No. Contact your project administrator if you need to reopen or extend a closed poll. While a poll is still active, users who can manage it can extend its deadline from the poll's **More** (⋮) menu with **Extend**. See [Manage Votes](../manage-votes/).
 
 ## Why can't I see a poll I should be able to vote in?
 

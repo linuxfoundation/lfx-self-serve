@@ -3,8 +3,8 @@ title: Manage Votes
 description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-18
+tags: [votes, manage, polls, results, reminders, mailing-list, deadline, extend]
+last_updated: 2026-10-22
 intercom_collection: Votes
 ---
 
@@ -57,6 +57,18 @@ Draft a reminder to the poll's group mailing list in your own email app. LFX doe
 The message goes to everyone on the list, including people who have already voted or can't vote. If nothing opens, check that your device has a default email app set up.
 
 If the group has no mailing list, LFX tells you so. Use **Copy link** to share the poll another way, or **Send reminder** to email the voters directly.
+
+## Extend a poll's deadline
+
+Give voters more time on an active poll. Only users who can manage the poll see this option.
+
+1. Open the votes dashboard, or the **Votes** tab of a group.
+2. Find an active poll and select the **More** (⋮) menu on its row.
+3. Select **Extend**. The **Extend Deadline** dialog opens.
+4. Choose a **New Close Date**, **New Close Time**, and **Timezone**. The new deadline must be later than the current one.
+5. Select **Extend Deadline**. The poll's row shows the new deadline.
+
+**Extend** doesn't appear on draft or ended polls.
 
 ## Edit a poll
 
