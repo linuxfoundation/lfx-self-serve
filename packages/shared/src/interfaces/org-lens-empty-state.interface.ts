@@ -88,6 +88,9 @@ export interface OrgLensEmptyStateValues {
   filterActive?: boolean;
 }
 
+/** #4314 — what the employer-membership lookup established; see `OrgLensEmployerAffiliation.membership`. */
+export type OrgLensEmployerMembership = 'member' | 'non-member' | 'unresolved';
+
 /**
  * #4314 — the caller's own employer affiliation as the Org Lens empty states need it:
  * who their profile says they work for, and whether that company holds any active membership
@@ -95,9 +98,6 @@ export interface OrgLensEmptyStateValues {
  * deliberately *not* behind the Org Lens read gate — a caller with no grant must be able to
  * learn why they have none.
  */
-/** #4314 — what the employer-membership lookup established; see `OrgLensEmployerAffiliation.membership`. */
-export type OrgLensEmployerMembership = 'member' | 'non-member' | 'unresolved';
-
 export interface OrgLensEmployerAffiliation {
   /**
    * Display name of a job the caller holds *now* (a work-history entry with no end date); `null` when

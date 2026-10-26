@@ -139,10 +139,13 @@ export class OrgLensEmptyStateService {
     return this.contractorVerdict(holdsAnything) === null;
   });
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(
-    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.employerAnswerOwed()
+  /** The shared bootstrap: both one-shot loads have answered, and a contractor's read check when one is owed. */
+  private readonly bootstrapSettled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending()
   );
+
+  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
+  public readonly settled: Signal<boolean> = computed(() => this.bootstrapSettled() && !this.employerAnswerOwed());
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
@@ -152,6 +155,20 @@ export class OrgLensEmptyStateService {
    * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
    */
   public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
+
+  /**
+   * Readiness for `/org/not-found` (#4314). The dead end picks among the staff, outage, contractor and
+   * addressed-but-unheld states; none of them reads the employer answer, so it waits for the shared
+   * bootstrap and the caller's list, and not for a CDP/Snowflake lookup whose result it discards —
+   * which would otherwise hide an already-decided `no-access` and its support action behind it.
+   *
+   * Deliberately its own signal rather than a change to `settled`: the Org pages that gate on `settled`
+   * alone *do* reach rules 6–8, and releasing them early would render page content for a caller who
+   * holds nothing instead of a skeleton.
+   */
+  public readonly deadEndReady: Signal<boolean> = computed(
+    () => this.bootstrapSettled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
+  );
 
   /** The selected organization is in the caller's resolved set (direct, inherited, or company-wide team entitlement). */
   public readonly selectedHeld: Signal<boolean> = computed(() => {

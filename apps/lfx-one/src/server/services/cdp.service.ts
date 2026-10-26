@@ -1023,7 +1023,9 @@ export class CdpService {
       // LFID/emails — treat as "no member" so resolveMember creates one. This is an
       // expected path, so skip reading the body here. Other statuses are genuine failures.
       if (response.status === 404) {
-        logger.debug(req, 'resolve_cdp_member', 'No CDP member found; will create', { lfids, request_id: requestId });
+        // Counts, not the identities — this branch is the common case for the Org Lens employer probe
+        // (#4314), which fires for people who have never opened their profile. `request_id` correlates it.
+        logger.debug(req, 'resolve_cdp_member', 'No CDP member found', { lfid_count: lfids.length, email_count: emails?.length ?? 0, request_id: requestId });
         return undefined;
       }
       const errorText = await response.text();

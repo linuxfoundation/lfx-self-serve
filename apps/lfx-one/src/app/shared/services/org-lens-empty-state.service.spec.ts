@@ -671,6 +671,34 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
   });
 
+  // The dead end picks among staff/outage/contractor/unheld states; none reads the employer answer,
+  // and waiting would hide an already-decided `no-access` and its support action behind a CDP call.
+  it('is ready for the dead end while the employer probe is still pending', () => {
+    h.isContractor.set(false);
+    h.affiliationPending.set(true);
+
+    expect(h.service.deadEndReady()).toBe(true);
+    // The Org pages that gate on `settled` do read it, so they stay on the skeleton.
+    expect(h.service.settled()).toBe(false);
+  });
+
+  it('still waits for the caller org list on the dead end when they have switcher access', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.isContractor.set(false);
+
+    expect(h.service.deadEndReady()).toBe(false);
+
+    h.listLoaded.set(true);
+    expect(h.service.deadEndReady()).toBe(true);
+  });
+
+  it('still holds the dead end for the shared bootstrap', () => {
+    h.isContractor.set(false);
+    h.personaLoaded.set(false);
+
+    expect(h.service.deadEndReady()).toBe(false);
+  });
+
   it('still holds the skeleton for a caller whose page decision reads the employer answer', () => {
     h.isContractor.set(false);
     h.affiliationPending.set(true);
