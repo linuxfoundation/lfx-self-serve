@@ -168,14 +168,15 @@ export interface RoleGrantsResponse {
 
 /**
  * #4225 — what the BFF could establish about the caller's own employer. `lookup: 'failed'` means the
- * question was asked and not answered (CDP down, no domain on the CDP organization, `b2b_org`
- * unreadable), which the client must treat as "unknown" and fall back to `no-organization` rather
- * than assert something new and wrong (spec 053 FR-011, never fall through).
+ * question was asked and not answered (CDP or the warehouse unreachable, no asserted username, or
+ * the employer carries no crowd.dev organization id to resolve it by), which the client must treat
+ * as "unknown" and fall back to `no-organization` rather than assert something new and wrong
+ * (spec 053 FR-011, never fall through).
  */
 export interface OrgLensAffiliationVerdict {
-  /** The caller has a current employer on their CDP work history. */
+  /** The caller has an *ongoing* employer on their CDP work history; a job they have left does not count. */
   hasEmployer: boolean;
-  /** That employer matched a `b2b_org` carrying `is_member:true`. Only meaningful when `lookup === 'ok'`. */
+  /** That employer's crowd.dev organization matched an LF account flagged `IS_MEMBER`. Only meaningful when `lookup === 'ok'`. */
   employerIsMember: boolean;
   /** Whether the determination completed. */
   lookup: 'ok' | 'failed';

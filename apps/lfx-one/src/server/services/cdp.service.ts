@@ -454,18 +454,7 @@ export class CdpService {
 
       const rawExperiences = await this.getMemberWorkExperiences(req, memberId);
 
-      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => ({
-        id: raw.id,
-        organization: raw.organizationName,
-        organizationId: raw.organizationId,
-        organizationLogo: raw.organizationLogo || undefined,
-        jobTitle: raw.jobTitle,
-        startDate: this.formatDateToMonthYear(raw.startDate),
-        endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
-        source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
-        cdpSource: raw.source,
-        needsReview: !(raw.verified && raw.verifiedBy === sub),
-      }));
+      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => this.toWorkExperienceEntry(raw, sub));
 
       logger.success(req, 'get_cdp_work_experiences_for_user', startTime, {
         sub,
@@ -481,6 +470,44 @@ export class CdpService {
       }
 
       logger.error(req, 'get_cdp_work_experiences_for_user', startTime, error, { sub });
+      throw error;
+    }
+  }
+
+  /**
+   * #4225 — work history for a caller we are only reading about, which never creates a CDP member.
+   *
+   * {@link getWorkExperiencesForUser} resolves through `resolveMember`, and that helper *creates* a
+   * member when CDP has none. That is right on the profile, where the user is curating their own
+   * record, but wrong on `GET /api/orgs/me/role-grants`: it would make a read endpoint write to CDP
+   * for precisely the population this lookup runs for — callers with no Org Lens grant, who are the
+   * most likely to have no CDP profile yet — and make a page-blocking call wait on that create.
+   *
+   * An unknown member is not an error here: they simply have no work history, so the caller reads
+   * "no employer" and gets the unchanged copy.
+   */
+  public async getWorkExperiencesForKnownUser(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user', { sub });
+
+    try {
+      const memberId = await this.resolveMemberId(req, [sub]);
+      if (!memberId) {
+        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for user; reporting no work history', { sub });
+        return [];
+      }
+
+      const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
+
+      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { sub, member_id: memberId, work_experience_count: entries.length });
+
+      return entries;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for user', { sub });
+        return [];
+      }
+
+      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error, { sub });
       throw error;
     }
   }
@@ -970,6 +997,22 @@ export class CdpService {
    * (NOT_FOUND / "Member not found") or a 2xx response with no `memberId`. Both are
    * treated as "no member" rather than an upstream failure. Any other non-2xx throws.
    */
+  /** Shared wire → `WorkExperienceEntry` mapping for both work-history readers. */
+  private toWorkExperienceEntry(raw: CdpWorkExperience, sub: string): WorkExperienceEntry {
+    return {
+      id: raw.id,
+      organization: raw.organizationName,
+      organizationId: raw.organizationId,
+      organizationLogo: raw.organizationLogo || undefined,
+      jobTitle: raw.jobTitle,
+      startDate: this.formatDateToMonthYear(raw.startDate),
+      endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
+      source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
+      cdpSource: raw.source,
+      needsReview: !(raw.verified && raw.verifiedBy === sub),
+    };
+  }
+
   private async resolveMemberId(req: Request | undefined, lfids: string[], emails?: string[]): Promise<string | undefined> {
     const token = await this.generateToken(req);
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;

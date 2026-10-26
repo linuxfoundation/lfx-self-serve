@@ -18,8 +18,11 @@ const OPERATION = 'get_org_role_grants';
 /** Nothing established, and the question was not answerable — the client keeps today's copy. */
 const UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'failed' };
 
-/** The caller has no employer on their work history; that is an answer, not an outage. */
+/** The caller has no current employer on their work history; that is an answer, not an outage. */
 const NO_EMPLOYER: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'ok' };
+
+/** The employer is known but its membership is not — still `failed`, so the client keeps today's copy. */
+const EMPLOYER_MEMBERSHIP_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: true, employerIsMember: false, lookup: 'failed' };
 
 /**
  * #4225 — why a caller who holds no Org Lens grant holds none.
@@ -90,17 +93,31 @@ export class OrgAffiliationService {
    * account, so it is not a member.
    */
   private async resolve(req: Request, username: string): Promise<OrgLensAffiliationVerdict> {
-    const experiences = await this.cdp.getWorkExperiencesForUser(req, username);
-    const employer = currentEmployerFromWorkExperiences(experiences);
+    const experiences = await this.cdp.getWorkExperiencesForKnownUser(req, username);
+    // Only ongoing employment counts. `currentEmployerFromWorkExperiences` falls back to the most
+    // recent *past* job when every entry has an end date — right for the invitation flow it was
+    // written for, wrong here: this copy tells the reader to ask an administrator at the company,
+    // which is no help to someone who left it. A caller with only former employers holds no
+    // affiliation for our purposes and keeps the unchanged copy.
+    const employer = currentEmployerFromWorkExperiences(experiences.filter((entry) => !entry.endDate));
     if (!employer) {
       return NO_EMPLOYER;
     }
     if (!employer.id) {
       logger.debug(req, OPERATION, 'Current employer has no CDP organization id; employer membership is unknown');
-      return { hasEmployer: true, employerIsMember: false, lookup: 'failed' };
+      return EMPLOYER_MEMBERSHIP_UNKNOWN;
     }
 
-    const account = await this.organizations.getOrgLensAccountContextByCdevOrgId(employer.id);
-    return { hasEmployer: true, employerIsMember: account?.isMember === true, lookup: 'ok' };
+    try {
+      const account = await this.organizations.getOrgLensAccountContextByCdevOrgId(employer.id);
+      return { hasEmployer: true, employerIsMember: account?.isMember === true, lookup: 'ok' };
+    } catch (error) {
+      // The employer is already known, so report that much: `UNKNOWN` would log `hasEmployer: false`
+      // for a caller whose employer we had in hand, which misreads as "no affiliation" during triage.
+      logger.warning(req, OPERATION, 'Employer membership lookup failed; reporting membership as unknown', {
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return EMPLOYER_MEMBERSHIP_UNKNOWN;
+    }
   }
 }

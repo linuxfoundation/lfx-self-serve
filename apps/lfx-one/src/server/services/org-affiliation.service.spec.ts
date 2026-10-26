@@ -35,15 +35,17 @@ function grants(overrides: Partial<RoleGrantsResponse> = {}): RoleGrantsResponse
   };
 }
 
-function experience(organizationId: string | undefined) {
-  return [{ id: 'we-1', organization: 'Acme Motors', organizationId, jobTitle: 'Engineer', startDate: 'Jan 2024', source: 'cdp-enriched' as const }];
+function experience(organizationId: string | undefined, endDate?: string) {
+  return [{ id: 'we-1', organization: 'Acme Motors', organizationId, jobTitle: 'Engineer', startDate: 'Jan 2024', endDate, source: 'cdp-enriched' as const }];
 }
 
 function service(opts: { experiences?: unknown; account?: unknown } = {}) {
   const cdp = {
-    getWorkExperiencesForUser: vi
+    // The read-only reader: it must never be the member-creating `getWorkExperiencesForUser`.
+    getWorkExperiencesForKnownUser: vi
       .fn()
       .mockImplementation(() => (opts.experiences instanceof Error ? Promise.reject(opts.experiences) : Promise.resolve(opts.experiences ?? []))),
+    getWorkExperiencesForUser: vi.fn(),
   };
   const organizations = {
     getOrgLensAccountContextByCdevOrgId: vi
@@ -109,12 +111,35 @@ describe('OrgAffiliationService.getRoleGrantAffiliation', () => {
     });
   });
 
-  it('never throws: a Snowflake outage is reported as unresolved', async () => {
+  // The employer was already in hand, so the outage must not log as "no affiliation" (PR #4318 review).
+  it('never throws: a warehouse outage keeps the known employer and reports membership unresolved', async () => {
     const { svc } = service({ experiences: experience(CDEV_ORG), account: new Error('snowflake down') });
 
     await expect(svc.getRoleGrantAffiliation(req(), grants())).resolves.toEqual({
-      affiliation: { hasEmployer: false, employerIsMember: false, lookup: 'failed' },
+      affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'failed' },
     });
+  });
+
+  // A job the caller has left is not an affiliation: the copy tells them to ask an administrator at
+  // the company, which is no help to someone who no longer works there.
+  it('ignores a former employer, even at a member company', async () => {
+    const { svc, organizations } = service({ experiences: experience(CDEV_ORG, 'Mar 2025'), account: { isMember: true } });
+
+    await expect(svc.getRoleGrantAffiliation(req(), grants())).resolves.toEqual({
+      affiliation: { hasEmployer: false, employerIsMember: false, lookup: 'ok' },
+    });
+    expect(organizations.getOrgLensAccountContextByCdevOrgId).not.toHaveBeenCalled();
+  });
+
+  // `GET /api/orgs/me/role-grants` is a read: resolving through the member-creating reader would
+  // write to CDP for exactly the no-grant callers this runs for (PR #4318 review).
+  it('reads work history without creating a CDP member', async () => {
+    const { svc, cdp } = service({ experiences: experience(CDEV_ORG), account: { isMember: true } });
+
+    await svc.getRoleGrantAffiliation(req(), grants());
+
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledWith(expect.anything(), 'employee');
+    expect(cdp.getWorkExperiencesForUser).not.toHaveBeenCalled();
   });
 });
 
@@ -130,7 +155,7 @@ describe('OrgAffiliationService gating — the question only arises for a caller
     const { svc, cdp, organizations } = service({ experiences: experience(CDEV_ORG), account: { isMember: true } });
 
     await expect(svc.getRoleGrantAffiliation(req(), value)).resolves.toEqual({});
-    expect(cdp.getWorkExperiencesForUser).not.toHaveBeenCalled();
+    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
     expect(organizations.getOrgLensAccountContextByCdevOrgId).not.toHaveBeenCalled();
   });
 
@@ -141,6 +166,6 @@ describe('OrgAffiliationService gating — the question only arises for a caller
     await expect(svc.getRoleGrantAffiliation(req(), grants())).resolves.toEqual({
       affiliation: { hasEmployer: false, employerIsMember: false, lookup: 'failed' },
     });
-    expect(cdp.getWorkExperiencesForUser).not.toHaveBeenCalled();
+    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
   });
 });
