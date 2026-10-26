@@ -6,6 +6,11 @@
     @case (linkedinIntake.agentId) {
       <lfx-linkedin-post-run [intake]="intake" />
     }
+    @default {
+      @if (dedicatedAudit) {
+        <lfx-aeo-geo-run [intake]="intake" />
+      }
+    }
   }
 }
 @if (agent && intake && !intake.oneOffDocument) {

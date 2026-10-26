@@ -1,0 +1,183 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto mt-3 px-4 sm:px-6 lg:px-8" data-testid="mktg-aeo-run-page">
+  <div class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-6 py-4">
+    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="projectSlug()" />
+    <span class="grow"></span>
+    <span class="text-sm text-gray-500" data-testid="mktg-aeo-run-history-label"
+      >{{ projectName() }}
+      @if (!previousLoading() && !previousError() && writer()) {
+        · {{ runCount() }} previous {{ runCount() === 1 ? 'run' : 'runs' }}
+      }
+    </span>
+  </div>
+  @if (loading()) {
+    <div class="p-8 text-gray-500" role="status" data-testid="mktg-aeo-run-loading">Loading the project…</div>
+  } @else if (!writer() && !error()) {
+    <lfx-message severity="warn" text="You need write access to this project to run an AEO/GEO audit." data-testid="mktg-aeo-run-no-access" />
+  }
+  @if (error()) {
+    <lfx-message severity="error" [text]="error()" data-testid="mktg-aeo-run-error" />
+    @if (activeRun() && !busy()) {
+      <button type="button" class="min-h-10 rounded-lg border border-gray-300 px-4" (click)="onRunAgain()" data-testid="mktg-aeo-run-again">Run again</button>
+    }
+    @if (!writer() && !loading()) {
+      <button type="button" class="min-h-10 rounded-lg border border-gray-300 px-4" (click)="reload.set(reload() + 1)" data-testid="mktg-aeo-run-retry">
+        Try again
+      </button>
+    }
+  }
+  @if (activeRun()) {
+    <lfx-mktg-run-activity
+      [activity]="activity()"
+      [startedAt]="startedAt()"
+      [title]="'Auditing the site…'"
+      [icon]="agent()?.icon ?? ''"
+      [iconClass]="iconClass()"
+      data-testid="mktg-aeo-run-activity" />
+    @if (questions().length) {
+      <lfx-mktg-run-questions
+        [questions]="questions()"
+        [projectName]="projectName()"
+        [previousAnswers]="answerValues()"
+        [initialDraft]="questionDraft()"
+        [allowNonAnswers]="true"
+        (draftChanged)="onQuestionDraft($event)"
+        [busy]="busy()"
+        (answered)="onAnswers($event)" />
+    }
+  }
+  @if (writer() && documentType(); as type) {
+    <!-- 820px is the form width specified on the page-7 design board. -->
+    <div class="mx-auto flex w-full max-w-[820px] flex-col gap-6 px-4 py-8 sm:px-6">
+      @if (!activeRun()) {
+        <form class="flex flex-col gap-6" [formGroup]="form" (ngSubmit)="onSubmit()" data-testid="mktg-aeo-run-form" novalidate>
+          <div class="flex flex-col gap-2">
+            <h1 class="text-2xl font-bold text-gray-900">AEO / GEO audit</h1>
+            <p class="text-gray-700">{{ intake().intro }}</p>
+          </div>
+          <section class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white px-6 py-5">
+            <div class="flex flex-col gap-2">
+              <label for="mktg-aeo-domain" class="font-semibold"
+                >The website to audit <span class="text-sm font-normal text-gray-500">a domain or a URL</span>
+                @if (prefill() && answers().domain === prefill()) {
+                  <span class="ml-2 text-xs text-blue-600" data-testid="mktg-aeo-run-from-lfx">From LFX</span>
+                }
+              </label>
+              <!-- 44px input height matches the design's minimum touch target at a 14px root. -->
+              <lfx-input-text
+                inputId="mktg-aeo-domain"
+                [form]="form"
+                control="domain"
+                [required]="true"
+                placeholder="project.example"
+                styleClass="w-full min-h-[44px]"
+                dataTest="mktg-aeo-domain"
+                [invalid]="!!domainError()"
+                [describedBy]="domainError() ? 'mktg-aeo-domain-error' : 'mktg-aeo-domain-hint'" />
+              @if (domainError()) {
+                <p id="mktg-aeo-domain-error" class="text-sm text-red-600" role="alert">{{ domainError() }}</p>
+              }
+              <p id="mktg-aeo-domain-hint" class="text-sm text-gray-500">
+                @if (domainName()) {
+                  Audited as {{ domainName() }}; the report is titled and filed under that name.
+                } @else {
+                  Enter the website the agent should audit.
+                }
+              </p>
+            </div>
+            <fieldset class="flex min-w-0 flex-col gap-2" aria-describedby="mktg-aeo-pages-hint mktg-aeo-pages-error">
+              <legend class="mb-2 font-semibold">Key pages <span class="text-sm font-normal text-gray-500">optional · two to five URLs</span></legend>
+              <p id="mktg-aeo-pages-hint" class="text-sm text-gray-500">
+                Left empty, the agent picks them itself from the homepage navigation, llms.txt and the sitemap. Name them when you know which pages matter:
+                about or definitional pages, the FAQ, recent posts, press releases.
+              </p>
+              @for (field of pageFields(); track field.key) {
+                <label class="sr-only" [for]="'mktg-aeo-' + field.key">Key page {{ field.number }}</label>
+                <lfx-input-text
+                  [inputId]="'mktg-aeo-' + field.key"
+                  [form]="form"
+                  [control]="field.key"
+                  type="url"
+                  placeholder="https://…"
+                  styleClass="w-full min-h-[44px]"
+                  [dataTest]="'mktg-aeo-' + field.key"
+                  [invalid]="!!pagesError()"
+                  describedBy="mktg-aeo-pages-hint mktg-aeo-pages-error" />
+              }
+              @if (visiblePages() < 5) {
+                <button
+                  type="button"
+                  class="min-h-10 self-start rounded-lg border border-gray-300 bg-white px-3 font-semibold"
+                  (click)="visiblePages.set(visiblePages() + 1)"
+                  data-testid="mktg-aeo-run-add-page">
+                  Add a page
+                </button>
+              }
+              <p id="mktg-aeo-pages-error" class="text-sm text-red-600" role="alert" data-testid="mktg-aeo-run-pages-error">{{ pagesError() }}</p>
+            </fieldset>
+          </section>
+          <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-6 py-4 text-sm text-gray-700">
+            <h2 class="font-semibold text-gray-900">What the agent does</h2>
+            <p>
+              Fetches the site and the key pages, checks AI crawler access and llms.txt, scores content answerability, technical metadata, external authority
+              and content depth and freshness, runs web searches, and writes the report with an overall score out of 10 and a verdict. Three to six minutes.
+            </p>
+          </section>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              class="min-h-12 rounded-lg bg-blue-600 px-5 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              [disabled]="submitDisabled()"
+              data-testid="mktg-aeo-run-submit">
+              {{ busy() ? 'Starting audit…' : 'Run audit' }}
+            </button>
+            <p class="text-sm text-gray-500">Stored as a new report under AEO/GEO reports; previous runs stay.</p>
+          </div>
+        </form>
+      }
+      <section class="flex flex-col gap-3" data-testid="mktg-aeo-run-previous">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="font-semibold uppercase tracking-wider text-gray-500">Previous runs</h2>
+          <a
+            [routerLink]="['..', 'documents']"
+            [queryParams]="{ type: type.agentKey }"
+            queryParamsHandling="merge"
+            class="text-blue-600"
+            data-testid="mktg-aeo-run-all-reports-link"
+            >All reports in Documents</a
+          >
+        </div>
+        @if (previousLoading()) {
+          <p role="status">Loading previous runs…</p>
+        } @else if (previousError()) {
+          <lfx-message severity="error" [text]="previousError()" data-testid="mktg-aeo-run-previous-error" />
+        } @else if (!runs().length) {
+          <p class="text-sm text-gray-500" data-testid="mktg-aeo-run-empty">No audits yet. Run the first audit for this project.</p>
+        } @else {
+          @for (run of runs(); track run.documentId) {
+            <div
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm"
+              data-testid="mktg-aeo-run-previous-row">
+              <span
+                >{{ run.aeoGeoReport?.domain ?? run.type.itemLabel }} · {{ run.revision.createdAt | date: 'd MMM y' }}
+                @if (run.aeoGeoReport; as report) {
+                  · <strong>{{ report.overall_score | number: '1.1-1' }} / 10</strong> · {{ report.verdict }}
+                }
+              </span>
+              <a
+                [routerLink]="['..', 'documents', type.agentKey, run.documentId]"
+                [attr.data-testid]="'mktg-aeo-run-open-' + run.documentId"
+                queryParamsHandling="preserve"
+                class="font-semibold text-blue-600"
+                [attr.aria-label]="'Open report from ' + (run.revision.createdAt | date: 'd MMM y')"
+                >Open</a
+              >
+            </div>
+          }
+        }
+      </section>
+    </div>
+  }
+</div>
