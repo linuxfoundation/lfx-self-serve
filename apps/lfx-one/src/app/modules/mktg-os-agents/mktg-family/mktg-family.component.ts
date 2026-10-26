@@ -75,13 +75,6 @@ export class MktgFamilyComponent {
       plain: { project: this.kit.projectQueryParams().project ?? '' },
     })
   );
-  protected readonly rebuildBlockedReason = computed(() => {
-    const panel = this.rebuildPanel();
-    if (!panel || panel.canStart()) return '';
-    if (panel.active()) return 'A rebuild is already running';
-    if (!this.kit.documents()?.approvedFramework) return 'Approve the messaging framework first: rebuilds start from the approved framework';
-    return '';
-  });
   protected readonly autoRebuild = computed(() =>
     this.navigationIntent()?.project === this.kit.projectUid() ? (this.navigationIntent()?.frameworkRevisionId ?? '') : ''
   );

@@ -5,7 +5,8 @@ import { expect } from '@playwright/test';
 import { MKTG_KIT_FAMILIES, MKTG_DOCUMENT_TYPES, MKTG_AGENTS, MKTG_AGENT_INTAKES } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { linkedinProfileFromSetup } from '../../../packages/shared/src/utils/linkedin-post.utils';
-import { kitTest as test, kitDocuments, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { kitTest as test, kitDocuments, kitJson, kitRevision, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { linkedinEnvelope } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing family content', () => {
   test.beforeEach(async ({ page }) => {
@@ -311,6 +312,22 @@ test.describe('Marketing family content', () => {
       const profile = linkedinProfileFromSetup({ name: 'Synthetic author', role: 'Maintainer', focus_areas: 'Code', primary_audience: 'Developers' });
       await page.route('**/api/mktg-agents/linkedin-post/profile', (route) =>
         route.fulfill({ json: { profile: { profile, profile_markdown: '# Synthetic profile' } } })
+      );
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'linkedin-post');
+      if (!type) throw new Error('Missing synthetic LinkedIn document type');
+      const document = kitRevision(type);
+      const output = linkedinEnvelope();
+      const response = {
+        ...document,
+        linkedinPost: { author: { name: 'Synthetic author' }, isAuthor: true, options: output.options, notes: output.notes, answers: { share_link: '' } },
+      };
+      const path = `/api/mktg-agents/documents/linkedin-post/${document.documentId}`;
+      await page.route(
+        (url) => url.pathname === path || url.pathname === `${path}/revisions/${document.revision.id}`,
+        (route) =>
+          route.request().method() === 'GET' && new URL(route.request().url()).searchParams.get('project') === KIT_PROJECT.uid
+            ? kitJson(route, response)
+            : route.fallback()
       );
       await openKit(page, '/families/social-community');
       await page.getByTestId('mktg-family-open-linkedin-post').click();
