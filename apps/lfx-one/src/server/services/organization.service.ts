@@ -1095,7 +1095,16 @@ export class OrganizationService {
     return OrganizationService.toAccountContexts(result.rows);
   }
 
-  /** #4225 — the same row keyed by the crowd.dev organization id instead of the LF account id; 0 or 1 rows. */
+  /**
+   * #4225 — the same row keyed by the crowd.dev organization id instead of the LF account id.
+   *
+   * `ACCOUNT_ID` is the view's grain, `CDEV_ORG_ID` is not: several LF accounts can point at one
+   * crowd.dev organization, so this predicate can match more than one row and the caller takes the
+   * first. `ORDER BY ... LIMIT 1` makes that choice deterministic rather than leaving it to
+   * Snowflake's unspecified row order, and ordering members first answers the only question asked of
+   * it — whether the employer is a member of anything — instead of whichever sibling account sorted
+   * first. `NULLS LAST` keeps an unset flag from outranking a real `TRUE`.
+   */
   private async fetchOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse[]> {
     const query = `
       SELECT
@@ -1114,6 +1123,8 @@ export class OrganizationService {
         MEMBERSHIP_TIER_CLASS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
       WHERE CDEV_ORG_ID = ?
+      ORDER BY IS_MEMBER DESC NULLS LAST, ACCOUNT_ID ASC
+      LIMIT 1
     `;
 
     const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [cdevOrgId]);
