@@ -562,6 +562,20 @@ describe('ComposerGuestsComponent', () => {
       expect(announce).toHaveBeenLastCalledWith('2 guests restored to the guest list.', 'polite');
     });
 
+    it('withdraws undo for every removal of an email a group puts back, not just the latest', () => {
+      // Two registrations sharing an email, e.g. for two occurrences, both removed before a group re-adds it.
+      const a = { ...savedGroupGuest, uid: 'reg-a', type: 'direct' as const, occurrence_id: '1893456000' };
+      const b = { ...a, uid: 'reg-b', occurrence_id: '1894060800' };
+      formService.setGuests([a, b]);
+      component['onRemoveGuest'](a);
+      component['onRemoveGuest'](formService.guests()[1]);
+      expect(component['undoableRemovals']()).toHaveLength(2);
+
+      reconcile([member]);
+
+      expect(component['undoableRemovals']()).toEqual([]);
+    });
+
     it('puts several never-saved guests back in their original order', () => {
       const make = (n: number) => ({
         ...savedGroupGuest,

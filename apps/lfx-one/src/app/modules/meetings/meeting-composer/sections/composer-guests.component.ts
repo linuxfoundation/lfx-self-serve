@@ -234,10 +234,17 @@ export class ComposerGuestsComponent {
    */
   protected readonly undoableRemovals: Signal<ComposerGuestRemoval[]> = computed(() => {
     const committeeKey = this.committeeKey();
-    return this.removals().filter(
-      (removal) =>
-        this.liveEmailCount(removal.guest.email) <= removal.liveSameEmail && !(removal.guest.type === 'committee' && committeeKey !== removal.committeeKey)
-    );
+    const removals = this.removals();
+    const sameEmail = (left: ComposerGuestRemoval, right: ComposerGuestRemoval): boolean =>
+      !!left.guest.email && left.guest.email.toLowerCase() === right.guest.email?.toLowerCase();
+
+    return removals.filter((removal, i) => {
+      // A later removal of the same email took off a row this baseline still counts as live, so it no
+      // longer is. If that over-counts (a row added after this removal), Undo is only withdrawn sooner.
+      const removedSince = removals.slice(i + 1).filter((later) => sameEmail(later, removal)).length;
+      const baseline = removal.liveSameEmail - removedSince;
+      return this.liveEmailCount(removal.guest.email) <= baseline && !(removal.guest.type === 'committee' && committeeKey !== removal.committeeKey);
+    });
   });
 
   /** One removal names the guest; more are counted, since Undo brings them all back together. */
