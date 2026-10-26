@@ -256,6 +256,95 @@ describe('VoteVotersComponent', () => {
     }
   });
 
+  it.each([
+    ['manual', 25],
+    ['manual', 50],
+    ['manual', 100],
+    ['reminder', 25],
+    ['reminder', 50],
+    ['reminder', 100],
+  ] as const)('clamps an invalid page after a %s refresh while retaining %s rows per page', async (reason, size) => {
+    const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
+    const { fixture, component, dialogClose$, getVoteVoters } = await mount({ voters: () => of(voters) });
+    current = fixture;
+    component['onStatusFilterChange'](VoteVoterStatus.NOT_VOTED);
+    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    table.onPage.emit({ first: 200, rows: size });
+    await settle(fixture);
+    expect(rowUids(fixture).length).toBeGreaterThan(0);
+
+    const pending = new Subject<VoteVoter[]>();
+    getVoteVoters.mockReturnValueOnce(pending);
+    if (reason === 'reminder') {
+      component['openReminder']();
+      dialogClose$.next(true);
+    } else {
+      component['refresh']();
+    }
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+    expect(component['tableFirst']()).toBe(200);
+
+    pending.next(voters.map((voter, index) => (index < 220 ? { ...voter, status: VoteVoterStatus.VOTED } : voter)));
+    pending.complete();
+    await settle(fixture);
+
+    const expectedFirst = size === 25 ? 25 : 0;
+    const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    expect(refreshed.first()).toBe(expectedFirst);
+    expect(refreshed.rows()).toBe(size);
+    expect(rowUids(fixture)).toEqual(voters.slice(220 + expectedFirst).map((voter) => voter.uid));
+    expect(statusLabels(component)).toContain('Not voted yet (30)');
+  });
+
+  for (const reason of ['manual', 'reminder'] as const) {
+    it.each([250, 80, 0])(`preserves pagination through a failed ${reason} refresh until Retry returns %s voters`, async (count) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const voters = Array.from({ length: 250 }, (_, index) => ({
+        ...VOTERS[1],
+        uid: `voter-${index}`,
+        user_name: `Synthetic voter ${String(index).padStart(3, '0')}`,
+      }));
+      const { fixture, component, dialogClose$, getVoteVoters } = await mount({ voters: () => of(voters) });
+      current = fixture;
+      component['onStatusFilterChange'](VoteVoterStatus.NOT_VOTED);
+      component['onPage']({ first: 200, rows: 50 });
+      await settle(fixture);
+
+      const failed = new Subject<VoteVoter[]>();
+      getVoteVoters.mockReturnValueOnce(failed);
+      if (reason === 'reminder') {
+        component['openReminder']();
+        dialogClose$.next(true);
+      } else {
+        component['refresh']();
+      }
+      await settle(fixture);
+      expect(component['tableFirst']()).toBe(200);
+      failed.error(new Error('refresh failed'));
+      await settle(fixture);
+      expect(byTestId(fixture, 'vote-voters-error')).not.toBeNull();
+      expect(component['tableFirst']()).toBe(200);
+
+      const retry = new Subject<VoteVoter[]>();
+      getVoteVoters.mockReturnValueOnce(retry);
+      byTestId(fixture, 'vote-voters-retry')!.querySelector('button')!.click();
+      await settle(fixture);
+      expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+      expect(component['tableFirst']()).toBe(200);
+
+      retry.next(voters.slice(0, count));
+      retry.complete();
+      await settle(fixture);
+      const expectedFirst = Math.min(200, Math.max(0, Math.ceil(count / 50) - 1) * 50);
+      expect(component['tableFirst']()).toBe(expectedFirst);
+      expect(component['selectedPageSize']()).toBe(50);
+      expect(component['statusFilter']()).toBe(VoteVoterStatus.NOT_VOTED);
+      expect(byTestId(fixture, 'vote-voters-error')).toBeNull();
+      expect(rowUids(fixture)).toEqual(voters.slice(expectedFirst, Math.min(expectedFirst + 50, count)).map((voter) => voter.uid));
+    });
+  }
+
   it('retains the selected page size when a page event omits rows', async () => {
     const { fixture, component } = await mount();
     current = fixture;

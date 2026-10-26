@@ -10,6 +10,7 @@ import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/ro
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   MyVoteResponse,
+  PollCommentResult,
   PollQuestionResult,
   Project,
   ServerRequestContext,
@@ -940,6 +941,76 @@ describe('VoteDetailComponent', () => {
       TestBed.tick();
       expect(read(fixture, 'activeTab')).toBe('overview');
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toEqual(['overview', 'results']);
+    });
+
+    it.each([
+      { label: 'omitted', prompts: undefined },
+      { label: 'empty', prompts: [] },
+    ])('keeps result-only comments reachable when detail prompts are $label', async ({ prompts }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_comment_prompts: prompts })));
+      const comments: PollCommentResult[] = [
+        {
+          prompt: { prompt_id: 'result-prompt', prompt: 'Any concerns?' },
+          responses: [
+            { vote_id: 'response-1', comment_text: 'First synthetic comment', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false },
+            { vote_id: 'response-2', comment_text: 'Second synthetic comment', vote_creation_time: '2026-10-21T12:00:00Z', abstained: false },
+          ],
+        },
+      ];
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: comments }));
+      const fixture = await setup();
+
+      expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
+      expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Second synthetic comment');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Optional written responses');
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
+      const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
+      expect(viewAll.properties['label']).toBe('View all 2 comments');
+      viewAll.triggerEventHandler('onClick', undefined);
+      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ tab: 'comments' }) }));
+
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      TestBed.tick();
+      expect(read(fixture, 'activeTab')).toBe('comments');
+      expect(testId(fixture, 'vote-detail-comments')).not.toBeNull();
+      const list = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
+      expect((list.properties['commentResults'] as PollCommentResult[])[0].responses.map((response) => response.comment_text)).toEqual([
+        'Second synthetic comment',
+        'First synthetic comment',
+      ]);
+    });
+
+    it.each([
+      { label: 'omitted', prompts: undefined },
+      { label: 'empty', prompts: [] },
+    ])('resolves a direct Comments link when result-only prompts load ($label)', async ({ prompts }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_comment_prompts: prompts })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+      expect(read(fixture, 'activeTab')).toBe('overview');
+
+      results.next({
+        ...makeResults(),
+        comment_results: [
+          {
+            prompt: { prompt_id: 'result-prompt', prompt: 'Any concerns?' },
+            responses: [{ vote_id: 'response-1', comment_text: 'Synthetic linked comment', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false }],
+          },
+        ],
+      });
+      results.complete();
+      TestBed.tick();
+
+      expect(read(fixture, 'audience')).toBe('voter');
+      expect(read(fixture, 'activeTab')).toBe('comments');
+      expect(testId(fixture, 'vote-detail-comments')).not.toBeNull();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
+      const list = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
+      expect((list.properties['commentResults'] as PollCommentResult[])[0].responses[0].comment_text).toBe('Synthetic linked comment');
     });
 
     it('writes the tab to the URL, omitting Overview', async () => {

@@ -230,7 +230,7 @@
             [committee]="committee()"
             [canEdit]="canEdit()"
             (tabNavigated)="navigateToTab($event)"
-            (voteDrawerRequested)="openVoteDrawer($event)"
+            (voteRequested)="openVote($event)"
             data-testid="committee-overview-weekly-brief-card" />
         }
 
@@ -362,17 +362,6 @@
     </div>
   </div>
 </div>
-
-<!-- Vote Results Drawer -->
-<!-- allowCastFromDrawer=false: the default-'creator'-audience inline "Cast Vote" CTA gates on
-     vote.response_status, which only getMyVotes() (Me-lens) decorates — this screen feeds the drawer
-     from getVotesByCommittee/getVote, so response_status is always undefined and the CTA could never
-     legitimately render here anyway. Explicit rather than relying on that data gap to keep it hidden. -->
-<lfx-vote-results-drawer
-  [(visible)]="voteDrawerVisible"
-  [voteId]="selectedVoteId()"
-  [listVote]="selectedVote()"
-  [allowCastFromDrawer]="false"></lfx-vote-results-drawer>
 
 <!-- Survey Results Drawer -->
 <!-- hasPMOAccess also gates the per-recipient Responses tab (not just the admin menu), so it's

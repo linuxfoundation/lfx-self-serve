@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Vote permalink — `/votes/:id` (#3659).
+ * Vote permalink — `/votes/:id` (#3659), rendered by the vote detail page (#3913, #3915).
  *
  * Coverage:
  *   - an unknown vote uid is a real upstream 404 (or a gateway 403): SSR answers HTTP 404 with the
  *     shared not-found card, in place, with the URL kept — a missing vote and a forbidden one look
  *     identical, so the page never confirms that a vote exists
  *   - the My Votes table's row "More" (⋮) menu offers Copy link
- *   - a view-only permalink shows the neutral non-participant panel on active and ended votes
- *     (client-side navigation keeps synthetic vote requests inside page.route stubs)
+ *   - a view-only permalink shows the neutral non-participant panel on active and ended votes, with no
+ *     ballot, tallies or results request (client-side navigation keeps synthetic vote requests
+ *     inside page.route stubs)
  *
  * A forbidden-but-existing vote can't be faked end to end — `page.route` stubs don't intercept the
- * SSR fetch — so the 403 → not-found mapping is covered by vote-permalink.component.spec.ts.
+ * SSR fetch — so the 403 → not-found mapping is covered by vote-detail.component.spec.ts.
  *
  * The permalink path is hardcoded rather than built with `votePermalinkPath`: vote.utils.ts imports
  * @angular/forms, which this Node runtime can't load (.claude/rules/development-rules.md § Testing).
@@ -129,8 +130,8 @@ test.describe('Vote permalink (#3659)', () => {
     await more.locator('button').click();
 
     await expect(page.getByRole('menuitem', { name: 'Copy link' })).toBeVisible();
-    // Opening the menu must not select the row, which would open the cast drawer.
-    await expect(page.getByTestId('votes-dashboard-cast-drawer').getByRole('dialog')).toHaveCount(0);
+    // Opening the menu must not select the row, which would navigate to the vote page.
+    await expect(page).not.toHaveURL(new RegExp(`/votes/${VOTE_UID}`));
   });
 
   for (const status of ['active', 'ended']) {
@@ -149,7 +150,7 @@ test.describe('Vote permalink (#3659)', () => {
       await gotoMyVotes(page);
       await expect(page.getByTestId(`votes-more-${VOTE_UID}`)).toBeVisible({ timeout: RENDER_TIMEOUT });
 
-      // SPA navigation exercises the actual permalink route and drawer wiring without an SSR
+      // SPA navigation exercises the actual permalink route and the vote page without an SSR
       // request for this synthetic vote (page.route cannot intercept the server-side fetch).
       await page.evaluate((url) => {
         window.history.pushState({}, '', url);
@@ -158,10 +159,13 @@ test.describe('Vote permalink (#3659)', () => {
 
       await expect(page).toHaveURL(new RegExp(`/votes/${VOTE_UID}$`));
       await expect(page.getByRole('heading', { name: "You're not a voter on this vote", exact: true })).toBeVisible({ timeout: RENDER_TIMEOUT });
-      await expect(page.getByTestId('vote-results-voter-description')).toContainText('Review the proposed charter.');
-      await expect(page.getByTestId('vote-results-voter-access-denied')).toHaveCount(0);
-      await expect(page.getByTestId('vote-results-drawer-cast-button')).toHaveCount(0);
-      await expect(page.getByTestId('vote-results-voter-final')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-voter-not-participant')).toBeVisible();
+      await expect(page.getByTestId('vote-detail-description')).toContainText('Review the proposed charter.');
+      await expect(page.getByTestId('vote-detail-voter-access-denied')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-header-cast-vote')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-voter-cast-vote')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-overview-results')).toHaveCount(0);
+      await expect(page.getByTestId('vote-cast-drawer-header')).toHaveCount(0);
       expect(resultsRequests).toEqual([]);
     });
   }

@@ -59,15 +59,15 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
- * Vote detail page (#3913). Route: /votes/:id, behind `vote-detail-page-enabled` (`voteDetailPageGuard`); with the
- * flag off the same URL renders `VotePermalinkComponent`.
+ * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and where every
+ * in-app vote link lands (#3915).
  *
  * The manager view follows write access on the vote (project writer, then committee writer — `resolveVoteCanManage`),
- * never the lens. Voters see only what the results drawer shows them today: their own response, and totals and comments
+ * never the lens. Voters see only their own response, and totals and comments
  * after the vote closes (the shared `canVoterFetchVoteResults` / `resolveVoterResultsState` rules). A vote the user can't
  * view (400/403/404) renders the shared not-found page in place with HTTP 404 under SSR, so a missing vote and a
- * forbidden one look identical; any other failure is a retry card. SSR stops after the vote fetch and paints the same
- * skeleton as the permalink; everything else resolves in the browser. An invited voter still awaiting a ballot on an
+ * forbidden one look identical; any other failure is a retry card. SSR stops after the vote fetch and paints the loading
+ * skeleton; everything else resolves in the browser. An invited voter still awaiting a ballot on an
  * active vote gets the cast drawer once on load, as the reminder email intends.
  *
  * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a named vote that is open or
@@ -182,7 +182,7 @@ export class VoteDetailComponent {
   /** Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality layout — see isRankedPollType. */
   protected readonly isGenericPoll: Signal<boolean> = computed(() => !isRankedPollType(this.vote()?.poll_type));
   protected readonly participationStats: Signal<VoteParticipationStats> = computed(() => computeVoteParticipationStats(this.voteResults()));
-  /** Abstain UI follows the data, not just the flag (same rule as the results drawer). */
+  /** Abstain UI follows the data, not just the flag. */
   protected readonly showAbstain: Signal<boolean> = computed(
     () => !this.voteResultsError() && (!!this.vote()?.allow_abstain || this.participationStats().abstainedVoters > 0)
   );
@@ -192,6 +192,9 @@ export class VoteDetailComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
+  protected readonly commentPromptCount: Signal<number> = computed(() =>
+    Math.max(this.vote()?.poll_comment_prompts?.length ?? 0, this.commentResults().length)
+  );
   protected readonly commentCount: Signal<number> = computed(() =>
     this.commentResults().reduce((sum, result) => sum + (result.total_responses ?? result.responses.length), 0)
   );
@@ -407,7 +410,7 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Managers always load results; voters only after close with a settled, matching, non-removed response (same gate as the drawer). */
+  /** Managers always load results; voters only after close with a settled, matching, non-removed response. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
     const key = computed(() => {
       const id = this.voteId();
@@ -472,16 +475,16 @@ export class VoteDetailComponent {
     });
   }
 
-  /** The Comments tab exists only when the vote asks for comments; the Voters tab only when `showVotersTab` allows it. */
+  /** Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it. */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
-      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0;
+      const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
     });
   }
 
-  /** A `?tab=` the vote doesn't offer (Comments without prompts, Voters for a voter or on a pseudo-anonymous vote) falls back to the default tab. */
+  /** A `?tab=` the vote doesn't offer (no detail/result comment prompts, or Voters without access) falls back to the default tab. */
   private initActiveTab(): Signal<VoteDetailTab> {
     return computed(() => {
       const requested = this.requestedTab();
@@ -492,7 +495,7 @@ export class VoteDetailComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       if (normalizePollStatus(this.vote()?.status) === PollStatus.ENDED) return true;
-      // Treat 100% participation as finalized even if the vote hasn't formally ended (same rule as the drawer).
+      // Treat 100% participation as finalized even if the vote hasn't formally ended.
       const stats = this.participationStats();
       return stats.eligibleVoters > 0 && stats.participationRate >= 100;
     });
@@ -531,7 +534,7 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Manager-only summary — voters get no stats, matching the results drawer. */
+  /** Manager-only summary — voters get no stats. */
   private initSummaryCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const stats = this.participationStats();
@@ -556,7 +559,7 @@ export class VoteDetailComponent {
         {
           value: loaded ? this.commentCount() : dash,
           label: 'Comments',
-          subLine: (this.vote()?.poll_comment_prompts?.length ?? 0) > 0 ? 'Optional written responses' : 'Comments not enabled',
+          subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
         },

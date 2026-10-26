@@ -498,7 +498,7 @@ export class VoteService {
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
-    // through would emit a 200 that the results drawer renders as a genuine zero-response vote
+    // through would emit a 200 that the vote detail page renders as a genuine zero-response vote
     // ("No responses yet") instead of its error state.
     if (!results) {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {

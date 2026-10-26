@@ -140,6 +140,7 @@ export class VoteVotersComponent {
 
   public constructor() {
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.tableFirst.set(0));
+    this.initTablePageBounds();
     this.initInitialChoice();
     this.initInitialBallot();
   }
@@ -251,6 +252,19 @@ export class VoteVotersComponent {
           (!choice || matchesVoteVoterChoice(row.voter, choice, vote))
       );
     });
+  }
+
+  /** Preserve valid pages on refresh, but move back into range when fewer voters match the current filters. */
+  private initTablePageBounds(): void {
+    toObservable(this.filteredRows)
+      .pipe(takeUntilDestroyed())
+      .subscribe((rows) => {
+        if (this.loading() || this.loadError()) return;
+
+        const pageSize = this.selectedPageSize();
+        const lastPageFirst = Math.max(0, Math.ceil(rows.length / pageSize) - 1) * pageSize;
+        if (this.tableFirst() > lastPageFirst) this.tableFirst.set(lastPageFirst);
+      });
   }
 
   /** Counts sit in each label; the Abstained pill shows only when the vote allows abstaining or someone abstained. */

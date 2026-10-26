@@ -227,13 +227,13 @@ export class VoteCastDrawerComponent {
   }
 
   // === Private Initializers ===
-  /** Mirrors vote-results-drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
+  /** Mirrors the former results drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
    *  off voteId alone meant a manager who extended a vote's deadline while this drawer was closed, then
    *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
    *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
-   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
-   *  the results drawer.
-   *  Also mirrors the results drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
+   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps a reopened drawer
+   *  on the current deadline.
+   *  Also mirrors that drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
    *  GH-3823 review): a deadline change on the open vote re-runs this stream, and startWith(listVote) alone
    *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
    *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes

@@ -456,7 +456,7 @@ describe('computeVoteParticipationStats', () => {
     }
   });
 
-  it('keeps a zero-person electorate at zero in the results drawer', () => {
+  it('keeps a zero-person electorate at zero in the participation stats', () => {
     expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
   });
 });

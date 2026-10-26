@@ -5,10 +5,8 @@ import { Component, NO_ERRORS_SCHEMA, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
-import { VOTE_DETAIL_PAGE_DEFAULT, VOTE_DETAIL_PAGE_FLAG } from '@lfx-one/shared/constants';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,22 +23,16 @@ class VotesTableStubComponent {
 describe('CommitteeVotesComponent', () => {
   let fixture: ComponentFixture<CommitteeVotesComponent>;
   let navigate: ReturnType<typeof vi.fn>;
-  let getBooleanFlag: ReturnType<typeof vi.fn>;
-  const voteDetailPageEnabled = signal(false);
 
-  const component = () => fixture.componentInstance;
   const table = () => fixture.debugElement.query(By.directive(VotesTableStubComponent)).componentInstance as VotesTableStubComponent;
 
   beforeEach(() => {
-    voteDetailPageEnabled.set(false);
     navigate = vi.fn().mockResolvedValue(true);
-    getBooleanFlag = vi.fn().mockReturnValue(voteDetailPageEnabled);
 
     TestBed.configureTestingModule({
       imports: [CommitteeVotesComponent],
       providers: [
         { provide: Router, useValue: { navigate } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag } },
         { provide: CommitteeService, useValue: { fetchCommittee: vi.fn() } },
         { provide: LensService, useValue: { activeLens: signal('project') } },
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -52,31 +44,15 @@ describe('CommitteeVotesComponent', () => {
     fixture.detectChanges();
   });
 
-  describe('vote detail page flag', () => {
-    it('reads the vote detail page flag with the shared default', () => {
-      expect(getBooleanFlag).toHaveBeenCalledWith(VOTE_DETAIL_PAGE_FLAG, VOTE_DETAIL_PAGE_DEFAULT);
-    });
+  it.each(['vote-open', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens a row with %s as one vote-id segment', (uid) => {
+    table().viewVote.emit(uid);
 
-    it('opens the vote page from a row and from View results when the flag is on', () => {
-      voteDetailPageEnabled.set(true);
+    expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
+  });
 
-      table().viewVote.emit('vote-open');
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'vote-open'], {});
+  it.each(['vote-ended', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {
+    table().viewResults.emit(uid);
 
-      table().viewResults.emit('vote-ended');
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'vote-ended'], { queryParams: { tab: 'results' } });
-      expect(component().resultsDrawerVisible()).toBe(false);
-      expect(component().selectedVoteId()).toBeNull();
-    });
-
-    it('opens the results drawer as today when the flag is off', () => {
-      table().viewVote.emit('vote-open');
-      expect(component().resultsDrawerVisible()).toBe(true);
-      expect(component().selectedVoteId()).toBe('vote-open');
-
-      table().viewResults.emit('vote-ended');
-      expect(component().selectedVoteId()).toBe('vote-ended');
-      expect(navigate).not.toHaveBeenCalled();
-    });
+    expect(navigate).toHaveBeenLastCalledWith(['/votes', uid], { queryParams: { tab: 'results' } });
   });
 });
