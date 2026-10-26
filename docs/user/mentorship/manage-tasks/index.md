@@ -71,7 +71,7 @@ A task can be assigned to up to 100 mentees in one request; a larger group is se
 | "This mentee can no longer be given tasks."                                               | They are no longer accepted on the term.                                                                              |
 | "You can no longer create tasks on this program."                                         | You are no longer an admin or mentor on it.                                                                           |
 | "A task that requires a file can only be submitted once a file has been uploaded for it." | The mentee has not uploaded the required file yet.                                                                    |
-| "This task no longer exists."                                                             | It was deleted. Refresh the page.                                                                                     |
+| "This task no longer exists."                                                             | The task is no longer on the program. Refresh the page and work from the reloaded list.                               |
 
 ## Related
 

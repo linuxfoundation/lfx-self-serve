@@ -9,7 +9,7 @@ last_updated: 2026-10-26
 intercom_collection: Mentorship
 ---
 
-The apply page confirms you are eligible, collects anything the program requires, and submits your application for the term.
+The apply page confirms your profile and your eligibility, then submits your application for the term. Anything the program wants you to produce comes afterwards, as prerequisite tasks.
 
 ## Before you begin
 
