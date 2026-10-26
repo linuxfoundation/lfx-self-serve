@@ -8,7 +8,7 @@ export function member360SourceLabel(text: string): string {
   return text.replace(/ \(not wired\)$/, ' (not connected yet)');
 }
 
-/** Shared source-status copy for the document page and workbook. */
+/** Shared source-status copy for the document page; the workbook export adopts it on its own branch. */
 export function member360SourceStatusText(status: Member360Envelope['tabs']['method']['data_sources'][number]['status']): string {
   switch (status) {
     case 'not_wired':

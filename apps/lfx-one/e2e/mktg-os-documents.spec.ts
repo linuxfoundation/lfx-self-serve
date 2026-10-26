@@ -28,7 +28,7 @@ test.describe('Marketing OS current revisions', () => {
 
   for (const [state, text] of [
     ['writing', 'Writing the document'],
-    ['questions', 'Paused — the run needs input'],
+    ['questions', 'Waiting for your answers'],
     ['storing', 'Storing the revision'],
     ['failed', 'A previous run did not finish'],
   ] as const) {
@@ -46,6 +46,17 @@ test.describe('Marketing OS current revisions', () => {
       if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
     });
   }
+
+  test('labels a Member 360 questions run as paused in the started list and navigation', async ({ page }) => {
+    const run: ReturnType<typeof startedDocumentRun> = { ...startedDocumentRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
+    await setupDocuments(page, { empty: true, runs: [run] });
+    await openDocuments(page);
+    const row = page.getByTestId(`mktg-documents-started-run-${run.runId}`);
+    await expect(row).toContainText('Paused — the run needs input');
+    await expect(row).not.toContainText('Waiting for your answers');
+    await expect(page.getByTestId('mktg-documents-nav-member-360')).toContainText('Paused');
+    await expect(page.getByTestId('mktg-documents-nav-member-360')).not.toContainText('Needs answers');
+  });
 
   test('opens a Started run before its first revision without crashing', async ({ page }) => {
     const run = startedDocumentRun('writing');
