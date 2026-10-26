@@ -99,14 +99,56 @@ describe('Member360Service workbook transport', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
-  it('stops polling on needs_input without forgetting the open run', () => {
+  it('keeps polling after needs_input without forgetting the open run', () => {
     const received = vi.fn();
-    startPending().subscribe(received);
+    const completed = vi.fn();
+    startPending().subscribe({ next: received, complete: completed });
     vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
-    expect(received).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_input' }));
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'needs_input' });
+    expect(completed).not.toHaveBeenCalled();
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
+    expect(received).toHaveBeenNthCalledWith(2, { status: 'ready', stored: true });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('completes and forgets the open run when needs_input is followed by failed', () => {
+    const received = vi.fn();
+    const completed = vi.fn();
+    startPending().subscribe({ next: received, complete: completed });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'needs_input' });
+    expect(completed).not.toHaveBeenCalled();
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'failed' });
+    expect(received).toHaveBeenNthCalledWith(2, { status: 'failed' });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('keeps the absolute ceiling and pending capability despite needs_input on every interval', () => {
+    const received = vi.fn();
+    const error = vi.fn();
+    startPending().subscribe({ next: received, error });
+    const startedAt = Date.now();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    while (Date.now() < startedAt + MEMBER_360_RUN_CEILING_MS) {
+      http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+      expect(error).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(Math.min(MKTG_RUN_POLL.intervalMs, startedAt + MEMBER_360_RUN_CEILING_MS - Date.now()));
+    }
+    expect(received.mock.calls.length).toBeGreaterThan(1);
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
   it.each([400, 401, 403, 404])('forgets the capability on a permanent %s result error', (status) => {

@@ -502,6 +502,8 @@ export class MktgDocumentViewComponent {
                           this.failureDetails.set(result.message ?? '');
                         }
                       }),
+                      // Keep needs_input out of the stored read while the tap above shows the prompt.
+                      // Polling continues; a later ready/failed emission clears that prompt.
                       filter((result) => result.status !== 'needs_input')
                     )
                 : of(null);

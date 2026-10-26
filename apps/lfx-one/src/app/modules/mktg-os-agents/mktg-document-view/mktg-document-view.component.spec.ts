@@ -631,6 +631,26 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
+  it('clears the questions prompt and reads the document once when the open poll becomes ready', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(completion);
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    completion.next({ status: 'needs_input' });
+    await settle();
+    expect(query('member-360-needs-input')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).not.toHaveBeenCalled();
+    completion.next({ status: 'ready', stored: true });
+    completion.complete();
+    await settle();
+    expect(query('member-360-needs-input')).toBeNull();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(store.getDocument).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567');
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
     run.isPending.mockReturnValue(true);
     run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));

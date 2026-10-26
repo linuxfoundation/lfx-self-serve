@@ -19,7 +19,7 @@ import {
   Member360Tracker,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { catchError, exhaustMap, filter, Observable, of, take, tap, throwError, timeout, TimeoutError, timer } from 'rxjs';
+import { catchError, exhaustMap, filter, mergeMap, mergeWith, Observable, of, take, takeWhile, tap, throwError, TimeoutError, timer } from 'rxjs';
 
 import { UserService } from './user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -80,6 +80,7 @@ export class Member360Service {
   public waitForStored(project: string, documentId: string, onActivity?: (activity: MktgRunActivity[]) => void): Observable<Member360Result> {
     const pending = this.readPending(project, documentId);
     if (!pending) return throwError(() => new Error('No pending run for this user and project'));
+    const deadline = pending.startedAt + MEMBER_360_RUN_CEILING_MS;
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http
@@ -98,8 +99,10 @@ export class Member360Service {
         if (result.activity) onActivity?.(result.activity);
       }),
       filter((result) => result.status === 'failed' || result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
-      take(1),
-      timeout(Math.max(1, pending.startedAt + MEMBER_360_RUN_CEILING_MS - Date.now())),
+      // Absolute ceiling from startedAt; needs_input does not extend it.
+      mergeWith(timer(new Date(deadline)).pipe(mergeMap(() => throwError(() => new TimeoutError())))),
+      // Include the terminal result before completing; needs_input keeps the poll open.
+      takeWhile((result) => !(result.status === 'failed' || (result.status === 'ready' && result.stored === true)), true),
       tap({
         next: (result) => {
           if (result.status === 'ready' || result.status === 'failed') this.forget(project, documentId);
