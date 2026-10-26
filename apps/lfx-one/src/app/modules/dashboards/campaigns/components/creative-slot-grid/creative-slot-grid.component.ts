@@ -1,0 +1,277 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import type {
+  CampaignPlatform,
+  CreativeSlotCoverageGroup,
+  CreativeSlotCoverageRow,
+  CreativeSlotCoverageState,
+  CreativeSlotGap,
+} from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { catchError, map, of, startWith, switchMap } from 'rxjs';
+
+/** Platform ids in the order the brief's own platform picker shows them, so the grid reads in the same order. */
+const PLATFORM_ORDER: readonly string[] = CAMPAIGN_PLATFORMS.map((platform) => platform.id);
+
+/** Open rows first: what an operator still has to do is the reason this grid exists. */
+const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> = { missing: 0, short: 1, filled: 2 };
+
+/**
+ * Which of a brief's stored images fill which platform image slots, and what is still missing.
+ *
+ * Reads `get-asset-plan` itself rather than taking a plan as an input: the plan is derived from the
+ * library and the platform selection, both of which change while the operator is on this tab, and a
+ * grid that re-read only when the tab remounted would show a stale answer about a library the
+ * operator had just changed.
+ *
+ * TWO honesty rules shape what this renders, both of them consequences of the upstream contract:
+ *
+ *  - Only platforms that PUBLISH slot rules appear in the plan's `platforms`; a platform with none
+ *    is dropped from the request rather than refused. So a selection answered with an empty plan
+ *    means "nothing is known about these platforms", not "this library can launch" — and the two
+ *    are named apart below, never collapsed into a reassuring empty state.
+ *  - `unclassified` names assets whose DIMENSIONS were never recorded, not assets of the wrong
+ *    shape. They are neither counted against a slot nor reported as failing one, and a backfill
+ *    makes them classifiable without the operator touching anything, so they are reported as
+ *    unknown rather than as a problem to fix.
+ */
+@Component({
+  selector: 'lfx-creative-slot-grid',
+  imports: [],
+  templateUrl: './creative-slot-grid.component.html',
+  styleUrl: './creative-slot-grid.component.scss',
+})
+export class CreativeSlotGridComponent {
+  // === Inputs ===
+  public readonly projectSlug = input('');
+  /** Empty until the brief is saved — campaign-service has nothing to plan against before then. */
+  public readonly briefId = input('');
+  /**
+   * The platforms the operator picked. Sent on the request and compared against the plan's echo,
+   * so a platform the service publishes no slot rules for can be named as such.
+   */
+  public readonly platforms = input<readonly CampaignPlatform[]>([]);
+  /** Bumped by the host when the library changes (an upload, a delete), to re-read the plan. */
+  public readonly reloadToken = input(0);
+
+  // === Injections ===
+  private readonly campaignService = inject(CampaignService);
+
+  // === Signals ===
+  /** Bumped by Refresh. Part of the request identity, so each press is one more read. */
+  private readonly attempts = signal(0);
+
+  // === Computed Signals ===
+  protected readonly state: Signal<CreativeSlotCoverageState> = this.initState();
+  protected readonly groups: Signal<CreativeSlotCoverageGroup[]> = this.initGroups();
+  protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
+  protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
+
+  // === Protected Methods ===
+  protected refresh(): void {
+    if (this.state().status !== 'loading') {
+      this.attempts.update((n) => n + 1);
+    }
+  }
+
+  // === Private Initializers ===
+  /**
+   * The request's identity. Compared by VALUE so a parent that hands over a new array holding the
+   * same platforms does not cost a re-read of an answer that cannot have changed.
+   */
+  private initRequest(): Signal<{ projectSlug: string; briefId: string; platforms: string[]; attempt: number }> {
+    return computed(
+      () => ({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        // Sorted so the identity is the SET of platforms: reordering the picker is not a new question.
+        platforms: [...this.platforms()].sort(),
+        attempt: this.reloadToken() + this.attempts(),
+      }),
+      {
+        // Both lists are sorted above, so an element-wise walk settles set equality. Compared this
+        // way rather than by joining: no separator can collide with a platform id.
+        equal: (a, b) =>
+          a.projectSlug === b.projectSlug &&
+          a.briefId === b.briefId &&
+          a.attempt === b.attempt &&
+          a.platforms.length === b.platforms.length &&
+          a.platforms.every((platform, index) => platform === b.platforms[index]),
+      }
+    );
+  }
+
+  /**
+   * One read per request. `switchMap` drops an answer the operator has moved past, so a slow read
+   * cannot paint over a newer one.
+   *
+   * An unaddressable request — no project, no saved brief, or no platform picked — stays `idle`
+   * rather than becoming an empty `ready` plan, because an empty plan with no gaps is exactly how
+   * a launch-ready library reads.
+   */
+  private initState(): Signal<CreativeSlotCoverageState> {
+    const idle: CreativeSlotCoverageState = { status: 'idle', plan: null, message: '' };
+    return toSignal(
+      toObservable(this.initRequest()).pipe(
+        switchMap((target) => {
+          if (target.projectSlug === '' || target.briefId === '' || target.platforms.length === 0) {
+            return of(idle);
+          }
+          return this.campaignService.getCreativeAssetPlan(target.projectSlug, target.briefId, target.platforms).pipe(
+            map((plan): CreativeSlotCoverageState => ({ status: 'ready', plan, message: '' })),
+            catchError((error: unknown) =>
+              of<CreativeSlotCoverageState>({
+                status: 'error',
+                plan: null,
+                message: extractErrorMessage(error, 'The image slot coverage could not be read.'),
+              })
+            ),
+            startWith<CreativeSlotCoverageState>({ status: 'loading', plan: null, message: '' })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  /**
+   * Assignments and gaps folded into one row per slot, grouped by platform and channel.
+   *
+   * The fold is the whole point: a slot holding one of the two images it needs appears in BOTH
+   * lists, and rendering them separately would show the same slot twice with two different answers.
+   * Channel is part of the grouping because Google's Performance Max, Demand Gen and Display each
+   * publish their own `logo` slot with different rules — collapsing them would merge three distinct
+   * requirements into one row.
+   */
+  private initGroups(): Signal<CreativeSlotCoverageGroup[]> {
+    return computed(() => {
+      const plan = this.state().plan;
+      if (!plan) {
+        return [];
+      }
+
+      // Only gaps that NAME a slot can be folded into an assignment row. A gap with no `slot_key`
+      // is a requirement spanning several slots and keeps a row of its own.
+      const slotGaps = new Map<string, CreativeSlotGap>();
+      for (const gap of plan.gaps) {
+        if (gap.slotKey !== undefined && gap.slotKey !== '' && !slotGaps.has(gap.slotKey)) {
+          slotGaps.set(gap.slotKey, gap);
+        }
+      }
+
+      const groups = new Map<string, CreativeSlotCoverageGroup>();
+      const folded = new Set<string>();
+
+      for (const assignment of plan.assignments) {
+        const gap = slotGaps.get(assignment.slotKey);
+        if (gap) {
+          folded.add(assignment.slotKey);
+        }
+        const filled = assignment.assetIds.length;
+        this.push(groups, assignment.platform, assignment.channel, {
+          key: assignment.slotKey,
+          label: assignment.label,
+          requirement: assignment.requirement,
+          filled,
+          need: gap?.need ?? 0,
+          reason: gap?.reason ?? '',
+          status: this.statusOf(filled, gap !== undefined),
+          statusLabel: this.statusLabelOf(filled, gap !== undefined),
+          countText: assignment.minCount > 0 ? `${filled} of ${assignment.minCount} needed` : `${filled} stored`,
+        });
+      }
+
+      for (const gap of plan.gaps) {
+        if (gap.slotKey !== undefined && folded.has(gap.slotKey)) {
+          continue;
+        }
+        this.push(groups, gap.platform, gap.channel, {
+          // A cross-slot rule has no slot to key on; its label is what distinguishes it.
+          key: gap.slotKey ?? `${gap.platform}/${gap.channel ?? ''}/${gap.label}`,
+          label: gap.label,
+          requirement: '',
+          filled: 0,
+          need: gap.need,
+          reason: gap.reason,
+          status: 'missing',
+          statusLabel: 'Missing',
+          // Only a named slot can state a count; a cross-slot rule has no single slot to count in.
+          countText: gap.slotKey === undefined || gap.slotKey === '' ? '' : `0 of ${gap.need} needed`,
+        });
+      }
+
+      return [...groups.values()]
+        .map((group) => ({
+          ...group,
+          rows: [...group.rows].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
+          openCount: group.rows.filter((row) => row.status !== 'filled').length,
+        }))
+        .sort((a, b) => this.platformRank(a.key) - this.platformRank(b.key) || a.key.localeCompare(b.key));
+    });
+  }
+
+  /**
+   * The picked platforms the plan came back WITHOUT.
+   *
+   * Upstream drops a platform it publishes no slot rules for instead of refusing the request, so
+   * without this line a Reddit-only selection would answer "no gaps" — which an operator would
+   * read as a library that is ready to launch.
+   */
+  private initUnplannedPlatforms(): Signal<string[]> {
+    return computed(() => {
+      const plan = this.state().plan;
+      if (!plan) {
+        return [];
+      }
+      const planned = new Set(plan.platforms);
+      return this.platforms()
+        .filter((platform) => !planned.has(platform))
+        .map((platform) => this.platformLabel(platform));
+    });
+  }
+
+  // === Private Helpers ===
+  private push(groups: Map<string, CreativeSlotCoverageGroup>, platform: string, channel: string | undefined, row: CreativeSlotCoverageRow): void {
+    const key = channel ? `${platform}/${channel}` : platform;
+    const group = groups.get(key);
+    if (group) {
+      group.rows.push(row);
+      return;
+    }
+    groups.set(key, {
+      key,
+      label: channel ? `${this.platformLabel(platform)} · ${channel}` : this.platformLabel(platform),
+      rows: [row],
+      openCount: 0,
+    });
+  }
+
+  private statusOf(filled: number, short: boolean): CreativeSlotCoverageRow['status'] {
+    if (!short) {
+      return 'filled';
+    }
+    return filled > 0 ? 'short' : 'missing';
+  }
+
+  private statusLabelOf(filled: number, short: boolean): string {
+    if (!short) {
+      return 'Covered';
+    }
+    return filled > 0 ? 'Partly covered' : 'Missing';
+  }
+
+  /** The platform id upstream uses is the one the picker uses, so a plan row joins without translation. */
+  private platformLabel(platform: string): string {
+    return CAMPAIGN_PLATFORMS.find((option) => option.id === platform)?.label ?? platform;
+  }
+
+  private platformRank(groupKey: string): number {
+    const rank = PLATFORM_ORDER.indexOf(groupKey.split('/')[0]);
+    return rank === -1 ? PLATFORM_ORDER.length : rank;
+  }
+}

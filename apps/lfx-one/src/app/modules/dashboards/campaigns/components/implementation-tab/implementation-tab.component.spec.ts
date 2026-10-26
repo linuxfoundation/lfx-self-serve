@@ -8305,6 +8305,10 @@ describe('ImplementationTabComponent reddit image upload', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            // The slot grid mounts beside the upload control and reads the plan as soon as this
+            // suite's brief is saved. Every list upstream returns is non-nil, so the empty plan
+            // is spelled out rather than left undefined.
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
       ],

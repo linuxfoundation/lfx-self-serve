@@ -60,6 +60,7 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  CreativeAssetPlan,
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   HubSpotEmailMonitorResponse,
@@ -359,6 +360,29 @@ export class CampaignService {
   public cancelCreativeAssetUpload(): void {
     this.creativeAssetUpload?.cancel.next();
     this.creativeAssetUpload = null;
+  }
+
+  /**
+   * Which of a brief's stored images fill which platform image slots, and what is still missing.
+   *
+   * A pure read — nothing is attached to anything, so it is safe to re-run whenever the library or
+   * the platform selection changes.
+   *
+   * `platforms` is APPENDED once per entry (`?platforms=a&platforms=b`), which is the repeatable
+   * form campaign-service reads; `HttpParams.set` with a joined string would be read as one
+   * platform named "a,b" and silently match nothing. An empty array appends nothing, and absent
+   * means every platform the service publishes slot rules for.
+   *
+   * The response's `platforms` is what the service actually planned for, NOT an echo of the
+   * request: a platform with no published slot rules is dropped rather than refused, so a caller
+   * must compare the two before telling an operator their library is ready.
+   */
+  public getCreativeAssetPlan(projectSlug: string, briefId: string, platforms: string[] = []): Observable<CreativeAssetPlan> {
+    const params = platforms.reduce(
+      (carry, platform) => carry.append('platforms', platform),
+      new HttpParams().set('project', projectSlug).set('brief_id', briefId)
+    );
+    return this.http.get<CreativeAssetPlan>('/api/campaigns/brief/creative-assets/plan', { params });
   }
 
   public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {
