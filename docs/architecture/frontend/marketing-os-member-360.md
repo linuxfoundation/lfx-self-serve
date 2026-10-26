@@ -28,6 +28,14 @@ The original-byte check still authenticates the upstream payload before that pro
 User and trigger events are excluded by the existing Guild service. Raw events remain available for the shared activity feed, agent-authored questions and root termination; after the terminal-state layer, raw contract candidates supply privacy-only contact masks, never accepted output. The previous stored Member Ranking is loaded server-side for trends;
 a failed comparison read is a classified `MEMBER_360_COMPARISON_UNAVAILABLE` conflict, never a silent “no previous run”. The form explains that the user can turn off comparison or retry.
 
+The result scope requires an exact project name and either an exact UID with an
+absent or matching slug, or an exact slug when the UID differs or is absent.
+The MCP and LFX One use different UID namespaces; agent 2.1.0's exact-name fallback
+can therefore return the MCP record's UID. Before storage the BFF normalizes
+`project_uid` to LFX One's UID and retains a differing agent UID as `lfx_project_uid`.
+This leaves stored-run readers, including the workbook's UID guard, scoped to the
+same entitled LFX One project. The intake is unchanged.
+
 Every session produces one immutable run document through the existing document
 store. After validating the upstream hash, the BFF clears every ranking row's
 `key_contact` before persistence and recomputes the sanitized tabs hash: immutable
@@ -57,16 +65,32 @@ registered document type; phases and an expandable step list show progress, with
 questions phase for the 1.0 form-only intake. A 2.0 text turn headed by the questions
 marker returns only `needs_input` and activity (no question text) without persisting a document. The generating view retains
 the feed and states that this page cannot answer yet and the run stays open; polling
-stops without discarding the pending session. There is no question parser or answer UI.
+continues without discarding the pending session until the run is stored or fails.
+There is no question parser or answer UI.
 Entity document-title
 binding is limited to Member 360, leaving other document title behavior unchanged. Pending capabilities
 are stored only in tab-scoped session storage, keyed by effective user, project and
 document, and expire after the shared run-storage TTL. Owner tokens never enter URLs.
 The BFF domain-separates them from chat and binds them to the user, project and session.
 Polling uses `exhaustMap` so slow result requests cannot overlap or be cancelled by a
-tick. Activity updates do not release the storage gate. Transient failures become
+tick. Result checks run every five seconds, backing off to thirty seconds while the
+run waits for input, within the absolute two-hour ceiling from the run's start. Activity updates do not release the storage gate. Transient failures become
 pending ticks without erasing the last successful feed; authorization errors fail
 fast and the overall deadline remains bounded.
+
+Member 360 fails only when Guild confirms the session ended without a valid result;
+error-typed events alone remain pending, and the shared settled-error overlay is not
+applied to this receiver. A questions turn stays `needs_input` through its own root
+`runtime_done`; only a later reply, a newer turn's completion or a session end
+recognized by the shared questions-precedence helper supersedes it. A status-only
+ended event does not currently supersede unanswered questions under that helper.
+Polling has a two-hour safety ceiling measured from the
+stored `startedAt`, not a fresh ten-minute timeout on navigation; this ceiling is
+absolute from the run's start, and questions do not extend it. Reaching the ceiling
+stops polling with a non-failure check-again notice and retains the pending capability.
+After that ceiling, reload or Retry makes one result check without restarting the
+polling window; a nonterminal response keeps the capability and shows the notice again.
+Only a ready or failed result (or a permanent transport error) forgets it.
 
 The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes parsed files into the tracker FormControl, with synthetic stable IDs independent of filenames. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
 
@@ -88,6 +112,19 @@ as a binary.
 the project's writer grant, reads the stored hash-checked run, and assembles its six
 tabs on demand, without a Key Contact column. It accepts no client-supplied tabs and
 does not persist the XLSX blob.
+
+The Summary is a width-bounded QBR canvas with metadata, a tier table/bar chart,
+optional movers, the complete watchlist, team action counts and data coverage;
+large watchlists continue vertically. Ranking dates are real date cells; values,
+scores and contact counts remain numbers with currency/decimal/integer formats.
+A single category-block heat scale accompanies engagement, renewal, tier and
+priority highlighting. The workbook and result page read renewal thresholds and
+tier tones from shared constants. Widths, formats, LFX fill shades and
+chart layout stay in server-side presentation constants. ExcelJS has no chart API, so JSZip injects native DrawingML parts,
+relationships and content-type overrides after writing. This writer requires
+Summary to be the first worksheet and to contain table parts; an unexpected layout
+fails with `500 MEMBER_360_WORKBOOK_INVALID` rather than emitting a partial chart.
+
 Workbook metadata and ZIP entry dates are normalized to the run date inside `tabs`,
 so repeated downloads are byte-identical. Downloads are private, non-cacheable XLSX
 attachments; browser Blob URLs are revoked after download or immediately on view destruction. Empty Evidence exports a header-only worksheet without a structured table definition or invented evidence row. ExcelJS and JSZip are server-only; neither is in the client bundle.

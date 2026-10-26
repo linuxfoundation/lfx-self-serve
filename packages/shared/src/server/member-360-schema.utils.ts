@@ -226,6 +226,7 @@ export const envelopeSchema = z
     project: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/),
     project_name: z.string().min(1),
     lfx_project_name: z.string().min(1).optional(),
+    lfx_project_uid: z.string().min(1).optional(),
     project_uid: z.string().min(1).optional(),
     project_slug: z.string().min(1).optional(),
     version: z.number().int().min(1),
