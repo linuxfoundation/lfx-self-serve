@@ -7,8 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 import { ProjectContextService } from '@services/project-context.service';
-import { Member360Service } from '@services/member-360.service';
-import { of, throwError } from 'rxjs';
+import { ENGAGEMENT_TIERS, MEMBER_360_RENEWAL_RED_DAYS, MEMBER_360_RENEWAL_AMBER_DAYS, MEMBER_360_TIER_TONES } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { member360Fixture } from '../../../../../../e2e/fixtures/mock-data/member-360.mock';
@@ -16,16 +15,10 @@ import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from '../../../..
 import { Member360ResultComponent } from './member-360-result.component';
 
 describe('Member360ResultComponent', () => {
-  const api = { download: vi.fn(() => of(new Blob(['workbook']))) };
   const context = signal({ slug: 'sample-foundation', name: 'Sample Foundation', uid: 'sample-project' });
   beforeEach(() =>
     TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        provideNoopAnimations(),
-        { provide: Member360Service, useValue: api },
-        { provide: ProjectContextService, useValue: { activeContext: context } },
-      ],
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: ProjectContextService, useValue: { activeContext: context } }],
     })
   );
   afterEach(() => {
@@ -37,8 +30,7 @@ describe('Member360ResultComponent', () => {
   });
   function render(envelope = member360Fixture()) {
     const fixture = TestBed.createComponent(Member360ResultComponent);
-    for (const [key, value] of Object.entries({ envelope, documentId: 'run-0123456789abcdef01234567', project: 'sample-project' }))
-      fixture.componentRef.setInput(key, value);
+    for (const [key, value] of Object.entries({ envelope, documentId: 'run-0123456789abcdef01234567' })) fixture.componentRef.setInput(key, value);
     fixture.detectChanges();
     const query = (id: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
     const names = () =>
@@ -290,18 +282,50 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-trend').textContent?.trim()).toBe('—');
     expect(view.query('member-360-trend').getAttribute('aria-label')).toBe('no trend');
   });
-  it('keeps unknown renewals last in either direction and includes day 120 in the header', () => {
+  it('keeps unknown renewals last in either direction and includes the red-window boundary in the header', () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[0].days_to_renewal = null;
-    envelope.tabs.member_ranking[1].days_to_renewal = 120;
+    envelope.tabs.member_ranking[1].days_to_renewal = MEMBER_360_RENEWAL_RED_DAYS;
     const view = render(envelope);
     view.sort('days_to_renewal');
     expect(view.names()[0]).toBe(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
     view.sort('days_to_renewal');
     expect(view.names()[0]).toBe(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
     expect(view.query('member-360-summary-renewals').querySelector('b')?.textContent?.trim()).toBe('1');
+    expect(view.query('member-360-summary-renewals').textContent).toContain(`Renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days`);
     expect(view.query('member-360-ranking').textContent).toContain('Unknown');
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
+  });
+  it.each([
+    { days: null, classes: 'text-gray-500' },
+    { days: MEMBER_360_RENEWAL_RED_DAYS, classes: 'font-bold text-red-700' },
+    { days: MEMBER_360_RENEWAL_RED_DAYS + 1, classes: 'font-semibold text-amber-700' },
+    { days: MEMBER_360_RENEWAL_AMBER_DAYS, classes: 'font-semibold text-amber-700' },
+    { days: MEMBER_360_RENEWAL_AMBER_DAYS + 1, classes: 'text-gray-700' },
+  ])('uses the workbook renewal colours for $days days', ({ days, classes }) => {
+    const envelope = member360Fixture();
+    envelope.tabs.member_ranking = [{ ...envelope.tabs.member_ranking[0], days_to_renewal: days }];
+    const view = render(envelope);
+    const cell = Array.from(view.query('member-360-ranking-row').querySelectorAll('td')).find(
+      (entry) => entry.textContent?.trim() === (days === null ? 'Unknown' : `${days} days`)
+    );
+    expect(cell).toBeDefined();
+    for (const name of classes.split(' ')) expect(cell?.classList.contains(name)).toBe(true);
+    expect(view.query('member-360-ranking').textContent).toContain(
+      `red ≤${MEMBER_360_RENEWAL_RED_DAYS}, amber ${MEMBER_360_RENEWAL_RED_DAYS + 1}–${MEMBER_360_RENEWAL_AMBER_DAYS}.`
+    );
+  });
+  it.each(ENGAGEMENT_TIERS)('keeps the exact badge classes for shared tier %s', (tier) => {
+    const envelope = member360Fixture();
+    envelope.tabs.member_ranking = [{ ...envelope.tabs.member_ranking[0], engagement_tier: tier }];
+    const view = render(envelope);
+    const badge = Array.from(view.query('member-360-ranking-row').querySelectorAll('span')).find((entry) => entry.textContent?.trim() === tier);
+    const classes = {
+      emerald: 'bg-emerald-50 text-emerald-800',
+      amber: 'bg-amber-50 text-amber-800',
+      red: 'bg-red-50 text-red-800',
+    };
+    for (const name of classes[MEMBER_360_TIER_TONES[tier]].split(' ')) expect(badge?.classList.contains(name)).toBe(true);
   });
   it('copies team actions and reports clipboard denial', async () => {
     const view = render();
@@ -322,23 +346,7 @@ describe('Member360ResultComponent', () => {
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
   });
-  it('downloads the stored BFF workbook and exposes a download failure', async () => {
-    const view = render();
-    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:synthetic'), revokeObjectURL: vi.fn() }));
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    await view.component['download']();
-    expect(api.download).toHaveBeenCalledWith('sample-project', 'run-0123456789abcdef01234567');
-    vi.advanceTimersByTime(1000);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
-    api.download.mockReturnValueOnce(throwError(() => new Error('unavailable')));
-    await view.component['download']();
-    view.fixture.detectChanges();
-    expect(view.query('member-360-notice').textContent).toContain('could not be prepared');
-    await view.component['download']();
-    view.fixture.destroy();
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
-    vi.advanceTimersByTime(1000);
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+  it('leaves workbook export to the document header', () => {
+    expect(render().fixture.nativeElement.querySelector('[data-testid="member-360-download"]')).toBeNull();
   });
 });
