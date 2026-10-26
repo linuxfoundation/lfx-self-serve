@@ -40,9 +40,9 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { startWith } from 'rxjs';
 
+import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
-import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
 import { MentorProgramsSectionComponent } from './components/mentor-programs-section/mentor-programs-section.component';

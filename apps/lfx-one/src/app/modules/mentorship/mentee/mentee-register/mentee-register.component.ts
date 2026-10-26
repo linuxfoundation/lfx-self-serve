@@ -42,9 +42,9 @@ import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 
+import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
-import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MenteeCountrySectionComponent } from './components/mentee-country-section/mentee-country-section.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
