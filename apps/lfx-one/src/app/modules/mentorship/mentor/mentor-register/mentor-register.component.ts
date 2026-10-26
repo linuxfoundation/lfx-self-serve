@@ -7,12 +7,9 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import {
   createEmptyMentorshipMentorForm,
-  MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
-  MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
   MENTORSHIP_MENTOR_EXPORT_DISCLAIMER,
   MENTORSHIP_MENTOR_INTRODUCTION_INTRO,
   MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER,
@@ -45,6 +42,7 @@ import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
+import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
 import { MentorProgramsSectionComponent } from './components/mentor-programs-section/mentor-programs-section.component';
@@ -71,7 +69,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
   selector: 'lfx-mentorship-mentor-register',
   imports: [
     ButtonComponent,
-    CheckboxComponent,
+    ComplianceConfirmationComponent,
     ConfirmDialogModule,
     RichEditorComponent,
     MentorProgramsSectionComponent,
@@ -97,8 +95,6 @@ export class MentorRegisterComponent {
   protected readonly introductionIntro = MENTORSHIP_MENTOR_INTRODUCTION_INTRO;
   protected readonly introductionPlaceholder = MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER;
   protected readonly skillsIntro = MENTORSHIP_MENTOR_SKILLS_INTRO;
-  protected readonly complianceLead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
-  protected readonly complianceItems = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;
   protected readonly termsIntro = MENTORSHIP_MENTOR_TERMS_INTRO;
   protected readonly exportDisclaimer = MENTORSHIP_MENTOR_EXPORT_DISCLAIMER;
   protected readonly profileExistsContinueLabel = MENTORSHIP_MENTOR_REGISTER_PROFILE_EXISTS_CONTINUE;
