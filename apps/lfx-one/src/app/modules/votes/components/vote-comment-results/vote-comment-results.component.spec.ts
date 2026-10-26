@@ -117,4 +117,24 @@ describe('VoteCommentResultsComponent', () => {
     expect(squash(el.textContent)).toContain(squash('Synthetic p1 comment 30'));
     expect(squash(el.textContent)).not.toContain(squash('Synthetic p1 comment 25'));
   });
+
+  describe('ballot links (#3914)', () => {
+    it('renders no links by default', () => {
+      const el = render([result('p1', responses('p1', 2))]);
+
+      expect(byTestId(el, 'vote-results-comment-view-ballot-p1-response-1')).toBeNull();
+    });
+
+    it("links each response and emits the response's vote id", () => {
+      fixture.componentRef.setInput('showBallotLinks', true);
+      const el = render([result('p1', responses('p1', 2))]);
+      const emitted: string[] = [];
+      fixture.componentInstance.viewBallot.subscribe((voteId) => emitted.push(voteId));
+
+      const link = byTestId(el, 'vote-results-comment-view-ballot-p1-response-2')!.querySelector('button')!;
+      expect(link.getAttribute('aria-label')).toBe('View ballot of Synthetic Voter 2');
+      link.click();
+      expect(emitted).toEqual(['p1-response-2']);
+    });
+  });
 });

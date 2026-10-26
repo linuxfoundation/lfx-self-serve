@@ -4,12 +4,12 @@
 import { isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS } from '@lfx-one/shared/constants';
+import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS, VOTE_VOTERS_ABSTAINED_CHOICE_KEY } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
   MyVoteResponse,
@@ -56,6 +56,7 @@ import { VoteOptionResultsComponent } from '../components/vote-option-results/vo
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
  * Vote detail page (#3913). Route: /votes/:id, behind `vote-detail-page-enabled` (`voteDetailPageGuard`); with the
@@ -68,6 +69,10 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
  * forbidden one look identical; any other failure is a retry card. SSR stops after the vote fetch and paints the same
  * skeleton as the permalink; everything else resolves in the browser. An invited voter still awaiting a ballot on an
  * active vote gets the cast drawer once on load, as the reminder email intends.
+ *
+ * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a named vote that is open or
+ * closed (`showVotersTab`), the same rules GET /api/votes/:uid/voters enforces. The results' "View N voters" and the comments'
+ * "View ballot" links open it through `voters_choice` / `voters_ballot`, which are ignored whenever the tab isn't shown.
  */
 @Component({
   selector: 'lfx-vote-detail',
@@ -88,6 +93,7 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
     VoteOptionResultsComponent,
     VoteParticipationCardComponent,
     VoteRankedQuestionResultsComponent,
+    VoteVotersComponent,
   ],
   providers: [DialogService],
   templateUrl: './vote-detail.component.html',
@@ -125,6 +131,12 @@ export class VoteDetailComponent {
   // === Route Params (toSignal) ===
   protected readonly voteId: Signal<string | null> = this.initVoteId();
   private readonly requestedTab: Signal<VoteDetailTab> = this.initRequestedTab();
+  private readonly requestedVotersChoice: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('voters_choice'))), {
+    initialValue: null,
+  });
+  private readonly requestedVotersBallot: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('voters_ballot'))), {
+    initialValue: null,
+  });
 
   // === Data Signals (Complex — init via private functions) ===
   /** Single load-state stream: loading, not-found, transient error and the loaded vote derive from one emission. */
@@ -148,6 +160,13 @@ export class VoteDetailComponent {
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
 
   // === Computed Signals ===
+  /**
+   * Individual ballots: a manager (never while the access check runs) on a vote that is explicitly named — a missing flag fails
+   * closed, as the server does — and open or closed, never a draft.
+   */
+  protected readonly showVotersTab: Signal<boolean> = this.initShowVotersTab();
+  protected readonly votersChoice: Signal<string | null> = computed(() => (this.showVotersTab() ? this.requestedVotersChoice() : null));
+  protected readonly votersBallot: Signal<string | null> = computed(() => (this.showVotersTab() ? this.requestedVotersBallot() : null));
   protected readonly tabs: Signal<readonly VoteDetailTabOption[]> = this.initTabs();
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
@@ -199,12 +218,30 @@ export class VoteDetailComponent {
 
   protected switchTab(tab: VoteDetailTab): void {
     if (this.activeTab() === tab) return;
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { tab: tab === VOTE_DETAIL_DEFAULT_TAB ? null : tab },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    // A tab picked from the strip opens unfiltered: the voters_* deep-link params belong to the link that set them.
+    this.navigateToTab({ tab: tab === VOTE_DETAIL_DEFAULT_TAB ? null : tab, voters_choice: null, voters_ballot: null });
+  }
+
+  /** "View N voters" on a generic option. */
+  protected onViewOptionVoters(questionId: string, choiceId: string): void {
+    this.onViewVoters(`${questionId}:${choiceId}`);
+  }
+
+  /** "View N voters" on the abstain row selects the Abstained status. */
+  protected onViewAbstainedVoters(): void {
+    this.onViewVoters(VOTE_VOTERS_ABSTAINED_CHOICE_KEY);
+  }
+
+  /** Opens the Voters tab filtered to a `<question_id>:<choice_id>` choice key. */
+  protected onViewVoters(choiceKey: string): void {
+    if (!this.showVotersTab()) return;
+    this.navigateToTab({ tab: 'voters', voters_choice: choiceKey, voters_ballot: null });
+  }
+
+  /** Opens the Voters tab with a comment's ballot (its vote response uid) open. */
+  protected onViewBallot(voteResponseUid: string): void {
+    if (!this.showVotersTab()) return;
+    this.navigateToTab({ tab: 'voters', voters_choice: null, voters_ballot: voteResponseUid });
   }
 
   protected onCastVote(): void {
@@ -426,15 +463,25 @@ export class VoteDetailComponent {
     });
   }
 
-  /** The Comments tab exists only when the vote asks for comments. */
-  private initTabs(): Signal<readonly VoteDetailTabOption[]> {
+  private initShowVotersTab(): Signal<boolean> {
     return computed(() => {
-      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0;
-      return VOTE_DETAIL_TABS.filter((tab) => tab.key !== 'comments' || hasPrompts);
+      const vote = this.vote();
+      if (!vote || this.canManage() !== true || vote.pseudo_anonymity !== false) return false;
+      const status = normalizePollStatus(vote.status);
+      return status === PollStatus.ACTIVE || status === PollStatus.ENDED;
     });
   }
 
-  /** A `?tab=` the vote doesn't offer (Comments on a vote without prompts) falls back to the default tab. */
+  /** The Comments tab exists only when the vote asks for comments; the Voters tab only when `showVotersTab` allows it. */
+  private initTabs(): Signal<readonly VoteDetailTabOption[]> {
+    return computed(() => {
+      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0;
+      const showVoters = this.showVotersTab();
+      return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
+    });
+  }
+
+  /** A `?tab=` the vote doesn't offer (Comments without prompts, Voters for a voter or on a pseudo-anonymous vote) falls back to the default tab. */
   private initActiveTab(): Signal<VoteDetailTab> {
     return computed(() => {
       const requested = this.requestedTab();
@@ -539,6 +586,10 @@ export class VoteDetailComponent {
   }
 
   // === Private Helpers ===
+  private navigateToTab(queryParams: Params): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   /** Open, ended or draft — a draft hasn't opened for voting, so it reads neither as reminder-ready nor as closed. */
   private notVotedCardText(): Pick<StatCardItem, 'label' | 'subLine'> {
     if (this.isActive()) return { label: 'Not voted yet', subLine: 'Eligible for a reminder' };

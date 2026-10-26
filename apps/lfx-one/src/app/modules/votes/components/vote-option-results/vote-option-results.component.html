@@ -20,6 +20,9 @@
             [class.bg-slate-300]="!option.isLeading"
             [style.width.%]="option.percentage"></div>
         </div>
+        @if (showVoterLinks() && option.voteCount > 0) {
+          <ng-container [ngTemplateOutlet]="voterLink" [ngTemplateOutletContext]="{ $implicit: option }" />
+        }
       </div>
     } @else {
       <div
@@ -79,7 +82,21 @@
             [class.bg-slate-400]="!option.isWinner && !option.isTied"
             [style.width.%]="option.percentage"></div>
         </div>
+        @if (showVoterLinks() && option.voteCount > 0) {
+          <ng-container [ngTemplateOutlet]="voterLink" [ngTemplateOutletContext]="{ $implicit: option }" />
+        }
       </div>
     }
   }
 </div>
+
+<ng-template #voterLink let-option>
+  <div class="flex justify-end">
+    <lfx-button
+      [label]="'View ' + option.voteCount + (option.voteCount === 1 ? ' voter' : ' voters')"
+      [text]="true"
+      size="small"
+      (onClick)="viewVoters.emit(option.choiceId)"
+      [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'" />
+  </div>
+</ng-template>

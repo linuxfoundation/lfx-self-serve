@@ -13,6 +13,9 @@
     <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
       <div class="h-full rounded-full bg-slate-300 transition-all" [style.width.%]="stats().abstainedRate"></div>
     </div>
+    @if (showVoterLinks() && stats().abstainedVoters > 0) {
+      <ng-container [ngTemplateOutlet]="voterLink" />
+    }
   </div>
 } @else {
   <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" [attr.data-testid]="testId()">
@@ -28,5 +31,19 @@
     <div class="w-full bg-white rounded-full h-2 overflow-hidden">
       <div class="h-full bg-slate-400 transition-all" [style.width.%]="stats().abstainedRate"></div>
     </div>
+    @if (showVoterLinks() && stats().abstainedVoters > 0) {
+      <ng-container [ngTemplateOutlet]="voterLink" />
+    }
   </div>
 }
+
+<ng-template #voterLink>
+  <div class="flex justify-end">
+    <lfx-button
+      [label]="'View ' + stats().abstainedVoters + (stats().abstainedVoters === 1 ? ' voter' : ' voters')"
+      [text]="true"
+      size="small"
+      (onClick)="viewVoters.emit()"
+      [attr.data-testid]="testId() + '-view-voters'" />
+  </div>
+</ng-template>

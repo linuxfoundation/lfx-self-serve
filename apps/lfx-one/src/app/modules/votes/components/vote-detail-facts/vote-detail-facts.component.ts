@@ -62,13 +62,24 @@ export class VoteDetailFactsComponent {
     if (invited === undefined || invited === null) return '—';
     return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
   });
-  protected readonly privacyText: Signal<string> = computed(() => (this.vote().pseudo_anonymity ? 'Pseudo-anonymous' : 'Named'));
+  protected readonly privacyText: Signal<string> = computed(() => {
+    const privacy = this.vote().pseudo_anonymity;
+    if (privacy === undefined || privacy === null) return 'Unavailable';
+    return privacy ? 'Pseudo-anonymous' : 'Named';
+  });
   protected readonly commentsText: Signal<string> = computed(() => {
     const prompts = this.vote().poll_comment_prompts?.length ?? 0;
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'prompt' : 'prompts'}`;
   });
-  protected readonly visibilityRules: Signal<string[]> = computed(() =>
-    getVoteVisibilityRules(this.audience(), !!this.vote().pseudo_anonymity, this.isEnded())
-  );
+  protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
+
+  // === Private Initializers ===
+  private initVisibilityRules(): Signal<string[]> {
+    return computed(() => {
+      const status = normalizePollStatus(this.vote().status);
+      const ballotsAvailable = status === PollStatus.ACTIVE || status === PollStatus.ENDED;
+      return getVoteVisibilityRules(this.audience(), this.vote().pseudo_anonymity, this.isEnded(), ballotsAvailable);
+    });
+  }
 }

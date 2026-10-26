@@ -63,4 +63,32 @@ describe('VoteAbstainResultComponent', () => {
     expect(render(stats(1, 20), 'final', 'vote-results-voter-option-abstain')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="vote-results-option-abstain"]')).toBeNull();
   });
+
+  describe('voter links (#3914)', () => {
+    const viewLink = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="vote-results-option-abstain-view-voters"] button');
+
+    it('renders no link by default', () => {
+      render(stats(2, 40), 'final');
+
+      expect(viewLink()).toBeNull();
+    });
+
+    it('links the abstentions when shown, and emits on click', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(stats(2, 40), 'live');
+      let emitted = 0;
+      fixture.componentInstance.viewVoters.subscribe(() => (emitted += 1));
+
+      expect(viewLink()?.textContent).toContain('View 2 voters');
+      viewLink()!.click();
+      expect(emitted).toBe(1);
+    });
+
+    it('renders no link when nobody abstained', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(stats(0, 0), 'final');
+
+      expect(viewLink()).toBeNull();
+    });
+  });
 });

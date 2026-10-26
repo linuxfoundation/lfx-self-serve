@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { Component, computed, input, model, output, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import { CommentResultPageView, PollCommentResult } from '@lfx-one/shared/interfaces';
@@ -13,7 +14,7 @@ import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 /** Paginated comment-results list, one block per prompt. Page state is a model so the host can keep it when this component is destroyed and recreated (e.g. a drawer swapping in its loading skeleton on reopen). */
 @Component({
   selector: 'lfx-vote-comment-results',
-  imports: [DatePipe, ExpandableTextComponent, LinkifyPipe, PaginatorModule],
+  imports: [DatePipe, ButtonComponent, ExpandableTextComponent, LinkifyPipe, PaginatorModule],
   templateUrl: './vote-comment-results.component.html',
   styleUrl: './vote-comment-results.component.scss',
   host: { class: 'contents' },
@@ -21,6 +22,12 @@ import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 export class VoteCommentResultsComponent {
   // === Inputs ===
   public readonly commentResults = input.required<PollCommentResult[]>();
+  /** Adds a "View ballot" link on each response — vote managers on named votes only (#3914). */
+  public readonly showBallotLinks = input<boolean>(false);
+
+  // === Outputs ===
+  /** The response's `vote_id` — the vote response (ballot) uid the Voters tab opens. */
+  public readonly viewBallot = output<string>();
 
   // === Constants ===
   protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;

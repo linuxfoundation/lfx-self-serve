@@ -31,6 +31,18 @@
         } @else if (isCreator()) {
           <p class="text-xs text-slate-500 italic">No rankings recorded yet.</p>
         }
+
+        @let firstChoices = firstChoiceCounts()[row.choiceId];
+        @if (showVoterLinks() && firstChoices > 0) {
+          <div class="flex justify-end">
+            <lfx-button
+              [label]="'View ' + firstChoices + (firstChoices === 1 ? ' first-choice voter' : ' first-choice voters')"
+              [text]="true"
+              size="small"
+              (onClick)="onViewVoters(row.choiceId)"
+              [attr.data-testid]="'vote-results-ranked-choice-' + row.choiceId + '-view-voters'" />
+          </div>
+        }
       </div>
     } @empty {
       @if (isCreator()) {

@@ -471,6 +471,100 @@ export interface VoteVoter {
   comment_responses?: CommentResponseInput[];
 }
 
+/** Status pill on the vote detail page's Voters tab (#3914): every voter, or one participation status. */
+export type VoteVoterStatusFilter = 'all' | VoteVoterStatus;
+
+/** Per-status voter totals behind the Voters tab's status pills (#3914). */
+export type VoteVoterStatusCounts = Record<VoteVoterStatusFilter, number>;
+
+/**
+ * One question's line in a voter row's Choice cell (#3914).
+ * @description Chips are already formatted for display: the choice text, or `<rank> <choice>` for a ranked
+ * question. At most two chips are kept; the rest are counted in `overflow` and render as `+N`.
+ */
+export interface VoteVoterChoiceSummary {
+  /** Question identifier */
+  questionId: string;
+  /** `Q1`, `Q2`… prefix — absent when the vote has a single question */
+  questionLabel?: string;
+  /** Whether the chips are ranked preferences, rendered as `1 X › 2 Y` */
+  ranked: boolean;
+  /** Up to two display chips, in selection or rank order */
+  chips: string[];
+  /** Selections beyond the displayed chips */
+  overflow: number;
+}
+
+/** Choice filter option on the Voters tab — `value` is `<question_id>:<choice_id>` (#3914). */
+export interface VoteVoterChoiceFilterOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * Display row for one invited voter on the Voters tab (#3914), built from a {@link VoteVoter} by `buildVoteVoterRowView`.
+ * @description Carries the source voter so the ballot dialog can render the full ballot without another read.
+ */
+export interface VoteVoterRowView {
+  /** Vote response row identifier — equals `PollCommentResponse.vote_id` */
+  uid: string;
+  /** Name, falling back to the username, then the email */
+  displayName: string;
+  organization?: string;
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  role?: string;
+  /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
+  committeeRole?: string;
+  status: VoteVoterStatus;
+  /** Status text; a not-voted voter reads "Not voted yet" while the vote is open and "Did not vote" after */
+  statusLabel: string;
+  /** One entry per question — empty unless the voter voted */
+  choiceSummaries: VoteVoterChoiceSummary[];
+  /** When the current ballot was submitted */
+  submittedAt?: string;
+  /** Voted or abstained — only these rows open the ballot dialog */
+  hasBallot: boolean;
+  voter: VoteVoter;
+}
+
+/** One choice in the read-only ballot dialog (#3914). */
+export interface VoteBallotChoiceView {
+  choiceId: string;
+  text: string;
+  selected: boolean;
+  /** 1-based preference — ranked questions only */
+  rank?: number;
+}
+
+/**
+ * One question in the read-only ballot dialog (#3914).
+ * @description Generic questions list every choice with its selected state; ranked questions split the choices
+ * into the voter's ranked order and the ones they left unranked.
+ */
+export interface VoteBallotQuestionView {
+  questionId: string;
+  /** 1-based question number */
+  number: number;
+  prompt: string;
+  ranked: boolean;
+  /** Single-choice questions render radio-style markers, the rest checkbox-style */
+  multiple: boolean;
+  /** Every choice, in question order — generic questions */
+  choices: VoteBallotChoiceView[];
+  /** Ranked choices in preference order — ranked questions */
+  rankedChoices: VoteBallotChoiceView[];
+  /** Choices the voter did not rank — ranked questions */
+  unrankedChoices: VoteBallotChoiceView[];
+}
+
+/** Dialog data for `lfx-vote-ballot-dialog` (#3914): the ballots in table order and the one to open first. */
+export interface VoteBallotDialogData {
+  vote: Vote;
+  /** The table's filtered, sorted rows that have a ballot — next/previous step through these */
+  ballots: VoteVoterRowView[];
+  index: number;
+}
+
 /** Request body for POST /api/votes/:uid/reminders (#3769) */
 export interface SendVoteReminderRequest {
   /** Vote response row identifiers (`VoteReminderRecipient.uid`) to remind */
@@ -1106,7 +1200,7 @@ export interface VotePermalinkState {
 }
 
 /** Tabs on the vote detail page (#3913); Overview is the default and is omitted from the `?tab=` query param. */
-export type VoteDetailTab = 'overview' | 'results' | 'comments';
+export type VoteDetailTab = 'overview' | 'results' | 'comments' | 'voters';
 
 /** One pill in the vote detail page's tab strip. */
 export interface VoteDetailTabOption {

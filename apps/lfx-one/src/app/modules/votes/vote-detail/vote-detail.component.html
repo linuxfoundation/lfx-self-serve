@@ -163,11 +163,23 @@
                     } @else if (voteResultsError()) {
                       <p class="text-sm text-red-700" data-testid="vote-detail-comments-error">Couldn't load comments. Try reloading this page.</p>
                     } @else {
-                      <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
+                      <lfx-vote-comment-results
+                        [commentResults]="commentResults()"
+                        [(pageState)]="commentPaginatorState"
+                        [showBallotLinks]="showVotersTab()"
+                        (viewBallot)="onViewBallot($event)" />
                     }
                   </lfx-card>
                 } @else {
                   <ng-container [ngTemplateOutlet]="voterStatePanel" />
+                }
+              }
+              @case ('voters') {
+                <!-- activeTab only resolves to voters while showVotersTab() holds; the guard keeps it explicit. -->
+                @if (showVotersTab()) {
+                  <lfx-card data-testid="vote-detail-voters">
+                    <lfx-vote-voters [vote]="voteData" [initialChoice]="votersChoice()" [initialBallotUid]="votersBallot()" />
+                  </lfx-card>
                 }
               }
             }
@@ -203,16 +215,30 @@
                 }
                 {{ question.question }}
               </h3>
-              <lfx-vote-option-results [options]="question.options" [variant]="optionVariant()" testIdPrefix="vote-detail-option-" />
+              <lfx-vote-option-results
+                [options]="question.options"
+                [variant]="optionVariant()"
+                testIdPrefix="vote-detail-option-"
+                [showVoterLinks]="showVotersTab()"
+                (viewVoters)="onViewOptionVoters(question.questionId, $event)" />
             </div>
           }
         } @else {
           @for (question of rankedQuestions(); track question.questionId) {
-            <lfx-vote-ranked-question-results [question]="question" [variant]="audience()" />
+            <lfx-vote-ranked-question-results
+              [question]="question"
+              [variant]="audience()"
+              [showVoterLinks]="showVotersTab()"
+              (viewVoters)="onViewVoters($event)" />
           }
         }
         @if (showAbstain()) {
-          <lfx-vote-abstain-result [stats]="participationStats()" [variant]="isVoteClosed() ? 'final' : 'live'" testId="vote-detail-option-abstain" />
+          <lfx-vote-abstain-result
+            [stats]="participationStats()"
+            [variant]="isVoteClosed() ? 'final' : 'live'"
+            testId="vote-detail-option-abstain"
+            [showVoterLinks]="showVotersTab()"
+            (viewVoters)="onViewAbstainedVoters()" />
         }
         @if (hasZeroVotes()) {
           <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
