@@ -100,8 +100,9 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 /**
  * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
  * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
- * flag keeps the module invisible, and the route guard fails closed like `akritesEnabledGuard`
- * rather than open like `myClasEnabledGuard`, because nothing here has shipped to users yet.
+ * flag keeps the module invisible. The route guard fails open like `myClasEnabledGuard` when the
+ * provider is not ready, so a slow or blocked LaunchDarkly never bounces testers away; before
+ * go-live anything a non-tester writes in that window is replaced by the final data import.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
@@ -128,7 +129,7 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
  * GW_EMBED_ROUTE_PREFIXES) that
  * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
  * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
- * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
+ * rather than open, since the embed is not ready for general users.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The BFF routes
