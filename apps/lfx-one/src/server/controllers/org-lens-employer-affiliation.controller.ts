@@ -44,7 +44,7 @@ export class OrgLensEmployerAffiliationController {
       // the sensitive-field redaction. `request_id` already correlates the line.
       logger.success(req, 'get_employer_affiliation', startTime, {
         has_employer: !!affiliation.employerName,
-        has_active_membership: affiliation.hasActiveMembership,
+        membership: affiliation.membership,
       });
 
       res.json(affiliation);

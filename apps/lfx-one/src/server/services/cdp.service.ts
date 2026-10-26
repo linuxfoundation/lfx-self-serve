@@ -441,6 +441,40 @@ export class CdpService {
   }
 
   /**
+   * Work history for a member that already exists, for callers that must not write and must not put
+   * the caller's identity in the log sink (#4314: the Org Lens employer probe, which every no-grant
+   * visit fires automatically, for people who may never open their profile).
+   *
+   * Unlike {@link getWorkExperiencesForUser} it resolves through {@link resolveMemberId} and stops
+   * there: no member is created, so a passive read cannot seed a CDP profile, and the INFO line that
+   * create path writes with the caller's LFID is never reached. No identifier is logged here either —
+   * `request_id` already correlates the line.
+   */
+  public async getWorkExperiencesForExistingMember(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_existing_member');
+
+    try {
+      const memberId = await this.resolveMemberId(req, [sub]);
+      if (!memberId) {
+        logger.success(req, 'get_cdp_work_experiences_for_existing_member', startTime, { member_found: false, work_experience_count: 0 });
+        return [];
+      }
+
+      const entries = this.toWorkExperienceEntries(await this.getMemberWorkExperiences(req, memberId), sub);
+
+      logger.success(req, 'get_cdp_work_experiences_for_existing_member', startTime, { member_found: true, work_experience_count: entries.length });
+
+      return entries;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return [];
+      }
+      logger.error(req, 'get_cdp_work_experiences_for_existing_member', startTime, error);
+      throw error;
+    }
+  }
+
+  /**
    * Orchestrates the full flow: token → resolve → get work experiences
    * Maps raw CDP work experiences to frontend-ready WorkExperienceEntry format
    */
@@ -454,18 +488,7 @@ export class CdpService {
 
       const rawExperiences = await this.getMemberWorkExperiences(req, memberId);
 
-      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => ({
-        id: raw.id,
-        organization: raw.organizationName,
-        organizationId: raw.organizationId,
-        organizationLogo: raw.organizationLogo || undefined,
-        jobTitle: raw.jobTitle,
-        startDate: this.formatDateToMonthYear(raw.startDate),
-        endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
-        source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
-        cdpSource: raw.source,
-        needsReview: !(raw.verified && raw.verifiedBy === sub),
-      }));
+      const entries: WorkExperienceEntry[] = this.toWorkExperienceEntries(rawExperiences, sub);
 
       logger.success(req, 'get_cdp_work_experiences_for_user', startTime, {
         sub,
@@ -975,7 +998,9 @@ export class CdpService {
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;
     const requestId = randomUUID();
 
-    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfids, request_id: requestId });
+    // Counts, not the identities: `request_id` correlates the line, and this runs on every CDP read,
+    // including the automatic Org Lens employer probe (#4314).
+    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfid_count: lfids.length, email_count: emails?.length ?? 0, request_id: requestId });
 
     const body: { lfids: string[]; emails?: string[] } = { lfids };
     if (emails?.length) {
@@ -1033,5 +1058,21 @@ export class CdpService {
     const date = new Date(isoDate);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  }
+
+  /** Maps CDP's raw work-experience rows to the frontend-ready shape both readers return. */
+  private toWorkExperienceEntries(rawExperiences: CdpWorkExperience[], sub: string): WorkExperienceEntry[] {
+    return rawExperiences.map((raw) => ({
+      id: raw.id,
+      organization: raw.organizationName,
+      organizationId: raw.organizationId,
+      organizationLogo: raw.organizationLogo || undefined,
+      jobTitle: raw.jobTitle,
+      startDate: this.formatDateToMonthYear(raw.startDate),
+      endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
+      source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
+      cdpSource: raw.source,
+      needsReview: !(raw.verified && raw.verifiedBy === sub),
+    }));
   }
 }

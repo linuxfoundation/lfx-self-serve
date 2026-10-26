@@ -95,6 +95,9 @@ export interface OrgLensEmptyStateValues {
  * deliberately *not* behind the Org Lens read gate — a caller with no grant must be able to
  * learn why they have none.
  */
+/** #4314 — what the employer-membership lookup established; see `OrgLensEmployerAffiliation.membership`. */
+export type OrgLensEmployerMembership = 'member' | 'non-member' | 'unresolved';
+
 export interface OrgLensEmployerAffiliation {
   /**
    * Display name of a job the caller holds *now* (a work-history entry with no end date); `null` when
@@ -106,10 +109,16 @@ export interface OrgLensEmployerAffiliation {
    */
   employerName: string | null;
   /**
-   * At least one of the caller's current employers holds an active membership in an LF-hosted
-   * foundation. `false` is a resolved answer (none of them matched an account, or none of the matched
-   * accounts has active membership rows), never "we could not tell" — that case is a failed request,
-   * which callers treat as unknown.
+   * What the lookup established about the caller's current employers:
+   *
+   * - `member` — at least one of them holds an active membership in an LF-hosted foundation.
+   * - `non-member` — every one of them resolved to a Salesforce account, and none of those accounts
+   *   has an active membership. This is the only value that may render "is not a member": it is a
+   *   checked negative.
+   * - `unresolved` — at least one current employer could not be matched to an account at all, so
+   *   nothing is known about its membership. An unmatched name is not proof of no membership: the
+   *   match is by name, and a member company whose account name differs from the profile's wording
+   *   lands here. Callers must treat it like a failed lookup, never as `non-member`.
    */
-  hasActiveMembership: boolean;
+  membership: OrgLensEmployerMembership;
 }

@@ -23,7 +23,7 @@ vi.mock('../services/logger.service', () => ({
 import { logger } from '../services/logger.service';
 import { OrgLensEmployerAffiliationController } from './org-lens-employer-affiliation.controller';
 
-const AFFILIATION: OrgLensEmployerAffiliation = { employerName: 'Delta Harbour', hasActiveMembership: false };
+const AFFILIATION: OrgLensEmployerAffiliation = { employerName: 'Delta Harbour', membership: 'non-member' };
 
 function harness() {
   const json = vi.fn();
@@ -76,7 +76,7 @@ describe('OrgLensEmployerAffiliationController', () => {
 
     const metadata = vi.mocked(logger.success).mock.calls[0][3];
     expect(JSON.stringify(metadata)).not.toContain('lfid-1');
-    expect(metadata).toEqual({ has_employer: true, has_active_membership: false });
+    expect(metadata).toEqual({ has_employer: true, membership: 'non-member' });
   });
 
   it('forwards an upstream failure instead of answering a default', async () => {

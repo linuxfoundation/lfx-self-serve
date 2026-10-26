@@ -92,13 +92,14 @@ export class OrgLensEmployerAffiliationService {
   });
 
   /**
-   * A resolved "this caller is affiliated with a company that holds no active LF membership". False
-   * while the answer is missing, failed, or the caller has no employer at all — the three cases that
-   * must not render the non-member copy.
+   * A *checked* "this caller is affiliated with a company that holds no active LF membership". False
+   * while the answer is missing, failed, `unresolved` (the employer did not match an account, so its
+   * membership was never established), or the caller has no employer at all — every case that must
+   * not render copy stating a company is not a member.
    */
   public readonly affiliatedToNonMember: Signal<boolean> = computed(() => {
     const probe = this.probe();
-    return probe.status === 'answered' && !!probe.affiliation.employerName && !probe.affiliation.hasActiveMembership;
+    return probe.status === 'answered' && !!probe.affiliation.employerName && probe.affiliation.membership === 'non-member';
   });
 
   /** Re-ask the question — the shared Retry's employer half. */

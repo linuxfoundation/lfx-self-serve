@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { LEGAL_FORM_SUFFIXES, MAX_CURRENT_EMPLOYERS } from '@lfx-one/shared/constants';
-import type { OrgLensEmployerAffiliation, OrgLensEmployerMembershipWarehouseRow, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensEmployerAffiliation,
+  OrgLensEmployerMembership,
+  OrgLensEmployerMembershipWarehouseRow,
+  WorkExperienceEntry,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
@@ -45,7 +50,7 @@ function matchKeyExpression(column: string): string {
  * grant, so a caller with none must be able to ask.
  *
  * It reveals nothing the caller does not already hold — their own employer's name comes from their own
- * profile, and the answer is one boolean about that company's membership, which is public information
+ * profile, and the answer is one word about that company's membership, which is public information
  * (LF member directories list it). No roster, no people, no membership detail, and no account id: the
  * matched account's identifier never leaves this service, since nothing renders it and self-declared
  * employment is not permission to learn it.
@@ -58,13 +63,12 @@ function matchKeyExpression(column: string): string {
  * (`ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is a different identifier). Names are
  * compared on {@link employerMatchKey} rather than literally, so a trailing legal form written on one
  * side and not the other ("Acme" / "Acme LLC") still finds the account. A name that matches no account
- * at all answers `hasActiveMembership: false` — an employer with a membership always has a Salesforce
- * account — and where several accounts match, the one with memberships wins, so neither a duplicate
- * nor a second current employer can downgrade a member company to the non-member copy.
+ * at all answers `unresolved`, never a negative: "no row came back" is a failure of this lookup, not a
+ * fact about that company. Where several accounts match, the one with memberships wins, so neither a
+ * duplicate nor a second current employer can downgrade a member company to the non-member copy.
  *
- * The key is built from Latin letters and digits, so a name written entirely in another script
- * reduces to nothing and matches no account. That caller keeps their employer and is told it is not
- * a member — the same answer any unmatched name gets, and wrong in the same way for the same reason.
+ * The key is built from Latin letters and digits, so a name written entirely in another script reduces
+ * to nothing and is never queried. That is `unresolved` too — an unasked question, not a negative.
  *
  * TODO(#4314 follow-up): replace the name match with a domain/identifier resolution once member-service
  * exposes an org lookup the BFF can call for an arbitrary employer. That closes both this and the
@@ -80,22 +84,31 @@ export class OrgLensEmployerAffiliationService {
   }
 
   public async getEmployerAffiliation(req: Request, lfid: string): Promise<OrgLensEmployerAffiliation> {
-    const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
+    // The read-only CDP path: a passive probe must not create a member, and must not put the caller's
+    // identity in the log sink.
+    const workExperiences = await this.cdpService.getWorkExperiencesForExistingMember(req, lfid);
     const employerNames = OrgLensEmployerAffiliationService.currentEmployerNames(workExperiences);
 
     if (employerNames.length === 0) {
-      return { employerName: null, hasActiveMembership: false };
+      return { employerName: null, membership: 'unresolved' };
     }
 
     // A name with no Latin characters reduces to an empty key, which would match any account whose
     // own name is all punctuation. Such a name is kept as an affiliation but never asked about; the
-    // caller is then told their employer is not a member, which is the same answer any unmatched
-    // name gets. See the resolution note in this class's doc comment.
-    const matchKeys = [...new Set(employerNames.map(employerMatchKey).filter(Boolean))];
+    // caller keeps their employer, and the answer is `unresolved` rather than a negative nobody checked.
+    const keys = employerNames.map(employerMatchKey);
+    const matchKeys = [...new Set(keys.filter(Boolean))];
     const rows = matchKeys.length > 0 ? await this.fetchEmployerMembershipRows(matchKeys) : [];
+    const matched = new Set(rows.map((row) => employerMatchKey(row.ACCOUNT_NAME)));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
     const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
+    // "Non-member" may only be stated once every current employer has actually been checked. A name
+    // with no queryable key was never asked about, and a queried name that matched nothing means the
+    // match failed, not that the company holds no membership — its account exists under a spelling
+    // this does not reduce to. Both answer `unresolved`, which renders no claim either way.
+    const everyEmployerChecked = keys.every((key) => key !== '' && matched.has(key));
+    const membership: OrgLensEmployerMembership = OrgLensEmployerAffiliationService.classifyMembership(!!member, everyEmployerChecked);
     // Always the caller's own spelling, never the account's: `employerName` is read back to them in
     // their own sentence, and a field that means the profile name on one answer and the Salesforce
     // name on another is a contract the next consumer cannot rely on. The member row is mapped back
@@ -106,13 +119,18 @@ export class OrgLensEmployerAffiliationService {
     logger.debug(req, 'get_employer_affiliation', 'Resolved employer membership', {
       current_employer_count: employerNames.length,
       resolved_accounts: rows.length,
-      has_member_employer: !!member,
+      membership,
     });
 
-    return {
-      employerName,
-      hasActiveMembership: !!member,
-    };
+    return { employerName, membership };
+  }
+
+  /** `member` wins over everything; `non-member` needs every current employer actually checked. */
+  private static classifyMembership(hasMemberEmployer: boolean, everyEmployerChecked: boolean): OrgLensEmployerMembership {
+    if (hasMemberEmployer) {
+      return 'member';
+    }
+    return everyEmployerChecked ? 'non-member' : 'unresolved';
   }
 
   /**
