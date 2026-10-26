@@ -1249,6 +1249,25 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('Final results are available');
     });
 
+    it.each(['creator', 'voter'] as const)('passes held and released results to the facts card for %s', async (audience) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: audience === 'creator' } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      const fixture = await setup();
+
+      results.next(heldResults());
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(true);
+
+      results.next(makeMethodResults());
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(false);
+    });
+
     it('never reads 100% participation on an open held vote as final', async () => {
       voteService.getVoteResults.mockReturnValue(of({ ...heldResults(), num_votes_cast: 4 }));
       const fixture = await setup();

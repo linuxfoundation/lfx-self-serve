@@ -86,7 +86,8 @@ export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab
 
 /**
  * Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts;
- * the Voters tab (#3914) only to vote managers on a named vote that is open or closed.
+ * the Voters tab (#3914, #3916) only to vote managers on a vote that is open or closed. Named votes show ballots;
+ * pseudo-anonymous votes show participation only, without ballot or choice links.
  */
 export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
   { key: 'overview', label: 'Overview', icon: 'fa-grid-2' },

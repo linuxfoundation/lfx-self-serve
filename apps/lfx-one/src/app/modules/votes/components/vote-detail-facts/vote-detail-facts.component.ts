@@ -34,6 +34,8 @@ export class VoteDetailFactsComponent {
   public readonly audience = input<'voter' | 'creator'>('voter');
   /** The page includes prompts recovered from authorized results; standalone callers fall back to vote metadata. */
   public readonly commentPromptCount = input<number | null>(null);
+  /** Totals and comments can remain held after close while upstream finalizes them. */
+  public readonly resultsHeld = input<boolean>(false);
 
   // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -81,7 +83,7 @@ export class VoteDetailFactsComponent {
     return computed(() => {
       const status = normalizePollStatus(this.vote().status);
       const ballotsAvailable = status === PollStatus.ACTIVE || status === PollStatus.ENDED;
-      return getVoteVisibilityRules(this.audience(), this.vote().pseudo_anonymity, this.isEnded(), ballotsAvailable);
+      return getVoteVisibilityRules(this.audience(), this.vote().pseudo_anonymity, this.isEnded(), ballotsAvailable, this.resultsHeld());
     });
   }
 }

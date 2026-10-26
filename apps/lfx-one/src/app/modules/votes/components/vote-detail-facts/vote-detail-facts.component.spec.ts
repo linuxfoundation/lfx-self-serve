@@ -104,6 +104,19 @@ describe('VoteDetailFactsComponent', () => {
     expect(rules()).toEqual(getVoteVisibilityRules('creator', true, true));
   });
 
+  it.each(['creator', 'voter'] as const)('shows pending visibility copy for %s until held results are released', (audience) => {
+    fixture.componentRef.setInput('resultsHeld', true);
+    render(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }), audience);
+
+    expect(rules()[0]).toBe('Voting has closed. Totals and comments will appear once they are finalized.');
+    expect(rules().join(' ')).not.toContain('see the final totals');
+    expect(rules()).toContain('No one sees how another voter voted on this page.');
+
+    fixture.componentRef.setInput('resultsHeld', false);
+    fixture.detectChanges();
+    expect(rules()[0]).toContain('see the final totals and comments.');
+  });
+
   it('tells a manager of an open pseudo-anonymous vote that totals and comments wait for close (#3916)', () => {
     render(makeVote({ status: PollStatus.ACTIVE, pseudo_anonymity: true }), 'creator');
 

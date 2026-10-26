@@ -835,15 +835,19 @@ export function canVoterFetchVoteResults(
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
  * @param ballotsAvailable - Whether the vote is open or ended, so managers can use the Voters tab now
+ * @param resultsHeld - Whether totals and comments are still withheld after the vote ends
  */
 export function getVoteVisibilityRules(
   audience: 'voter' | 'creator',
   pseudoAnonymous: boolean | null | undefined,
   isClosed: boolean,
-  ballotsAvailable = true
+  ballotsAvailable = true,
+  resultsHeld = false
 ): string[] {
   const rules: string[] = [];
-  if (audience === 'creator') {
+  if (isClosed && resultsHeld) {
+    rules.push('Voting has closed. Totals and comments will appear once they are finalized.');
+  } else if (audience === 'creator') {
     rules.push(isClosed ? 'As a manager, you can see the final totals and comments.' : creatorOpenVisibilityRule(pseudoAnonymous));
     rules.push(isClosed ? 'Invited voters now see the final totals and comments.' : 'Voters see only their own response until the vote closes.');
   } else {

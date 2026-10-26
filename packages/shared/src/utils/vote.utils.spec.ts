@@ -1100,6 +1100,17 @@ describe('voter results helpers', () => {
       expect(getVoteVisibilityRules('creator', true, true)[0]).toBe('As a manager, you can see the final totals and comments.');
     });
 
+    it.each(['creator', 'voter'] as const)('holds the visibility promise for %s until closed results are released', (audience) => {
+      const rules = getVoteVisibilityRules(audience, true, true, true, true);
+
+      expect(rules).toEqual([
+        'Voting has closed. Totals and comments will appear once they are finalized.',
+        'No one sees how another voter voted on this page.',
+        'Pseudo-anonymous ballot: results are shown without voter names.',
+      ]);
+      expect(getVoteVisibilityRules(audience, true, true, true, false)[0]).toContain('see the final totals and comments.');
+    });
+
     it('tells managers they see live totals while voters wait for close', () => {
       expect(getVoteVisibilityRules('creator', false, false)).toEqual([
         'As a manager, you can follow live totals and comments until the vote closes.',
