@@ -24,7 +24,8 @@ import {
   findMember360Questions,
   member360TerminalResult,
 } from '@lfx-one/shared/server';
-import { extractMktgToolResults } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { extractMktgToolResults, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -100,12 +101,15 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
-      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
+        return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      }
       const failed = member360TerminalResult(payloads, contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
+      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
       return { status: 'pending', activity: buildMktgRunActivity(payloads) };
     }
     const type = findMktgDocumentType('member-360');

@@ -607,6 +607,10 @@ describe('MktgDocumentViewComponent', () => {
       .mockReturnValueOnce(throwError(() => new TimeoutError()))
       .mockReturnValueOnce(completion);
     await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-document-view-error')?.textContent).toContain('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+    expect(query('member-360-failure-details')).toBeNull();
+    expect(query('member-360-run-again')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
     const retry = query('mktg-document-view-retry')?.querySelector('button');
     if (!retry) throw new Error('Missing synthetic timeout Retry');
     retry.click();
@@ -625,6 +629,26 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-run-activity-title')).not.toBeNull();
     expect(store.getDocument).not.toHaveBeenCalled();
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it('clears the questions prompt and reads the document once when the open poll becomes ready', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(completion);
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    completion.next({ status: 'needs_input' });
+    await settle();
+    expect(query('member-360-needs-input')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).not.toHaveBeenCalled();
+    completion.next({ status: 'ready', stored: true });
+    completion.complete();
+    await settle();
+    expect(query('member-360-needs-input')).toBeNull();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(store.getDocument).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567');
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a questions turn open with the feed instead of an error or stored result', async () => {

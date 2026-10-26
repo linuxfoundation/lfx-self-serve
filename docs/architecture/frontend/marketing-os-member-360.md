@@ -65,16 +65,32 @@ registered document type; phases and an expandable step list show progress, with
 questions phase for the 1.0 form-only intake. A 2.0 text turn headed by the questions
 marker returns only `needs_input` and activity (no question text) without persisting a document. The generating view retains
 the feed and states that this page cannot answer yet and the run stays open; polling
-stops without discarding the pending session. There is no question parser or answer UI.
+continues without discarding the pending session until the run is stored or fails.
+There is no question parser or answer UI.
 Entity document-title
 binding is limited to Member 360, leaving other document title behavior unchanged. Pending capabilities
 are stored only in tab-scoped session storage, keyed by effective user, project and
 document, and expire after the shared run-storage TTL. Owner tokens never enter URLs.
 The BFF domain-separates them from chat and binds them to the user, project and session.
 Polling uses `exhaustMap` so slow result requests cannot overlap or be cancelled by a
-tick. Activity updates do not release the storage gate. Transient failures become
+tick. Result checks run every five seconds, backing off to thirty seconds while the
+run waits for input, within the absolute two-hour ceiling from the run's start. Activity updates do not release the storage gate. Transient failures become
 pending ticks without erasing the last successful feed; authorization errors fail
 fast and the overall deadline remains bounded.
+
+Member 360 fails only when Guild confirms the session ended without a valid result;
+error-typed events alone remain pending, and the shared settled-error overlay is not
+applied to this receiver. A questions turn stays `needs_input` through its own root
+`runtime_done`; only a later reply, a newer turn's completion or a session end
+recognized by the shared questions-precedence helper supersedes it. A status-only
+ended event does not currently supersede unanswered questions under that helper.
+Polling has a two-hour safety ceiling measured from the
+stored `startedAt`, not a fresh ten-minute timeout on navigation; this ceiling is
+absolute from the run's start, and questions do not extend it. Reaching the ceiling
+stops polling with a non-failure check-again notice and retains the pending capability.
+After that ceiling, reload or Retry makes one result check without restarting the
+polling window; a nonterminal response keeps the capability and shows the notice again.
+Only a ready or failed result (or a permanent transport error) forgets it.
 
 The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes parsed files into the tracker FormControl, with synthetic stable IDs independent of filenames. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
 

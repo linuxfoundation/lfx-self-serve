@@ -4,7 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
-import { MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS, MEMBER_360_RUN_CEILING_MS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,7 +27,7 @@ describe('Member360Service workbook transport', () => {
     sessionStorage.clear();
   });
   function startPending(onActivity?: Parameters<Member360Service['waitForStored']>[2]) {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
     api.generate({ project: 'sample-project' }).subscribe();
     http
       .expectOne('/api/mktg-agents/member-360/generate')
@@ -99,14 +99,62 @@ describe('Member360Service workbook transport', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
-  it('stops polling on needs_input without forgetting the open run', () => {
+  it('keeps polling after needs_input without forgetting the open run', () => {
     const received = vi.fn();
-    startPending().subscribe(received);
+    const completed = vi.fn();
+    startPending().subscribe({ next: received, complete: completed });
     vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
-    expect(received).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_input' }));
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'needs_input' });
+    expect(completed).not.toHaveBeenCalled();
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS - MKTG_RUN_POLL.intervalMs - 1);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(1);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
+    expect(received).toHaveBeenNthCalledWith(2, { status: 'ready', stored: true });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('completes and forgets the open run when needs_input is followed by failed', () => {
+    const received = vi.fn();
+    const completed = vi.fn();
+    startPending().subscribe({ next: received, complete: completed });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'needs_input' });
+    expect(completed).not.toHaveBeenCalled();
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS - MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'failed' });
+    expect(received).toHaveBeenNthCalledWith(2, { status: 'failed' });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('keeps the absolute ceiling and pending capability despite needs_input on every interval', () => {
+    const received = vi.fn();
+    const error = vi.fn();
+    startPending().subscribe({ next: received, error });
+    const startedAt = Date.now();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    while (Date.now() < startedAt + MEMBER_360_RUN_CEILING_MS) {
+      http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+      expect(error).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(Math.min(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS, startedAt + MEMBER_360_RUN_CEILING_MS - Date.now()));
+    }
+    expect(received.mock.calls.length).toBeGreaterThan(1);
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
   it.each([400, 401, 403, 404])('forgets the capability on a permanent %s result error', (status) => {
@@ -125,23 +173,85 @@ describe('Member360Service workbook transport', () => {
     http.expectNone('/api/mktg-agents/member-360/result');
   });
 
-  it('retains the capability after a poll timeout so a reload can resume', () => {
+  it.each([0, 50 * 60_000])('keeps polling past ten minutes with a ceiling from startedAt after a %sms reload', (elapsed) => {
+    startPending();
+    vi.advanceTimersByTime(elapsed);
+    const reloaded = TestBed.runInInjectionContext(() => new Member360Service());
     const error = vi.fn();
-    startPending().subscribe({ error });
+    reloaded.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error });
     vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
     const request = http.expectOne('/api/mktg-agents/member-360/result');
-    request.flush({ status: 'pending' });
     vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    const cancelled = http.match('/api/mktg-agents/member-360/result');
-    expect(cancelled.every((request) => request.cancelled)).toBe(true);
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(error).not.toHaveBeenCalled();
+    expect(request.cancelled).toBe(false);
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS - elapsed - MKTG_RUN_POLL.initialDelayMs - MKTG_RUN_POLL.timeoutMs - 1);
+    expect(error).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(request.cancelled).toBe(true);
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(reloaded.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    const expired = vi.fn();
+    reloaded.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error: expired });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(expired).not.toHaveBeenCalled();
+    check.flush({ status: 'pending' });
+    expect(expired).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(reloaded.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('delivers a stored result from one slow check after the ceiling and forgets the pending run', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS + 1);
+    const received = vi.fn();
+    const completed = vi.fn();
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ next: received, complete: completed, error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    expect(check.cancelled).toBe(false);
+    expect(error).not.toHaveBeenCalled();
+    http.expectNone('/api/mktg-agents/member-360/result');
+    check.flush({ status: 'ready', stored: true });
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'ready', stored: true });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    expect(sessionStorage.length).toBe(0);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('makes one result check when subscribed a second before the ceiling, then retains a nonterminal run', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS - 1000);
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(error).not.toHaveBeenCalled();
+    check.flush({ status: 'pending' });
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('bounds an expired one-shot request without forgetting the pending run when the BFF never responds', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS + 1);
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(error).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    expect(check.cancelled).toBe(true);
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
     expect(sessionStorage.length).toBe(1);
-    const resume = api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe();
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
-    expect(resume.closed).toBe(true);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
   });
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
     const filename = 'Q3+sponsors — draft.csv';
