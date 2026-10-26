@@ -547,6 +547,25 @@ describe('VoteVotersComponent', () => {
       expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (2)', 'Responded (2)', 'Not responded (0)']);
     });
 
+    it('clears the participation status and role filters back to all voters', async () => {
+      const { fixture, component } = await mountPseudo();
+      current = fixture;
+
+      expect(component['participationStatusFilter']()).toBe('all');
+      component['onStatusFilterChange']('responded');
+      component['filterForm'].controls.role.setValue('Voting Rep');
+      await settle(fixture);
+      expect(rowUids(fixture)).toEqual(['0', '1']);
+
+      component['clearFilters']();
+      await settle(fixture);
+
+      expect(component['participationStatusFilter']()).toBe('all');
+      expect(component['filterForm'].controls.role.value).toBeNull();
+      expect(rowUids(fixture)).toEqual(['0', '1', '2']);
+      expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (3)', 'Responded (2)', 'Not responded (1)']);
+    });
+
     it('ignores the voters_choice and voters_ballot deep links', async () => {
       const { fixture, component, open } = await mountPseudo({ initialChoice: 'q-1:c-yes', initialBallotUid: 'b-avery' });
       current = fixture;

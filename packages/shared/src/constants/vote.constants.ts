@@ -113,6 +113,9 @@ export const VOTE_VOTER_STATUS_FILTER_LABELS: Record<VoteVoterStatusFilter, stri
   [VoteVoterStatus.NOT_VOTED]: 'Not voted yet',
 };
 
+/** Status pill shown when no participation status filter is applied on the pseudo-anonymous Voters tab (#3916). */
+export const VOTE_PARTICIPATION_ALL_STATUS_FILTER: VoteParticipationStatusFilter = 'all';
+
 /** Status pill and Status column labels on the participation-only Voters tab of a pseudo-anonymous vote (#3916). */
 export const VOTE_PARTICIPATION_STATUS_FILTER_LABELS: Record<VoteParticipationStatusFilter, string> = {
   all: 'All',

@@ -14,6 +14,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  VOTE_PARTICIPATION_ALL_STATUS_FILTER,
   VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
@@ -112,7 +113,7 @@ export class VoteVotersComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly loadError = signal<boolean>(false);
   protected readonly statusFilter = signal<VoteVoterStatusFilter>(VOTE_VOTERS_ALL_STATUS_FILTER);
-  protected readonly participationStatusFilter = signal<VoteParticipationStatusFilter>('all');
+  protected readonly participationStatusFilter = signal<VoteParticipationStatusFilter>(VOTE_PARTICIPATION_ALL_STATUS_FILTER);
   /** First row of the table page, reset to 0 whenever a filter changes. */
   protected readonly tableFirst = signal<number>(0);
   protected readonly selectedPageSize = signal<number>(VOTE_VOTERS_PAGE_SIZE);
@@ -166,7 +167,7 @@ export class VoteVotersComponent {
   protected readonly participationFilteredRows: Signal<VoteParticipationVoterRowView[]> = computed(() => {
     const status = this.participationStatusFilter();
     const rows = this.participationMatchingRows();
-    return status === 'all' ? rows : rows.filter((row) => row.status === status);
+    return status === VOTE_PARTICIPATION_ALL_STATUS_FILTER ? rows : rows.filter((row) => row.status === status);
   });
   protected readonly participationStatusCounts: Signal<VoteParticipationStatusCounts> = computed(() =>
     countVoteParticipationByStatus(this.participationMatchingRows())
@@ -209,7 +210,7 @@ export class VoteVotersComponent {
   protected clearFilters(): void {
     this.filterForm.reset({ search: '', role: null, choice: null });
     this.statusFilter.set(VOTE_VOTERS_ALL_STATUS_FILTER);
-    this.participationStatusFilter.set('all');
+    this.participationStatusFilter.set(VOTE_PARTICIPATION_ALL_STATUS_FILTER);
     this.tableFirst.set(0);
   }
 
