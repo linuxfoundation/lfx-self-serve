@@ -15,8 +15,10 @@ import {
   BRAND_KIT_INTAKE,
   ICP_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
@@ -339,6 +341,17 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
   }
 
+  it('names the route asset in the crumb before its loading or generating document arrives', async () => {
+    store.getDocument.mockReturnValue(new Subject<MktgDocumentDetailResponse>());
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing loading asset receiver');
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+    component['generating'].set(true);
+    await settle();
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+  });
+
   it('renders stored LinkedIn options and its saved link with the shared copy cards', async () => {
     const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
     if (!type) throw new Error('Missing LinkedIn test document type');
@@ -511,7 +524,7 @@ describe('MktgDocumentViewComponent', () => {
       ['linkedin-post'],
       expect.objectContaining({
         queryParams: { profile: 'edit', revision: null, type: null },
-        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       })
     );
   });
@@ -522,8 +535,35 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
     expect(navigate).toHaveBeenCalledWith(
       ['linkedin-post'],
-      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { project: PROJECT.slug, mode: null, ...MKTG_RUN_RESUME_QUERY_CLEAR } })
     );
+  });
+
+  it('replaces the automatic questions leg with a scoped continuation URL', async () => {
+    await render('/documents/brand-kit/living?tab=sources&profile=edit');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing questions receiver');
+    const questions = {
+      attempt: { session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-question-session', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+      questionsId: 'synthetic-q',
+      questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
+    };
+    const pending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+      attempt: questions.attempt,
+      pendingQuestions: questions,
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.prepare).mockReturnValue('synthetic-q-token');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onProgress']({ type: 'questions', pending: questions }, pending);
+    expect(navigate).toHaveBeenCalledWith([expect.any(String), BRAND_KIT_INTAKE.agentId], {
+      queryParams: { project: PROJECT.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: 'synthetic-q-token', mode: null },
+      replaceUrl: true,
+    });
+    expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
   });
 
   it('keeps Markdown-only LinkedIn revisions readable without inventing structured cards', async () => {
@@ -1131,6 +1171,52 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['submittingGeneration']()).toBe(false);
   });
 
+  it.each(['b'.repeat(64), '', 'c'.repeat(64)])('confirms a fast completed receipt only for its explicit run selector (%s)', async (selector) => {
+    const pending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+      attempt: {
+        session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-fast-run', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+        runId: 'b'.repeat(64),
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const service = TestBed.inject(MktgAgentRunService);
+    vi.mocked(TestBed.inject(MktgRunAttemptService).load).mockReturnValue(pending);
+    const progress = new Subject<MktgGenerateProgress>();
+    vi.mocked(service.resume).mockReturnValue(progress);
+    await render('/documents/brand-kit/living' + (selector ? '?run=' + selector : ''));
+    if (selector !== pending.attempt?.runId) {
+      expect(service.resume).not.toHaveBeenCalled();
+      return;
+    }
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    const completed: MktgStoredAgentRun = {
+      agentId: BRAND_KIT_INTAKE.agentId,
+      projectUid: PROJECT.uid,
+      sessionId: 'synthetic-fast-run',
+      ownerToken: 'synthetic-proof',
+      answers: {},
+      savedAt: pending.updatedAt,
+      versions: [
+        {
+          version: 1,
+          document: '# Exact fast result',
+          createdAt: pending.updatedAt,
+          documentLocation: { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId: OLDER.id },
+        },
+      ],
+    };
+    progress.next(mktgRunProgressFixture('document', completed, 1));
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ revision: OLDER.id, mode: null }) })
+    );
+  });
+
   it.each((['document', 'persisted'] as const).flatMap((event) => ['agent', 'project', 'document', 'valid'].map((binding) => ({ event, binding }))))(
     'binds a $event receipt to the requested catalog/project/document ($binding)',
     async ({ event, binding }) => {
@@ -1171,7 +1257,7 @@ describe('MktgDocumentViewComponent', () => {
       if (binding === 'valid') {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           [expect.any(String), 'documents', BRAND_KIT.agentKey, 'living'],
-          expect.objectContaining({ queryParams: expect.objectContaining({ revision: LATEST.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: LATEST.id, mode: null }) })
         );
         expect(changed).toHaveBeenCalledWith(PROJECT.uid);
       } else {
@@ -1213,7 +1299,7 @@ describe('MktgDocumentViewComponent', () => {
       if (receipted) {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           expect.anything(),
-          expect.objectContaining({ queryParams: expect.objectContaining({ revision: OLDER.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: OLDER.id, mode: null }) })
         );
       } else {
         expect(navigate).not.toHaveBeenCalled();
@@ -1439,20 +1525,36 @@ describe('MktgDocumentViewComponent', () => {
     ['brand-kit', 'Positioning & brand', 'positioning-brand'],
     ['linkedin-post', 'Social & community', 'social-community'],
     ['icp', 'Positioning & brand', 'positioning-brand'],
+    ['aeo-geo', 'Website & web', 'website-web'],
   ])('maps %s to fixed shared parents and a current asset crumb', async (key, familyName, familyId) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
     if (!type) throw new Error('Synthetic document type missing');
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
-    await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&revision=${LATEST.id}`);
+    const response = { ...revisionResponse(LATEST), type };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&type=${key}&revision=${LATEST.id}`);
     expect(query('mktg-document-view-back-link')).toBeNull();
     expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
     expect(query('mktg-breadcrumb-link-0')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=testorbit');
     expect(query('mktg-breadcrumb-link-1')?.textContent).toBe(familyName);
     expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe(`/project/mktg-os-agents/families/${familyId}?project=testorbit`);
-    expect(query('mktg-breadcrumb-current')?.textContent).toBe(type.itemLabel);
+    expect(query('mktg-breadcrumb-current')?.textContent).toBe(key === 'aeo-geo' ? `${type.itemLabel} · 13 Oct 2026` : type.itemLabel);
     expect(query('mktg-document-view-title')).not.toBeNull();
     // LinkedIn posts hide the revision chip (Joan's LinkedIn post board: no Approve, you finish by copying a post).
     expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
+  });
+
+  it('keeps the AEO/GEO crumb plain on an unparseable report date without throwing', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'aeo-geo');
+    if (!type) throw new Error('Synthetic AEO/GEO document type missing');
+    const response = { ...revisionResponse(LATEST), type };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/project/mktg-os-agents/documents/aeo-geo/living?project=proj-1');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['view'].set({ ...response, revision: { ...LATEST, createdAt: 'not-a-date' } });
+    expect(() => component['crumbs']()).not.toThrow();
+    expect(component['crumbs']().at(-1)?.label).toBe(type.itemLabel);
   });
 
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -14,6 +14,7 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
@@ -37,6 +38,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
+  MktgBreadcrumbItem,
   MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
@@ -220,6 +222,7 @@ export class MktgDocumentViewComponent {
   private readonly reloads = signal(0);
   private readonly handoffRunId = signal('');
   private readonly refreshedFailures = new Set<string>();
+  private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
 
@@ -239,9 +242,7 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), this.view()?.type.itemLabel ?? 'Document')
-  );
+  protected readonly crumbs = this.initCrumbs();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -482,6 +483,7 @@ export class MktgDocumentViewComponent {
               this.retrying.set(false);
               this.handoffRunId.set('');
               this.refreshedFailures.clear();
+              this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
               this.notice.set('');
               this.restoringId.set(null);
@@ -574,6 +576,7 @@ export class MktgDocumentViewComponent {
             if (prepared) {
               this.localProgress.set('writing');
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
+              if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
@@ -713,9 +716,17 @@ export class MktgDocumentViewComponent {
                     take(1),
                     switchMap(() => {
                       const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
-                      if (recorded?.state !== 'writing' && recorded?.state !== 'storing') return EMPTY;
-                      this.localProgress.set('writing');
-                      this.handoffRunId.set(recorded.runId);
+                      const active = recorded?.state === 'writing' || recorded?.state === 'storing';
+                      // The accepted run may have finished before this first metadata read. Confirm its
+                      // private result receipt instead of silently treating whichever revision is current as its output.
+                      const finishedBeforeRead =
+                        !recorded &&
+                        !this.preparedRunIds.has(request.runId) &&
+                        request.runId === recoverable.attempt?.runId &&
+                        !!this.runDetail()?.revisions.length;
+                      if (!active && !finishedBeforeRead) return EMPTY;
+                      if (active) this.localProgress.set('writing');
+                      this.handoffRunId.set(recoverable.attempt?.runId ?? '');
                       return resume({ ...recoverable, request: { ...recoverable.request, intake } });
                     })
                   )
@@ -896,7 +907,7 @@ export class MktgDocumentViewComponent {
     if (!this.linkedinContent()?.isAuthor) return;
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       queryParams: { profile: 'edit', revision: null, type: null },
       queryParamsHandling: 'merge',
     });
@@ -960,8 +971,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: { profile: null, revision: null, type: null },
-      queryParamsHandling: 'merge',
+      queryParams: this.runAgainParams(),
     });
   }
 
@@ -1125,6 +1135,18 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  private initCrumbs(): Signal<MktgBreadcrumbItem[]> {
+    return computed(() => {
+      const view = this.view();
+      let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
+      const createdAt = view?.revision.createdAt;
+      if (view?.type.agentKey === 'aeo-geo' && typeof createdAt === 'string' && createdAt.trim() && !Number.isNaN(Date.parse(createdAt))) {
+        label += ` · ${formatDate(createdAt, 'd MMM y', 'en-US', 'UTC')}`;
+      }
+      return mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), label);
+    });
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
@@ -1183,6 +1205,7 @@ export class MktgDocumentViewComponent {
       const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
+        this.preparedRunIds.add(runId);
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { run: runId, generation: null },
@@ -1217,7 +1240,8 @@ export class MktgDocumentViewComponent {
       if (location) {
         this.localProgress.set(null);
         void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-          queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+          queryParams: { ...this.runAgainParams(), revision: location.revisionId, mode: null },
+          replaceUrl: true,
         });
       } else {
         this.localProgress.set('storing');
@@ -1234,6 +1258,7 @@ export class MktgDocumentViewComponent {
       const token = this.attempts.prepare(pending.request, true);
       void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
         queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
+        replaceUrl: true,
       });
     }
   }
