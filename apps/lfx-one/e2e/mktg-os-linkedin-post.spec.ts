@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
-import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
+import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants';
+import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
 import {
   createLinkedinRuns,
   json,
@@ -635,7 +635,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page).toHaveURL(documentUrl);
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
     await page.getByTestId('mktg-linkedin-draft-another').click();
-    await expect(page).not.toHaveURL(/[?&](profile=edit|mode=)/);
+    await expect(page).not.toHaveURL(/[?&]profile=edit/);
+    await expect(page).toHaveURL(/[?&]mode=new/);
     await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('');
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
     await page.reload();

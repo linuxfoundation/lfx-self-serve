@@ -13,7 +13,7 @@ test.describe('Marketing family content', () => {
   });
   for (const loaded of [false, true]) {
     for (const mount of ['project', 'foundation'] as const) {
-      test(`${mount}: every eligible living row opens a fresh intake without generation (loaded=${loaded})`, async ({ page }) => {
+      test(`${mount}: only unbuilt living rows offer fresh intake (loaded=${loaded})`, async ({ page }) => {
         await setupKit(page, { loaded, approvedFramework: loaded });
         const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === 'positioning-brand');
         if (!family) throw new Error('Missing registered synthetic family');
@@ -29,12 +29,16 @@ test.describe('Marketing family content', () => {
         for (const { asset, agent } of eligible) {
           await openKit(page, '/families/positioning-brand', mount);
           const row = page.getByTestId(`mktg-family-asset-${asset.id}`);
-          if (!loaded && MKTG_AGENT_INTAKES[agent.id].attachments?.some((attachment) => attachment.format === 'json' && !attachment.optional)) {
+          if (loaded) {
+            await expect(row.locator('lfx-button')).toHaveCount(0);
+            continue;
+          }
+          if (MKTG_AGENT_INTAKES[agent.id].attachments?.some((attachment) => attachment.format === 'json' && !attachment.optional)) {
             await expect(row.getByTestId(`mktg-family-run-${asset.id}`).getByRole('button')).toBeDisabled();
             continue;
           }
           const action = row.getByTestId(`mktg-family-run-${asset.id}`).getByRole('link');
-          await expect(action).toContainText(loaded ? 'Run again' : 'Run ' + (asset.runName ?? asset.label));
+          await expect(action).toContainText('Run ' + (asset.runName ?? asset.label));
           const href = new URL((await action.getAttribute('href')) ?? '', page.url());
           expect(href.searchParams.get('mode')).toBe('new');
           expect(href.searchParams.get('project')).toBe(KIT_PROJECT.slug);
@@ -60,8 +64,9 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-messaging-framework')).toContainText('v3');
     await expect(page.getByTestId('mktg-family-current-messaging-framework')).not.toContainText('v12');
     await expect(page.getByTestId('mktg-family-asset-boilerplates')).toContainText('Draft');
-    await expect(page.getByTestId('mktg-family-run-messaging-framework').getByRole('link')).toHaveAttribute('href', /mode=new/);
-    await expect(page.getByTestId('mktg-family-run-boilerplates').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-family-assets').locator('lfx-button')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Review 4 drafts');
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAttribute('href', /documents\/foundation-message\/living\?project=/);
     await expect(page.getByTestId('mktg-family-asset-icp')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-sources')).toContainText('Sources read on the last run: project.example, Synthetic plan.');
     await expect(page.getByTestId('mktg-family-sources')).toContainText('2 sources failed: README: Timed out; Analyst note: Login required.');
@@ -74,6 +79,33 @@ test.describe('Marketing family content', () => {
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
     await expect(page.getByTestId('mktg-family-exports')).toContainText("Exports use the family's approved current assets.");
   });
+  test('a blocked next step links to the document that needs approval', async ({ page }) => {
+    const listing = kitDocuments(true);
+    for (const group of listing.groups) if (group.type.agentKey !== 'foundation-message') group.documents = [];
+    await setupKit(page, { listing });
+    await openKit(page, '/families/positioning-brand');
+    const primary = page.getByTestId('mktg-family-run').getByRole('link');
+    await expect(primary).toHaveText('Review and approve the messaging framework');
+    await primary.click();
+    await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('family-approve-next.png'), fullPage: true });
+  });
+  for (const stale of [false, true]) {
+    test(`approved living assets have ${stale ? 'an Update primary' : 'no unnecessary primary'}`, async ({ page }) => {
+      const listing = kitDocuments(true);
+      const ref = { agentKey: 'foundation-message' as const, revisionId: '000003-' + 'a'.repeat(64), revisionNumber: 3, contentSha256: 'a'.repeat(64) };
+      for (const group of listing.groups)
+        for (const document of group.documents) {
+          document.approvedCurrent = { revisionId: document.latestRevisionId, number: 3 };
+          if (stale && group.type.agentKey === 'boilerplates') document.needsRebuild = { builtFrom: ref, rebuildFrom: { ...ref, revisionNumber: 4 } };
+        }
+      await setupKit(page, { listing, approvedFramework: true });
+      await openKit(page, '/families/positioning-brand');
+      if (stale) await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toHaveText('Update boilerplates');
+      else await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
+      await page.screenshot({ path: test.info().outputPath(`family-approved-${stale}.png`), fullPage: true });
+    });
+  }
   test('family breadcrumb returns to the kit instead of the last stored asset', async ({ page }) => {
     await setupKit(page, { loaded: true });
     await openKit(page, '/families/positioning-brand');
@@ -126,7 +158,7 @@ test.describe('Marketing family content', () => {
   test('runs the family’s next agent without making a live generation request', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/positioning-brand');
-    await expect(page.getByTestId('mktg-family-run-next')).toHaveText('Next: Messaging framework');
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create messaging framework');
     await page.getByTestId('mktg-family-run').getByRole('link').click();
     await expect(page).toHaveURL(/\/mktg-os-agents\/foundation-setup\?project=/);
     await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
@@ -140,7 +172,7 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
     for (const id of ['faq', 'boilerplates', 'brand-kit']) {
       await expect(page.getByTestId(`mktg-family-run-${id}`).getByRole('button')).toBeDisabled();
-      await expect(page.getByTestId(`mktg-family-run-${id}`).getByRole('link')).toHaveCount(0);
+      await expect(page.getByTestId(`mktg-family-run-reason-${id}`)).toContainText('Approve the messaging framework first');
     }
     await expect(page.getByTestId('mktg-family-run-messaging-framework').getByRole('link')).toHaveAttribute('href', /mode=new/);
   });
@@ -209,30 +241,29 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('labels disabled and active Run controls with no rebuild outside Positioning', async ({ page }) => {
+  test('hides coming-soon primary actions and names the available one-off Create step', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
-    await expect(page.getByTestId('mktg-family-run').getByRole('button')).toBeDisabled();
-    await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveText('Coming soon');
+    await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Coming soon');
     await expect(page.getByTestId('mktg-family-run-aeo-geo')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
-    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Run next agent: Member 360');
-    await expect(page.getByTestId('mktg-family-run-next')).toHaveText('Next: Member 360');
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create Member 360');
+    await expect(page.getByTestId('mktg-family-run-next')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-coming-soon')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-asset-member-360')).toBeVisible();
   });
   for (const [familyId, agentId, label] of [
-    ['social-community', 'linkedin-post', 'LinkedIn posts'],
+    ['social-community', 'linkedin-post', 'LinkedIn post'],
     ['member-sponsor', 'member-360', 'Member 360'],
   ]) {
-    test(`${familyId} offers row Run then Run again and the same header priority`, async ({ page }) => {
+    test(`${familyId} keeps Create and moves built-row entry to the document`, async ({ page }) => {
       const listing = kitDocuments(false);
       await setupKit(page, { listing });
       await openKit(page, '/families/' + familyId);
-      await expect(page.getByTestId('mktg-family-run-next')).toHaveText('Next: ' + label);
+      await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create ' + label);
       const action = page.getByTestId(`mktg-family-run-${agentId}`).getByRole('link');
       await expect(action).toHaveText('Run ' + label);
       await expect(action).toHaveAttribute(
@@ -253,8 +284,9 @@ test.describe('Marketing family content', () => {
         updatedAt: null,
       });
       await openKit(page, '/families/' + familyId);
-      await expect(action).toHaveText('Run again');
-      await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Run ' + label);
+      await expect(action).toHaveCount(0);
+      await expect(page.getByTestId(`mktg-family-open-${agentId}`)).toBeVisible();
+      await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create ' + label);
       await expect(page.getByTestId('mktg-family-run-next')).toHaveCount(0);
       await page.screenshot({ path: test.info().outputPath(`family-${agentId}-run-again.png`), fullPage: true });
     });
@@ -263,7 +295,7 @@ test.describe('Marketing family content', () => {
     { name: 'last URL inputs', source: 'url', value: 'https://source.example/previous', share: '' },
     { name: 'oversized text re-entry', source: 'text', value: '', share: 'https://current.example/' },
   ]) {
-    test(`LinkedIn Run again opens ${entry.name} without starting a run`, async ({ page }) => {
+    test(`LinkedIn Draft another opens ${entry.name} without starting a run`, async ({ page }) => {
       const answers: Record<string, string> = { content_source: entry.source, share_link: entry.share };
       if (entry.source === 'url') answers['content_url'] = entry.value;
       await setupKit(page, {
@@ -281,7 +313,8 @@ test.describe('Marketing family content', () => {
         route.fulfill({ json: { profile: { profile, profile_markdown: '# Synthetic profile' } } })
       );
       await openKit(page, '/families/social-community');
-      await page.getByTestId('mktg-family-run-linkedin-post').getByRole('link', { name: 'Run again' }).click();
+      await page.getByTestId('mktg-family-open-linkedin-post').click();
+      await page.getByTestId('mktg-linkedin-draft-another').getByRole('button').click();
       await expect(page).toHaveURL(/linkedin-post\?project=kit-synthetic-project&mode=new$/);
       await expect(page.getByTestId(`mktg-linkedin-source-${entry.source}`)).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByRole('textbox', { name: 'The content to post about', exact: true })).toHaveValue(entry.value);
@@ -292,10 +325,10 @@ test.describe('Marketing family content', () => {
     });
   }
   test('header and row Run links preserve native modifier clicks with project and fresh mode', async ({ page, context }) => {
-    await setupKit(page, { loaded: true, approvedFramework: true });
+    await setupKit(page);
     await openKit(page, '/families/positioning-brand');
     const action = page.getByTestId('mktg-family-run').getByRole('link');
-    await expect(action).toHaveText('Run messaging framework');
+    await expect(action).toHaveText('Create messaging framework');
     const href = `/project/mktg-os-agents/foundation-setup?project=${KIT_PROJECT.slug}&mode=new`;
     await expect(action).toHaveAttribute('href', href);
     // Stub only the new tab's document navigation; no live session or generation is needed to prove native linking.
@@ -317,24 +350,13 @@ test.describe('Marketing family content', () => {
     }
     await page.screenshot({ path: test.info().outputPath('family-header-native-link.png'), fullPage: true });
   });
-  for (const [familyId, label] of [
-    ['positioning-brand', 'Run messaging framework'],
-    ['social-community', 'Run LinkedIn posts'],
-  ]) {
-    test(`a denied ${familyId} listing keeps board Run copy and keyboard-accessible write reason`, async ({ page }) => {
+  for (const familyId of ['positioning-brand', 'social-community']) {
+    test(`a denied ${familyId} listing hides primary actions and private state`, async ({ page }) => {
       await setupKit(page, { writer: false });
       await openKit(page, '/families/' + familyId);
-      const action = page.getByTestId('mktg-family-run');
-      await expect(action.getByRole('button')).toBeDisabled();
-      await expect(action.getByRole('button')).toHaveText(label);
-      await expect(action.getByRole('button')).toHaveAccessibleName(`${label} (You need write access to this project to run its agents)`);
-      const reason = page.getByTestId('mktg-family-run-blocked');
-      await expect(reason).toHaveRole('note');
-      await expect(reason).toHaveAttribute('aria-label', 'You need write access to this project to run its agents');
+      await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
       await expect(page.getByTestId('mktg-family-error')).toContainText('write access');
       await expect(page.getByTestId('mktg-family-assets')).toHaveCount(0);
-      await reason.focus();
-      await expect(page.getByRole('tooltip')).toContainText('You need write access to this project to run its agents');
       await page.screenshot({ path: test.info().outputPath(`family-reader-run-${familyId}.png`), fullPage: true });
     });
   }

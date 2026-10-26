@@ -405,10 +405,10 @@ describe('MktgDocumentViewComponent', () => {
       },
     };
   }
-  async function renderLinkedin(response: MktgRevisionResponse): Promise<void> {
+  async function renderLinkedin(response: MktgRevisionResponse, urlQuery = ''): Promise<void> {
     store.getDocument.mockReturnValueOnce(of(response));
     store.getRevision.mockReturnValueOnce(of(response));
-    await render(`/documents/linkedin-post/${response.documentId}`);
+    await render(`/documents/linkedin-post/${response.documentId}${urlQuery}`);
   }
   it('preserves other answer keys after a share-link Enter save without adding a nested main landmark', async () => {
     const response = linkedinResponse('https://public.example/original');
@@ -558,13 +558,13 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
-  it('explicitly drops profile-edit and fresh-entry mode when drafting another post', async () => {
-    await renderLinkedin(linkedinResponse());
+  it.each(['', '?mode=new', '?mode=old'])('Draft another explicitly restores last inputs independently of the current URL (%s)', async (urlQuery) => {
+    await renderLinkedin(linkedinResponse(), urlQuery);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
     expect(navigate).toHaveBeenCalledWith(
       ['linkedin-post'],
-      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null, mode: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null, mode: 'new' }, queryParamsHandling: 'merge' })
     );
   });
 

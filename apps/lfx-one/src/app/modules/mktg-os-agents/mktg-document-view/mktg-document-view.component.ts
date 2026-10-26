@@ -911,7 +911,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: { profile: null, revision: null, type: null, mode: null },
+      queryParams: { profile: null, revision: null, type: null, mode: mktgRunModeFor(LINKEDIN_POST_INTAKE.agentId) },
       queryParamsHandling: 'merge',
     });
   }
