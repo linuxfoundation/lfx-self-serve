@@ -647,6 +647,39 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
 
     expect(rows).toHaveLength(2);
   });
+
+  // The All Employees page trusts a live row's username for the former-employee join only when the row's
+  // first source (the one that created it) is a seat or an access principal. That rests on the merge order
+  // here (stored, seats, key contacts, access) and on `sources` surviving the compact cache in order.
+  it('lists the creating source first, through the cache too', async () => {
+    const keyContact = (email: string, lfUsername: string): KeyContactEmployee => ({
+      email,
+      firstName: 'Kim',
+      lastName: 'Contact',
+      fullName: 'Kim Contact',
+      jobTitle: null,
+      initials: 'KC',
+      lfUsername,
+    });
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: 'rvega', email: 'rvega@example.com', first_name: 'Rowan', last_name: 'Vega' })]);
+    getKeyContactEmployees.mockResolvedValue([keyContact('kim@example.com', 'kim-resolved'), keyContact('rvega@example.com', 'rvega-resolved')]);
+    getAccessPrincipals.mockResolvedValue([
+      accessUser({ email: 'kim@example.com', username: null, inviteStatus: 'pending', isPending: true }),
+      accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke' }),
+    ]);
+    cache.serveHits = true;
+
+    const miss = await run();
+    const hit = await run();
+
+    for (const { rows } of [miss, hit]) {
+      const byUsername = new Map(rows.map((row) => [row.lfUsername, row]));
+      expect(byUsername.get('kim-resolved')?.sources).toEqual(['keyContact', 'access']);
+      expect(byUsername.get('rvega')?.sources).toEqual(['committee', 'keyContact']);
+      expect(byUsername.get('dclarke')?.sources).toEqual(['snowflake', 'access']);
+    }
+  });
 });
 
 describe('OrgPeopleDirectoryService.merge — no regression for single-source people', () => {

@@ -449,6 +449,36 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
     });
 
+    it('shows someone on both warehouse rosters (one cache stale after a build) once, as the stored current row, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      snowflake$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', commitsCount: 4 }),
+            row('p-7', 'Alan Turing', { lfUsername: 'alan', commitsCount: 2 }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      former$.next(
+        response(
+          [
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 }),
+            row('p-8', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 2 }),
+          ],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-7', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual([]);
+      expect(activeStat()).toContain('3');
+    });
+
     it("never joins the previous account's live roster to the next account's former employees during a switch", async () => {
       await mount('browser', '/?employment=former');
       await answerCurrent();

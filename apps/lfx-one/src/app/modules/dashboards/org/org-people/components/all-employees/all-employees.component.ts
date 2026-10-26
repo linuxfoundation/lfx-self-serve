@@ -373,6 +373,9 @@ export class AllEmployeesComponent {
    * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
    *   activity plus the live sources, seats and access badge, untagged.
    * - With only Org Lens access, they are still former: the former row, carrying the access badge.
+   * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
+   * be stale. Under "All", someone on both is shown once, as the stored current row (matched on person key or
+   * the stored username).
    * Rows are only reconciled once both reads belong to the selected account, so a previous account's live roster
    * never joins the next account's former employees.
    */
@@ -382,12 +385,18 @@ export class AllEmployeesComponent {
     const formerRows = this.showFormer() && this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
     const liveRows = current.accountId === accountId ? current.rows : [];
     const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
+    const storedKeys = new Set<string>();
     const liveRoles = new Map<string, OrgAllEmployeeRow>();
     const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
     const folded = new Set<OrgAllEmployeeRow>();
     for (const row of liveRows) {
-      if (!row.lfUsername || !formerUsernames.has(row.lfUsername)) continue;
       const [createdBy] = row.sources;
+      if (createdBy === 'snowflake') {
+        storedKeys.add(`key:${row.personKey}`);
+        if (row.lfUsername) storedKeys.add(`username:${row.lfUsername}`);
+        continue;
+      }
+      if (!row.lfUsername || !formerUsernames.has(row.lfUsername)) continue;
       if (createdBy !== 'board' && createdBy !== 'committee' && createdBy !== 'access') continue;
       if (row.sources.some((source) => source === 'board' || source === 'committee' || source === 'keyContact')) {
         liveRoles.set(row.lfUsername, row);
@@ -399,6 +408,7 @@ export class AllEmployeesComponent {
     const shownFormerRows: OrgAllEmployeeRow[] = [];
     const rejoinedRows: OrgAllEmployeeRow[] = [];
     for (const row of formerRows) {
+      if (this.showCurrent() && (storedKeys.has(`key:${row.personKey}`) || (row.lfUsername && storedKeys.has(`username:${row.lfUsername}`)))) continue;
       const role = row.lfUsername ? liveRoles.get(row.lfUsername) : undefined;
       const accessBadge = (row.lfUsername ? liveAccess.get(row.lfUsername) : undefined) ?? row.accessBadge;
       if (!role) {
