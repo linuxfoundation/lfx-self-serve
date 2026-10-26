@@ -77,6 +77,7 @@ const USERNAME = 'staffer';
  */
 const TEAM_REQUESTS = [
   { resource: 'team', id: 'lf-staff', access: 'member' },
+  { resource: 'team', id: 'global-org-auditors', access: 'member' },
   { resource: 'team', id: 'global_org_admin', access: 'member' },
   { resource: 'team', id: 'lf-contractor', access: 'member' },
 ];

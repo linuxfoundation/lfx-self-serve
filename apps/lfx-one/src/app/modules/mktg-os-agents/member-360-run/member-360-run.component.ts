@@ -11,10 +11,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import {
-  MKTG_AGENTS,
   MEMBER_360_INTRO,
   MEMBER_360_MAX_BYTES,
   MEMBER_360_MAX_TRACKERS,
@@ -72,14 +70,6 @@ export class Member360RunComponent {
   protected readonly latestPeriod = computed(() => this.latest()?.period.label.replace(/^(\d{4})-(Q[1-4])$/, '$2 $1') ?? '');
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(
-      'member-360',
-      this.context.activeContext()?.name ?? '',
-      mktgKitRootPath(this.router.url),
-      MKTG_AGENTS.find((agent) => agent.id === 'member-360')?.name ?? 'Member 360'
-    )
-  );
   private lastScope = '';
   private uploadSequence = 0;
   private nextTrackerId = 0;

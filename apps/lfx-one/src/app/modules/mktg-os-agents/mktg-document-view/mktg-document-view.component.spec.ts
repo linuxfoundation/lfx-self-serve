@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
-import { computed, linkedSignal, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { computed, linkedSignal, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
@@ -13,10 +13,13 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_INTAKE,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   ICP_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
@@ -29,6 +32,7 @@ import {
   MktgRevisionResponse,
   MktgStoredAgentRun,
   MktgRevisionSummary,
+  MktgRunActivity,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -43,6 +47,10 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
+import { MktgPrintService } from '@services/mktg-print.service';
+// package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
+import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +62,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 import { Title } from '@angular/platform-browser';
 import { Member360Result } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
-import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
+import { member360Fixture, member360Revision } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
 import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 
 describe('MktgDocumentViewComponent', () => {
@@ -91,7 +99,7 @@ describe('MktgDocumentViewComponent', () => {
 
   const projectLookup = vi.fn();
   const impersonating = signal(false);
-  const viewer = signal<{ sub: string } | undefined>({ sub: 'synthetic-writer' });
+  const viewer = signal<{ sub: string } | null | undefined>({ sub: 'synthetic-writer' });
   function started(state: MktgDocumentRunProgress['state']): MktgDocumentRunProgress {
     return {
       project: PROJECT.uid,
@@ -106,6 +114,9 @@ describe('MktgDocumentViewComponent', () => {
 
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
+  const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
+  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
@@ -279,6 +290,13 @@ describe('MktgDocumentViewComponent', () => {
   beforeEach(async () => {
     run.isPending.mockReturnValue(false);
     subject = linkedSignal(() => viewer()?.sub ?? '');
+    pending.load.mockReset().mockReturnValue(null);
+    pending.waitForStorage.mockReset();
+    pending.clear.mockClear();
+    print.print.mockReset().mockResolvedValue(undefined);
+    print.clear.mockClear();
+    print.ensureFontStylesheet.mockClear();
+
     store = {
       listDocuments: vi.fn(() => of({ project: PROJECT.uid, groups: [] })),
       retryRun: vi.fn(() => of(detail)),
@@ -305,7 +323,7 @@ describe('MktgDocumentViewComponent', () => {
     activeContext = signal<ProjectContext | null>(PROJECT);
     projectLookup.mockReturnValue(of({ writer: true }));
     impersonating.set(false);
-    viewer.set({ sub: 'synthetic-writer' });
+    viewer.set({ sub: 'synthetic-sub' });
 
     await TestBed.configureTestingModule({
       providers: [
@@ -326,9 +344,12 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
-        { provide: Member360Service, useValue: run },
+        { provide: Member360Service, useValue: { ...run, download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
+        { provide: HttpClient, useValue: {} },
+        { provide: MktgPendingDocumentService, useValue: pending },
+        { provide: MktgPrintService, useValue: print },
       ],
     }).compileComponents();
   });
@@ -338,6 +359,17 @@ describe('MktgDocumentViewComponent', () => {
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-asset-meta')).toBeNull();
     expect(store.approveRevision).not.toHaveBeenCalled();
   }
+
+  it('names the route asset in the crumb before its loading or generating document arrives', async () => {
+    store.getDocument.mockReturnValue(new Subject<MktgDocumentDetailResponse>());
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing loading asset receiver');
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+    component['generating'].set(true);
+    await settle();
+    expect(query('mktg-breadcrumb-current')?.textContent?.trim()).toBe(BRAND_KIT.itemLabel);
+  });
 
   it('renders stored LinkedIn options and its saved link with the shared copy cards', async () => {
     const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
@@ -511,7 +543,7 @@ describe('MktgDocumentViewComponent', () => {
       ['linkedin-post'],
       expect.objectContaining({
         queryParams: { profile: 'edit', revision: null, type: null },
-        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       })
     );
   });
@@ -522,8 +554,35 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
     expect(navigate).toHaveBeenCalledWith(
       ['linkedin-post'],
-      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { project: PROJECT.slug, mode: null, ...MKTG_RUN_RESUME_QUERY_CLEAR } })
     );
+  });
+
+  it('replaces the automatic questions leg with a scoped continuation URL', async () => {
+    await render('/documents/brand-kit/living?tab=sources&profile=edit');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing questions receiver');
+    const questions = {
+      attempt: { session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-question-session', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+      questionsId: 'synthetic-q',
+      questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
+    };
+    const pending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+      attempt: questions.attempt,
+      pendingQuestions: questions,
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.prepare).mockReturnValue('synthetic-q-token');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onProgress']({ type: 'questions', pending: questions }, pending);
+    expect(navigate).toHaveBeenCalledWith([expect.any(String), BRAND_KIT_INTAKE.agentId], {
+      queryParams: { project: PROJECT.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: 'synthetic-q-token', mode: null },
+      replaceUrl: true,
+    });
+    expect(attempts.prepare).toHaveBeenCalledWith(pending.request, true);
   });
 
   it('keeps Markdown-only LinkedIn revisions readable without inventing structured cards', async () => {
@@ -536,6 +595,358 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-document')?.textContent).toContain('Older post [LINK]');
     expect(query('mktg-linkedin-option')).toBeNull();
     expectNoKitAssetChrome();
+  });
+
+  describe('AEO/GEO report and pending-document seam', () => {
+    beforeEach(() => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Synthetic audit document type missing.');
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
+    });
+
+    it('shows a document-side poll refusal, drops the writing capability and offers a fresh run without Check again', async () => {
+      const reply = 'The target is unavailable. Confirm the domain before starting a new audit.';
+      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+      vi.spyOn(realPending, 'poll').mockReturnValue(of({ status: 'refused' as const, reply }));
+      const clear = vi.spyOn(realPending, 'clear');
+      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+      pending.load.mockReturnValue({
+        agentId: 'aeo-geo',
+        projectUid: PROJECT.uid,
+        documentId: 'run-012345678901234567890123',
+        sessionId: 'synthetic-session',
+        ownerToken: 'synthetic-proof',
+        savedAt: new Date().toISOString(),
+        phase: 'writing',
+      });
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain(reply);
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(query('mktg-document-view-run-again')).not.toBeNull();
+      expect(clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+    it.each([
+      { label: 'named key pages', auditCounts: { keyPagesNamed: 2, pagesAudited: 5 }, copy: '2 key pages named, 5 audited' },
+      { label: 'agent-selected pages', auditCounts: { keyPagesNamed: 0, pagesAudited: 5 }, copy: 'no key pages named, 5 audited' },
+      { label: 'legacy without counts', auditCounts: undefined, copy: '' },
+    ])('renders a report scorecard with $label and no restore controls', async ({ auditCounts, copy }) => {
+      const auditType = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'aeo-geo');
+      if (!auditType) throw new Error('Audit document type missing.');
+      const report: MktgRevisionResponse = {
+        ...revisionResponse(LATEST),
+        type: auditType,
+        aeoGeoReport: {
+          domain: 'project.example',
+          report_filename: 'project.example AEO-GEO Report.md',
+          overall_score: 6,
+          verdict: 'A useful baseline',
+          auditCounts,
+          scores: { ai_crawler_access: 6, llms_txt: 6, content_answerability: 6, technical_metadata: 6, external_authority: 6, content_depth_freshness: 6 },
+        },
+      };
+      store.getRevision.mockReturnValue(of(report));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-overall')?.textContent).toContain('6.0');
+      expect(query('mktg-document-view-overall')?.classList.contains('text-amber-700')).toBe(true);
+      expect(query('mktg-document-view-verdict')?.textContent).toContain('A useful baseline');
+      expect(query('mktg-document-view-scorecard')?.querySelectorAll('[data-testid^="mktg-document-view-score-"]')).toHaveLength(6);
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-restore-1')).toBeNull();
+      expect(query('mktg-document-view-revision-chip')).toBeNull();
+      expect(query('mktg-document-view-download')).not.toBeNull();
+      const subline = query('mktg-document-view-audit-subline')?.textContent?.replace(/\s+/g, ' ');
+      expect(subline).toContain('AEO/GEO audit — 13 Oct 2026');
+      if (copy) {
+        expect(subline).toContain(copy);
+      } else {
+        expect(subline).not.toContain('key pages named');
+        expect(subline).not.toContain('audited');
+      }
+    });
+
+    it.each(['project', 'domain'] as const)('renders the recorded %s sidecar for web and PDF without the legacy body', async (kind) => {
+      const envelope = aeoGeoEnvelopeFixture(kind);
+      const typed = envelope.report;
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!typed || !type) {
+        throw new Error('Recorded audit fixture is incomplete.');
+      }
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          type,
+          markdown: envelope.document_markdown,
+          aeoGeoReport: {
+            domain: envelope.domain,
+            report_filename: envelope.report_filename,
+            overall_score: envelope.overall_score,
+            verdict: envelope.verdict,
+            scores: envelope.scores,
+            report: typed,
+          },
+        })
+      );
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-verdict')?.textContent).toContain(typed.verdict);
+      expect(query('mktg-document-view-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
+      expect(query('mktg-document-view-overall')?.classList.contains('text-emerald-700')).toBe(true);
+      expect(query('mktg-document-view-print-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
+      expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[print-color-adjust:exact]')).toBe(true);
+      expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[-webkit-print-color-adjust:exact]')).toBe(true);
+      expect(query('mktg-document-view-print-verdict')?.textContent).toContain(typed.verdict);
+      for (const row of typed.scorecard) {
+        expect(query(`mktg-document-view-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);
+        expect(query(`mktg-document-view-score-${row.key}`)?.querySelector<HTMLElement>('.h-full')?.style.width).toBe(`${row.score * 10}%`);
+        expect(query(`mktg-document-view-print-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);
+      }
+      const about = query('mktg-document-view-about');
+      const aside = about?.closest('section[aria-label="Revision details"]');
+      const content = query('mktg-document-view-report-summary')?.closest('section[aria-label="Document content"]');
+      expect(about?.textContent).toContain('Content hash');
+      expect(content).toBeTruthy();
+      expect(aside?.parentElement).toBe(content?.parentElement);
+      expect(content?.parentElement?.classList.contains('@[800px]:grid-cols-[minmax(0,1fr)_20rem]')).toBe(true);
+      expect(aside?.querySelector('[data-testid="mktg-document-view-revision-2"]')).not.toBeNull();
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-report-summary')?.textContent).toContain(typed.headline);
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(query('mktg-document-view-print')?.textContent).toContain(typed.recommendations[0].title);
+      expect(query('mktg-aeo-typed-findings')?.querySelectorAll('h4')).toHaveLength(5);
+      expect(query('mktg-aeo-typed-scorecard')?.textContent).toContain(typed.scorecard[0].summary);
+    });
+
+    it.each([true, false])('handles empty revisions without a TypeError (resumable=%s)', async (resumable) => {
+      store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [] }));
+      pending.load.mockReturnValue(resumable ? { agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' } : null);
+      pending.waitForStorage.mockReturnValue(NEVER);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(store.getRevision).not.toHaveBeenCalled();
+      if (resumable) {
+        expect(pending.waitForStorage).toHaveBeenCalled();
+        expect(query('mktg-document-view-generating')).not.toBeNull();
+      } else {
+        expect(pending.waitForStorage).not.toHaveBeenCalled();
+        expect(query('mktg-document-view-error')).not.toBeNull();
+      }
+    });
+    it('keeps a new document generating until storage, then reopens the stored revision', async () => {
+      const completed = new Subject<void>();
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(completed);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-generating')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
+      completed.next();
+      completed.complete();
+      await settle();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
+    });
+
+    it('shows projected activity while waiting for storage and clears it on a scope change', async () => {
+      const completed = new Subject<void>();
+      const activity: MktgRunActivity[] = [
+        { id: 'step-1', kind: 'reading', label: 'Reading project.example', status: 'running', startedAt: new Date().toISOString() },
+      ];
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', savedAt: new Date(Date.now() - 60_000).toISOString() });
+      pending.waitForStorage.mockImplementation((_run, _intake, onActivity) => {
+        onActivity(activity);
+        return completed;
+      });
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-activity')?.textContent).toContain('Reading project.example');
+      expect(query('mktg-run-activity-phase-questions')).not.toBeNull();
+      expect(query('mktg-run-activity-elapsed')?.textContent).toContain('1m ');
+      expect(query('mktg-document-view-activity')?.getAttribute('title')).toBeNull();
+      expect(query('mktg-document-view-activity')?.querySelector('.fa-chart-line')).not.toBeNull();
+      expect(query('mktg-document-view-activity')?.querySelector('.bg-emerald-50')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      viewer.set(null);
+      await settle();
+      expect(query('mktg-document-view-activity')).toBeNull();
+      expect(completed.observed).toBe(false);
+    });
+
+    it('cancels an audit poll immediately when the active project is cleared', async () => {
+      const completed = new Subject<void>();
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(completed);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(completed.observed).toBe(true);
+      activeContext.set(null);
+      await settle();
+      expect(completed.observed).toBe(false);
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-loading')).not.toBeNull();
+    });
+
+    it('does not resume a capability belonging to a different agent', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'member-360', documentId: 'run-012345678901234567890123' });
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+    });
+
+    it.each(['timeout', 'stored-read-outage'])('Check again recovers a %s through a retained capability and a late stored report', async (failure) => {
+      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+      const ready = {
+        status: 'ready' as const,
+        persistence: { project: PROJECT.uid, content_sha256: 'a'.repeat(64), s3_key: 'synthetic/report.md', version: 1 },
+        documentMarkdown: '# Report',
+        version: 1,
+      };
+      const poll = vi.spyOn(realPending, 'poll');
+      const clear = vi.spyOn(realPending, 'clear');
+      if (failure === 'timeout') poll.mockReturnValueOnce(throwError(() => new TimeoutError())).mockReturnValue(of(ready));
+      else poll.mockReturnValue(of(ready));
+      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123', phase: 'writing' });
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: failure === 'timeout' ? 404 : 503 })));
+      const envelope = aeoGeoEnvelopeFixture();
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Audit document type missing.');
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          type,
+          markdown: envelope.document_markdown,
+          aeoGeoReport: {
+            domain: envelope.domain,
+            report_filename: envelope.report_filename,
+            scores: envelope.scores,
+            overall_score: envelope.overall_score,
+            verdict: envelope.verdict,
+            report: envelope.report,
+          },
+        })
+      );
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-retry')).not.toBeNull();
+      expect(query('mktg-document-view-error')?.textContent).toContain(failure === 'timeout' ? 'taking longer than expected' : 'not been stored yet');
+      expect(clear).not.toHaveBeenCalled();
+      query('mktg-document-view-retry')?.click();
+      await settle();
+      expect(query('mktg-document-view-report-summary')).not.toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(failure === 'timeout' ? 2 : 1);
+      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+
+    it('Run again explicitly clears the timed-out capability before leaving the document', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(throwError(() => new TimeoutError()));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(pending.clear).not.toHaveBeenCalled();
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent | undefined;
+      if (!component) throw new Error('Document component missing.');
+      component['onRunAgain']();
+      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+
+    it('keeps the loading indicator while the effective user is unresolved', async () => {
+      viewer.set(null);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-loading')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(store.getDocument).not.toHaveBeenCalled();
+      viewer.set({ sub: 'synthetic-sub' });
+      await settle();
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+    });
+
+    it('prints a stored report as PDF through the shared service and clears it on destruction', async () => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Synthetic audit document type missing.');
+      const audit = { ...detail, type, documentId: 'run-012345678901234567890123' };
+      store.getDocument.mockReturnValue(of(audit));
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          ...audit,
+          aeoGeoReport: {
+            domain: 'project.example',
+            report_filename: 'project.example AEO-GEO Report.md',
+            overall_score: 6,
+            verdict: 'Baseline',
+            scores: { ai_crawler_access: 6, llms_txt: 6, content_answerability: 6, technical_metadata: 6, external_authority: 6, content_depth_freshness: 6 },
+          },
+        })
+      );
+      await render('/project/mktg-os-agents/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-download')?.textContent).toContain('Download PDF');
+      expect(query('mktg-document-view-print')?.textContent).toContain('Revision 2');
+      expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
+      expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=testorbit');
+      query('mktg-document-view-download')?.click();
+      expect(print.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+      harness.fixture.destroy();
+      expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    });
+
+    it.each(['linkedin-post', 'member-360'])('preserves current-main reading and immutable run actions for %s', async (agentKey) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+      if (!type) throw new Error('Synthetic run document type missing.');
+      viewer.set(null);
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(OLDER), type, documentId: 'run-synthetic' }));
+      await render(`/documents/${agentKey}/run-synthetic`);
+      const pollArgs = agentKey === 'member-360' ? [] : [false];
+      const revisionPollArgs = agentKey === 'member-360' ? [] : [true];
+      expect(store.getDocument).toHaveBeenCalledWith('proj-1', agentKey, 'run-synthetic', ...pollArgs);
+      expect(pending.load).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-title')?.textContent).toContain(type.itemLabel);
+      expect(query('mktg-document-view-revision-chip')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-report-summary')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(store.getRevision).toHaveBeenCalledWith('proj-1', agentKey, 'run-synthetic', LATEST.id, ...revisionPollArgs);
+      expect(query('mktg-document-view-history-bar-make-current')).toBeNull();
+      expect(harness.routeNativeElement?.querySelectorAll('[data-testid^="mktg-document-view-restore-"]')).toHaveLength(0);
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent | undefined;
+      if (!component) throw new Error('Document component missing.');
+      component['onRestore'](OLDER);
+      expect(store.restoreRevision).not.toHaveBeenCalled();
+    });
+
+    it('uses the current selector when opening an audit without an explicit revision', async () => {
+      store.getDocument.mockReturnValue(of({ ...detail, current: { revisionId: OLDER.id } }));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(store.getRevision).toHaveBeenCalledWith(PROJECT.uid, 'aeo-geo', 'run-012345678901234567890123', OLDER.id);
+    });
+
+    it('offers Check again after a stored report revision read fails transiently', async () => {
+      store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('The report could not be loaded. Check again.');
+      expect(query('mktg-document-view-retry')?.textContent).toContain('Check again');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+    });
+    it('preserves the missing-document code in the audit error copy without Check again', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This document could not be found.');
+      expect(query('mktg-document-view-retry')).toBeNull();
+    });
+
+    it('leaves main’s load errors on the shared Retry path, not audit recovery', async () => {
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/documents/brand-kit/living');
+      expect(query('mktg-document-view-error')?.textContent).toContain('could not be loaded');
+      expect(query('mktg-document-view-retry')?.textContent).toContain('Retry');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps loading while project context is unresolved', async () => {
@@ -607,6 +1018,10 @@ describe('MktgDocumentViewComponent', () => {
       .mockReturnValueOnce(throwError(() => new TimeoutError()))
       .mockReturnValueOnce(completion);
     await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-document-view-error')?.textContent).toContain('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+    expect(query('member-360-failure-details')).toBeNull();
+    expect(query('member-360-run-again')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
     const retry = query('mktg-document-view-retry')?.querySelector('button');
     if (!retry) throw new Error('Missing synthetic timeout Retry');
     retry.click();
@@ -627,6 +1042,26 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
+  it('clears the questions prompt and reads the document once when the open poll becomes ready', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(completion);
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    completion.next({ status: 'needs_input' });
+    await settle();
+    expect(query('member-360-needs-input')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).not.toHaveBeenCalled();
+    completion.next({ status: 'ready', stored: true });
+    completion.complete();
+    await settle();
+    expect(query('member-360-needs-input')).toBeNull();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(store.getDocument).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'member-360', 'run-0123456789abcdef01234567');
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
     run.isPending.mockReturnValue(true);
     run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));
@@ -636,6 +1071,120 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-error')).toBeNull();
     expect(store.getDocument).not.toHaveBeenCalled();
   });
+
+  describe('workbook in the document header', () => {
+    let savedFilename = '';
+    function storedMember(): MktgRevisionResponse {
+      return { ...member360Revision(), project: PROJECT.uid };
+    }
+    function component(): MktgDocumentViewComponent {
+      return harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    }
+    function button(): HTMLButtonElement | null {
+      return query('member-360-download')?.querySelector('button') ?? null;
+    }
+    beforeEach(() => {
+      const view = storedMember();
+      store.getDocument.mockReturnValue(of(view));
+      store.getRevision.mockReturnValue(of(view));
+      vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:synthetic'), revokeObjectURL: vi.fn() }));
+      savedFilename = '';
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedFilename = this.download;
+      });
+    });
+    afterEach(() => {
+      harness?.fixture.destroy();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+    it('exports once from the outer header with its filename and releases the object URL on destroy', async () => {
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      expect(query('mktg-document-view-header')?.contains(query('member-360-download'))).toBe(true);
+      expect(query('member-360-result')?.querySelector('[data-testid="member-360-download"]')).toBeNull();
+      expect(button()?.textContent).toContain('Download Member360_sample-foundation_2026-Q3.xlsx');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      button()?.click();
+      expect(TestBed.inject(Member360Service).download).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
+      expect(savedFilename).toBe('Member360_sample-foundation_2026-Q3.xlsx');
+      harness.fixture.destroy();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
+      vi.advanceTimersByTime(1000);
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+    });
+    it('disables duplicate downloads until the request finishes and recovers from a failed request', async () => {
+      const pending = new Subject<Blob>();
+      const api = vi.mocked(TestBed.inject(Member360Service).download);
+      api.mockReturnValueOnce(pending);
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      button()?.click();
+      harness.detectChanges();
+      expect(button()?.disabled).toBe(true);
+      component()['onDownloadWorkbook']();
+      expect(api).toHaveBeenCalledTimes(1);
+      pending.error(new HttpErrorResponse({ status: 503 }));
+      await settle();
+      expect(query('mktg-document-view-workbook-error')?.textContent).toContain('The workbook could not be prepared. Try downloading again.');
+      expect(button()?.disabled).toBe(false);
+      button()?.click();
+      await settle();
+      expect(query('mktg-document-view-workbook-error')).toBeNull();
+      expect(api).toHaveBeenCalledTimes(2);
+    });
+    it('keeps workbook failure and team-copy feedback independently addressable', async () => {
+      const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+      try {
+        vi.mocked(TestBed.inject(Member360Service).download).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        await render('/documents/member-360/run-0123456789abcdef01234567');
+        query('member-360-copy-member-success')?.querySelector('button')?.click();
+        await settle();
+        expect(query('member-360-notice')?.textContent).toContain('Member Success list copied.');
+        button()?.click();
+        await settle();
+        expect(query('mktg-document-view-workbook-error')?.textContent).toContain('The workbook could not be prepared.');
+        expect(query('member-360-notice')?.textContent).toContain('Member Success list copied.');
+        expect(harness.routeNativeElement?.querySelectorAll('[data-testid="member-360-notice"]')).toHaveLength(1);
+        expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-workbook-error"]')).toHaveLength(1);
+      } finally {
+        if (previous) Object.defineProperty(navigator, 'clipboard', previous);
+        else Reflect.deleteProperty(navigator, 'clipboard');
+      }
+    });
+    it.each(['document', 'project', 'subject'])('never saves a late workbook after a %s change', async (change) => {
+      const pending = new Subject<Blob>();
+      vi.mocked(TestBed.inject(Member360Service).download).mockReturnValueOnce(pending);
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      button()?.click();
+      if (change === 'document') await harness.navigateByUrl('/documents/member-360/run-fedcba987654321001234567', MktgDocumentViewComponent);
+      if (change === 'project') activeContext.set({ ...PROJECT, uid: 'synthetic-other-project' });
+      if (change === 'subject') subject.set('synthetic-other-writer');
+      await settle();
+      pending.next(new Blob(['old-scope workbook']));
+      pending.complete();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-workbook-error')).toBeNull();
+    });
+    it('does not call browser APIs or fetch a workbook during SSR', () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      const fixture = TestBed.createComponent(MktgDocumentViewComponent);
+      fixture.componentInstance['view'].set(storedMember());
+      fixture.componentInstance['writer'].set(true);
+      fixture.componentInstance['loading'].set(false);
+      fixture.componentInstance['onDownloadWorkbook']();
+      expect(TestBed.inject(Member360Service).download).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+      fixture.destroy();
+    });
+    it('keeps a non-writer from invoking the download action', async () => {
+      projectLookup.mockReturnValue(of({ writer: false }));
+      await render('/documents/member-360/run-0123456789abcdef01234567');
+      expect(button()?.disabled).toBe(true);
+      component()['onDownloadWorkbook']();
+      expect(TestBed.inject(Member360Service).download).not.toHaveBeenCalled();
+    });
+  });
+
   it('renders Member 360 as the structured type of this document, not a second viewer', async () => {
     const member360 = member360Fixture();
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360 }));
@@ -993,6 +1542,52 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['submittingGeneration']()).toBe(false);
   });
 
+  it.each(['b'.repeat(64), '', 'c'.repeat(64)])('confirms a fast completed receipt only for its explicit run selector (%s)', async (selector) => {
+    const pending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+      attempt: {
+        session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-fast-run', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+        runId: 'b'.repeat(64),
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    const service = TestBed.inject(MktgAgentRunService);
+    vi.mocked(TestBed.inject(MktgRunAttemptService).load).mockReturnValue(pending);
+    const progress = new Subject<MktgGenerateProgress>();
+    vi.mocked(service.resume).mockReturnValue(progress);
+    await render('/documents/brand-kit/living' + (selector ? '?run=' + selector : ''));
+    if (selector !== pending.attempt?.runId) {
+      expect(service.resume).not.toHaveBeenCalled();
+      return;
+    }
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    const completed: MktgStoredAgentRun = {
+      agentId: BRAND_KIT_INTAKE.agentId,
+      projectUid: PROJECT.uid,
+      sessionId: 'synthetic-fast-run',
+      ownerToken: 'synthetic-proof',
+      answers: {},
+      savedAt: pending.updatedAt,
+      versions: [
+        {
+          version: 1,
+          document: '# Exact fast result',
+          createdAt: pending.updatedAt,
+          documentLocation: { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId: OLDER.id },
+        },
+      ],
+    };
+    progress.next(mktgRunProgressFixture('document', completed, 1));
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ revision: OLDER.id, mode: null }) })
+    );
+  });
+
   it.each((['document', 'persisted'] as const).flatMap((event) => ['agent', 'project', 'document', 'valid'].map((binding) => ({ event, binding }))))(
     'binds a $event receipt to the requested catalog/project/document ($binding)',
     async ({ event, binding }) => {
@@ -1033,7 +1628,7 @@ describe('MktgDocumentViewComponent', () => {
       if (binding === 'valid') {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           [expect.any(String), 'documents', BRAND_KIT.agentKey, 'living'],
-          expect.objectContaining({ queryParams: expect.objectContaining({ revision: LATEST.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: LATEST.id, mode: null }) })
         );
         expect(changed).toHaveBeenCalledWith(PROJECT.uid);
       } else {
@@ -1075,7 +1670,7 @@ describe('MktgDocumentViewComponent', () => {
       if (receipted) {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
           expect.anything(),
-          expect.objectContaining({ queryParams: expect.objectContaining({ revision: OLDER.id }) })
+          expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT.slug, revision: OLDER.id, mode: null }) })
         );
       } else {
         expect(navigate).not.toHaveBeenCalled();
@@ -1301,20 +1896,37 @@ describe('MktgDocumentViewComponent', () => {
     ['brand-kit', 'Positioning & brand', 'positioning-brand'],
     ['linkedin-post', 'Social & community', 'social-community'],
     ['icp', 'Positioning & brand', 'positioning-brand'],
+    ['aeo-geo', 'Website & web', 'website-web'],
   ])('maps %s to fixed shared parents and a current asset crumb', async (key, familyName, familyId) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
     if (!type) throw new Error('Synthetic document type missing');
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
-    await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&revision=${LATEST.id}`);
+    const response = { ...revisionResponse(LATEST), type };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&type=${key}&revision=${LATEST.id}`);
     expect(query('mktg-document-view-back-link')).toBeNull();
     expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
     expect(query('mktg-breadcrumb-link-0')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=testorbit');
     expect(query('mktg-breadcrumb-link-1')?.textContent).toBe(familyName);
     expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe(`/project/mktg-os-agents/families/${familyId}?project=testorbit`);
-    expect(query('mktg-breadcrumb-current')?.textContent).toBe(type.itemLabel);
+    expect(query('mktg-breadcrumb-current')?.textContent).toBe(key === 'aeo-geo' ? `${type.itemLabel} · 13 Oct 2026` : type.itemLabel);
     expect(query('mktg-document-view-title')).not.toBeNull();
     // LinkedIn posts hide the revision chip (Joan's LinkedIn post board: no Approve, you finish by copying a post).
-    expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
+    // The AEO/GEO one-off report shows its hero instead of a revision chip.
+    expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post' && key !== 'aeo-geo');
+  });
+
+  it('keeps the AEO/GEO crumb plain on an unparseable report date without throwing', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'aeo-geo');
+    if (!type) throw new Error('Synthetic AEO/GEO document type missing');
+    const response = { ...revisionResponse(LATEST), type };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/project/mktg-os-agents/documents/aeo-geo/living?project=proj-1');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['view'].set({ ...response, revision: { ...LATEST, createdAt: 'not-a-date' } });
+    expect(() => component['breadcrumbPage']()).not.toThrow();
+    expect(component['breadcrumbPage']()).toEqual(expect.objectContaining({ kind: 'asset', label: type.itemLabel }));
   });
 
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {

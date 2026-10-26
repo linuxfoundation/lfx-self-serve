@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, PLATFORM_ID, signal } from '@angular/core';
+import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
@@ -586,5 +586,103 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(navigateByUrl).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBe(pendingSave);
+  });
+});
+
+/**
+ * Guards the nav-name sync: a saved first/last name is pushed into the shared UserService.user (which the
+ * navbar reads) without re-triggering the eventually-consistent profile GET over the optimistic merge.
+ */
+describe('ProfileLayoutComponent — nav name sync after a profile save', () => {
+  const PROFILE = {
+    user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@example.com' },
+    profile: { bio: 'OLD BIO', job_title: 'Engineer' },
+  } as unknown as CombinedProfile;
+
+  async function setup(impersonating = false): Promise<{
+    fixture: ComponentFixture<ProfileLayoutComponent>;
+    user: WritableSignal<User | null>;
+    getCurrentUserProfile: ReturnType<typeof vi.fn>;
+  }> {
+    const user = signal<User | null>({ sub: 'auth0|u1', name: 'Ada Lovelace' } as unknown as User);
+    const getCurrentUserProfile = vi.fn(() => of(PROFILE));
+    const userServiceMock = {
+      user,
+      impersonating: signal(impersonating),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile,
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, user, getCurrentUserProfile };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('updates the shared user name after a name save', async () => {
+    const { fixture, user } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
+
+    expect(user()?.name).toBe('Ada Byron');
+  });
+
+  it('does not refetch the profile or lose the saved values after the name sync', async () => {
+    const { fixture, getCurrentUserProfile } = await setup();
+    expect(getCurrentUserProfile).toHaveBeenCalledTimes(1);
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron', bio: 'NEW BIO' });
+    await fixture.whenStable();
+
+    expect(getCurrentUserProfile).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.aboutMe()).toBe('NEW BIO');
+  });
+
+  it('leaves the shared user untouched for a save with no name fields', async () => {
+    const { fixture, user } = await setup();
+    const before = user();
+
+    fixture.componentInstance.onProfileSaved({ bio: 'NEW BIO' });
+
+    expect(user()).toBe(before);
+  });
+
+  it('leaves the shared user untouched when the name did not change', async () => {
+    const { fixture, user } = await setup();
+    const before = user();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Lovelace' });
+
+    expect(user()).toBe(before);
+  });
+
+  it('leaves the shared user untouched while impersonating', async () => {
+    const { fixture, user } = await setup(true);
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
+
+    expect(user()?.name).toBe('Ada Lovelace');
   });
 });

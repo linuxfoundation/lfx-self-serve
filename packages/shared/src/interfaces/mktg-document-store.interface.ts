@@ -13,6 +13,7 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { AeoGeoReportSummary } from './aeo-geo.interface';
 import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.interface';
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
@@ -281,6 +282,8 @@ export interface MktgDocumentLocation {
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
+  /** Schema-validated report sidecar for the AEO/GEO presentation of the one Document view. */
+  aeoGeoReport?: AeoGeoReportSummary;
   revision: MktgRevisionSummary;
   approval: MktgRevisionApproval | null;
   /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
