@@ -187,7 +187,7 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS = {
   low: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
 } as const;
 
-/** A past event's registrations against its goal: at or above the first share green, the second amber, else red. */
+/** The design's thresholds for a past event's registrations against its goal: at or above the first green, the second amber, else red. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES = { onTrack: 1, atRisk: 0.8 } as const;
 
 /** The status legend beside the event list; the registrations bar's fill carries the same three tones. */

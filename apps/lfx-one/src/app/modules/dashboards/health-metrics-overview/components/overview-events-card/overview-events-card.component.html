@@ -111,7 +111,7 @@
               </div>
 
               <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
-                <span class="text-[11px] text-gray-500 @[700px]:hidden" aria-hidden="true">Registrations</span>
+                <span class="text-[11px] text-gray-500 @[700px]:hidden">Registrations</span>
                 <div class="flex items-baseline justify-between gap-[8px]">
                   <span class="text-[13px] font-semibold text-gray-900">{{ row.registrations.countLabel }}</span>
                   <span class="text-[12px] text-gray-400">{{ row.registrations.sideLabel }}</span>
@@ -126,7 +126,7 @@
               </div>
 
               <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
-                <span class="text-[11px] text-gray-500 @[700px]:hidden" aria-hidden="true">Accepted speaking proposals</span>
+                <span class="text-[11px] text-gray-500 @[700px]:hidden">Accepted speaking proposals</span>
                 @if (row.talks.hasProposals) {
                   <div class="flex items-baseline justify-between gap-[8px]">
                     <span class="text-[13px] font-semibold text-gray-900">{{ row.talks.countLabel }}</span>
