@@ -1328,18 +1328,12 @@ export class MktgDocumentViewComponent {
     const read = () =>
       revisionId
         ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
-        : this.documentStore
-            .getDocument(project, agentKey, documentId, false, undefined, canResume)
-            .pipe(
-              switchMap((detail) =>
-                this.documentStore.getRevision(
-                  project,
-                  agentKey,
-                  documentId,
-                  detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
-                )
-              )
-            );
+        : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
+            switchMap((detail) => {
+              const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+              return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
+            })
+          );
     return read().pipe(
       catchError((error: HttpErrorResponse) => {
         if (error.status !== 404 || !canResume || !pending || !intake) throw error;
