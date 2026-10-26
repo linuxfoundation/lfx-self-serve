@@ -37,8 +37,6 @@ In the same section, the table lists your programs with their status. A request 
 
 ## Request status
 
-## Request status
-
 | Status        | What it means                                                                            |
 | ------------- | ---------------------------------------------------------------------------------------- |
 | **Pending**   | Raised and awaiting the Program Admin's decision — whether you asked or they invited you |

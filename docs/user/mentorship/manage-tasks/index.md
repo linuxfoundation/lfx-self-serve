@@ -31,13 +31,13 @@ Tasks are how a program gives a mentee work and tracks it. Program Admins and th
 
 Where you create a task depends on your role. In both cases it is the mentee list, not the Tasks tab.
 
-**As a Program Admin**
+### As a Program Admin
 
 1. Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin).
 2. Go to **Current Mentees** and use the **Create task** row action on the mentee.
 3. Fill in the form and select **Add Task**.
 
-**As a mentor**
+### As a mentor
 
 1. Open the program from **My Programs** and go to the **Mentees** tab.
 2. For one mentee, use the **+** on their row. For several, use **Create Group Task** above the table and pick the assignees.
@@ -45,7 +45,9 @@ Where you create a task depends on your role. In both cases it is the mentee lis
 
 The **Assign to** picker only appears when you are creating a group task. A per-row create is assigned to that mentee already.
 
-**To change a task**, expand the mentee's row with **View Tasks**, use **Edit Task**, then **Save Task**. A task's assignee cannot be changed after it is created — delete it and create a new one instead.
+### Change a task
+
+Expand the mentee's row with **View Tasks**, use **Edit Task**, then **Save Task**. A task's assignee cannot be changed after it is created — delete it and create a new one instead.
 
 A mentor's **Tasks** tab offers **Approve** and **Request Changes** only; it does not create or edit tasks.
 
