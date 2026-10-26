@@ -97,16 +97,18 @@ export interface OrgLensEmptyStateValues {
  */
 export interface OrgLensEmployerAffiliation {
   /**
-   * Display name of the job the caller holds *now* (a work-history entry with no end date); `null`
-   * when they have none, a profile of only past jobs included — someone between jobs is not affiliated.
+   * Display name of a job the caller holds *now* (a work-history entry with no end date); `null` when
+   * they have none, a profile of only past jobs included — someone between jobs is not affiliated.
+   * With several concurrent jobs it is the LF-member one where there is one, else the first.
    */
   employerName: string | null;
-  /** Salesforce account the employer resolved to, or `null` when no LF account matches the name. */
+  /** Salesforce account `employerName` resolved to, or `null` when no LF account matches the name. */
   accountId: string | null;
   /**
-   * The employer holds at least one active membership in an LF-hosted foundation. `false` is a
-   * resolved answer (no matching account, or an account with no active membership rows), never
-   * "we could not tell" — that case is a failed request, which callers treat as unknown.
+   * At least one of the caller's current employers holds an active membership in an LF-hosted
+   * foundation. `false` is a resolved answer (none of them matched an account, or none of the matched
+   * accounts has active membership rows), never "we could not tell" — that case is a failed request,
+   * which callers treat as unknown.
    */
   hasActiveMembership: boolean;
 }

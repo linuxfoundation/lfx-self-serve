@@ -114,6 +114,55 @@ describe('OrgLensEmployerAffiliationService', () => {
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['Current Employer']);
   });
 
+  // A day job alongside a foundation or board role is two open-ended entries for one person.
+  it('reports a member when any current employer holds a membership, whichever entry comes first', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Bank Pekao'), experience('The Linux Foundation')]);
+    execute.mockResolvedValue(
+      rows(
+        { ACCOUNT_ID: 'acc-lf', ACCOUNT_NAME: 'The Linux Foundation', ACTIVE_MEMBERSHIP_COUNT: 4 },
+        { ACCOUNT_ID: 'acc-bp', ACCOUNT_NAME: 'Bank Pekao', ACTIVE_MEMBERSHIP_COUNT: 0 }
+      )
+    );
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
+      employerName: 'The Linux Foundation',
+      accountId: 'acc-lf',
+      hasActiveMembership: true,
+    });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['Bank Pekao', 'The Linux Foundation']);
+  });
+
+  it('asks about every current employer in one query', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Alpha'), experience('Beta'), experience('Gone', 'Dec 2023')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-a', ACCOUNT_NAME: 'Alpha', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
+      employerName: 'Alpha',
+      accountId: 'acc-a',
+      hasActiveMembership: false,
+    });
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('IN (UPPER(TRIM(?)), UPPER(TRIM(?)))'), ['Alpha', 'Beta']);
+  });
+
+  it('names the first current employer when none of them is a member', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Bank Pekao'), experience('Corner Shop Ltd')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bp', ACCOUNT_NAME: 'Bank Pekao', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
+      employerName: 'Bank Pekao',
+      hasActiveMembership: false,
+    });
+  });
+
+  it('asks once per distinct current employer', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Acme'), experience(' acme ')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-4', ACCOUNT_NAME: 'Acme', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+
+    await service.getEmployerAffiliation(REQ, 'lfid');
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['Acme']);
+  });
+
   // Duplicate account names must not let an empty row downgrade a member company.
   it('orders a duplicated company name so the account holding memberships answers', async () => {
     getWorkExperiencesForUser.mockResolvedValue([experience('Acme')]);

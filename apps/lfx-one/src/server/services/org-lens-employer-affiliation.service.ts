@@ -9,6 +9,14 @@ import { CdpService } from './cdp.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
+/** Guards the `IN` list: far above any real number of concurrent jobs, and bounded all the same. */
+const MAX_CURRENT_EMPLOYERS = 10;
+
+/** The same shape the query compares on, so a row can be matched back to the name that asked for it. */
+function normalizeName(name: string): string {
+  return name.trim().toUpperCase();
+}
+
 interface RawEmployerMembershipRow {
   ACCOUNT_ID: string;
   ACCOUNT_NAME: string;
@@ -23,6 +31,9 @@ interface RawEmployerMembershipRow {
  * It reveals nothing the caller does not already hold — their own employer's name comes from their own
  * profile, and the answer is one boolean about that company's membership, which is public information
  * (LF member directories list it). No roster, no people, no membership detail.
+ *
+ * A caller may hold several current jobs; every one of them is checked, and `hasActiveMembership` is
+ * true when any is a member, so a day job alongside a foundation role never reads as "not a member".
  *
  * Resolution is by account name, because the only employer identifier a profile carries is a CDP
  * organization id and no platinum relation maps CDP org ids to Salesforce accounts
@@ -45,44 +56,65 @@ export class OrgLensEmployerAffiliationService {
 
   public async getEmployerAffiliation(req: Request, lfid: string): Promise<OrgLensEmployerAffiliation> {
     const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
-    const employerName = OrgLensEmployerAffiliationService.currentEmployerName(workExperiences);
+    const employerNames = OrgLensEmployerAffiliationService.currentEmployerNames(workExperiences);
 
-    if (!employerName) {
+    if (employerNames.length === 0) {
       return { employerName: null, accountId: null, hasActiveMembership: false };
     }
 
-    const row = await this.fetchEmployerMembershipRow(employerName);
+    const rows = await this.fetchEmployerMembershipRows(employerNames);
+    const byName = new Map(rows.map((row) => [normalizeName(row.ACCOUNT_NAME), row]));
+    // A member anywhere in the set settles it: the state exists for someone with no LF-member
+    // employer at all, and a day job plus a foundation role is one person, not two answers.
+    const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
+    const employerName = member ? member.ACCOUNT_NAME : employerNames[0];
 
     logger.debug(req, 'get_employer_affiliation', 'Resolved employer membership', {
-      has_employer: true,
-      resolved_account: !!row,
-      active_memberships: row?.ACTIVE_MEMBERSHIP_COUNT ?? 0,
+      current_employer_count: employerNames.length,
+      resolved_accounts: rows.length,
+      has_member_employer: !!member,
     });
 
     return {
       employerName,
-      accountId: row?.ACCOUNT_ID ?? null,
-      hasActiveMembership: (row?.ACTIVE_MEMBERSHIP_COUNT ?? 0) > 0,
+      accountId: (member ?? byName.get(normalizeName(employerName)))?.ACCOUNT_ID ?? null,
+      hasActiveMembership: !!member,
     };
   }
 
   /**
-   * The employer the caller works for *now* — an entry with no end date. Deliberately not
-   * `currentEmployerFromWorkExperiences`, which falls back to the most recent ended job: that
-   * fallback is right for pre-filling an invite dialog, and wrong here, where naming a company
-   * someone has left is exactly the misleading copy this state exists to remove. Someone between
-   * jobs has no current employer, so they keep the unchanged `no-organization` state.
+   * Every employer the caller works for *now* — each entry with no end date, in profile order and
+   * deduplicated. All of them, not the first: a day job alongside a foundation or board role is two
+   * open-ended entries for one person, and checking only the first would tell someone their employer
+   * is not a member while another current employer is.
+   *
+   * Deliberately not `currentEmployerFromWorkExperiences`, which falls back to the most recent ended
+   * job: that fallback is right for pre-filling an invite dialog, and wrong here, where naming a
+   * company someone has left is exactly the misleading copy this state exists to remove. Someone
+   * between jobs has no current employer, so they keep the unchanged `no-organization` state.
+   *
+   * Capped so an unusual profile cannot widen the `IN` list without bound; the cap is far above any
+   * real number of concurrent jobs.
    */
-  private static currentEmployerName(experiences: WorkExperienceEntry[]): string | null {
-    return experiences.find((experience) => !experience.endDate)?.organization?.trim() || null;
+  private static currentEmployerNames(experiences: WorkExperienceEntry[]): string[] {
+    const names = new Map<string, string>();
+    for (const experience of experiences) {
+      const name = experience.endDate ? '' : experience.organization?.trim();
+      if (name && !names.has(normalizeName(name))) {
+        names.set(normalizeName(name), name);
+      }
+    }
+    return [...names.values()].slice(0, MAX_CURRENT_EMPLOYERS);
   }
 
   /**
-   * The account a name resolves to, with its active-membership count. `ORDER BY` puts an account that
-   * holds memberships first so a duplicated company name cannot answer "non-member" for a member.
+   * The accounts these names resolve to, with each one's active-membership count. `ORDER BY` puts the
+   * accounts that hold memberships first, so neither a duplicated company name nor a second current
+   * employer can leave a member company behind a non-member row.
    */
-  private async fetchEmployerMembershipRow(employerName: string): Promise<RawEmployerMembershipRow | null> {
+  private async fetchEmployerMembershipRows(employerNames: string[]): Promise<RawEmployerMembershipRow[]> {
     const schema = resolveLfxOnePlatinumSchema();
+    const placeholders = employerNames.map(() => 'UPPER(TRIM(?))').join(', ');
     const query = `
       SELECT
         c.ACCOUNT_ID AS ACCOUNT_ID,
@@ -91,13 +123,12 @@ export class OrgLensEmployerAffiliationService {
       FROM ${schema}.ORG_LENS_ACCOUNT_CONTEXT c
       LEFT JOIN ${schema}.ORG_LENS_MEMBERSHIPS_SUMMARY m
         ON m.ACCOUNT_ID = c.ACCOUNT_ID
-      WHERE UPPER(TRIM(c.ACCOUNT_NAME)) = UPPER(TRIM(?))
+      WHERE UPPER(TRIM(c.ACCOUNT_NAME)) IN (${placeholders})
       GROUP BY c.ACCOUNT_ID, c.ACCOUNT_NAME
       ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC
-      LIMIT 1
     `;
 
-    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, [employerName]);
-    return result.rows[0] ?? null;
+    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, employerNames);
+    return result.rows;
   }
 }
