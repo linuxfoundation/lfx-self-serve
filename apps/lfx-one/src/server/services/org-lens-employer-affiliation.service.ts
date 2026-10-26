@@ -97,16 +97,19 @@ export class OrgLensEmployerAffiliationService {
     // own name is all punctuation. Such a name is kept as an affiliation but never asked about; the
     // caller keeps their employer, and the answer is `unresolved` rather than a negative nobody checked.
     const keys = employerNames.map(employerMatchKey);
-    const matchKeys = [...new Set(keys.filter(Boolean))];
+    // The cap bounds the `IN` list only. Keys past it are simply never asked about, which leaves them
+    // unchecked below — so an eleventh employer cannot be silently dropped out of the answer.
+    const matchKeys = [...new Set(keys.filter(Boolean))].slice(0, MAX_CURRENT_EMPLOYERS);
     const rows = matchKeys.length > 0 ? await this.fetchEmployerMembershipRows(matchKeys) : [];
     const matched = new Set(rows.map((row) => employerMatchKey(row.ACCOUNT_NAME)));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
     const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
     // "Non-member" may only be stated once every current employer has actually been checked. A name
-    // with no queryable key was never asked about, and a queried name that matched nothing means the
-    // match failed, not that the company holds no membership — its account exists under a spelling
-    // this does not reduce to. Both answer `unresolved`, which renders no claim either way.
+    // with no queryable key was never asked about, one past the `IN` cap was never asked about, and a
+    // queried name that matched nothing means the match failed, not that the company holds no
+    // membership — its account exists under a spelling this does not reduce to. All three answer
+    // `unresolved`, which renders no claim either way.
     const everyEmployerChecked = keys.every((key) => key !== '' && matched.has(key));
     const membership: OrgLensEmployerMembership = OrgLensEmployerAffiliationService.classifyMembership(!!member, everyEmployerChecked);
     // Always the caller's own spelling, never the account's: `employerName` is read back to them in
@@ -144,8 +147,9 @@ export class OrgLensEmployerAffiliationService {
    * company someone has left is exactly the misleading copy this state exists to remove. Someone
    * between jobs has no current employer, so they keep the unchanged `no-organization` state.
    *
-   * Capped so an unusual profile cannot widen the `IN` list without bound; the cap is far above any
-   * real number of concurrent jobs.
+   * Every one of them, uncapped: the cap belongs on the `IN` list, not here. Dropping a name before
+   * the completeness check would let an unchecked employer — possibly the member one — vanish, and
+   * "non-member" would then be stated over a company this never looked at.
    */
   private static currentEmployerNames(experiences: WorkExperienceEntry[]): string[] {
     const names = new Map<string, string>();
@@ -163,7 +167,7 @@ export class OrgLensEmployerAffiliationService {
         names.set(key, name);
       }
     }
-    return [...names.values()].slice(0, MAX_CURRENT_EMPLOYERS);
+    return [...names.values()];
   }
 
   /**

@@ -312,6 +312,31 @@ describe('OrgLensEmployerAffiliationService', () => {
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['BETACOASTAL']);
   });
 
+  // The cap bounds the `IN` list, not the answer. Truncating the names would hide an employer the
+  // lookup never saw, and "non-member" would then be stated over a company nobody checked.
+  it('answers unresolved when a current employer is past the query cap', async () => {
+    const employers = Array.from({ length: 12 }, (_, index) => experience(`Employer ${index}`));
+    getWorkExperiencesForExistingMember.mockResolvedValue(employers);
+    execute.mockResolvedValue(
+      rows(...Array.from({ length: 10 }, (_, index) => ({ ACCOUNT_ID: `acc-${index}`, ACCOUNT_NAME: `Employer ${index}`, ACTIVE_MEMBERSHIP_COUNT: 0 })))
+    );
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'unresolved' });
+    // Only the cap's worth is asked about; the rest are what leaves the answer unresolved.
+    expect(execute.mock.calls[0][1]).toHaveLength(10);
+  });
+
+  it('still answers member when an employer past the cap is the only one queried as a member', async () => {
+    const employers = Array.from({ length: 12 }, (_, index) => experience(`Employer ${index}`));
+    getWorkExperiencesForExistingMember.mockResolvedValue(employers);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Employer 3', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
+      employerName: 'Employer 3',
+      membership: 'member',
+    });
+  });
+
   // Duplicate account names must not let an empty row downgrade a member company.
   it('orders a duplicated company name so the account holding memberships answers', async () => {
     getWorkExperiencesForExistingMember.mockResolvedValue([experience('Acme')]);
