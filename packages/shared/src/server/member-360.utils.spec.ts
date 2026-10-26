@@ -93,6 +93,12 @@ describe('Member 360 form-only contract', () => {
       expect(formInputSchema.safeParse({ ...base, trackers: [{ filename: 'tracker.csv', rows }] }).success).toBe(false);
     }
   });
+  it('accepts the optional original LFX uid while stripping unknown envelope keys', () => {
+    const identity = envelopeSchema.pick({ lfx_project_uid: true });
+    expect(identity.parse({ lfx_project_uid: 'mcp-project', future_metadata: true })).toEqual({ lfx_project_uid: 'mcp-project' });
+    expect(identity.parse({})).toEqual({});
+    expect(identity.safeParse({ lfx_project_uid: '' }).success).toBe(false);
+  });
   it('fails closed on incomplete or malformed output, scores and unknown properties', () => {
     expect(envelopeSchema.safeParse({ contract: 'member-360-output/v1', tabs: {} }).success).toBe(false);
     expect(memberRankingRowSchema.safeParse({ engagement_score: 101 }).success).toBe(false);
