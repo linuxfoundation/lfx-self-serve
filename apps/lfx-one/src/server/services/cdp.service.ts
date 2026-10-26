@@ -487,27 +487,31 @@ export class CdpService {
    * "no employer" and gets the unchanged copy.
    */
   public async getWorkExperiencesForKnownUser(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
-    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user', { sub });
+    // `sub` is the caller's LFID username, not an opaque id, so it stays out of every log line here:
+    // this runs on a page-blocking request for every grant-less caller, which would put a username in
+    // production logs for exactly that group (PR #4318 review; `security/pii-in-logs-and-identifiers`).
+    // CDP's own member id is opaque and safe, and the request-scoped logger already identifies the caller.
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user');
 
     try {
       const memberId = await this.resolveMemberId(req, [sub]);
       if (!memberId) {
-        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for user; reporting no work history', { sub });
+        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for caller; reporting no work history');
         return [];
       }
 
       const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
 
-      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { sub, member_id: memberId, work_experience_count: entries.length });
+      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { member_id: memberId, work_experience_count: entries.length });
 
       return entries;
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for user', { sub });
+        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for caller');
         return [];
       }
 
-      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error, { sub });
+      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error);
       throw error;
     }
   }
@@ -991,12 +995,6 @@ export class CdpService {
     return data.memberId;
   }
 
-  /**
-   * Resolve an LFID/emails to a CDP member ID via CDP's resolve endpoint.
-   * Returns undefined when CDP has no member for the request — either a 404
-   * (NOT_FOUND / "Member not found") or a 2xx response with no `memberId`. Both are
-   * treated as "no member" rather than an upstream failure. Any other non-2xx throws.
-   */
   /** Shared wire → `WorkExperienceEntry` mapping for both work-history readers. */
   private toWorkExperienceEntry(raw: CdpWorkExperience, sub: string): WorkExperienceEntry {
     return {
@@ -1013,6 +1011,12 @@ export class CdpService {
     };
   }
 
+  /**
+   * Resolve an LFID/emails to a CDP member ID via CDP's resolve endpoint.
+   * Returns undefined when CDP has no member for the request — either a 404
+   * (NOT_FOUND / "Member not found") or a 2xx response with no `memberId`. Both are
+   * treated as "no member" rather than an upstream failure. Any other non-2xx throws.
+   */
   private async resolveMemberId(req: Request | undefined, lfids: string[], emails?: string[]): Promise<string | undefined> {
     const token = await this.generateToken(req);
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;
