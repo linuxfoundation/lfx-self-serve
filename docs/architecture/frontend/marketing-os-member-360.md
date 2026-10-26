@@ -80,7 +80,11 @@ fast and the overall deadline remains bounded.
 
 Member 360 fails only when Guild confirms the session ended without a valid result;
 error-typed events alone remain pending, and the shared settled-error overlay is not
-applied to this receiver. Polling has a two-hour safety ceiling measured from the
+applied to this receiver. A questions turn stays `needs_input` through its own root
+`runtime_done`; only a later reply, a newer turn's completion or a session end
+recognized by the shared questions-precedence helper supersedes it. A status-only
+ended event does not currently supersede unanswered questions under that helper.
+Polling has a two-hour safety ceiling measured from the
 stored `startedAt`, not a fresh ten-minute timeout on navigation; this ceiling is
 absolute from the run's start, and questions do not extend it. Reaching the ceiling
 stops polling with a non-failure check-again notice and retains the pending capability.

@@ -4,11 +4,17 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_MAX_TRACKERS } from '../constants/member-360.constants';
-import { formInputSchema, member360GenerateSchema, renderMember360FormMessage } from './member-360.utils';
+import { findMember360Questions, formInputSchema, isMember360Question, member360GenerateSchema, renderMember360FormMessage } from './member-360.utils';
 import { envelopeSchema, memberRankingRowSchema } from './member-360-schema.utils';
 
 // Mirror synthetic-org.mock.ts identities by value because shared cannot import apps.
 describe('Member 360 form-only contract', () => {
+  it('shares the first-line questions predicate with attributed question extraction', () => {
+    const text = '  MEMBER 360 — QUESTIONS (member-360-questions/v1)\nSynthetic question  ';
+    expect(isMember360Question(text)).toBe(true);
+    expect(isMember360Question('Other reply\nmember-360-questions/v1')).toBe(false);
+    expect(findMember360Questions([JSON.stringify({ type: 'agent_notification_message', content: text })])).toBe(text.trim());
+  });
   it('renders authoritative scope before all requester-controlled data', () => {
     const input = formInputSchema.parse({
       type: 'member_360_intake_form',

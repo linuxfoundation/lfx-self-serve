@@ -4,6 +4,9 @@
 import { MEMBER_360_FINALIZE_TOOL, MEMBER_360_REDACTED_SUMMARY, MEMBER_360_INVALID_RESULT } from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -481,7 +484,7 @@ describe('Member 360 entitlement and generation', () => {
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
   });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
-    'keeps %s open without exposing questions, then reports failure when the root session ends',
+    'keeps %s open through its own turn end, then fails after a later final reply',
     async (header) => {
       const questions = {
         project: 'Sample Foundation',
@@ -499,14 +502,51 @@ describe('Member 360 entitlement and generation', () => {
       const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` });
       mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
       expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      const done = JSON.stringify({
+        type: 'runtime_done',
+        task: { id: 'synthetic-root-task', entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' },
+      });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done]);
+      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
       mocks.getRawEventPayloads.mockResolvedValue([
         questionsEvent,
-        JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' } }),
+        done,
+        JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'The run could not produce a result.' } }),
+        done,
       ]);
-      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'failed', reason: 'agent_stopped' });
+      const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+      expect(result).toMatchObject({ status: 'failed', reason: 'agent_stopped', message: 'The run ended without a Member 360 result.' });
+      expect(JSON.stringify(result)).not.toContain(questionsText);
       expect(mocks.recordGeneration).not.toHaveBeenCalled();
     }
   );
+  it('keeps the recorded questions, root completion and resumed runtime sequence pending for input', async () => {
+    const fixture = JSON.parse(
+      readFileSync(new URL('../../../../../packages/shared/src/utils/__fixtures__/mktg-run-activity.session.json', import.meta.url), 'utf8')
+    ) as { events: Record<string, unknown>[] };
+    const questionIndex = fixture.events.findIndex(
+      (event) => event['type'] === 'agent_notification_message' && JSON.stringify(event).includes('messaging-framework-questions/v1')
+    );
+    expect(questionIndex).toBeGreaterThanOrEqual(0);
+    const events = fixture.events.slice(questionIndex, questionIndex + 3);
+    expect(events.map((event) => event['type'])).toEqual(['agent_notification_message', 'runtime_done', 'runtime_start']);
+    const payloads = events.map((event) =>
+      JSON.stringify(event).replace('MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)')
+    );
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('follows shared precedence when a status-only session end follows unanswered questions', async () => {
+    const payloads = [
+      JSON.stringify({ type: 'agent_notification_message', content: 'member-360-questions/v1\nWhich outreach should lead?' }),
+      JSON.stringify({ type: 'session_status', session: { status: 'DONE' } }),
+    ];
+    expect(mktgFailureAfterQuestions(payloads, isMember360Question)).toBeNull();
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
   it('does not let short or placeholder contact rows damage report prose', async () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[0].key_contact = '—';

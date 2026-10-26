@@ -48,9 +48,12 @@ Generic browser history retains versions/answers/Q&A on failure, marks session r
 invalid, and retries the exact failed request including feedback on a new session.
 
 Member 360's result controller is excluded from `GuildService.resolveRunOutcome`.
-Without a valid result, it fails only when Guild ends the session: a root
-`runtime_done` event or an ended session status. Error events alone remain pending;
-a session end takes precedence over historical questions. See the
+Without a valid result, its terminal classifier uses root `runtime_done` or an ended
+session status; error events alone remain pending. A questions turn stays
+`needs_input` through its own root `runtime_done`; only a later reply, a newer turn's
+completion or a session end recognized by the shared questions-precedence helper
+supersedes it. A status-only ended event does not currently supersede unanswered
+questions under that helper. See the
 [Member 360 lifecycle](../frontend/marketing-os-member-360.md) for polling and recovery.
 
 ## Current is not newest
