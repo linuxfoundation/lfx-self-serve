@@ -24,13 +24,17 @@
       <lfx-tag class="ml-auto" value="Prototype · sample data" severity="info" />
     </div>
 
-    <lfx-card data-testid="it-os-agent-chat-placeholder">
-      <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
-        <i class="fa-light fa-comments text-3xl text-gray-400" aria-hidden="true"></i>
-        <p class="text-sm text-gray-500">{{ agent.description }}</p>
-        <p class="text-sm text-gray-500">The chat for this agent is coming soon.</p>
-      </div>
-    </lfx-card>
+    @if (agent.id === 'dns') {
+      <lfx-it-os-dns-agent />
+    } @else {
+      <lfx-card data-testid="it-os-agent-chat-placeholder">
+        <div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+          <i class="fa-light fa-comments text-3xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm text-gray-500">{{ agent.description }}</p>
+          <p class="text-sm text-gray-500">The chat for this agent is coming soon.</p>
+        </div>
+      </lfx-card>
+    }
   } @else {
     <lfx-empty-state
       icon="fa-light fa-robot"
