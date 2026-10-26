@@ -82,6 +82,7 @@ test('a stored revision read outage offers Check again and then reopens the repo
   app.state.persisted = true;
   await expect(page.getByTestId('mktg-document-view-error')).toContainText('not been stored yet', { timeout: PAGE_LOAD_TIMEOUT });
   await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  expect(app.state.revisionReadFailures).toBeGreaterThan(0);
   await page.screenshot({ path: testInfo.outputPath('stored-revision-read-outage.png'), fullPage: true });
   app.state.revisionReadError = false;
   await page.getByTestId('mktg-document-view-retry').click();

@@ -12,8 +12,8 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   BRAND_KIT_CONTRACT_ID,
-  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   BRAND_KIT_INTAKE,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   ICP_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   MKTG_DOCUMENT_TYPES,
@@ -678,6 +678,20 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-aeo-typed-scorecard')?.textContent).toContain(typed.scorecard[0].summary);
     });
 
+    it.each([true, false])('handles empty revisions without a TypeError (resumable=%s)', async (resumable) => {
+      store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [] }));
+      pending.load.mockReturnValue(resumable ? { agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' } : null);
+      pending.waitForStorage.mockReturnValue(NEVER);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(store.getRevision).not.toHaveBeenCalled();
+      if (resumable) {
+        expect(pending.waitForStorage).toHaveBeenCalled();
+        expect(query('mktg-document-view-generating')).not.toBeNull();
+      } else {
+        expect(pending.waitForStorage).not.toHaveBeenCalled();
+        expect(query('mktg-document-view-error')).not.toBeNull();
+      }
+    });
     it('keeps a new document generating until storage, then reopens the stored revision', async () => {
       const completed = new Subject<void>();
       store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));

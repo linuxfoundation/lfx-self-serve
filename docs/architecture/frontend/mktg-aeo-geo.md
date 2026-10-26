@@ -97,7 +97,7 @@ Slides export is a separate capability,
 not a simulated control here.
 
 The content and structural `mktg-os-aeo-geo` Playwright specs stub every Marketing
-OS call and project entitlement and run against an expert-served snapshot.
+OS call and project entitlement and run against the served branch.
 They cover validation, storage-dependent generating state, independent runs,
 research/questions re-entry, same-session answers, writing recovery, typed
 report presentation, PDF printing, refusal/errors, access denial and responsive

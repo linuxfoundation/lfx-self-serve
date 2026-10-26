@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
-import { aeoGeoEnvelopeFixture } from '../../../packages/shared/src/utils/aeo-geo.fixture';
+import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 
 test.describe('AEO/GEO audit content', () => {
   test('empty intake history, normalized domain, and blank or 2–5 key pages', async ({ page }, testInfo) => {
