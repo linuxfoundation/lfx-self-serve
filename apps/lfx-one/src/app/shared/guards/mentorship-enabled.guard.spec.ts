@@ -105,7 +105,7 @@ describe('mentorshipEnabledGuard', () => {
     expect(result).toEqual({ redirected: '/' });
   });
 
-  it('fails closed to / when the provider never becomes ready', async () => {
+  it('fails open when the provider never becomes ready', async () => {
     vi.useFakeTimers();
     providerReady.set(false);
 
@@ -116,8 +116,8 @@ describe('mentorshipEnabledGuard', () => {
     vi.useRealTimers();
 
     expect(waitForReady).toHaveBeenCalledWith({ guard: 'mentorshipEnabledGuard', flag: MENTORSHIP_ENABLED_FLAG });
-    expect(router.parseUrl).toHaveBeenCalledWith('/');
-    expect(result).toEqual({ redirected: '/' });
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(result).toBe(true);
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 });
