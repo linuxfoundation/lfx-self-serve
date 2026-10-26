@@ -3,6 +3,14 @@
 
 import { MKTG_RUN_NEW_MODE } from './mktg-last-intake.constants';
 
+export const MKTG_FAMILY_ACTION_LABELS = {
+  rebuild: (names: string[]) => (names.length === 1 ? `Update ${names[0]}` : `Update ${names.length} assets`),
+  blocked: (document: string) => `Review and approve the ${document.toLowerCase()}`,
+  create: (asset: string) => `Create ${asset}`,
+  review: (count: number) => (count === 1 ? 'Review the draft' : `Review ${count} drafts`),
+  run: (asset: string) => `Run ${asset}`,
+};
+
 export const MKTG_FAMILY_WRITE_REQUIRED = 'You need write access to this project to run its agents';
 /**
  * One-off pages opt into last-input restoration only once they support it.

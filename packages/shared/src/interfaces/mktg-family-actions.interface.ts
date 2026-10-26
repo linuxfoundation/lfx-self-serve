@@ -12,7 +12,7 @@ export interface MktgFamilyActionContext {
 }
 
 export interface MktgFamilyRunAction {
-  kind: 'run' | 'run-again';
+  kind: 'run';
   label: string;
   agentId: string;
   mode: 'new' | null;
@@ -20,12 +20,11 @@ export interface MktgFamilyRunAction {
 }
 
 export interface MktgFamilyHeaderAction {
-  kind: 'rebuild' | 'run-next' | 'run-lead';
+  kind: 'rebuild' | 'blocked' | 'create' | 'review';
   label: string;
-  nextAssetLabel: string;
   agentId: string | null;
   mode: 'new' | null;
-  blockedReason: string;
+  link: { commands: string[]; queryParams: Record<string, string> } | null;
 }
 
 export interface MktgFamilyActions {
