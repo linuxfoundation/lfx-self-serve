@@ -529,7 +529,8 @@ export interface MktgRunEndpoints {
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
   /**
-   * POST — body {@link MktgRunAnswersBody}; responds `{ success: true }`. For
+   * POST — body {@link MktgRunAnswersBody} or the one-off agent's typed answers body;
+   * responds `{ success: true }`. For
    * agents whose result can be `questions` (they research first and ask only
    * the gaps): the answers go to the SAME session, and the run polls on.
    */
@@ -597,10 +598,20 @@ export interface MktgRunResultBody {
   project?: string;
 }
 
+/** In-progress values and position for opt-in question-stepper recovery. */
+export interface MktgRunQuestionDraft {
+  index: number;
+  answers: Record<string, string>;
+}
+
 /** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
 export interface MktgPendingDocumentRun {
+  /** Browser-local, in-progress questions; never part of an agent request. */
+  questionDraft?: MktgRunQuestionDraft;
   /** Optional LFX-side answers needed to resume the pending document. */
   answers?: Record<string, string>;
+  /** A research/questions run stays on its form; a writing run resumes on its document. */
+  phase?: 'research' | 'writing';
   agentId: string;
   projectUid: string;
   documentId: string;
@@ -611,7 +622,7 @@ export interface MktgPendingDocumentRun {
 
 /** Response of an agent's `generate` endpoint — the session to poll. */
 export interface MktgRunSessionResponse {
-  /** Stable destination for a one-off run's document, returned before storage. */
+  /** Stable destination for a one-off run's Document view, returned before storage. */
   documentId?: string;
   /** Public opaque run selector, not a Guild session id or capability. */
   runId?: string;
@@ -804,6 +815,8 @@ export interface MktgRunResultResponse {
   status: 'pending' | 'ready' | 'questions' | 'refused' | 'failed';
   /** Final agent reply when its runtime ended without a valid asset; plain text only. */
   failureText?: string;
+  /** Client poll fallback, not a definitive server generation state. */
+  transient?: boolean;
   /** Set when the session's own error events (runtime_error, llm_failed, …) ended the run before any output — this item's detection; `failureText` is main's idle-runtime-end reply. */
   failure?: MktgRunFailure;
   /** The agent's questions, present when `questions`. */
@@ -959,12 +972,17 @@ export interface MktgRunActivityPhaseDefinition {
 }
 
 /**
- * A registered batch intake form for one agent. The run-page shell is driven
- * entirely by this definition, so a second agent's form slots in by adding a
- * new entry to the shared registry.
+ * Registered intake contract and run configuration for one agent. Living
+ * intakes render `fields` through the generic run-page shell. A
+ * `oneOffDocument` intake is rendered by a dedicated component instead;
+ * its `fields` describe the contract/validation metadata, not its UI controls.
  */
 export interface MktgAgentIntake {
-  /** Dedicated one-off intake; no generic feedback/regeneration UI. */
+  /**
+   * Delegates form rendering to a dedicated run component; `fields` remain
+   * contract/validation metadata only. Each submission hands off to an
+   * immutable one-off Document view, without revisions or feedback.
+   */
   oneOffDocument?: boolean;
   /** Catalog agent id this intake belongs to. */
   agentId: string;
@@ -1264,6 +1282,8 @@ export interface MktgGenerateRequest {
   projectUid: string;
   /** Registered intake definition for the agent. */
   intake: MktgAgentIntake;
+  /** Explicit Start from a fresh intake: never continue an older session. */
+  newRun?: boolean;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
   /** Existing documents, for intakes with a documents section. */

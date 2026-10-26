@@ -4,12 +4,16 @@
 import { MEMBER_360_FINALIZE_TOOL, MEMBER_360_REDACTED_SUMMARY, MEMBER_360_INVALID_RESULT } from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { logger } from './logger.service';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -55,7 +59,7 @@ vi.mock('./mktg-document-store.service', () => ({
     recordGeneration = mocks.recordGeneration;
   },
 }));
-vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 
 // SDK persisted tool-call/result transcript parts, paired by call id.
 function finalized(envelope: unknown): string {
@@ -84,7 +88,7 @@ describe('Member 360 entitlement and generation', () => {
     const envelope = member360Fixture();
     if (mode === 'schema') Object.assign(envelope, { kind: 'invalid' });
     if (mode === 'hash') envelope.content_sha256 = '0'.repeat(64);
-    if (mode === 'project') envelope.project_uid = 'other-project';
+    if (mode === 'project') envelope.project_name = 'Other Foundation';
     let payload = finalized(envelope);
     if (mode === 'raw') payload = JSON.stringify(envelope);
     if (mode === 'other-tool') payload = payload.replace(MEMBER_360_FINALIZE_TOOL, 'web_search');
@@ -164,6 +168,7 @@ describe('Member 360 entitlement and generation', () => {
     const started = await new Member360Service().start(req, { project: 'sample-project' });
     expect(started).toEqual({ sessionId: 'session-1', documentId: buildMktgRunDocumentId('session-1') });
     expect(mocks.getProjectById).toHaveBeenCalledWith(req, 'sample-project', true);
+    expect(mocks.createSession.mock.calls[0][1]).toMatchObject({ mentionOnOwnLine: true });
     const message = mocks.createSession.mock.calls[0][1].message;
     expect(message).toContain('MEMBER 360 RUN REQUEST');
     expect(message).toContain('  LFX project UID: sample-project (authoritative');
@@ -219,8 +224,66 @@ describe('Member 360 entitlement and generation', () => {
     expect(envelope.tabs.member_ranking[0].key_contact).not.toBeNull();
   });
   it('never stores an envelope scoped to a different project', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_uid: 'other-project' })]);
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_name: 'Other Foundation' })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'pending', activity: [] });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('accepts a different MCP uid by exact name and slug and normalizes the stored uid', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][2]).toBe('sample-project');
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    expect(stored.lfx_project_uid).toBe('mcp-project');
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(stored.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.tabs)).digest('hex'));
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(envelope.project_uid).toBe('mcp-project');
+  });
+  it.each(['sample-project', 'mcp-project'])('does not trust agent-supplied uid provenance when the project uid is %s', async (projectUid) => {
+    const envelope = { ...member360Fixture(), project_uid: projectUid, project_slug: 'sample-foundation', lfx_project_uid: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    if (projectUid === 'sample-project') {
+      expect(stored).not.toHaveProperty('lfx_project_uid');
+    } else {
+      expect(stored.lfx_project_uid).toBe(projectUid);
+    }
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(envelope.lfx_project_uid).toBe('owner@example.test');
+  });
+  it.each(['project_uid', 'project_slug'] as const)('rejects an email-valued %s without logging the identity', async (field) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation', [field]: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalled();
+    const logs = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logs).toContain('Rejected envelope scope');
+    expect(logs).not.toContain('owner@example.test');
+    expect(logs).toContain('[contact redacted]');
+  });
+  it.each(['other-foundation', undefined])('rejects a different uid when the slug is %s despite an exact name', async (projectSlug) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: projectSlug };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('still accepts an exact uid and name without a slug', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'sample-project', project_slug: undefined };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][3].member360).not.toHaveProperty('lfx_project_uid');
+  });
+  it('rejects an exact uid with a conflicting slug', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_slug: 'other-foundation' })]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
@@ -279,14 +342,16 @@ describe('Member 360 entitlement and generation', () => {
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
-  it('ends an error event without exposing a raw error object or inventing an agent reason', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([
-      JSON.stringify({
-        type: 'runtime_error',
-        task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
-        content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
-      }),
-    ]);
+  it('keeps an error event pending until session end without exposing its raw details', async () => {
+    const error = JSON.stringify({
+      type: 'runtime_error',
+      task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
+      content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
+    });
+    mocks.getRawEventPayloads.mockResolvedValue([error]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('pending');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    mocks.getRawEventPayloads.mockResolvedValue([error, JSON.stringify({ type: 'session_status', session: { status: 'DONE' } })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
       reason: 'agent_stopped',
@@ -344,7 +409,7 @@ describe('Member 360 entitlement and generation', () => {
     const candidate =
       rejection === 'schema'
         ? { contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-contact-2' }] } }
-        : { ...member360Fixture(), project_uid: 'other-project' };
+        : { ...member360Fixture(), project_name: 'Other Foundation' };
     candidate.tabs.member_ranking[0].key_contact = 'opaque-contact-2';
     if ('content_sha256' in candidate) candidate.content_sha256 = createHash('sha256').update(JSON.stringify(candidate.tabs)).digest('hex');
     const message = 'Cannot complete this run; contact opaque-contact-2 or owner@example.test.';
@@ -419,7 +484,7 @@ describe('Member 360 entitlement and generation', () => {
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
   });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
-    'recognizes %s without exposing question text or persisting',
+    'keeps %s open through its own turn end, then fails after a later final reply',
     async (header) => {
       const questions = {
         project: 'Sample Foundation',
@@ -434,14 +499,54 @@ describe('Member 360 entitlement and generation', () => {
         ],
       };
       const questionsText = `${header}\n\`\`\`json\n${JSON.stringify(questions)}\n\`\`\``;
-      mocks.getRawEventPayloads.mockResolvedValue([
-        JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` }),
-        JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', status: 'DONE' } }),
-      ]);
+      const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
       expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      const done = JSON.stringify({
+        type: 'runtime_done',
+        task: { id: 'synthetic-root-task', entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' },
+      });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done]);
+      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      mocks.getRawEventPayloads.mockResolvedValue([
+        questionsEvent,
+        done,
+        JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'The run could not produce a result.' } }),
+        done,
+      ]);
+      const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+      expect(result).toMatchObject({ status: 'failed', reason: 'agent_stopped', message: 'The run ended without a Member 360 result.' });
+      expect(JSON.stringify(result)).not.toContain(questionsText);
       expect(mocks.recordGeneration).not.toHaveBeenCalled();
     }
   );
+  it('keeps the recorded questions, root completion and resumed runtime sequence pending for input', async () => {
+    const fixture = JSON.parse(
+      readFileSync(new URL('../../../../../packages/shared/src/utils/__fixtures__/mktg-run-activity.session.json', import.meta.url), 'utf8')
+    ) as { events: Record<string, unknown>[] };
+    const questionIndex = fixture.events.findIndex(
+      (event) => event['type'] === 'agent_notification_message' && JSON.stringify(event).includes('messaging-framework-questions/v1')
+    );
+    expect(questionIndex).toBeGreaterThanOrEqual(0);
+    const events = fixture.events.slice(questionIndex, questionIndex + 3);
+    expect(events.map((event) => event['type'])).toEqual(['agent_notification_message', 'runtime_done', 'runtime_start']);
+    const payloads = events.map((event) =>
+      JSON.stringify(event).replace('MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)')
+    );
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('follows shared precedence when a status-only session end follows unanswered questions', async () => {
+    const payloads = [
+      JSON.stringify({ type: 'agent_notification_message', content: 'member-360-questions/v1\nWhich outreach should lead?' }),
+      JSON.stringify({ type: 'session_status', session: { status: 'DONE' } }),
+    ];
+    expect(mktgFailureAfterQuestions(payloads, isMember360Question)).toBeNull();
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
   it('does not let short or placeholder contact rows damage report prose', async () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[0].key_contact = '—';

@@ -82,9 +82,20 @@ The Family page links the real asset view `documents/:agentKey/:documentId`, pre
 lens/project context. The first declared agent is runnable only with an active catalog entry;
 unregistered agents keep a disabled button with catalog-independent pending copy from the
 family constants. Member 360 explains that its page is on its way, without a disabled tooltip;
-its button automatically enables once an active catalog entry lands.
-Missing rows offer a Run link only for an active, non-excluded catalog agent, keeping query
-params and leaving the header Run button unchanged.
+its button automatically enables once an active catalog entry lands. Family Run action
+wording uses the matching asset's board `runName` (or row label), not the catalog's agent
+name; header pending copy remains a fallback. Catalog identity still controls routing and
+availability. Row headings and the Agents grid's catalog names are not renamed.
+Every available living row offers Run for its active, non-excluded catalog agent with a
+registered intake, whether Missing, Draft, Approved or Needs rebuild. Coming-soon and one-off
+rows do not gain this action. Required approved-document dependencies still disable row actions
+with the same reason as the run page. The header keeps its state-driven priority: Rebuild what
+is stale, otherwise Run next agent for the first missing asset, otherwise the lead agent.
+Adding built-row actions does not change which missing asset the header selects.
+Living header/row Run and asset Run again open `?mode=new`,
+clearing old questions/generation/revision/run selectors; the Sources page still waits for
+explicit Start. This per-row action is a provisional addition: the Family board depicts only
+the header framework Run. Dedicated one-off routing/availability and breadcrumbs stay unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
@@ -120,16 +131,22 @@ exact matching so it is not active everywhere; named tabs use subset matching wi
 Family titles follow the family name.
 
 Up is a fixed-parent `lfx-mktg-breadcrumb`, independent of the entry route. The pure shared
-`mktgKitRootCrumb` builds the `<Project> kit` label once; `mktgKitCrumbsFor` derives a document or
-agent's family from the shared catalog/family registries. Every crumb except the last is a link;
+`buildMktgBreadcrumbs(page, kitRootPath, projectName)` takes a typed kit/tab/family/asset/run page
+and derives labels and fixed parents from the shared catalog/family registries. Pages pass only
+that identity to the component, which reads name and slug from `ProjectContextService` and tracks
+`NavigationEnd` URLs for the absolute lens root (matched on a full path segment). Until the project
+resolves, every page uses the neutral `Marketing kit` label. The shared Node unit suite guards
+against breadcrumb nav markup outside `components/mktg-breadcrumb/mktg-breadcrumb.component.html`. Every crumb except the last is a link;
 the last has `aria-current="page"`. Kit home is the root and has no breadcrumb. Tab pages show
 `<Project> kit › <Tab>`; a family shows `<Project> kit › <Family>`; generic run and shared document
 views show `<Project> kit › <Family> › <Agent or asset>`. Unmapped legacy documents use Documents
 as their middle parent. Parent links use the active project slug and do not inherit asset-only query state;
 an absent project is omitted, not serialized as `?project=`. Separate run/document/Marketing OS back
 arrows are removed. The Member 360 and LinkedIn run pages use the same component and fixed family parents.
-Their final crumbs use the catalog agent names. Run again, including Member 360's New run,
+Living run pages use the built asset's item label; one-off run pages retain the catalog agent name.
+Run again, including Member 360's New run,
 targets the catalog run route via `mktgRunRouteFor` and drops document-only state.
+Stored AEO/GEO report crumbs add the revision's UTC date and never carry the list's `type` filter.
 Downstream and Rebuild links derive their lens root with `mktgKitRootPath` and use the active
 project slug. Export actions stay on the asset or Family page; external deck links still open in a new tab.
 
@@ -144,19 +161,22 @@ filters locally as typed but pushes only once per settled term, after a 300 ms d
 equality check; Back restores the previous settled term, not individual keystrokes. URL echoes do not
 rewrite the search input while typing.
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
-Run-page and document Edit actions mark their pushed history entry with `mktgEditPushed: true`.
-Cancel and persisted profile saves return through history only for a marked entry. An unmarked cold
-edit stays cold after Family → Back: Save/Cancel clear `profile` with `replaceUrl: true` in place.
-A setup-only Continue is not a persisted save; it always stays on intake with the answers in `setup`
-and clears `profile` in place, rather than destroying those answers by returning to the document.
+Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
+Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`
+in place, including after Family → Back. Setup-only Continue keeps its answers and returns through
+history only for run origin; document origin stays on intake with `replaceUrl: true` to avoid losing
+unpersisted answers. Legacy boolean markers conservatively retain document-origin behavior.
 Browser Back/Forward restores these query-backed views without starting a run or repeating a write.
-Only automatic hops replace history: the generic unknown/coming-soon/intake-less agent redirect
-uses `replaceUrl: true`. Main's generic run renders result and questions inline.
+Automatic run-to-document, post-research, questions and selected-revision landings replace history,
+including navigation retries; the exact receipt revision is preserved. Unknown-agent redirects replace.
+Run again/New run push with the active project and the owned `mode=new` entry intent for living assets.
+Draft another and dependency-agent links push with active-project-only params. Automatic landings clear entry-only mode.
+Manual Open intake remains a user push and may carry its owned questions continuation token.
 
 No-project branches are defensive and unit-covered, not stable route-level e2e states:
 `projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`
 selects an available project or sends an empty lens to Me through `handleEmptyLensResponse`.
-A no-cookie/empty-nav e2e therefore reaches My Dashboard, not an unselected kit.
+A no-cookie/empty-nav e2e therefore reaches the Me lens Dashboard, not an unselected kit.
 
 Content/robust Playwright pairs stub synthetic listing and revision data, including a
 Boilerplates document and framework source report. They pin the local flag and project grants,

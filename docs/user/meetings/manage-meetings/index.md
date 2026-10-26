@@ -12,7 +12,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View meetings
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. Your personal **My Meetings** view (Me lens) also shows meetings across your projects, and Edit/Delete still appear there for meetings you organize — that view just doesn't have a **Create Meeting** button.
+2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. Your personal **Meetings** view (Me lens) also shows meetings across your projects, and Edit/Delete still appear there for meetings you organize — that view just doesn't have a **Create Meeting** button.
 3. The dashboard lists meetings for your active project context, with **Upcoming** and **Past** tabs. If no meetings are scheduled, the Upcoming tab shows "No meetings yet / Schedule a meeting to get started."
 4. Each meeting you organize shows **Edit** and **Delete** icon buttons directly on its card in the list. You can also select a meeting to open its full detail view.
 

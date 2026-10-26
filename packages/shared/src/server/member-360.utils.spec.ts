@@ -4,11 +4,17 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_MAX_TRACKERS } from '../constants/member-360.constants';
-import { formInputSchema, member360GenerateSchema, renderMember360FormMessage } from './member-360.utils';
+import { findMember360Questions, formInputSchema, isMember360Question, member360GenerateSchema, renderMember360FormMessage } from './member-360.utils';
 import { envelopeSchema, memberRankingRowSchema } from './member-360-schema.utils';
 
 // Mirror synthetic-org.mock.ts identities by value because shared cannot import apps.
 describe('Member 360 form-only contract', () => {
+  it('shares the first-line questions predicate with attributed question extraction', () => {
+    const text = '  MEMBER 360 — QUESTIONS (member-360-questions/v1)\nSynthetic question  ';
+    expect(isMember360Question(text)).toBe(true);
+    expect(isMember360Question('Other reply\nmember-360-questions/v1')).toBe(false);
+    expect(findMember360Questions([JSON.stringify({ type: 'agent_notification_message', content: text })])).toBe(text.trim());
+  });
   it('renders authoritative scope before all requester-controlled data', () => {
     const input = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -24,7 +30,7 @@ describe('Member 360 form-only contract', () => {
     expect(text).toContain('a\\|b');
     const weightsLine = text.split('\n').find((line) => line.startsWith('CATEGORY WEIGHTS:')) ?? '';
     // Pin the complete upstream prompt line without a person's name in test data.
-    expect(createHash('sha256').update(weightsLine).digest('hex')).toBe('42205192ed4645a9353fd23b9e1aec20d8791794f510f15ae43ce7e58f281310');
+    expect(createHash('sha256').update(weightsLine).digest('hex')).toBe('a034f2d693896d65c4b4c103599d4a3544b9bf33c150446cba5e3b2a2de01846');
     expect(text).toContain('PRIOR MEMBER 360 RUN: none supplied');
   });
   it('rejects unsafe tracker filenames on Generate and flattens delimiters defensively', () => {
@@ -92,6 +98,12 @@ describe('Member 360 form-only contract', () => {
     for (const rows of [[], [{ count: 5 }], Array.from({ length: 2001 }, () => ({ company: 'Acme Motors' }))]) {
       expect(formInputSchema.safeParse({ ...base, trackers: [{ filename: 'tracker.csv', rows }] }).success).toBe(false);
     }
+  });
+  it('accepts the optional original LFX uid while stripping unknown envelope keys', () => {
+    const identity = envelopeSchema.pick({ lfx_project_uid: true });
+    expect(identity.parse({ lfx_project_uid: 'mcp-project', future_metadata: true })).toEqual({ lfx_project_uid: 'mcp-project' });
+    expect(identity.parse({})).toEqual({});
+    expect(identity.safeParse({ lfx_project_uid: '' }).success).toBe(false);
   });
   it('fails closed on incomplete or malformed output, scores and unknown properties', () => {
     expect(envelopeSchema.safeParse({ contract: 'member-360-output/v1', tabs: {} }).success).toBe(false);

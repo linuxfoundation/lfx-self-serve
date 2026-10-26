@@ -274,13 +274,13 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     vi.clearAllMocks();
   });
 
-  it('passes the full owner~name agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
+  it('passes the full owner~name agent_id by default and keeps the routing mention on its own line', async () => {
     const sessionId = await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
 
     expect(sessionId).toBe('session-new');
     const body = sentBody();
     expect(body['agent_id']).toBe('owner~foundation-message');
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
   });
 
   it('puts the @handle mention on a line of its own when asked, so a coded agent finds its intake header line intact', async () => {
@@ -291,6 +291,24 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect(body['agent_input']).toEqual({ type: 'text', text: '@slides-export\nBATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X' });
   });
 
+  it('retains explicit same-line opt-out for session creation', async () => {
+    await service.createSession(req, { message: 'INTAKE HEADER\nSynthetic body', handle: 'synthetic-agent', mentionOnOwnLine: false });
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: '@synthetic-agent INTAKE HEADER\nSynthetic body' });
+  });
+
+  it('uses the same own-line default for an answers follow-up, replacing a caller-supplied mention', async () => {
+    await service.sendFollowUp(req, 'session-new', { message: '@untrusted\nANSWERS HEADER\nSynthetic answer', handle: 'synthetic-agent' });
+    expect(sentBody()).toEqual({ mode: 'text', content: '@synthetic-agent\nANSWERS HEADER\nSynthetic answer' });
+  });
+
+  it.each(['createSession', 'sendFollowUp'] as const)('keeps %s mention-only routing free of a trailing separator', async (method) => {
+    if (method === 'createSession') await service.createSession(req, { message: '@untrusted  ', handle: 'synthetic-agent' });
+    else await service.sendFollowUp(req, 'session-new', { message: '@untrusted  ', handle: 'synthetic-agent' });
+    expect(sentBody()).toMatchObject(
+      method === 'createSession' ? { agent_input: { type: 'text', text: '@synthetic-agent' } } : { mode: 'text', content: '@synthetic-agent' }
+    );
+  });
+
   it('drops the agent_id field (only) when GUILD_EXPLICIT_AGENT_ID=false', async () => {
     vi.stubEnv('GUILD_EXPLICIT_AGENT_ID', 'false');
 
@@ -298,7 +316,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
 
     const body = sentBody();
     expect('agent_id' in body).toBe(false);
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
   });
 
   it('sends a structured agent input verbatim with the owner~name agent_id (no mention can ride a typed form payload)', async () => {
@@ -332,6 +350,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     await service.createSession(req, { message: 'hello' });
 
     expect('agent_id' in sentBody()).toBe(false);
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: 'hello' });
   });
 });
 
@@ -387,6 +406,8 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
+    expect(() => service.preflight('synthetic_redraft')).toThrow('Guild API is not configured.');
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(service.createSession(req, { message: 'hi', handle: 'foundation-message' })).rejects.toMatchObject({
       code: 'guild_not_configured',
       message: 'Guild API is not configured. Missing environment variable: GUILD_API_KEY.',

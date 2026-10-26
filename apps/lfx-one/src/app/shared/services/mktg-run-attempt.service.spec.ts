@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { MktgGenerateRequest, User } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserService } from './user.service';
@@ -23,6 +23,51 @@ describe('MktgRunAttemptService', () => {
     user.set({ sub: 'synthetic-subject' } as User);
     TestBed.configureTestingModule({ providers: [{ provide: UserService, useValue: { user } }] });
     service = TestBed.inject(MktgRunAttemptService);
+  });
+
+  it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    service.saveRedraft(intent);
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+    expect(restored.loadRedraft({ ...scope, revisionId: `000002-${'b'.repeat(64)}` })).toBeNull();
+    user.set({ sub: 'other-synthetic' } as User);
+    expect(restored.loadRedraft(scope)).toBeNull();
+    user.set({ sub: 'synthetic-subject' } as User);
+    service.saveRedraft({
+      ...intent,
+      updatedAt: new Date(Date.now() - MKTG_RUN_STORAGE_TTL_MS - 1).toISOString(),
+      attempt: {
+        runId: 'c'.repeat(64),
+        priorVersion: 1,
+        session: { agentId: request.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-expired-capability' },
+      },
+    });
+    expect(service.loadRedraft(scope)).toMatchObject({ clientRequestId: intent.clientRequestId, commentIds: intent.commentIds });
+    expect(service.loadRedraft(scope)?.attempt).toBeUndefined();
+    expect(Object.values(window.localStorage).join('')).not.toContain('synthetic-expired-capability');
+  });
+
+  it('keeps completed source payloads for same-visit reuse without retaining a recoverable attempt or persisting bytes', () => {
+    const uploaded = { ...request, documents: [{ kind: 'file' as const, title: 'synthetic.txt', text: 'private-source' }] };
+    service.reserve(uploaded);
+    service.clear(request.projectUid, request.agentId);
+    expect(service.load(request.projectUid, request.agentId)).toBeNull();
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBe(uploaded);
+    expect(window.localStorage.length).toBe(0);
+    expect(TestBed.runInInjectionContext(() => new MktgRunAttemptService()).lastInputs(request.projectUid, request.agentId)).toBeNull();
+    user.set({ sub: 'other-subject' } as User);
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBeNull();
+  });
+
+  it('does not reuse inputs across project/agent boundaries or after the input TTL', () => {
+    service.reserve(request);
+    expect(service.lastInputs('other-project', request.agentId)).toBeNull();
+    expect(service.lastInputs(request.projectUid, 'other-agent')).toBeNull();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + MKTG_RUN_STORAGE_TTL_MS + 1);
+    expect(service.lastInputs(request.projectUid, request.agentId)).toBeNull();
+    clock.mockRestore();
   });
 
   it('retains the draft before a session exists, restoring its answers without an owner token', () => {

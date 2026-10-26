@@ -16,9 +16,10 @@ import {
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_KIT_STATE_LABELS,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
+  MKTG_RUN_NEW_MODE,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, mktgKitRootCrumb, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
+import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -67,17 +68,29 @@ export class MktgFamilyComponent {
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
   /** Why the family's lead agent cannot run yet: one copy for the tooltip and the note under the button. */
   protected readonly pendingReason = computed(() => this.definition()?.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon']);
-  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();
+  protected readonly firstRunEnabled = computed(() => {
+    const agent = this.firstAgent();
+    if (!agent || agent.status !== 'active') return false;
+    return !!MKTG_AGENT_INTAKES[agent.id];
+  });
+  protected readonly firstRunName = computed(() => {
+    const family = this.definition();
+    if (!this.firstRunEnabled() && family?.pendingAgentName) return family.pendingAgentName;
+    const asset = family?.assets.find((row) =>
+      MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === this.firstAgent()?.id)
+    );
+    return asset?.runName ?? asset?.label ?? family?.pendingAgentName ?? this.firstAgent()?.name;
+  });
   protected readonly rowRunAgents: Signal<Record<string, MktgAgent>> = this.initRowRunAgents();
   /** Why each not-run-yet row's agent cannot run yet (a required document is not approved); absent when it can. */
   protected readonly rowRunBlocked: Signal<Record<string, string>> = this.initRowRunBlocked();
   /** The first asset not run yet, in the family's run order (the framework before the assets that read it). */
   protected readonly nextAgent = computed(() => {
     const agents = this.rowRunAgents();
-    const row = this.family()?.rows.find((candidate) => agents[candidate.asset.id]);
+    const row = this.family()?.rows.find((candidate) => candidate.state === 'missing' && agents[candidate.asset.id]);
     return row ? { agent: agents[row.asset.id], label: row.asset.label, blocked: this.rowRunBlocked()[row.asset.id] ?? '' } : null;
   });
   protected readonly rebuildBlockedReason = computed(() => {
@@ -88,11 +101,10 @@ export class MktgFamilyComponent {
     if (!this.kit.documents()?.approvedFramework) return 'Approve the messaging framework first: rebuilds start from the approved framework';
     return 'Rebuild is not available right now';
   });
-  private readonly routeQueryParams = toSignal(this.route.queryParams, { initialValue: {} });
   protected readonly autoRebuild = computed(() =>
     this.navigationIntent()?.project === this.kit.projectUid() ? (this.navigationIntent()?.frameworkRevisionId ?? '') : ''
   );
-  protected readonly runQueryParams = computed(() => ({ ...this.routeQueryParams(), project: this.kit.projectQueryParams().project ?? '' }));
+  protected readonly runQueryParams = computed(() => ({ project: this.kit.projectQueryParams().project ?? '', mode: MKTG_RUN_NEW_MODE }));
 
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.definition()?.name));
@@ -123,8 +135,13 @@ export class MktgFamilyComponent {
 
   protected runFirstAgent(): void {
     const agent = this.firstAgent();
-    if (this.live() && agent?.status === 'active') {
-      this.router.navigate(['../../', agent.id], { relativeTo: this.route, queryParams: this.kit.projectQueryParams(), queryParamsHandling: 'merge' });
+    if (this.live() && agent && this.firstRunEnabled()) {
+      const living = MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === agent.id);
+      this.router.navigate(['../../', agent.id], {
+        relativeTo: this.route,
+        queryParams: living ? this.runQueryParams() : this.kit.projectQueryParams(),
+        ...(living ? {} : { queryParamsHandling: 'merge' as const }),
+      });
     }
   }
 
@@ -132,14 +149,15 @@ export class MktgFamilyComponent {
     this.navigationIntent.set(null);
   }
 
+  /** PROVISIONAL: per-row Run actions for built living assets extend the board's header-only action. */
   private initRowRunAgents(): Signal<Record<string, MktgAgent>> {
     return computed(() => {
       const agents: Record<string, MktgAgent> = {};
       for (const row of this.family()?.rows ?? []) {
-        if (row.state !== 'missing') continue;
-        const id = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === row.asset.agentKey)?.catalogAgentId;
-        const agent = MKTG_AGENTS.find((candidate) => candidate.id === id && candidate.status === 'active');
-        if (agent && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)) agents[row.asset.id] = agent;
+        const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
+        if (row.state === 'coming-soon' || (type?.kind !== 'living' && row.state !== 'missing')) continue;
+        const agent = MKTG_AGENTS.find((candidate) => candidate.id === type?.catalogAgentId && candidate.status === 'active');
+        if (agent && MKTG_AGENT_INTAKES[agent.id] && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)) agents[row.asset.id] = agent;
       }
       return agents;
     });

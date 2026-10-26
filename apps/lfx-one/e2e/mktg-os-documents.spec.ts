@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_LAST_INTAKE_API } from '../../../packages/shared/src/constants';
 
 import {
   DOCUMENTS_URL,
@@ -46,6 +46,17 @@ test.describe('Marketing OS current revisions', () => {
       if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
     });
   }
+
+  test('labels a Member 360 questions run as paused in the started list and navigation', async ({ page }) => {
+    const run: ReturnType<typeof startedDocumentRun> = { ...startedDocumentRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
+    await setupDocuments(page, { empty: true, runs: [run] });
+    await openDocuments(page);
+    const row = page.getByTestId(`mktg-documents-started-run-${run.runId}`);
+    await expect(row).toContainText('Paused — the run needs input');
+    await expect(row).not.toContainText('Waiting for your answers');
+    await expect(page.getByTestId('mktg-documents-nav-member-360')).toContainText('Paused');
+    await expect(page.getByTestId('mktg-documents-nav-member-360')).not.toContainText('Needs answers');
+  });
 
   test('opens a Started run before its first revision without crashing', async ({ page }) => {
     const run = startedDocumentRun('writing');
@@ -94,13 +105,15 @@ test.describe('Marketing OS current revisions', () => {
   test('opens the selected run without changing the stored current revision', async ({ page }) => {
     const run = startedDocumentRun();
     await setupDocuments(page, { runs: [run] });
+    await page.route(`**${MKTG_LAST_INTAKE_API}/${DOCUMENT_TYPE.agentKey}/last?*`, (route) => fulfillDocumentJson(route, { intake: null }));
     await openDocuments(page);
     await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
     await expect(page).toHaveURL(new RegExp(`run=${run.runId}`));
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
     await page.getByTestId('mktg-document-view-run-again').click();
-    await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mktg-agent-run-result')).toHaveCount(0);
   });
 

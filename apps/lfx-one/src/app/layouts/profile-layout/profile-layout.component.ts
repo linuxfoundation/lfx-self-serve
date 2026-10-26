@@ -20,7 +20,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -254,6 +254,8 @@ export class ProfileLayoutComponent {
    * drawer is correct too) and sets it as the optimistic header override.
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
+    this.syncSharedUserName(metadata);
+
     // No base profile to merge into yet (Flow C cold load, or a user-only GET with no profile record
     // where merging would fabricate one and flip the drawer's metadataLoaded true). Stash the save +
     // refetch; reapplyPendingOptimisticUpdate merges it once a base profile lands, so an eventually-
@@ -286,6 +288,22 @@ export class ProfileLayoutComponent {
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
     // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
     this.pendingOptimisticMetadata = null;
+  }
+
+  // The navbar and account popover read UserService.user().name, which is seeded once from the SSR
+  // OIDC claims and never refetched, so push a saved name change into it for the current session.
+  private syncSharedUserName(metadata: Partial<UserMetadata>): void {
+    const currentUser = this.userService.user();
+    if (!currentUser || this.impersonating() || (metadata.given_name === undefined && metadata.family_name === undefined)) {
+      return;
+    }
+
+    const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
+    const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
+    const name = `${givenName} ${familyName}`.trim();
+    if (name && name !== currentUser.name) {
+      this.userService.user.set({ ...currentUser, name });
+    }
   }
 
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
@@ -423,6 +441,9 @@ export class ProfileLayoutComponent {
         switchMap(() =>
           user$.pipe(
             filter((user) => user !== null),
+            // Key on identity, not object: syncSharedUserName replaces the user object on a name save, and
+            // that must not refetch the eventually-consistent profile over the optimistic merge.
+            distinctUntilChanged((previous, current) => previous?.sub === current?.sub),
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
                 map((profile: CombinedProfile) => this.mapToHeaderData(profile)),

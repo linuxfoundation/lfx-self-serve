@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
+import { aeoGeoEnvelopeFixture } from '../../../../../packages/shared/src/utils/aeo-geo.fixture';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -54,13 +55,17 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-session-event.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-activity.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-comments.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-redraft.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/boilerplates.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
@@ -165,6 +170,10 @@ import type { Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
+import { guardFoundationMessageText } from '@lfx-one/shared/utils/foundation-message.utils';
+import { guardBrandKitText } from '@lfx-one/shared/utils/brand-kit.utils';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
@@ -735,6 +744,135 @@ describe('MktgDocumentStoreService', () => {
         validationErrors: [expect.objectContaining({ field: 'documentId', message: 'Approve is not available for one-off run documents.' })],
       });
       expect(store.conditionalWrites).toEqual([]);
+    });
+  });
+
+  describe('redraft through the existing main Draft writer', () => {
+    async function prepare(approved: boolean) {
+      const a = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Base'), PROJECT, 'base');
+      const b = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Current'), PROJECT, 'current');
+      const first = a?.document_location?.revision_id;
+      const second = b?.document_location?.revision_id;
+      if (!first || !second) throw new Error('Missing synthetic bases');
+      if (approved) await service.approveRevision(req, PROJECT, FRAMEWORK, 'living', second);
+      const context = await new MktgDocumentRedraftContextService().create(req, 'redraft-session', {
+        ...redraftContextFixture(),
+        project: PROJECT,
+        basedOnId: first,
+        priorVersion: 1,
+      });
+      const generated = {
+        ...jsonEnvelope('Revised', 2),
+        mode: 'redraft',
+        project_name: context.projectName,
+        revision: {
+          mode: 'redraft',
+          prior_version: 1,
+          comments: [
+            { number: 1, field: context.comments[0].anchor.key, comment: guardFoundationMessageText(context.comments[0].text), resolution: 'Applied.' },
+          ],
+        },
+      } as MktgArtifactJsonEnvelope;
+      return { first, second, context, generated };
+    }
+    it.each([false, true])('inherits main selection unchanged (approved current=%s), records actual base and metadata only', async (approved) => {
+      const { first, second, context, generated } = await prepare(approved);
+      const pointer = `documents/${PROJECT}/foundation-message/living/current.json`;
+      const before = JSON.parse(storedObject(pointer).body);
+      const creatorSubject = approved ? 'synthetic-creator' : null;
+      const receipt = await new MktgDocumentStoreService({ creatorSubject }).persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      if (!receipt?.document_location) throw new Error('Missing synthetic receipt');
+      const stored = storedObject(receipt.s3_key);
+      const record = storedRecord(receipt.s3_key);
+      expect(record).toMatchObject({ origin: 'revised', basedOnId: first, comments: [] });
+      expect(stored.metadata['author-id']).toBe(creatorSubject ?? undefined);
+      expect(record.bundle.sidecar).not.toHaveProperty('redraftRunId');
+      expect(record).not.toHaveProperty('redraftRunId');
+      expect(stored.metadata).toMatchObject({ 'redraft-run-id': context.runId, 'comment-count': '1' });
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      const after = JSON.parse(storedObject(pointer).body);
+      expect(detail?.revisions[0]).toMatchObject({ id: receipt.document_location.revision_id, approval: null, commentCount: 1 });
+      if (approved) {
+        expect(after).toEqual({ ...before, revisionIds: [...before.revisionIds, receipt.document_location.revision_id] });
+        expect(detail?.approvedCurrent?.revisionId).toBe(second);
+      } else {
+        expect(after.revisionId).toBe(receipt.document_location.revision_id);
+        expect(detail?.approvedCurrent).toBeNull();
+      }
+      delete stored.metadata['comment-count'];
+      expect((await service.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.revisions[0].commentCount).toBe(1);
+      const again = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      expect(again?.document_location).toEqual(receipt.document_location);
+    });
+    it.each([false, true])('keeps the Brand Kit pre-compatibility gate and degrades echo refusal to null (invalid=%s)', async (invalid) => {
+      const base = await service.persistGeneration(req, SPEC, envelope('# Base kit'), PROJECT, 'base-kit');
+      if (!base?.document_location) throw new Error('Missing synthetic kit');
+      const context = await new MktgDocumentRedraftContextService().create(req, 'kit-redraft', {
+        ...redraftContextFixture('brand-kit'),
+        project: PROJECT,
+        basedOnId: base.document_location.revision_id,
+        priorVersion: 1,
+      });
+      const generated = {
+        ...envelope('# Revised kit', 2),
+        mode: 'redraft',
+        project_name: context.projectName,
+        revision: {
+          prior_version: 1,
+          comments: [
+            {
+              number: 1,
+              passage: guardBrandKitText(context.comments[0].anchor.passage ?? ''),
+              comment: invalid ? 'wrong' : guardBrandKitText(context.comments[0].text),
+              resolution: 'Applied.',
+            },
+          ],
+        },
+      };
+      const before = [...store.objects.keys()];
+      const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'kit-redraft');
+      if (invalid) {
+        expect(receipt).toBeNull();
+        expect([...store.objects.keys()]).toEqual(before);
+        expect(loggerMocks.warning).toHaveBeenCalled();
+      } else {
+        expect(receipt?.document_location?.revision_id).not.toBe(base.document_location.revision_id);
+        expect(storedRecord(receipt?.s3_key ?? '')).toMatchObject({ origin: 'revised', basedOnId: base.document_location.revision_id });
+      }
+    });
+    it('joins history by the immutable session hash and refuses another registered agent before output reads', async () => {
+      const { generated, context } = await prepare(false);
+      await expect(service.assertRedraftScope(req, FRAMEWORK_SPEC, 'redraft-session', PROJECT)).resolves.toEqual(context);
+      await expect(service.assertRedraftScope(req, SPEC, 'redraft-session', PROJECT)).rejects.toMatchObject({ statusCode: 403 });
+      const receipt = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session');
+      const view = await service.getRevision(req, PROJECT, FRAMEWORK, 'living', receipt?.document_location?.revision_id ?? '');
+      if (!view) throw new Error('Missing synthetic redraft revision');
+      expect(await service.redraftForRevision(req, view)).toEqual(context);
+      store.objects.delete(`document-redrafts/${context.runId}.json`);
+      await expect(service.redraftForRevision(req, view)).rejects.toMatchObject({ statusCode: 503 });
+    });
+    it('never falls back to Generate when a redraft descriptor is missing', async () => {
+      const { context, generated } = await prepare(false);
+      store.objects.delete(`document-redrafts/${context.runId}.json`);
+      const before = [...store.objects];
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'redraft-session')).toBeNull();
+      const unbound = { ...envelope('# Unbound'), mode: 'redraft' };
+      await expect(service.persistGeneration(req, SPEC, unbound, PROJECT, 'redraft-session')).resolves.toBeNull();
+      expect([...store.objects]).toEqual(before);
+    });
+    it('refuses wrong realm or result provenance before a revision/pointer write', async () => {
+      const { generated } = await prepare(true);
+      const before = revisionKeys();
+      const pointers = [...store.objects].filter(([key]) => key.endsWith('/current.json')).map(([key, value]) => [key, value.body]);
+      const bad = { ...generated, version: 3 };
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, bad, PROJECT, 'redraft-session')).toBeNull();
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'other-project', writer: true });
+      expect(await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, 'other-project', 'redraft-session')).toBeNull();
+      const objects = [...store.objects.keys()];
+      await expect(service.persistGeneration(req, SPEC, envelope('# Must not persist'), 'other-project', 'redraft-session')).resolves.toBeNull();
+      expect([...store.objects.keys()]).toEqual(objects);
+      expect(revisionKeys()).toEqual(before);
+      expect([...store.objects].filter(([key]) => key.endsWith('/current.json')).map(([key, value]) => [key, value.body])).toEqual(pointers);
     });
   });
 
@@ -1643,6 +1781,29 @@ describe('MktgDocumentStoreService', () => {
       expect(latest?.summary.number).toBe(1);
     });
 
+    it('finishes the exact exported revision when a later approved current disappears, retaining integrity checks', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+      await approveStored(FRAMEWORK, 1);
+      const started = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', {});
+      if (!started) throw new Error('Missing synthetic export revision');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      await approveStored(FRAMEWORK, 2);
+      const [firstKey, secondKey] = revisionKeys();
+      store.objects.delete(secondKey);
+
+      await expect(service.getDocument(req, PROJECT, FRAMEWORK, 'living')).rejects.toMatchObject({ code: 'MKTG_APPROVED_REVISION_UNREADABLE' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toMatchObject({
+        id: started.summary.id,
+        number: 1,
+        contentSha256: started.summary.contentSha256,
+      });
+      const first = storedObject(firstKey);
+      store.objects.set(firstKey, { ...first, body: 'corrupt synthetic revision' });
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+      store.objects.delete(firstKey);
+      expect(await service.readExportedRevision(req, PROJECT, FRAMEWORK, 'living', started.summary.id)).toBeNull();
+    });
+
     it('exports the existing selected content after Make current without creating a copy', async () => {
       const first = jsonEnvelope('First');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
@@ -1673,6 +1834,38 @@ describe('MktgDocumentStoreService', () => {
   });
 
   describe('one-off runs', () => {
+    it.each(['project', 'domain'] as const)('records concurrent %s audit polls once and reopens the validated typed sidecar', async (kind) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Audit document type missing.');
+      const report = aeoGeoEnvelopeFixture(kind);
+      await Promise.all([1, 2, 3].map(() => service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], report, PROJECT, 'audit-a')));
+      const legacy = aeoGeoEnvelopeFixture(kind);
+      delete legacy.report;
+      legacy.agent.agent_version = '1.0.0';
+      await service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], legacy, PROJECT, 'audit-b');
+      const group = (await service.listDocuments(req, PROJECT)).groups.find((entry) => entry.type.agentKey === 'aeo-geo');
+      if (!group) throw new Error('Audit group missing.');
+      expect(group.documents).toHaveLength(2);
+      expect(group.documents.map((document) => document.revisionCount)).toEqual([1, 1]);
+      for (const [sessionId, expected] of [
+        ['audit-a', report],
+        ['audit-b', legacy],
+      ] as const) {
+        const document = group.documents.find((entry) => entry.documentId === service.runDocumentId(sessionId));
+        if (!document) throw new Error('Audit document missing.');
+        const reopened = await service.getRevision(req, PROJECT, type, document.documentId, document.latestRevisionId);
+        expect(reopened).toMatchObject({
+          markdown: expected.document_markdown,
+          aeoGeoReport: {
+            verdict: expected.verdict,
+            scores: expected.scores,
+            report_filename: expected.report_filename,
+            auditCounts: { keyPagesNamed: expected.inputs.key_pages_count ?? 0, pagesAudited: expected.inputs.pages_audited.length },
+          },
+        });
+        expect(reopened?.aeoGeoReport?.report).toEqual(expected.report);
+      }
+    });
     it('publishes exactly one revision when result polls overlap', async () => {
       const generated = envelope('# One run');
       const [first, second] = await Promise.all([

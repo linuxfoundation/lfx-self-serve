@@ -4,6 +4,7 @@
 import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES, MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
 import express, { NextFunction, raw, Request, RequestHandler, Response, Router } from 'express';
 
+import { AeoGeoController } from '../controllers/aeo-geo.controller';
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
@@ -69,6 +70,7 @@ const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
 const member360Controller = new Member360Controller();
 const member360Workbook = new Member360WorkbookController();
+const aeoGeoController = new AeoGeoController();
 
 router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
 router.post(
@@ -86,6 +88,9 @@ router.post(
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+router.post('/aeo-geo/generate', (req, res, next) => aeoGeoController.generate(req, res, next));
+router.post('/aeo-geo/result', (req, res, next) => aeoGeoController.result(req, res, next));
+router.post('/aeo-geo/answers', (req, res, next) => aeoGeoController.answers(req, res, next));
 
 let rebuild: MktgRebuildController | undefined;
 function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
@@ -103,6 +108,9 @@ function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
 router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
 router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
 router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
+
+// GET /api/mktg-agents/intakes/:agentKey/last - private scalar history; the service resolves writer access.
+router.get('/intakes/:agentKey/last', (req, res, next) => mktgAgentsController.getLastIntake(req, res, next));
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
@@ -178,6 +186,19 @@ router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/approve?project=<uid>
 router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', blockDuringImpersonation, (req, res, next) =>
   mktgDocumentsController.approveRevision(req, res, next)
+);
+
+// GET revision-scoped field comments; requires project writer access.
+router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.listComments(req, res, next));
+// POST a field comment; requires project writer access and a stored revision.
+router.post('/documents/:agentKey/:documentId/comments', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.addComment(req, res, next));
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revise - ID-only comments redraft; project writer access; creator-bound ACK.
+router.post('/documents/:agentKey/:documentId/revise', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.revise(req, res, next));
+// GET creator-owned terminal recovery proof; no private ledger/session fields or mutation.
+router.get('/documents/:agentKey/:documentId/revise/:requestId/state', (req, res, next) => mktgDocumentsController.redraftState(req, res, next));
+// POST release an uncertain/expired reservation; requires project writer access AND the original send creator.
+router.post('/documents/:agentKey/:documentId/revise/:requestId/release', blockDuringImpersonation, (req, res, next) =>
+  mktgDocumentsController.releaseRedraft(req, res, next)
 );
 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision

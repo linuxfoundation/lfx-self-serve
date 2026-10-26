@@ -40,6 +40,7 @@ import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
@@ -90,6 +91,7 @@ export class NavbarComponent extends NavMenuBase {
   private readonly changelogService = inject(ChangelogService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly appService = inject(AppService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -132,7 +134,8 @@ export class NavbarComponent extends NavMenuBase {
   protected readonly lensTabs: Signal<LensOption[]> = computed(() =>
     this.lensService.displayLenses().map((lens) => ({ ...lens, ...NAVBAR_LENS_OVERRIDES[lens.id] }))
   );
-  protected readonly activeLensId = this.lensService.displayActiveLens;
+  // The menu's lens, not the page's: in the mobile drawer a tab previews its lens's menu (#4208).
+  protected readonly activeLensId = this.lensService.displayMenuLens;
   // A lone tab carries no choice — only render the switcher when the persona can reach more than one lens.
   protected readonly showLensTabs: Signal<boolean> = computed(() => this.lensTabs().length > 1);
 
@@ -264,6 +267,7 @@ export class NavbarComponent extends NavMenuBase {
     });
     this.initTabIndicator();
     this.initDrawerCloseCleanup();
+    this.initPreviewPickCommit();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -277,7 +281,15 @@ export class NavbarComponent extends NavMenuBase {
     this.failedPhotoUrl.set(url);
   }
 
+  /**
+   * Desktop lens tabs switch the lens and land on its default page. In the mobile drawer a tab only previews that lens's
+   * menu, leaving the page and its lens untouched, for the viewer to pick a page from it — or close the drawer (#4208).
+   */
   protected switchLens(lens: Lens): void {
+    if (this.mobile()) {
+      this.lensService.previewMenuLens(lens);
+      return;
+    }
     this.lensService.switchLens(lens);
   }
 
@@ -338,6 +350,21 @@ export class NavbarComponent extends NavMenuBase {
 
   protected closeMobileDrawer(): void {
     this.appService.closeMobileSidebar();
+  }
+
+  /**
+   * An organization picked while the drawer previews Org Lens from another lens's page commits Org Lens and lands on that
+   * organization's overview (#4208): off an Org page the selector re-addresses nothing by itself. Without a preview the
+   * selector has already re-addressed the page, possibly with `replaceUrl`, which the layout leaves alone — so the pick
+   * closes the mobile drawer itself.
+   */
+  protected onOrgSelected(): void {
+    if (!this.lensService.previewingMenuLens()) {
+      this.closeMobileDrawer();
+      return;
+    }
+    this.lensService.commitMenuLens();
+    void this.router.navigate(this.orgLensNavigation.orgLensLink('overview'));
   }
 
   protected openChangelogDrawer(): void {
@@ -434,7 +461,35 @@ export class NavbarComponent extends NavMenuBase {
         this.projectSelector()?.closePanel();
         this.orgSelector()?.closePanel();
         NavTooltipDirective.hideWithin(this.elementRef.nativeElement);
+        // Closed without a pick (X, backdrop, Escape): the preview is dropped and the page keeps its lens (#4208).
+        this.lensService.clearMenuLensPreview();
       });
+    // A navigation to another layout (the Docs link) destroys this navbar before the drawer reports closing, and the
+    // preview lives in a root service: drop it here too, so it cannot outlive the drawer that showed it.
+    this.destroyRef.onDestroy(() => {
+      if (this.mobile()) this.lensService.clearMenuLensPreview();
+    });
+  }
+
+  /**
+   * A page link followed from a previewed lens's menu commits that lens before the router runs its guards, several of
+   * which read `activeLens` (#4208). RouterLink starts the navigation from its own click listener, which runs before any
+   * template listener on the same anchor, so this listens in the capture phase on the navbar instead. Modified clicks
+   * open a new tab and leave this one, and its lens, as they are.
+   */
+  private initPreviewPickCommit(): void {
+    afterNextRender(() => {
+      const host = this.elementRef.nativeElement;
+      const commitOnPick = (event: MouseEvent): void => {
+        if (!this.lensService.previewingMenuLens() || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const link = event.target instanceof Element ? event.target.closest('a.lfxn__item, a.lfxn__me-action') : null;
+        if (link && host.contains(link) && link.getAttribute('href')?.startsWith('/')) {
+          this.lensService.commitMenuLens();
+        }
+      };
+      host.addEventListener('click', commitOnPick, true);
+      this.destroyRef.onDestroy(() => host.removeEventListener('click', commitOnPick, true));
+    });
   }
 
   /**

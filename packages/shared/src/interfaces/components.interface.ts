@@ -309,6 +309,8 @@ export interface ButtonProps {
   badgeSeverity?: BadgeSeverityOptions['severity'];
   /** Accessibility label */
   ariaLabel?: string;
+  /** Native description idrefs. */
+  ariaDescribedBy?: string;
 }
 
 /** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
@@ -316,7 +318,7 @@ export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dia
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup; 'aria-controls'?: string; 'aria-describedby'?: string | null };
 }
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */

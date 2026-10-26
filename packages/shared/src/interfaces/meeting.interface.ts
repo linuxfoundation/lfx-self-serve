@@ -688,6 +688,16 @@ export interface MeetingRegistrationRemovalResult {
 }
 
 /**
+ * Registrants matched by the signed-in user's other verified emails.
+ */
+export interface MeetingRegistrantsByVerifiedEmails {
+  /** Matches ordered by email priority (meeting-invite preference first). */
+  registrants: MeetingRegistrant[];
+  /** True when nothing matched and an email source was unavailable. */
+  lookupFailed: boolean;
+}
+
+/**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
  * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`
  * surface, but the handler itself requires a session and a bearer token, so the caller is an authenticated
@@ -862,6 +872,26 @@ export interface ComposerGuestRow {
    * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
    */
   removable: boolean;
+}
+
+/**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**

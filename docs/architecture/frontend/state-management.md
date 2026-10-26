@@ -373,6 +373,34 @@ export class EventBusService {
 
 ## Marketing OS asset-run handoff
 
+An explicit `?mode=new` opens Sources for review, never a generation or a
+questions-token consumption. Scalar prefill comes from the writer-gated durable
+last-intake snapshot, this user's scoped same-visit inputs, then completed device-run
+inputs, choosing the first present value per field before honestly labelled defaults.
+An explicit blank wins over lower-priority values; each field labels its actual origin.
+An unavailable history read is distinct from no history; denied access suppresses
+private fallback and Start. Recorded blank fields remain blank. Project, effective
+subject and explicit entry-mode changes cancel the previous reads and reset the form; SSR never
+reads private browser history or starts a history request. Once Generate is accepted, its
+entry-only mode is consumed with replaceUrl. Sources state stays latched for that visit;
+the scoped internal URL clear does not reset or cancel the attempt. Reload restores saved
+questions or polls the accepted writing attempt, never issuing another Generate. Back, catalog tiles and
+dependency links clear this entry-only mode instead of transferring it to another agent.
+
+Edit exposes the registered intake controls in place. Start alone prepares or
+submits a fresh run, resolving dependency documents again, and removes fresh mode
+from the asset handoff URL. Sources stay read-only above research/questions once
+started. Dependency blockers and recovery controls remain visible with the editor collapsed.
+Fresh sessions never reset document-history numbering: envelope identity is retained separately,
+while local history stays monotonic; regenerate-via-generate intakes still send priorVersion.
+Uploaded payloads are reused only from an owned same-visit draft when no shared snapshot exists.
+The shared scalar/count DTO cannot bind local bytes to a recorded run, so equal values/counts
+never establish upload provenance; a shared snapshot requires reattachment or explicit omission.
+The same-visit cache outlives successful attempt cleanup, not an application reload. Missing
+source counts require reattachment or an explicit choice to continue without them,
+never a false kept-file claim. No uploaded content is added to browser persistence.
+The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
+
 The run route owns intake, the research/writing feed and questions, not the
 result or a feedback form. Direct no-answers intakes open the document route
 before their first POST. Questions runs transfer their owned attempt after the
@@ -434,3 +462,80 @@ location (or `null` until its receipt arrives) and accepted attempt. Cached hist
 order never selects a handoff revision; receipt-less recovery retains that attempt's
 session, capability and prior-version hint, not a newer cached run's. The asset-store item's single approved-current pointer and its chip/state
 are the authority for current status, never a separate run/list-derived flag.
+
+## Asset comment client
+
+`MktgDocumentCommentsService` owns one selected document revision's comment list.
+The view selects its project/agent/document/revision scope and clears selection
+on departure. Instantiating the client or reopening a stored view never POSTs.
+Readonly signals distinguish loading, measured empty, load failure and save
+failure. A transient same-scope refresh retains the last measured list; access
+denials clear it. Effective-subject/project changes immediately hide old data
+and cancel outstanding requests. Scope generations reject a deferred old action
+even after navigating away and back to the same revision. A successful add
+cancels a pre-save GET so it cannot overwrite the acknowledged snapshot.
+
+The client retains each field's browser-memory form and opaque request ID across
+tab-host destruction, keyed by effective viewer and document revision; changing
+that scope discards old drafts. The composer handles explicit save retries. The
+client never automatically retries a POST or invents an ID.
+Comment forms are memory-only and all HTTP is browser-gated; no sources,
+sessions, attribution IDs or agent handles are added to the comment request.
+Redraft recovery separately retains its opaque send nonce after the 24-hour
+capability TTL. Expired session capabilities are removed; a read-only, creator-bound
+ledger check is required before automatic cleanup, which is allowed only for a
+completed/failed (including released) send. Unknown/non-terminal state and failed
+reconciliation retain the frozen IDs; restoring a view never POSTs.
+
+The framework document view adds data-keyed comment controls inside the existing
+field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
+Stored Brand Kits opt into string passage pins in their screen chapters (never SVG
+bytes, generated sample text or the printed book). The BFF captures passage text
+from the immutable stored key for `brand_kit_revise_form`; the browser sends only
+that key and comment. Boilerplates pin each original `bp[index].t` length and send
+the selected asset's comments through the same redraft flow. Framework, Kit and
+Boilerplates keep Comments, Revisions and About together in the right-hand column
+at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
+800px host-container threshold and each asset's inner container grids remain intact.
+Run previews, legacy/unreadable assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
+and boilerplate lengths identically in pins and the panel.
+The controls appear on hover/focus, and stay visible on hover-less devices; threads
+and a wrapper-based composer pin beneath their field. Disabled hosts have no
+layout box; the extra hover groups use display:contents until controls are shown.
+Inner grids respond to each asset's own container rather than viewport width;
+Framework and Kit containment is screen-only to preserve print positioning.
+The shared contract-specific label util gives pins and the panel the same human
+field caption, including original array position and goal/audience title. Closing
+a composer restores its Comment button's focus; successful adds announce politely.
+An in-flight comment save outlives its field/tab host; the retained per-field form
+and nonce survive that host's replacement. A matching ACK clears only its submitted
+text, never newer edits made while that response was pending.
+The Comments panel shows only read errors; save errors belong to the composer.
+The Comments panel owns
+selection/lifetime and lists the same server threads beside revision history.
+A shared thread component renders author/date/field/status as text only. Form
+validation uses the shared text cap; failed saves retain text and the opaque
+request ID, while changed text or a revision change starts a different draft.
+No source report fields or print surfaces are made editable. Send freezes the
+selected open IDs/nonce in subject-and-revision-bound private TTL recovery before
+POST. Unknown ACK restoration never auto-submits; retry reuses that exact intent.
+Only primary BFF allow-listed answers clear unaccepted intent: 400 VALIDATION_ERROR,
+404 NOT_FOUND, or 409 MKTG_REDRAFT_COMMENTS_BUSY / MKTG_REDRAFT_REQUEST_FAILED.
+Other 4xx, code-less 5xx and transport failures retain the nonce and permit creator
+release. Post-session server failures are always uncertain, not definitive 4xx. The ACK supplies the authoritative stored
+prior version for polling and exact version comparison, not legacy display metadata.
+Known ACKs use the existing run observer and bounded receipt retry, without fake
+intake answers, another poller, or a Generate fallback. Only the exact scoped new
+Draft receipt lands; approved current is not inferred or changed. Landing preserves
+the reader's tab, with the submitted kit passage's registered chapter taking
+precedence when it differs. That chapter is UI-only context, frozen for the send;
+it is not added to revise requests or persistence receipts. A 409 on an explicit
+release means the start is still active. Release is offered only for an unaccepted
+intent whose response proved uncertainty, transport failure or expiry; accepted
+attempts offer re-observe Retry instead. An unknown release is idempotent success
+with no ledger write. Identity/navigation cancellation hides stale feeds. Disabled
+Send controls explain missing source, empty/over-cap comments or unread state; counts
+appear only after successful reads, and run messages use a persistent live region.
+Description idrefs bind declaratively through the shared button wrapper, with a
+CDK-generated per-instance reason id. The feed starts only after an accepted
+attempt or nonempty activity, never merely because a primary POST is pending.
