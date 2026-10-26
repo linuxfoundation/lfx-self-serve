@@ -67,6 +67,7 @@ import {
   extractMktgArtifactKeySha,
   findMktgDocumentStatus,
   findMktgDocumentType,
+  isAeoGeoEnvelope,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
   readLinkedinDocumentContent,
@@ -830,6 +831,19 @@ export class MktgDocumentStoreService {
     const linkedinPost = presentation
       ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }
       : null;
+    const candidate = { ...stored.record.bundle.sidecar, document_markdown: stored.record.bundle.markdown };
+    let report: MktgRevisionResponse['aeoGeoReport'];
+    if (type.agentKey === 'aeo-geo' && isAeoGeoEnvelope(candidate)) {
+      report = {
+        domain: candidate.domain,
+        report_filename: candidate.report_filename,
+        overall_score: candidate.overall_score,
+        verdict: candidate.verdict,
+        scores: candidate.scores,
+        ...(candidate.report ? { report: candidate.report } : {}),
+        auditCounts: { keyPagesNamed: candidate.inputs.key_pages_count ?? 0, pagesAudited: candidate.inputs.pages_audited.length },
+      };
+    }
     return {
       ...detail,
       revision: selected,
@@ -837,6 +851,7 @@ export class MktgDocumentStoreService {
       markdown: stored.record.bundle.markdown,
       sidecar: stored.record.bundle.sidecar,
       ...(linkedinPost ? { linkedinPost } : {}),
+      ...(report ? { aeoGeoReport: report } : {}),
     };
   }
 
