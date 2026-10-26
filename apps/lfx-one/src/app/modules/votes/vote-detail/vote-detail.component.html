@@ -117,13 +117,24 @@
                           {{ notVotedCount() }} invited {{ notVotedCount() === 1 ? 'voter has' : 'voters have' }} not responded yet
                         </p>
                       }
-                      <p class="text-sm">
-                        As a manager, you can follow live results and send a reminder to voters who haven't voted. Final results are shared with voters after
-                        the vote closes.
-                      </p>
+                      @if (isPseudoAnonymous()) {
+                        <p class="text-sm" data-testid="vote-detail-overview-callout-pseudo-anonymous">
+                          As a manager, you can follow who has responded and send a reminder to voters who haven't voted. This is a pseudo-anonymous vote, so
+                          totals and comments appear when voting closes, for you and every invited voter.
+                        </p>
+                      } @else {
+                        <p class="text-sm">
+                          As a manager, you can follow live results and send a reminder to voters who haven't voted. Final results are shared with voters after
+                          the vote closes.
+                        </p>
+                      }
                     } @else if (isEnded()) {
                       <p class="text-sm font-semibold">This vote is closed</p>
-                      <p class="text-sm">Final results are available to you and to every invited voter.</p>
+                      @if (resultsHeld()) {
+                        <p class="text-sm">Totals and comments will appear once they are finalized.</p>
+                      } @else {
+                        <p class="text-sm">Final results are available to you and to every invited voter.</p>
+                      }
                     } @else {
                       <p class="text-sm font-semibold">This vote is a draft</p>
                       <p class="text-sm">It hasn't been opened for voting yet, so there are no responses to show.</p>
@@ -143,7 +154,11 @@
                       }
                       <!-- Before results load (or if they fail) the totals would read as zero; resultsBody shows the loading/error state. -->
                       @if (audience() === 'creator' && hasLoadedResults()) {
-                        <lfx-vote-participation-card [stats]="participationStats()" [showAbstained]="showAbstain()" testId="vote-detail-participation" />
+                        <lfx-vote-participation-card
+                          [stats]="participationStats()"
+                          [showAbstained]="showAbstain()"
+                          [abstainedHeld]="resultsHeld()"
+                          testId="vote-detail-participation" />
                       }
                       <ng-container [ngTemplateOutlet]="resultsBody" />
                     </div>
@@ -162,11 +177,14 @@
                       </div>
                     } @else if (voteResultsError()) {
                       <p class="text-sm text-red-700" data-testid="vote-detail-comments-error">Couldn't load comments. Try reloading this page.</p>
+                    } @else if (resultsHeld()) {
+                      <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-comments-held' }" />
                     } @else {
                       <lfx-vote-comment-results
                         [commentResults]="commentResults()"
                         [(pageState)]="commentPaginatorState"
-                        [showBallotLinks]="showVotersTab()"
+                        [showBallotLinks]="showNamedBallotLinks()"
+                        [anonymous]="isPseudoAnonymous()"
                         (viewBallot)="onViewBallot($event)" />
                     }
                   </lfx-card>
@@ -175,7 +193,7 @@
                 }
               }
               @case ('voters') {
-                <!-- activeTab only resolves to voters while showVotersTab() holds; the guard keeps it explicit. -->
+                <!-- activeTab only resolves to voters while showVotersTab() holds; the guard keeps it explicit. Pseudo-anonymous votes get a participation-only tab. -->
                 @if (showVotersTab()) {
                   <lfx-card data-testid="vote-detail-voters">
                     <lfx-vote-voters [vote]="voteData" [initialChoice]="votersChoice()" [initialBallotUid]="votersBallot()" />
@@ -185,7 +203,7 @@
             }
           </div>
 
-          <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" />
+          <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" [resultsHeld]="resultsHeld()" />
         </div>
       }
     </div>
@@ -202,6 +220,9 @@
         </div>
       } @else if (voteResultsError()) {
         <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Try reloading this page.</p>
+      } @else if (resultsHeld()) {
+        <!-- Pseudo-anonymous totals and the abstain row are held until the vote ends (#3916). -->
+        <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
       } @else {
         @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
           <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">You voted on this motion.</p>
@@ -219,7 +240,7 @@
                 [options]="question.options"
                 [variant]="optionVariant()"
                 testIdPrefix="vote-detail-option-"
-                [showVoterLinks]="showVotersTab()"
+                [showVoterLinks]="showNamedBallotLinks()"
                 (viewVoters)="onViewOptionVoters(question.questionId, $event)" />
             </div>
           }
@@ -228,7 +249,7 @@
             <lfx-vote-ranked-question-results
               [question]="question"
               [variant]="audience()"
-              [showVoterLinks]="showVotersTab()"
+              [showVoterLinks]="showNamedBallotLinks()"
               (viewVoters)="onViewVoters($event)" />
           }
         }
@@ -237,7 +258,7 @@
             [stats]="participationStats()"
             [variant]="isVoteClosed() ? 'final' : 'live'"
             testId="vote-detail-option-abstain"
-            [showVoterLinks]="showVotersTab()"
+            [showVoterLinks]="showNamedBallotLinks()"
             (viewVoters)="onViewAbstainedVoters()" />
         }
         @if (hasZeroVotes()) {
@@ -246,6 +267,25 @@
           </p>
         }
       }
+    </ng-template>
+
+    <!-- Held pseudo-anonymous totals, abstentions and comments (#3916); the context is the panel's data-testid. -->
+    <ng-template #heldPanel let-testId>
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-start gap-3" [attr.data-testid]="testId">
+        <i class="fa-light fa-lock text-gray-500 mt-0.5" aria-hidden="true"></i>
+        <div class="flex flex-col gap-1">
+          <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
+          @if (isEnded()) {
+            <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
+          } @else if (closeText()) {
+            <p class="text-sm text-gray-700">
+              This is a pseudo-anonymous vote, so totals, abstentions and comments stay hidden until voting closes on {{ closeText() }}.
+            </p>
+          } @else {
+            <p class="text-sm text-gray-700">This is a pseudo-anonymous vote, so totals, abstentions and comments stay hidden until voting closes.</p>
+          }
+        </div>
+      </div>
     </ng-template>
 
     <!-- Voter panels when results aren't shown. -->

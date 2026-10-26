@@ -14,6 +14,7 @@ import {
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import {
+  VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
   VOTE_VOTER_MAX_CHOICE_CHIPS,
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
@@ -49,6 +50,9 @@ import type {
   VoteBallotQuestionView,
   VoteFormValue,
   VoteParticipationStats,
+  VoteParticipationStatusCounts,
+  VoteParticipationVoter,
+  VoteParticipationVoterRowView,
   VoteResultsOption,
   VoteResultsQuestion,
   VoteResultsResponse,
@@ -361,12 +365,12 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
  * Merges the vote detail's comment prompts with the results payload's comment responses
  * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
  * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
- * left-join in by `prompt_id` when present, sorted newest-first (pagination slices the already-sorted list, so page 1
- * always shows the most recent comments). If the detail supplied no prompts (e.g. it failed and the list-vote
- * fallback lacks them), degrade to the results payload's prompts that have responses.
+ * left-join in by `prompt_id` when present. Timestamped responses sort newest-first; timestamp-free
+ * pseudo-anonymous responses preserve the server's comment-text order. Pagination slices this ordered list.
+ * If the detail supplied no prompts (e.g. it failed and the list-vote fallback lacks them), degrade to the results payload's prompts that have responses.
  * @param commentResults - `comment_results` from the results API
  * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
- * @returns One PollCommentResult per prompt, with responses sorted newest-first
+ * @returns One PollCommentResult per prompt, with timestamped responses newest-first and timestamp-free responses in server order
  */
 export function mergeCommentResults(commentResults: PollCommentResult[], detailPrompts: PollCommentPrompt[] | undefined): PollCommentResult[] {
   if (!detailPrompts?.length) {
@@ -825,23 +829,26 @@ export function canVoterFetchVoteResults(
 
 /**
  * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
- * totals and comments; voters see their own response, and totals and comments only after close), never a new rule.
+ * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
+ * own response, and totals and comments only after close), never a new rule.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
  * @param isClosed - Whether the vote has ended. A draft is not closed.
  * @param ballotsAvailable - Whether the vote is open or ended, so managers can use the Voters tab now
+ * @param resultsHeld - Whether totals and comments are still withheld after the vote ends
  */
 export function getVoteVisibilityRules(
   audience: 'voter' | 'creator',
   pseudoAnonymous: boolean | null | undefined,
   isClosed: boolean,
-  ballotsAvailable = true
+  ballotsAvailable = true,
+  resultsHeld = false
 ): string[] {
   const rules: string[] = [];
-  if (audience === 'creator') {
-    rules.push(
-      isClosed ? 'As a manager, you can see the final totals and comments.' : 'As a manager, you can follow live totals and comments until the vote closes.'
-    );
+  if (isClosed && resultsHeld) {
+    rules.push('Voting has closed. Totals and comments will appear once they are finalized.');
+  } else if (audience === 'creator') {
+    rules.push(isClosed ? 'As a manager, you can see the final totals and comments.' : creatorOpenVisibilityRule(pseudoAnonymous));
     rules.push(isClosed ? 'Invited voters now see the final totals and comments.' : 'Voters see only their own response until the vote closes.');
   } else {
     rules.push(
@@ -870,6 +877,12 @@ export function getVoteVisibilityRules(
     );
   }
   return rules;
+}
+
+/** A manager's view of an open vote: live totals on a named vote; participation only on any other (#3916), where totals are held until close. */
+function creatorOpenVisibilityRule(pseudoAnonymous: boolean | null | undefined): string {
+  if (pseudoAnonymous !== false) return 'As a manager, you can follow who has responded. Totals and comments appear when the vote closes.';
+  return 'As a manager, you can follow live totals and comments until the vote closes.';
 }
 
 /** Splits a Voters tab choice key (`<question_id>:<choice_id>`) at its first colon; null when malformed. */
@@ -1025,6 +1038,28 @@ export function sortVoteVotersForDisplay(rows: readonly VoteVoterRowView[], vote
   };
 
   return [...rows].sort((a, b) => rank(a) - rank(b) || byName(a, b));
+}
+
+/**
+ * Maps a participation-only voter from GET /api/votes/:uid/voters to its Voters tab row on a pseudo-anonymous vote (#3916)
+ * @description Same Role and committee-role columns as {@link buildVoteVoterRowView}, with only a Responded / Not responded status.
+ */
+export function buildVoteParticipationRowView(voter: VoteParticipationVoter): VoteParticipationVoterRowView {
+  return {
+    displayName: voter.user_name?.trim() || 'Unknown voter',
+    organization: voter.user_org_name || undefined,
+    role: voter.user_voting_status || undefined,
+    committeeRole: voter.user_role || undefined,
+    status: voter.status,
+    statusLabel: VOTE_PARTICIPATION_STATUS_FILTER_LABELS[voter.status],
+  };
+}
+
+/** Counts participation-only Voters tab rows per status pill (#3916); `all` is every row. */
+export function countVoteParticipationByStatus(rows: readonly Pick<VoteParticipationVoterRowView, 'status'>[]): VoteParticipationStatusCounts {
+  const counts: VoteParticipationStatusCounts = { all: rows.length, responded: 0, pending: 0 };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
 }
 
 /** Counts Voters tab rows per status pill (#3914); `all` is every row. */

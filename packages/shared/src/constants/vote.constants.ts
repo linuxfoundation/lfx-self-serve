@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
-import type { VoteDetailTab, VoteDetailTabOption, VoteVoterStatusFilter } from '../interfaces/poll.interface';
+import type { VoteDetailTab, VoteDetailTabOption, VoteParticipationStatusFilter, VoteVoterStatusFilter } from '../interfaces/poll.interface';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -22,9 +22,9 @@ export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 /**
  * Aggregate bound on comment responses per prompt returned by the BFF results endpoint. The upstream
  * results contract has no pagination, so without a cap the payload grows with electorate size × prompt
- * count × response length (50 prompts × 5,000 code points × N voters). The BFF keeps the most recent N
- * per prompt and reports the pre-cap count via `PollCommentResult.total_responses`. Well above any
- * realistic committee electorate; true cursor pagination is an upstream contract follow-up.
+ * count × response length (50 prompts × 5,000 code points × N voters). Named votes keep the most recent N;
+ * pseudo-anonymous votes keep the first N in comment-text order. The pre-cap count is reported via
+ * `PollCommentResult.total_responses`. Well above any realistic committee electorate; true cursor pagination is an upstream contract follow-up.
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 
@@ -63,9 +63,6 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
 
-/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
-export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
-
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
@@ -89,7 +86,8 @@ export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab
 
 /**
  * Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts;
- * the Voters tab (#3914) only to vote managers on a named vote that is open or closed.
+ * the Voters tab (#3914, #3916) only to vote managers on a vote that is open or closed. Named votes show ballots;
+ * pseudo-anonymous votes show participation only, without ballot or choice links.
  */
 export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
   { key: 'overview', label: 'Overview', icon: 'fa-grid-2' },
@@ -113,6 +111,16 @@ export const VOTE_VOTER_STATUS_FILTER_LABELS: Record<VoteVoterStatusFilter, stri
   [VoteVoterStatus.VOTED]: 'Voted',
   [VoteVoterStatus.ABSTAINED]: 'Abstained',
   [VoteVoterStatus.NOT_VOTED]: 'Not voted yet',
+};
+
+/** Status pill shown when no participation status filter is applied on the pseudo-anonymous Voters tab (#3916). */
+export const VOTE_PARTICIPATION_ALL_STATUS_FILTER: VoteParticipationStatusFilter = 'all';
+
+/** Status pill and Status column labels on the participation-only Voters tab of a pseudo-anonymous vote (#3916). */
+export const VOTE_PARTICIPATION_STATUS_FILTER_LABELS: Record<VoteParticipationStatusFilter, string> = {
+  all: 'All',
+  responded: 'Responded',
+  pending: 'Not responded',
 };
 
 /** A not-voted voter can still vote while the vote is open; after it closes they did not vote. */

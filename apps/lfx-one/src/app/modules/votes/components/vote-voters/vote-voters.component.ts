@@ -14,6 +14,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  VOTE_PARTICIPATION_ALL_STATUS_FILTER,
+  VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
   VOTE_VOTER_NOT_VOTED_LABELS,
   VOTE_VOTER_STATUS_FILTER_LABELS,
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
@@ -26,6 +28,10 @@ import {
   FilterPillOption,
   Vote,
   VoteBallotDialogData,
+  VoteParticipationStatusCounts,
+  VoteParticipationStatusFilter,
+  VoteParticipationVoter,
+  VoteParticipationVoterRowView,
   VoteVoter,
   VoteVoterChoiceFilterOption,
   VoteVoterRowView,
@@ -33,8 +39,10 @@ import {
   VoteVoterStatusFilter,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildVoteParticipationRowView,
   buildVoteVoterChoiceFilterOptions,
   buildVoteVoterRowView,
+  countVoteParticipationByStatus,
   countVoteVotersByStatus,
   matchesVoteVoterChoice,
   normalizePollStatus,
@@ -54,6 +62,10 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
  * named votes. The page decides visibility; GET /api/votes/:uid/voters (#3911) enforces the same rules. Filtering, counts and
  * sorting run in the browser — an electorate is a few hundred people at most and the endpoint returns it in one response.
  * `initialChoice` and `initialBallotUid` carry the results' "View N voters" and the comments' "View ballot" links.
+ *
+ * On a vote that is not explicitly named (#3916) the tab is participation-only: the endpoint returns Responded / Not responded
+ * rows with no identifier or ballot, in name order, so there is no choice filter, Choice or Submitted column, or ballot dialog,
+ * and both deep links are ignored.
  */
 @Component({
   selector: 'lfx-vote-voters',
@@ -101,6 +113,7 @@ export class VoteVotersComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly loadError = signal<boolean>(false);
   protected readonly statusFilter = signal<VoteVoterStatusFilter>(VOTE_VOTERS_ALL_STATUS_FILTER);
+  protected readonly participationStatusFilter = signal<VoteParticipationStatusFilter>(VOTE_PARTICIPATION_ALL_STATUS_FILTER);
   /** First row of the table page, reset to 0 whenever a filter changes. */
   protected readonly tableFirst = signal<number>(0);
   protected readonly selectedPageSize = signal<number>(VOTE_VOTERS_PAGE_SIZE);
@@ -112,10 +125,16 @@ export class VoteVotersComponent {
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly roleFilter: Signal<string | null> = toSignal(this.filterForm.controls.role.valueChanges, { initialValue: null });
   private readonly choiceFilter: Signal<string | null> = toSignal(this.filterForm.controls.choice.valueChanges, { initialValue: null });
-  private readonly voters: Signal<VoteVoter[]> = this.initVoters();
+  private readonly response: Signal<VoteVoter[] | VoteParticipationVoter[]> = this.initVoters();
 
   // === Computed Signals ===
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
+  /** A vote that is not explicitly named gets participation only — a missing flag fails closed, as the server does (#3916). */
+  protected readonly participationOnly: Signal<boolean> = computed(() => this.vote().pseudo_anonymity !== false);
+  /** Named rows carry a `uid`; participation rows never do, so the shape decides which list a row belongs to. */
+  private readonly voters: Signal<VoteVoter[]> = computed(() =>
+    this.participationOnly() ? [] : (this.response() as (VoteVoter | VoteParticipationVoter)[]).filter((voter): voter is VoteVoter => 'uid' in voter)
+  );
   /** Every voter in display order — not voted first while the vote is open, by choice after it closes. */
   protected readonly rows: Signal<VoteVoterRowView[]> = computed(() => {
     const vote = this.vote();
@@ -133,10 +152,34 @@ export class VoteVotersComponent {
   });
   protected readonly statusCounts: Signal<VoteVoterStatusCounts> = computed(() => countVoteVotersByStatus(this.matchingRows()));
   /** Reminder eligibility counts every invitee, whatever the filters show. */
-  protected readonly notVotedTotal: Signal<number> = computed(() => countVoteVotersByStatus(this.rows())[VoteVoterStatus.NOT_VOTED]);
+  protected readonly notVotedTotal: Signal<number> = computed(() =>
+    this.participationOnly()
+      ? countVoteParticipationByStatus(this.participationRows()).pending
+      : countVoteVotersByStatus(this.rows())[VoteVoterStatus.NOT_VOTED]
+  );
   protected readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
   protected readonly roleOptions: Signal<VoteVoterChoiceFilterOption[]> = this.initRoleOptions();
   protected readonly choiceOptions: Signal<VoteVoterChoiceFilterOption[]> = computed(() => buildVoteVoterChoiceFilterOptions(this.vote()));
+  /** Participation-only rows (#3916), in the server's name order. */
+  protected readonly participationRows: Signal<VoteParticipationVoterRowView[]> = this.initParticipationRows();
+  /** Participation rows matching search and role. Status counts follow these filters but not the selected status pill. */
+  private readonly participationMatchingRows: Signal<VoteParticipationVoterRowView[]> = this.initParticipationMatchingRows();
+  protected readonly participationFilteredRows: Signal<VoteParticipationVoterRowView[]> = computed(() => {
+    const status = this.participationStatusFilter();
+    const rows = this.participationMatchingRows();
+    return status === VOTE_PARTICIPATION_ALL_STATUS_FILTER ? rows : rows.filter((row) => row.status === status);
+  });
+  protected readonly participationStatusCounts: Signal<VoteParticipationStatusCounts> = computed(() =>
+    countVoteParticipationByStatus(this.participationMatchingRows())
+  );
+  protected readonly participationStatusOptions: Signal<FilterPillOption[]> = this.initParticipationStatusOptions();
+  /** Every invitee and the filtered rows in whichever mode the tab is in — drive the empty states and the page bounds. */
+  protected readonly totalRowCount: Signal<number> = computed(() => (this.participationOnly() ? this.participationRows().length : this.rows().length));
+  /** A new array on every load, even an equally long one, so the page bounds re-check after each refresh. */
+  private readonly visibleRows: Signal<readonly (VoteVoterRowView | VoteParticipationVoterRowView)[]> = computed(() =>
+    this.participationOnly() ? this.participationFilteredRows() : this.filteredRows()
+  );
+  protected readonly visibleRowCount: Signal<number> = computed(() => this.visibleRows().length);
 
   public constructor() {
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.tableFirst.set(0));
@@ -151,7 +194,11 @@ export class VoteVotersComponent {
   }
 
   protected onStatusFilterChange(status: string): void {
-    this.statusFilter.set(status as VoteVoterStatusFilter);
+    if (this.participationOnly()) {
+      this.participationStatusFilter.set(status as VoteParticipationStatusFilter);
+    } else {
+      this.statusFilter.set(status as VoteVoterStatusFilter);
+    }
     this.tableFirst.set(0);
   }
 
@@ -163,6 +210,7 @@ export class VoteVotersComponent {
   protected clearFilters(): void {
     this.filterForm.reset({ search: '', role: null, choice: null });
     this.statusFilter.set(VOTE_VOTERS_ALL_STATUS_FILTER);
+    this.participationStatusFilter.set(VOTE_PARTICIPATION_ALL_STATUS_FILTER);
     this.tableFirst.set(0);
   }
 
@@ -216,7 +264,7 @@ export class VoteVotersComponent {
   }
 
   /** Reloads on a new vote and on every refresh; `switchMap` drops a load a newer one replaced. */
-  private initVoters(): Signal<VoteVoter[]> {
+  private initVoters(): Signal<VoteVoter[] | VoteParticipationVoter[]> {
     const voteUid = computed(() => this.vote().uid);
     return toSignal(
       combineLatest([toObservable(voteUid), this.refresh$.pipe(startWith(undefined))]).pipe(
@@ -228,14 +276,34 @@ export class VoteVotersComponent {
             catchError((error) => {
               console.error('Failed to load vote voters', error);
               this.loadError.set(true);
-              return of([] as VoteVoter[]);
+              return of([] as VoteVoter[] | VoteParticipationVoter[]);
             }),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: [] as VoteVoter[] }
+      { initialValue: [] as VoteVoter[] | VoteParticipationVoter[] }
     );
+  }
+
+  private initParticipationRows(): Signal<VoteParticipationVoterRowView[]> {
+    return computed(() => {
+      if (!this.participationOnly()) return [];
+      return (this.response() as (VoteVoter | VoteParticipationVoter)[])
+        .filter((voter): voter is VoteParticipationVoter => !('uid' in voter))
+        .map((voter) => buildVoteParticipationRowView(voter));
+    });
+  }
+
+  private initParticipationMatchingRows(): Signal<VoteParticipationVoterRowView[]> {
+    return computed(() => {
+      const term = this.searchTerm();
+      const role = this.roleFilter();
+
+      return this.participationRows().filter(
+        (row) => (!term || row.displayName.toLowerCase().includes(term) || !!row.organization?.toLowerCase().includes(term)) && (!role || row.role === role)
+      );
+    });
   }
 
   private initMatchingRows(): Signal<VoteVoterRowView[]> {
@@ -256,7 +324,7 @@ export class VoteVotersComponent {
 
   /** Preserve valid pages on refresh, but move back into range when fewer voters match the current filters. */
   private initTablePageBounds(): void {
-    toObservable(this.filteredRows)
+    toObservable(this.visibleRows)
       .pipe(takeUntilDestroyed())
       .subscribe((rows) => {
         if (this.loading() || this.loadError()) return;
@@ -284,18 +352,27 @@ export class VoteVotersComponent {
     });
   }
 
+  /** Counts sit in each label: All, Responded and Not responded (#3916). */
+  private initParticipationStatusOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const counts = this.participationStatusCounts();
+      const ids = Object.keys(VOTE_PARTICIPATION_STATUS_FILTER_LABELS) as VoteParticipationStatusFilter[];
+      return ids.map((id) => ({ id, label: `${VOTE_PARTICIPATION_STATUS_FILTER_LABELS[id]} (${counts[id]})` }));
+    });
+  }
+
   private initRoleOptions(): Signal<VoteVoterChoiceFilterOption[]> {
     return computed(() => {
-      const roles = new Set(this.rows().flatMap((row) => (row.role ? [row.role] : [])));
+      const roles = new Set([...this.rows(), ...this.participationRows()].flatMap((row) => (row.role ? [row.role] : [])));
       return [...roles].sort((a, b) => a.localeCompare(b)).map((role) => ({ label: role, value: role }));
     });
   }
 
-  /** A results link selects its choice — or, for the abstain row, the Abstained pill — over every status. */
+  /** A results link selects its choice — or, for the abstain row, the Abstained pill — over every status. Ignored on a participation-only tab. */
   private initInitialChoice(): void {
     toObservable(this.initialChoice)
       .pipe(
-        filter((choice): choice is string => !!choice),
+        filter((choice): choice is string => !!choice && !this.participationOnly()),
         takeUntilDestroyed()
       )
       .subscribe((choice) => {
@@ -310,12 +387,12 @@ export class VoteVotersComponent {
       });
   }
 
-  /** A comment's "View ballot" link opens that ballot once the list has loaded — once per linked ballot. */
+  /** A comment's "View ballot" link opens that ballot once the list has loaded — once per linked ballot. Ignored on a participation-only tab. */
   private initInitialBallot(): void {
     let openedFor: string | null = null;
     const ready = computed(() => {
       const uid = this.initialBallotUid();
-      if (!uid || this.loading()) return null;
+      if (!uid || this.loading() || this.participationOnly()) return null;
       return this.rows().some((row) => row.uid === uid && row.hasBallot) ? uid : null;
     });
 

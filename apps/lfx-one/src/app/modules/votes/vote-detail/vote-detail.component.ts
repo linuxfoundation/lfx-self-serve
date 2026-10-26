@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -32,6 +32,8 @@ import {
   buildVoteResultsQuestions,
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
+  formatVoteDeadline,
+  getUserTimezone,
   isRankedPollType,
   mergeCommentResults,
   normalizePollStatus,
@@ -70,9 +72,13 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
  * skeleton; everything else resolves in the browser. An invited voter still awaiting a ballot on an
  * active vote gets the cast drawer once on load, as the reminder email intends.
  *
- * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a named vote that is open or
- * closed (`showVotersTab`), the same rules GET /api/votes/:uid/voters enforces. The results' "View N voters" and the comments'
- * "View ballot" links open it through `voters_choice` / `voters_ballot`, which are ignored whenever the tab isn't shown.
+ * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a vote that is open or
+ * closed (`showVotersTab`), the same rules GET /api/votes/:uid/voters enforces; on a vote that is not explicitly named it is
+ * participation-only (#3916). The results' "View N voters" and the comments' "View ballot" links open it through
+ * `voters_choice` / `voters_ballot`; both links and both params are named-vote only (`showNamedBallotLinks`).
+ *
+ * On a pseudo-anonymous vote the BFF holds totals, the abstention count and comments until the vote ends (`results_held`,
+ * #3916): the page shows a held panel in their place and keeps the participation numbers.
  */
 @Component({
   selector: 'lfx-vote-detail',
@@ -108,6 +114,9 @@ export class VoteDetailComponent {
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
+
+  // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
+  private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   /** Re-runs the vote load: `retry` shows the skeleton again, `refresh` (after a ballot) reloads in place. */
   private readonly reload$ = new BehaviorSubject<'retry' | 'refresh'>('retry');
@@ -158,15 +167,23 @@ export class VoteDetailComponent {
   protected readonly voteResultsError: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().error);
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
+  /** Pseudo-anonymous totals, abstentions and comments are held until the vote ends (#3916) — a missing `num_abstained` must not read as 0. */
+  protected readonly resultsHeld: Signal<boolean> = computed(() => this.voteResults()?.results_held === true);
+  /** The scheduled close in the viewer's time zone, for the held panel. */
+  protected readonly closeText: Signal<string> = computed(() => {
+    const end = this.vote()?.end_time;
+    return end ? formatVoteDeadline(end, this.viewerTimezone) : '';
+  });
 
   // === Computed Signals ===
-  /**
-   * Individual ballots: a manager (never while the access check runs) on a vote that is explicitly named — a missing flag fails
-   * closed, as the server does — and open or closed, never a draft.
-   */
+  /** Voters tab: a manager (never while the access check runs) on a vote that is open or closed, never a draft. */
   protected readonly showVotersTab: Signal<boolean> = this.initShowVotersTab();
-  protected readonly votersChoice: Signal<string | null> = computed(() => (this.showVotersTab() ? this.requestedVotersChoice() : null));
-  protected readonly votersBallot: Signal<string | null> = computed(() => (this.showVotersTab() ? this.requestedVotersBallot() : null));
+  /** A missing privacy flag fails closed, as the server does (#3911). */
+  protected readonly isPseudoAnonymous: Signal<boolean> = computed(() => this.vote()?.pseudo_anonymity !== false);
+  /** Ballot and "View voters" links (and their deep-link params) — explicitly named votes only, even though the tab now shows on any vote (#3916). */
+  protected readonly showNamedBallotLinks: Signal<boolean> = computed(() => this.showVotersTab() && !this.isPseudoAnonymous());
+  protected readonly votersChoice: Signal<string | null> = computed(() => (this.showNamedBallotLinks() ? this.requestedVotersChoice() : null));
+  protected readonly votersBallot: Signal<string | null> = computed(() => (this.showNamedBallotLinks() ? this.requestedVotersBallot() : null));
   protected readonly tabs: Signal<readonly VoteDetailTabOption[]> = this.initTabs();
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
@@ -237,13 +254,13 @@ export class VoteDetailComponent {
 
   /** Opens the Voters tab filtered to a `<question_id>:<choice_id>` choice key. */
   protected onViewVoters(choiceKey: string): void {
-    if (!this.showVotersTab()) return;
+    if (!this.showNamedBallotLinks()) return;
     this.navigateToTab({ tab: 'voters', voters_choice: choiceKey, voters_ballot: null });
   }
 
   /** Opens the Voters tab with a comment's ballot (its vote response uid) open. */
   protected onViewBallot(voteResponseUid: string): void {
-    if (!this.showVotersTab()) return;
+    if (!this.showNamedBallotLinks()) return;
     this.navigateToTab({ tab: 'voters', voters_choice: null, voters_ballot: voteResponseUid });
   }
 
@@ -469,7 +486,7 @@ export class VoteDetailComponent {
   private initShowVotersTab(): Signal<boolean> {
     return computed(() => {
       const vote = this.vote();
-      if (!vote || this.canManage() !== true || vote.pseudo_anonymity !== false) return false;
+      if (!vote || this.canManage() !== true) return false;
       const status = normalizePollStatus(vote.status);
       return status === PollStatus.ACTIVE || status === PollStatus.ENDED;
     });
@@ -503,7 +520,12 @@ export class VoteDetailComponent {
 
   private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary' }> {
     return computed(() => {
-      if (this.isVoteClosed()) return { value: 'Final results', severity: 'secondary' };
+      // Held results are never final: an ended vote can still be held while upstream catches up (#3916).
+      if (this.resultsHeld()) {
+        if (this.isEnded()) return { value: 'Totals pending', severity: 'secondary' };
+      } else if (this.isVoteClosed()) {
+        return { value: 'Final results', severity: 'secondary' };
+      }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
       return { value: 'Not open yet', severity: 'secondary' };
     });
@@ -539,8 +561,10 @@ export class VoteDetailComponent {
     return computed(() => {
       const stats = this.participationStats();
       const loaded = !!this.voteResults();
+      const held = this.resultsHeld();
       const dash = '—';
-      const abstained = stats.abstainedVoters;
+      // A held payload has no abstention count; leave it out rather than show a false 0 (#3916).
+      const abstained = held ? 0 : stats.abstainedVoters;
       return [
         {
           value: loaded ? stats.totalResponses : dash,
@@ -557,7 +581,7 @@ export class VoteDetailComponent {
           iconContainerClass: 'bg-emerald-100 text-emerald-600',
         },
         {
-          value: loaded ? this.commentCount() : dash,
+          value: loaded && !held ? this.commentCount() : dash,
           label: 'Comments',
           subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
           icon: 'fa-light fa-comments',

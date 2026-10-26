@@ -2,10 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="vote-voters">
-  <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-center gap-2" data-testid="vote-voters-manager-notice">
-    <i class="fa-light fa-lock text-gray-500" aria-hidden="true"></i>
-    <p class="text-sm text-gray-700">Only vote managers can see individual ballots.</p>
-  </div>
+  @if (participationOnly()) {
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-center gap-2" data-testid="vote-voters-anonymous-notice">
+      <i class="fa-light fa-lock text-gray-500" aria-hidden="true"></i>
+      <p class="text-sm text-gray-700">Pseudo-anonymous vote. You can see who has responded, but not how anyone voted.</p>
+    </div>
+  } @else {
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 flex items-center gap-2" data-testid="vote-voters-manager-notice">
+      <i class="fa-light fa-lock text-gray-500" aria-hidden="true"></i>
+      <p class="text-sm text-gray-700">Only vote managers can see individual ballots.</p>
+    </div>
+  }
 
   @if (isActive()) {
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600" data-testid="vote-voters-updated">
@@ -56,17 +63,19 @@
           styleClass="w-full"
           size="small" />
       </div>
-      <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-choice-filter">
-        <lfx-select
-          [form]="filterForm"
-          control="choice"
-          [options]="choiceOptions()"
-          placeholder="All choices"
-          ariaLabel="Filter by choice"
-          [showClear]="true"
-          styleClass="w-full"
-          size="small" />
-      </div>
+      @if (!participationOnly()) {
+        <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-choice-filter">
+          <lfx-select
+            [form]="filterForm"
+            control="choice"
+            [options]="choiceOptions()"
+            placeholder="All choices"
+            ariaLabel="Filter by choice"
+            [showClear]="true"
+            styleClass="w-full"
+            size="small" />
+        </div>
+      }
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -77,6 +86,12 @@
             <p-skeleton width="5.5rem" height="1.75rem" borderRadius="9999px" />
           }
         </div>
+      } @else if (participationOnly()) {
+        <lfx-filter-pills
+          [options]="participationStatusOptions()"
+          [selectedFilter]="participationStatusFilter()"
+          (filterChange)="onStatusFilterChange($event)"
+          data-testid="vote-voters-status-pills" />
       } @else {
         <lfx-filter-pills
           [options]="statusOptions()"
@@ -102,14 +117,14 @@
           <p-skeleton width="100%" height="2.75rem" />
         }
       </div>
-    } @else if (rows().length === 0) {
+    } @else if (totalRowCount() === 0) {
       <lfx-empty-state
         icon="fa-light fa-users"
         title="No invited voters"
         subtitle="No one has been invited to this vote."
         [withCard]="false"
         data-testid="vote-voters-empty" />
-    } @else if (filteredRows().length === 0) {
+    } @else if (visibleRowCount() === 0) {
       <lfx-empty-state
         icon="fa-light fa-filter-slash"
         title="No voters match these filters"
@@ -118,6 +133,67 @@
         [withCard]="false"
         (ctaClick)="clearFilters()"
         data-testid="vote-voters-no-matches" />
+    } @else if (participationOnly()) {
+      <!-- Participation rows carry no identifier (#3916), so they are keyed by position, in the server's name order. -->
+      <lfx-table
+        [value]="participationFilteredRows()"
+        [paginator]="participationFilteredRows().length > pageSize"
+        [rows]="selectedPageSize()"
+        [first]="tableFirst()"
+        [rowsPerPageOptions]="rowsPerPageOptions"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} voters"
+        styleClass="p-datatable-sm"
+        (onPage)="onPage($event)"
+        data-testid="vote-voters-table">
+        <ng-template #header>
+          <tr>
+            <th><span class="text-sm font-inter text-gray-500">Voter</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Role</span></th>
+            <th><span class="text-sm font-inter text-gray-500">Status</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row let-rowIndex="rowIndex">
+          <tr [attr.data-testid]="'vote-voters-row-' + rowIndex">
+            <!-- Voter -->
+            <td>
+              <div class="flex items-center gap-3 min-w-0">
+                <lfx-person-avatar [name]="row.displayName" size="sm" />
+                <div class="flex flex-col min-w-0 max-w-xs">
+                  <span class="text-sm font-medium text-gray-900 whitespace-normal break-words" [attr.data-testid]="'vote-voters-name-' + rowIndex">{{
+                    row.displayName
+                  }}</span>
+                  @if (row.organization) {
+                    <span class="text-xs text-gray-500 whitespace-normal break-words" [attr.data-testid]="'vote-voters-organization-' + rowIndex">{{
+                      row.organization
+                    }}</span>
+                  }
+                </div>
+              </div>
+            </td>
+
+            <!-- Role -->
+            <td>
+              <div class="flex flex-col">
+                <span class="text-sm text-gray-700">{{ row.role || '—' }}</span>
+                @if (row.committeeRole) {
+                  <span class="text-xs text-gray-500">{{ row.committeeRole }}</span>
+                }
+              </div>
+            </td>
+
+            <!-- Status -->
+            <td [attr.data-testid]="'vote-voters-status-' + rowIndex">
+              @if (row.status === 'responded') {
+                <lfx-tag [value]="row.statusLabel" severity="success" />
+              } @else {
+                <span class="text-sm italic text-gray-400">{{ row.statusLabel }}</span>
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
     } @else {
       <lfx-table
         [value]="filteredRows()"

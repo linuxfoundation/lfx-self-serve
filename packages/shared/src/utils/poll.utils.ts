@@ -82,5 +82,15 @@ export function countVotesByStatus(votes: Pick<Vote, 'status'>[]): VoteStatusCou
  * of scrambling the comparator with NaN. Ties keep the API's original order (stable sort).
  */
 export function sortCommentResponsesByRecency(responses: PollCommentResponse[]): PollCommentResponse[] {
-  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time) || 0) - (Date.parse(a.vote_creation_time) || 0));
+  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time ?? '') || 0) - (Date.parse(a.vote_creation_time ?? '') || 0));
+}
+
+/**
+ * Sort comment-prompt responses by `comment_text` (#3916).
+ * @description Used for pseudo-anonymous votes, whose responses carry no submission time, so
+ * the order exposes nothing about when each ballot was cast. Returns a new array — never mutates
+ * the API payload.
+ */
+export function sortCommentResponsesByText(responses: PollCommentResponse[]): PollCommentResponse[] {
+  return [...responses].sort((a, b) => (a.comment_text ?? '').localeCompare(b.comment_text ?? ''));
 }

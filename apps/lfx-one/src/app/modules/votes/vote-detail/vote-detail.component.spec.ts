@@ -1059,9 +1059,8 @@ describe('VoteDetailComponent', () => {
     });
 
     it.each([
-      ['a pseudo-anonymous vote', { pseudo_anonymity: true }],
-      ['a vote without the anonymity flag', { pseudo_anonymity: undefined }],
-      ['a draft', { pseudo_anonymity: false, status: PollStatus.DISABLED }],
+      ['a named draft', { pseudo_anonymity: false, status: PollStatus.DISABLED }],
+      ['a pseudo-anonymous draft', { pseudo_anonymity: true, status: PollStatus.DISABLED }],
     ])('hides the tab on %s and falls back to Overview', async (_label, overrides) => {
       voteService.fetchVote.mockReturnValue(of(makeVote(overrides as Partial<Vote>)));
       queryParamMap.next(convertToParamMap({ tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: 'b-1' }));
@@ -1122,13 +1121,46 @@ describe('VoteDetailComponent', () => {
       );
     });
 
-    it('ignores the links when the tab is hidden', async () => {
+    it.each([
+      ['a pseudo-anonymous vote', { pseudo_anonymity: true }],
+      ['a vote without the anonymity flag', { pseudo_anonymity: undefined }],
+    ])('shows the participation-only tab on %s but ignores its deep-link params (#3916)', async (_label, overrides) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote(overrides as Partial<Vote>)));
+      queryParamMap.next(convertToParamMap({ tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: 'b-1' }));
+      const fixture = await setup();
+
+      expect(tabKeys(fixture)).toContain('voters');
+      expect(read(fixture, 'activeTab')).toBe('voters');
+      expect(read(fixture, 'showNamedBallotLinks')).toBe(false);
+      const voters = fixture.debugElement.query(By.css('lfx-vote-voters'));
+      expect(voters.properties['initialChoice']).toBeNull();
+      expect(voters.properties['initialBallotUid']).toBeNull();
+    });
+
+    it('ignores the links on a pseudo-anonymous vote (#3916)', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
       const fixture = await setup();
 
       call(fixture, 'onViewVoters', 'question-1:choice-yes');
       call(fixture, 'onViewBallot', 'b-1');
       expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('binds no ballot or voter links on a closed pseudo-anonymous vote (#3916)', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED, allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), num_abstained: 1 }));
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup();
+
+      expect(fixture.debugElement.query(By.css('lfx-vote-option-results')).properties['showVoterLinks']).toBe(false);
+      expect(fixture.debugElement.query(By.css('lfx-vote-abstain-result')).properties['showVoterLinks']).toBe(false);
+
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      TestBed.tick();
+      fixture.detectChanges();
+      const comments = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
+      expect(comments.properties['showBallotLinks']).toBe(false);
+      expect(comments.properties['anonymous']).toBe(true);
     });
 
     it('binds the link inputs to the tab visibility', async () => {
@@ -1138,12 +1170,111 @@ describe('VoteDetailComponent', () => {
 
       const options = fixture.debugElement.query(By.css('lfx-vote-option-results'));
       expect(options.properties['showVoterLinks']).toBe(true);
+      expect(read(fixture, 'showNamedBallotLinks')).toBe(true);
 
       options.triggerEventHandler('viewVoters', 'choice-yes');
       expect(router.navigate).toHaveBeenLastCalledWith(
         [],
         expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: null } })
       );
+    });
+  });
+
+  describe('held pseudo-anonymous results (#3916)', () => {
+    const heldResults = (): VoteResultsResponse => ({
+      poll_results: [],
+      comment_results: [],
+      num_recipients: 4,
+      num_votes_cast: 3,
+      poll_end_time: '2026-10-30T16:00:00Z',
+      results_held: true,
+    });
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of(heldResults()));
+    });
+
+    it('shows the held panel on Overview, with the pseudo-anonymous callout and no live-results promise', async () => {
+      const fixture = await setup();
+
+      expect(read(fixture, 'resultsHeld')).toBe(true);
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals appear when voting closes');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('until voting closes on');
+      expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout-pseudo-anonymous')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('follow live results');
+      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('1 invited voter has not responded yet');
+    });
+
+    it('keeps participation numbers but shows "—" for comments and drops the abstention count from the summary', async () => {
+      const fixture = await setup();
+
+      const cards = read<StatCardItem[]>(fixture, 'summaryCards');
+      expect(cards[0]).toMatchObject({ value: 3, label: 'Responses', subLine: 'of 4 invited' });
+      expect(cards[1]).toMatchObject({ value: '75%', label: 'Participation' });
+      expect(cards[2]).toMatchObject({ value: '—', label: 'Comments' });
+      expect(cards[3]).toMatchObject({ value: 1 });
+    });
+
+    it('shows the held panel on Results, with the abstention stat held', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-option-results')).toBeNull();
+      const card = fixture.debugElement.query(By.css('lfx-vote-participation-card'));
+      expect(card.properties['abstainedHeld']).toBe(true);
+      expect(card.properties['showAbstained']).toBe(true);
+    });
+
+    it('shows the held panel on Comments in place of the comment list', async () => {
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-comments-held')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
+    });
+
+    it('shows the held panel, not "No votes", on an ended vote whose totals are still held', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED })));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Voting has closed');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals are being finalized');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).not.toContain('Totals appear when voting closes');
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
+      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('Totals and comments will appear once they are finalized.');
+      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('Final results are available');
+    });
+
+    it.each(['creator', 'voter'] as const)('passes held and released results to the facts card for %s', async (audience) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: audience === 'creator' } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      const fixture = await setup();
+
+      results.next(heldResults());
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(true);
+
+      results.next(makeMethodResults());
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(false);
+    });
+
+    it('never reads 100% participation on an open held vote as final', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...heldResults(), num_votes_cast: 4 }));
+      const fixture = await setup();
+
+      expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Voting in progress');
     });
   });
 });

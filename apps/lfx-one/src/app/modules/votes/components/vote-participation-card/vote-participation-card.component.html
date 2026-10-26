@@ -19,7 +19,7 @@
       <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
       <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
         <p class="text-xs text-slate-500">Abstained</p>
-        <p class="font-semibold text-slate-900 text-lg">{{ stats().abstainedVoters }}</p>
+        <p class="font-semibold text-slate-900 text-lg" data-testid="vote-results-abstained-value">{{ abstainedHeld() ? '—' : stats().abstainedVoters }}</p>
       </div>
     }
   </div>

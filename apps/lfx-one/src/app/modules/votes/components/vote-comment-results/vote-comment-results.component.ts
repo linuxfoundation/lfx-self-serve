@@ -24,6 +24,8 @@ export class VoteCommentResultsComponent {
   public readonly commentResults = input.required<PollCommentResult[]>();
   /** Adds a "View ballot" link on each response — vote managers on named votes only (#3914). */
   public readonly showBallotLinks = input<boolean>(false);
+  /** Pseudo-anonymous vote (#3916): responses render as text only — no author, date, abstained label or ballot link. */
+  public readonly anonymous = input<boolean>(false);
 
   // === Outputs ===
   /** The response's `vote_id` — the vote response (ballot) uid the Voters tab opens. */
@@ -61,9 +63,10 @@ export class VoteCommentResultsComponent {
 
         return {
           ...cr,
-          responses: cr.responses.slice(first, first + rows).map((response) => ({
+          responses: cr.responses.slice(first, first + rows).map((response, index) => ({
             ...response,
             paragraphs: splitIntoParagraphs(response.comment_text),
+            position: first + index,
           })),
           totalResponses,
           first,
