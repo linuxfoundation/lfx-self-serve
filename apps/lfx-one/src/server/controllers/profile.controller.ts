@@ -168,6 +168,9 @@ export class ProfileController {
         return next(validationError);
       }
 
+      // The primary-email and metadata reads are independent; overlap their NATS round trips.
+      const primaryEmailPromise = this.resolveIdentitiesPrimaryEmail(req, getEffectiveUsername(req));
+
       // Get user metadata from NATS (authoritative source). created_at rides top-level on the
       // envelope (not inside UserMetadata) — see #2836. `username` was resolved above via
       // getUsernameFromAuth, which routes through the impersonation-aware getEffectiveUsername
@@ -203,7 +206,7 @@ export class ProfileController {
       // NATS metadata — never fall back to the impersonator's OIDC claims.
       const impersonating = isImpersonating(req);
       // Match Identities even when the login session still contains the previous primary address.
-      const primaryEmail = await this.resolveIdentitiesPrimaryEmail(req, getEffectiveUsername(req));
+      const primaryEmail = await primaryEmailPromise;
       const userProfile: UserProfile = impersonating
         ? {
             // Never fall back to the impersonator's OIDC claims here — the effective helpers resolve

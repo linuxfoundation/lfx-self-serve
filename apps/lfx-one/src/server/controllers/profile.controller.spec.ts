@@ -1988,6 +1988,51 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     }
   });
 
+  it('starts primary-email and metadata reads before either lookup completes', async () => {
+    let releaseMetadata!: () => void;
+    let releasePrimaryEmail!: () => void;
+    const metadataRead = new Promise<void>((resolve) => {
+      releaseMetadata = resolve;
+    });
+    const primaryEmailRead = new Promise<void>((resolve) => {
+      releasePrimaryEmail = resolve;
+    });
+    userSvc.getUserInfo.mockImplementationOnce(async () => {
+      await metadataRead;
+      return { success: true, data: {} };
+    });
+    emailVerificationSvc.getUserEmails.mockImplementationOnce(async () => {
+      await primaryEmailRead;
+      return { primary_email: 'current-primary@example.org', alternate_emails: [] };
+    });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+    const profileRequest = controller.getCurrentUserProfile(
+      buildReq({ path: '/api/profile', oidc: { user: { sub: 'auth0|dev-user', email: primary } } }),
+      res,
+      next
+    );
+
+    try {
+      // Let the initial username lookup settle without releasing either service read.
+      await Promise.resolve();
+      expect(userSvc.getUserInfo).toHaveBeenCalledWith(expect.anything(), lfid);
+      expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), lfid);
+      expect(res.json).not.toHaveBeenCalled();
+
+      releaseMetadata();
+      await Promise.resolve();
+      expect(res.json).not.toHaveBeenCalled();
+    } finally {
+      releaseMetadata();
+      releasePrimaryEmail();
+      await profileRequest;
+    }
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ email: 'current-primary@example.org' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('uses the same current primary for the profile and identities after a mid-session change', async () => {
     const currentPrimary = 'new-primary@example.org';
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${currentPrimary} `, alternate_emails: [primary] });
