@@ -1518,6 +1518,7 @@ describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () =>
     vi.clearAllMocks();
     isImpersonatingMock.mockReturnValue(false);
     getUsernameFromAuthMock.mockResolvedValue('testuser');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
     controller = new ProfileController();
   });
 
@@ -1951,6 +1952,14 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     return res.json.mock.calls[0][0];
   }
 
+  async function fetchProfileEmail(oidcUser: Record<string, unknown> = { sub: 'auth0|dev-user', email: primary }): Promise<string> {
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+    await controller.getCurrentUserProfile(buildReq({ path: '/api/profile', oidc: { user: oidcUser } }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    return res.json.mock.calls[0][0].user.email;
+  }
+
   const visible = (rows: any[]): any[] => rows.filter((row) => row.displayState !== 'hidden');
   const byId = (rows: any[], id: string): any => rows.find((row) => row.id === id);
 
@@ -1959,6 +1968,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     Object.assign(auth0ToCdpProviderMap, { 'google-oauth2': 'google', github: 'github', email: 'email', linkedin: 'linkedin' });
     Object.assign(cdpPlatformToTypeMap, { google: 'email', email: 'email', linkedin: 'email', github: 'username', lfid: 'username' });
     getEffectiveUsernameMock.mockReturnValue(lfid);
+    getUsernameFromAuthMock.mockResolvedValue(lfid);
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: {} });
     getEffectiveEmailMock.mockReturnValue(primary);
     getEffectiveSubMock.mockReturnValue('auth0|dev-user');
     isImpersonatingMock.mockReturnValue(false);
@@ -1975,6 +1986,62 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
         delete map[key];
       }
     }
+  });
+
+  it('uses the same current primary for the profile and identities after a mid-session change', async () => {
+    const currentPrimary = 'new-primary@example.org';
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${currentPrimary} `, alternate_emails: [primary] });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    expect(await fetchProfileEmail()).toBe(currentPrimary);
+    const rows = await fetchIdentities();
+    expect(rows.find((row) => row.isPrimary)?.value).toBe(currentPrimary);
+    expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), lfid);
+  });
+
+  it.each(['missing', 'blank', 'failure'])('keeps the profile and identities fallback aligned when auth-service primary is %s', async (scenario) => {
+    if (scenario === 'failure') {
+      emailVerificationSvc.getUserEmails.mockRejectedValue(new Error('unavailable'));
+    } else {
+      emailVerificationSvc.getUserEmails.mockResolvedValue(scenario === 'blank' ? { primary_email: '  ', alternate_emails: [] } : null);
+    }
+    getEffectiveEmailMock.mockReturnValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    expect(await fetchProfileEmail()).toBe(primary);
+    const rows = await fetchIdentities();
+    expect(rows.find((row) => row.isPrimary)).toEqual(expect.objectContaining({ value: primary, verified: false }));
+  });
+
+  it('uses the impersonation target primary for both displays, never the operator session email', async () => {
+    const targetPrimary = 'target-primary@example.org';
+    isImpersonatingMock.mockReturnValue(true);
+    // The profile helper's legacy bearer-token shortcut must not select the operator's account.
+    getUsernameFromAuthMock.mockResolvedValue('operator-shortcut');
+    getEffectiveEmailMock.mockReturnValue('target-old@example.org');
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: targetPrimary, alternate_emails: [] });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    const operator = { sub: 'auth0|operator', email: 'operator@example.org' };
+
+    expect(await fetchProfileEmail(operator)).toBe(targetPrimary);
+    expect((await fetchIdentities(operator)).find((row) => row.isPrimary)?.value).toBe(targetPrimary);
+    expect(emailVerificationSvc.getUserEmails.mock.calls.map(([, identifier]) => identifier)).toEqual([lfid, lfid]);
+  });
+
+  it('does not query auth-service using a profile fallback when no effective LFID is available', async () => {
+    getEffectiveUsernameMock.mockReturnValue(null);
+    getUsernameFromAuthMock.mockResolvedValue('profile-fallback');
+
+    expect(await fetchProfileEmail()).toBe(primary);
+    expect(emailVerificationSvc.getUserEmails).not.toHaveBeenCalled();
+  });
+
+  it.each(['target-old@example.org', null])('falls back only to the target email (%s) while impersonating', async (targetEmail) => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveEmailMock.mockReturnValue(targetEmail);
+    emailVerificationSvc.getUserEmails.mockRejectedValue(new Error('unavailable'));
+
+    expect(await fetchProfileEmail({ sub: 'auth0|operator', email: 'operator@example.org' })).toBe(targetEmail || '');
   });
 
   it('shows a primary email that CDP attributes to another LFID on a merged profile, without writing to CDP', async () => {
@@ -2179,6 +2246,49 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     ]);
     expect(byId(rows, 'cdp-linkedin-username')).toBeUndefined();
     expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-linkedin-username', lfid);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps a linked Google email visible when an unsupported email username row comes first', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'google-oauth2', user_id: 'google-1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-email-username', platform: 'email', type: 'username', value: primary }),
+      cdpRow({ id: 'cdp-google-email', platform: 'email', type: 'email', value: primary }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.platform === 'google')).toEqual([
+      expect.objectContaining({ id: 'cdp-google-email', type: 'email', displayState: 'verified', auth0UserId: 'google-1' }),
+    ]);
+    expect(byId(rows, 'cdp-email-username')).toBeUndefined();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-email-username', lfid);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps linked accounts from different providers visible when their provider-specific user IDs collide', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'github', user_id: '12345', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
+      { provider: 'linkedin', user_id: '12345', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-linkedin@example.org' } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-github', platform: 'github', type: 'username', value: 'dev-gh', verified: true, verifiedBy: lfid }),
+      cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: 'dev-linkedin@example.org', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.auth0UserId)).toEqual([
+      expect.objectContaining({ id: 'cdp-github', platform: 'github', displayState: 'verified', auth0UserId: '12345' }),
+      expect.objectContaining({ id: 'cdp-linkedin', platform: 'linkedin', displayState: 'verified', auth0UserId: '12345' }),
+    ]);
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
     expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
   });
 

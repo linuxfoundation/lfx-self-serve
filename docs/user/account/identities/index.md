@@ -32,6 +32,8 @@ Identities are grouped into two sections:
 
 Your primary email is always listed, with a **Primary** badge. If you also sign in with Google or an email login that uses the same address, that account stays listed and can still be removed to unlink it. If your sign-in hasn't confirmed it as verified, it shows under **Unverified identities** with the badge but without **Verify** or **This is not me** — it can't be verified or removed from this page. If it should show as verified, contact support.
 
+The profile sidebar and the **Primary** badge use your current primary email. Changing it in **Edit profile** refreshes both displays without signing out and back in.
+
 > **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the code-entry step whether or not the address is already linked elsewhere. If no code arrives, the address may belong to another LFX account — use **contact support** in the code step for help. Social-account conflicts still show a conflict message after provider sign-in.
 
 ## Add an identity

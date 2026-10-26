@@ -445,7 +445,7 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
   });
 });
 
-describe('ProfileLayoutComponent — identities tab dot ignores the primary email (#4123)', () => {
+describe('ProfileLayoutComponent — primary email and identity notifications (#4123)', () => {
   function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'value'>): EnrichedIdentity {
     return {
       platform: 'email',
@@ -461,14 +461,16 @@ describe('ProfileLayoutComponent — identities tab dot ignores the primary emai
     };
   }
 
-  async function setup(identities: EnrichedIdentity[]): Promise<ComponentFixture<ProfileLayoutComponent>> {
+  async function setup(identities: EnrichedIdentity[], refresh$ = new Subject<void>()): Promise<ComponentFixture<ProfileLayoutComponent>> {
     const userServiceMock = {
       user: signal({ user_id: 'u1' } as unknown as User),
       impersonating: signal(false),
       uploadedAvatarUrl: signal<string | null>(null),
       effectiveAvatarUrl: computed(() => ''),
-      identitiesRefresh$: EMPTY,
-      getCurrentUserProfile: vi.fn(() => of({ user: { username: 'dev-user' }, profile: null } as unknown as CombinedProfile)),
+      identitiesRefresh$: refresh$,
+      getCurrentUserProfile: vi.fn(() =>
+        of({ user: { username: 'dev-user', email: 'old-primary@example.org', first_name: 'Old' }, profile: { given_name: 'Old' } } as CombinedProfile)
+      ),
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of(identities)),
     };
@@ -495,6 +497,34 @@ describe('ProfileLayoutComponent — identities tab dot ignores the primary emai
   beforeEach(() => {
     sessionStorage.clear();
     TestBed.resetTestingModule();
+  });
+
+  it('shows the identities primary instead of a stale profile email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+  });
+
+  it('falls back to the profile email when identities have no primary row', async () => {
+    const fixture = await setup([makeIdentity({ id: 'other-email', value: 'other@example.org' })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+  });
+
+  it('refreshes the sidebar primary without losing optimistic profile edits', async () => {
+    const refresh$ = new Subject<void>();
+    const fixture = await setup([makeIdentity({ id: 'old-primary', value: 'old-primary@example.org', isPrimary: true })], refresh$);
+    fixture.componentInstance.onProfileSaved({ given_name: 'Saved' });
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+    const getIdentities = vi.mocked(TestBed.inject(UserService).getIdentities);
+    getIdentities.mockReturnValue(of([makeIdentity({ id: 'new-primary', value: 'new-primary@example.org', isPrimary: true })]));
+
+    refresh$.next();
+    await fixture.whenStable();
+
+    expect(getIdentities).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+    expect(fixture.componentInstance.profileData()?.firstName).toBe('Saved');
   });
 
   it('keeps the dot off for a lone unverified primary email', async () => {

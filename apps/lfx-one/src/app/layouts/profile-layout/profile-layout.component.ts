@@ -146,7 +146,9 @@ export class ProfileLayoutComponent {
 
   public readonly organization = computed(() => this.profileData()?.organization || '');
 
-  public readonly emailInfo = computed(() => this.profileData()?.email || '');
+  // Prefer the same primary row as Identities, including after a primary change or an optimistic
+  // metadata save that still holds the previous email in profileData.
+  public readonly emailInfo = computed(() => this.identities().find((identity) => identity.isPrimary)?.value || this.profileData()?.email || '');
 
   public readonly fullAddress: Signal<string[]> = this.initFullAddress();
 

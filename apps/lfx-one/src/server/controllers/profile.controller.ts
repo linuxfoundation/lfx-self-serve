@@ -202,12 +202,14 @@ export class ProfileController {
       // impersonator, so identity/name fields must come from the effective (target) identity and
       // NATS metadata — never fall back to the impersonator's OIDC claims.
       const impersonating = isImpersonating(req);
+      // Match Identities even when the login session still contains the previous primary address.
+      const primaryEmail = await this.resolveIdentitiesPrimaryEmail(req, getEffectiveUsername(req));
       const userProfile: UserProfile = impersonating
         ? {
             // Never fall back to the impersonator's OIDC claims here — the effective helpers resolve
             // the target's identity from the impersonation session.
             id: (getEffectiveSub(req) || '') as string,
-            email: (getEffectiveEmail(req) || '') as string,
+            email: primaryEmail?.email || '',
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
@@ -218,7 +220,7 @@ export class ProfileController {
           }
         : {
             id: oidcUser['sub'] as string,
-            email: oidcUser['email'] as string,
+            email: primaryEmail?.email || '',
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
             // The resolved LFID above — not the OIDC username/preferred_username display claims.
@@ -2625,13 +2627,13 @@ export class ProfileController {
 
     // Auth-service logins already shown by an earlier CDP row — case-variant CDP rows (dev@ / DEV@)
     // match the same login, which must appear once with one Remove menu.
-    const claimedAuthUserIds = new Set<string>();
+    const claimedAuthIdentityKeys = new Set<string>();
 
     // Process CDP identities
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
       const authKey = this.identityMatchKey(cdp.platform, cdp.type, cdp.value);
       // Google OAuth creates email-type CDP entries — cross-match CDP email entries against Google auth identities
-      const googleKey = cdp.platform === 'email' ? this.identityMatchKey('google', 'email', cdp.value) : null;
+      const googleKey = cdp.platform === 'email' && cdp.type === 'email' ? this.identityMatchKey('google', 'email', cdp.value) : null;
       const authIdentity = authServiceMap.get(authKey) ?? (googleKey ? authServiceMap.get(googleKey) : undefined);
 
       const inAuthService = !!authIdentity;
@@ -2669,10 +2671,11 @@ export class ProfileController {
             });
           });
         }
-        if (claimedAuthUserIds.has(authIdentity.user_id)) {
+        const authIdentityKey = `${authIdentity.provider}:${authIdentity.user_id}`;
+        if (claimedAuthIdentityKeys.has(authIdentityKey)) {
           return { ...cdp, displayState: 'hidden', inAuth0: true };
         }
-        claimedAuthUserIds.add(authIdentity.user_id);
+        claimedAuthIdentityKeys.add(authIdentityKey);
         // If a Google OAuth identity matched a CDP email entry, show it as a Google identity
         const isGoogleCrossMatch = cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2';
         return {
@@ -2790,20 +2793,20 @@ export class ProfileController {
   }
 
   /**
-   * The account's primary email for the identities list: auth-service `primary_email` (keyed on
-   * the LFID username), falling back to the session email for display even when the IdP hasn't
+   * The account's primary email for the profile and identities list: auth-service `primary_email`
+   * (keyed on the LFID username), falling back to the session email for display even when the IdP hasn't
    * verified it (the target's stored email while impersonating). Verification follows
    * `resolveVerifiedUserEmails`: the session must hold an IdP-verified email
    * (`getEffectiveEmail(req)`), and then the auth-service primary is trusted even when it differs
    * from that session email — auth-service only promotes verified addresses, and the session claim
    * stays stale after a mid-session primary change. A session-only fallback is verified only when
-   * it is that verified email. A failed auth-service read falls back rather than failing the
-   * endpoint; returns null when neither source resolves an address.
+   * it is that verified email. An unavailable LFID or failed auth-service read falls back rather than
+   * failing the endpoint; returns null when neither source resolves an address.
    */
-  private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string): Promise<IdentitiesPrimaryEmail | null> {
+  private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string | null): Promise<IdentitiesPrimaryEmail | null> {
     const sessionEmail = getEffectiveEmail(req);
     const sessionDisplayEmail = isImpersonating(req) ? sessionEmail : (req.oidc?.user?.['email'] as string | undefined)?.trim() || null;
-    const emails = await this.emailVerificationService.getUserEmails(req, lfid).catch(() => null);
+    const emails = lfid ? await this.emailVerificationService.getUserEmails(req, lfid).catch(() => null) : null;
     const authServicePrimary = emails?.primary_email?.trim();
     const email = authServicePrimary || sessionDisplayEmail;
     if (!email) {
