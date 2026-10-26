@@ -26,8 +26,8 @@ These intake limits do not change the chat-message or ICP-feedback size gates.
 
 ## Run outcomes
 
-Catalog result controllers await `GuildService.resolveRunOutcome` after authorization
-and before logging or recording their response. It only adds failure to pending/questions;
+Catalog result controllers, except Member 360, await `GuildService.resolveRunOutcome`
+after authorization and before logging or recording their response. It only adds failure to pending/questions;
 validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
 The existing idle-runtime completion path uses failed/failureText for a final plain
 reply without an asset. Provider error events add failed/failure when no output
@@ -36,8 +36,8 @@ An error outside a tool task must settle for 30 seconds without recovery. Only
 explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
 agent text, including progress/questions, proves recovery. Status, heartbeat,
 unknown and lifecycle/completion events leave the error standing at any age.
-Tool-task errors are excluded using the same `isMktgToolTaskEvent` metadata predicate
-as Member 360. Queued-turn boundaries discard prior-turn errors; capped pages
+Tool-task errors are excluded using the `isMktgToolTaskEvent` metadata predicate.
+Queued-turn boundaries discard prior-turn errors; capped pages
 remain inconclusive rather than proving a terminal outcome.
 Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
 the five-second constant remains exported for compatibility, not recovery evidence.
@@ -46,6 +46,15 @@ model turns; a recorded failed stream is still unavailable. No unverified sessio
 metadata probe is used. Lookup failures log a warning and preserve the result.
 Generic browser history retains versions/answers/Q&A on failure, marks session reuse
 invalid, and retries the exact failed request including feedback on a new session.
+
+Member 360's result controller is excluded from `GuildService.resolveRunOutcome`.
+Without a valid result, its terminal classifier uses root `runtime_done` or an ended
+session status; error events alone remain pending. A questions turn stays
+`needs_input` through its own root `runtime_done`; only a later reply, a newer turn's
+completion or a session end recognized by the shared questions-precedence helper
+supersedes it. A status-only ended event does not currently supersede unanswered
+questions under that helper. See the
+[Member 360 lifecycle](../frontend/marketing-os-member-360.md) for polling and recovery.
 
 ## Current is not newest
 
