@@ -8,11 +8,7 @@
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-header">
       <div class="flex min-w-0 flex-col gap-1">
-        <h1
-          class="text-base font-semibold text-gray-900"
-          [class.break-words]="isLinkedinDocument()"
-          data-testid="mktg-document-view-title"
-          [attr.aria-current]="isAeoDocument() ? 'page' : null">
+        <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
           {{ isAeoDocument() ? 'AEO/GEO' : title() }}
         </h1>
         @if (header(); as meta) {
@@ -166,7 +162,8 @@
         <a
           [routerLink]="['../../..', runAgent()?.id]"
           (click)="onRunAgain()"
-          queryParamsHandling="preserve"
+          [queryParams]="runAgainParams()"
+          queryParamsHandling="merge"
           class="text-blue-600 underline"
           data-testid="mktg-document-view-run-again"
           >Run again</a
@@ -234,7 +231,8 @@
             <div class="flex flex-wrap gap-3">
               <a
                 [routerLink]="['../../..', runAgent()?.id]"
-                queryParamsHandling="preserve"
+                [queryParams]="runAgainParams()"
+                queryParamsHandling="merge"
                 class="inline-flex min-h-10 items-center rounded-lg border border-gray-300 px-4 font-semibold text-gray-700"
                 data-testid="mktg-document-view-run-again"
                 (click)="onRunAgain()"

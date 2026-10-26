@@ -71,6 +71,7 @@ describe('AEO/GEO intake and renderer', () => {
       { domain: 'project.example', key_pages: 'https://project.example/a' },
       { domain: 'project.example', key_pages: 'https://project.example/a\nhttps://project.example/a' },
       { domain: 'project.example', key_pages: 'ftp://project.example/a\nhttps://project.example/b' },
+      { domain: 'project.example', key_pages: 'https://?\nhttps://[invalid' },
       { domain: 'project.example', key_pages: Array.from({ length: 6 }, (_, i) => `https://project.example/${i}`).join('\n') },
     ]) {
       expect(validateAeoGeoIntakeAnswers(answers).valid).toBe(false);
@@ -118,7 +119,7 @@ describe('AEO/GEO envelope gates', () => {
     expect(report.caveats).toHaveLength(kind === 'project' ? 9 : 7);
     expect(report.sources).toHaveLength(kind === 'project' ? 11 : 15);
   });
-  it('mirrors report min(1) strings and regex URL gates without promoting unsafe userinfo into links', () => {
+  it('mirrors report min(1) strings and regex URL gates', () => {
     const report = aeoGeoReportFixture();
     report.headline = ' ';
     report.verdict = ' ';
@@ -143,6 +144,7 @@ describe('AEO/GEO envelope gates', () => {
   it('accepts legacy envelopes and validates every typed-report equality and required section', () => {
     const legacy = envelope();
     expect(isAeoGeoEnvelope(legacy)).toBe(true);
+    expect(isAeoGeoEnvelope({ ...legacy, document_markdown: legacy.document_markdown.replace(/^(Overall score:.*)$/m, '$1\t ') })).toBe(true);
     const report = aeoGeoReportFixture(legacy, legacy.inputs.pages_audited);
     expect(isAeoGeoReport({ ...report, future: true })).toBe(true);
     expect(isAeoGeoEnvelope({ ...legacy, report })).toBe(true);
