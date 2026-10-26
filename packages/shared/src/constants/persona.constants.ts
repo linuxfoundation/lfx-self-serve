@@ -87,8 +87,8 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
  * LF teams holding plain `auditor` on every `b2b_org`: `lf-staff` plus `global-org-auditors`, a
- * hand-picked read-only team whose membership is managed in sso-tools. This set mirrors the reconciler's
- * `orgAuditorTeams`, which writes those grants; member-service also writes the `lf-staff` one. Org Lens
+ * hand-picked read-only team whose membership is managed in sso-tools. This set mirrors member-service's
+ * `B2BOrgAuditorTeamNames`, which writes those grants on every org publish. Org Lens
  * search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which includes this list.
  * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
  * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
