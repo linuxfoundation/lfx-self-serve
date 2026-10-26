@@ -16,12 +16,17 @@ import type { Member360FormInput } from '../interfaces/member-360.interface';
 import { weightsSchema } from './member-360-schema.utils';
 import { extractMktgAgentTexts } from '../utils/mktg-session-event.utils';
 
+/** Recognize the contract marker on the first line of an attributed agent reply. */
+export function isMember360Question(text: string): boolean {
+  return (text.trim().split(/\r?\n/, 1)[0] ?? '').includes(MEMBER_360_QUESTIONS_MARKER);
+}
+
 /** Temporary questions tolerance: attribute agent text and inspect only its marker line. */
 export function findMember360Questions(payloads: string[]): string | undefined {
   return payloads
     .flatMap(extractMktgAgentTexts)
     .map((text) => text.trim())
-    .filter((text) => (text.split(/\r?\n/, 1)[0] ?? '').includes(MEMBER_360_QUESTIONS_MARKER))
+    .filter(isMember360Question)
     .at(-1);
 }
 

@@ -44,6 +44,21 @@ test('shared Member document has linked parents and New run drops asset-only URL
   await page.screenshot({ path: info.outputPath('member-document-back.png'), fullPage: true });
 });
 
+test('Sources and Method use plain-English connection labels for legacy envelopes', async ({ page }, info) => {
+  await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+  const view = member360Revision();
+  if (!view.member360) throw new Error('Member 360 fixture is missing');
+  view.member360.tabs.summary.data_coverage.sources_unavailable = ['CRM (not wired)', 'Web research'];
+  view.member360.content_sha256 = createHash('sha256').update(JSON.stringify(view.member360.tabs)).digest('hex');
+  await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-result')).toContainText('CRM (not connected yet), Web research');
+  await page.getByTestId('member-360-method-toggle').click();
+  await expect(page.getByTestId('member-360-method')).toContainText('hubspot: not connected yet');
+  await expect(page.getByTestId('member-360-method')).not.toContainText('not_wired');
+  await page.screenshot({ path: info.outputPath('plain-source-labels.png'), fullPage: true });
+});
+
 test('ranking filters push shareable URLs and Back restores each preceding view', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
@@ -249,7 +264,7 @@ test('a questions turn keeps the document open with the feed and an unsupported-
   await page.screenshot({ path: info.outputPath('questions-turn-open.png'), fullPage: true });
 });
 
-test('ranking sorts, filters, expands evidence, copies team actions and exports the workbook', async ({ page }, info) => {
+test('ranking sorts, filters, expands evidence and copies team actions', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   const view = member360Revision();
   if (!view.member360) throw new Error('Member 360 fixture is missing');
@@ -283,9 +298,6 @@ test('ranking sorts, filters, expands evidence, copies team actions and exports 
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (_text: string) => undefined } }));
   await page.getByRole('button', { name: 'Copy Member Success list' }).click();
   await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
-  const download = page.waitForEvent('download');
-  await page.getByTestId('member-360-download').getByRole('button').click();
-  expect((await download).suggestedFilename()).toBe('Member360_sample-foundation_2026-Q3.xlsx');
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });
 });
 

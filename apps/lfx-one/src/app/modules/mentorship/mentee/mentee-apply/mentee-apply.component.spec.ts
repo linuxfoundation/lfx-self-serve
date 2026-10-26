@@ -234,6 +234,10 @@ describe('MenteeApplyComponent', () => {
       'You can no longer apply to this term',
     ],
     ['eligibility criteria not met: the mentee already holds an accepted mentorship', 'You are already in a mentorship'],
+    [
+      'eligibility criteria not met: you already have 3 applications under review; withdraw one before applying again',
+      'You have reached the application limit',
+    ],
     ['eligibility criteria not met: application window has not opened yet', 'Applications have not opened yet'],
   ])('shows the specific state for the upstream reason "%s"', async (message, title) => {
     applyToMenteeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422, error: { error: message, code: 'VALIDATION_ERROR' } })));
