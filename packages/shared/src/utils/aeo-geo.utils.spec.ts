@@ -71,6 +71,7 @@ describe('AEO/GEO intake and renderer', () => {
       { domain: 'project.example', key_pages: 'https://project.example/a' },
       { domain: 'project.example', key_pages: 'https://project.example/a\nhttps://project.example/a' },
       { domain: 'project.example', key_pages: 'ftp://project.example/a\nhttps://project.example/b' },
+      { domain: 'project.example', key_pages: 'https://?\nhttps://[invalid' },
       { domain: 'project.example', key_pages: Array.from({ length: 6 }, (_, i) => `https://project.example/${i}`).join('\n') },
     ]) {
       expect(validateAeoGeoIntakeAnswers(answers).valid).toBe(false);
