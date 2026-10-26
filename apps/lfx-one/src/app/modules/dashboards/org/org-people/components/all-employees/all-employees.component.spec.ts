@@ -377,6 +377,29 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(formerTags()).toEqual([]);
       expect(activeStat()).toContain('2');
     });
+
+    it('keeps one current row carrying the access badge when a former employee has both a live key-contact row and an access-only row, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace-kc', 'Grace Hopper', { lfUsername: 'grace', sources: ['keyContact'] }),
+            row('live-grace-access', 'Grace Hopper', { lfUsername: 'grace', sources: ['access'], accessBadge: 'admin' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace-kc', 'org-people-all-employees-row-p-1']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-live-grace-kc"]')?.textContent).toContain('Admin');
+      expect(formerTags()).toEqual([]);
+    });
   });
 
   describe('on the server, with ?employment=former', () => {

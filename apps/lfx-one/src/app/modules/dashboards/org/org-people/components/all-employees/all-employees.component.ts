@@ -365,23 +365,32 @@ export class AllEmployeesComponent {
   /**
    * Current and former rows for the selected view, reconciled by LF username. Someone in the former roster can
    * also arrive from the live roster before the next warehouse build:
-   * - with only Org Lens access, they are still former: show the former row, carrying the access badge;
-   * - with a live seat or key-contact role, they are current again: keep the live row, drop the former one.
+   * - with a live seat or key-contact role, they are current again: keep that live row, drop the former one;
+   * - with only Org Lens access, they are still former: show the former row.
+   * Either way a separate access-only live row for them is folded in: its badge moves to the row that is shown.
    */
   private initRosterRows(): OrgAllEmployeeRow[] {
     const formerRows = this.showFormer() ? this.formerResponse().rows : [];
     const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
+    const isLiveMatch = (row: OrgAllEmployeeRow): row is OrgAllEmployeeRow & { lfUsername: string } =>
+      !!row.lfUsername && formerUsernames.has(row.lfUsername) && !row.sources.includes('snowflake');
     const accessOnly = new Map<string, OrgAllEmployeeRow['accessBadge']>();
     const liveRoles = new Set<string>();
     for (const row of this.response().rows) {
-      if (!row.lfUsername || !formerUsernames.has(row.lfUsername) || row.sources.includes('snowflake')) continue;
+      if (!isLiveMatch(row)) continue;
       if (row.sources.every((source) => source === 'access')) {
         accessOnly.set(row.lfUsername, row.accessBadge);
       } else {
         liveRoles.add(row.lfUsername);
       }
     }
-    const currentRows = this.showCurrent() ? this.response().rows.filter((row) => !(row.lfUsername && accessOnly.has(row.lfUsername))) : [];
+    const currentRows = this.showCurrent()
+      ? this.response().rows.flatMap((row) => {
+          if (!isLiveMatch(row)) return [row];
+          if (accessOnly.has(row.lfUsername) && row.sources.every((source) => source === 'access')) return [];
+          return [{ ...row, accessBadge: row.accessBadge ?? accessOnly.get(row.lfUsername) }];
+        })
+      : [];
     const shownFormerRows = formerRows
       .filter((row) => !(row.lfUsername && liveRoles.has(row.lfUsername)))
       .map((row) => (row.lfUsername && accessOnly.has(row.lfUsername) ? { ...row, accessBadge: accessOnly.get(row.lfUsername) } : row));
