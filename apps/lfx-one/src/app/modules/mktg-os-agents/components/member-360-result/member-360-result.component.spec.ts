@@ -4,6 +4,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Location } from '@angular/common';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
+import { Tooltip } from 'primeng/tooltip';
 import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 import { ProjectContextService } from '@services/project-context.service';
@@ -326,6 +328,43 @@ describe('Member360ResultComponent', () => {
       red: 'bg-red-50 text-red-800',
     };
     for (const name of classes[MEMBER_360_TIER_TONES[tier]].split(' ')) expect(badge?.classList.contains(name)).toBe(true);
+  });
+  it('shows escaped heat tooltips on the body for focus and hover, and dismisses them with Escape', async () => {
+    const view = render();
+    const cell = view.fixture.debugElement.query(By.css('[role="img"][data-testid^="member-360-heat-"]'));
+    const element: HTMLElement = cell.nativeElement;
+    const tooltip = cell.injector.get(Tooltip);
+    expect(tooltip.appendTo()).toBe('body');
+    expect(tooltip.tooltipEvent).toBe('both');
+    expect(tooltip.escape).toBe(true);
+    expect(element.getAttribute('tabindex')).toBe('0');
+    expect(element.querySelector('span')).toBeNull();
+    element.focus();
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(element.getAttribute('aria-label')));
+    expect(document.querySelector('[role="tooltip"]')?.parentElement).toBe(document.body);
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+    element.blur();
+    element.dispatchEvent(new MouseEvent('mouseenter'));
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(element.getAttribute('aria-label')));
+    element.dispatchEvent(new MouseEvent('mouseleave'));
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+  });
+  it('presents legacy source labels and Method statuses in plain English without mutating the envelope', () => {
+    const envelope = member360Fixture();
+    envelope.tabs.summary.data_coverage.sources_used = ['LFX Platform'];
+    envelope.tabs.summary.data_coverage.sources_unavailable = ['CRM (not wired)', 'Web research'];
+    envelope.tabs.method.data_sources[0] = { source: 'lfx_platform', label: 'LFX Platform', status: 'used' };
+    envelope.tabs.method.data_sources[1] = { source: 'uploaded_trackers', label: 'Trackers', status: 'unavailable' };
+    envelope.tabs.method.data_sources[2] = { source: 'hubspot', label: 'CRM', status: 'not_wired' };
+    const original = JSON.stringify(envelope);
+    const view = render(envelope);
+    expect(view.query('member-360-result').textContent).toContain('CRM (not connected yet), Web research');
+    expect(view.query('member-360-method').textContent).toContain('LFX Platform: used');
+    expect(view.query('member-360-method').textContent).toContain('Trackers: unavailable');
+    expect(view.query('member-360-method').textContent).toContain('CRM: not connected yet');
+    expect(view.query('member-360-result').textContent).not.toMatch(/not wired|not_wired/);
+    expect(JSON.stringify(envelope)).toBe(original);
   });
   it('copies team actions and reports clipboard denial', async () => {
     const view = render();

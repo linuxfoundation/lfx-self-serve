@@ -24,12 +24,24 @@ import {
   MEMBER_360_RENEWAL_AMBER_DAYS,
   MEMBER_360_TIER_TONES,
 } from '@lfx-one/shared/constants';
-import { rankMember360Rows, mktgKitRootPath, mktgRunRouteFor } from '@lfx-one/shared/utils';
+import { rankMember360Rows, mktgKitRootPath, mktgRunRouteFor, member360SourceLabel, member360SourceStatusText } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360SummaryCard, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-member-360-result',
-  imports: [DatePipe, ReactiveFormsModule, JsonPipe, NgClass, RouterLink, ButtonComponent, InputTextComponent, SelectComponent, MessageComponent],
+  imports: [
+    DatePipe,
+    ReactiveFormsModule,
+    JsonPipe,
+    NgClass,
+    RouterLink,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    MessageComponent,
+    TooltipModule,
+  ],
   templateUrl: './member-360-result.component.html',
   styleUrl: './member-360-result.component.scss',
 })
@@ -61,8 +73,8 @@ export class Member360ResultComponent {
   private readonly filterValues = toSignal(this.filters.valueChanges.pipe(map(() => this.readFilters())), { initialValue: this.readFilters() });
   protected readonly rows = this.initRows();
   protected readonly summary = computed(() => this.envelope().tabs.summary);
-  protected readonly sourcesUsed = computed(() => this.summary().data_coverage.sources_used.join(' · '));
-  protected readonly sourcesUnavailable = computed(() => this.summary().data_coverage.sources_unavailable.join(', '));
+  protected readonly sourcesUsed = computed(() => this.summary().data_coverage.sources_used.map(member360SourceLabel).join(' · '));
+  protected readonly sourcesUnavailable = computed(() => this.summary().data_coverage.sources_unavailable.map(member360SourceLabel).join(', '));
   protected readonly cards = this.initCards();
   protected readonly scoreRange = computed(() => {
     const scores = this.envelope().tabs.member_ranking.map((row) => row.engagement_score);
@@ -87,6 +99,9 @@ export class Member360ResultComponent {
     }))
   );
   protected readonly method = computed(() => this.envelope().tabs.method);
+  protected readonly methodSources = computed(() =>
+    this.method().data_sources.map((source) => ({ ...source, label: member360SourceLabel(source.label), statusText: member360SourceStatusText(source.status) }))
+  );
   protected readonly weights = computed(() =>
     MEMBER_360_HEAT_ORDER.map((key) => ({ label: CATEGORY_LABELS[key], value: this.method().weights_used[key], original: this.method().weights_default[key] }))
   );
