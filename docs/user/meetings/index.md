@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-13
+last_updated: 2026-10-26
 intercom_collection: Meetings
 ---
 
@@ -76,6 +76,7 @@ Empty states differ by lens:
 
 ### On each meeting card
 
+- If the meeting belongs to a group, the group's name appears on a line under the meeting title. A meeting linked to several groups lists them separated by commas; if the line is cut off, hover over it to see every group.
 - **Materials** lists the files and links for the meeting. On a recurring meeting, materials are grouped under **This occurrence** (for this date only) and **All occurrences** (shared by every date). Organizers see **Edit materials**.
 - **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. An invited organizer's saved response immediately updates this summary and face ordering, even while response data is being indexed. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
 - Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list. Calendar invites never list other guests, whatever this setting says. In the new meeting editor (preview), an organizer can turn **Show attendees to guests** on for a Restricted meeting, but LFX pages still keep a Restricted meeting's guest list hidden, so guests see no difference.
