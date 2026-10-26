@@ -991,6 +991,36 @@ export class OrganizationService {
   }
 
   /**
+   * #4225 — the LF account behind a crowd.dev (CDP) organization id, or `null` when that organization
+   * has no LF account at all. The reverse of {@link getOrgLensAccountContext}: the caller here holds
+   * no Org Lens grant, so the only identifier they can be described by is the CDP organization on
+   * their own work history, and the one fact wanted is `isMember`.
+   *
+   * `ORG_LENS_ACCOUNT_CONTEXT` is a denormalised one-row-per-account view that already carries both
+   * `ACCOUNT_ID` and `CDEV_ORG_ID`, so this is the same read with the other column in the predicate.
+   * Cached per CDP organization under its own sub-resource, so it never collides with the
+   * account-keyed entry for the same row.
+   *
+   * A row that cannot be found is not an error: it means the organization is unknown to LFX, which
+   * the caller must read as "not a member", never as an outage.
+   */
+  public async getOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse | null> {
+    if (!cdevOrgId) {
+      return null;
+    }
+
+    const rows = await withOrgCache(
+      cdevOrgId,
+      'account-context-by-cdev-org',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchOrgLensAccountContextByCdevOrgId(cdevOrgId),
+      OrganizationService.isAccountContextArray
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
    * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
    * request (each independently timing out only after 10s inside `CdpService`) can't make
    * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
@@ -1062,7 +1092,37 @@ export class OrganizationService {
 
     const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [accountId]);
 
-    return result.rows.map((row) => ({
+    return OrganizationService.toAccountContexts(result.rows);
+  }
+
+  /** #4225 — the same row keyed by the crowd.dev organization id instead of the LF account id; 0 or 1 rows. */
+  private async fetchOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse[]> {
+    const query = `
+      SELECT
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        LOGO_URL,
+        CDEV_ORG_ID,
+        CDEV_ORG_NAME,
+        CDEV_ORG_LOGO,
+        IS_MEMBER,
+        MEMBER_ACCOUNT_TYPE,
+        MEMBERSHIP_ID,
+        MEMBERSHIP_PROJECT_ID,
+        MEMBERSHIP_PROJECT_NAME,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        MEMBERSHIP_TIER_CLASS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
+      WHERE CDEV_ORG_ID = ?
+    `;
+
+    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [cdevOrgId]);
+
+    return OrganizationService.toAccountContexts(result.rows);
+  }
+
+  private static toAccountContexts(rows: OrgLensAccountContextRow[]): OrgLensAccountContextResponse[] {
+    return rows.map((row) => ({
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME,
       logoUrl: row.LOGO_URL,

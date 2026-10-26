@@ -153,6 +153,32 @@ export interface RoleGrantsResponse {
    * state with Retry. Absent ⇒ `ok`.
    */
   claManagerLookup?: 'ok' | 'failed';
+  /**
+   * #4225 — the caller's own employment affiliation, used only to pick between `no-organization` and
+   * `affiliated-no-grant` when the caller holds nothing. Resolved server-side because the client
+   * cannot read it: the employer comes from CDP work history, and its membership from the warehouse
+   * row that carries both the LF account and the crowd.dev organization behind it. Deliberately not
+   * the `b2b_org` index, whose per-row read filter is the `auditor` grant this caller does not hold.
+   * Computed only when every grant array is empty and the caller is neither staff nor a contractor —
+   * it costs nothing for a caller who holds something. Grants nothing: it only chooses wording.
+   * Optional for rolling deploys: absent ⇒ treat as `lookup: 'failed'`, i.e. keep today's copy.
+   */
+  affiliation?: OrgLensAffiliationVerdict;
+}
+
+/**
+ * #4225 — what the BFF could establish about the caller's own employer. `lookup: 'failed'` means the
+ * question was asked and not answered (CDP down, no domain on the CDP organization, `b2b_org`
+ * unreadable), which the client must treat as "unknown" and fall back to `no-organization` rather
+ * than assert something new and wrong (spec 053 FR-011, never fall through).
+ */
+export interface OrgLensAffiliationVerdict {
+  /** The caller has a current employer on their CDP work history. */
+  hasEmployer: boolean;
+  /** That employer matched a `b2b_org` carrying `is_member:true`. Only meaningful when `lookup === 'ok'`. */
+  employerIsMember: boolean;
+  /** Whether the determination completed. */
+  lookup: 'ok' | 'failed';
 }
 
 /** Spec 053 — completeness of the caller's organization-list lookup. */
