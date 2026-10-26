@@ -22,4 +22,6 @@ export interface PersonDrawerContext {
   profileUrl?: string | null;
   sourceIconClass?: string | null;
   defaultTab?: PersonDrawerTab;
+  /** `true` when the opener lists the person as a former employee of the account; the header shows a "Former employee" badge. */
+  isFormer?: boolean;
 }

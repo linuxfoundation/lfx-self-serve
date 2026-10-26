@@ -144,6 +144,8 @@ function buildOrgsRouter(): Router {
     orgLensKeyContactsController.removeKeyContactBySlug(req, res, next)
   );
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
+  // lfx-self-serve#4311 — former employees (All Employees "Former employees" view). Same guard rationale as below ('former' must not be consumed as a personKey).
+  router.get('/:orgUid/lens/people/former', (req, res, next) => orgLensPeopleController.getFormerEmployees(req, res, next));
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   // Spec 027 — People → Committee tab (org-wide committee members). Registered BEFORE the `/:personKey/detail`

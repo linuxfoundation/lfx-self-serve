@@ -410,6 +410,40 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
   });
 
+  describe('former employees (lfx-self-serve#4311)', () => {
+    const formerKey = 'person-former';
+
+    beforeEach(() => {
+      database.exec(`
+        CREATE TABLE ORG_PEOPLE_FORMER (
+          ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT,
+          EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER,
+          COMMITS_COUNT INTEGER, EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
+        )
+      `);
+      database
+        .prepare('INSERT INTO ORG_PEOPLE_FORMER VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(ACCOUNT, formerKey, formerKey, 'leftuser', null, 'Left Dev', null, null, null, 0, 0, 0, 4, 0, 0, '["foundation-two"]');
+      database
+        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(ACCOUNT, formerKey, 'project-two', 'Project Two', 'foundation-two', 'Foundation Two', 4, 0, '2026-05-01');
+    });
+
+    it('returns former employees flagged as former, with tiles counted over them and the foundations of their code', async () => {
+      const response = await service.getFormerEmployees(ACCOUNT);
+
+      expect(response.rows).toEqual([expect.objectContaining({ personKey: formerKey, name: 'Left Dev', commitsCount: 4, isFormer: true })]);
+      expect(response.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
+      expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+    });
+
+    it('answers unavailable for a former employee even when addresses are on record', async () => {
+      addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
+
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
+    });
+  });
+
   describe('by LF username (lfx-self-serve-ops#894)', () => {
     it("resolves the username to its one roster person in this account and returns that person's activity", async () => {
       addRosterRow(ACCOUNT, personKey, ' MixedUser ');

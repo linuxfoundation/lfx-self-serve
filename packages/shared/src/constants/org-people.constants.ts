@@ -6,6 +6,8 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
+  OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
   OrgContributorsResponse,
@@ -69,6 +71,19 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
   { label: 'Events', value: 'events' },
   { label: 'Training', value: 'training' },
 ] as const;
+
+/** Employment-filter dropdown options for the All Employees table (lfx-self-serve#4311). */
+export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploymentOption[] = [
+  { label: 'Current employees', value: 'current' },
+  { label: 'Former employees', value: 'former' },
+  { label: 'All', value: 'all' },
+] as const;
+
+/** Default employment filter — the URL drops `?employment=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
+
+/** Used to validate `?employment=` query-param input. */
+export const VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT: ReadonlySet<OrgAllEmployeeEmploymentFilter> = new Set(ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.map((o) => o.value));
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 

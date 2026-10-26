@@ -3,8 +3,9 @@
 
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeEmploymentFilter, OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -51,12 +52,15 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let fixture: ComponentFixture<AllEmployeesComponent>;
   let getDirectory: Mock<(orgUid: string) => Observable<OrgAllEmployeesResponse>>;
   let getAllEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let former$: Subject<OrgAllEmployeesResponse>;
+  let getFormerEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const rowKeys = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('[data-testid^="org-people-all-employees-row-"]')]
       .map((r) => r.dataset['testid'] ?? '')
-      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row'));
+      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former'));
+  const formerTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-former"]')].map((tag) => tag.dataset['testid'] ?? '');
   const activeStat = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-active"]')?.textContent ?? '';
 
   async function settle(): Promise<void> {
@@ -64,18 +68,20 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     await fixture.whenStable();
   }
 
-  async function mount(platformId: 'browser' | 'server'): Promise<void> {
+  async function mount(platformId: 'browser' | 'server', initialUrl = '/'): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [AllEmployeesComponent],
       providers: [
+        provideRouter([]),
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
-        { provide: AllEmployeesService, useValue: { getAllEmployees, getEmployeeDetail: vi.fn() } },
+        { provide: AllEmployeesService, useValue: { getAllEmployees, getFormerEmployees, getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
 
+    await TestBed.inject(Router).navigateByUrl(initialUrl);
     fixture = TestBed.createComponent(AllEmployeesComponent);
     await settle();
   }
@@ -85,6 +91,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     live$ = new Subject();
     getDirectory = vi.fn(() => live$);
     getAllEmployees = vi.fn(() => snowflake$);
+    former$ = new Subject();
+    getFormerEmployees = vi.fn(() => former$);
     // Failure paths log before falling back; keep the expected noise out of the test output.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -277,6 +285,56 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2']);
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+  });
+
+  // lfx-self-serve#4311 — former employees are a separate read, shown only when a view that includes them is picked.
+  describe('in the browser, with the employment filter', () => {
+    const answerCurrent = async (): Promise<void> => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
+    };
+    const answerFormer = async (): Promise<void> => {
+      former$.next(response([row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+    };
+
+    it('does not read former employees for the default "Current employees" view', async () => {
+      await mount('browser');
+      await answerCurrent();
+
+      expect(getFormerEmployees).not.toHaveBeenCalled();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(formerTags()).toEqual([]);
+    });
+
+    it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
+      await mount('browser');
+      await answerCurrent();
+
+      // The template's (ngModelChange) handler; PrimeNG's overlay select is not driven from jsdom.
+      const component = fixture.componentInstance as unknown as { onEmploymentChange(value: OrgAllEmployeeEmploymentFilter): void };
+      component.onEmploymentChange('former');
+      await settle();
+      await answerFormer();
+
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG);
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(activeStat()).toContain('1');
+      expect(TestBed.inject(Router).url).toContain('employment=former');
+    });
+
+    it('shows current and former employees together, with summed tiles, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      await answerFormer();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(activeStat()).toContain('2');
     });
   });
 });

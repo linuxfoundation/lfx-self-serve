@@ -72,6 +72,31 @@ export class OrgLensPeopleController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/people/former — former employees with code credited to the account (lfx-self-serve#4311). Never merged into the live directory. */
+  public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'get_org_lens_people_former', {
+      org_uid: orgUid,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_people_former');
+
+      const response = await this.service.getFormerEmployees(orgUid);
+
+      logger.success(req, 'get_org_lens_people_former', startTime, {
+        org_uid: orgUid,
+        row_count: response.rows.length,
+        foundation_count: response.foundations.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/orgs/:orgUid/lens/people/:personKey/detail */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];

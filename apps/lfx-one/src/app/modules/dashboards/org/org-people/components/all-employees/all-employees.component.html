@@ -38,6 +38,16 @@
         styleClass="w-full"
         ariaLabel="Filter by activity" />
     </div>
+    <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
+      <p-select
+        [options]="employmentOptions"
+        [ngModel]="selectedEmployment()"
+        (ngModelChange)="onEmploymentChange($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        ariaLabel="Filter by employment" />
+    </div>
   </div>
 
   @if (fetchError()) {
@@ -218,7 +228,16 @@
                       }
                     </span>
                     <span class="flex min-w-0 flex-col">
-                      <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
+                      <span class="flex min-w-0 items-center gap-2">
+                        <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
+                        @if (row.isFormer) {
+                          <span
+                            class="inline-flex flex-shrink-0 items-center rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                            [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-former'">
+                            Former
+                          </span>
+                        }
+                      </span>
                       @if (row.title) {
                         <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
                       }

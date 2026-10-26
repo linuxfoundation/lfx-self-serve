@@ -34,7 +34,7 @@ import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
-import { toWireResponse } from './org-people-wire.mapper';
+import { computeStats, toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
@@ -132,6 +132,23 @@ export class OrgLensPeopleService {
       stats: this.mapStats(raw.statsRaw),
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     };
+  }
+
+  /**
+   * Former employees at the account (lfx-self-serve#4311), from ORG_PEOPLE_FORMER. That model is kept
+   * apart from ORG_PEOPLE_ALL so the shared people directory — and the reassign pickers that read it —
+   * never sees a former employee; only this read opts in. Stats are computed over these rows, so the
+   * tiles match the rows the "Former employees" view shows.
+   */
+  public async getFormerEmployees(accountId: string): Promise<OrgAllEmployeesResponse> {
+    const raw = await this.getFormerEmployeesRaw(accountId);
+    const response = toWireResponse({
+      accountId,
+      rows: raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow(row), isFormer: true })),
+      stats: EMPTY_ORG_ALL_EMPLOYEE_STATS,
+      foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
+    });
+    return { ...response, stats: computeStats(response.rows) };
   }
 
   /**
@@ -286,6 +303,73 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
+  private getFormerEmployeesRaw(accountId: string): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; foundationRaw: OrgPeopleFoundationOptionRow[] }> {
+    return withOrgCache(
+      accountId,
+      'people-former:v1',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchFormerEmployeesRaw(accountId),
+      isFormerEmployeesRaw
+    );
+  }
+
+  /** Former employees' rows (same columns as ORG_PEOPLE_ALL) and the foundations of their code rows. */
+  private async fetchFormerEmployeesRaw(accountId: string): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; foundationRaw: OrgPeopleFoundationOptionRow[] }> {
+    const rowsQuery = `
+      SELECT
+        ACCOUNT_ID,
+        PERSON_KEY,
+        LFID,
+        LF_USERNAME,
+        CDP_MEMBER_ID,
+        NAME,
+        TITLE,
+        EMAIL,
+        PHOTO,
+        SEATS_COUNT,
+        BOARD_SEATS_COUNT,
+        COMMITTEE_SEATS_COUNT,
+        COMMITS_COUNT,
+        EVENTS_COUNT,
+        COURSES_COUNT,
+        ENGAGED_FOUNDATION_IDS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_FORMER
+      WHERE ACCOUNT_ID = ?
+      ORDER BY NAME ASC NULLS LAST
+    `;
+
+    const foundationQuery = `
+      SELECT DISTINCT c.FOUNDATION_ID, c.FOUNDATION_NAME
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS c
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_FORMER f
+        ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
+      WHERE c.ACCOUNT_ID = ? AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
+      ORDER BY c.FOUNDATION_NAME ASC
+    `;
+
+    const [rowsResult, foundationResult] = await Promise.all([
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId]),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId]),
+    ]);
+
+    return { rowsRaw: rowsResult.rows, foundationRaw: foundationResult.rows };
+  }
+
+  /**
+   * A former employee's company addresses are never read: they left, and the address model covers the
+   * account's current people only. A failed lookup answers `false` so it can never block the address
+   * read for anyone else.
+   */
+  private async isFormerEmployee(accountId: string, personKey: string): Promise<boolean> {
+    try {
+      const { rowsRaw } = await this.getFormerEmployeesRaw(accountId);
+      return rowsRaw.some((row) => row.PERSON_KEY === personKey);
+    } catch (error) {
+      logger.info(undefined, 'get_org_lens_people_former_lookup', 'former employee lookup failed', { err: error });
+      return false;
+    }
+  }
+
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
   private async fetchAllEmployeesRaw(
     accountId: string
@@ -426,11 +510,11 @@ export class OrgLensPeopleService {
   /**
    * A failure is answered as `failed` and is never cached.
    *
-   * A `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
-   * before the cache: no verified identity → not available, never "none on record".
+   * A `cdp:` person key (no Salesforce identity to join on) and a former employee of the account
+   * short-circuit to `unavailable` before the cache: not available, never "none on record".
    */
   private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (personKey.startsWith('cdp:')) {
+    if (personKey.startsWith('cdp:') || (await this.isFormerEmployee(accountId, personKey))) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
@@ -737,6 +821,11 @@ function isCompactAllEmployeesRaw(value: unknown): boolean {
 function isEmployeeActivityRaw(value: unknown): boolean {
   const v = value as Partial<Record<keyof EmployeeActivityRaw, unknown>> | null;
   return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+}
+
+function isFormerEmployeesRaw(value: unknown): boolean {
+  const v = value as { rowsRaw?: unknown; foundationRaw?: unknown } | null;
+  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.foundationRaw);
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */

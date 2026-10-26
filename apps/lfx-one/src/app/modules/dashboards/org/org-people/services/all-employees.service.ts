@@ -16,6 +16,10 @@ export class AllEmployeesService {
     return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`);
   }
 
+  public getFormerEmployees(orgUid: string): Observable<OrgAllEmployeesResponse> {
+    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/former`);
+  }
+
   public getEmployeeDetail(orgUid: string, personKey: string): Observable<OrgAllEmployeeDetail> {
     return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`);
   }

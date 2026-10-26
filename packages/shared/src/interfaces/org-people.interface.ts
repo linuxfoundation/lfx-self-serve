@@ -20,6 +20,9 @@ export interface PeopleTabConfig {
 /** Filter the All Employees table by activity dimension. */
 export type OrgAllEmployeeActivityFilter = 'all' | 'governance' | 'code' | 'events' | 'training';
 
+/** Which employees the All Employees table shows (lfx-self-serve#4311). `former` reads the former-employees roster; `all` shows both. */
+export type OrgAllEmployeeEmploymentFilter = 'current' | 'former' | 'all';
+
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 
@@ -45,6 +48,12 @@ export type OrgPersonSource = 'snowflake' | 'board' | 'committee' | 'keyContact'
 export interface OrgAllEmployeeActivityOption {
   label: string;
   value: OrgAllEmployeeActivityFilter;
+}
+
+/** Dropdown option for the employment filter (typed value). */
+export interface OrgAllEmployeeEmploymentOption {
+  label: string;
+  value: OrgAllEmployeeEmploymentFilter;
 }
 
 /** One row in the All Employees table. */
@@ -84,6 +93,8 @@ export interface OrgAllEmployeeRow {
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];
+  /** `true` on rows from the former-employees roster: every employment record at this account has ended. Absent on current rows. */
+  isFormer?: boolean;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */

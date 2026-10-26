@@ -5,6 +5,7 @@ import { DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   catchError,
   combineLatest,
@@ -33,17 +34,27 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+  EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
+  ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
+  ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
+  ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
+  VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+} from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeeDetail,
+  OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeEmploymentOption,
   OrgAllEmployeeRow,
   OrgAllEmployeeRowVm,
   OrgAllEmployeesResponse,
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
+  OrgAllEmployeeStats,
   OrgDropdownOption,
 } from '@lfx-one/shared/interfaces';
 
@@ -67,11 +78,14 @@ export class AllEmployeesComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
 
   // Spread to a mutable array so PrimeNG's mutable [options] input type accepts it without an unsafe cast.
   protected readonly activityOptions: OrgAllEmployeeActivityOption[] = [...ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS];
+  protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
 
   protected readonly statSkeletonLabels: readonly string[] = [
     'Employees Active in Open Source',
@@ -86,6 +100,10 @@ export class AllEmployeesComponent {
   protected readonly searchTerm = signal<string>('');
   protected readonly selectedFoundationId = signal<string>('');
   protected readonly selectedActivity = signal<OrgAllEmployeeActivityFilter>('all');
+  // Seeded from `?employment=` so a shared link opens the same view; written back on change (default dropped from the URL).
+  protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(this.initialEmployment());
+  private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
+  private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
 
   // Default sort: Code Contributions (commits) descending.
   protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
@@ -114,10 +132,13 @@ export class AllEmployeesComponent {
 
   // Seeded true: toSignal seeds EMPTY_ORG_ALL_EMPLOYEES_RESPONSE and a real fetch fires synchronously on mount.
   private readonly loadingState = signal<boolean>(true);
-  protected readonly isLoading = this.loadingState.asReadonly();
-
   private readonly fetchErrorState = signal<boolean>(false);
-  protected readonly fetchError = this.fetchErrorState.asReadonly();
+  // Former employees load only once a view that shows them is selected (lfx-self-serve#4311).
+  private readonly formerLoadingState = signal<boolean>(false);
+  private readonly formerErrorState = signal<boolean>(false);
+
+  protected readonly isLoading = computed(() => (this.showCurrent() && this.loadingState()) || (this.showFormer() && this.formerLoadingState()));
+  protected readonly fetchError = computed(() => (this.showCurrent() && this.fetchErrorState()) || (this.showFormer() && this.formerErrorState()));
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
@@ -141,7 +162,30 @@ export class AllEmployeesComponent {
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
   );
 
-  protected readonly stats = computed(() => this.response().stats);
+  // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
+  protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = toSignal(
+    combineLatest([this.orgUid$, toObservable(this.showFormer), toObservable(this.retryTrigger)]).pipe(
+      switchMap(([orgUid, showFormer]) => {
+        if (!orgUid || !showFormer || !isPlatformBrowser(this.platformId)) {
+          return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+        }
+        this.formerLoadingState.set(true);
+        this.formerErrorState.set(false);
+        return this.dataService.getFormerEmployees(orgUid).pipe(
+          take(1),
+          catchError((error: unknown) => {
+            console.error('Failed to load former employees:', error);
+            this.formerErrorState.set(true);
+            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+          }),
+          finalize(() => this.formerLoadingState.set(false))
+        );
+      })
+    ),
+    { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
+  );
+
+  protected readonly stats: Signal<OrgAllEmployeeStats> = computed(() => this.initStats());
 
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
 
@@ -183,6 +227,7 @@ export class AllEmployeesComponent {
       toObservable(this.searchTerm),
       toObservable(this.selectedFoundationId),
       toObservable(this.selectedActivity),
+      toObservable(this.selectedEmployment),
       toObservable(this.sortColumn),
       toObservable(this.sortDirection),
     ])
@@ -238,6 +283,17 @@ export class AllEmployeesComponent {
       avatarUrl: row.avatarUrl,
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
+      isFormer: row.isFormer === true,
+    });
+  }
+
+  protected onEmploymentChange(value: OrgAllEmployeeEmploymentFilter): void {
+    this.selectedEmployment.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { employment: value === DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ? null : value },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
@@ -269,13 +325,40 @@ export class AllEmployeesComponent {
   }
 
   private initFoundationOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Foundations', value: '' }, ...this.response().foundations.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
+    const foundations = new Map<string, string>();
+    const sources = [...(this.showCurrent() ? this.response().foundations : []), ...(this.showFormer() ? this.formerResponse().foundations : [])];
+    for (const f of sources) {
+      foundations.set(f.foundationId, f.foundationName);
+    }
+    const options = [...foundations].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+    return [{ label: 'All Foundations', value: '' }, ...options];
+  }
+
+  /** Tiles follow the employment filter: current and former rosters are disjoint, so "All" is their sum. */
+  private initStats(): OrgAllEmployeeStats {
+    const current = this.response().stats;
+    const former = this.formerResponse().stats;
+    switch (this.selectedEmployment()) {
+      case 'current':
+        return current;
+      case 'former':
+        return former;
+      case 'all':
+        return {
+          activeInOss: current.activeInOss + former.activeInOss,
+          inGovernance: current.inGovernance + former.inGovernance,
+          codeContributors: current.codeContributors + former.codeContributors,
+          eventAttendees: current.eventAttendees + former.eventAttendees,
+          trainees: current.trainees + former.trainees,
+        };
+    }
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
     // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
     // on each one, so there is neither a client-side synthetic UNION nor an address join here.
-    return this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
+    const rows = [...(this.showCurrent() ? this.response().rows : []), ...(this.showFormer() ? this.formerResponse().rows : [])];
+    return rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
@@ -338,7 +421,17 @@ export class AllEmployeesComponent {
   }
 
   private initIsFiltering(): boolean {
-    return this.searchTerm().trim().length > 0 || !!this.selectedFoundationId() || this.selectedActivity() !== 'all';
+    return (
+      this.searchTerm().trim().length > 0 ||
+      !!this.selectedFoundationId() ||
+      this.selectedActivity() !== 'all' ||
+      this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT
+    );
+  }
+
+  private initialEmployment(): OrgAllEmployeeEmploymentFilter {
+    const value = this.route.snapshot.queryParamMap.get('employment') as OrgAllEmployeeEmploymentFilter | null;
+    return value && VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT.has(value) ? value : DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
   }
 
   private initAriaSortMap(): Record<OrgAllEmployeeSortColumn, 'ascending' | 'descending' | 'none'> {
