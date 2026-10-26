@@ -156,7 +156,7 @@ describe('AeoGeoRunComponent', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance['busy']()).toBe(false);
     expect(query('mktg-aeo-run-error').textContent).toContain('The report page could not be opened.');
-    expect(query('aeo-geo-open-document').getAttribute('href')).toContain(`/documents/aeo-geo/${run().documentId}`);
+    expect(query('mktg-aeo-run-open-document').getAttribute('href')).toContain(`/documents/aeo-geo/${run().documentId}`);
     expect(clear).not.toHaveBeenCalled();
   });
   it('ends a failed run with the supplied failure reason', async () => {

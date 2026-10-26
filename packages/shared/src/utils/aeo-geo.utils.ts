@@ -58,10 +58,16 @@ export function normalizeAeoGeoDomain(input: string): string {
     .replace(/^[^@]*@/, '')
     .replace(/:\d+$/, '');
   while (domain.endsWith('.')) domain = domain.slice(0, -1);
-  if (!AEO_GEO_DOMAIN_PATTERN.test(domain) || !isPublicAeoGeoHost(domain)) {
+  let hostname: string;
+  try {
+    hostname = new URL(`https://${domain}`).hostname;
+  } catch {
     throw new Error(AEO_GEO_INTAKE_ERRORS.domain);
   }
-  return domain;
+  if (hostname !== domain || !AEO_GEO_DOMAIN_PATTERN.test(hostname) || !isPublicAeoGeoHost(hostname)) {
+    throw new Error(AEO_GEO_INTAKE_ERRORS.domain);
+  }
+  return hostname;
 }
 
 export function aeoGeoKeyPages(value: string): string[] {

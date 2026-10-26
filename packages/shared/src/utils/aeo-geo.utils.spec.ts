@@ -56,6 +56,7 @@ describe('AEO/GEO intake and renderer', () => {
     'https://?',
     'https://[invalid',
     'http://0x7f000001/',
+    'http://0x7f.0x0.0x0.0x1/a',
     'https://metadata.google.internal./',
     'ftp://project.example/a',
     '/about',
@@ -99,7 +100,11 @@ describe('AEO/GEO intake and renderer', () => {
       expect(validateAeoGeoIntakeAnswers({ domain, key_pages: 'https://reference.example/a\nhttps://other.example/b' }).valid).toBe(true);
     }
   );
+  it.each(['0x7f.0x0.0x0.0x1', '0177.0.0.1', '2130706433', '0x7f.0.0.1', '127.1', '[::1]'])('rejects canonicalized literal intake address %s', (domain) => {
+    expect(() => normalizeAeoGeoDomain(domain)).toThrow(AEO_GEO_INTAKE_ERRORS.domain);
+  });
   it('normalizes domain and URL inputs exactly like the live agent', () => {
+    expect(normalizeAeoGeoDomain('https://www.Example.org:443/path')).toBe('www.example.org');
     expect(normalizeAeoGeoDomain(' HTTPS://WWW.Project.Example.:443/path?q=1 ')).toBe('www.project.example');
     expect(() => normalizeAeoGeoDomain('no hostname')).toThrow();
   });

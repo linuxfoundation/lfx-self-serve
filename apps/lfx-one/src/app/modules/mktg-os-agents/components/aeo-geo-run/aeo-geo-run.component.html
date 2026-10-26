@@ -20,7 +20,7 @@
   @if (error()) {
     <lfx-message severity="error" [text]="error()" data-testid="mktg-aeo-run-error" />
     @if (documentLink()) {
-      <a [routerLink]="documentLink()" [queryParams]="{ mode: null }" queryParamsHandling="merge" data-testid="aeo-geo-open-document">Open the report</a>
+      <a [routerLink]="documentLink()" [queryParams]="{ mode: null }" queryParamsHandling="merge" data-testid="mktg-aeo-run-open-document">Open the report</a>
     }
     @if (activeRun() && !busy()) {
       <button type="button" class="min-h-10 rounded-lg border border-gray-300 px-4" (click)="onRunAgain()" data-testid="mktg-aeo-run-again">Run again</button>
