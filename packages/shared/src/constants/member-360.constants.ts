@@ -85,6 +85,8 @@ export const MEMBER_360_WORKBOOK_CONTENT_TYPE = 'application/vnd.openxmlformats-
  * inside the 24-hour pending TTL, and only stops polling sessions Guild never closes.
  */
 export const MEMBER_360_RUN_CEILING_MS = 7_200_000;
+/** Slower polling while the run waits for the user's answers. */
+export const MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS = 30_000;
 export const MEMBER_360_TRACKER_KINDS = ['event_sponsors', 'attendees', 'speaking', 'ambassadors', 'content', 'webinars', 'other'] as const;
 export const MEMBER_360_HEAT_ORDER = ['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social'] as const;
 export const MEMBER_360_WINDOW_OPTIONS = [

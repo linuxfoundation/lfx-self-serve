@@ -6,6 +6,7 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   MEMBER_360_API,
+  MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
   MEMBER_360_RUN_CEILING_MS,
   MEMBER_360_TRACKER_FILENAME_HEADER,
   MKTG_RUN_POLL,
@@ -84,9 +85,11 @@ export class Member360Service {
     return defer(() => {
       // A reload after the ceiling checks once, without restarting automatic polling.
       const expired = Date.now() >= deadline;
+      let waitingSince: number | null = null;
       return (expired ? timer(0) : timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs)).pipe(
-        exhaustMap(() =>
-          this.http
+        exhaustMap(() => {
+          if (waitingSince !== null && Date.now() - waitingSince < MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS) return EMPTY;
+          return this.http
             .post<Member360Result>(`${MEMBER_360_API}/result`, { project, sessionId: pending.session.sessionId, ownerToken: pending.session.ownerToken })
             .pipe(
               catchError((error) => {
@@ -94,11 +97,12 @@ export class Member360Service {
                 console.warn('Member 360 result poll temporarily unavailable; retrying.');
                 return of<Member360Result>({ status: 'pending' });
               })
-            )
-        ),
+            );
+        }),
         // Report progress without releasing the document's persistence gate. A transient
         // poll failure has no activity, so it must not erase the last successful feed.
         tap((result) => {
+          waitingSince = result.status === 'needs_input' ? Date.now() : null;
           if (result.activity) onActivity?.(result.activity);
         }),
         mergeMap((result) =>

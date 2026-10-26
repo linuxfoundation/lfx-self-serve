@@ -65,7 +65,8 @@ are stored only in tab-scoped session storage, keyed by effective user, project 
 document, and expire after the shared run-storage TTL. Owner tokens never enter URLs.
 The BFF domain-separates them from chat and binds them to the user, project and session.
 Polling uses `exhaustMap` so slow result requests cannot overlap or be cancelled by a
-tick. Activity updates do not release the storage gate. Transient failures become
+tick. Result checks run every five seconds, backing off to thirty seconds while the
+run waits for input; the absolute two-hour ceiling is unchanged. Activity updates do not release the storage gate. Transient failures become
 pending ticks without erasing the last successful feed; authorization errors fail
 fast and the overall deadline remains bounded.
 

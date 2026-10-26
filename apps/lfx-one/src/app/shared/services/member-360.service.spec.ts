@@ -4,7 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
-import { MEMBER_360_RUN_CEILING_MS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS, MEMBER_360_RUN_CEILING_MS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -109,6 +109,10 @@ describe('Member360Service workbook transport', () => {
     expect(completed).not.toHaveBeenCalled();
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS - MKTG_RUN_POLL.intervalMs - 1);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(1);
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
     expect(received).toHaveBeenNthCalledWith(2, { status: 'ready', stored: true });
     expect(completed).toHaveBeenCalledTimes(1);
@@ -126,6 +130,8 @@ describe('Member360Service workbook transport', () => {
     expect(completed).not.toHaveBeenCalled();
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS - MKTG_RUN_POLL.intervalMs);
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'failed' });
     expect(received).toHaveBeenNthCalledWith(2, { status: 'failed' });
     expect(completed).toHaveBeenCalledTimes(1);
@@ -142,7 +148,7 @@ describe('Member360Service workbook transport', () => {
     while (Date.now() < startedAt + MEMBER_360_RUN_CEILING_MS) {
       http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
       expect(error).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(Math.min(MKTG_RUN_POLL.intervalMs, startedAt + MEMBER_360_RUN_CEILING_MS - Date.now()));
+      vi.advanceTimersByTime(Math.min(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS, startedAt + MEMBER_360_RUN_CEILING_MS - Date.now()));
     }
     expect(received.mock.calls.length).toBeGreaterThan(1);
     expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
