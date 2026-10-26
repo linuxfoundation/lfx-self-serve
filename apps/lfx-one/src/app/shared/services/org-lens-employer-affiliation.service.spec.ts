@@ -69,7 +69,7 @@ function flush(): void {
 }
 
 function affiliation(partial: Partial<OrgLensEmployerAffiliation> = {}): OrgLensEmployerAffiliation {
-  return { employerName: 'Bank Pekao', hasActiveMembership: false, ...partial };
+  return { employerName: 'Delta Harbour', hasActiveMembership: false, ...partial };
 }
 
 describe('OrgLensEmployerAffiliationService', () => {
@@ -108,19 +108,19 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('reports a non-member employer once the answer lands', () => {
     h = setup();
-    h.answers[0].next(affiliation({ employerName: 'Bank Pekao', hasActiveMembership: false }));
+    h.answers[0].next(affiliation({ employerName: 'Delta Harbour', hasActiveMembership: false }));
 
     expect(h.service.pending()).toBe(false);
-    expect(h.service.employerName()).toBe('Bank Pekao');
+    expect(h.service.employerName()).toBe('Delta Harbour');
     expect(h.service.affiliatedToNonMember()).toBe(true);
     expect(h.service.lookupFailed()).toBe(false);
   });
 
   it('does not report a member employer as a non-member', () => {
     h = setup();
-    h.answers[0].next(affiliation({ employerName: 'ServiceNow', hasActiveMembership: true }));
+    h.answers[0].next(affiliation({ employerName: 'Vendor Corp', hasActiveMembership: true }));
 
-    expect(h.service.employerName()).toBe('ServiceNow');
+    expect(h.service.employerName()).toBe('Vendor Corp');
     expect(h.service.affiliatedToNonMember()).toBe(false);
   });
 
@@ -147,7 +147,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   // outlives that round trip, so the old answer must not survive it.
   it('re-asks after a profile work-experience write', () => {
     h = setup();
-    h.answers[0].next(affiliation({ employerName: 'Bank Pekao', hasActiveMembership: false }));
+    h.answers[0].next(affiliation({ employerName: 'Delta Harbour', hasActiveMembership: false }));
     expect(h.service.affiliatedToNonMember()).toBe(true);
 
     h.workExperienceRevision.update((revision) => revision + 1);
@@ -155,9 +155,9 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     expect(h.get).toHaveBeenCalledTimes(2);
     expect(h.service.pending()).toBe(true);
-    h.answers[1].next(affiliation({ employerName: 'ServiceNow', hasActiveMembership: true }));
+    h.answers[1].next(affiliation({ employerName: 'Vendor Corp', hasActiveMembership: true }));
     expect(h.service.affiliatedToNonMember()).toBe(false);
-    expect(h.service.employerName()).toBe('ServiceNow');
+    expect(h.service.employerName()).toBe('Vendor Corp');
   });
 
   it('re-asks on refresh, so the shared Retry covers the employer half', () => {

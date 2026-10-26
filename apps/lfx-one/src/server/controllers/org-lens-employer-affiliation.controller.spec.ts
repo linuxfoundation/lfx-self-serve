@@ -23,7 +23,7 @@ vi.mock('../services/logger.service', () => ({
 import { logger } from '../services/logger.service';
 import { OrgLensEmployerAffiliationController } from './org-lens-employer-affiliation.controller';
 
-const AFFILIATION: OrgLensEmployerAffiliation = { employerName: 'Bank Pekao', hasActiveMembership: false };
+const AFFILIATION: OrgLensEmployerAffiliation = { employerName: 'Delta Harbour', hasActiveMembership: false };
 
 function harness() {
   const json = vi.fn();

@@ -1,53 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensEmployerAffiliation, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
+import { LEGAL_FORM_SUFFIXES, MAX_CURRENT_EMPLOYERS } from '@lfx-one/shared/constants';
+import type { OrgLensEmployerAffiliation, OrgLensEmployerMembershipWarehouseRow, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
 import { CdpService } from './cdp.service';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
-
-/** Guards the `IN` list: far above any real number of concurrent jobs, and bounded all the same. */
-const MAX_CURRENT_EMPLOYERS = 10;
-
-/**
- * Legal-form suffixes dropped before an employer name is compared to a Salesforce account name. A
- * profile says "Acme"; Salesforce says "Acme LLC". Without this, that member company misses its own
- * account and its employee is told their employer is not a member — the wrong copy, stated definitively.
- *
- * Only these, and only one of them, and only at the end: a trailing legal form is the one part of a
- * company name that is routinely written or omitted at will. Anything more aggressive starts merging
- * genuinely different companies, and a wrong *member* answer silently hides this state.
- */
-const LEGAL_FORM_SUFFIXES = [
-  'INC',
-  'INCORPORATED',
-  'LLC',
-  'LLP',
-  'LTD',
-  'LIMITED',
-  'CORP',
-  'CORPORATION',
-  'CO',
-  'COMPANY',
-  'GMBH',
-  'AG',
-  'SA',
-  'SAS',
-  'SPA',
-  'BV',
-  'NV',
-  'PLC',
-  'PTY',
-  'OY',
-  'AB',
-  'AS',
-  'KK',
-  'SRL',
-  'SL',
-];
 
 /**
  * The shape both sides of the comparison are reduced to: upper-cased, punctuation dropped, one
@@ -76,12 +37,6 @@ function employerMatchKey(name: string): string {
 function matchKeyExpression(column: string): string {
   const words = `REGEXP_REPLACE(REGEXP_REPLACE(UPPER(${column}), '[.,''/]+', ''), '[^A-Z0-9 ]+', ' ')`;
   return `REGEXP_REPLACE(REGEXP_REPLACE(TRIM(${words}), ' +(${LEGAL_FORM_SUFFIXES.join('|')})$', ''), ' +', '')`;
-}
-
-interface RawEmployerMembershipRow {
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
-  ACTIVE_MEMBERSHIP_COUNT: number;
 }
 
 /**
@@ -199,7 +154,7 @@ export class OrgLensEmployerAffiliationService {
    * that hold memberships first, so neither a duplicated company name nor a second current employer
    * can leave a member company behind a non-member row.
    */
-  private async fetchEmployerMembershipRows(matchKeys: string[]): Promise<RawEmployerMembershipRow[]> {
+  private async fetchEmployerMembershipRows(matchKeys: string[]): Promise<OrgLensEmployerMembershipWarehouseRow[]> {
     const schema = resolveLfxOnePlatinumSchema();
     const placeholders = matchKeys.map(() => '?').join(', ');
     const query = `
@@ -215,7 +170,7 @@ export class OrgLensEmployerAffiliationService {
       ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC
     `;
 
-    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, matchKeys);
+    const result = await this.snowflakeService.execute<OrgLensEmployerMembershipWarehouseRow>(query, matchKeys);
     return result.rows;
   }
 }

@@ -155,10 +155,10 @@ describe('OrgLensEmptyStateComponent', () => {
 
   // #4314 — the caller's own employer, which is not an addressed organization and so is named.
   it("interpolates the caller's employer into the non-member state and offers only the affiliation CTA", () => {
-    const fixture = render('affiliated-non-member', { employerName: 'Bank Pekao' });
+    const fixture = render('affiliated-non-member', { employerName: 'Delta Harbour' });
 
     expect(byTestId(fixture, 'title')?.textContent?.trim()).toBe('Your affiliated employer is not a member of the Linux Foundation');
-    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Bank Pekao');
+    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Delta Harbour');
     expect(byTestId(fixture, 'primary')?.textContent).toContain('Update employer affiliation');
     expect(byTestId(fixture, 'contact-support')).toBeNull();
   });
@@ -176,6 +176,14 @@ describe('OrgLensEmptyStateComponent', () => {
     const fixture = render('affiliated-non-member', { employerName: "Acme $& $' $1 Partners" });
 
     expect(byTestId(fixture, 'description')?.textContent).toContain("You are affiliated with Acme $& $' $1 Partners");
+  });
+
+  // One pass over the template: a token inside an inserted value is part of the value, not a token.
+  it('does not reinterpret a brace token inside the employer name', () => {
+    const fixture = render('affiliated-non-member', { employerName: 'Example {noun} Labs' });
+
+    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Example {noun} Labs');
+    expect(byTestId(fixture, 'description')?.textContent).not.toContain('Example records Labs');
   });
 
   it('interpolates the organization name, noun and period for a held section', () => {

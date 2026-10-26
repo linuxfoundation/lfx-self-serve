@@ -269,15 +269,15 @@ describe('OrgLensEmptyStateService.pageState', () => {
   // #4314 — the rule-6 split. "Add an affiliation" is only an answer for someone who has none.
   it('renders affiliated-non-member when the caller already has an employer and it holds no LF membership', () => {
     h.affiliatedToNonMember.set(true);
-    h.affiliationEmployerName.set('Bank Pekao');
+    h.affiliationEmployerName.set('Delta Harbour');
 
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
-    expect(h.service.employerName()).toBe('Bank Pekao');
+    expect(h.service.employerName()).toBe('Delta Harbour');
   });
 
   it('keeps no-organization when the affiliated employer is an LF member', () => {
     h.affiliatedToNonMember.set(false);
-    h.affiliationEmployerName.set('ServiceNow');
+    h.affiliationEmployerName.set('Vendor Corp');
 
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
     // The name belongs to the non-member copy only; no other state may interpolate it.

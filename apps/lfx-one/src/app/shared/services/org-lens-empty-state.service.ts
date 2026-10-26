@@ -41,13 +41,16 @@ import { PersonaService } from './persona.service';
  * who already has one, at a company with no active membership in any LF-hosted foundation, is told that
  * instead — there is no Org Lens behind the CTA and no administrator to ask. It keys on a *resolved*
  * answer from `OrgLensEmployerAffiliationService`: no employer, a member employer, or a lookup that
- * failed all fall through, so an unknown never renders as "not a member". CLA state does not enter into
- * it — a CLA-only caller is already admitted by rule 1.
+ * failed are each handled below, so an unknown never renders as "not a member". CLA state does not
+ * enter into it — a CLA-only caller is already admitted by rule 1.
  *
  * Rule 7 is the other half of that: with the employer lookup failed, "add an affiliation" is a guess
  * too, since the caller may well have one. The honest render is the outage state with Retry, which
- * re-runs the employer probe alongside the grants lookup. Only a lookup that answered "no employer"
- * reaches rule 8.
+ * re-runs the employer probe alongside the grants lookup.
+ *
+ * Rule 8 is what a *successful* lookup falls to — both "no current employer", where the affiliation
+ * CTA is the right answer, and "a member employer with no grant", where it is not but #4225 owns the
+ * copy. Only a failed lookup is diverted, at rule 7.
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice

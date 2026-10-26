@@ -127,6 +127,7 @@ export * from './http-retry.constants';
 export * from './committee-engagement.constants';
 export * from './weekly-brief.constants';
 export * from './profile-visibility.constants';
+export * from './org-lens-employer-affiliation.constants';
 export * from './org-lens-roi.constants';
 export * from './boilerplates.constants';
 export * from './brand-kit.constants';
