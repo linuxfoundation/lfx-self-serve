@@ -72,8 +72,6 @@ interface UpcomingEventRow extends EventRowBase {
 
 interface PastEventRow extends EventRowBase {
   HAS_GOAL: boolean | null;
-  GOAL_MET: boolean | null;
-  PACE_STATUS: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -422,8 +420,6 @@ export class HealthMetricsOverviewService {
         p.registrations_count AS registrations,
         p.event_registrations_goal AS registrations_goal,
         p.has_registrations_goal AS has_goal,
-        p.is_registrations_goal_met AS goal_met,
-        p.pace_status,
         r.accepted_speaker_proposals_all_time AS accepted_talks,
         r.total_speaker_proposals_all_time AS total_proposals,
         NULLIF(TRIM(r.cfp_status), '') AS cfp_status,
@@ -524,7 +520,7 @@ function mapChurnTier(row: WideRow, range: HealthMetricsL2Range): HealthMetricsO
 }
 
 /** The fields both lists share. */
-function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'goalMet' | 'paceStatus' | 'ranges'> {
+function mapEventBase(row: EventRowBase): Omit<HealthMetricsOverviewEvent, 'registrationsGoal' | 'compScore' | 'ranges'> {
   const eventId = String(row.EVENT_ID);
   return {
     eventId,
@@ -545,21 +541,16 @@ function mapUpcomingEvent(row: UpcomingEventRow): HealthMetricsOverviewEvent {
     ...mapEventBase(row),
     registrationsGoal: positiveOrNull(toNullableNumber(row.REGISTRATIONS_GOAL)),
     compScore: row.COMP_SCORE?.toLowerCase() ?? null,
-    goalMet: null,
-    paceStatus: null,
     ranges: [],
   };
 }
 
 /** The past-events view's own flag decides "no goal", as on the Events tab. */
 function mapPastEvent(row: PastEventRow): HealthMetricsOverviewEvent {
-  const hasGoal = row.HAS_GOAL === true;
   return {
     ...mapEventBase(row),
-    registrationsGoal: hasGoal ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
+    registrationsGoal: row.HAS_GOAL === true ? toNullableNumber(row.REGISTRATIONS_GOAL) : null,
     compScore: null,
-    goalMet: hasGoal && row.GOAL_MET !== null ? row.GOAL_MET === true : null,
-    paceStatus: hasGoal ? row.PACE_STATUS : null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[`IS_IN_PERIOD_${range}`] === true),
   };
 }

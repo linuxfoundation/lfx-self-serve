@@ -22,6 +22,7 @@ import {
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
@@ -75,6 +76,7 @@ import type { Request } from 'express';
 
 const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST';
 const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
+const REGISTRATION_HISTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS';
 const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE';
 const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_GROWTH';
 const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
@@ -128,6 +130,13 @@ interface ForecastEventRow {
   GOAL: number | null;
   DAYS_LEFT: number | null;
   IS_NEW_EVENT: boolean | null;
+}
+
+interface RegistrationHistoryRow {
+  DAYS_TO_EVENT: number | null;
+  EVENT_REGISTRATION_TYPE: string | null;
+  REGISTRATIONS: number | null;
+  PRIOR_YEAR: number | null;
 }
 
 interface ForecastCurveRow {
@@ -342,6 +351,50 @@ export class HealthMetricsEventsService {
     if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED;
 
     return { eventId: query.eventId, formats: groupCurveRows(result.rows) };
+  }
+
+  /**
+   * One past event's registrations per format over the trend's window, with last year's beside it. A closed event's
+   * modelled columns hold what it drew, and the view repeats some days, so each day is read once.
+   */
+  public async getRegistrationHistory(req: Request, query: HealthMetricsEventsForecastCurveQuery): Promise<HealthMetricsEventsForecastCurve> {
+    // The view carries no foundation, so the past-events view scopes the event to it.
+    const sql = `
+      SELECT
+        h.days_to_event,
+        h.event_registration_type,
+        MAX(h.cumulative_avg_predicted_registrations) AS registrations,
+        MAX(h.prior_event_cumulative_registrations) AS prior_year
+      FROM ${REGISTRATION_HISTORY_VIEW} h
+      WHERE h.event_id = ?
+        AND h.event_start_date < CURRENT_DATE()
+        AND h.days_to_event BETWEEN ? AND 0
+        AND EXISTS (
+          SELECT 1
+          FROM ${PAST_EVENTS_VIEW} p
+          WHERE p.foundation_slug = ?
+            AND p.is_all_projects = TRUE
+            AND p.event_id = h.event_id
+        )
+      GROUP BY h.event_registration_type, h.days_to_event
+      ORDER BY h.event_registration_type ASC NULLS LAST, h.days_to_event ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<RegistrationHistoryRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.eventId, -HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS, query.foundationSlug],
+      {
+        view: REGISTRATION_HISTORY_VIEW,
+        operation: 'get_events_registration_history',
+        clientMessage: 'The registration history is unavailable right now.',
+      }
+    );
+
+    if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED;
+
+    return { eventId: query.eventId, formats: groupHistoryRows(result.rows) };
   }
 
   /**
@@ -1290,6 +1343,29 @@ function groupCurveRows(rows: ForecastCurveRow[]): HealthMetricsEventsForecastCu
   const series = [...byFormat.values()];
   series.forEach(joinForecastToToday);
   return series;
+}
+
+/** A closed event has no forecast, so every day is measured. */
+function groupHistoryRows(rows: RegistrationHistoryRow[]): HealthMetricsEventsForecastCurveSeries[] {
+  const byFormat = new Map<string, HealthMetricsEventsForecastCurveSeries>();
+
+  for (const row of rows) {
+    if (row.DAYS_TO_EVENT === null) continue;
+
+    const format = row.EVENT_REGISTRATION_TYPE ?? UNTYPED_FORMAT_LABEL;
+    const series = byFormat.get(format) ?? { format, points: [] };
+    series.points.push({
+      daysToEvent: Number(row.DAYS_TO_EVENT),
+      actual: toNullableNumber(row.REGISTRATIONS),
+      forecastAvg: null,
+      forecastLow: null,
+      forecastHigh: null,
+      priorYear: toNullableNumber(row.PRIOR_YEAR),
+    });
+    byFormat.set(format, series);
+  }
+
+  return [...byFormat.values()];
 }
 
 /** Starts the forecast and its band at the last measured day, so the dashed line meets the solid one. */

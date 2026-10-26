@@ -100,9 +100,11 @@
         <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
           ><span class="h-[3px] w-[14px] rounded-full bg-gray-400"></span>Last year</span
         >
-        <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-          ><span class="h-[3px] w-[14px] rounded-full bg-blue-500"></span>Predicted</span
-        >
+        @if (!isPast) {
+          <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+            ><span class="h-[3px] w-[14px] rounded-full bg-blue-500"></span>Predicted</span
+          >
+        }
       </div>
     }
   }

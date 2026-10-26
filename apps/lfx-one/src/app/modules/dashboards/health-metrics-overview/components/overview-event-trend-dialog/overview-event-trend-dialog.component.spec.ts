@@ -22,8 +22,6 @@ const EVENT: HealthMetricsOverviewEvent = {
   registrations: 328,
   registrationsGoal: 1000,
   compScore: 'medium',
-  goalMet: null,
-  paceStatus: null,
   acceptedTalks: 0,
   totalProposals: 185,
   cfpStatus: 'Review Complete',
@@ -54,9 +52,11 @@ const point = (daysToEvent: number, actual: number | null, forecast: number | nu
 describe('OverviewEventTrendDialogComponent', () => {
   let fixture: ComponentFixture<OverviewEventTrendDialogComponent>;
   let close: ReturnType<typeof vi.fn>;
+  let history: ReturnType<typeof vi.fn>;
 
-  async function render(curve: HealthMetricsEventsForecastCurve | Error): Promise<void> {
+  async function render(curve: HealthMetricsEventsForecastCurve | Error, isPast = false): Promise<void> {
     close = vi.fn();
+    history = vi.fn().mockReturnValue(curve instanceof Error ? throwError(() => curve) : of(curve));
     await TestBed.configureTestingModule({
       imports: [OverviewEventTrendDialogComponent],
       providers: [
@@ -65,11 +65,12 @@ describe('OverviewEventTrendDialogComponent', () => {
           useValue: {
             getEventsRegistrationForecast: vi.fn().mockReturnValue(of({ events: [HEADLINE] })),
             getEventsRegistrationForecastCurve: vi.fn().mockReturnValue(curve instanceof Error ? throwError(() => curve) : of(curve)),
+            getEventsRegistrationHistory: history,
           },
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { event: EVENT } } },
+        { provide: DynamicDialogConfig, useValue: { data: { event: EVENT, isPast } } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(OverviewEventTrendDialogComponent);
@@ -109,6 +110,17 @@ describe('OverviewEventTrendDialogComponent', () => {
 
     expect(query('overview-trend-format')).not.toBeNull();
     expect(fixture.componentInstance['format']()).toBe('In Person');
+  });
+
+  it("shows a past event's history with its final count and no forecast", async () => {
+    await render({ eventId: 'e1', formats: [{ format: 'In Person', points: [point(-90, 100, null), point(0, 328, null)] }] }, true);
+
+    expect(history).toHaveBeenCalledWith({ foundationSlug: 'acme', eventId: 'e1' });
+    expect(query('overview-trend-kpi-final')?.textContent).toContain('328');
+    expect(query('overview-trend-kpi-days-left')?.textContent).toContain('Event held');
+    expect(query('overview-trend-kpi-predicted')).toBeNull();
+    expect(query('overview-trend-dialog')?.textContent).not.toContain('Predicted');
+    expect(query('overview-trend-chart')?.querySelector('line[stroke-dasharray="3 3"]')).toBeNull();
   });
 
   it('opens with focus on its title rather than the close button', async () => {

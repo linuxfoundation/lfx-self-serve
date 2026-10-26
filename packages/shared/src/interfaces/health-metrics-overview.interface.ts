@@ -119,9 +119,6 @@ export interface HealthMetricsOverviewEvent {
   registrationsGoal: number | null;
   /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
   compScore: string | null;
-  /** Past only: the closed event's goal flag and pace band, as the Events tab's past section reads them. */
-  goalMet: boolean | null;
-  paceStatus: string | null;
   acceptedTalks: number | null;
   totalProposals: number | null;
   /** The call for proposals' stage, e.g. `In Review`. */
@@ -327,29 +324,17 @@ export interface HealthMetricsOverviewBalanceView {
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
-/** A status pill: the label plus its background and text classes. */
-export interface HealthMetricsOverviewBadgeView {
-  label: string;
-  className: string;
-}
-
-/** An event's registrations against its goal; without a goal there is no bar or badge. */
-export interface HealthMetricsOverviewEventRegistrationsView {
+/** A count over a bar: the figure, the text right of it ("of 1,000", "No goal set") and the bar's width and fill. */
+export interface HealthMetricsOverviewEventBarView {
   countLabel: string;
-  hasGoal: boolean;
-  goalLabel: string;
-  pctLabel: string;
+  sideLabel: string;
   widthPct: number;
   barClass: string;
-  badge: HealthMetricsOverviewBadgeView | null;
 }
 
-/** Accepted talks as a bar when there are proposals, otherwise the call for proposals' stage as a note. */
-export interface HealthMetricsOverviewEventTalksView {
+/** Accepted speaking proposals as a bar when there are proposals, otherwise the call for proposals' stage. */
+export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
-  acceptedLabel: string;
-  totalLabel: string;
-  widthPct: number;
   note: string;
 }
 
@@ -357,10 +342,21 @@ export interface HealthMetricsOverviewEventRowView {
   eventId: string;
   name: string;
   meta: string;
-  /** Only upcoming events open the registration trend. */
-  clickable: boolean;
-  registrations: HealthMetricsOverviewEventRegistrationsView;
+  /** Past events read their history, upcoming ones their forecast. */
+  isPast: boolean;
+  /** The bar's fill carries the status; there is no badge. */
+  registrations: HealthMetricsOverviewEventBarView;
   talks: HealthMetricsOverviewEventTalksView;
+}
+
+/** The period's events, split into held and upcoming for the stacked bar. */
+export interface HealthMetricsOverviewEventsTotalView {
+  value: string;
+  delta: HealthMetricsOverviewDelta | null;
+  pastLabel: string;
+  upcomingLabel: string;
+  pastPct: number;
+  upcomingPct: number;
 }
 
 export interface HealthMetricsOverviewSponsorshipView {
@@ -368,14 +364,16 @@ export interface HealthMetricsOverviewSponsorshipView {
   hasGoal: boolean;
   goalLabel: string;
   widthPct: number;
+  barClass: string;
   progressLabel: string;
 }
 
 export interface HealthMetricsOverviewEventsView {
   isEmpty: boolean;
-  total: HealthMetricsOverviewKpiView;
+  total: HealthMetricsOverviewEventsTotalView;
   sponsorship: HealthMetricsOverviewSponsorshipView;
   listTitle: string;
+  listInfo: string;
   rows: HealthMetricsOverviewEventRowView[];
 }
 
@@ -461,7 +459,8 @@ export interface HealthMetricsOverviewCardRead<T> {
   status: Signal<HealthMetricsOverviewCardStatus>;
 }
 
-/** What the events card hands the registration trend dialog. */
+/** What the events card hands the registration trend dialog; a past event shows its history, with no forecast. */
 export interface HealthMetricsOverviewTrendDialogData {
   event: HealthMetricsOverviewEvent;
+  isPast: boolean;
 }
