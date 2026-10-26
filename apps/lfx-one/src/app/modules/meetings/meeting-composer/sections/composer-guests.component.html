@@ -118,7 +118,7 @@
            A full-width strip under the header rather than a card in the list, so it reads as list status. -->
       <div class="flex items-center gap-3 border-b border-gray-200 bg-gray-50 py-1 pl-4 pr-2" data-testid="composer-guest-undo">
         <p class="min-w-0 flex-1 truncate text-sm text-gray-700" data-testid="composer-guest-undo-message">{{ undoMessage() }}</p>
-        <lfx-button label="Undo" size="small" severity="secondary" [text]="true" data-testid="composer-guest-undo-button" (onClick)="onUndoRemove()" />
+        <lfx-button label="Undo" size="small" severity="info" [text]="true" data-testid="composer-guest-undo-button" (onClick)="onUndoRemove()" />
         <button
           type="button"
           class="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
