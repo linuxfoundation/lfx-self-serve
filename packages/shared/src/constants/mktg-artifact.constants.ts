@@ -83,6 +83,12 @@ export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
     maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
     logNamespace: 'foundation_message',
   },
+  'aeo-geo': {
+    agentKey: 'aeo-geo',
+    keyPrefix: 'aeo-geo',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'aeo_geo',
+  },
   // Registered ahead of its BFF endpoints: the ICP agent's self-serve page is
   // in flight and its persistence is now a wiring job, not an implementation.
   icp: {

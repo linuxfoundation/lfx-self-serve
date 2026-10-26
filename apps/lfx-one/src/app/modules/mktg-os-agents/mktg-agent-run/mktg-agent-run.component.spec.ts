@@ -226,6 +226,18 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  it('does not route another one-off intake into the dedicated audit form', async () => {
+    SHELL_INTAKE.oneOffDocument = true;
+    try {
+      await configure();
+      expect(component['dedicatedAudit']).toBe(false);
+      expect(query('mktg-agent-run-page')).toBeNull();
+      expect(host().querySelector('lfx-aeo-geo-run')).toBeNull();
+    } finally {
+      delete SHELL_INTAKE.oneOffDocument;
+    }
+  });
+
   it('shows fixed Kit and Family parents instead of a separate back arrow', async () => {
     await configure('browser', 'foundation-setup');
     const breadcrumb: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb"]');

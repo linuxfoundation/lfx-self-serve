@@ -8,7 +8,7 @@ import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@a
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR, MKTG_ANSWER_TOO_LONG_ERROR } from '@lfx-one/shared/constants';
-import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip } from '@lfx-one/shared/interfaces';
+import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip, MktgRunQuestionDraft } from '@lfx-one/shared/interfaces';
 import { foundationMessageAnswerOrigin, isFoundationMessageAnswerSubstantive, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
 import { map } from 'rxjs';
 
@@ -46,12 +46,16 @@ export class MktgRunQuestionsComponent {
   public readonly previousAnswers = input<Record<string, string>>({});
   /** True while the answers are being sent. */
   public readonly busy = input(false);
+  /** Saved answers and index restored after reload, taking precedence over previousAnswers. */
+  public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
   /** Opt in when an intake accepts answers such as "None"; empty and oversized answers still fail. */
   public readonly allowNonAnswers = input(false);
 
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
   public readonly answered = output<MktgRunAnswer[]>();
+  /** Emits index and answers on every change, including the initial reset, for host persistence. */
+  public readonly draftChanged = output<MktgRunQuestionDraft>();
 
   // === Forms ===
   /** One box per question, holding the suggested answer until the requester changes it. */
@@ -95,8 +99,16 @@ export class MktgRunQuestionsComponent {
     // suggestion (or the earlier try's answer).
     effect(() => {
       const questions = this.questions();
-      const previous = this.previousAnswers();
-      untracked(() => this.reset(questions, previous));
+      const draft = untracked(() => this.initialDraft());
+      const previous = draft?.answers ?? untracked(() => this.previousAnswers());
+      untracked(() => {
+        this.reset(questions, previous);
+        this.goTo(draft?.index ?? 0);
+      });
+    });
+    effect(() => {
+      const draft = { index: this.index(), answers: this.values() };
+      if (this.questions().length) this.draftChanged.emit(draft);
     });
   }
 

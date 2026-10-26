@@ -3,6 +3,7 @@
 
 import { LINKEDIN_QUESTIONS_CONTRACT, LINKEDIN_FINALIZE_TOOL } from './linkedin-post.constants';
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
+import { AEO_GEO_FINALIZE_TOOL, AEO_GEO_QUESTIONS_CONTRACT } from './aeo-geo.constants';
 import { BOILERPLATES_FINALIZE_TOOL, BOILERPLATES_QUESTIONS_CONTRACT_ID } from './boilerplates.constants';
 import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
 import { FAQ_FINALIZE_TOOL, FAQ_QUESTIONS_CONTRACT_ID } from './faq.constants';
@@ -55,6 +56,7 @@ export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost,
+  AEO_GEO_FINALIZE_TOOL,
 ];
 
 /**
@@ -127,6 +129,7 @@ export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
   FAQ_QUESTIONS_CONTRACT_ID,
   LINKEDIN_QUESTIONS_CONTRACT,
+  AEO_GEO_QUESTIONS_CONTRACT,
 ];
 
 /**

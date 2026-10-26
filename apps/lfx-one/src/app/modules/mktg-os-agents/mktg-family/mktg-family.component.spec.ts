@@ -235,7 +235,9 @@ describe('Marketing family page', () => {
     }
     families.update((value) => value.map((family) => ({ ...family, rows: family.rows.map((row) => ({ ...row, state: 'missing', monthlyCount: null })) })));
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-aeo-geo"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-aeo-geo"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/aeo-geo?project=synthetic&mode=new'
+    );
   });
 
   it.each(['inactive', 'intake-less'])('omits row actions for %s catalog entries', async (reason) => {
@@ -320,12 +322,26 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/unknown', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-not-found"]')).not.toBeNull();
   });
-  it('captions each disabled action and explains a coming-soon Run agent in the intro', async () => {
+  it('enables the AEO/GEO Run and captions disabled actions', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
-    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(true);
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')?.textContent).toContain('Coming soon');
+    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(false);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] button')?.textContent).toContain('Run AEO/GEO scorecard');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.click();
+    expect(navigate).toHaveBeenCalledWith(['../../', 'aeo-geo'], expect.objectContaining({ queryParamsHandling: 'merge' }));
+    const rows = families().flatMap((family) => family.rows);
+    const stored = rows.find((row) => row.document)?.document;
+    const audit = rows.find((row) => row.asset.agentKey === 'aeo-geo');
+    if (!stored || !audit) throw new Error('Missing synthetic audit row fixtures');
+    audit.document = { ...stored, agentKey: 'aeo-geo', documentId: 'run-synthetic-audit' };
+    families.set([...families()]);
+    harness.detectChanges();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-open-aeo-geo"]')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/documents/aeo-geo/run-synthetic-audit?project=synthetic'
+    );
     await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
     const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
     expect(run?.disabled).toBe(true);

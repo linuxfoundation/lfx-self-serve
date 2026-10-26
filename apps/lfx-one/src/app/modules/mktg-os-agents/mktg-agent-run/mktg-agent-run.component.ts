@@ -14,6 +14,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  AEO_GEO_INTAKE,
   LINKEDIN_POST_INTAKE,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
@@ -68,6 +69,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
+import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
@@ -81,6 +83,8 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // questions run. Direct no-answers intakes still open before their first POST.
 // Failed navigation retries only navigation, never generation.
 // Asset rendering, revisions and exports belong to the one document view.
+// Registered one-off intakes delegate to their dedicated run component;
+// each audit hands off to a separate immutable report in the Document view.
 @Component({
   selector: 'lfx-mktg-agent-run',
   imports: [
@@ -94,6 +98,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     InputTextComponent,
     TextareaComponent,
     MessageComponent,
+    AeoGeoRunComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
     MktgRunActivityComponent,
@@ -149,6 +154,7 @@ export class MktgAgentRunComponent {
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
   protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
+  protected readonly dedicatedAudit = !!this.intake?.oneOffDocument && this.intake.agentId === AEO_GEO_INTAKE.agentId;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
    * dependency ids PLUS the intake's REQUIRED attachments (the Brand Kit's
