@@ -71,6 +71,15 @@ export function aeoGeoKeyPages(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Shared field and submit rule: an absolute http(s) URL with a public website hostname. */
+export function isAeoGeoKeyPageUrl(url: string): boolean {
+  try {
+    return AEO_GEO_HTTP_URL_PATTERN.test(url) && isPublicAeoGeoHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationResult {
   const errors: string[] = [];
   if (!isRecord(answers) || Object.keys(answers).some((key) => !['domain', 'key_pages', 'project_name', 'project_uid'].includes(key))) {
@@ -89,17 +98,7 @@ export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationR
     const pages = typeof value === 'string' ? aeoGeoKeyPages(value) : [];
     if (
       typeof value !== 'string' ||
-      (pages.length > 0 &&
-        (pages.length < 2 ||
-          pages.length > 5 ||
-          new Set(pages).size !== pages.length ||
-          !pages.every((url) => {
-            try {
-              return AEO_GEO_HTTP_URL_PATTERN.test(url) && isPublicAeoGeoHost(new URL(url).hostname);
-            } catch {
-              return false;
-            }
-          })))
+      (pages.length > 0 && (pages.length < 2 || pages.length > 5 || new Set(pages).size !== pages.length || !pages.every(isAeoGeoKeyPageUrl)))
     ) {
       errors.push(AEO_GEO_INTAKE_ERRORS.key_pages);
     }

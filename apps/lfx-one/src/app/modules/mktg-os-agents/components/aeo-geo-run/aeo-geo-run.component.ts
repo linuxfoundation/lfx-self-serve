@@ -9,7 +9,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
-  AEO_GEO_HTTP_URL_PATTERN,
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_KEY_PAGE_FIELDS,
   AEO_GEO_RECENT_RUNS_LIMIT,
@@ -28,7 +27,7 @@ import {
   MktgRunQuestionDraft,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitCrumbsFor, mktgKitRootPath, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
+import { isAeoGeoKeyPageUrl, mktgKitCrumbsFor, mktgKitRootPath, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -309,8 +308,8 @@ export class AeoGeoRunComponent {
   private initPagesError(): Signal<string> {
     return computed(() => {
       const pages = this.answers().key_pages.split('\n').filter(Boolean);
-      if (pages.some((url) => !AEO_GEO_HTTP_URL_PATTERN.test(url))) {
-        return 'Each key page must be an absolute http(s) URL.';
+      if (pages.some((url) => !isAeoGeoKeyPageUrl(url))) {
+        return AEO_GEO_INTAKE_ERRORS.key_pages;
       }
       if (new Set(pages).size !== pages.length) {
         return 'Use a different URL for each key page; remove any repeats.';

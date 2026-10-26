@@ -8,7 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { provideRouter, Router } from '@angular/router';
-import { AEO_GEO_INTAKE, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgAgentIntake } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
@@ -113,6 +113,14 @@ describe('AeoGeoRunComponent', () => {
     expect(disabled()).toBe(true);
     await fill('mktg-aeo-page_2', 'https://project.example/faq');
     expect(disabled()).toBe(false);
+  });
+  it.each(['http://10.0.0.1/a', 'https://?'])('shows the shared key-page error for %s rather than silently disabling Run', async (page) => {
+    await render();
+    await fill('mktg-aeo-page_1', 'https://project.example/about');
+    await fill('mktg-aeo-page_2', page);
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect(query('mktg-aeo-run-pages-error').textContent).toContain(AEO_GEO_INTAKE_ERRORS.key_pages);
+    expect(start).not.toHaveBeenCalled();
   });
   it.each([
     { count: 1, label: 'previous run' },

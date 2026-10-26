@@ -8,6 +8,7 @@ import {
   buildAeoGeoFormPayload,
   extractAeoGeoEnvelopeCandidates,
   isAeoGeoEnvelope,
+  isAeoGeoKeyPageUrl,
   isAeoGeoReport,
   isPublicAeoGeoHost,
   normalizeAeoGeoDomain,
@@ -47,6 +48,20 @@ function envelope(): AeoGeoEnvelope {
 }
 
 describe('AEO/GEO intake and renderer', () => {
+  it.each(['https://project.example/about', 'http://reference.example.org/a?b=1', 'https://xn--bcher-kva.example/'])('accepts key-page URL %s', (url) => {
+    expect(isAeoGeoKeyPageUrl(url)).toBe(true);
+  });
+  it.each([
+    'http://10.0.0.1/a',
+    'https://?',
+    'https://[invalid',
+    'http://0x7f000001/',
+    'https://metadata.google.internal./',
+    'ftp://project.example/a',
+    '/about',
+  ])('rejects key-page URL %s', (url) => {
+    expect(isAeoGeoKeyPageUrl(url)).toBe(false);
+  });
   it.each([
     '169.254.169.254',
     '10.0.0.10',
@@ -207,14 +222,19 @@ describe('AEO/GEO envelope gates', () => {
     expect(isAeoGeoEnvelope(valid)).toBe(true);
     expect(extractAeoGeoEnvelopeCandidates(JSON.stringify({ result: { envelope_json: JSON.stringify(valid) } }))).toEqual([valid]);
   });
-  it('ignores a hostile whitespace row without delaying report validation', () => {
+  it('ignores a hostile 50k-space row in an otherwise valid report', () => {
     const report = envelope();
     report.document_markdown += '\n|' + ' '.repeat(50_000) + 'x';
-    const start = performance.now();
     expect(isAeoGeoEnvelope(report)).toBe(true);
-    const elapsed = performance.now() - start;
-    console.info(`Hostile scorecard row validation: ${elapsed.toFixed(3)} ms`);
-    expect(elapsed).toBeLessThan(200);
+  });
+  it.each([
+    { length: 16, valid: true },
+    { length: 17, valid: false },
+  ])('only matches score cells up to 16 characters (length $length)', ({ length, valid }) => {
+    const report = envelope();
+    const scoreCell = `6${' '.repeat(length - 4)}/10`;
+    report.document_markdown = report.document_markdown.replace('| llms.txt | 6/10 |', `| llms.txt | ${scoreCell} |`);
+    expect(isAeoGeoEnvelope(report)).toBe(valid);
   });
   it('accepts extra N/10 rows outside the Scorecard, matching the upstream G1 gate', () => {
     const report = envelope();
