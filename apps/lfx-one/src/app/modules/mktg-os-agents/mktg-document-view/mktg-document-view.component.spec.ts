@@ -1905,7 +1905,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-breadcrumb-current')?.textContent).toBe(key === 'aeo-geo' ? `${type.itemLabel} · 13 Oct 2026` : type.itemLabel);
     expect(query('mktg-document-view-title')).not.toBeNull();
     // LinkedIn posts hide the revision chip (Joan's LinkedIn post board: no Approve, you finish by copying a post).
-    expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
+    // The AEO/GEO one-off report shows its hero instead of a revision chip.
+    expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post' && key !== 'aeo-geo');
   });
 
   it('keeps the AEO/GEO crumb plain on an unparseable report date without throwing', async () => {
