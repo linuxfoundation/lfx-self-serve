@@ -833,7 +833,7 @@ export function canVoterFetchVoteResults(
  */
 export function getVoteVisibilityRules(
   audience: 'voter' | 'creator',
-  pseudoAnonymous: boolean | undefined,
+  pseudoAnonymous: boolean | null | undefined,
   isClosed: boolean,
   ballotsAvailable = true
 ): string[] {
@@ -860,7 +860,7 @@ export function getVoteVisibilityRules(
   } else {
     rules.push("Vote managers can see each voter's ballot. Other voters can't see yours.");
   }
-  if (pseudoAnonymous === undefined) {
+  if (pseudoAnonymous === undefined || pseudoAnonymous === null) {
     rules.push('Ballot privacy information is unavailable.');
   } else {
     rules.push(

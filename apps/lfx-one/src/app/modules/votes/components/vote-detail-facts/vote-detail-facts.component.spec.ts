@@ -109,6 +109,23 @@ describe('VoteDetailFactsComponent', () => {
     expect(rules().join(' ')).not.toContain('can see each voter');
   });
 
+  it.each<['voter' | 'creator', PollStatus]>([
+    ['creator', PollStatus.ACTIVE],
+    ['creator', PollStatus.ENDED],
+    ['creator', PollStatus.DISABLED],
+    ['voter', PollStatus.ACTIVE],
+    ['voter', PollStatus.ENDED],
+  ])('treats runtime null privacy as unavailable for %s (%s)', (audience, status) => {
+    fixture.componentRef.setInput('vote', { ...makeVote({ status }), pseudo_anonymity: null });
+    fixture.componentRef.setInput('audience', audience);
+    fixture.detectChanges();
+
+    expect(value('privacy')).toBe('Unavailable');
+    expect(rules()).toContain('Ballot privacy information is unavailable.');
+    expect(rules().join(' ')).not.toContain('Named ballot');
+    expect(rules().join(' ')).not.toContain('Voters tab');
+  });
+
   it.each([PollStatus.ACTIVE, PollStatus.ENDED])('keeps the Voters tab available in the manager copy for a named %s vote', (status) => {
     render(makeVote({ status, pseudo_anonymity: false }), 'creator');
 

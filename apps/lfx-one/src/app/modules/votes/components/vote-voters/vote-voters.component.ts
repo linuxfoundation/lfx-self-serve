@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -76,6 +76,7 @@ export class VoteVotersComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -102,6 +103,7 @@ export class VoteVotersComponent {
   protected readonly statusFilter = signal<VoteVoterStatusFilter>(VOTE_VOTERS_ALL_STATUS_FILTER);
   /** First row of the table page, reset to 0 whenever a filter changes. */
   protected readonly tableFirst = signal<number>(0);
+  protected readonly selectedPageSize = signal<number>(VOTE_VOTERS_PAGE_SIZE);
   protected readonly updatedAt = signal<Date | null>(null);
 
   private readonly refresh$ = new Subject<void>();
@@ -154,6 +156,7 @@ export class VoteVotersComponent {
 
   protected onPage(event: PaginatorState): void {
     this.tableFirst.set(event.first ?? 0);
+    this.selectedPageSize.set(event.rows ?? this.selectedPageSize());
   }
 
   protected clearFilters(): void {
@@ -173,7 +176,7 @@ export class VoteVotersComponent {
         draggable: false,
         data: { vote: this.vote() },
       })
-      ?.onClose.pipe(take(1))
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((sent) => {
         if (sent === true) this.refresh();
       });

@@ -1060,6 +1060,19 @@ describe('voter results helpers', () => {
       expect(rules.join(' ')).not.toContain('can see each voter');
     });
 
+    it.each<['voter' | 'creator', boolean]>([
+      ['creator', true],
+      ['creator', false],
+      ['voter', true],
+      ['voter', false],
+    ])('treats null privacy as unavailable for %s (closed: %s)', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, null, isClosed);
+      expect(rules).toContain('No one sees how another voter voted on this page.');
+      expect(rules.at(-1)).toBe('Ballot privacy information is unavailable.');
+      expect(rules.join(' ')).not.toContain('Named ballot');
+      expect(rules.join(' ')).not.toContain('Voters tab');
+    });
+
     it('says who can read ballots on a named vote (#3914)', () => {
       expect(getVoteVisibilityRules('creator', false, false)).toContain(
         "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."

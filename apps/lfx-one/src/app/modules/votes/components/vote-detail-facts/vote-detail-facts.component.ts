@@ -64,7 +64,7 @@ export class VoteDetailFactsComponent {
   });
   protected readonly privacyText: Signal<string> = computed(() => {
     const privacy = this.vote().pseudo_anonymity;
-    if (privacy === undefined) return 'Unavailable';
+    if (privacy === undefined || privacy === null) return 'Unavailable';
     return privacy ? 'Pseudo-anonymous' : 'Named';
   });
   protected readonly commentsText: Signal<string> = computed(() => {

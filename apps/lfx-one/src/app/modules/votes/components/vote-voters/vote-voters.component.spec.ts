@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { TableComponent } from '@components/table/table.component';
 import { VOTE_VOTER_STATUS_FILTER_LABELS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType, VoteVoterStatus } from '@lfx-one/shared/enums';
 import { Vote, VoteBallotDialogData, VoteVoter } from '@lfx-one/shared/interfaces';
@@ -206,6 +208,65 @@ describe('VoteVotersComponent', () => {
     expect(component['roleOptions']().map((option) => option.value)).toEqual(['Alternate', 'Voting Rep']);
   });
 
+  it('keeps accessible filter labels after a value is selected', async () => {
+    const { fixture, component } = await mount();
+    current = fixture;
+
+    for (const selected of [false, true]) {
+      if (selected) {
+        component['filterForm'].patchValue({ role: 'Voting Rep', choice: 'q-1:c-yes' });
+        fixture.detectChanges();
+      }
+      expect(byTestId(fixture, 'vote-voters-role-filter')!.querySelector('[role="combobox"]')!.getAttribute('aria-label')).toBe('Filter by role');
+      expect(byTestId(fixture, 'vote-voters-choice-filter')!.querySelector('[role="combobox"]')!.getAttribute('aria-label')).toBe('Filter by choice');
+    }
+  });
+
+  it.each([50, 100])('retains a %s-row page and its offset across manual and reminder refreshes', async (size) => {
+    const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
+    const { fixture, component, dialogClose$, getVoteVoters } = await mount({ voters: () => of(voters) });
+    current = fixture;
+
+    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    table.onPage.emit({ first: size, rows: size });
+    await settle(fixture);
+    expect(rowUids(fixture)).toHaveLength(size);
+    const selectedPage = rowUids(fixture);
+
+    for (const reminder of [false, true]) {
+      const pending = new Subject<VoteVoter[]>();
+      getVoteVoters.mockReturnValueOnce(pending);
+      if (reminder) {
+        component['openReminder']();
+        dialogClose$.next(true);
+      } else {
+        component['refresh']();
+      }
+      fixture.detectChanges();
+      expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'vote-voters-table')).toBeNull();
+
+      pending.next(voters);
+      pending.complete();
+      await settle(fixture);
+      const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+      expect(refreshed.rows()).toBe(size);
+      expect(refreshed.first()).toBe(size);
+      expect(rowUids(fixture)).toEqual(selectedPage);
+    }
+  });
+
+  it('retains the selected page size when a page event omits rows', async () => {
+    const { fixture, component } = await mount();
+    current = fixture;
+
+    component['onPage']({ first: 0, rows: 50 });
+    component['onPage']({ first: 0 });
+    fixture.detectChanges();
+    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    expect(table.rows()).toBe(50);
+  });
+
   it('filters by status pill and offers Clear filters when nothing matches', async () => {
     const { fixture, component } = await mount();
     current = fixture;
@@ -240,6 +301,20 @@ describe('VoteVotersComponent', () => {
     component['openReminder']();
     dialogClose$.next(undefined);
     await settle(fixture);
+    expect(getVoteVoters).toHaveBeenCalledTimes(1);
+  });
+
+  it('unsubscribes from reminder close when destroyed before the dialog closes', async () => {
+    const { fixture, component, dialogClose$, getVoteVoters } = await mount();
+    const refresh = vi.spyOn(component['refresh$'], 'next');
+
+    component['openReminder']();
+    expect(dialogClose$.observed).toBe(true);
+    fixture.destroy();
+    expect(dialogClose$.observed).toBe(false);
+
+    dialogClose$.next(true);
+    expect(refresh).not.toHaveBeenCalled();
     expect(getVoteVoters).toHaveBeenCalledTimes(1);
   });
 

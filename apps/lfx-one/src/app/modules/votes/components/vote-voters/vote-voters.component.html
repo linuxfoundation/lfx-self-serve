@@ -46,7 +46,15 @@
           size="small" />
       </div>
       <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-role-filter">
-        <lfx-select [form]="filterForm" control="role" [options]="roleOptions()" placeholder="All roles" [showClear]="true" styleClass="w-full" size="small" />
+        <lfx-select
+          [form]="filterForm"
+          control="role"
+          [options]="roleOptions()"
+          placeholder="All roles"
+          ariaLabel="Filter by role"
+          [showClear]="true"
+          styleClass="w-full"
+          size="small" />
       </div>
       <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-choice-filter">
         <lfx-select
@@ -54,6 +62,7 @@
           control="choice"
           [options]="choiceOptions()"
           placeholder="All choices"
+          ariaLabel="Filter by choice"
           [showClear]="true"
           styleClass="w-full"
           size="small" />
@@ -114,7 +123,7 @@
         [value]="filteredRows()"
         dataKey="uid"
         [paginator]="filteredRows().length > pageSize"
-        [rows]="pageSize"
+        [rows]="selectedPageSize()"
         [first]="tableFirst()"
         [rowsPerPageOptions]="rowsPerPageOptions"
         [showCurrentPageReport]="true"
