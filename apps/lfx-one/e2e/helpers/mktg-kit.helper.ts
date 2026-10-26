@@ -278,6 +278,14 @@ export async function setupKit(
   if (!frameworkType) throw new Error('Framework document type missing from catalog');
   const framework = kitRevision(frameworkType, options.report);
   const documentPath = '/api/mktg-agents/documents/foundation-message/living';
+  // The asset page reads comments for this exact synthetic project/revision; writes stay blocked.
+  await page.route(
+    (url) => url.pathname === `${documentPath}/comments`,
+    (route) => {
+      if (!isProjectRead(route) || new URL(route.request().url()).searchParams.get('revision') !== framework.revision.id) return rejectUnexpected(route);
+      return kitJson(route, { revisionId: framework.revision.id, threads: [] });
+    }
+  );
   await page.route(
     (url) => url.pathname === documentPath,
     (route) => (isProjectRead(route) ? kitJson(route, framework) : rejectUnexpected(route))

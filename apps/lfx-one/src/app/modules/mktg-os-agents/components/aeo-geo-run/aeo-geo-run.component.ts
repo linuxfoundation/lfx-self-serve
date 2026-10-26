@@ -27,7 +27,7 @@ import {
   MktgRunQuestionDraft,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
-import { isAeoGeoKeyPageUrl, mktgKitCrumbsFor, mktgKitRootPath, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
+import { isAeoGeoKeyPageUrl, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -104,7 +104,6 @@ export class AeoGeoRunComponent {
   private readonly values = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? '');
-  protected readonly crumbs = computed(() => mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), 'AEO/GEO'));
   protected readonly documentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.intake().agentId));
   protected readonly pageFields = computed(() => AEO_GEO_KEY_PAGE_FIELDS.slice(0, this.visiblePages()));
   protected readonly answers = this.initAnswers();

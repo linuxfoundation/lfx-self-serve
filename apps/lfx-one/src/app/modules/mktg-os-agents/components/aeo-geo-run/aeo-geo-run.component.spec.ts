@@ -306,6 +306,7 @@ describe('AeoGeoRunComponent', () => {
     expect(query('mktg-aeo-run-previous').closest('form')).toBeNull();
     expect(query('mktg-breadcrumb-link-0').getAttribute('href')).toBe('/project/mktg-os-agents?project=synthetic-project');
     expect(query('mktg-breadcrumb-link-1').getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=synthetic-project');
+    expect(query('mktg-breadcrumb-current').textContent).toBe('AEO/GEO');
     expect(query('mktg-aeo-run-all-reports-link')).not.toBeNull();
   });
   it('exposes a stable retry action when the project lookup fails', async () => {

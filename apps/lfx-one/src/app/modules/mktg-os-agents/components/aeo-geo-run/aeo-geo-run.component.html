@@ -3,7 +3,7 @@
 
 <div class="container mx-auto mt-3 px-4 sm:px-6 lg:px-8" data-testid="mktg-aeo-run-page">
   <div class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-6 py-4">
-    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="projectSlug()" />
+    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'aeo-geo', label: 'AEO/GEO' }" />
     <span class="grow"></span>
     <span class="text-sm text-gray-500" data-testid="mktg-aeo-run-history-label"
       >{{ projectName() }}
