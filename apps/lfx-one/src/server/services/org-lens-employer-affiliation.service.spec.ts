@@ -56,7 +56,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: null,
-      accountId: null,
       hasActiveMembership: false,
     });
     expect(execute).not.toHaveBeenCalled();
@@ -68,7 +67,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'Bank Pekao',
-      accountId: 'acc-1',
       hasActiveMembership: false,
     });
     expect(execute).toHaveBeenCalledWith(expect.stringContaining('ORG_LENS_ACCOUNT_CONTEXT'), ['BANKPEKAO']);
@@ -88,7 +86,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'Corner Shop Ltd',
-      accountId: null,
       hasActiveMembership: false,
     });
   });
@@ -100,7 +97,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: null,
-      accountId: null,
       hasActiveMembership: false,
     });
     expect(execute).not.toHaveBeenCalled();
@@ -112,6 +108,18 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ employerName: 'Current Employer' });
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['CURRENTEMPLOYER']);
+  });
+
+  // Self-declared employment is not permission to learn a company's internal id, and nothing renders
+  // one, so the response must not carry it back.
+  it('never returns a Salesforce account id', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Bank Pekao')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-1', ACCOUNT_NAME: 'Bank Pekao', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+
+    const affiliation = await service.getEmployerAffiliation(REQ, 'lfid');
+
+    expect(Object.keys(affiliation).sort()).toEqual(['employerName', 'hasActiveMembership']);
+    expect(JSON.stringify(affiliation)).not.toContain('acc-1');
   });
 
   // A day job alongside a foundation or board role is two open-ended entries for one person.
@@ -126,7 +134,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'The Linux Foundation',
-      accountId: 'acc-lf',
       hasActiveMembership: true,
     });
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['BANKPEKAO', 'THELINUXFOUNDATION']);
@@ -138,7 +145,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'Alpha',
-      accountId: 'acc-a',
       hasActiveMembership: false,
     });
     expect(execute).toHaveBeenCalledWith(expect.stringContaining('IN (?, ?)'), ['ALPHA', 'BETA']);
@@ -171,7 +177,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'the linux foundation',
-      accountId: 'acc-lf',
       hasActiveMembership: true,
     });
   });
@@ -182,7 +187,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
       employerName: 'bank pekao',
-      accountId: 'acc-bp',
     });
   });
 
@@ -193,7 +197,6 @@ describe('OrgLensEmployerAffiliationService', () => {
     execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme, LLC', ACTIVE_MEMBERSHIP_COUNT: 2 }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
-      accountId: 'acc-acme',
       hasActiveMembership: true,
     });
   });
@@ -257,7 +260,6 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: '架空会社',
-      accountId: null,
       hasActiveMembership: false,
     });
     // An empty key would match any account whose own name is all punctuation, so it is never asked.

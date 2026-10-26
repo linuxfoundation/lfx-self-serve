@@ -109,9 +109,26 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
+  /**
+   * #4314 — the employer probe is owed an answer *that the page decision will read*. Only the callers
+   * who reach rules 6–8 do: someone who holds the selection, reaches it as its CLA manager, or whom the
+   * read gate admitted renders their page at rules 1 and 5, and no employer answer can change that.
+   * Waiting on the probe for them would hold an already-admitted contractor on a skeleton while CDP
+   * and Snowflake run, for an answer that is then discarded.
+   */
+  private readonly employerAnswerOwed: Signal<boolean> = computed(() => {
+    if (!this.employerAffiliation.pending()) {
+      return false;
+    }
+    if (this.selectedHeld() || this.selectedClaOnly()) {
+      return false;
+    }
+    return this.contractorVerdict(this.accountContext.hasOrgSelectorAccess()) !== 'admitted';
+  });
+
   /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(
-    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.employerAffiliation.pending()
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.employerAnswerOwed()
   );
 
   /**

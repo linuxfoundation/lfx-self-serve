@@ -628,6 +628,38 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     expect(h.service.pageState()).toBeNull();
   });
 
+  // #4314 — the probe fires for anyone with no switcher access, an admitted contractor included, but
+  // their page is settled at rule 5. Waiting would hold them on a skeleton for an answer rule 6 never
+  // reads, while CDP and Snowflake run.
+  it('does not hold an admitted contractor on the skeleton for the employer probe', () => {
+    h.hasOrgSelectorAccess.set(false);
+    h.selectedAccount.set(account(OTHER));
+    h.affiliationPending.set(true);
+    TestBed.tick();
+
+    h.readAnswers[0].next(true);
+
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('still holds the skeleton for a caller whose page decision reads the employer answer', () => {
+    h.isContractor.set(false);
+    h.affiliationPending.set(true);
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('does not hold a caller who holds the selection for the employer probe', () => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.isContractor.set(false);
+    h.affiliationPending.set(true);
+
+    expect(h.service.settled()).toBe(true);
+  });
+
   // A contractor who holds organizations but has no selection yet is waiting for the default selection,
   // not refused: no state, and nothing to ask the gate about.
   it('shows nothing for a contractor who holds organizations while the default selection is pending', () => {

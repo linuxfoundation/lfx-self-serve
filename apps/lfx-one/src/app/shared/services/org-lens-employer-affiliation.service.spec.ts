@@ -69,7 +69,7 @@ function flush(): void {
 }
 
 function affiliation(partial: Partial<OrgLensEmployerAffiliation> = {}): OrgLensEmployerAffiliation {
-  return { employerName: 'Bank Pekao', accountId: null, hasActiveMembership: false, ...partial };
+  return { employerName: 'Bank Pekao', hasActiveMembership: false, ...partial };
 }
 
 describe('OrgLensEmployerAffiliationService', () => {

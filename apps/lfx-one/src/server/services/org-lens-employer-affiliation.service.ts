@@ -91,7 +91,9 @@ interface RawEmployerMembershipRow {
  *
  * It reveals nothing the caller does not already hold — their own employer's name comes from their own
  * profile, and the answer is one boolean about that company's membership, which is public information
- * (LF member directories list it). No roster, no people, no membership detail.
+ * (LF member directories list it). No roster, no people, no membership detail, and no account id: the
+ * matched account's identifier never leaves this service, since nothing renders it and self-declared
+ * employment is not permission to learn it.
  *
  * A caller may hold several current jobs; every one of them is checked, and `hasActiveMembership` is
  * true when any is a member, so a day job alongside a foundation role never reads as "not a member".
@@ -127,7 +129,7 @@ export class OrgLensEmployerAffiliationService {
     const employerNames = OrgLensEmployerAffiliationService.currentEmployerNames(workExperiences);
 
     if (employerNames.length === 0) {
-      return { employerName: null, accountId: null, hasActiveMembership: false };
+      return { employerName: null, hasActiveMembership: false };
     }
 
     // A name with no Latin characters reduces to an empty key, which would match any account whose
@@ -136,7 +138,6 @@ export class OrgLensEmployerAffiliationService {
     // name gets. See the resolution note in this class's doc comment.
     const matchKeys = [...new Set(employerNames.map(employerMatchKey).filter(Boolean))];
     const rows = matchKeys.length > 0 ? await this.fetchEmployerMembershipRows(matchKeys) : [];
-    const byMatchKey = new Map(rows.map((row) => [employerMatchKey(row.ACCOUNT_NAME), row]));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
     const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
@@ -155,7 +156,6 @@ export class OrgLensEmployerAffiliationService {
 
     return {
       employerName,
-      accountId: (member ?? byMatchKey.get(employerMatchKey(employerName)))?.ACCOUNT_ID ?? null,
       hasActiveMembership: !!member,
     };
   }

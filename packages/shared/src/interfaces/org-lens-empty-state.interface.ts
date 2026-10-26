@@ -105,8 +105,6 @@ export interface OrgLensEmployerAffiliation {
    * it is read back to them in their own sentence, and the match is deliberately looser than equality.
    */
   employerName: string | null;
-  /** Salesforce account `employerName` resolved to, or `null` when no LF account matches the name. */
-  accountId: string | null;
   /**
    * At least one of the caller's current employers holds an active membership in an LF-hosted
    * foundation. `false` is a resolved answer (none of them matched an account, or none of the matched
