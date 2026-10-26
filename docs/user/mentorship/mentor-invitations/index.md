@@ -31,10 +31,10 @@ Accepting puts the program on your **My Programs** tab, with its mentees, applic
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| The invitation is not found | The token has already been used, or the invitation was withdrawn. Ask the Program Admin to send a new one. |
-| The page asks you to register first | You have no mentor profile. See [Become a Mentor](../become-a-mentor/). |
+| What you see                        | What it means                                                                                              |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| The invitation is not found         | The token has already been used, or the invitation was withdrawn. Ask the Program Admin to send a new one. |
+| The page asks you to register first | You have no mentor profile. See [Become a Mentor](../become-a-mentor/).                                    |
 
 ## Related
 

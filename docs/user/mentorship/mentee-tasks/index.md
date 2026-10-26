@@ -18,15 +18,17 @@ The **My Tasks** tab holds everything a program has assigned you — the prerequ
 
 ## Task status
 
-You set a task's status yourself from its dropdown.
+You set a task's status yourself from its dropdown, but only certain moves are allowed:
 
-| Status | What it means |
-|---|---|
-| **To Do** | Not started |
-| **In Progress** | You are working on it |
-| **Submitted** | Handed in for your mentor to review |
+| Status          | What it means                       | Where you can move it                                |
+| --------------- | ----------------------------------- | ---------------------------------------------------- |
+| **To Do**       | Not started                         | To **In Progress**                                   |
+| **In Progress** | You are working on it               | To **Submitted**, once any required file is uploaded |
+| **Submitted**   | Handed in for your mentor to review | Back to **In Progress**, until the due date passes   |
 
-A mentor or Program Admin may also move a task on their side; your view refreshes to match.
+**Submitted** is greyed out on a task still in **To Do** — start it first. You cannot move a task back to **To Do** once it is under way.
+
+A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, the dropdown locks: "Completed tasks can only be changed by your mentor."
 
 ## Steps
 
@@ -34,24 +36,41 @@ A mentor or Program Admin may also move a task on their side; your view refreshe
 2. Pick the application whose tasks you want. Prerequisite tasks and term tasks are listed separately.
 3. Use the filter chips — **All**, **To Do**, **In Progress**, **Submitted** — to narrow the list.
 4. Open a task to read what it asks for and when it is due.
-5. If the task requires a file, upload it before changing the status.
-6. Set the task's status from its dropdown.
+5. Set the task to **In Progress**.
+6. If the task requires a file, upload it. Uploading does not submit the task — it unlocks the **Submitted** option.
+7. Set the task to **Submitted**.
 
 ## Tasks that require a file
 
-Some tasks cannot be marked **Submitted** until a file is attached. If you try, you will see:
+While a required file is missing, **Submitted** stays disabled and the row shows:
 
-> A task that requires a file can only be submitted once a file has been uploaded for it.
+> This task needs a file before it can be submitted. Upload one first.
 
-Upload the file first, then set the status.
+Upload the file, then set the status yourself. You can replace or remove the file until the due date passes.
+
+## Tasks that are past due
+
+After the due date you can still start a task and work on it, but **Submitted** is disabled:
+
+> The due date has passed, so this task can no longer be submitted.
+
+A task you already submitted cannot be reopened after the due date either:
+
+> The due date has passed, so this submission can no longer be reopened.
+
+Contact your mentor or the Program Admin if you need a task reopened.
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "This task no longer exists. Refresh the page and try again." | The task was removed by a mentor or Program Admin. |
-| "We could not update this task right now. Please try again." | A transient failure; the status was not saved. |
-| The task is past its due date | The program may no longer accept a status change on it. Contact your mentor. |
+Each of these appears as a toast, and your task list is re-read so it matches what the program sees.
+
+| What you see                                                                                                                                 | What it means                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| "This task no longer exists. Your tasks have been refreshed."                                                                                | A mentor or Program Admin removed the task.                |
+| "This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed."                                      | The move was refused — most often a missing required file. |
+| "This task has already moved on, so your change was not applied. Your tasks have been refreshed."                                            | Someone else changed the task first.                       |
+| "You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed." | A permissions check failed; try again shortly.             |
+| "The due date for this task has passed, so it can no longer be submitted or reopened."                                                       | You tried to submit or reopen a task after its due date.   |
 
 ## Related
 

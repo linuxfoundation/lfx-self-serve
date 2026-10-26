@@ -21,7 +21,12 @@ The program declined it for that term. You can apply to a different program, or 
 
 ### Why can't I mark my task as Submitted?
 
-The task requires a file. Upload the file first, then change the status.
+One of four reasons:
+
+- **The task is still in To Do.** Move it to **In Progress** first.
+- **It needs a file you have not uploaded.** The row says "This task needs a file before it can be submitted. Upload one first." Uploading does not submit the task — it unlocks the option.
+- **The due date has passed.** "The due date has passed, so this task can no longer be submitted."
+- **Your mentor already marked it complete.** "Completed tasks can only be changed by your mentor."
 
 ### What is the difference between Prerequisite Tasks and Tasks?
 
@@ -39,9 +44,14 @@ Find the program at [mentorship.linuxfoundation.org](https://mentorship.linuxfou
 
 ### How do I join a program?
 
-Either a Program Admin invites you by email, or you raise a request from **My Programs**. Either way the Program Admin approves it.
+Two ways, and they do not work the same:
 
-### My invitation link does not work.
+- **A Program Admin invites you.** Accepting the invitation puts you straight onto the program; no further approval is needed.
+- **You raise a request yourself**, from **Mentor Profile → Edit Mentor Profile → Select LFX Mentorship**. That one waits for a Program Admin to approve it.
+
+You cannot request a program from **My Programs** — that tab only lists the programs you already mentor.
+
+### My invitation link does not work
 
 Invitation links are single use. Ask the Program Admin to send a new one.
 

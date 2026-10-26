@@ -9,7 +9,7 @@ last_updated: 2026-10-26
 intercom_collection: Mentorship
 ---
 
-Enrollment is a three-step form that submits a program for LFX review. It saves as you go, and warns you before you leave with unsaved answers.
+Enrollment is a three-step form that submits a program for LFX review. Nothing is saved until you submit on the final step — moving between steps only validates them — so the form warns you before you leave with unsaved answers. Set aside enough time to finish it in one sitting.
 
 ## Before you begin
 
@@ -22,26 +22,26 @@ Enrollment is a three-step form that submits a program for LFX review. It saves 
 
 Describe the program and the project it belongs to. This is what candidates read on your program page.
 
-| Field | Notes |
-|---|---|
-| **Program name** | 3–100 characters |
-| **Program description** | Rich text, up to 3,000 characters of plain text |
-| **Linux Foundation project** | Picked from the project list; required |
-| **Repository URL** | Drives the repository statistics on the public program page |
-| **Website URL** | Shown as a link on the program page |
-| **Code of Conduct URL** | If you leave it empty, the listing defaults to the Contributor Covenant |
-| **Program logo** | JPG or PNG, 420 × 420 px, max 2 MB |
-| **Technologies** | Up to 100 entries of up to 300 characters each |
+| Field                        | Notes                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| **Program name**             | 3–100 characters                                                        |
+| **Program description**      | Rich text, up to 3,000 characters of plain text                         |
+| **Linux Foundation project** | Picked from the project list; required                                  |
+| **Repository URL**           | Drives the repository statistics on the public program page             |
+| **Website URL**              | Shown as a link on the program page                                     |
+| **Code of Conduct URL**      | If you leave it empty, the listing defaults to the Contributor Covenant |
+| **Program logo**             | JPG or PNG, 420 × 420 px, max 2 MB                                      |
+| **Technologies**             | Up to 100 entries of up to 300 characters each                          |
 
 ## Step 2 — Program Setup
 
 Define the skills mentees need and the term schedule.
 
-| Field | Notes |
-|---|---|
-| **Required and desirable skills** | Include non-technical areas your program could benefit from |
-| **Terms** | Standard periods, or a custom term. A term name is up to 50 characters |
-| **Open terms** | At most **4** open terms at once |
+| Field                             | Notes                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| **Required and desirable skills** | Include non-technical areas your program could benefit from            |
+| **Terms**                         | Standard periods, or a custom term. A term name is up to 50 characters |
+| **Open terms**                    | At most **4** open terms at once                                       |
 
 ## Step 3 — Prerequisites
 
@@ -62,15 +62,15 @@ You see **Program submitted for review.** The program sits at **Pending Review**
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "Something on the form is not complete or invalid." | Correct the highlighted fields before continuing. |
-| "Program logo is not the right file type." | Use JPG or PNG. SVG is not accepted. |
-| "Program logo must be 2 MB or smaller." | Shrink the image. |
-| "Program saved and sent for review, but the logo didn't upload." | The program exists; add the logo later from its card. |
-| "The program is saved, but its logo is missing. Leave anyway?" | You are leaving a partially saved program. Add the logo from the program card afterwards. |
-| "This text is too long or has too much formatting." | Shorten the description or remove some links or styling. |
-| "You will lose your changes—are you sure you wish to cancel?" | Leaving now discards unsaved answers. |
+| What you see                                                     | What it means                                                                             |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "Something on the form is not complete or invalid."              | Correct the highlighted fields before continuing.                                         |
+| "Program logo is not the right file type."                       | Use JPG or PNG. SVG is not accepted.                                                      |
+| "Program logo must be 2 MB or smaller."                          | Shrink the image.                                                                         |
+| "Program saved and sent for review, but the logo didn't upload." | The program exists; add the logo later from its card.                                     |
+| "The program is saved, but its logo is missing. Leave anyway?"   | You are leaving a partially saved program. Add the logo from the program card afterwards. |
+| "This text is too long or has too much formatting."              | Shorten the description or remove some links or styling.                                  |
+| "You will lose your changes—are you sure you wish to cancel?"    | Leaving now discards unsaved answers.                                                     |
 
 ## Related
 

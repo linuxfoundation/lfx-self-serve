@@ -19,11 +19,11 @@ The Mentorship section is where you take part in an LFX Mentorship program. It c
 
 ## Who this applies to
 
-| Role | Where it lives | Who it is for |
-|---|---|---|
-| **Mentee** | [app.lfx.dev/mentorship/mentee](https://app.lfx.dev/mentorship/mentee) | Anyone applying to or taking part in a program |
-| **Mentor** | [app.lfx.dev/mentorship/mentor](https://app.lfx.dev/mentorship/mentor) | Project contributors who review a mentee's work |
-| **Program Admin** | [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) | People who administer a project's program |
+| Role              | Where it lives                                                         | Who it is for                                   |
+| ----------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| **Mentee**        | [app.lfx.dev/mentorship/mentee](https://app.lfx.dev/mentorship/mentee) | Anyone applying to or taking part in a program  |
+| **Mentor**        | [app.lfx.dev/mentorship/mentor](https://app.lfx.dev/mentorship/mentor) | Project contributors who review a mentee's work |
+| **Program Admin** | [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin)   | People who administer a project's program       |
 
 A single person can hold more than one role. Each surface is reached on its own and has its own tabs.
 
@@ -42,26 +42,26 @@ Go to **app.lfx.dev** and select **Mentorship** from the left navigation sidebar
 
 ## Program status
 
-| Status | Meaning |
-|---|---|
-| **Open** | Approved and running |
+| Status             | Meaning                              |
+| ------------------ | ------------------------------------ |
+| **Open**           | Approved and running                 |
 | **Pending Review** | Awaiting LFX review after enrollment |
-| **Completed** | The program's terms have finished |
-| **Rejected** | Not approved during review |
-| **Hidden** | Removed from public listings |
+| **Completed**      | The program's terms have finished    |
+| **Rejected**       | Not approved during review           |
+| **Hidden**         | Removed from public listings         |
 
 **Rejected** applies only to a program. An application that is turned down is **Declined**.
 
 ## Application status
 
-| Status | Mentee sees | Meaning |
-|---|---|---|
-| **Pending** | In Review | Submitted, awaiting a decision |
-| **Accepted** | Accepted | On the term |
-| **Declined** | Not Selected | Not taken on for this term |
-| **Withdrawn** | Withdrawn | Pulled, by the mentee or on their behalf |
-| **Graduated** | Graduated | Finished the term successfully |
-| **On Hold** | On Hold | Parked by the program |
+| Status        | Mentee sees  | Meaning                                  |
+| ------------- | ------------ | ---------------------------------------- |
+| **Pending**   | In Review    | Submitted, awaiting a decision           |
+| **Accepted**  | Accepted     | On the term                              |
+| **Declined**  | Not Selected | Not taken on for this term               |
+| **Withdrawn** | Withdrawn    | Pulled, by the mentee or on their behalf |
+| **Graduated** | Graduated    | Finished the term successfully           |
+| **On Hold**   | On Hold      | Parked by the program                    |
 
 ## Related sections
 

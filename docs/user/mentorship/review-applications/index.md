@@ -20,16 +20,19 @@ The **Current Mentees** tab is where a Program Admin decides on applications for
 
 1. Go to the **Current Mentees** tab.
 2. Narrow the list with the search box, the status filter (**All statuses**, or one status) and the term filter (**All open terms**, or one term).
-3. Open a row to read the applicant's profile, prerequisite tasks and reviewer notes.
+3. Select **View Tasks** on the row to expand the applicant's prerequisite tasks and download anything they submitted. Use **Add note**, or the note already on the row, for reviewer notes.
+
+   The row and the applicant's name do not open a profile page — what you review is their tasks and the notes on the row.
+
 4. Use the row actions:
 
-    | Action | What it does |
-    |---|---|
-    | **Accept** | Puts the applicant on the term. You must choose an attendance type: **Full time** or **Part time** |
-    | **Decline** | Turns the application down. The mentee is told it was declined |
-    | **Withdraw** | Pulls the application on the mentee's behalf. This cannot be undone |
-    | **Graduate** | Marks an accepted mentee as having completed the term |
-    | **Create task** | Assigns work. See [Create and Assign Tasks](../manage-tasks/) |
+   | Action          | What it does                                                                                       |
+   | --------------- | -------------------------------------------------------------------------------------------------- |
+   | **Accept**      | Puts the applicant on the term. You must choose an attendance type: **Full time** or **Part time** |
+   | **Decline**     | Turns the application down. The mentee is told it was declined                                     |
+   | **Withdraw**    | Pulls the application on the mentee's behalf. This cannot be undone                                |
+   | **Graduate**    | Marks an accepted mentee as having completed the term                                              |
+   | **Create task** | Assigns work. See [Create and Assign Tasks](../manage-tasks/)                                      |
 
 5. Confirm in the dialog.
 
@@ -37,14 +40,14 @@ The tab is paged ten mentees at a time, and the search waits briefly after your 
 
 ## Applicant status
 
-| Status | What it means |
-|---|---|
-| **Applied** | Submitted; prerequisites not all finished |
+| Status              | What it means                               |
+| ------------------- | ------------------------------------------- |
+| **Applied**         | Submitted; prerequisites not all finished   |
 | **Tasks Completed** | Prerequisites finished, awaiting a decision |
-| **Accepted** | On the term |
-| **Declined** | Turned down |
-| **Withdrawn** | Pulled by the mentee, or on their behalf |
-| **Graduated** | Finished the term |
+| **Accepted**        | On the term                                 |
+| **Declined**        | Turned down                                 |
+| **Withdrawn**       | Pulled by the mentee, or on their behalf    |
+| **Graduated**       | Finished the term                           |
 
 ## Decline by term
 
@@ -58,13 +61,13 @@ If the mentee still has tasks that are not Submitted or Completed, the confirmat
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "This application changed. The list has been refreshed." | Someone else decided first. Check the new status before acting again. |
-| "This term is closed, so the application can't be accepted." | The term closed while you were looking. |
-| "Another change is still being saved. Try again in a moment." | One decision at a time. |
-| "Choose an attendance type to accept the application." | Accept requires **Full time** or **Part time**. |
-| "The change couldn't be saved. Please try again." | A transient failure; nothing changed. |
+| What you see                                                  | What it means                                                         |
+| ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| "This application changed. The list has been refreshed."      | Someone else decided first. Check the new status before acting again. |
+| "This term is closed, so the application can't be accepted."  | The term closed while you were looking.                               |
+| "Another change is still being saved. Try again in a moment." | One decision at a time.                                               |
+| "Choose an attendance type to accept the application."        | Accept requires **Full time** or **Part time**.                       |
+| "The change couldn't be saved. Please try again."             | A transient failure; nothing changed.                                 |
 
 ## Related
 

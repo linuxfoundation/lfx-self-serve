@@ -25,10 +25,10 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentor 
 
 The profile also lists the programs you have mentored:
 
-| Status | What it means |
-|---|---|
-| **In Progress** | The term is running |
-| **Completed** | The term has finished |
+| Status          | What it means         |
+| --------------- | --------------------- |
+| **In Progress** | The term is running   |
+| **Completed**   | The term has finished |
 
 ## Related
 

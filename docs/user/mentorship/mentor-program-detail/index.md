@@ -18,36 +18,51 @@ A program's detail page is where a mentor does their day-to-day work: reading ap
 
 ## The tabs
 
-| Tab | What it holds |
-|---|---|
-| **Tasks** | Every task on the program, with the mentee it belongs to and its status |
-| **Mentees** | The mentees accepted onto the program |
-| **Applicants** | People who applied, with a status filter |
+| Tab            | What it holds                                                                       |
+| -------------- | ----------------------------------------------------------------------------------- |
+| **Applicants** | People who applied, with a status filter, their other active applications and notes |
+| **Mentees**    | The mentees accepted onto the program, with task progress — where tasks are created |
+| **Tasks**      | Submitted tasks waiting on your review                                              |
 
-## Steps
+## Review an applicant
 
 1. Open [app.lfx.dev/mentorship/mentor/programs](https://app.lfx.dev/mentorship/mentor/programs) and select a program.
 2. On **Applicants**, filter with the status pills — **Pending**, **Accepted**, **Declined** or **All**.
-3. Open an applicant to read their profile, their cover letter and their prerequisite tasks.
-4. Select **Add note** to record context for the other reviewers. See [Leave a Reviewer Note](../reviewer-notes/).
-5. On **Tasks**, select **Create Task** to assign work, or the edit action on a row to change one. See [Create and Assign Tasks](../manage-tasks/).
-6. Review a submitted task and move it to **Completed** when you are satisfied.
+3. Select **View Tasks** on the row to expand their prerequisite tasks and download anything they submitted.
+4. Select **Add note**, or the existing note on the row, to record context for the other reviewers. See [Leave a Reviewer Note](../reviewer-notes/).
+
+The applicant's row and name do not open a profile page, and there is no cover letter to read — what you review is their tasks and the notes on the row. The **Other Active Applications** column shows the other programs they have live applications on.
+
+## Create a task
+
+Tasks are created from the **Mentees** tab, not the Tasks tab, and only for an accepted mentee:
+
+- **One mentee** — use the **+** on their row. The task is assigned to them, with no assignee picker.
+- **Several mentees** — use **Create Group Task** above the table, then pick the assignees, with **Select all** and **Clear** to hand.
+
+To change a task, expand the mentee's row with **View Tasks** and use **Edit Task**. A task's assignee cannot be changed after it is created.
+
+## Review a submitted task
+
+On the **Tasks** tab, each submitted task offers **Approve** or **Request Changes**. This tab is for reviewing only — you cannot create or edit a task here.
+
+Approving a task locks it for the mentee: from then on only a mentor can change it.
 
 ## Applicant task status
 
-| Status | What it means |
-|---|---|
-| **Pending** | Not started |
-| **In Progress** | The mentee is working on it |
-| **Submitted** | Handed in, waiting on your review |
-| **Completed** | You have accepted it |
+| Status          | What it means                                       |
+| --------------- | --------------------------------------------------- |
+| **Pending**     | Not started                                         |
+| **In Progress** | The mentee is working on it                         |
+| **Submitted**   | Handed in, waiting on your review                   |
+| **Completed**   | You approved it; the mentee can no longer change it |
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
+| What you see                                    | What it means                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------- |
 | "You can no longer edit tasks on this program." | You are no longer an approved mentor on it. Refresh the page. |
-| "This application no longer exists." | The applicant withdrew, or the application was removed. |
+| "This application no longer exists."            | The applicant withdrew, or the application was removed.       |
 
 ## Related
 

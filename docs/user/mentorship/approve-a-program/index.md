@@ -26,10 +26,10 @@ The page records the decision only when you confirm, so a mail scanner that pref
 
 ## After completing
 
-| Decision | Program status becomes |
-|---|---|
+| Decision    | Program status becomes                                        |
+| ----------- | ------------------------------------------------------------- |
 | **Approve** | Approved — the program is published and can take applications |
-| **Reject** | Rejected — the program is not listed |
+| **Reject**  | Rejected — the program is not listed                          |
 
 **Rejected** is reserved for programs. An application that is turned down is **Declined**.
 

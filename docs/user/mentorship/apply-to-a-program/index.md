@@ -27,22 +27,25 @@ The apply page confirms you are eligible, collects anything the program requires
    - You do not already hold a duplicate mentee profile.
 3. Confirm the compliance statement.
 4. Acknowledge the program terms.
-5. Complete any prerequisites the program asks for, such as a cover letter or a resume.
-6. Submit the application.
+5. Submit the application.
+
+The apply page collects no cover letter, resume or file. It confirms your profile and the five statements, and submits the program and term. Anything the program asks you to produce is assigned as a prerequisite task **after** the application exists.
 
 All five confirmations must be ticked before the submit button is enabled.
 
 ## After completing
 
-The application appears on your **Overview** tab with the status **In Review**. Any prerequisite tasks the program set appear under **My Tasks** as **Prerequisite Tasks**.
+The application appears as a card on your **Overview** tab. Its badge is **In Progress** while prerequisite tasks remain, and **Awaiting Review** once you have submitted them all — or straight away if the program assigned none.
+
+Any prerequisite tasks appear under **My Tasks**, grouped as **Prerequisite Tasks**. Work through those next: the program reviews your application once they are in.
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
+| What you see                                         | What it means                                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | The page says the term is not accepting applications | The term closed between opening the program page and applying. Pick another program or wait for the next term. |
-| You cannot reach the apply page | You have no mentee profile yet, or the link is missing the program or term. Start again from the program page. |
-| Submit stays disabled | One of the five confirmations is unticked. |
+| You cannot reach the apply page                      | You have no mentee profile yet, or the link is missing the program or term. Start again from the program page. |
+| Submit stays disabled                                | One of the five confirmations is unticked.                                                                     |
 
 ## Related
 

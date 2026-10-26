@@ -34,11 +34,11 @@ You see **Note saved** (or **Note cleared**). The note is available to the progr
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "You can no longer edit notes on this program. Refresh the page and try again." | You are no longer an admin or mentor on it. |
-| "This application no longer exists. Refresh the page and try again." | The application was withdrawn or removed. |
-| "Could not save the note" | A transient failure; the note was not saved. |
+| What you see                                                                    | What it means                                |
+| ------------------------------------------------------------------------------- | -------------------------------------------- |
+| "You can no longer edit notes on this program. Refresh the page and try again." | You are no longer an admin or mentor on it.  |
+| "This application no longer exists. Refresh the page and try again."            | The application was withdrawn or removed.    |
+| "Could not save the note"                                                       | A transient failure; the note was not saved. |
 
 ## Related
 

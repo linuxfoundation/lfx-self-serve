@@ -29,10 +29,10 @@ The application's status becomes **Withdrawn** and the list refreshes. One of yo
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
+| What you see                            | What it means                                                                                                    |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | The withdraw fails and the list reloads | The application changed while you were looking at it — most often a decision landed first. Check its new status. |
-| There is no **Withdraw** action | The application is no longer pending. |
+| There is no **Withdraw** action         | The application is no longer pending.                                                                            |
 
 ## Related
 

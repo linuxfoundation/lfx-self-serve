@@ -18,44 +18,58 @@ Tasks are how a program gives a mentee work and tracks it. Program Admins and th
 
 ## The task form
 
-| Field | Notes |
-|---|---|
-| **Task Name** | Up to 120 characters, e.g. "Submit ingestion benchmark report" |
-| **Due Date** | `yyyy-mm-dd` |
-| **Task Description** | Up to 1,000 characters. What should the mentee do, and how will you know it is done? |
-| **Task Status** | The status the task starts in |
-| **Requires a file** | Tick "Completion of this task requires that the mentee submits a file" to block submission until a file is uploaded |
-| **Assign to** | One or more mentees. **Select all** and **Clear** act on the whole list |
+| Field                | Notes                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Task Name**        | Up to 120 characters, e.g. "Submit ingestion benchmark report"                                                      |
+| **Due Date**         | `yyyy-mm-dd`                                                                                                        |
+| **Task Description** | Up to 1,000 characters. What should the mentee do, and how will you know it is done?                                |
+| **Task Status**      | The status the task starts in                                                                                       |
+| **Requires a file**  | Tick "Completion of this task requires that the mentee submits a file" to block submission until a file is uploaded |
+| **Assign to**        | One or more mentees. **Select all** and **Clear** act on the whole list                                             |
 
 ## Steps
 
-1. Open the program — from the Admin area, or from **My Programs** if you are a mentor.
-2. Select **Create Task**.
-3. Fill in the form and choose who to assign it to.
-4. Select **Add Task**.
-5. To change a task later, use the edit action on its row, then **Save Task**.
+Where you create a task depends on your role. In both cases it is the mentee list, not the Tasks tab.
+
+**As a Program Admin**
+
+1. Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin).
+2. Go to **Current Mentees** and use the **Create task** row action on the mentee.
+3. Fill in the form and select **Add Task**.
+
+**As a mentor**
+
+1. Open the program from **My Programs** and go to the **Mentees** tab.
+2. For one mentee, use the **+** on their row. For several, use **Create Group Task** above the table and pick the assignees.
+3. Fill in the form and select **Add Task**.
+
+The **Assign to** picker only appears when you are creating a group task. A per-row create is assigned to that mentee already.
+
+**To change a task**, expand the mentee's row with **View Tasks**, use **Edit Task**, then **Save Task**. A task's assignee cannot be changed after it is created — delete it and create a new one instead.
+
+A mentor's **Tasks** tab offers **Approve** and **Request Changes** only; it does not create or edit tasks.
 
 A task can be assigned to up to 100 mentees in one request; a larger group is sent in batches.
 
 ## Task status
 
-| Status | What it means |
-|---|---|
-| **Pending** | Not started |
-| **In Progress** | The mentee is working on it |
-| **Submitted** | Handed in, waiting on review |
-| **Completed** | Accepted by a reviewer |
+| Status          | What it means                |
+| --------------- | ---------------------------- |
+| **Pending**     | Not started                  |
+| **In Progress** | The mentee is working on it  |
+| **Submitted**   | Handed in, waiting on review |
+| **Completed**   | Accepted by a reviewer       |
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "Some tasks were not created" | The task was created for some of the mentees you picked, not all. Check the rows. |
-| "The task may not have been created. Check the mentee's row before trying again." | The request failed without a clear answer. Look at the row before retrying — a second attempt can create a duplicate. |
-| "This mentee can no longer be given tasks." | They are no longer accepted on the term. |
-| "You can no longer create tasks on this program." | You are no longer an admin or mentor on it. |
-| "A task that requires a file can only be submitted once a file has been uploaded for it." | The mentee has not uploaded the required file yet. |
-| "This task no longer exists." | It was deleted. Refresh the page. |
+| What you see                                                                              | What it means                                                                                                         |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| "Some tasks were not created"                                                             | The task was created for some of the mentees you picked, not all. Check the rows.                                     |
+| "The task may not have been created. Check the mentee's row before trying again."         | The request failed without a clear answer. Look at the row before retrying — a second attempt can create a duplicate. |
+| "This mentee can no longer be given tasks."                                               | They are no longer accepted on the term.                                                                              |
+| "You can no longer create tasks on this program."                                         | You are no longer an admin or mentor on it.                                                                           |
+| "A task that requires a file can only be submitted once a file has been uploaded for it." | The mentee has not uploaded the required file yet.                                                                    |
+| "This task no longer exists."                                                             | It was deleted. Refresh the page.                                                                                     |
 
 ## Related
 

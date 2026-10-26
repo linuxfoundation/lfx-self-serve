@@ -27,20 +27,20 @@ The list is paged twelve programs at a time.
 
 ## Program status
 
-| Status | What it means |
-|---|---|
-| **Open** | Approved and running |
+| Status             | What it means                     |
+| ------------------ | --------------------------------- |
+| **Open**           | Approved and running              |
 | **Pending Review** | Submitted and awaiting LFX review |
-| **Completed** | Its terms have finished |
-| **Rejected** | Not approved during review |
-| **Hidden** | Removed from public listings |
+| **Completed**      | Its terms have finished           |
+| **Rejected**       | Not approved during review        |
+| **Hidden**         | Removed from public listings      |
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "No access to this program" | You are not a Program Admin on it. Ask an existing admin to add you. |
-| "We could not load this program. Try again." | A transient failure reading the program. |
+| What you see                                 | What it means                                                        |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| "No access to this program"                  | You are not a Program Admin on it. Ask an existing admin to add you. |
+| "We could not load this program. Try again." | A transient failure reading the program.                             |
 
 ## Related
 

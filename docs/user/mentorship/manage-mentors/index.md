@@ -21,26 +21,35 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 1. Open [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select the program.
 2. Go to the **Mentors** tab.
 3. To bring someone on, send an invitation. They receive an email and answer it in LFX.
-4. To act on a request a mentor raised, use the row action: **Approve**, **Decline** or **Withdraw**.
+4. Use the row action. Which one a row offers depends on the mentor's status:
+
+   | Status              | Row action                                             |
+   | ------------------- | ------------------------------------------------------ |
+   | Requested, Pending  | **Approve** or **Decline**                             |
+   | Invited             | **Revoke invite** — the mentor can no longer accept it |
+   | Approved            | **Remove** — they can request to join again later      |
+   | Declined, Withdrawn | None                                                   |
+
+   Each action asks you to confirm before it is applied.
 
 The tab is paged ten mentors at a time.
 
 ## Mentor status
 
-| Status | What it means |
-|---|---|
-| **Requested** | The mentor asked to join |
-| **Invited** | You invited them; they have not answered |
-| **Pending** | Awaiting a decision |
-| **Approved** | They mentor the program |
-| **Declined** | Not approved, or they declined the invitation |
-| **Withdrawn** | The request or invitation was pulled |
+| Status        | What it means                                 |
+| ------------- | --------------------------------------------- |
+| **Requested** | The mentor asked to join                      |
+| **Invited**   | You invited them; they have not answered      |
+| **Pending**   | Awaiting a decision                           |
+| **Approved**  | They mentor the program                       |
+| **Declined**  | Not approved, or they declined the invitation |
+| **Withdrawn** | The request or invitation was pulled          |
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "We could not load the mentors. Try again." | A transient failure reading the mentor list. |
+| What you see                                        | What it means                                           |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| "We could not load the mentors. Try again."         | A transient failure reading the mentor list.            |
 | The mentor says their invitation link does not work | Invitation links are single use. Send a new invitation. |
 
 ## Related

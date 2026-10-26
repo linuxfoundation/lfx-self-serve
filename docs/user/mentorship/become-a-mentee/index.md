@@ -14,7 +14,7 @@ Registering creates your mentee profile. Program mentors read it when they revie
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
-- You must be 18 or older and able to commit consistent hours for a full term.
+- You must be at least 18, or turn 18 by the time the program starts, and able to commit consistent hours for a full term.
 - Have your introduction, the skills you have, and the skills you want to learn ready.
 
 ## Steps
@@ -23,8 +23,15 @@ Registering creates your mentee profile. Program mentors read it when they revie
 2. Fill in the registration form:
    - **About me** — a short introduction for mentors.
    - **Skills you have** and **skills you want** — add them with the skills picker. You can add up to 100 skills of up to 300 characters each.
-3. Acknowledge the platform terms.
-4. Submit the form.
+   - **Country of residence** — required; the form will not submit without it.
+3. Complete the **Demographics** section if you wish. It is optional, and you can answer "prefer not to say" to any of it.
+4. Tick each statement under **Eligibility Requirements**:
+   - You are at least 18, or will be by the time the program starts.
+   - You are eligible to work in the country you live in for the duration of the mentorship.
+   - You do not have another mentee profile and are not taking part in another Linux Foundation mentorship program.
+5. Read the export-controls statement and confirm it applies to you.
+6. Acknowledge the platform terms.
+7. Submit the form.
 
 ## After completing
 
@@ -34,11 +41,12 @@ If you already have a mentee profile, opening `/mentorship/mentee` does not show
 
 ## Troubleshooting
 
-| What you see | What it means |
-|---|---|
-| "Your profile is in conflict with an existing record." | Refresh the page and try again. |
-| "You are viewing as another user, so registration is read-only." | You are in a view-as session; leave it and register as yourself. |
-| "Check your registration" | A required field is missing or a skill exceeds the limits. |
+| What you see                                                                                      | What it means                                                    |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| "Your profile is in conflict with an existing record."                                            | Refresh the page and try again.                                  |
+| "You are viewing as another user, so registration is read-only."                                  | You are in a view-as session; leave it and register as yourself. |
+| "Check your registration"                                                                         | A required field is missing or a skill exceeds the limits.       |
+| "We could not accept your registration. Please confirm the eligibility statements and try again." | One of the Eligibility Requirements is not ticked.               |
 
 ## Related
 

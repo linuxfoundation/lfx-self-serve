@@ -21,23 +21,33 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee 
 2. Review each application card. It names the program and the term, and shows a status badge.
 3. Read the progress line. Its label depends on where the application stands:
 
-    | Your application | Progress shows |
-    |---|---|
-    | Awaiting review, or prerequisites in progress | **Prerequisite Tasks** |
-    | Accepted and running, or graduated | **Tasks** |
+   | Your application                              | Progress shows         |
+   | --------------------------------------------- | ---------------------- |
+   | Awaiting review, or prerequisites in progress | **Prerequisite Tasks** |
+   | Accepted and running, or graduated            | **Tasks**              |
 
-4. Check **Application History** for earlier applications and their outcomes.
+4. Scroll to **Past Applications** for applications that did not lead to a place, and their outcomes.
 
 ## Status badges
 
-| Badge | Meaning |
-|---|---|
-| **In Review** | Submitted; the program's mentors have not decided yet |
-| **Accepted** | You have a place on the term |
-| **Not Selected** | The program did not take you on for this term |
-| **Withdrawn** | The application was pulled |
-| **Graduated** | You finished the term |
-| **On Hold** | The program has parked the application |
+The badge on an application card is one of four:
+
+| Badge               | Meaning                                                                         |
+| ------------------- | ------------------------------------------------------------------------------- |
+| **In Progress**     | Submitted, with prerequisite tasks still to finish                              |
+| **Awaiting Review** | Every prerequisite is submitted, or none was assigned; the program decides next |
+| **Active**          | You have a place on the term and it is running                                  |
+| **Graduated**       | You finished the term                                                           |
+
+Applications that did not lead to a place are not shown as cards. They appear under **Past Applications**, lower down the same tab:
+
+| Outcome          | Meaning                                       |
+| ---------------- | --------------------------------------------- |
+| **Not selected** | The program did not take you on for this term |
+| **Withdrawn**    | You pulled the application                    |
+| **On Hold**      | The program has parked the application        |
+
+**Application History** on [Mentee Profile](../mentee-profile/) is a separate, fuller list, and labels the same applications differently: **In Review**, **Accepted**, **Not Selected**, **Withdrawn**, **Graduated** and **On Hold**.
 
 If you have not applied to anything yet, the tab says so and points you at **Find a Program**.
 
