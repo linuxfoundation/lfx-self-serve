@@ -595,9 +595,16 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
     value:
 
-  # Offers a stored-image LIBRARY in the Google section of the create flow: images uploaded to the
-  # brief (the same PNG/JPEG upload REDDIT_ASSETS offers, into the same library) and named by asset
-  # id in the Google creative fields, instead of pasted image URLs.
+  # Will offer a stored-image LIBRARY in the Google section of the create flow: images uploaded to
+  # the brief (the same PNG/JPEG upload REDDIT_ASSETS offers, into the same library) and named by
+  # asset id in the Google creative fields, instead of pasted image URLs.
+  #
+  # NOTHING READS IT YET — setting it changes nothing an operator can see. The Google creative
+  # fields carry image URLs only at this release, with no asset-id key for a stored image to go in,
+  # so the library control this gates does not exist; the flag is wired ahead of it. What it DOES
+  # already do is admit an upload into the brief's library on its own authority (the shared upload
+  # route accepts either asset flag), which is why it is worth setting on a deployment that is
+  # staging images before the control ships.
   #
   # A CAPABILITY flag like REDDIT_ASSETS, but it asserts something DIFFERENT. It does NOT say URL
   # signing is configured: Google's dispatch path reads the stored bytes and POSTs them to the
@@ -611,7 +618,8 @@ environment:
   # independently: one flag would mean Reddit asset upload could never be enabled without Google's,
   # or the reverse.
   #
-  # Off (the default), the Google library controls are hidden; the pasted image URL stays offered.
+  # Off (the default), the Google library controls stay hidden; the pasted image URL stays offered.
+  # On, at this release, so does the pasted image URL — see the "nothing reads it yet" note above.
   # It does NOT gate the brief's asset list, get, plan and delete routes — those are addressed by a
   # campaign-service brief and gate on BRIEFS like every other brief route, so a deployment can
   # always see and prune the library it already holds. Same accepted values as the flags above.

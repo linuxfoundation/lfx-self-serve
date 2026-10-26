@@ -4543,9 +4543,14 @@ export interface CampaignListResult {
    * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
    * that the deployed campaign-service resolves Google creative asset ids at all — an older one
    * ignores them and dispatches a campaign with no images, reporting success. The legacy creator
-   * never reads them either, hence the cutover half. Modelled on the client like the capabilities
-   * above (`boolean | null`, `null` for unanswered), which withholds the control; the pasted image
-   * URL stays offered either way.
+   * never reads them either, hence the cutover half.
+   *
+   * NOTHING IN THE CLIENT READS THIS YET. It is served ahead of the Google creative asset-id field:
+   * at this commit `GoogleDemandGenCreative`, `GooglePerformanceMaxCreative` and
+   * `GoogleDisplayCreative` carry image URLs only, with no asset-id key for a stored image to go
+   * in, so the library control it gates does not exist. The Reddit sibling's client model — `boolean | null` on the component, `null` for
+   * unanswered, withholding the control — is the shape to mirror when that field lands; until then
+   * the Google section offers the pasted image URL and nothing else, flag on or off.
    */
   googleAssetUploadEnabled: boolean;
   /**

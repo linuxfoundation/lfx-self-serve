@@ -248,7 +248,14 @@ export enum ServerFeatureFlag {
    * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
    * no creative key at all, so the capability the client sees
    * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
-   * controls are hidden, and the upload route accepts a request only on the Reddit flag's authority.
+   * controls stay hidden, and the upload route accepts a request only on the Reddit flag's
+   * authority.
+   *
+   * NOTHING READS IT YET. At this commit the Google creative interfaces carry image URLs only,
+   * with no asset-id key for a stored image to go in, so the library controls this WILL gate do
+   * not exist and turning it on changes nothing an operator can see. What it already does is admit
+   * an upload into the brief's library on its own authority, which is why it is worth setting on a
+   * deployment staging images ahead of the control.
    * It does NOT gate the brief's asset list, get, plan and delete routes: those are addressed by a
    * campaign-service brief and gate on `CampaignServiceBriefs` like every other brief route, so a
    * deployment running Reddit uploads alone can still read and prune the same library. The pasted

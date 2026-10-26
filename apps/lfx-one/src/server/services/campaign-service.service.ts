@@ -557,6 +557,10 @@ export function canUseRedditCreativeAssets(): boolean {
  * It gates the upload route alongside `canUseRedditCreativeAssets` — either flag admits an upload,
  * because the stored library is one library and either platform having a use for it is reason enough
  * to let an image into it.
+ *
+ * At this commit the upload route is ALL it gates: the Google creative interfaces carry image URLs
+ * only, with no asset-id key, so there is no create field for a true answer to unlock yet. It is
+ * served to the client as `googleAssetUploadEnabled` and wired ahead of that field.
  */
 export function canUseGoogleCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleAssets);
@@ -585,6 +589,7 @@ function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, 
     asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
     isCreativeAssetMimeType(asset.mime_type) &&
     typeof asset.byte_size === 'number' &&
+    Number.isFinite(asset.byte_size) &&
     typeof asset.checksum === 'string';
   if (!usable) {
     return null;
@@ -598,11 +603,13 @@ function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, 
     byteSize: asset.byte_size,
     checksum: asset.checksum,
   };
-  // `Minimum(1)` upstream, so a 0 or a negative is not a dimension this service recorded.
-  if (typeof asset.width === 'number' && asset.width >= 1) {
+  // `Minimum(1)` upstream, so a 0 or a negative is not a dimension this service recorded. `>= 1`
+  // does NOT close the degenerate cases on its own — `Infinity >= 1` is true — so the finiteness
+  // check carries its own weight here, as it does on `byte_size` above.
+  if (typeof asset.width === 'number' && Number.isFinite(asset.width) && asset.width >= 1) {
     stored.width = asset.width;
   }
-  if (typeof asset.height === 'number' && asset.height >= 1) {
+  if (typeof asset.height === 'number' && Number.isFinite(asset.height) && asset.height >= 1) {
     stored.height = asset.height;
   }
   return stored;
@@ -627,7 +634,9 @@ function toCreativeSlotAssignment(entry: CampaignServiceCreativeAssetPlan['assig
     Array.isArray(entry.asset_ids) &&
     entry.asset_ids.every((id) => typeof id === 'string') &&
     typeof entry.min_count === 'number' &&
-    typeof entry.max_count === 'number';
+    Number.isFinite(entry.min_count) &&
+    typeof entry.max_count === 'number' &&
+    Number.isFinite(entry.max_count);
   if (!usable) {
     return null;
   }
@@ -662,6 +671,7 @@ function toCreativeSlotGap(entry: CampaignServiceCreativeAssetPlan['gaps'][numbe
     entry.platform.length > 0 &&
     typeof entry.label === 'string' &&
     typeof entry.need === 'number' &&
+    Number.isFinite(entry.need) &&
     typeof entry.reason === 'string';
   if (!usable) {
     return null;
@@ -2226,9 +2236,13 @@ export class CampaignServiceClient {
     const countable =
       Array.isArray(list?.assets) &&
       typeof list.count === 'number' &&
+      Number.isFinite(list.count) &&
       typeof list.count_limit === 'number' &&
+      Number.isFinite(list.count_limit) &&
       typeof list.bytes_used === 'number' &&
-      typeof list.bytes_limit === 'number';
+      Number.isFinite(list.bytes_used) &&
+      typeof list.bytes_limit === 'number' &&
+      Number.isFinite(list.bytes_limit);
     const assets = countable ? list.assets.map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
     if (!countable || assets.some((asset) => asset === null)) {
       logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {

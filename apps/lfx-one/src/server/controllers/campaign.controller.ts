@@ -2212,6 +2212,12 @@ export class CampaignController {
     // can use an image on either platform is reason enough to let it in. Refusing unless Reddit's
     // flag were on would mean a Google-only deployment could read and delete the library it is not
     // allowed to add to.
+    //
+    // The Google arm runs AHEAD of the field that will consume it: at this commit the Google
+    // creative interfaces carry image URLs only, so an asset uploaded on GOOGLE_ASSETS alone is
+    // stored, listed, planned and deletable but cannot yet be named in a Google create. That is
+    // the intended order — the library has to exist before the asset-id field can reference it —
+    // and it costs an operator nothing worse than a stored image they can prune.
     if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets()) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
       return;
@@ -6352,6 +6358,12 @@ export class CampaignController {
       return null;
     }
 
+    // DELIBERATELY stricter than `uploadCreativeAsset`, which takes any non-empty `brief_id`. The
+    // upload is a write the operator just made a brief for, and a wrong id there is upstream's
+    // 404 to give; these four are reads whose only caller is the campaigns page, which always has
+    // the UUID campaign-service minted. Spending the shape check here keeps a malformed id out of
+    // a path segment without an upstream round trip, and the upload stays lenient rather than
+    // being tightened in a PR that does not own it.
     const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
     if (!isCampaignServiceJobId(briefId)) {
       next(

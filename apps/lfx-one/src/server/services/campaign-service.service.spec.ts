@@ -5877,6 +5877,10 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       ['a recorded pair', { width: 1200, height: 628 }, { width: 1200, height: 628 }],
       ['no dimensions at all', {}, {}],
       ['a zero, which Minimum(1) says this service never recorded', { width: 0, height: 0 }, {}],
+      // `Infinity >= 1` is true, so the minimum alone does not close this; `JSON.parse` cannot
+      // produce it, but the guard costs nothing and matches how this file checks every other
+      // number.
+      ['a non-finite pair', { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY }, {}],
     ])('carries %s through without inventing one', async (_label, dimensions, expected) => {
       proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [{ ...upstreamAsset, ...dimensions }] });
 
@@ -5893,6 +5897,8 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       ['an asset typed outside the allowlist', { ...upstreamList, assets: [{ ...upstreamAsset, mime_type: 'image/gif' }] }],
       ['no assets array', { count: 0, count_limit: 100, bytes_used: 0, bytes_limit: 1 }],
       ['no quota numbers', { assets: [] }],
+      ['an asset sized by a non-finite number', { ...upstreamList, assets: [{ ...upstreamAsset, byte_size: Number.POSITIVE_INFINITY }] }],
+      ['a non-finite quota number', { ...upstreamList, bytes_limit: Number.NaN }],
     ])('refuses a library naming %s with a 502 and a message an operator can act on', async (_label, body) => {
       proxyRequest.mockResolvedValueOnce(body);
 
@@ -6033,6 +6039,8 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       ['an assignment with no slot_key', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], slot_key: '' }] }],
       ['an assignment with non-string asset ids', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], asset_ids: [1] }] }],
       ['a gap with no numeric need', { ...upstreamPlan, gaps: [{ ...upstreamPlan.gaps[0], need: 'one' }] }],
+      ['a gap with a non-finite need', { ...upstreamPlan, gaps: [{ ...upstreamPlan.gaps[0], need: Number.POSITIVE_INFINITY }] }],
+      ['an assignment with a non-finite max_count', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], max_count: Number.NaN }] }],
       ['no unclassified array', { ...upstreamPlan, unclassified: undefined }],
     ])('refuses a plan naming %s with a 502 and a message an operator can act on', async (_label, body) => {
       proxyRequest.mockResolvedValueOnce(body);
