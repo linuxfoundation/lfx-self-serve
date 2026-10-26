@@ -71,7 +71,7 @@ describe('OrgLensEmployerAffiliationService', () => {
       accountId: 'acc-1',
       hasActiveMembership: false,
     });
-    expect(execute).toHaveBeenCalledWith(expect.stringContaining('ORG_LENS_ACCOUNT_CONTEXT'), ['Bank Pekao']);
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('ORG_LENS_ACCOUNT_CONTEXT'), ['BANKPEKAO']);
   });
 
   it('reports an employer with active memberships as a member', async () => {
@@ -111,7 +111,7 @@ describe('OrgLensEmployerAffiliationService', () => {
     execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Current Employer', ACTIVE_MEMBERSHIP_COUNT: 1 }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ employerName: 'Current Employer' });
-    expect(execute).toHaveBeenCalledWith(expect.anything(), ['Current Employer']);
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['CURRENTEMPLOYER']);
   });
 
   // A day job alongside a foundation or board role is two open-ended entries for one person.
@@ -129,7 +129,7 @@ describe('OrgLensEmployerAffiliationService', () => {
       accountId: 'acc-lf',
       hasActiveMembership: true,
     });
-    expect(execute).toHaveBeenCalledWith(expect.anything(), ['Bank Pekao', 'The Linux Foundation']);
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['BANKPEKAO', 'THELINUXFOUNDATION']);
   });
 
   it('asks about every current employer in one query', async () => {
@@ -141,7 +141,7 @@ describe('OrgLensEmployerAffiliationService', () => {
       accountId: 'acc-a',
       hasActiveMembership: false,
     });
-    expect(execute).toHaveBeenCalledWith(expect.stringContaining('IN (UPPER(TRIM(?)), UPPER(TRIM(?)))'), ['Alpha', 'Beta']);
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('IN (?, ?)'), ['ALPHA', 'BETA']);
   });
 
   it('names the first current employer when none of them is a member', async () => {
@@ -160,7 +160,51 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     await service.getEmployerAffiliation(REQ, 'lfid');
 
-    expect(execute).toHaveBeenCalledWith(expect.anything(), ['Acme']);
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['ACME']);
+  });
+
+  // An exact-name miss would state "not a member" about a company that is one. A trailing legal form
+  // is the one part of a company name routinely written on one side and omitted on the other.
+  it('matches a member account whose name carries a legal-form suffix the profile omits', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Acme')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme, LLC', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
+      accountId: 'acc-acme',
+      hasActiveMembership: true,
+    });
+  });
+
+  it('matches when the profile carries the legal form and the account does not', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Acme Inc.')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme', ACTIVE_MEMBERSHIP_COUNT: 1 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ hasActiveMembership: true });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['ACME']);
+  });
+
+  // The SQL and the JS normalization are twins; a drift between them fails silently, as a member
+  // company reading as a non-member. This pins the shape both sides produce.
+  it('compares both sides on the same normalized key', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('  Bank   Pekao S.A. ')]);
+    execute.mockResolvedValue(rows());
+
+    await service.getEmployerAffiliation(REQ, 'lfid');
+
+    const [query, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['BANKPEKAO']);
+    expect(query).toContain("REGEXP_REPLACE(UPPER(c.ACCOUNT_NAME), '[.,'']+', '')");
+    expect(query).toContain("$', '')");
+  });
+
+  // Only one suffix, and never the whole name: "Limited" alone is a company, not a legal form.
+  it('does not strip a legal form that is the entire name', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Limited')]);
+    execute.mockResolvedValue(rows());
+
+    await service.getEmployerAffiliation(REQ, 'lfid');
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['LIMITED']);
   });
 
   // Duplicate account names must not let an empty row downgrade a member company.

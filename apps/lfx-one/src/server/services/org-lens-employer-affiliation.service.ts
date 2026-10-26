@@ -12,9 +12,68 @@ import { SnowflakeService } from './snowflake.service';
 /** Guards the `IN` list: far above any real number of concurrent jobs, and bounded all the same. */
 const MAX_CURRENT_EMPLOYERS = 10;
 
-/** The same shape the query compares on, so a row can be matched back to the name that asked for it. */
-function normalizeName(name: string): string {
-  return name.trim().toUpperCase();
+/**
+ * Legal-form suffixes dropped before an employer name is compared to a Salesforce account name. A
+ * profile says "Acme"; Salesforce says "Acme LLC". Without this, that member company misses its own
+ * account and its employee is told their employer is not a member — the wrong copy, stated definitively.
+ *
+ * Only these, and only one of them, and only at the end: a trailing legal form is the one part of a
+ * company name that is routinely written or omitted at will. Anything more aggressive starts merging
+ * genuinely different companies, and a wrong *member* answer silently hides this state.
+ */
+const LEGAL_FORM_SUFFIXES = [
+  'INC',
+  'INCORPORATED',
+  'LLC',
+  'LLP',
+  'LTD',
+  'LIMITED',
+  'CORP',
+  'CORPORATION',
+  'CO',
+  'COMPANY',
+  'GMBH',
+  'AG',
+  'SA',
+  'SAS',
+  'SPA',
+  'BV',
+  'NV',
+  'PLC',
+  'PTY',
+  'OY',
+  'AB',
+  'AS',
+  'KK',
+  'SRL',
+  'SL',
+];
+
+/**
+ * The shape both sides of the comparison are reduced to: upper-cased, punctuation dropped, one
+ * trailing legal form removed, spaces squeezed out. `matchKeyExpression` is the SQL twin of this —
+ * the two must stay in step, or a match silently fails and a member company reads as a non-member.
+ */
+function employerMatchKey(name: string): string {
+  const words = name
+    .toUpperCase()
+    // Dots, commas and apostrophes join what they sit between ("S.A." is one word); every other
+    // separator splits it ("Acme-Corp" is two). Getting this backwards loses the trailing legal form.
+    .replace(/[.,']+/g, '')
+    .replace(/[^A-Z0-9 ]+/g, ' ')
+    .trim()
+    .split(/ +/)
+    .filter(Boolean);
+  if (words.length > 1 && LEGAL_FORM_SUFFIXES.includes(words[words.length - 1])) {
+    words.pop();
+  }
+  return words.join('');
+}
+
+/** The SQL twin of {@link employerMatchKey}, applied to an account-name column. */
+function matchKeyExpression(column: string): string {
+  const words = `REGEXP_REPLACE(REGEXP_REPLACE(UPPER(${column}), '[.,'']+', ''), '[^A-Z0-9 ]+', ' ')`;
+  return `REGEXP_REPLACE(REGEXP_REPLACE(TRIM(${words}), ' +(${LEGAL_FORM_SUFFIXES.join('|')})$', ''), ' +', '')`;
 }
 
 interface RawEmployerMembershipRow {
@@ -37,10 +96,12 @@ interface RawEmployerMembershipRow {
  *
  * Resolution is by account name, because the only employer identifier a profile carries is a CDP
  * organization id and no platinum relation maps CDP org ids to Salesforce accounts
- * (`ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is a different identifier). A name that
- * matches no Salesforce account answers `hasActiveMembership: false` — an employer with a membership
- * always has an account — and where several accounts share a name the one with memberships wins, so a
- * duplicate can never downgrade a member company to the non-member copy.
+ * (`ACCOUNT_TO_CDEV_ORG_MAPPING` maps Crowd.dev org ids, which is a different identifier). Names are
+ * compared on {@link employerMatchKey} rather than literally, so a trailing legal form written on one
+ * side and not the other ("Acme" / "Acme LLC") still finds the account. A name that matches no account
+ * at all answers `hasActiveMembership: false` — an employer with a membership always has a Salesforce
+ * account — and where several accounts match, the one with memberships wins, so neither a duplicate
+ * nor a second current employer can downgrade a member company to the non-member copy.
  *
  * TODO(#4314 follow-up): replace the name match with a domain/identifier resolution once member-service
  * exposes an org lookup the BFF can call for an arbitrary employer.
@@ -63,7 +124,7 @@ export class OrgLensEmployerAffiliationService {
     }
 
     const rows = await this.fetchEmployerMembershipRows(employerNames);
-    const byName = new Map(rows.map((row) => [normalizeName(row.ACCOUNT_NAME), row]));
+    const byMatchKey = new Map(rows.map((row) => [employerMatchKey(row.ACCOUNT_NAME), row]));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
     const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
@@ -77,7 +138,7 @@ export class OrgLensEmployerAffiliationService {
 
     return {
       employerName,
-      accountId: (member ?? byName.get(normalizeName(employerName)))?.ACCOUNT_ID ?? null,
+      accountId: (member ?? byMatchKey.get(employerMatchKey(employerName)))?.ACCOUNT_ID ?? null,
       hasActiveMembership: !!member,
     };
   }
@@ -100,21 +161,23 @@ export class OrgLensEmployerAffiliationService {
     const names = new Map<string, string>();
     for (const experience of experiences) {
       const name = experience.endDate ? '' : experience.organization?.trim();
-      if (name && !names.has(normalizeName(name))) {
-        names.set(normalizeName(name), name);
+      const key = name ? employerMatchKey(name) : '';
+      if (name && key && !names.has(key)) {
+        names.set(key, name);
       }
     }
     return [...names.values()].slice(0, MAX_CURRENT_EMPLOYERS);
   }
 
   /**
-   * The accounts these names resolve to, with each one's active-membership count. `ORDER BY` puts the
-   * accounts that hold memberships first, so neither a duplicated company name nor a second current
-   * employer can leave a member company behind a non-member row.
+   * The accounts these names resolve to, with each one's active-membership count. Both sides are
+   * compared on {@link employerMatchKey}, so "Acme" finds "Acme LLC". `ORDER BY` puts the accounts
+   * that hold memberships first, so neither a duplicated company name nor a second current employer
+   * can leave a member company behind a non-member row.
    */
   private async fetchEmployerMembershipRows(employerNames: string[]): Promise<RawEmployerMembershipRow[]> {
     const schema = resolveLfxOnePlatinumSchema();
-    const placeholders = employerNames.map(() => 'UPPER(TRIM(?))').join(', ');
+    const placeholders = employerNames.map(() => '?').join(', ');
     const query = `
       SELECT
         c.ACCOUNT_ID AS ACCOUNT_ID,
@@ -123,12 +186,12 @@ export class OrgLensEmployerAffiliationService {
       FROM ${schema}.ORG_LENS_ACCOUNT_CONTEXT c
       LEFT JOIN ${schema}.ORG_LENS_MEMBERSHIPS_SUMMARY m
         ON m.ACCOUNT_ID = c.ACCOUNT_ID
-      WHERE UPPER(TRIM(c.ACCOUNT_NAME)) IN (${placeholders})
+      WHERE ${matchKeyExpression('c.ACCOUNT_NAME')} IN (${placeholders})
       GROUP BY c.ACCOUNT_ID, c.ACCOUNT_NAME
       ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC
     `;
 
-    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, employerNames);
+    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, employerNames.map(employerMatchKey));
     return result.rows;
   }
 }
