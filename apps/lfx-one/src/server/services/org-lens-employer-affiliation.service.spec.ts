@@ -216,7 +216,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     const [query, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['BANKPEKAO']);
-    expect(query).toContain("REGEXP_REPLACE(UPPER(c.ACCOUNT_NAME), '[.,'']+', '')");
+    expect(query).toContain("REGEXP_REPLACE(UPPER(c.ACCOUNT_NAME), '[.,''/]+', '')");
     expect(query).toContain("$', '')");
   });
 
@@ -228,6 +228,51 @@ describe('OrgLensEmployerAffiliationService', () => {
     await service.getEmployerAffiliation(REQ, 'lfid');
 
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['LIMITED']);
+  });
+
+  // A/S (Danish, Norwegian) and S/A (Brazilian) are legal forms written with a slash; splitting on it
+  // would hide the suffix and miss the member account.
+  it('matches a slash-written legal form the profile omits', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Maersk')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-mae', ACCOUNT_NAME: 'Maersk A/S', ACTIVE_MEMBERSHIP_COUNT: 1 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ hasActiveMembership: true });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['MAERSK']);
+  });
+
+  it('strips a slash-written legal form from the profile side too', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Petrobras S/A')]);
+    execute.mockResolvedValue(rows());
+
+    await service.getEmployerAffiliation(REQ, 'lfid');
+
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['PETROBRAS']);
+  });
+
+  // The key is Latin-only, so a name in another script reduces to nothing. Keeping the affiliation
+  // matters more than resolving it: dropping it would answer `employerName: null` and send someone who
+  // does have an employer back to the "add an affiliation" copy — the loop #4314 exists to end.
+  it('keeps a non-Latin employer name instead of answering that there is none', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('架空会社')]);
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
+      employerName: '架空会社',
+      accountId: null,
+      hasActiveMembership: false,
+    });
+    // An empty key would match any account whose own name is all punctuation, so it is never asked.
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('still asks about the resolvable employers alongside a non-Latin one', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('架空会社'), experience('The Linux Foundation')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-lf', ACCOUNT_NAME: 'The Linux Foundation', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
+      employerName: 'The Linux Foundation',
+      hasActiveMembership: true,
+    });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), ['THELINUXFOUNDATION']);
   });
 
   // Duplicate account names must not let an empty row downgrade a member company.

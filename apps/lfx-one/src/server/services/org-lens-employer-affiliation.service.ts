@@ -57,9 +57,11 @@ const LEGAL_FORM_SUFFIXES = [
 function employerMatchKey(name: string): string {
   const words = name
     .toUpperCase()
-    // Dots, commas and apostrophes join what they sit between ("S.A." is one word); every other
-    // separator splits it ("Acme-Corp" is two). Getting this backwards loses the trailing legal form.
-    .replace(/[.,']+/g, '')
+    // Dots, commas, apostrophes and slashes join what they sit between, so "S.A." and the Nordic
+    // "A/S" are each one word; every other separator splits it ("Acme-Corp" is two). This only
+    // decides whether a trailing legal form is seen as its own word — the final step squeezes spaces
+    // out either way — so a joiner is the safe choice: it can find a suffix a splitter would miss.
+    .replace(/[.,'/]+/g, '')
     .replace(/[^A-Z0-9 ]+/g, ' ')
     .trim()
     .split(/ +/)
@@ -72,7 +74,7 @@ function employerMatchKey(name: string): string {
 
 /** The SQL twin of {@link employerMatchKey}, applied to an account-name column. */
 function matchKeyExpression(column: string): string {
-  const words = `REGEXP_REPLACE(REGEXP_REPLACE(UPPER(${column}), '[.,'']+', ''), '[^A-Z0-9 ]+', ' ')`;
+  const words = `REGEXP_REPLACE(REGEXP_REPLACE(UPPER(${column}), '[.,''/]+', ''), '[^A-Z0-9 ]+', ' ')`;
   return `REGEXP_REPLACE(REGEXP_REPLACE(TRIM(${words}), ' +(${LEGAL_FORM_SUFFIXES.join('|')})$', ''), ' +', '')`;
 }
 
@@ -103,8 +105,13 @@ interface RawEmployerMembershipRow {
  * account — and where several accounts match, the one with memberships wins, so neither a duplicate
  * nor a second current employer can downgrade a member company to the non-member copy.
  *
+ * The key is built from Latin letters and digits, so a name written entirely in another script
+ * reduces to nothing and matches no account. That caller keeps their employer and is told it is not
+ * a member — the same answer any unmatched name gets, and wrong in the same way for the same reason.
+ *
  * TODO(#4314 follow-up): replace the name match with a domain/identifier resolution once member-service
- * exposes an org lookup the BFF can call for an arbitrary employer.
+ * exposes an org lookup the BFF can call for an arbitrary employer. That closes both this and the
+ * script limitation above, which is why neither is worth a wider fuzzy match in the meantime.
  */
 export class OrgLensEmployerAffiliationService {
   private snowflakeService: SnowflakeService;
@@ -123,7 +130,12 @@ export class OrgLensEmployerAffiliationService {
       return { employerName: null, accountId: null, hasActiveMembership: false };
     }
 
-    const rows = await this.fetchEmployerMembershipRows(employerNames);
+    // A name with no Latin characters reduces to an empty key, which would match any account whose
+    // own name is all punctuation. Such a name is kept as an affiliation but never asked about; the
+    // caller is then told their employer is not a member, which is the same answer any unmatched
+    // name gets. See the resolution note in this class's doc comment.
+    const matchKeys = [...new Set(employerNames.map(employerMatchKey).filter(Boolean))];
+    const rows = matchKeys.length > 0 ? await this.fetchEmployerMembershipRows(matchKeys) : [];
     const byMatchKey = new Map(rows.map((row) => [employerMatchKey(row.ACCOUNT_NAME), row]));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
@@ -166,8 +178,15 @@ export class OrgLensEmployerAffiliationService {
     const names = new Map<string, string>();
     for (const experience of experiences) {
       const name = experience.endDate ? '' : experience.organization?.trim();
-      const key = name ? employerMatchKey(name) : '';
-      if (name && key && !names.has(key)) {
+      if (!name) {
+        continue;
+      }
+      // Deduplicate on the match key where there is one, and on the name itself where there is not.
+      // A name that reduces to an empty key — one written entirely in a non-Latin script — is still
+      // an affiliation: dropping it here would answer `employerName: null` and send someone who does
+      // have an employer back to the "add an affiliation" copy, the loop this state exists to end.
+      const key = employerMatchKey(name) || name.toUpperCase();
+      if (!names.has(key)) {
         names.set(key, name);
       }
     }
@@ -175,14 +194,14 @@ export class OrgLensEmployerAffiliationService {
   }
 
   /**
-   * The accounts these names resolve to, with each one's active-membership count. Both sides are
-   * compared on {@link employerMatchKey}, so "Acme" finds "Acme LLC". `ORDER BY` puts the accounts
+   * The accounts these {@link employerMatchKey} keys resolve to, with each one's active-membership
+   * count. The account side is reduced to the same key in SQL, so "Acme" finds "Acme LLC". `ORDER BY` puts the accounts
    * that hold memberships first, so neither a duplicated company name nor a second current employer
    * can leave a member company behind a non-member row.
    */
-  private async fetchEmployerMembershipRows(employerNames: string[]): Promise<RawEmployerMembershipRow[]> {
+  private async fetchEmployerMembershipRows(matchKeys: string[]): Promise<RawEmployerMembershipRow[]> {
     const schema = resolveLfxOnePlatinumSchema();
-    const placeholders = employerNames.map(() => '?').join(', ');
+    const placeholders = matchKeys.map(() => '?').join(', ');
     const query = `
       SELECT
         c.ACCOUNT_ID AS ACCOUNT_ID,
@@ -196,7 +215,7 @@ export class OrgLensEmployerAffiliationService {
       ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC
     `;
 
-    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, employerNames.map(employerMatchKey));
+    const result = await this.snowflakeService.execute<RawEmployerMembershipRow>(query, matchKeys);
     return result.rows;
   }
 }
