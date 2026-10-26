@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // this spec's assertions asserting a value the product no longer uses.
 import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
 import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
   EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
   EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
@@ -133,7 +138,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', google: 'fa-brands fa-google' },
   CDP_PLATFORM_TO_TYPE_MAP: cdpPlatformToTypeMap,
   CDP_TO_AUTH0_PROVIDER_MAP: {},
-  EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   EMAIL_VERIFICATION_FAILED_ERROR,
@@ -2354,5 +2363,330 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
     expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
     expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+});
+
+// auth-service (lfx-v2-auth-service#114) recognizes an address already connected to the caller when
+// the OTP request carries the caller's own Flow C token, and replies with a token-free success.
+describe('ProfileController — already-connected email (#4253)', () => {
+  const ownedEmail = 'owned@example.test';
+  const alreadyConnectedReply = { success: true, message: 'email already connected to this account', data: { status: 'already_connected' } };
+  let controller: ProfileController;
+
+  function verifyReq(): any {
+    return buildReq({
+      path: '/api/profile/identities/email/verify',
+      body: { email: ownedEmail, otp: '123456' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+    });
+  }
+
+  function expectNoWrites(): void {
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+    expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
+    expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+    expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', '');
+    isImpersonatingMock.mockReturnValue(false);
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
+    getEffectiveUsernameMock.mockReturnValue('user-1');
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('synthetic-user-mgmt-token');
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    userSvc.syncVerifiedEmailToUserService.mockResolvedValue(true);
+    socialVerificationSvc.getPendingSocialConnect.mockReturnValue(undefined);
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  describe('verifyAndLinkEmail', () => {
+    it('returns the already-connected success without linking, syncing, or touching CDP', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue(alreadyConnectedReply);
+      const req = verifyReq();
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(req, res, vi.fn());
+
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '123456', 'synthetic-user-mgmt-token');
+      expect(res.status).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, status: EMAIL_ALREADY_CONNECTED_STATUS, message: EMAIL_ALREADY_CONNECTED_MESSAGE });
+      expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', expect.any(Number), { status: EMAIL_ALREADY_CONNECTED_STATUS });
+      expect(generateM2MTokenMock).not.toHaveBeenCalled();
+      expectNoWrites();
+    });
+
+    it('sends the user token and links a new address exactly as before, without a status', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      const req = verifyReq();
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(req, res, vi.fn());
+
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledWith(req, ownedEmail, '123456', 'synthetic-user-mgmt-token');
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(req, 'synthetic-user-mgmt-token', 'synthetic-identity-token');
+      expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
+      expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: 'Email identity verified and linked successfully' });
+    });
+
+    it('keeps the legacy fallback tokenless: never forwards the M2M link credential to OTP verification', async () => {
+      profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+      generateM2MTokenMock.mockResolvedValue('synthetic-m2m-token');
+      vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', 'https://issuer.example.test/');
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      const req = verifyReq();
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(req, res, vi.fn());
+
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '123456', undefined);
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledWith(req, 'synthetic-m2m-token', 'synthetic-identity-token');
+    });
+
+    it('treats a status-only success on the tokenless fallback as malformed (token_missing)', async () => {
+      profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+      generateM2MTokenMock.mockResolvedValue('synthetic-m2m-token');
+      vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', 'https://issuer.example.test/');
+      emailVerificationSvc.verifyOtp.mockResolvedValue(alreadyConnectedReply);
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(verifyReq(), res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'token_missing' }));
+      expectNoWrites();
+    });
+
+    it.each([{ status: 'connected' }, { status: 'ALREADY_CONNECTED' }, {}])('rejects a tokenless success with data %j as token_missing', async (data) => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data });
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(verifyReq(), res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'token_missing' }));
+      expectNoWrites();
+    });
+
+    it('never treats an unsuccessful reply carrying the status as success (floor-held generic 400)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'invalid code', data: { status: 'already_connected' } });
+      const res = buildRes();
+
+      const pending = controller.verifyAndLinkEmail(verifyReq(), res, vi.fn());
+      await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS);
+      await pending;
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(400);
+      expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
+      expectNoWrites();
+    });
+
+    it('requires management authorization before consuming the OTP', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(null);
+      const req = verifyReq();
+      req.appSession = {};
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
+      expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+      expect(req.appSession.pendingEmailVerification).toEqual({ email: ownedEmail, otp: '123456' });
+    });
+
+    it('keeps service unavailability a retryable 503', async () => {
+      const response = { success: false, error: 'Service temporarily unavailable', message: 'Try again later' };
+      emailVerificationSvc.verifyOtp.mockResolvedValue(response);
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(verifyReq(), res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(503);
+      expect(res.json).toHaveBeenCalledExactlyOnceWith(response);
+    });
+
+    it('answers a post-proof link conflict with neutral copy that never asserts another account or names the owner', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked', message: 'linked to lf-fixture-owner' });
+      emailVerificationSvc.resolveEmailToUsername.mockResolvedValue('lf-fixture-owner');
+      isIdentityAlreadyLinkedErrorMock.mockReturnValue(true);
+      const res = buildRes();
+
+      await controller.verifyAndLinkEmail(verifyReq(), res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
+      expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+      expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/another account/i);
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain('lf-fixture-owner');
+    });
+  });
+
+  describe('handleProfileAuthCallback with a pending email verification', () => {
+    function callbackReq(appSession: Record<string, unknown> = { pendingEmailVerification: { email: ownedEmail, otp: '654321' } }): any {
+      return buildReq({
+        path: '/api/profile/auth/callback',
+        query: { state: 'state-1', code: 'code-1' },
+        oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+        appSession,
+      });
+    }
+
+    const successRedirect = '/profile/emails?success=profile_token_obtained';
+    const retryRedirect = `${successRedirect}&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_RETRY_REQUIRED_STATUS}`;
+
+    beforeEach(() => {
+      authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+      profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'synthetic-user-mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+      profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    });
+
+    it('recognizes an already-connected address with the stored user token and writes nothing', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue(alreadyConnectedReply);
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(profileAuthSvc.storeManagementToken.mock.invocationCallOrder[0]).toBeLessThan(profileAuthSvc.getManagementToken.mock.invocationCallOrder[0]);
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '654321', 'synthetic-user-mgmt-token');
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${successRedirect}&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_ALREADY_CONNECTED_STATUS}`);
+      expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email already connected to this account');
+      expectNoWrites();
+    });
+
+    it('links a new address with no email outcome marker (unchanged behavior)', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(req, 'synthetic-user-mgmt-token', 'synthetic-identity-token');
+      expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
+    });
+
+    it.each([
+      ['gateway token population', (err: Error) => populateApiGatewayTokenMock.mockRejectedValueOnce(err)],
+      ['v1 email sync', (err: Error) => userSvc.syncVerifiedEmailToUserService.mockRejectedValueOnce(err)],
+    ])('keeps a completed link successful when %s fails, without logging the email', async (_label, arrange) => {
+      const err = new Error('synthetic follow-up failure');
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      arrange(err);
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification follow-up sync failed (non-blocking)', {
+        err,
+      });
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+      expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledTimes(1);
+      expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledWith(req, 'user-1');
+    });
+
+    it('adds no email outcome to an ordinary authorization without a pending verification', async () => {
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(callbackReq({}), res);
+
+      expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+    });
+
+    it('does not consume the code when the user token is unavailable, and drops the attempt with the retry marker', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(null);
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+      expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable');
+      expectNoWrites();
+    });
+
+    it.each([
+      [
+        'an OTP/provider failure',
+        () => emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'failed to exchange OTP for token: invalid code' }),
+      ],
+      ['a service outage', () => emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'Service temporarily unavailable' })],
+      ['a malformed tokenless success', () => emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { status: 'unexpected' } })],
+      ['a thrown verification error', () => emailVerificationSvc.verifyOtp.mockRejectedValue(new Error('boom'))],
+    ])('reports %s with the same generic retry marker and no link', async (_label, arrange) => {
+      arrange();
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledTimes(1);
+      expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(logger.warning).mock.calls[0][3]).not.toHaveProperty('email');
+      expectNoWrites();
+    });
+
+    it('reports a link failure with the retry marker and skips the follow-up writes', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledTimes(1);
+      expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
+      expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification link failed', {
+        error: 'email already linked',
+      });
+    });
+
+    it('never replays the attempt: a second callback finds nothing pending', async () => {
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'expired otp' });
+      const req = callbackReq();
+
+      await controller.handleProfileAuthCallback(req, buildRes());
+      const secondRes = buildRes();
+      await controller.handleProfileAuthCallback(callbackReq(req.appSession), secondRes);
+
+      expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledTimes(1);
+      expect(secondRes.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+    });
+
+    it('leaves the pending attempt untouched while impersonating', async () => {
+      isImpersonatingMock.mockReturnValue(true);
+      const req = callbackReq();
+      const res = buildRes();
+
+      await controller.handleProfileAuthCallback(req, res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
+      expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+      expect(req.appSession.pendingEmailVerification).toEqual({ email: ownedEmail, otp: '654321' });
+    });
   });
 });

@@ -229,6 +229,41 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
 
   /**
+   * Offers a stored-image LIBRARY in the Google creative section — images uploaded to the brief and
+   * named by asset id in the Google creative fields, instead of pasted image URLs.
+   *
+   * A CAPABILITY flag like `CampaignServiceRedditAssets`, but it asserts something DIFFERENT, and
+   * the difference matters enough to state rather than inherit. It does NOT say URL signing is
+   * configured: Google's dispatch path reads the stored bytes and POSTs them base64-encoded to
+   * `assets:mutate`, so no URL ever leaves the service and the signing settings are irrelevant to
+   * it (`internal/dispatch/googleads_creative_assets.go` and `googleads_image_ref.go` hold no signer
+   * reference; the only signing gate in the repo is Reddit's `checkRedditAssetChoice`). What it says
+   * is that the DEPLOYED campaign-service resolves Google creative asset ids at all — an older one
+   * ignores the unknown keys, dispatches a campaign with no images and reports success.
+   *
+   * It is a SIBLING of the Reddit flag rather than a widening of it so the two can ship
+   * independently: they assert different upstream capabilities, and one flag would mean Reddit asset
+   * upload could never be enabled without Google's, or the reverse.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no creative key at all, so the capability the client sees
+   * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
+   * controls stay hidden, and the upload route accepts a request only on the Reddit flag's
+   * authority.
+   *
+   * NOTHING READS IT YET. At this commit the Google creative interfaces carry image URLs only,
+   * with no asset-id key for a stored image to go in, so the library controls this WILL gate do
+   * not exist and turning it on changes nothing an operator can see. What it already does is admit
+   * an upload into the brief's library on its own authority, which is why it is worth setting on a
+   * deployment staging images ahead of the control.
+   * It does NOT gate the brief's asset list, get, plan and delete routes: those are addressed by a
+   * campaign-service brief and gate on `CampaignServiceBriefs` like every other brief route, so a
+   * deployment running Reddit uploads alone can still read and prune the same library. The pasted
+   * image URL is unaffected either way. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceGoogleAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
