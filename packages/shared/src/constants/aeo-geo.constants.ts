@@ -32,6 +32,6 @@ export const AEO_GEO_HTTP_URL_PATTERN = /^https?:\/\/\S+$/;
 export const AEO_GEO_SECTIONS = ['## Scorecard', "## What's working", '## Recommendations (priority order)', '## Caveats & unverified items', '## Sources'];
 export const AEO_GEO_MAX_DOCUMENT_BYTES = MKTG_ARTIFACT_MAX_DOCUMENT_BYTES;
 export const AEO_GEO_INTAKE_ERRORS = {
-  domain: 'Enter a valid domain or website URL, e.g. project.example or https://project.example/.',
-  key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line.',
+  domain: 'Enter a valid domain or website URL, e.g. project.example or https://project.example/. Public website names only.',
+  key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line. Public website names only.',
 } as const;

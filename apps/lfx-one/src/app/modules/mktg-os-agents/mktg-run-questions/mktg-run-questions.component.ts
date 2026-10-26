@@ -99,8 +99,8 @@ export class MktgRunQuestionsComponent {
     // suggestion (or the earlier try's answer).
     effect(() => {
       const questions = this.questions();
-      const draft = this.initialDraft();
-      const previous = draft?.answers ?? this.previousAnswers();
+      const draft = untracked(() => this.initialDraft());
+      const previous = draft?.answers ?? untracked(() => this.previousAnswers());
       untracked(() => {
         this.reset(questions, previous);
         this.goTo(draft?.index ?? 0);

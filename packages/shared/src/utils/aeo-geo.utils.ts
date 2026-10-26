@@ -27,7 +27,26 @@ import type {
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 import type { MktgRunQuestion } from '../interfaces/mktg-run.interface';
 
-/** Same normalization as the live form renderer; never used as a server fetch URL. */
+/** Intake rejects literal addresses and private namespaces; RFC 2606 test names remain supported. */
+export function isPublicAeoGeoHost(host: string): boolean {
+  const name = host.toLowerCase();
+  let end = name.length;
+  while (end > 0 && name[end - 1] === '.') end--;
+  const hostname = name.slice(0, end);
+  const lastDot = hostname.lastIndexOf('.');
+  if (lastDot < 0 || hostname.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+    return false;
+  }
+  const lastLabel = hostname.slice(lastDot + 1);
+  if (!lastLabel || Array.from(lastLabel).every((char) => char >= '0' && char <= '9')) {
+    return false;
+  }
+  return !['localhost', 'internal', 'local', 'lan', 'home', 'home.arpa', 'corp', 'intranet', 'onion', 'ip6.arpa', 'in-addr.arpa'].some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`)
+  );
+}
+
+/** Same normalization as the live form renderer, with an additional public-host intake guard. */
 export function normalizeAeoGeoDomain(input: string): string {
   let domain = input
     .trim()
@@ -39,7 +58,7 @@ export function normalizeAeoGeoDomain(input: string): string {
     .replace(/^[^@]*@/, '')
     .replace(/:\d+$/, '');
   while (domain.endsWith('.')) domain = domain.slice(0, -1);
-  if (!AEO_GEO_DOMAIN_PATTERN.test(domain)) {
+  if (!AEO_GEO_DOMAIN_PATTERN.test(domain) || !isPublicAeoGeoHost(domain)) {
     throw new Error(AEO_GEO_INTAKE_ERRORS.domain);
   }
   return domain;
@@ -76,7 +95,7 @@ export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationR
           new Set(pages).size !== pages.length ||
           !pages.every((url) => {
             try {
-              return AEO_GEO_HTTP_URL_PATTERN.test(url) && !!new URL(url);
+              return AEO_GEO_HTTP_URL_PATTERN.test(url) && isPublicAeoGeoHost(new URL(url).hostname);
             } catch {
               return false;
             }
@@ -257,13 +276,20 @@ export function isAeoGeoEnvelope(value: unknown): value is AeoGeoEnvelope {
   ) {
     return false;
   }
-  const rows = lines.map((line) => line.match(/^\|\s*([^|]+?)\s*\|\s*(\d{1,2})\s*\/\s*10\s*\|/)).filter((row) => row !== null);
+  const rows = lines.flatMap((line) => {
+    if (!line.startsWith('|')) return [];
+    const cells = line.split('|').map((cell) => cell.trim());
+    const scoreCell = cells[2];
+    if (cells.length < 4 || scoreCell === undefined || scoreCell.length > 16) return [];
+    const score = scoreCell.match(/^(\d{1,2})\s*\/\s*10$/);
+    return score ? [{ category: cells[1], score: Number(score[1]) }] : [];
+  });
   // Mirror the agent's G1 gate: other N/10 rows are allowed anywhere in the
   // report. The first row for each exact category label determines its score.
   let lastIndex = -1;
   for (const { key, label } of AEO_GEO_CATEGORIES) {
-    const index = rows.findIndex((row) => row[1] === label);
-    if (index === -1 || index < lastIndex || Number(rows[index][2]) !== scores[key]) {
+    const index = rows.findIndex((row) => row.category === label);
+    if (index === -1 || index < lastIndex || rows[index].score !== scores[key]) {
       return false;
     }
     lastIndex = Math.max(lastIndex, index);

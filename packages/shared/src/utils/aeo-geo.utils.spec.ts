@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { AEO_GEO_CATEGORIES, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
+import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
 import type { AeoGeoEnvelope } from '../interfaces/aeo-geo.interface';
 import {
   buildAeoGeoFormPayload,
   extractAeoGeoEnvelopeCandidates,
   isAeoGeoEnvelope,
   isAeoGeoReport,
+  isPublicAeoGeoHost,
   normalizeAeoGeoDomain,
   renderAeoGeoFormText,
   validateAeoGeoIntakeAnswers,
@@ -46,6 +47,43 @@ function envelope(): AeoGeoEnvelope {
 }
 
 describe('AEO/GEO intake and renderer', () => {
+  it.each([
+    '169.254.169.254',
+    '10.0.0.10',
+    '[::1]',
+    'localhost',
+    'metadata.google.internal',
+    'intranet.local',
+    'host.localhost',
+    'host.lan',
+    'host.home',
+    'host.home.arpa',
+    'host.corp',
+    'host.intranet',
+    'host.onion',
+    'host.ip6.arpa',
+    'host.in-addr.arpa',
+    'site.123',
+  ])('rejects non-public intake host %s', (domain) => {
+    expect(isPublicAeoGeoHost(domain)).toBe(false);
+    expect(() => normalizeAeoGeoDomain(domain)).toThrow();
+    expect(validateAeoGeoIntakeAnswers({ domain }).valid).toBe(false);
+  });
+  it.each(['http://169.254.169.254/latest/meta-data/', 'http://0x7f000001/', 'http://2130706433/', 'http://[::1]/', 'https://metadata.google.internal./'])(
+    'rejects non-public key page %s',
+    (page) => {
+      const result = validateAeoGeoIntakeAnswers({ domain: 'project.example.org', key_pages: `${page}\nhttps://project.example.org/about` });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain(AEO_GEO_INTAKE_ERRORS.key_pages);
+    }
+  );
+  it.each(['project.example', 'project.test', 'project.invalid', 'xn--bcher-kva.example'])(
+    'preserves public or reserved fixture hostname %s and cross-domain key pages',
+    (domain) => {
+      expect(isPublicAeoGeoHost(domain)).toBe(true);
+      expect(validateAeoGeoIntakeAnswers({ domain, key_pages: 'https://reference.example/a\nhttps://other.example/b' }).valid).toBe(true);
+    }
+  );
   it('normalizes domain and URL inputs exactly like the live agent', () => {
     expect(normalizeAeoGeoDomain(' HTTPS://WWW.Project.Example.:443/path?q=1 ')).toBe('www.project.example');
     expect(() => normalizeAeoGeoDomain('no hostname')).toThrow();
@@ -168,6 +206,15 @@ describe('AEO/GEO envelope gates', () => {
     const valid = envelope();
     expect(isAeoGeoEnvelope(valid)).toBe(true);
     expect(extractAeoGeoEnvelopeCandidates(JSON.stringify({ result: { envelope_json: JSON.stringify(valid) } }))).toEqual([valid]);
+  });
+  it('ignores a hostile whitespace row without delaying report validation', () => {
+    const report = envelope();
+    report.document_markdown += '\n|' + ' '.repeat(50_000) + 'x';
+    const start = performance.now();
+    expect(isAeoGeoEnvelope(report)).toBe(true);
+    const elapsed = performance.now() - start;
+    console.info(`Hostile scorecard row validation: ${elapsed.toFixed(3)} ms`);
+    expect(elapsed).toBeLessThan(200);
   });
   it('accepts extra N/10 rows outside the Scorecard, matching the upstream G1 gate', () => {
     const report = envelope();

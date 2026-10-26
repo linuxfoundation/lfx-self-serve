@@ -36,6 +36,22 @@ describe('MktgRunQuestionsComponent answer validation', () => {
     ]);
   });
 
+  it('keeps question two when send updates previous answers and clears the draft', async () => {
+    const { fixture, component } = await render(true);
+    component['onNext']();
+    fixture.detectChanges();
+    expect(component['index']()).toBe(1);
+    fixture.componentRef.setInput('previousAnswers', { avoid: 'None', other: 'None' });
+    fixture.componentRef.setInput('initialDraft', { index: 0, answers: { avoid: 'None', other: 'None' } });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component['index']()).toBe(1);
+    fixture.componentRef.setInput('initialDraft', null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component['index']()).toBe(1);
+  });
+
   it('still rejects None by default for other agents', async () => {
     const { component, emitted } = await render();
     component['onNext']();
