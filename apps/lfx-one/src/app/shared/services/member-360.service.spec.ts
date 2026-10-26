@@ -223,6 +223,20 @@ describe('Member360Service workbook transport', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
+  it('makes one result check when subscribed a second before the ceiling, then retains a nonterminal run', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS - 1000);
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(error).not.toHaveBeenCalled();
+    check.flush({ status: 'pending' });
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
   it('bounds an expired one-shot request without forgetting the pending run when the BFF never responds', () => {
     startPending();
     vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS + 1);

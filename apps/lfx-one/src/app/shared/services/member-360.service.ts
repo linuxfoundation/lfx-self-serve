@@ -100,8 +100,8 @@ export class Member360Service {
     if (!pending) return throwError(() => new Error('No pending run for this user and project'));
     const deadline = pending.startedAt + MEMBER_360_RUN_CEILING_MS;
     return defer(() => {
-      // A reload after the ceiling checks once, without restarting automatic polling.
-      const expired = Date.now() >= deadline;
+      // At or near the ceiling, check once instead of timing out before the first poll.
+      const expired = Date.now() >= deadline - MKTG_RUN_POLL.initialDelayMs;
       let waitingSince: number | null = null;
       return (expired ? timer(0) : timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs)).pipe(
         exhaustMap(() => {

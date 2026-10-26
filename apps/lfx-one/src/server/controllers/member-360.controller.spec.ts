@@ -8,12 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), resolveRunOutcome: vi.fn() }));
-vi.mock('../services/guild.service', () => ({
-  GuildService: class {
-    resolveRunOutcome = mocks.resolveRunOutcome;
-  },
-}));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn() }));
 vi.mock('../services/member-360.service', () => ({
   Member360Service: class {
     start = mocks.start;
@@ -57,7 +52,6 @@ describe('Member 360 HTTP boundary', () => {
     const next = vi.fn();
     const pending = { status: 'pending', activity: [] };
     mocks.result.mockResolvedValue(pending);
-    mocks.resolveRunOutcome.mockResolvedValue({ status: 'failed', reason: 'agent_stopped' });
     await new Member360Controller().result(
       {
         body: {
@@ -70,7 +64,6 @@ describe('Member 360 HTTP boundary', () => {
       next
     );
     expect(json.mock.calls[0]?.[0]).toBe(pending);
-    expect(mocks.resolveRunOutcome).not.toHaveBeenCalled();
     expect(mocks.result).toHaveBeenCalledWith(expect.anything(), 'session-1', 'sample-project');
     expect(next).not.toHaveBeenCalled();
   });
