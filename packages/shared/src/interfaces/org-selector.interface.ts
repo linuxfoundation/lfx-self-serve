@@ -168,9 +168,11 @@ export interface RoleGrantsResponse {
 
 /**
  * #4225 — what the BFF could establish about the caller's own employer. `lookup: 'failed'` means the
- * question was asked and not answered (CDP or the warehouse unreachable, no asserted username, or
- * the employer carries no crowd.dev organization id to resolve it by), which the client must treat
- * as "unknown" and fall back to `no-organization` rather than assert something new and wrong
+ * question was asked and not answered (CDP or the warehouse unreachable, no asserted username, the
+ * employer carries no crowd.dev organization id to resolve it by, or that id is absent from the
+ * account-grain `ORG_LENS_ACCOUNT_CONTEXT` view — the known gap in `lens-system.md`, which is why
+ * `failed` appears even when CDP and the warehouse are healthy), which the client must treat as
+ * "unknown" and fall back to `no-organization` rather than assert something new and wrong
  * (spec 053 FR-011, never fall through).
  */
 export interface OrgLensAffiliationVerdict {

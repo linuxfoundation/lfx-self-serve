@@ -1010,8 +1010,9 @@ export class OrganizationService {
    * Cached per CDP organization under its own sub-resource, so it never collides with the
    * account-keyed entry for the same row.
    *
-   * A row that cannot be found is not an error: it means the organization is unknown to LFX, which
-   * the caller must read as "not a member", never as an outage.
+   * A row that cannot be found is not an error — never treat it as an outage — but it is not an
+   * answer either: per the KNOWN GAP above, the caller must read it as unknown, never as
+   * "not a member".
    */
   public async getOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse | null> {
     if (!cdevOrgId) {
