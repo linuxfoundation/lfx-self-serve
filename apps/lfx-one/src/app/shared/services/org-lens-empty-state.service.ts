@@ -28,8 +28,9 @@ import { PersonaService } from './persona.service';
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
  *   6. caller holds nothing, and their own employer holds no
  *      active LF membership                                     → `affiliated-non-member` (#4314)
- *   7. caller holds nothing                                     → `no-organization`
- *   8. otherwise (a selection is pending)                       → `null`
+ *   7. caller holds nothing, and the employer lookup failed      → `could-not-load` (#4314)
+ *   8. caller holds nothing                                     → `no-organization`
+ *   9. otherwise (a selection is pending)                       → `null`
  *
  * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
  * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
@@ -40,8 +41,13 @@ import { PersonaService } from './persona.service';
  * who already has one, at a company with no active membership in any LF-hosted foundation, is told that
  * instead — there is no Org Lens behind the CTA and no administrator to ask. It keys on a *resolved*
  * answer from `OrgLensEmployerAffiliationService`: no employer, a member employer, or a lookup that
- * failed all fall through to rule 7, so an unknown never renders as "not a member". CLA state does not
- * enter into it — a CLA-only caller is already admitted by rule 1.
+ * failed all fall through, so an unknown never renders as "not a member". CLA state does not enter into
+ * it — a CLA-only caller is already admitted by rule 1.
+ *
+ * Rule 7 is the other half of that: with the employer lookup failed, "add an affiliation" is a guess
+ * too, since the caller may well have one. The honest render is the outage state with Retry, which
+ * re-runs the employer probe alongside the grants lookup. Only a lookup that answered "no employer"
+ * reaches rule 8.
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
@@ -167,7 +173,13 @@ export class OrgLensEmptyStateService {
       return null;
     }
     if (!holdsAnything) {
-      return this.employerAffiliation.affiliatedToNonMember() ? 'affiliated-non-member' : 'no-organization';
+      if (this.employerAffiliation.affiliatedToNonMember()) {
+        return 'affiliated-non-member';
+      }
+      if (this.employerAffiliation.lookupFailed()) {
+        return 'could-not-load';
+      }
+      return 'no-organization';
     }
     return null;
   });
@@ -226,8 +238,8 @@ export class OrgLensEmptyStateService {
   }
 
   /**
-   * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-run
-   * the role-grants lookup past the BFF cache and, once it answers, re-fetch the org list from its
+   * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-ask
+   * the caller's employer affiliation (#4314), re-run the role-grants lookup past the BFF cache and, once it answers, re-fetch the org list from its
    * first page when one was fetched or is being fetched — the list is filtered server-side by the same
    * lookup, so refreshing only one of the two would leave the other stale, and a Retry pressed while
    * the first list fetch is still in flight must not skip it. The list refresh carries no bootstrap
@@ -235,6 +247,8 @@ export class OrgLensEmptyStateService {
    * list never requested is left to the switcher's own enabled-transition bootstrap.
    */
   public retry(): void {
+    // #4314 — the employer probe is the other half of what rule 6/7 read, and it has its own failure.
+    this.employerAffiliation.refresh();
     this.roleGrants
       .refresh(true)
       .pipe(take(1))

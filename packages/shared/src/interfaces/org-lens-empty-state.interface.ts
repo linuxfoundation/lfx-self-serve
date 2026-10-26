@@ -96,7 +96,10 @@ export interface OrgLensEmptyStateValues {
  * learn why they have none.
  */
 export interface OrgLensEmployerAffiliation {
-  /** Display name from the caller's profile work history; `null` when they have no current employer. */
+  /**
+   * Display name of the job the caller holds *now* (a work-history entry with no end date); `null`
+   * when they have none, a profile of only past jobs included — someone between jobs is not affiliated.
+   */
   employerName: string | null;
   /** Salesforce account the employer resolved to, or `null` when no LF account matches the name. */
   accountId: string | null;

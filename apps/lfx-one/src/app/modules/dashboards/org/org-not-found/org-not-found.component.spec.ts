@@ -67,7 +67,13 @@ function setup(): Harness {
       // #4314 — this dead end never renders a rule-6 state, so the probe just stays quiet here.
       {
         provide: OrgLensEmployerAffiliationService,
-        useValue: { pending: signal(false), affiliatedToNonMember: signal(false), employerName: signal(null) },
+        useValue: {
+          pending: signal(false),
+          affiliatedToNonMember: signal(false),
+          employerName: signal(null),
+          lookupFailed: signal(false),
+          refresh: vi.fn(),
+        },
       },
       {
         provide: OrgNavigationService,

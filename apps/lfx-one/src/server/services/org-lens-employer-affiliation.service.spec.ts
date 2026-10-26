@@ -93,6 +93,19 @@ describe('OrgLensEmployerAffiliationService', () => {
     });
   });
 
+  // The shared `currentEmployerFromWorkExperiences` falls back to the most recent ended job; naming a
+  // company someone has left is exactly the misleading copy this state exists to remove.
+  it('reports no employer for a profile whose jobs have all ended', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('Former Employer', 'Dec 2023'), experience('Older Employer', 'Jan 2020')]);
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
+      employerName: null,
+      accountId: null,
+      hasActiveMembership: false,
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('asks about the current employer, not a past one', async () => {
     getWorkExperiencesForUser.mockResolvedValue([experience('Former Employer', 'Dec 2023'), experience('Current Employer')]);
     execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Current Employer', ACTIVE_MEMBERSHIP_COUNT: 1 }));

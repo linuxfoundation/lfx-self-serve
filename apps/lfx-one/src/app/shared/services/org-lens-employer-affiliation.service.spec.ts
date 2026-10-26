@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 import { AccountContextService } from './account-context.service';
 import { OrgLensEmployerAffiliationService } from './org-lens-employer-affiliation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
+import { UserService } from './user.service';
 
 interface Harness {
   service: OrgLensEmployerAffiliationService;
@@ -20,6 +21,8 @@ interface Harness {
   get: Mock<(url: string) => Observable<OrgLensEmployerAffiliation>>;
   /** The in-flight request's subject, one per call. */
   answers: Subject<OrgLensEmployerAffiliation>[];
+  /** `UserService.workExperienceRevision` — bumped by a profile work-experience write. */
+  workExperienceRevision: WritableSignal<number>;
 }
 
 interface SetupOptions {
@@ -36,6 +39,7 @@ function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded 
   const isStaff = signal(staff);
   const hasOrgSelectorAccess = signal(holdsOrg);
   const answers: Subject<OrgLensEmployerAffiliation>[] = [];
+  const workExperienceRevision = signal(0);
   const get: Mock<(url: string) => Observable<OrgLensEmployerAffiliation>> = vi.fn(() => {
     if (failing) {
       return throwError(() => new Error('upstream down'));
@@ -50,10 +54,11 @@ function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded 
       { provide: HttpClient, useValue: { get } },
       { provide: OrgRoleGrantsService, useValue: { loaded, isStaff } },
       { provide: AccountContextService, useValue: { hasOrgSelectorAccess } },
+      { provide: UserService, useValue: { workExperienceRevision } },
     ],
   });
 
-  const harness = { service: TestBed.inject(OrgLensEmployerAffiliationService), loaded, isStaff, hasOrgSelectorAccess, get, answers };
+  const harness = { service: TestBed.inject(OrgLensEmployerAffiliationService), loaded, isStaff, hasOrgSelectorAccess, get, answers, workExperienceRevision };
   flush();
   return harness;
 }
@@ -125,6 +130,44 @@ describe('OrgLensEmployerAffiliationService', () => {
 
     expect(h.service.employerName()).toBeNull();
     expect(h.service.affiliatedToNonMember()).toBe(false);
+  });
+
+  // The probe is driven from an effect, so there is a tick where `needed` is true and the probe has
+  // not started. Reading that as settled would flash the "add an affiliation" copy.
+  it('counts an unstarted probe as pending, not as settled', () => {
+    h = setup({ grantsLoaded: false });
+    h.loaded.set(true);
+
+    // No flush: this is exactly the gap between `needed` turning true and the effect running.
+    expect(h.service.pending()).toBe(true);
+    expect(h.service.affiliatedToNonMember()).toBe(false);
+  });
+
+  // The state's own CTA sends the caller to the profile to change this answer; a root-provided service
+  // outlives that round trip, so the old answer must not survive it.
+  it('re-asks after a profile work-experience write', () => {
+    h = setup();
+    h.answers[0].next(affiliation({ employerName: 'Bank Pekao', hasActiveMembership: false }));
+    expect(h.service.affiliatedToNonMember()).toBe(true);
+
+    h.workExperienceRevision.update((revision) => revision + 1);
+    flush();
+
+    expect(h.get).toHaveBeenCalledTimes(2);
+    expect(h.service.pending()).toBe(true);
+    h.answers[1].next(affiliation({ employerName: 'ServiceNow', hasActiveMembership: true }));
+    expect(h.service.affiliatedToNonMember()).toBe(false);
+    expect(h.service.employerName()).toBe('ServiceNow');
+  });
+
+  it('re-asks on refresh, so the shared Retry covers the employer half', () => {
+    h = setup();
+    h.answers[0].next(affiliation());
+
+    h.service.refresh();
+    flush();
+
+    expect(h.get).toHaveBeenCalledTimes(2);
   });
 
   // A failed lookup is "unknown", never "not a member" — the copy would otherwise assert something

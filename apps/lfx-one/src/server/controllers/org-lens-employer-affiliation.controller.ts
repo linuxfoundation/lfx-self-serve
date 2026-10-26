@@ -40,8 +40,9 @@ export class OrgLensEmployerAffiliationController {
 
       const affiliation = await this.employerAffiliationService.getEmployerAffiliation(req, lfid);
 
+      // No `lfid`: a username is PII in a log sink, and `logger.success` does not run metadata through
+      // the sensitive-field redaction. `request_id` already correlates the line.
       logger.success(req, 'get_employer_affiliation', startTime, {
-        lfid,
         has_employer: !!affiliation.employerName,
         has_active_membership: affiliation.hasActiveMembership,
       });

@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { catchError, distinctUntilChanged, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
+import { UserService } from './user.service';
 
 /** The probe's state: not needed, in flight, or an answer (`failed` when the request did not land). */
 type AffiliationProbe = { status: 'idle' } | { status: 'pending' } | { status: 'answered'; affiliation: OrgLensEmployerAffiliation } | { status: 'failed' };
@@ -32,6 +32,10 @@ export class OrgLensEmployerAffiliationService {
   private readonly http = inject(HttpClient);
   private readonly accountContext = inject(AccountContextService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly userService = inject(UserService);
+
+  /** Bumped by {@link refresh} to re-ask the same question (the shared Retry). */
+  private readonly refreshCount: WritableSignal<number> = signal(0);
 
   /**
    * The caller is in the population this question is about: the grants lookup has answered, they are
@@ -41,21 +45,45 @@ export class OrgLensEmployerAffiliationService {
     () => this.roleGrants.loaded() && !this.roleGrants.isStaff() && !this.accountContext.hasOrgSelectorAccess()
   );
 
+  /**
+   * What the probe is asking about: `null` when nothing should be asked, otherwise a key that changes
+   * whenever the answer could have. The caller's own work history is in it, so following the state's
+   * "Update employer affiliation" CTA and coming back re-asks instead of repeating the stale answer —
+   * a root-provided service outlives that round trip.
+   */
+  private readonly probeKey: Signal<string | null> = computed(() =>
+    this.needed() ? `${this.userService.workExperienceRevision()}:${this.refreshCount()}` : null
+  );
+
   private readonly probe: Signal<AffiliationProbe> = toSignal(
-    toObservable(this.needed).pipe(
+    toObservable(this.probeKey).pipe(
+      distinctUntilChanged(),
       switchMap(
-        (needed): Observable<AffiliationProbe> =>
-          needed ? this.fetch().pipe(startWith<AffiliationProbe>({ status: 'pending' })) : of<AffiliationProbe>({ status: 'idle' })
+        (key): Observable<AffiliationProbe> =>
+          key === null ? of<AffiliationProbe>({ status: 'idle' }) : this.fetch().pipe(startWith<AffiliationProbe>({ status: 'pending' }))
       )
     ),
     { initialValue: { status: 'idle' } as AffiliationProbe }
   );
 
-  /** The probe is owed an answer and has not given one — hold the page on its skeleton until it has. */
-  public readonly pending: Signal<boolean> = computed(() => this.needed() && this.probe().status === 'pending');
+  /**
+   * The probe is owed an answer and has not given one — hold the page on its skeleton until it has.
+   *
+   * Anything that is not an answer counts, `idle` included: `toObservable` drives the probe from an
+   * effect, so between `needed` turning true and that effect running the probe is still `idle`. Reading
+   * that as settled would let `no-organization` — the "add an affiliation" copy this state exists to
+   * replace — render for a tick before the skeleton.
+   */
+  public readonly pending: Signal<boolean> = computed(() => {
+    if (!this.needed()) {
+      return false;
+    }
+    const status = this.probe().status;
+    return status !== 'answered' && status !== 'failed';
+  });
 
   /** The request did not land, so "no membership" is unknown rather than false. */
-  public readonly lookupFailed: Signal<boolean> = computed(() => this.probe().status === 'failed');
+  public readonly lookupFailed: Signal<boolean> = computed(() => this.needed() && this.probe().status === 'failed');
 
   /** The caller's current employer from their own profile; `null` when they have none, or nothing was asked. */
   public readonly employerName: Signal<string | null> = computed(() => {
@@ -72,6 +100,11 @@ export class OrgLensEmployerAffiliationService {
     const probe = this.probe();
     return probe.status === 'answered' && !!probe.affiliation.employerName && !probe.affiliation.hasActiveMembership;
   });
+
+  /** Re-ask the question — the shared Retry's employer half. */
+  public refresh(): void {
+    this.refreshCount.update((count) => count + 1);
+  }
 
   private fetch(): Observable<AffiliationProbe> {
     return this.http.get<OrgLensEmployerAffiliation>('/api/profile/employer-affiliation').pipe(

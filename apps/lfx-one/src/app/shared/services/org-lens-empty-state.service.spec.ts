@@ -43,6 +43,10 @@ interface Harness {
   affiliatedToNonMember: WritableSignal<boolean>;
   /** #4314 — the caller's own employer name. */
   affiliationEmployerName: WritableSignal<string | null>;
+  /** #4314 — the employer lookup did not land, so "no membership" is unknown. */
+  affiliationLookupFailed: WritableSignal<boolean>;
+  /** #4314 — `OrgLensEmployerAffiliationService.refresh`, the employer half of the shared Retry. */
+  refreshAffiliation: Mock<() => void>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
@@ -80,6 +84,8 @@ function setup(): Harness {
   const affiliationPending = signal(false);
   const affiliatedToNonMember = signal(false);
   const affiliationEmployerName = signal<string | null>(null);
+  const affiliationLookupFailed = signal(false);
+  const refreshAffiliation: Mock<() => void> = vi.fn();
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
@@ -124,7 +130,13 @@ function setup(): Harness {
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
       {
         provide: OrgLensEmployerAffiliationService,
-        useValue: { pending: affiliationPending, affiliatedToNonMember, employerName: affiliationEmployerName },
+        useValue: {
+          pending: affiliationPending,
+          affiliatedToNonMember,
+          employerName: affiliationEmployerName,
+          lookupFailed: affiliationLookupFailed,
+          refresh: refreshAffiliation,
+        },
       },
       {
         provide: OrgNavigationService,
@@ -152,6 +164,8 @@ function setup(): Harness {
     affiliationPending,
     affiliatedToNonMember,
     affiliationEmployerName,
+    affiliationLookupFailed,
+    refreshAffiliation,
     refresh,
     listLoaded,
     listLoading,
@@ -279,6 +293,28 @@ describe('OrgLensEmptyStateService.pageState', () => {
     h.affiliationPending.set(false);
     h.affiliatedToNonMember.set(true);
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
+  });
+
+  // An employer lookup that failed makes "add an affiliation" a guess too — the caller may well have
+  // one — so the honest render is the outage state with Retry, not the wrong CTA.
+  it('renders could-not-load, not no-organization, when the employer lookup failed', () => {
+    h.affiliationLookupFailed.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
+  it('prefers a resolved non-member answer over a stale lookup failure', () => {
+    h.affiliationLookupFailed.set(true);
+    h.affiliatedToNonMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-non-member');
+  });
+
+  it('re-asks the employer affiliation as part of the shared Retry', () => {
+    h.service.retry();
+
+    expect(h.refreshAffiliation).toHaveBeenCalled();
+    expect(h.refresh).toHaveBeenCalledWith(true);
   });
 
   it('renders staff-check-failed ahead of affiliated-non-member', () => {

@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils';
+import type { OrgLensEmployerAffiliation, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
@@ -46,8 +45,7 @@ export class OrgLensEmployerAffiliationService {
 
   public async getEmployerAffiliation(req: Request, lfid: string): Promise<OrgLensEmployerAffiliation> {
     const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
-    const employer = currentEmployerFromWorkExperiences(workExperiences);
-    const employerName = employer?.name?.trim() || null;
+    const employerName = OrgLensEmployerAffiliationService.currentEmployerName(workExperiences);
 
     if (!employerName) {
       return { employerName: null, accountId: null, hasActiveMembership: false };
@@ -66,6 +64,17 @@ export class OrgLensEmployerAffiliationService {
       accountId: row?.ACCOUNT_ID ?? null,
       hasActiveMembership: (row?.ACTIVE_MEMBERSHIP_COUNT ?? 0) > 0,
     };
+  }
+
+  /**
+   * The employer the caller works for *now* — an entry with no end date. Deliberately not
+   * `currentEmployerFromWorkExperiences`, which falls back to the most recent ended job: that
+   * fallback is right for pre-filling an invite dialog, and wrong here, where naming a company
+   * someone has left is exactly the misleading copy this state exists to remove. Someone between
+   * jobs has no current employer, so they keep the unchanged `no-organization` state.
+   */
+  private static currentEmployerName(experiences: WorkExperienceEntry[]): string | null {
+    return experiences.find((experience) => !experience.endDate)?.organization?.trim() || null;
   }
 
   /**
