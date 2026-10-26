@@ -1243,6 +1243,8 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Voting has closed');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals are being finalized');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).not.toContain('Totals appear when voting closes');
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
       expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
       expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('Totals and comments will appear once they are finalized.');

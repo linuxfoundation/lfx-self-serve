@@ -4,6 +4,8 @@
 import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { PollCommentResponse, PollCommentResult } from '@lfx-one/shared/interfaces';
 import { PaginatorState } from 'primeng/paginator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -142,6 +144,30 @@ describe('VoteCommentResultsComponent', () => {
 
       const texts = [...el.querySelectorAll('lfx-expandable-text')].map((node) => node.textContent?.trim());
       expect(texts).toEqual(['alpha', 'alpha', 'bravo']);
+    });
+
+    it.each([
+      ['page', { first: 10, rows: 5 }, '11'],
+      ['page size', { first: 0, rows: 10 }, '01'],
+    ] as const)('resets anonymous comment expansion when the %s changes', async (_label, nextPage, expectedComment) => {
+      fixture.componentRef.setInput('anonymous', true);
+      const items = textOnly(...Array.from({ length: 20 }, (_, i) => `Synthetic comment ${String(i + 1).padStart(2, '0')}`));
+      const el = render([result('p1', items)], new Map([['p1', { first: 5, rows: 5 }]]));
+      await fixture.whenStable();
+
+      const previous = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+      previous.needsExpansion.set(true);
+      previous.isExpanded.set(true);
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('pageState', new Map([['p1', nextPage]]));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const current = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+      expect(current).not.toBe(previous);
+      expect(current.isExpanded()).toBe(false);
+      expect(el.querySelector('lfx-expandable-text')?.textContent).toContain(`Synthetic comment ${expectedComment}`);
     });
 
     it('discloses truncation without claiming recency', () => {

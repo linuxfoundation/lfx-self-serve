@@ -530,10 +530,10 @@ export class VoteService {
       }
     }
 
-    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
-    // responses at the most recent N to keep the payload linear in prompt count rather than
-    // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
-    // reported via total_responses so the UI can disclose truncation.
+    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's responses
+    // at N to keep the payload linear in prompt count rather than electorate size (defense against multi-MB
+    // payloads). Named votes keep the most recent N; pseudo-anonymous votes keep the first N in comment-text
+    // order. The pre-cap count is reported via total_responses so the UI can disclose truncation.
     for (const commentResult of results?.comment_results ?? []) {
       // Normalize to an array before touching length — this loop is the single aggregation point for
       // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).

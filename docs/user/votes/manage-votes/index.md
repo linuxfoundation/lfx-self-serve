@@ -4,7 +4,7 @@ description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-18
+last_updated: 2026-10-26
 intercom_collection: Votes
 ---
 
@@ -26,6 +26,8 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View results
 
 Select a poll to view its current results and status.
+
+On a pseudo-anonymous poll, totals, abstentions and comments stay hidden until the poll closes and its results are finalized. While it is open, managers can see who has responded on the **Voters** tab, but not how anyone voted. Comments appear without names or dates once results are released.
 
 ## Send a reminder
 

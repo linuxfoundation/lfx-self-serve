@@ -943,8 +943,9 @@ export interface PollCommentResult {
   /** Comment prompt definition */
   prompt: PollCommentPrompt;
   /**
-   * Submitted voter responses. The BFF caps this at `VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT`
-   * (most recent first); compare against `total_responses` to detect truncation.
+   * Submitted voter responses. The BFF caps this at `VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT`:
+   * named votes keep the most recent responses; pseudo-anonymous votes keep the first responses in
+   * comment-text order without timestamps. Compare against `total_responses` to detect truncation.
    */
   responses: PollCommentResponse[];
   /**
@@ -964,6 +965,8 @@ export interface PollCommentResult {
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
+  /** Position in the prompt's full response list, used as a privacy-safe identity across pages */
+  position: number;
 }
 
 /**

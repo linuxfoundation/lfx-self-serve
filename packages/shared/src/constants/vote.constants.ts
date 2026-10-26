@@ -22,9 +22,9 @@ export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 /**
  * Aggregate bound on comment responses per prompt returned by the BFF results endpoint. The upstream
  * results contract has no pagination, so without a cap the payload grows with electorate size × prompt
- * count × response length (50 prompts × 5,000 code points × N voters). The BFF keeps the most recent N
- * per prompt and reports the pre-cap count via `PollCommentResult.total_responses`. Well above any
- * realistic committee electorate; true cursor pagination is an upstream contract follow-up.
+ * count × response length (50 prompts × 5,000 code points × N voters). Named votes keep the most recent N;
+ * pseudo-anonymous votes keep the first N in comment-text order. The pre-cap count is reported via
+ * `PollCommentResult.total_responses`. Well above any realistic committee electorate; true cursor pagination is an upstream contract follow-up.
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 

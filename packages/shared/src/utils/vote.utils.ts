@@ -365,12 +365,12 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
  * Merges the vote detail's comment prompts with the results payload's comment responses
  * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
  * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
- * left-join in by `prompt_id` when present, sorted newest-first (pagination slices the already-sorted list, so page 1
- * always shows the most recent comments). If the detail supplied no prompts (e.g. it failed and the list-vote
- * fallback lacks them), degrade to the results payload's prompts that have responses.
+ * left-join in by `prompt_id` when present. Timestamped responses sort newest-first; timestamp-free
+ * pseudo-anonymous responses preserve the server's comment-text order. Pagination slices this ordered list.
+ * If the detail supplied no prompts (e.g. it failed and the list-vote fallback lacks them), degrade to the results payload's prompts that have responses.
  * @param commentResults - `comment_results` from the results API
  * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
- * @returns One PollCommentResult per prompt, with responses sorted newest-first
+ * @returns One PollCommentResult per prompt, with timestamped responses newest-first and timestamp-free responses in server order
  */
 export function mergeCommentResults(commentResults: PollCommentResult[], detailPrompts: PollCommentPrompt[] | undefined): PollCommentResult[] {
   if (!detailPrompts?.length) {

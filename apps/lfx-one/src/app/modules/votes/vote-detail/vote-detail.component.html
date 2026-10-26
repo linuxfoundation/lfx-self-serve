@@ -274,7 +274,7 @@
       <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-start gap-3" [attr.data-testid]="testId">
         <i class="fa-light fa-lock text-gray-500 mt-0.5" aria-hidden="true"></i>
         <div class="flex flex-col gap-1">
-          <p class="text-sm font-semibold text-gray-900">Totals appear when voting closes</p>
+          <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
           @if (isEnded()) {
             <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
           } @else if (closeText()) {

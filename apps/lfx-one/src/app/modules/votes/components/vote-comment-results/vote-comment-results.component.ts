@@ -63,9 +63,10 @@ export class VoteCommentResultsComponent {
 
         return {
           ...cr,
-          responses: cr.responses.slice(first, first + rows).map((response) => ({
+          responses: cr.responses.slice(first, first + rows).map((response, index) => ({
             ...response,
             paragraphs: splitIntoParagraphs(response.comment_text),
+            position: first + index,
           })),
           totalResponses,
           first,

@@ -12,8 +12,8 @@
 @for (commentResult of paginatedCommentResults(); track commentResult.prompt.prompt_id) {
   <div class="flex flex-col gap-2">
     <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
-    <!-- Pseudo-anonymous responses carry no vote_id (#3916), so they are keyed by position. -->
-    @for (response of commentResult.responses; track response.vote_id ?? $index) {
+    <!-- Pseudo-anonymous responses carry no vote_id (#3916); absolute list positions keep expansion state from crossing pages. -->
+    @for (response of commentResult.responses; track response.vote_id ?? response.position) {
       <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
         <lfx-expandable-text [maxHeight]="150" class="comment-text">
           <div class="flex flex-col gap-3 whitespace-normal text-sm text-slate-700">
