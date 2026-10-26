@@ -149,6 +149,27 @@ describe('AeoGeoService', () => {
     mocks.getHistory.mockResolvedValue([{ sender: 'agent', text: 'AEO/GEO — ANSWERS (aeo-geo-answers/v1)' }]);
     expect((await new AeoGeoService().getResult(req, 'session-a', 'project-1')).status).toBe('questions');
   });
+  it('surfaces a second questions round after the preceding answers message', async () => {
+    const event = aeoGeoQuestionsEventFixture();
+    const text = JSON.parse(event).content.data;
+    mocks.getRawEventPayloads.mockResolvedValue([event]);
+    mocks.getHistory.mockResolvedValue([
+      { sender: 'agent', text },
+      { sender: 'user', text: 'AEO/GEO — ANSWERS (aeo-geo-answers/v1)' },
+      { sender: 'agent', text },
+    ]);
+    expect((await new AeoGeoService().getResult(req, 'session-a', 'project-1')).status).toBe('questions');
+  });
+  it('returns the current status on an answers retry without sending another follow-up', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([aeoGeoQuestionsEventFixture()]);
+    const service = new AeoGeoService();
+    await service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', [], 'catalog-handle');
+    mocks.getHistory.mockResolvedValue([{ sender: 'user', text: 'AEO/GEO — ANSWERS (aeo-geo-answers/v1)' }]);
+    await expect(service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', [], 'catalog-handle')).resolves.toMatchObject({
+      status: 'pending',
+    });
+    expect(mocks.sendFollowUp).toHaveBeenCalledTimes(1);
+  });
   it('sends the guarded answers to the same session, rejecting wrong document, ids and false acceptance', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([aeoGeoQuestionsEventFixture()]);
     const service = new AeoGeoService();

@@ -46,6 +46,7 @@ export class MktgRunQuestionsComponent {
   public readonly previousAnswers = input<Record<string, string>>({});
   /** True while the answers are being sent. */
   public readonly busy = input(false);
+  /** Saved answers and index restored after reload, taking precedence over previousAnswers. */
   public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
   /** Opt in when an intake accepts answers such as "None"; empty and oversized answers still fail. */
   public readonly allowNonAnswers = input(false);
@@ -53,6 +54,7 @@ export class MktgRunQuestionsComponent {
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
   public readonly answered = output<MktgRunAnswer[]>();
+  /** Emits index and answers on every change, including the initial reset, for host persistence. */
   public readonly draftChanged = output<MktgRunQuestionDraft>();
 
   // === Forms ===

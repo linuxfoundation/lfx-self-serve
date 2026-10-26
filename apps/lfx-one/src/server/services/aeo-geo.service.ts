@@ -74,7 +74,9 @@ export class AeoGeoService {
       if (turn) {
         // History decides only whether the user answered, never what the agent's report contains.
         const history = await this.guild.getHistory(req, sessionId);
-        if (history.some((message) => message.sender === 'user' && message.text.trimStart().startsWith(AEO_GEO_ANSWERS_HEADER))) {
+        const answered = history.map((message) => message.sender === 'user' && message.text.trimStart().startsWith(AEO_GEO_ANSWERS_HEADER)).lastIndexOf(true);
+        const asked = history.map((message) => message.sender === 'agent' && parseAeoGeoQuestionsTurn(message.text) !== null).lastIndexOf(true);
+        if (answered > asked) {
           return { status: 'pending', activity };
         }
         return {
@@ -105,12 +107,21 @@ export class AeoGeoService {
     };
   }
 
-  public async sendAnswers(req: Request, sessionId: string, documentId: string, project: string, answers: AeoGeoAnswer[], handle: string): Promise<void> {
+  public async sendAnswers(
+    req: Request,
+    sessionId: string,
+    documentId: string,
+    project: string,
+    answers: AeoGeoAnswer[],
+    handle: string
+  ): Promise<MktgRunResultResponse> {
     if (documentId !== this.documents.runDocumentId(sessionId)) {
       throw ServiceValidationError.forField('documentId', 'The answers must belong to this audit document.');
     }
     const result = await this.getResult(req, sessionId, project);
     if (result.status !== 'questions' || !result.questions) {
+      const history = await this.guild.getHistory(req, sessionId);
+      if (history.some((message) => message.sender === 'user' && message.text.trimStart().startsWith(AEO_GEO_ANSWERS_HEADER))) return result;
       throw ServiceValidationError.forField('answers', 'This audit is not waiting for answers.');
     }
     for (const answer of answers) {
@@ -122,5 +133,6 @@ export class AeoGeoService {
     logger.debug(req, 'aeo_geo_answers', 'Continuing the same audit session', { answers: answers.length, agent_handle: handle });
     // The agent's answers frame must start at the first line; this session already routes to the agent.
     await this.guild.sendFollowUp(req, sessionId, { message: renderAeoGeoAnswers(answers) });
+    return { status: 'pending' };
   }
 }

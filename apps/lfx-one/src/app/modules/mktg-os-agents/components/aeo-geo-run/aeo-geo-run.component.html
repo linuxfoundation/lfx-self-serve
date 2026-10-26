@@ -42,6 +42,7 @@
         [projectName]="projectName()"
         [previousAnswers]="answerValues()"
         [initialDraft]="questionDraft()"
+        [allowNonAnswers]="true"
         (draftChanged)="onQuestionDraft($event)"
         [busy]="busy()"
         (answered)="onAnswers($event)" />

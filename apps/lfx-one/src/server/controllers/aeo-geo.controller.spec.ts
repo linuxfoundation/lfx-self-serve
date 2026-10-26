@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request, Response } from 'express';
+import { mktgRunFailureFromPayloads } from '../../../../../packages/shared/src/utils/mktg-run-failure.utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   getResult: vi.fn(),
   sendAnswers: vi.fn(),
+  resolveRunOutcome: vi.fn(),
   getProjectById: vi.fn(),
   getEffectiveUsername: vi.fn(),
   createSessionOwnerToken: vi.fn(),
@@ -25,6 +27,11 @@ vi.mock('../services/aeo-geo.service', () => ({
     public startGeneration = mocks.startGeneration;
     public getResult = mocks.getResult;
     public sendAnswers = mocks.sendAnswers;
+  },
+}));
+vi.mock('../services/guild.service', () => ({
+  GuildService: class {
+    public resolveRunOutcome = mocks.resolveRunOutcome;
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -57,6 +64,8 @@ describe('AeoGeoController', () => {
     mocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', name: 'Synthetic Canonical Project', writer: true });
     mocks.startGeneration.mockResolvedValue({ sessionId: 'session-a', documentId: 'run-012345678901234567890123' });
     mocks.getResult.mockResolvedValue({ status: 'pending' });
+    mocks.sendAnswers.mockResolvedValue({ status: 'pending' });
+    mocks.resolveRunOutcome.mockImplementation(async (_req, _sessionId, result) => result);
   });
   it('uses the catalog handle, never a submitted routing handle, and returns an owner-bound destination', async () => {
     const result = await call('generate', { ...body(), handle: 'untrusted' });
@@ -70,7 +79,7 @@ describe('AeoGeoController', () => {
       },
       'catalog-audit-handle'
     );
-    expect(mocks.createSessionOwnerToken).toHaveBeenCalledWith('synthetic-lfid', 'session-a');
+    expect(mocks.createSessionOwnerToken).toHaveBeenCalledWith('synthetic-lfid', 'aeo-geo:resolved-project:session-a');
     expect(result.json).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'session-a', ownerToken: 'owner-proof', documentId: expect.stringMatching(/^run-/) })
     );
@@ -119,10 +128,10 @@ describe('AeoGeoController', () => {
     const payload = { project: 'project-1', sessionId: 'session-a', ownerToken: 'owner-proof', documentId: 'run-012345678901234567890123', answers };
     mocks.verifySessionOwnerToken.mockReturnValueOnce(false);
     expect((await call('answers', payload)).next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
-    expect(mocks.getProjectById).not.toHaveBeenCalled();
+    expect(mocks.sendAnswers).not.toHaveBeenCalled();
     expect((await call('answers', { ...payload, answers: [answers[0], answers[0]] })).next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     expect(mocks.sendAnswers).not.toHaveBeenCalled();
-    expect((await call('answers', payload)).json).toHaveBeenCalledWith({ success: true });
+    expect((await call('answers', payload)).json).toHaveBeenCalledWith({ success: true, status: 'pending' });
     expect(mocks.sendAnswers).toHaveBeenCalledWith(expect.anything(), 'session-a', payload.documentId, 'resolved-project', answers, 'catalog-audit-handle');
     expect(mocks.startGeneration).not.toHaveBeenCalled();
     mocks.getProjectById.mockResolvedValue({ uid: 'project-1', writer: false });
@@ -135,6 +144,32 @@ describe('AeoGeoController', () => {
     expect(mocks.getResult).not.toHaveBeenCalled();
     expect((await call('result', payload)).json).toHaveBeenCalledWith({ status: 'pending' });
     expect(mocks.getResult).toHaveBeenCalledWith(expect.anything(), 'session-a', 'resolved-project');
-    expect(mocks.verifySessionOwnerToken).toHaveBeenCalledWith('owner-proof', 'synthetic-lfid', 'session-a');
+    expect(mocks.verifySessionOwnerToken).toHaveBeenCalledWith('owner-proof', 'synthetic-lfid', 'aeo-geo:resolved-project:session-a');
+  });
+  it.each(['result', 'answers'] as const)('rejects %s replay into another canonical project before reading or answering Guild', async (kind) => {
+    mocks.getProjectById.mockResolvedValue({ uid: 'other-project', writer: true });
+    mocks.verifySessionOwnerToken.mockImplementation((_token, _user, scope) => scope === 'aeo-geo:resolved-project:session-a');
+    const result = await call(kind, {
+      project: 'other-project',
+      sessionId: 'session-a',
+      ownerToken: 'owner-proof',
+      documentId: 'run-012345678901234567890123',
+      answers: [],
+    });
+    expect(result.next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(mocks.getResult).not.toHaveBeenCalled();
+    expect(mocks.sendAnswers).not.toHaveBeenCalled();
+  });
+  it('returns the safe failed outcome for an aged runtime error followed only by teardown', async () => {
+    const failure = mktgRunFailureFromPayloads([
+      JSON.stringify({ type: 'runtime_error', created_at: '2026-01-01T00:00:00Z', content: 'Synthetic private provider error' }),
+      JSON.stringify({ type: 'runtime_done', created_at: '2026-01-01T00:00:01Z' }),
+    ]);
+    expect(failure).not.toBeNull();
+    mocks.resolveRunOutcome.mockImplementation(async (_req, _sessionId, result) => ({ ...result, status: 'failed', failure }));
+    const result = await call('result', { project: 'project-1', sessionId: 'session-a', ownerToken: 'owner-proof' });
+    expect(mocks.resolveRunOutcome).toHaveBeenCalledWith(expect.anything(), 'session-a', { status: 'pending' });
+    expect(result.json).toHaveBeenCalledWith({ status: 'failed', failure });
+    expect(JSON.stringify(result.json.mock.calls)).not.toContain('Synthetic private');
   });
 });
