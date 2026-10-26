@@ -37,8 +37,8 @@ export function normalizeAeoGeoDomain(input: string): string {
   domain = domain
     .split(/[/?#]/)[0]
     .replace(/^[^@]*@/, '')
-    .replace(/:\d+$/, '')
-    .replace(/\.+$/, '');
+    .replace(/:\d+$/, '');
+  while (domain.endsWith('.')) domain = domain.slice(0, -1);
   if (!AEO_GEO_DOMAIN_PATTERN.test(domain)) {
     throw new Error(AEO_GEO_INTAKE_ERRORS.domain);
   }
@@ -71,7 +71,16 @@ export function validateAeoGeoIntakeAnswers(answers: unknown): AeoGeoValidationR
     if (
       typeof value !== 'string' ||
       (pages.length > 0 &&
-        (pages.length < 2 || pages.length > 5 || new Set(pages).size !== pages.length || !pages.every((url) => AEO_GEO_HTTP_URL_PATTERN.test(url))))
+        (pages.length < 2 ||
+          pages.length > 5 ||
+          new Set(pages).size !== pages.length ||
+          !pages.every((url) => {
+            try {
+              return AEO_GEO_HTTP_URL_PATTERN.test(url) && !!new URL(url);
+            } catch {
+              return false;
+            }
+          })))
     ) {
       errors.push(AEO_GEO_INTAKE_ERRORS.key_pages);
     }
@@ -239,7 +248,7 @@ export function isAeoGeoEnvelope(value: unknown): value is AeoGeoEnvelope {
   if (positions.some((position, index) => position < 0 || (index > 0 && position <= positions[index - 1]))) {
     return false;
   }
-  const headline = markdown.match(/^Overall score: \*\*(\d{1,2}(?:\.\d)?) \/ 10\*\* — (.+?)\s*$/m);
+  const headline = markdown.match(/^Overall score: \*\*(\d{1,2}(?:\.\d)?) \/ 10\*\* — (.*)$/m);
   if (
     !headline ||
     headline[1] !== overall.toFixed(1) ||
@@ -440,7 +449,7 @@ export function aeoGeoRunQuestions(turn: AeoGeoQuestionsTurn): MktgRunQuestion[]
     why: q.why.trim(),
     suggestedAnswer: q.suggested_answer.trim(),
     basis: q.basis
-      .split(/\s*;\s*|,\s+/)
+      .split(/[;,]/)
       .map((entry) => entry.trim())
       .filter(Boolean),
   }));
