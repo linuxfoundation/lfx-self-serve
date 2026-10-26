@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -12,6 +12,7 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   BRAND_KIT_CONTRACT_ID,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   BRAND_KIT_INTAKE,
   ICP_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
@@ -29,6 +30,7 @@ import {
   MktgRevisionResponse,
   MktgStoredAgentRun,
   MktgRevisionSummary,
+  MktgRunActivity,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -45,7 +47,8 @@ import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-d
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgPrintService } from '@services/mktg-print.service';
-
+// package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
+import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -109,7 +112,7 @@ describe('MktgDocumentViewComponent', () => {
 
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
-  const pending = {};
+  const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
   const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
   let resolveBrandKit: ReturnType<typeof vi.fn>;
@@ -285,6 +288,9 @@ describe('MktgDocumentViewComponent', () => {
   beforeEach(async () => {
     run.isPending.mockReturnValue(false);
     subject = linkedSignal(() => viewer()?.sub ?? '');
+    pending.load.mockReset().mockReturnValue(null);
+    pending.waitForStorage.mockReset();
+    pending.clear.mockClear();
     print.print.mockReset().mockResolvedValue(undefined);
     print.clear.mockClear();
     print.ensureFontStylesheet.mockClear();
@@ -339,6 +345,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: Member360Service, useValue: run },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn() } },
+        { provide: HttpClient, useValue: {} },
         { provide: MktgPendingDocumentService, useValue: pending },
         { provide: MktgPrintService, useValue: print },
       ],
@@ -548,6 +555,337 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-document')?.textContent).toContain('Older post [LINK]');
     expect(query('mktg-linkedin-option')).toBeNull();
     expectNoKitAssetChrome();
+  });
+
+  describe('AEO/GEO report and pending-document seam', () => {
+    beforeEach(() => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Synthetic audit document type missing.');
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
+    });
+
+    it('shows a document-side poll refusal, drops the writing capability and offers a fresh run without Check again', async () => {
+      const reply = 'The target is unavailable. Confirm the domain before starting a new audit.';
+      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+      vi.spyOn(realPending, 'poll').mockReturnValue(of({ status: 'refused' as const, reply }));
+      const clear = vi.spyOn(realPending, 'clear');
+      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+      pending.load.mockReturnValue({
+        agentId: 'aeo-geo',
+        projectUid: PROJECT.uid,
+        documentId: 'run-012345678901234567890123',
+        sessionId: 'synthetic-session',
+        ownerToken: 'synthetic-proof',
+        savedAt: new Date().toISOString(),
+        phase: 'writing',
+      });
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain(reply);
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(query('mktg-document-view-run-again')).not.toBeNull();
+      expect(clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+    it.each([
+      { label: 'named key pages', auditCounts: { keyPagesNamed: 2, pagesAudited: 5 }, copy: '2 key pages named, 5 audited' },
+      { label: 'agent-selected pages', auditCounts: { keyPagesNamed: 0, pagesAudited: 5 }, copy: 'no key pages named, 5 audited' },
+      { label: 'legacy without counts', auditCounts: undefined, copy: '' },
+    ])('renders a report scorecard with $label and no restore controls', async ({ auditCounts, copy }) => {
+      const auditType = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'aeo-geo');
+      if (!auditType) throw new Error('Audit document type missing.');
+      const report: MktgRevisionResponse = {
+        ...revisionResponse(LATEST),
+        type: auditType,
+        aeoGeoReport: {
+          domain: 'project.example',
+          report_filename: 'project.example AEO-GEO Report.md',
+          overall_score: 6,
+          verdict: 'A useful baseline',
+          auditCounts,
+          scores: { ai_crawler_access: 6, llms_txt: 6, content_answerability: 6, technical_metadata: 6, external_authority: 6, content_depth_freshness: 6 },
+        },
+      };
+      store.getRevision.mockReturnValue(of(report));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-overall')?.textContent).toContain('6.0');
+      expect(query('mktg-document-view-overall')?.classList.contains('text-amber-700')).toBe(true);
+      expect(query('mktg-document-view-verdict')?.textContent).toContain('A useful baseline');
+      expect(query('mktg-document-view-scorecard')?.querySelectorAll('[data-testid^="mktg-document-view-score-"]')).toHaveLength(6);
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-restore-1')).toBeNull();
+      expect(query('mktg-document-view-revision-chip')).toBeNull();
+      expect(query('mktg-document-view-download')).not.toBeNull();
+      const subline = query('mktg-document-view-audit-subline')?.textContent?.replace(/\s+/g, ' ');
+      expect(subline).toContain('AEO/GEO audit — 13 Oct 2026');
+      if (copy) {
+        expect(subline).toContain(copy);
+      } else {
+        expect(subline).not.toContain('key pages named');
+        expect(subline).not.toContain('audited');
+      }
+    });
+
+    it.each(['project', 'domain'] as const)('renders the recorded %s sidecar for web and PDF without the legacy body', async (kind) => {
+      const envelope = aeoGeoEnvelopeFixture(kind);
+      const typed = envelope.report;
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!typed || !type) {
+        throw new Error('Recorded audit fixture is incomplete.');
+      }
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          type,
+          markdown: envelope.document_markdown,
+          aeoGeoReport: {
+            domain: envelope.domain,
+            report_filename: envelope.report_filename,
+            overall_score: envelope.overall_score,
+            verdict: envelope.verdict,
+            scores: envelope.scores,
+            report: typed,
+          },
+        })
+      );
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-verdict')?.textContent).toContain(typed.verdict);
+      expect(query('mktg-document-view-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
+      expect(query('mktg-document-view-overall')?.classList.contains('text-emerald-700')).toBe(true);
+      expect(query('mktg-document-view-print-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
+      expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[print-color-adjust:exact]')).toBe(true);
+      expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[-webkit-print-color-adjust:exact]')).toBe(true);
+      expect(query('mktg-document-view-print-verdict')?.textContent).toContain(typed.verdict);
+      for (const row of typed.scorecard) {
+        expect(query(`mktg-document-view-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);
+        expect(query(`mktg-document-view-score-${row.key}`)?.querySelector<HTMLElement>('.h-full')?.style.width).toBe(`${row.score * 10}%`);
+        expect(query(`mktg-document-view-print-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);
+      }
+      const about = query('mktg-document-view-about');
+      const aside = about?.closest('section[aria-label="Revision details"]');
+      const content = query('mktg-document-view-report-summary')?.closest('section[aria-label="Document content"]');
+      expect(about?.textContent).toContain('Content hash');
+      expect(content).toBeTruthy();
+      expect(aside?.parentElement).toBe(content?.parentElement);
+      expect(content?.parentElement?.classList.contains('@[800px]:grid-cols-[minmax(0,1fr)_20rem]')).toBe(true);
+      expect(aside?.querySelector('[data-testid="mktg-document-view-revision-2"]')).not.toBeNull();
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-report-summary')?.textContent).toContain(typed.headline);
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(query('mktg-document-view-print')?.textContent).toContain(typed.recommendations[0].title);
+      expect(query('mktg-aeo-typed-findings')?.querySelectorAll('h4')).toHaveLength(5);
+      expect(query('mktg-aeo-typed-scorecard')?.textContent).toContain(typed.scorecard[0].summary);
+    });
+
+    it('keeps a new document generating until storage, then reopens the stored revision', async () => {
+      const completed = new Subject<void>();
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(completed);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-generating')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
+      completed.next();
+      completed.complete();
+      await settle();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
+    });
+
+    it('shows projected activity while waiting for storage and clears it on a scope change', async () => {
+      const completed = new Subject<void>();
+      const activity: MktgRunActivity[] = [
+        { id: 'step-1', kind: 'reading', label: 'Reading project.example', status: 'running', startedAt: new Date().toISOString() },
+      ];
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', savedAt: new Date(Date.now() - 60_000).toISOString() });
+      pending.waitForStorage.mockImplementation((_run, _intake, onActivity) => {
+        onActivity(activity);
+        return completed;
+      });
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-activity')?.textContent).toContain('Reading project.example');
+      expect(query('mktg-run-activity-phase-questions')).not.toBeNull();
+      expect(query('mktg-run-activity-elapsed')?.textContent).toContain('1m ');
+      expect(query('mktg-document-view-activity')?.getAttribute('title')).toBeNull();
+      expect(query('mktg-document-view-activity')?.querySelector('.fa-chart-line')).not.toBeNull();
+      expect(query('mktg-document-view-activity')?.querySelector('.bg-emerald-50')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      viewer.set(null);
+      await settle();
+      expect(query('mktg-document-view-activity')).toBeNull();
+      expect(completed.observed).toBe(false);
+    });
+
+    it('cancels an audit poll immediately when the active project is cleared', async () => {
+      const completed = new Subject<void>();
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(completed);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(completed.observed).toBe(true);
+      activeContext.set(null);
+      await settle();
+      expect(completed.observed).toBe(false);
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-loading')).not.toBeNull();
+    });
+
+    it('does not resume a capability belonging to a different agent', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'member-360', documentId: 'run-012345678901234567890123' });
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+    });
+
+    it.each(['timeout', 'stored-read-outage'])('Check again recovers a %s through a retained capability and a late stored report', async (failure) => {
+      const realPending = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+      const ready = {
+        status: 'ready' as const,
+        persistence: { project: PROJECT.uid, content_sha256: 'a'.repeat(64), s3_key: 'synthetic/report.md', version: 1 },
+        documentMarkdown: '# Report',
+        version: 1,
+      };
+      const poll = vi.spyOn(realPending, 'poll');
+      const clear = vi.spyOn(realPending, 'clear');
+      if (failure === 'timeout') poll.mockReturnValueOnce(throwError(() => new TimeoutError())).mockReturnValue(of(ready));
+      else poll.mockReturnValue(of(ready));
+      pending.waitForStorage.mockImplementation(realPending.waitForStorage.bind(realPending));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123', phase: 'writing' });
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: failure === 'timeout' ? 404 : 503 })));
+      const envelope = aeoGeoEnvelopeFixture();
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Audit document type missing.');
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          type,
+          markdown: envelope.document_markdown,
+          aeoGeoReport: {
+            domain: envelope.domain,
+            report_filename: envelope.report_filename,
+            scores: envelope.scores,
+            overall_score: envelope.overall_score,
+            verdict: envelope.verdict,
+            report: envelope.report,
+          },
+        })
+      );
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-retry')).not.toBeNull();
+      expect(query('mktg-document-view-error')?.textContent).toContain(failure === 'timeout' ? 'taking longer than expected' : 'not been stored yet');
+      expect(clear).not.toHaveBeenCalled();
+      query('mktg-document-view-retry')?.click();
+      await settle();
+      expect(query('mktg-document-view-report-summary')).not.toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(failure === 'timeout' ? 2 : 1);
+      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+
+    it('Run again explicitly clears the timed-out capability before leaving the document', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.waitForStorage.mockReturnValue(throwError(() => new TimeoutError()));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(pending.clear).not.toHaveBeenCalled();
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent | undefined;
+      if (!component) throw new Error('Document component missing.');
+      component['onRunAgain']();
+      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
+
+    it('keeps the loading indicator while the effective user is unresolved', async () => {
+      viewer.set(null);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-loading')).not.toBeNull();
+      expect(query('mktg-document-view-document')).toBeNull();
+      expect(store.getDocument).not.toHaveBeenCalled();
+      viewer.set({ sub: 'synthetic-sub' });
+      await settle();
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+    });
+
+    it('prints a stored report as PDF through the shared service and clears it on destruction', async () => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Synthetic audit document type missing.');
+      const audit = { ...detail, type, documentId: 'run-012345678901234567890123' };
+      store.getDocument.mockReturnValue(of(audit));
+      store.getRevision.mockReturnValue(
+        of({
+          ...revisionResponse(LATEST),
+          ...audit,
+          aeoGeoReport: {
+            domain: 'project.example',
+            report_filename: 'project.example AEO-GEO Report.md',
+            overall_score: 6,
+            verdict: 'Baseline',
+            scores: { ai_crawler_access: 6, llms_txt: 6, content_answerability: 6, technical_metadata: 6, external_authority: 6, content_depth_freshness: 6 },
+          },
+        })
+      );
+      await render('/project/mktg-os-agents/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-download')?.textContent).toContain('Download PDF');
+      expect(query('mktg-document-view-print')?.textContent).toContain('Revision 2');
+      expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
+      expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=testorbit');
+      query('mktg-document-view-download')?.click();
+      expect(print.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+      harness.fixture.destroy();
+      expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    });
+
+    it.each(['linkedin-post', 'member-360'])('preserves current-main reading and immutable run actions for %s', async (agentKey) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+      if (!type) throw new Error('Synthetic run document type missing.');
+      viewer.set(null);
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(OLDER), type, documentId: 'run-synthetic' }));
+      await render(`/documents/${agentKey}/run-synthetic`);
+      const pollArgs = agentKey === 'member-360' ? [] : [false];
+      const revisionPollArgs = agentKey === 'member-360' ? [] : [true];
+      expect(store.getDocument).toHaveBeenCalledWith('proj-1', agentKey, 'run-synthetic', ...pollArgs);
+      expect(pending.load).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-title')?.textContent).toContain(type.itemLabel);
+      expect(query('mktg-document-view-revision-chip')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
+      expect(query('mktg-document-view-report-summary')).toBeNull();
+      expect(query('mktg-document-view-retry')).toBeNull();
+      expect(store.getRevision).toHaveBeenCalledWith('proj-1', agentKey, 'run-synthetic', LATEST.id, ...revisionPollArgs);
+      expect(query('mktg-document-view-history-bar-make-current')).toBeNull();
+      expect(harness.routeNativeElement?.querySelectorAll('[data-testid^="mktg-document-view-restore-"]')).toHaveLength(0);
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent | undefined;
+      if (!component) throw new Error('Document component missing.');
+      component['onRestore'](OLDER);
+      expect(store.restoreRevision).not.toHaveBeenCalled();
+    });
+
+    it('uses the current selector when opening an audit without an explicit revision', async () => {
+      store.getDocument.mockReturnValue(of({ ...detail, current: { revisionId: OLDER.id } }));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(store.getRevision).toHaveBeenCalledWith(PROJECT.uid, 'aeo-geo', 'run-012345678901234567890123', OLDER.id);
+    });
+
+    it('preserves the missing-document code in the audit error copy without Check again', async () => {
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This document could not be found.');
+      expect(query('mktg-document-view-retry')).toBeNull();
+    });
+
+    it('leaves main’s load errors on the shared Retry path, not audit recovery', async () => {
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/documents/brand-kit/living');
+      expect(query('mktg-document-view-error')?.textContent).toContain('could not be loaded');
+      expect(query('mktg-document-view-retry')?.textContent).toContain('Retry');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps loading while project context is unresolved', async () => {

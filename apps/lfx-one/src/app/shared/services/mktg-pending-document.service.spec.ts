@@ -4,12 +4,18 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { AEO_GEO_INTAKE, MKTG_PENDING_DOCUMENT_STORAGE_PREFIX, MKTG_RUN_POLL, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
-import { MktgPendingDocumentRun } from '@lfx-one/shared/interfaces';
-import { of, throwError } from 'rxjs';
+import {
+  AEO_GEO_INTAKE,
+  AEO_GEO_REFUSAL_MAX_CHARS,
+  MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_TTL_MS,
+} from '@lfx-one/shared/constants';
+import { MktgPendingDocumentRun, MktgRunResultResponse } from '@lfx-one/shared/interfaces';
+import { NEVER, of, take, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserService } from './user.service';
-import { MktgPendingDocumentService } from './mktg-pending-document.service';
+import { MktgPendingDocumentService, MktgRunRefusalError } from './mktg-pending-document.service';
 
 const DOCUMENT_ID = 'run-012345678901234567890123';
 function run(): MktgPendingDocumentRun {
@@ -73,6 +79,54 @@ describe('MktgPendingDocumentService', () => {
       answers,
     });
   });
+  it.each(['refused', 'bad-request', 'timeout'])('handles a writing %s with terminal cleanup or resumable timeout', (failure) => {
+    service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }).subscribe();
+    service.markWriting(run());
+    if (failure === 'refused') post.mockReturnValue(of({ status: 'refused', reply: 'x'.repeat(AEO_GEO_REFUSAL_MAX_CHARS + 100) }));
+    else if (failure === 'bad-request') post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
+    else post.mockReturnValue(NEVER);
+    const error = vi.fn();
+    service.waitForStorage(run(), AEO_GEO_INTAKE).subscribe({ error });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
+    expect(error).toHaveBeenCalledOnce();
+    if (failure === 'refused') {
+      expect(error.mock.calls[0][0]).toBeInstanceOf(MktgRunRefusalError);
+      expect(error.mock.calls[0][0].message).toHaveLength(AEO_GEO_REFUSAL_MAX_CHARS);
+    }
+    const reloaded = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
+    if (failure === 'timeout') {
+      expect(service.loadActive('project-1', AEO_GEO_INTAKE.agentId)?.phase).toBe('writing');
+      expect(reloaded.loadActive('project-1', AEO_GEO_INTAKE.agentId)?.phase).toBe('writing');
+      post.mockReturnValue(of({ status: 'ready', persistence: { project: 'project-1' } }));
+      const done = vi.fn();
+      reloaded.waitForStorage(run(), AEO_GEO_INTAKE).subscribe(done);
+      vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+      expect(done).toHaveBeenCalledOnce();
+    } else {
+      expect(service.loadActive('project-1', AEO_GEO_INTAKE.agentId)).toBeNull();
+      expect(reloaded.loadActive('project-1', AEO_GEO_INTAKE.agentId)).toBeNull();
+    }
+  });
+
+  it('marks a transient fallback distinctly from the next real pending result', () => {
+    post.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 }))).mockReturnValueOnce(of({ status: 'pending' }));
+    const values: MktgRunResultResponse[] = [];
+    service
+      .poll(run(), AEO_GEO_INTAKE)
+      .pipe(take(2))
+      .subscribe((value) => values.push(value));
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+    expect(values).toEqual([{ status: 'pending', transient: true }, { status: 'pending' }]);
+  });
+
+  it('ends a stalled poll at the wall-clock deadline', () => {
+    post.mockReturnValue(NEVER);
+    const error = vi.fn();
+    service.poll(run(), AEO_GEO_INTAKE).subscribe({ error });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs + MKTG_RUN_POLL.initialDelayMs);
+    expect(error).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledOnce();
+  });
   it('isolates capabilities by user, project and document and expires them', () => {
     service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }).subscribe();
     expect(service.load('project-2', DOCUMENT_ID)).toBeNull();
@@ -112,6 +166,20 @@ describe('MktgPendingDocumentService', () => {
     post.mockReturnValue(of({ sessionId: 'session-2', ownerToken: 'new-proof', documentId: 'run-999999999999999999999999' }));
     service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }).subscribe();
     expect(service.load('project-1', DOCUMENT_ID)).toBeNull();
+  });
+  it('requires a persistence receipt and tolerates transient poll errors', () => {
+    const ready: MktgRunResultResponse = { status: 'ready', documentMarkdown: '# Report', version: 1 };
+    post
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of(ready))
+      .mockReturnValueOnce(of({ ...ready, persistence: { project: 'project-1' } }));
+    const done = vi.fn();
+    service.waitForStorage(run(), AEO_GEO_INTAKE).subscribe(done);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+    expect(done).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    expect(done).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledWith(AEO_GEO_INTAKE.endpoints.result, { sessionId: 'session-1', ownerToken: 'owner-proof', project: 'project-1' });
   });
   it('forwards optional activity before storage without completing the pending run', () => {
     const activity = [{ id: 'step-1', kind: 'reading', label: 'Reading project.example', status: 'running', startedAt: '2026-10-19T10:00:00Z' }];
