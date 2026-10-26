@@ -69,6 +69,7 @@ export class Member360Service {
 
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
+    const redactIdentity = createMember360Redactor([]);
     let best: Member360Envelope | null = null;
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
@@ -89,8 +90,8 @@ export class Member360Service {
         if (!this.member360EnvelopeMatchesProject(envelope, project)) {
           logger.debug(req, 'member_360_result', 'Rejected envelope scope', {
             project: project.uid,
-            envelope_project_uid: envelope.project_uid,
-            envelope_project_slug: envelope.project_slug,
+            envelope_project_uid: envelope.project_uid && redactIdentity(envelope.project_uid),
+            envelope_project_slug: envelope.project_slug && redactIdentity(envelope.project_slug),
           });
           continue;
         }
@@ -117,9 +118,11 @@ export class Member360Service {
       // Verify upstream bytes first, then exclude contact identity from the immutable store.
       const redact = createMember360Redactor(best.tabs.member_ranking.map((row) => row.key_contact));
       const tabs = redactMember360Tabs(best.tabs, redact);
-      const redactIdentity = createMember360Redactor([]);
+      // This provenance field is BFF-owned, never trusted from the agent contract.
+      const storedEnvelope = { ...best };
+      delete storedEnvelope.lfx_project_uid;
       let member360 = {
-        ...best,
+        ...storedEnvelope,
         project_uid: project.uid,
         ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),
         project_name: redactIdentity(best.project_name),
@@ -163,6 +166,7 @@ export class Member360Service {
   }
 
   private member360EnvelopeMatchesProject(envelope: Member360Envelope, project: Project): boolean {
+    if (envelope.project_uid !== undefined && !MKTG_ARTIFACT_PARTITION_REGEX.test(envelope.project_uid)) return false;
     return (
       envelope.project_name === project.name &&
       ((envelope.project_uid === project.uid && (envelope.project_slug === undefined || envelope.project_slug === project.slug)) ||
