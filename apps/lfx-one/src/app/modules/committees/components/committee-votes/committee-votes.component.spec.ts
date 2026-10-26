@@ -44,15 +44,15 @@ describe('CommitteeVotesComponent', () => {
     fixture.detectChanges();
   });
 
-  it('opens the vote page from a row', () => {
-    table().viewVote.emit('vote-open');
+  it.each(['vote-open', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens a row with %s as one vote-id segment', (uid) => {
+    table().viewVote.emit(uid);
 
-    expect(navigate).toHaveBeenLastCalledWith(['/votes/vote-open']);
+    expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
   });
 
-  it('opens the vote page on the Results tab from View results', () => {
-    table().viewResults.emit('vote-ended');
+  it.each(['vote-ended', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {
+    table().viewResults.emit(uid);
 
-    expect(navigate).toHaveBeenLastCalledWith(['/votes/vote-ended'], { queryParams: { tab: 'results' } });
+    expect(navigate).toHaveBeenLastCalledWith(['/votes', uid], { queryParams: { tab: 'results' } });
   });
 });

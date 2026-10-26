@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
-import { buildCommitteeCreateQueryParams, votePermalinkPath } from '@lfx-one/shared/utils';
+import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -53,11 +53,11 @@ export class CommitteeVotesComponent {
 
   /** Mirrors the votes dashboard: a vote opens on its page, whose breadcrumb leads back. */
   public viewVote(voteUid: string): void {
-    void this.router.navigate([votePermalinkPath(voteUid)]);
+    void this.router.navigate(['/votes', voteUid]);
   }
 
   public viewVoteResults(voteUid: string): void {
-    void this.router.navigate([votePermalinkPath(voteUid)], { queryParams: { tab: 'results' } });
+    void this.router.navigate(['/votes', voteUid], { queryParams: { tab: 'results' } });
   }
 
   /** votes-table's refresh output, fired after a successful delete — propagates to parent. */

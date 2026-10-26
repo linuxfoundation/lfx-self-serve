@@ -28,7 +28,6 @@ import {
   matchesMyVotesQuickFilter,
   recordPageToken,
   resolveCursorWalkOutcome,
-  votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -229,11 +228,11 @@ export class VotesDashboardComponent {
 
   /** A vote opened from the list navigates to its page, which opens the cast drawer itself for a voter awaiting a ballot. */
   protected onViewVote(voteId: string): void {
-    void this.router.navigate([votePermalinkPath(voteId)]);
+    void this.router.navigate(['/votes', voteId]);
   }
 
   protected onViewResults(voteId: string): void {
-    void this.router.navigate([votePermalinkPath(voteId)], { queryParams: { tab: 'results' } });
+    void this.router.navigate(['/votes', voteId], { queryParams: { tab: 'results' } });
   }
 
   protected refreshVotes(): void {

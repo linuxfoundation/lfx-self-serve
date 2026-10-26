@@ -1033,13 +1033,19 @@ describe('VotesDashboardComponent personal summary', () => {
     it("opens the vote page from a row, including a vote awaiting the viewer's ballot", () => {
       table.viewVote.emit('soon');
 
-      expect(navigate).toHaveBeenLastCalledWith(['/votes/soon']);
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon']);
     });
 
-    it('opens the vote page on the Results tab from View results', () => {
-      dashboard['onViewResults']('later');
+    it.each(['later', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {
+      dashboard['onViewResults'](uid);
 
-      expect(navigate).toHaveBeenLastCalledWith(['/votes/later'], { queryParams: { tab: 'results' } });
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', uid], { queryParams: { tab: 'results' } });
+    });
+
+    it.each(['vote/invalid', 'vote?invalid', 'vote#invalid'])('opens a row with %s as one vote-id segment', (uid) => {
+      table.viewVote.emit(uid);
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
     });
   });
 });

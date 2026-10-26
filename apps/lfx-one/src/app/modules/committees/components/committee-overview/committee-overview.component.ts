@@ -46,7 +46,6 @@ import {
   isValidUrl,
   mapActivityEventsToFeedItems,
   selectNextUpcomingMeeting,
-  votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -351,7 +350,7 @@ export class CommitteeOverviewComponent {
   // lookup, fetch or toast here, and the router's own navigation cancellation means the last
   // click wins.
   public openVote(voteUid: string): void {
-    void this.router.navigate([votePermalinkPath(voteUid)]);
+    void this.router.navigate(['/votes', voteUid]);
   }
 
   public handlePendingActionClick(item: PendingActionItem): void {

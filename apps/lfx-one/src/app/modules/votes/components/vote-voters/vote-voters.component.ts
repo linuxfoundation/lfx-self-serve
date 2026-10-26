@@ -259,6 +259,8 @@ export class VoteVotersComponent {
     toObservable(this.filteredRows)
       .pipe(takeUntilDestroyed())
       .subscribe((rows) => {
+        if (this.loading() || this.loadError()) return;
+
         const pageSize = this.selectedPageSize();
         const lastPageFirst = Math.max(0, Math.ceil(rows.length / pageSize) - 1) * pageSize;
         if (this.tableFirst() > lastPageFirst) this.tableFirst.set(lastPageFirst);
