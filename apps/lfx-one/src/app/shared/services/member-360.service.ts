@@ -20,7 +20,24 @@ import {
   Member360Tracker,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { catchError, defer, EMPTY, exhaustMap, filter, mergeMap, mergeWith, Observable, of, take, takeWhile, tap, throwError, TimeoutError, timer } from 'rxjs';
+import {
+  catchError,
+  defer,
+  EMPTY,
+  exhaustMap,
+  filter,
+  mergeMap,
+  mergeWith,
+  Observable,
+  of,
+  take,
+  takeWhile,
+  tap,
+  throwError,
+  timeout,
+  TimeoutError,
+  timer,
+} from 'rxjs';
 
 import { UserService } from './user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -89,7 +106,7 @@ export class Member360Service {
       return (expired ? timer(0) : timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs)).pipe(
         exhaustMap(() => {
           if (waitingSince !== null && Date.now() - waitingSince < MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS) return EMPTY;
-          return this.http
+          const poll = this.http
             .post<Member360Result>(`${MEMBER_360_API}/result`, { project, sessionId: pending.session.sessionId, ownerToken: pending.session.ownerToken })
             .pipe(
               catchError((error) => {
@@ -98,6 +115,7 @@ export class Member360Service {
                 return of<Member360Result>({ status: 'pending' });
               })
             );
+          return expired ? poll.pipe(timeout({ first: MKTG_RUN_POLL.timeoutMs })) : poll;
         }),
         // Report progress without releasing the document's persistence gate. A transient
         // poll failure has no activity, so it must not erase the last successful feed.

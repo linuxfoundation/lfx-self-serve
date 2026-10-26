@@ -481,7 +481,7 @@ describe('Member 360 entitlement and generation', () => {
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
   });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
-    'recognizes %s without exposing question text or persisting',
+    'keeps %s open without exposing questions, then reports failure when the root session ends',
     async (header) => {
       const questions = {
         project: 'Sample Foundation',
@@ -496,11 +496,14 @@ describe('Member 360 entitlement and generation', () => {
         ],
       };
       const questionsText = `${header}\n\`\`\`json\n${JSON.stringify(questions)}\n\`\`\``;
-      mocks.getRawEventPayloads.mockResolvedValue([
-        JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` }),
-        JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', status: 'DONE' } }),
-      ]);
+      const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
       expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      mocks.getRawEventPayloads.mockResolvedValue([
+        questionsEvent,
+        JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' } }),
+      ]);
+      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'failed', reason: 'agent_stopped' });
       expect(mocks.recordGeneration).not.toHaveBeenCalled();
     }
   );

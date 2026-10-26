@@ -223,6 +223,22 @@ describe('Member360Service workbook transport', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
+  it('bounds an expired one-shot request without forgetting the pending run when the BFF never responds', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS + 1);
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(error).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    expect(check.cancelled).toBe(true);
+    expect(error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    expect(sessionStorage.length).toBe(1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
     const filename = 'Q3+sponsors — draft.csv';
     api.parseTracker('sample-project', new File(['company\nAcme Motors'], filename)).subscribe();

@@ -99,13 +99,13 @@ export class Member360Service {
       }
     }
     if (!best) {
-      const questionsText = findMember360Questions(payloads);
-      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
       const failed = member360TerminalResult(payloads, contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
+      const questionsText = findMember360Questions(payloads);
+      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
       return { status: 'pending', activity: buildMktgRunActivity(payloads) };
     }
     const type = findMktgDocumentType('member-360');
