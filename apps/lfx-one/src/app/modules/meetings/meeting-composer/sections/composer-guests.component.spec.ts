@@ -449,7 +449,7 @@ describe('ComposerGuestsComponent', () => {
       expect(component['undoBatch']()).not.toBeNull();
     });
 
-    it('withdraws undo for a group guest once the selected groups change', () => {
+    it('withdraws undo once the selected groups change, whatever the removed guest', () => {
       formService
         .form()
         .get('committees')
@@ -457,6 +457,25 @@ describe('ComposerGuestsComponent', () => {
       const groupGuest = { ...savedGroupGuest, uid: '', tempId: 'temp_1', state: 'new' as const };
       formService.setGuests([groupGuest]);
       component['onRemoveGuest'](groupGuest);
+      expect(component['undoBatch']()).not.toBeNull();
+
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-b' }]);
+
+      expect(component['undoBatch']()).toBeNull();
+    });
+
+    it('withdraws undo for a removed direct guest too when the groups change', () => {
+      // The snapshot would overwrite whatever the group change did to the rows, so the batch goes whole.
+      formService
+        .form()
+        .get('committees')
+        ?.setValue([{ uid: 'committee-a' }]);
+      const direct = { ...savedGroupGuest, uid: 'd-1', type: 'direct' as const };
+      formService.setGuests([direct]);
+      component['onRemoveGuest'](direct);
       expect(component['undoBatch']()).not.toBeNull();
 
       formService
@@ -476,7 +495,7 @@ describe('ComposerGuestsComponent', () => {
       expect(component['undoBatch']()).not.toBeNull();
     });
 
-    it('withdraws undo for a group guest once a voting-status filter narrows', () => {
+    it('withdraws undo once a voting-status filter narrows, whatever the removed guest', () => {
       formService
         .form()
         .get('committees')
