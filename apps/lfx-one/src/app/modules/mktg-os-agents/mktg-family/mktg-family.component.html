@@ -20,7 +20,7 @@
             <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
             <lfx-button
               [label]="header.label"
-              icon="fa-light fa-play"
+              [icon]="header.kind === 'create' ? 'fa-light fa-play' : undefined"
               [ariaLabel]="header.label"
               [routerLink]="header.link?.commands ?? ['../../', header.agentId ?? '']"
               [queryParams]="headerQueryParams()"

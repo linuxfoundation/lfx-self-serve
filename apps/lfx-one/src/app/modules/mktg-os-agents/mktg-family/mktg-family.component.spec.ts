@@ -276,6 +276,21 @@ describe('Marketing family page', () => {
     }
   });
 
+  it('shows the play icon only for Create, with no icon element for blocked or review steps', async () => {
+    const drafts = families();
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    // PrimeNG retains a p-hidden placeholder span; it has no glyph or layout gap.
+    const icon = () => harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] .p-button-icon:not(.p-hidden)');
+    expect(icon()).toBeNull(); // Blocked: review and approve the framework.
+    families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
+    await harness.fixture.whenStable();
+    expect(icon()?.classList.contains('fa-play')).toBe(true);
+    families.set(drafts.map((item) => ({ ...item, rows: item.rows.filter((row) => row.document) })));
+    await harness.fixture.whenStable();
+    expect(icon()).toBeNull(); // Review the existing draft.
+  });
+
   it('reviews the first draft when nothing remains to create, then hides the fresh approved header', async () => {
     families.update((items) => items.map((item) => ({ ...item, rows: item.rows.filter((row) => row.document) })));
     const harness = await RouterTestingHarness.create();
