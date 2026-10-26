@@ -20,11 +20,11 @@ The **My Tasks** tab holds everything a program has assigned you — the prerequ
 
 You set a task's status yourself from its dropdown, but only certain moves are allowed:
 
-| Status          | What it means                       | Where you can move it                                |
-| --------------- | ----------------------------------- | ---------------------------------------------------- |
-| **To Do**       | Not started                         | To **In Progress**                                   |
-| **In Progress** | You are working on it               | To **Submitted**, once any required file is uploaded |
-| **Submitted**   | Handed in for your mentor to review | Back to **In Progress**, until the due date passes   |
+| Status          | What it means                       | Where you can move it                                           |
+| --------------- | ----------------------------------- | --------------------------------------------------------------- |
+| **To Do**       | Not started                         | To **In Progress**                                              |
+| **In Progress** | You are working on it               | To **Submitted** — or upload the file, which submits it for you |
+| **Submitted**   | Handed in for your mentor to review | Back to **In Progress**, until the due date passes              |
 
 **Submitted** is greyed out on a task still in **To Do** — start it first. You cannot move a task back to **To Do** once it is under way.
 
@@ -37,16 +37,26 @@ A mentor or Program Admin may also move a task on their side; your view refreshe
 3. Use the filter chips — **All**, **To Do**, **In Progress**, **Submitted** — to narrow the list.
 4. Open a task to read what it asks for and when it is due.
 5. Set the task to **In Progress**.
-6. If the task requires a file, upload it. Uploading does not submit the task — it unlocks the **Submitted** option.
-7. Set the task to **Submitted**.
+6. Finish it:
+   - **A task that needs a file** — upload the file. That submits the task; there is no separate step.
+   - **Any other task** — set it to **Submitted** yourself.
 
 ## Tasks that require a file
 
-While a required file is missing, **Submitted** stays disabled and the row shows:
+**Uploading the file submits the task.** There is no draft state: once the upload succeeds the task moves to **Submitted** and your mentor can review it. Upload only when the work is ready to hand in.
+
+Until you upload, **Submitted** stays disabled and the row shows:
 
 > This task needs a file before it can be submitted. Upload one first.
 
-Upload the file, then set the status yourself. You can replace or remove the file until the due date passes.
+Afterwards:
+
+| You want to          | You can, while                                                         |
+| -------------------- | ---------------------------------------------------------------------- |
+| **Replace** the file | Your mentor has not completed the task and the due date has not passed |
+| **Remove** the file  | The task is not submitted yet and the due date has not passed          |
+
+Because the upload submits the task, **Remove** disappears straight after it. To take a submission back, move the task to **In Progress** first, then remove or replace the file.
 
 ## Tasks that are past due
 

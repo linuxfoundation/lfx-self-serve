@@ -47,7 +47,7 @@ The **Assign to** picker only appears when you are creating a group task. A per-
 
 ### Change a task
 
-Expand the mentee's row with **View Tasks**, use **Edit Task**, then **Save Task**. A task's assignee cannot be changed after it is created — delete it and create a new one instead.
+Expand the mentee's row with **View Tasks**, use **Edit Task**, then **Save Task**. A task's assignee cannot be changed after it is created, and tasks cannot be deleted, so create a separate task for anyone else who needs it.
 
 A mentor's **Tasks** tab offers **Approve** and **Request Changes** only; it does not create or edit tasks.
 

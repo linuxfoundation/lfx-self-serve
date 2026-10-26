@@ -24,7 +24,7 @@ The program declined it for that term. You can apply to a different program, or 
 One of four reasons:
 
 - **The task is still in To Do.** Move it to **In Progress** first.
-- **It needs a file you have not uploaded.** The row says "This task needs a file before it can be submitted. Upload one first." Uploading does not submit the task — it unlocks the option.
+- **It needs a file you have not uploaded.** The row says "This task needs a file before it can be submitted. Upload one first." Upload it — that submits the task for you, so there is no separate step.
 - **The due date has passed.** "The due date has passed, so this task can no longer be submitted."
 - **Your mentor already marked it complete.** "Completed tasks can only be changed by your mentor."
 
