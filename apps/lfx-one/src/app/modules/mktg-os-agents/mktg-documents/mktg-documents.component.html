@@ -43,7 +43,11 @@
                     Writing the document
                   }
                   @case ('questions') {
-                    Waiting for your answers
+                    @if (run.agentKey === 'member-360') {
+                      Paused — the run needs input
+                    } @else {
+                      Waiting for your answers
+                    }
                   }
                   @case ('storing') {
                     Storing the revision

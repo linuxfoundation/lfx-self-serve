@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="runAgainParams().project" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-header">
       <div class="flex min-w-0 flex-col gap-1">
         <h1
           class="text-base font-semibold text-gray-900"
@@ -54,7 +54,22 @@
           </span>
         }
       }
+      @if (!loading() && view()?.member360; as envelope) {
+        <lfx-button
+          (onClick)="onDownloadWorkbook()"
+          [loading]="downloadingWorkbook()"
+          [disabled]="downloadingWorkbook() || !writer()"
+          label="Download Member360_{{ envelope.project }}_{{ envelope.period.label }}.xlsx"
+          [outlined]="true"
+          severity="secondary"
+          class="min-w-0 max-w-full"
+          styleClass="min-h-12 max-w-full whitespace-normal break-words"
+          data-testid="member-360-download" />
+      }
     </div>
+    @if (workbookError()) {
+      <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
+    }
 
     @if (runAgentId() && !hasAssetView()) {
       <a
@@ -680,7 +695,7 @@
           @if (historyError()) {
             <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
           }
-          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" [project]="current.project" />
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" />
         }
       }
     }
