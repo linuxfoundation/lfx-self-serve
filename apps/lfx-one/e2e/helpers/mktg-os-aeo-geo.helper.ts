@@ -13,8 +13,8 @@ import type { AeoGeoAnswersBody, MktgRevisionResponse } from '@lfx-one/shared/in
 import { expect, Page } from '@playwright/test';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
-import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '../../../../packages/shared/src/utils/aeo-geo.fixture';
-import { aeoGeoRunQuestions } from '../../../../packages/shared/src/utils/aeo-geo.utils';
+import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
+import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
 
 export const PAGE_LOAD_TIMEOUT = 20_000;
 export const AUDIT_PROJECT = { uid: 'audit-project-1', slug: 'audit-e2e-project', name: 'Synthetic Audit Project' };
@@ -93,6 +93,7 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     answersSent: false,
     refused: false,
     revisionReadError: false,
+    revisionReadFailures: 0,
   };
   const answers: AeoGeoAnswersBody[] = [];
   const sessions = new Map<string, string>();
@@ -207,7 +208,10 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     const documentId = path.split('/')[5];
     const doc = documents.get(documentId);
     if (doc && method === 'GET') {
-      if (state.revisionReadError) return route.fulfill({ status: 503, json: { error: 'Synthetic stored revision read outage' } });
+      if (state.revisionReadError && path.includes('/revisions/')) {
+        state.revisionReadFailures++;
+        return route.fulfill({ status: 503, json: { error: 'Synthetic stored revision read outage' } });
+      }
       return route.fulfill({ json: doc });
     }
     return route.fulfill({ status: 404, json: { error: 'Synthetic document not stored' } });
