@@ -472,16 +472,16 @@ export class VoteDetailComponent {
     });
   }
 
-  /** The Comments tab exists only when the vote asks for comments; the Voters tab only when `showVotersTab` allows it. */
+  /** Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it. */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
-      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0;
+      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0 || this.commentResults().length > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
     });
   }
 
-  /** A `?tab=` the vote doesn't offer (Comments without prompts, Voters for a voter or on a pseudo-anonymous vote) falls back to the default tab. */
+  /** A `?tab=` the vote doesn't offer (no detail/result comment prompts, or Voters without access) falls back to the default tab. */
   private initActiveTab(): Signal<VoteDetailTab> {
     return computed(() => {
       const requested = this.requestedTab();
