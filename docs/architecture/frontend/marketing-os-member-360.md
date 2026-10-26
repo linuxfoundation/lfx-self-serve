@@ -28,6 +28,14 @@ The original-byte check still authenticates the upstream payload before that pro
 User and trigger events are excluded by the existing Guild service. Raw events remain available for the shared activity feed, agent-authored questions and root termination; after the terminal-state layer, raw contract candidates supply privacy-only contact masks, never accepted output. The previous stored Member Ranking is loaded server-side for trends;
 a failed comparison read is a classified `MEMBER_360_COMPARISON_UNAVAILABLE` conflict, never a silent “no previous run”. The form explains that the user can turn off comparison or retry.
 
+The result scope requires an exact project name and either an exact UID with an
+absent or matching slug, or an exact slug when the UID differs or is absent.
+The MCP and LFX One use different UID namespaces; agent 2.1.0's exact-name fallback
+can therefore return the MCP record's UID. Before storage the BFF normalizes
+`project_uid` to LFX One's UID and retains a differing agent UID as `lfx_project_uid`.
+This leaves stored-run readers, including the workbook's UID guard, scoped to the
+same entitled LFX One project. The intake is unchanged.
+
 Every session produces one immutable run document through the existing document
 store. After validating the upstream hash, the BFF clears every ranking row's
 `key_contact` before persistence and recomputes the sanitized tabs hash: immutable
