@@ -11,7 +11,7 @@ import {
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
-import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -448,6 +448,104 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     await fixture.whenStable();
 
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProfileLayoutComponent — primary email and identity notifications (#4123)', () => {
+  function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'value'>): EnrichedIdentity {
+    return {
+      platform: 'email',
+      type: 'email',
+      verified: false,
+      source: 'cdp',
+      icon: 'fa-light fa-envelope',
+      createdAt: '',
+      updatedAt: '',
+      displayState: 'unverified',
+      inAuth0: false,
+      ...overrides,
+    };
+  }
+
+  async function setup(identities: EnrichedIdentity[], refresh$ = new Subject<void>()): Promise<ComponentFixture<ProfileLayoutComponent>> {
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: refresh$,
+      getCurrentUserProfile: vi.fn(() =>
+        of({ user: { username: 'dev-user', email: 'old-primary@example.org', first_name: 'Old' }, profile: { given_name: 'Old' } } as CombinedProfile)
+      ),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of(identities)),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('shows the identities primary instead of a stale profile email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+  });
+
+  it('falls back to the profile email when identities have no primary row', async () => {
+    const fixture = await setup([makeIdentity({ id: 'other-email', value: 'other@example.org' })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+  });
+
+  it('refreshes the sidebar primary without losing optimistic profile edits', async () => {
+    const refresh$ = new Subject<void>();
+    const fixture = await setup([makeIdentity({ id: 'old-primary', value: 'old-primary@example.org', isPrimary: true })], refresh$);
+    fixture.componentInstance.onProfileSaved({ given_name: 'Saved' });
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+    const getIdentities = vi.mocked(TestBed.inject(UserService).getIdentities);
+    getIdentities.mockReturnValue(of([makeIdentity({ id: 'new-primary', value: 'new-primary@example.org', isPrimary: true })]));
+
+    refresh$.next();
+    await fixture.whenStable();
+
+    expect(getIdentities).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+    expect(fixture.componentInstance.profileData()?.firstName).toBe('Saved');
+  });
+
+  it('keeps the dot off for a lone unverified primary email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true })]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(false);
+  });
+
+  it('still lights the dot for another unverified identity', async () => {
+    const fixture = await setup([
+      makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true }),
+      makeIdentity({ id: 'cdp-other', value: 'other@example.org' }),
+    ]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(true);
   });
 });
 

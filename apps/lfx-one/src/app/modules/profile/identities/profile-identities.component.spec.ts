@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { EnrichedIdentity } from '@lfx-one/shared/interfaces';
@@ -95,6 +95,56 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
   });
 });
 
+function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'type' | 'value'>): EnrichedIdentity {
+  return {
+    platform: 'email',
+    verified: true,
+    source: 'cdp',
+    icon: 'fa-light fa-envelope',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    displayState: 'verified',
+    inAuth0: false,
+    ...overrides,
+  };
+}
+
+async function setupWithIdentities(
+  identities: EnrichedIdentity[],
+  invite: { email: string | null } | 'error',
+  renderTemplate = false
+): Promise<ComponentFixture<ProfileIdentitiesComponent>> {
+  const userServiceMock = {
+    impersonating: signal(false),
+    identitiesRefresh$: EMPTY,
+    getIdentities: vi.fn(() => of(identities)),
+    getMeetingInviteEmail: vi.fn(() => (invite === 'error' ? throwError(() => new Error('nats down')) : of({ email_id: null, ...invite }))),
+    refreshUserIdentities: vi.fn(),
+  };
+
+  TestBed.configureTestingModule({
+    imports: [ProfileIdentitiesComponent],
+    providers: [
+      { provide: PLATFORM_ID, useValue: 'browser' },
+      { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
+      { provide: UserService, useValue: userServiceMock },
+      { provide: MessageService, useValue: { add: vi.fn() } },
+      { provide: DialogService, useValue: { open: vi.fn() } },
+    ],
+  });
+  // Empty template: exercise menuItemsMap without the full panel/dialog child graph. When rendering,
+  // keep the real template but leave the lfx-* children as inert custom elements.
+  TestBed.overrideComponent(
+    ProfileIdentitiesComponent,
+    renderTemplate ? { set: { imports: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] } } : { set: { template: '', imports: [] } }
+  );
+
+  const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return fixture;
+}
+
 /**
  * Guards the Remove-guard's identity match (Copilot review, PR #1073): it must key off `type`
  * (not `provider`), match case-insensitively, leave non-email identities removable even when
@@ -102,58 +152,16 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
  * when the invite fetch itself failed.
  */
 describe('ProfileIdentitiesComponent — meeting-invite Remove guard (Copilot review, PR #1073)', () => {
-  function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'type' | 'value'>): EnrichedIdentity {
-    return {
-      platform: 'email',
-      verified: true,
-      source: 'cdp',
-      icon: 'fa-light fa-envelope',
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z',
-      displayState: 'verified',
-      inAuth0: false,
-      ...overrides,
-    };
-  }
-
-  async function setup(identities: EnrichedIdentity[], invite: { email: string | null } | 'error'): Promise<ComponentFixture<ProfileIdentitiesComponent>> {
-    const userServiceMock = {
-      impersonating: signal(false),
-      identitiesRefresh$: EMPTY,
-      getIdentities: vi.fn(() => of(identities)),
-      getMeetingInviteEmail: vi.fn(() => (invite === 'error' ? throwError(() => new Error('nats down')) : of({ email_id: null, ...invite }))),
-      refreshUserIdentities: vi.fn(),
-    };
-
-    TestBed.configureTestingModule({
-      imports: [ProfileIdentitiesComponent],
-      providers: [
-        { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
-        { provide: UserService, useValue: userServiceMock },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: DialogService, useValue: { open: vi.fn() } },
-      ],
-    });
-    // Empty template: exercise menuItemsMap without the full panel/dialog child graph.
-    TestBed.overrideComponent(ProfileIdentitiesComponent, { set: { template: '', imports: [] } });
-
-    const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    return fixture;
-  }
-
   it('disables Remove for an exact-match meeting-invite email', async () => {
     const identity = makeIdentity({ id: 'id-1', type: 'email', value: 'primary@example.com' });
-    const fixture = await setup([identity], { email: 'primary@example.com' });
+    const fixture = await setupWithIdentities([identity], { email: 'primary@example.com' });
 
     expect(fixture.componentInstance.menuItemsMap().get('id-1')?.[0]).toEqual(expect.objectContaining({ disabled: true }));
   });
 
   it('disables Remove for a case-insensitive meeting-invite email match', async () => {
     const identity = makeIdentity({ id: 'id-1', type: 'email', value: 'Primary@Example.com' });
-    const fixture = await setup([identity], { email: 'primary@example.com' });
+    const fixture = await setupWithIdentities([identity], { email: 'primary@example.com' });
 
     expect(fixture.componentInstance.menuItemsMap().get('id-1')?.[0]).toEqual(expect.objectContaining({ disabled: true }));
   });
@@ -162,7 +170,7 @@ describe('ProfileIdentitiesComponent — meeting-invite Remove guard (Copilot re
     // Same `value` as the invite email, but `type: 'username'` — e.g. the server rewrote this
     // row's `platform` to 'github' while it stayed a username, not an email, identity.
     const identity = makeIdentity({ id: 'id-1', type: 'username', platform: 'github', value: 'primary@example.com' });
-    const fixture = await setup([identity], { email: 'primary@example.com' });
+    const fixture = await setupWithIdentities([identity], { email: 'primary@example.com' });
 
     const item = fixture.componentInstance.menuItemsMap().get('id-1')?.[0];
     expect(item?.disabled).toBeFalsy();
@@ -173,11 +181,105 @@ describe('ProfileIdentitiesComponent — meeting-invite Remove guard (Copilot re
     const emailA = makeIdentity({ id: 'id-1', type: 'email', value: 'a@example.com' });
     const emailB = makeIdentity({ id: 'id-2', type: 'email', value: 'b@example.com' });
     const username = makeIdentity({ id: 'id-3', type: 'username', platform: 'github', value: 'someone' });
-    const fixture = await setup([emailA, emailB, username], 'error');
+    const fixture = await setupWithIdentities([emailA, emailB, username], 'error');
 
     const menuMap = fixture.componentInstance.menuItemsMap();
     expect(menuMap.get('id-1')?.[0]).toEqual(expect.objectContaining({ disabled: true }));
     expect(menuMap.get('id-2')?.[0]).toEqual(expect.objectContaining({ disabled: true }));
     expect(menuMap.get('id-3')?.[0]?.disabled).toBeFalsy();
+  });
+});
+
+describe('ProfileIdentitiesComponent — primary email row (#4123)', () => {
+  it('maps a verified primary row to a verified identity with isPrimary', async () => {
+    const fixture = await setupWithIdentities([makeIdentity({ id: 'cdp-primary', type: 'email', value: 'dev@example.com', isPrimary: true })], { email: null });
+
+    expect(fixture.componentInstance.verifiedIdentities()).toEqual([expect.objectContaining({ id: 'cdp-primary', isPrimary: true })]);
+  });
+
+  it('groups an unverified primary row under unverified identities, still marked primary', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', verified: false, displayState: 'unverified', isPrimary: true })],
+      { email: null }
+    );
+
+    expect(fixture.componentInstance.unverifiedIdentities()).toEqual([expect.objectContaining({ id: 'primary-email', isPrimary: true })]);
+    expect(fixture.componentInstance.verifiedIdentities()).toEqual([]);
+  });
+
+  it('shows the empty state when every row is filtered out', async () => {
+    const fixture = await setupWithIdentities(
+      [
+        makeIdentity({ id: 'cdp-lfid', type: 'username', platform: 'lfid', value: 'dev-user' }),
+        makeIdentity({ id: 'cdp-hidden', type: 'email', value: 'old@example.org', displayState: 'hidden' }),
+      ],
+      { email: null }
+    );
+
+    expect(fixture.componentInstance.isEmpty()).toBe(true);
+  });
+});
+
+/**
+ * Renders the real template for primary-email rows (#4123): an unverified primary gets the support
+ * hint instead of Verify / "This is not me", and a verified primary keeps the Remove menu only when
+ * it is backed by a linked login.
+ */
+describe('ProfileIdentitiesComponent — primary email row template (#4123)', () => {
+  const query = (fixture: ComponentFixture<ProfileIdentitiesComponent>, testId: string): Element | null =>
+    fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('shows the support hint instead of Verify and "This is not me" for an unverified primary, without the verify prompt', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', verified: false, displayState: 'unverified', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'primary-email-hint')).not.toBeNull();
+    expect(query(fixture, 'identity-primary-badge')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-primary-email')).toBeNull();
+    expect(query(fixture, 'reject-identity-btn')).toBeNull();
+    expect(query(fixture, 'unverified-identities-warning')).toBeNull();
+  });
+
+  it('keeps the verify prompt and actions for a non-primary unverified row beside an unverified primary', async () => {
+    const fixture = await setupWithIdentities(
+      [
+        makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', verified: false, displayState: 'unverified', isPrimary: true }),
+        makeIdentity({ id: 'cdp-alt', type: 'email', value: 'alt@example.com', verified: false, displayState: 'unverified' }),
+      ],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'unverified-identities-warning')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-cdp-alt')).not.toBeNull();
+    expect(query(fixture, 'verify-btn-primary-email')).toBeNull();
+  });
+
+  it('shows no Remove menu for a verified display-only primary', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'primary-email', type: 'email', value: 'dev@example.com', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'identity-primary-badge')).not.toBeNull();
+    expect(query(fixture, 'identity-menu-primary-email')).toBeNull();
+  });
+
+  it('keeps the Remove menu for a primary backed by a linked login', async () => {
+    const fixture = await setupWithIdentities(
+      [makeIdentity({ id: 'cdp-primary', type: 'email', value: 'dev@example.com', inAuth0: true, auth0UserId: 'email|1', isPrimary: true })],
+      { email: null },
+      true
+    );
+
+    expect(query(fixture, 'identity-menu-cdp-primary')).not.toBeNull();
   });
 });
