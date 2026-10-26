@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
+import type { OrgLensAffiliationVerdict, OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
 
 import { NAV_SEARCH_DEBOUNCE_MS } from './lens.constants';
 
@@ -48,6 +48,18 @@ export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
  * chain — resolve, work-history, warehouse — so it is larger, while still well inside a page load.
  */
 export const ORG_AFFILIATION_LOOKUP_TIMEOUT_MS = 5000;
+
+/** #4225 — logger operation name for the employer-affiliation enrichment; it rides the role-grants call, so it shares that operation. */
+export const ORG_AFFILIATION_OPERATION = 'get_org_role_grants';
+
+/** #4225 — nothing established and the question was not answerable; the client keeps the copy it shows today. */
+export const ORG_AFFILIATION_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'failed' };
+
+/** #4225 — the caller has no ongoing employer on their work history. An answer, not an outage. */
+export const ORG_AFFILIATION_NO_EMPLOYER: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'ok' };
+
+/** #4225 — the employer is known but its membership is not; still `failed`, so the client keeps today's copy. */
+export const ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: true, employerIsMember: false, lookup: 'failed' };
 
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;

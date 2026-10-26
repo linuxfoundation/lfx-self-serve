@@ -1,29 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import {
+  ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN,
+  ORG_AFFILIATION_LOOKUP_TIMEOUT_MS,
+  ORG_AFFILIATION_NO_EMPLOYER,
+  ORG_AFFILIATION_OPERATION,
+  ORG_AFFILIATION_UNKNOWN,
+} from '@lfx-one/shared/constants';
 import type { OrgLensAffiliationVerdict, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 // Deep import, never the `utils` barrel: that barrel statically pulls in `@angular/forms`, which
 // throws at import time in a plain Node runtime (docs/architecture/shared/package-architecture.md, GH-2381).
 import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils/invitation.utils';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { CdpService } from './cdp.service';
 import { logger } from './logger.service';
 import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
 import { OrganizationService } from './organization.service';
-
-const OPERATION = 'get_org_role_grants';
-
-/** Nothing established, and the question was not answerable — the client keeps today's copy. */
-const UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'failed' };
-
-/** The caller has no current employer on their work history; that is an answer, not an outage. */
-const NO_EMPLOYER: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'ok' };
-
-/** The employer is known but its membership is not — still `failed`, so the client keeps today's copy. */
-const EMPLOYER_MEMBERSHIP_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: true, employerIsMember: false, lookup: 'failed' };
 
 /**
  * #4225 — why a caller who holds no Org Lens grant holds none.
@@ -69,16 +65,16 @@ export class OrgAffiliationService {
 
     const username = getEffectiveUsername(req);
     if (!username) {
-      return { affiliation: UNKNOWN };
+      return { affiliation: ORG_AFFILIATION_UNKNOWN };
     }
 
     try {
       return { affiliation: await this.withDeadline(this.resolve(req, username)) };
     } catch (error) {
-      logger.warning(req, OPERATION, 'Affiliation lookup failed; reporting the employer verdict as unknown', {
-        err: error instanceof Error ? error.message : String(error),
-      });
-      return { affiliation: UNKNOWN };
+      // `err: error`, not `error.message`: the serializer keeps the type, status/code and stack that
+      // timeout-vs-CDP-vs-warehouse triage depends on (docs/architecture/backend/logging-monitoring.md).
+      logger.warning(req, ORG_AFFILIATION_OPERATION, 'Affiliation lookup failed; reporting the employer verdict as unknown', { err: error });
+      return { affiliation: ORG_AFFILIATION_UNKNOWN };
     }
   }
 
@@ -97,7 +93,13 @@ export class OrgAffiliationService {
   private withDeadline(lookup: Promise<OrgLensAffiliationVerdict>): Promise<OrgLensAffiliationVerdict> {
     return new Promise<OrgLensAffiliationVerdict>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`Affiliation lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`)),
+        () =>
+          reject(
+            new MicroserviceError(`Affiliation lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'AFFILIATION_LOOKUP_TIMEOUT', {
+              operation: ORG_AFFILIATION_OPERATION,
+              service: 'org_affiliation_service',
+            })
+          ),
         ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
       );
       lookup.then(
@@ -107,7 +109,14 @@ export class OrgAffiliationService {
         },
         (error: unknown) => {
           clearTimeout(timer);
-          reject(error instanceof Error ? error : new Error(String(error)));
+          reject(
+            error instanceof Error
+              ? error
+              : new MicroserviceError(`Affiliation lookup rejected: ${String(error)}`, 500, 'AFFILIATION_LOOKUP_FAILED', {
+                  operation: ORG_AFFILIATION_OPERATION,
+                  service: 'org_affiliation_service',
+                })
+          );
         }
       );
     });
@@ -133,23 +142,21 @@ export class OrgAffiliationService {
     // affiliation for our purposes and keeps the unchanged copy.
     const employer = currentEmployerFromWorkExperiences(experiences.filter((entry) => !entry.endDate));
     if (!employer) {
-      return NO_EMPLOYER;
+      return ORG_AFFILIATION_NO_EMPLOYER;
     }
     if (!employer.id) {
-      logger.debug(req, OPERATION, 'Current employer has no CDP organization id; employer membership is unknown');
-      return EMPLOYER_MEMBERSHIP_UNKNOWN;
+      logger.debug(req, ORG_AFFILIATION_OPERATION, 'Current employer has no CDP organization id; employer membership is unknown');
+      return ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN;
     }
 
     try {
       const account = await this.organizations.getOrgLensAccountContextByCdevOrgId(employer.id);
       return { hasEmployer: true, employerIsMember: account?.isMember === true, lookup: 'ok' };
     } catch (error) {
-      // The employer is already known, so report that much: `UNKNOWN` would log `hasEmployer: false`
+      // The employer is already known, so report that much: `ORG_AFFILIATION_UNKNOWN` would log `hasEmployer: false`
       // for a caller whose employer we had in hand, which misreads as "no affiliation" during triage.
-      logger.warning(req, OPERATION, 'Employer membership lookup failed; reporting membership as unknown', {
-        err: error instanceof Error ? error.message : String(error),
-      });
-      return EMPLOYER_MEMBERSHIP_UNKNOWN;
+      logger.warning(req, ORG_AFFILIATION_OPERATION, 'Employer membership lookup failed; reporting membership as unknown', { err: error });
+      return ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN;
     }
   }
 }
