@@ -8,7 +8,7 @@ import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@a
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR, MKTG_ANSWER_TOO_LONG_ERROR } from '@lfx-one/shared/constants';
-import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip } from '@lfx-one/shared/interfaces';
+import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip, MktgRunQuestionDraft } from '@lfx-one/shared/interfaces';
 import { foundationMessageAnswerOrigin, isFoundationMessageAnswerSubstantive, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
 import { map } from 'rxjs';
 
@@ -46,10 +46,12 @@ export class MktgRunQuestionsComponent {
   public readonly previousAnswers = input<Record<string, string>>({});
   /** True while the answers are being sent. */
   public readonly busy = input(false);
+  public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
 
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
   public readonly answered = output<MktgRunAnswer[]>();
+  public readonly draftChanged = output<MktgRunQuestionDraft>();
 
   // === Forms ===
   /** One box per question, holding the suggested answer until the requester changes it. */
@@ -93,8 +95,16 @@ export class MktgRunQuestionsComponent {
     // suggestion (or the earlier try's answer).
     effect(() => {
       const questions = this.questions();
-      const previous = this.previousAnswers();
-      untracked(() => this.reset(questions, previous));
+      const draft = this.initialDraft();
+      const previous = draft?.answers ?? this.previousAnswers();
+      untracked(() => {
+        this.reset(questions, previous);
+        this.goTo(draft?.index ?? 0);
+      });
+    });
+    effect(() => {
+      const draft = { index: this.index(), answers: this.values() };
+      if (this.questions().length) this.draftChanged.emit(draft);
     });
   }
 

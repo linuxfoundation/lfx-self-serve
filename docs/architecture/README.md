@@ -22,6 +22,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[State Management](./frontend/state-management.md)** - Angular Signals and reactive programming
 - **[Drawer Pattern](./frontend/drawer-pattern.md)** - Drawer components, lazy data, chart integration
 - **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
+- **[Marketing OS AEO/GEO Audits](./frontend/mktg-aeo-geo.md)** - One-off intake, generating-document handoff and stored report presentation
 - **[Gatewaze Embed Host](./frontend/gw-embed.md)** - Mounting the React embed, dual-router sync, style containment, session
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
