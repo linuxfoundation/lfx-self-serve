@@ -94,9 +94,12 @@ import {
   merge,
   throwError,
   timer,
+  TimeoutError,
   Observable,
   shareReplay,
   take,
+  takeUntil,
+  Subject,
 } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -194,6 +197,9 @@ export class MktgDocumentViewComponent {
   protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
+  protected readonly downloadingWorkbook = signal(false);
+  protected readonly workbookError = signal('');
+  private readonly cancelWorkbookDownload = new Subject<void>();
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
@@ -215,6 +221,7 @@ export class MktgDocumentViewComponent {
   private readonly reloads = signal(0);
   private readonly handoffRunId = signal('');
   private readonly refreshedFailures = new Set<string>();
+  private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
 
@@ -416,7 +423,12 @@ export class MktgDocumentViewComponent {
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
         .pipe(
-          tap(() => this.writer.set(false)),
+          tap(() => {
+            this.cancelWorkbookDownload.next();
+            this.downloadingWorkbook.set(false);
+            this.workbookError.set('');
+            this.writer.set(false);
+          }),
           switchMap(([request]) => (request.slug ? this.projectService.getProject(request.slug, false) : of(null))),
           takeUntilDestroyed()
         )
@@ -470,6 +482,7 @@ export class MktgDocumentViewComponent {
               this.retrying.set(false);
               this.handoffRunId.set('');
               this.refreshedFailures.clear();
+              this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
               this.notice.set('');
               this.restoringId.set(null);
@@ -500,6 +513,8 @@ export class MktgDocumentViewComponent {
                           this.failureDetails.set(result.message ?? '');
                         }
                       }),
+                      // Keep needs_input out of the stored read while the tap above shows the prompt.
+                      // Polling continues; a later ready/failed emission clears that prompt.
                       filter((result) => result.status !== 'needs_input')
                     )
                 : of(null);
@@ -531,12 +546,16 @@ export class MktgDocumentViewComponent {
                     })
                   );
                 }),
-                catchError((error: HttpErrorResponse) => {
-                  this.errorText.set(
-                    pending
-                      ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                      : this.loadErrorText(error.status, error.error?.code)
-                  );
+                catchError((error: HttpErrorResponse | TimeoutError) => {
+                  if (error instanceof TimeoutError) {
+                    this.errorText.set('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+                  } else {
+                    this.errorText.set(
+                      pending
+                        ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                        : this.loadErrorText(error.status, error.error?.code)
+                    );
+                  }
                   return of(null);
                 })
               );
@@ -556,6 +575,7 @@ export class MktgDocumentViewComponent {
             if (prepared) {
               this.localProgress.set('writing');
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
+              if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
@@ -695,9 +715,17 @@ export class MktgDocumentViewComponent {
                     take(1),
                     switchMap(() => {
                       const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
-                      if (recorded?.state !== 'writing' && recorded?.state !== 'storing') return EMPTY;
-                      this.localProgress.set('writing');
-                      this.handoffRunId.set(recorded.runId);
+                      const active = recorded?.state === 'writing' || recorded?.state === 'storing';
+                      // The accepted run may have finished before this first metadata read. Confirm its
+                      // private result receipt instead of silently treating whichever revision is current as its output.
+                      const finishedBeforeRead =
+                        !recorded &&
+                        !this.preparedRunIds.has(request.runId) &&
+                        request.runId === recoverable.attempt?.runId &&
+                        !!this.runDetail()?.revisions.length;
+                      if (!active && !finishedBeforeRead) return EMPTY;
+                      if (active) this.localProgress.set('writing');
+                      this.handoffRunId.set(recoverable.attempt?.runId ?? '');
                       return resume({ ...recoverable, request: { ...recoverable.request, intake } });
                     })
                   )
@@ -735,6 +763,50 @@ export class MktgDocumentViewComponent {
     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
       queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
     });
+  }
+
+  protected onDownloadWorkbook(): void {
+    const view = this.view();
+    const envelope = view?.member360;
+    if (!isPlatformBrowser(this.platformId) || !view || !envelope || !this.writer() || this.loading() || this.downloadingWorkbook()) return;
+    const selection = this.revisionParam();
+    const subject = this.userService.user()?.sub;
+    const current = () => this.userService.user()?.sub === subject && this.sameView(view.project, view, selection) && this.writer();
+    if (!current()) return;
+    this.downloadingWorkbook.set(true);
+    this.workbookError.set('');
+    this.member360
+      .download(view.project, view.documentId)
+      .pipe(
+        take(1),
+        takeUntil(this.cancelWorkbookDownload),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.downloadingWorkbook.set(false))
+      )
+      .subscribe({
+        next: (blob) => {
+          if (!current()) return;
+          try {
+            const url = URL.createObjectURL(blob);
+            // Cleanup outlives the click, but not the document page.
+            timer(1000)
+              .pipe(
+                takeUntilDestroyed(this.destroyRef),
+                finalize(() => URL.revokeObjectURL(url))
+              )
+              .subscribe();
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Member360_${envelope.project}_${envelope.period.label}.xlsx`;
+            link.click();
+          } catch {
+            this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+          }
+        },
+        error: () => {
+          if (current()) this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+        },
+      });
   }
 
   protected onRetryRun(): void {
@@ -1065,9 +1137,10 @@ export class MktgDocumentViewComponent {
   private initBreadcrumbPage(): Signal<MktgBreadcrumbPage> {
     return computed(() => {
       const view = this.view();
-      let label = view?.type.itemLabel ?? 'Document';
-      if (view?.type.agentKey === 'aeo-geo' && view.revision.createdAt) {
-        label += ` · ${formatDate(view.revision.createdAt, 'd MMM y', 'en-US', 'UTC')}`;
+      let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
+      const createdAt = view?.revision.createdAt;
+      if (view?.type.agentKey === 'aeo-geo' && typeof createdAt === 'string' && createdAt.trim() && !Number.isNaN(Date.parse(createdAt))) {
+        label += ` · ${formatDate(createdAt, 'd MMM y', 'en-US', 'UTC')}`;
       }
       return { kind: 'asset', agentKey: this.params().agentKey, label };
     });
@@ -1131,6 +1204,7 @@ export class MktgDocumentViewComponent {
       const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
+        this.preparedRunIds.add(runId);
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { run: runId, generation: null },

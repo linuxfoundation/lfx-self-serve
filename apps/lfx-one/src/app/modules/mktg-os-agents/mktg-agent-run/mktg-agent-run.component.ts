@@ -22,7 +22,9 @@ import {
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_RUN_NEW_MODE,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
@@ -56,7 +58,7 @@ import { mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -74,7 +76,7 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 
 // Catalog-driven intake, research/writing feed and questions. Accepted answers
-// transfer this owned attempt at their ACK. Without an agent writing marker,
+// stay on this feed until their exact stored revision is known. Without an agent writing marker,
 // only checking/finalize (or an earlier ready result) safely transfers a no-
 // questions run. Direct no-answers intakes still open before their first POST.
 // Failed navigation retries only navigation, never generation.
@@ -593,6 +595,7 @@ export class MktgAgentRunComponent {
         relativeTo: this.route,
         queryParams: {
           project: this.projectSlug(),
+          ...MKTG_RUN_RESUME_QUERY_CLEAR,
           generation: destination.generation ?? null,
           revision: destination.revisionId ?? null,
           run: destination.runId ?? null,
@@ -701,7 +704,7 @@ export class MktgAgentRunComponent {
     this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
-  /** Sends answers once; the accepted ACK transfers this owned attempt to the asset page. */
+  /** Sends answers once, keeps the run-page feed, and lands only after the exact revision is stored. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
@@ -715,21 +718,45 @@ export class MktgAgentRunComponent {
     this.activityStartedAt.set(Date.now());
     this.phase.set('running');
     this.generationSub?.unsubscribe();
+    let accepted = false;
     this.generationSub = this.runService
       .answerQuestions(request, pending, answers)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: () => {
-          this.answersSending.set(false);
-          // The accepted answers were saved before this ACK. The asset resumes polling, not another POST.
-          this.openPrepared(request, true);
+        next: (progress) => {
+          if (progress.type === 'submitted') {
+            accepted = true;
+            this.answersSending.set(false);
+          }
+          this.onProgress(progress, request.projectUid, true);
         },
         error: () => {
-          // The answers come back on the questions step, as given: not square one.
+          if (accepted) {
+            // No Retry here: the accepted run may still finish server-side; a Generate would duplicate it.
+            this.discardPendingNavigation();
+            this.navigating.set(false);
+            this.recheckingAttempt.set(false);
+            this.answersSending.set(false);
+            this.writingStretch.set(false);
+            this.clearQuestions();
+            this.runFailed.set(false);
+            this.phase.set('form');
+            this.errorText.set('The recorded run could not be confirmed. Your intake is kept — check Documents before trying again.');
+            return;
+          }
+          // Before the ACK, the answers come back on the questions step, as given: not square one.
           this.answersSending.set(false);
           this.writingStretch.set(false);
           this.errorText.set('The agent could not take your answers. They are kept — try again.');
           this.phase.set('questions');
+        },
+        complete: () => {
+          if (accepted && this.phase() === 'running' && !this.navigation()) {
+            this.writingStretch.set(false);
+            this.clearQuestions();
+            this.phase.set('form');
+            this.errorText.set('The saved revision could not be confirmed. Your inputs are kept — check Documents before starting another run.');
+          }
         },
       });
   }
@@ -1471,9 +1498,12 @@ export class MktgAgentRunComponent {
   }
 
   /** One handler for the generate stream and the answers stream: they emit the same events. */
-  private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
+  private onProgress(progress: MktgGenerateProgress, projectUid: string, stayOnRunPage = false): void {
     if (progress.type === 'submitted') {
       this.consumeFreshEntry(projectUid);
+      if (stayOnRunPage && this.route.snapshot.queryParamMap.get('questions')) {
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { questions: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      }
       return;
     }
     if (progress.type === 'restored') {
@@ -1495,7 +1525,7 @@ export class MktgAgentRunComponent {
       // The whole feed so far, every time it changed.
       this.activity.set(progress.activity);
       this.recheckingAttempt.set(false);
-      if (progress.activity.some((step) => step.kind === 'checking')) this.handoffPostResearch();
+      if (!stayOnRunPage && progress.activity.some((step) => step.kind === 'checking')) this.handoffPostResearch();
       return;
     }
     if (progress.type === 'questions') {
@@ -1560,7 +1590,7 @@ export class MktgAgentRunComponent {
           state: 'writing',
           updatedAt: new Date().toISOString(),
         });
-        this.openPrepared(request, true);
+        if (!stayOnRunPage) this.openPrepared(request, true);
       }
     }
   }
@@ -1577,10 +1607,10 @@ export class MktgAgentRunComponent {
     // Terminal failure is tracked before the service emits its last activity.
     if (!pending?.attempt || pending.state === 'failed') return;
     this.writingStretch.set(true);
-    this.openPrepared(request, true);
+    this.openPrepared(request, true, true);
   }
 
-  private openPrepared(request: MktgGenerateRequest, resume = false): void {
+  private openPrepared(request: MktgGenerateRequest, resume = false, recordedProgress = false): void {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request.agentId);
     if (!type) {
       this.phase.set('form');
@@ -1593,8 +1623,10 @@ export class MktgAgentRunComponent {
       this.errorText.set('Sign in before opening this run. Your intake is kept.');
       return;
     }
-    const generation = this.runAttempts.prepare(request, resume);
     const runId = this.runAttempts.load(request.projectUid, request.agentId)?.attempt?.runId;
+    // Accepted work belongs to the recorded run's shared progress view, not a fresh local generating entry.
+    // Drafts, legacy attempts and receipt-less early results retain their private receiver token.
+    const generation = recordedProgress && runId && MKTG_STARTED_RUN_ID_REGEX.test(runId) ? undefined : this.runAttempts.prepare(request, resume);
     this.navigation.set({ projectUid: request.projectUid, subject, agentKey: type.agentKey, generation, runId });
     this.onRetryHandoff();
   }

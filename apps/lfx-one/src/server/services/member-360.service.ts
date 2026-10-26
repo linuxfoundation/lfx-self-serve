@@ -24,7 +24,8 @@ import {
   findMember360Questions,
   member360TerminalResult,
 } from '@lfx-one/shared/server';
-import { extractMktgToolResults } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { extractMktgToolResults, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -69,6 +70,7 @@ export class Member360Service {
 
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
+    const redactIdentity = createMember360Redactor([]);
     let best: Member360Envelope | null = null;
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
@@ -86,12 +88,12 @@ export class Member360Service {
           logger.debug(req, 'member_360_result', 'Rejected envelope size or integrity', {});
           continue;
         }
-        if (
-          envelope.project_uid !== project.uid ||
-          envelope.project_name !== project.name ||
-          (envelope.project_slug && envelope.project_slug !== project.slug)
-        ) {
-          logger.debug(req, 'member_360_result', 'Rejected envelope scope', { project: project.uid });
+        if (!this.member360EnvelopeMatchesProject(envelope, project)) {
+          logger.debug(req, 'member_360_result', 'Rejected envelope scope', {
+            project: project.uid,
+            envelope_project_uid: envelope.project_uid && redactIdentity(envelope.project_uid),
+            envelope_project_slug: envelope.project_slug && redactIdentity(envelope.project_slug),
+          });
           continue;
         }
         if (!best || envelope.version >= best.version) best = parsed.data;
@@ -99,12 +101,15 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
-      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
+        return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      }
       const failed = member360TerminalResult(payloads, contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
+      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
       return { status: 'pending', activity: buildMktgRunActivity(payloads) };
     }
     const type = findMktgDocumentType('member-360');
@@ -117,9 +122,13 @@ export class Member360Service {
       // Verify upstream bytes first, then exclude contact identity from the immutable store.
       const redact = createMember360Redactor(best.tabs.member_ranking.map((row) => row.key_contact));
       const tabs = redactMember360Tabs(best.tabs, redact);
-      const redactIdentity = createMember360Redactor([]);
+      // This provenance field is BFF-owned, never trusted from the agent contract.
+      const storedEnvelope = { ...best };
+      delete storedEnvelope.lfx_project_uid;
       let member360 = {
-        ...best,
+        ...storedEnvelope,
+        project_uid: project.uid,
+        ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),
         project_name: redactIdentity(best.project_name),
         ...(best.lfx_project_name !== undefined && { lfx_project_name: redactIdentity(best.lfx_project_name) }),
         tabs,
@@ -142,6 +151,12 @@ export class Member360Service {
         document_markdown: summary,
         content_sha256: this.sha(summary),
       };
+      if (best.project_uid !== undefined && best.project_uid !== project.uid) {
+        logger.info(req, 'member_360_result', 'Envelope uid differs from the LFX One project uid; accepted by name and slug', {
+          project: project.uid,
+          envelope_project_uid: best.project_uid,
+        });
+      }
       const stored = await this.documents.recordGeneration(req, type, project.uid, bundle, sessionId);
       return { status: 'ready', stored: true, documentId: stored.record.documentId };
     } catch (err) {
@@ -152,6 +167,15 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  private member360EnvelopeMatchesProject(envelope: Member360Envelope, project: Project): boolean {
+    if (envelope.project_uid !== undefined && !MKTG_ARTIFACT_PARTITION_REGEX.test(envelope.project_uid)) return false;
+    return (
+      envelope.project_name === project.name &&
+      ((envelope.project_uid === project.uid && (envelope.project_slug === undefined || envelope.project_slug === project.slug)) ||
+        (envelope.project_slug !== undefined && envelope.project_slug === project.slug))
+    );
   }
 
   private async resolveProject(req: Request, uid: string): Promise<Project> {
