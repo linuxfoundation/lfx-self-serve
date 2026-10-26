@@ -124,13 +124,28 @@ describe('AudienceBuilderProxyService wire mapping', () => {
       ],
     });
 
-    const lists = await service.getSuppressionLists(req, 'tlf', '', '', 'Synthetic Summit 2026');
+    const { lists, standardList } = await service.getSuppressionLists(req, 'tlf', '', '', 'Synthetic Summit 2026');
+    expect(standardList, 'no standing list upstream means none exists yet').toBeUndefined();
     expect(proxyRequest.mock.calls.at(-1)?.[4]).toEqual({ registrants_event: 'Synthetic Summit 2026' });
     expect(lists[0].willCreate).toBe(true);
     expect(lists[1], 'a false will_create is left out, not carried as false').not.toHaveProperty('willCreate');
 
     await service.getSuppressionLists(req, 'tlf', '', '');
     expect(proxyRequest.mock.calls.at(-1)?.[4], 'an empty edition is a filter matching nothing, so it is omitted').toEqual({});
+  });
+
+  it("passes the project's standing standard list through, and drops one without an id", async () => {
+    proxyRequest.mockResolvedValue({
+      lists: [],
+      standard_list: { list_id: '300', name: 'LFX Standard Suppressions - tlf', hubspot_url: 'https://app.hubspot.com/l/300', size: 42 },
+    });
+
+    const result = await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(result.standardList).toEqual({ listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300', size: 42 });
+
+    proxyRequest.mockResolvedValue({ lists: [], standard_list: { list_id: ' ', name: 'x', hubspot_url: '' } });
+    const blank = await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(blank, 'a standing list with no id is no evidence it exists').not.toHaveProperty('standardList');
   });
 
   it('forwards the registrants edition on compose', async () => {
@@ -226,6 +241,36 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     proxyRequest.mockRejectedValue(err);
 
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(AudienceComposePartialError);
+  });
+
+  it("maps compose's optional suppression_list_ids, and leaves it out when upstream omits it", async () => {
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
+      source_list_ids: ['1'],
+      suppression_list_ids: ['300', '202', '9001'],
+    });
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] });
+    expect(result.suppressionListIds).toEqual(['300', '202', '9001']);
+
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: ['1'] });
+    const older = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] });
+    expect(older).not.toHaveProperty('suppressionListIds');
+  });
+
+  it('rethrows a 409 squatted-name conflict unchanged rather than as a compose partial', async () => {
+    const err = MicroserviceError.fromMicroserviceResponse(
+      409,
+      'Conflict',
+      { code: '409', message: 'a HubSpot list (id 4242) already uses the name "S 2026 - Current Registrants"; rename or remove it in HubSpot' },
+      'LFX_V2_CAMPAIGN_SERVICE',
+      '/x',
+      'compose'
+    );
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] })).rejects.toBe(err);
+    await expect(service.attachExisting(req, 'tlf', { briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'] })).rejects.toBe(err);
+    expect(err.toResponse()['error']).toContain('rename or remove it in HubSpot');
   });
 
   it('forwards brief_id only when the caller supplied one', async () => {

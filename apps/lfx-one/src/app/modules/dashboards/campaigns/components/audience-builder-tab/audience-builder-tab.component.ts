@@ -14,6 +14,7 @@ import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
   AUDIENCE_BUILD_MODES,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
+  AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY,
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
@@ -41,12 +42,15 @@ import type {
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
   AudienceListBrief,
+  AudienceListNameConflict,
   AudienceListRef,
   AudienceListSearchResult,
   AudienceMasterListBrief,
   AudiencePreviewCount,
   AudienceSignal,
+  AudienceStartOverAction,
   AudienceSuppressionList,
+  AudienceWriteDispatchContext,
   CampaignAudience,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
@@ -251,6 +255,12 @@ export class AudienceBuilderTabComponent {
   /** Bumped by every run reset so the custom builder starts over with it. */
   protected readonly customResetKey = signal(0);
   /**
+   * A Discover or event-page draft that would start the tab over, waiting for the operator to
+   * confirm. Both used to reset silently: Discover wiped hand-built work, and a draft from a
+   * different event page mixed its event with the lists discovered for another.
+   */
+  protected readonly pendingStartOver = signal<AudienceStartOverAction | null>(null);
+  /**
    * The two ways to set the audience. Build: describe a new list, or draft one from the event page
    * (both fill the same custom builder). Reuse: discover and use the lists that already exist.
    */
@@ -327,6 +337,16 @@ export class AudienceBuilderTabComponent {
   // === State: suppression ===
   protected readonly suppressionLoading = signal(false);
   protected readonly suppressionLists = signal<readonly AudienceSuppressionList[]>([]);
+  /**
+   * The project's standing standard suppression list, null until it exists. An attach or compose
+   * that applies every resolved standard row creates it when it is null, and reuses it otherwise.
+   */
+  protected readonly standardList = signal<AudienceComposedList | null>(null);
+  /**
+   * A reload asked for while a load was already on the wire. Skipping it lost the reload after an
+   * attach or compose created a list, so the row kept its empty id; it runs when that load settles.
+   */
+  private suppressionReloadPending = false;
   /**
    * True when the suppression fetch FAILED, as distinct from a portal that has no suppression
    * lists. The two produced identical DOM before this existed -- an empty array renders the grid's
@@ -443,12 +463,16 @@ export class AudienceBuilderTabComponent {
   /** The composed master's id, handed to QA as its suggested target. Empty until a compose succeeds. */
   protected readonly composedMasterListId = computed(() => this.composeResult()?.master.listId ?? '');
   protected readonly composePartial = signal<AudienceComposeMasterPartial | null>(null);
+  /** What the last compose expected to create, so its result can say what it actually created. */
+  private readonly composeDispatch = signal<AudienceWriteDispatchContext | null>(null);
   protected readonly composeError = signal<string | null>(null);
 
   // === Attach existing lists (no compose) ===
   /** The send / master list id an attach is in flight for; null when idle. */
   protected readonly attachingId = signal<string | null>(null);
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
+  /** What the last attach expected to create, so its result can say what it actually created. */
+  private readonly attachDispatch = signal<AudienceWriteDispatchContext | null>(null);
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -463,6 +487,13 @@ export class AudienceBuilderTabComponent {
    */
   private readonly lastWriteWasAttach = signal<boolean>(false);
   protected readonly attachError = signal<string | null>(null);
+  /**
+   * A compose or attach refused 409 because a HubSpot list squats the name of a list it must find
+   * or create (the standing standard list, or the edition's current registrants). A plain retry
+   * gets the same 409, so both writes stay blocked until the operator says the list was renamed or
+   * removed in HubSpot. Nothing was sent to: upstream resolves these lists before the master.
+   */
+  protected readonly listNameConflict = signal<AudienceListNameConflict | null>(null);
   /**
    * An attach is on the wire, from dispatch until its reply SETTLES -- whatever brief is on screen.
    *
@@ -640,8 +671,28 @@ export class AudienceBuilderTabComponent {
    * row is ticked and its list does not exist yet. An existing list is ticked by id like any row.
    */
   protected readonly registrantsToCreate = computed(() => {
-    const row = this.suppressionLists().find((list) => list.category === 'current_registrants' && list.willCreate && list.listId === '');
-    return row !== undefined && this.suppression().has(row.key) ? this.loadedRegistrantsEdition() : '';
+    const row = this.registrantsRow();
+    return row !== null && row.willCreate === true && row.listId === '' ? this.loadedRegistrantsEdition() : '';
+  });
+
+  /** The ticked current-registrants row, existing or still to be created; null while unticked. */
+  private readonly registrantsRow = computed(() => {
+    const row = this.suppressionLists().find((list) => list.category === 'current_registrants');
+    return row !== undefined && this.suppression().has(row.key) ? row : null;
+  });
+
+  /**
+   * The edition sent as `currentRegistrantsEvent` whenever the registrants row is ticked -- an
+   * existing list as much as one still to be created. Upstream checks that a reused registrants
+   * list is the right kind and selects this edition; sending its id as a plain suppression id
+   * skipped those checks.
+   */
+  protected readonly registrantsEvent = computed(() => (this.registrantsRow() === null ? '' : this.loadedRegistrantsEdition()));
+
+  /** The existing registrants list id, which goes up as the edition rather than as a plain id. */
+  private readonly registrantsSentId = computed(() => {
+    const row = this.registrantsRow();
+    return this.registrantsEvent() !== '' && row !== null ? row.listId : '';
   });
 
   /** Ids of the resolved standard rows: what the project's standing standard list stands for. */
@@ -650,6 +701,19 @@ export class AudienceBuilderTabComponent {
       .filter((list) => list.category === 'standard' && list.listId !== '')
       .map((list) => list.listId)
   );
+
+  /**
+   * Every resolved standard row is excluded, so upstream applies them through the standing list
+   * (creating it when `standardList` is null) rather than one by one.
+   */
+  protected readonly standardApplied = computed(() => {
+    const ids = this.standardRowIds();
+    const excluded = new Set(this.excludeIds());
+    return ids.length > 0 && ids.every((id) => excluded.has(id));
+  });
+
+  /** The next attach or compose creates the standing standard list: it applies and does not exist yet. */
+  protected readonly standingWillCreate = computed(() => this.standardApplied() && this.standardList() === null);
 
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
   protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
@@ -664,7 +728,33 @@ export class AudienceBuilderTabComponent {
    * attached. Sending with no suppression at all is the compliance failure that step exists to
    * prevent, so it is a hard gate rather than the amber hint it used to be.
    */
-  protected readonly suppressionMissing = computed(() => this.suppressionListIds().size === 0);
+  protected readonly suppressionMissing = computed(() => {
+    // The registrants list goes up as an edition, not as a suppression id, so it does not count.
+    const registrantsId = this.registrantsSentId();
+    return [...this.suppressionListIds()].every((id) => id === registrantsId);
+  });
+
+  /**
+   * Why `suppressionMissing` holds, in the operator's terms; '' when it does not.
+   *
+   * A ticked current-registrants row is sent as an edition (`registrantsEvent`), not as a
+   * suppression list id, and the BFF requires at least one id -- so it cannot be the send's only
+   * suppression. Asking to "select at least one" while that row was ticked read as a
+   * contradiction.
+   */
+  protected readonly suppressionMissingMessage = computed(() => {
+    if (!this.suppressionMissing()) {
+      return '';
+    }
+    if (this.registrantsEvent() !== '') {
+      return "The current-registrants list cannot be the send's only suppression: it is applied by edition beside the others. Keep at least one other suppression list ticked in step 3 too.";
+    }
+    // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
+    // list when none resolves in this portal gave them an instruction they could not follow.
+    return this.suppressionLists().some((list) => list.listId !== '')
+      ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
+      : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
+  });
 
   /** The suppression count, only while it still describes the ticked exclusions. */
   protected readonly suppressionCount = computed(() => {
@@ -683,6 +773,15 @@ export class AudienceBuilderTabComponent {
   protected readonly excludeIds = computed(() =>
     [...new Set([...this.suppressionListIds(), ...this.exclusion().keys()])].filter((id) => !this.inclusion().has(id))
   );
+
+  /**
+   * The exclusions a write SENDS as plain ids: `excludeIds` without the registrants list, which
+   * goes up as `currentRegistrantsEvent` instead (see `registrantsEvent`).
+   */
+  protected readonly sentExcludeIds = computed(() => {
+    const registrantsId = this.registrantsSentId();
+    return registrantsId === '' ? this.excludeIds() : this.excludeIds().filter((id) => id !== registrantsId);
+  });
 
   /**
    * Lists ticked on BOTH sides. Resolving this silently was the defect: `excludeIds` drops the
@@ -748,7 +847,9 @@ export class AudienceBuilderTabComponent {
       !this.composeOnWire() &&
       !this.attachInFlight() &&
       // A custom create still landing would add its list after the attach recorded the selection.
-      !this.customCreating()
+      !this.customCreating() &&
+      // A squatted list name answers every retry with the same 409 until it is fixed in HubSpot.
+      this.listNameConflict() === null
   );
 
   /**
@@ -850,6 +951,27 @@ export class AudienceBuilderTabComponent {
   });
 
   /**
+   * The exclusions a recorded compose actually applied, from its result's `suppressionListIds`
+   * with the standing list read as the standard rows it stands for; null when the compose is not
+   * the recorded write or its upstream did not report them.
+   */
+  private readonly composedExclusions = computed<readonly string[] | null>(() => {
+    const composed = this.composeResult();
+    if (composed === null || composed.suppressionListIds === undefined || this.attachedListId() !== composed.master.listId) {
+      return null;
+    }
+    const attached = this.attachResult();
+    if (attached !== null && attached.master.listId === composed.master.listId && this.lastWriteWasAttach()) {
+      return null;
+    }
+    const standingId = composed.suppression?.listId;
+    return [...new Set(composed.suppressionListIds.flatMap((id) => (id === standingId ? this.standardRowIds() : [id])))];
+  });
+
+  /** The recorded audience's exclusions, whichever write recorded it, for matching a prior send. */
+  protected readonly recordedExclusions = computed<readonly string[]>(() => this.composedExclusions() ?? this.attachedExclusions());
+
+  /**
    * Every list the recorded audience sends to, so a prior send with several include lists can be
    * matched on all of them. An attach of several lists records them in `includeListIds`; a single
    * master (attached or composed) is just that one list.
@@ -865,6 +987,56 @@ export class AudienceBuilderTabComponent {
       return includes.length > 0 ? includes : [listId];
     }
     return [listId];
+  });
+
+  /**
+   * What the last attach created in HubSpot, in the operator's terms.
+   *
+   * "No new list was created" was true only when neither list it may create was missing: an attach
+   * that applies every standard row creates the standing list on first use, and one with a ticked
+   * current-registrants row creates that edition's list.
+   */
+  protected readonly attachCreationText = computed(() => {
+    const result = this.attachResult();
+    const dispatch = this.attachDispatch();
+    if (result === null || dispatch === null) {
+      return '';
+    }
+    const created: string[] = [];
+    if (result.standardSuppression && !dispatch.standingExisted) {
+      created.push(`the project's shared standard suppression list "${result.standardSuppression.name}"`);
+    }
+    if (dispatch.registrantsName !== '') {
+      created.push(`"${dispatch.registrantsName}"`);
+    }
+    if (created.length === 0) {
+      return result.standardSuppression
+        ? 'No new list was created in HubSpot; the shared standard suppression list was reused (its members are refreshed only when the standard lists change).'
+        : 'No new list was created in HubSpot.';
+    }
+    return `Created ${created.join(' and ')} in HubSpot.`;
+  });
+
+  /**
+   * What the last compose excluded and created, for its result banner; '' when nothing is known.
+   * The excluded count is upstream's (`suppressionListIds`), never the ids sent.
+   */
+  protected readonly composeSuppressionText = computed(() => {
+    const result = this.composeResult();
+    const dispatch = this.composeDispatch();
+    if (result === null) {
+      return '';
+    }
+    const created: string[] = [];
+    if (dispatch !== null && result.suppression && !dispatch.standingExisted) {
+      created.push(`the project's shared standard suppression list "${result.suppression.name}"`);
+    }
+    if (dispatch !== null && dispatch.registrantsName !== '') {
+      created.push(`"${dispatch.registrantsName}"`);
+    }
+    const excluded = result.suppressionListIds === undefined ? '' : `It excludes ${result.suppressionListIds.length} suppression list(s).`;
+    const createdText = created.length === 0 ? '' : `Also created ${created.join(' and ')} in HubSpot.`;
+    return [excluded, createdText].filter((part) => part !== '').join(' ');
   });
 
   /** Names for the recorded include lists, for the attach result banner. */
@@ -886,8 +1058,19 @@ export class AudienceBuilderTabComponent {
   protected readonly attachedMasterId = computed<string | null>(() => {
     const listId = this.attachedListId();
     const attached = this.attachResult();
-    if (listId === null || attached === null || attached.master.listId !== listId) {
-      return listId;
+    if (listId === null) {
+      return null;
+    }
+    if (attached === null || attached.master.listId !== listId) {
+      // A compose whose upstream reported what it excluded is matched on both halves too; one that
+      // did not report them is matched on the master alone.
+      const composed = this.composedExclusions();
+      if (composed === null) {
+        return listId;
+      }
+      const recorded = new Set(composed);
+      const requested = new Set(this.excludeIds().filter((id) => id !== listId));
+      return recorded.size === requested.size && [...requested].every((id) => recorded.has(id)) ? listId : null;
     }
     // Several lists attached directly: no single master is "the" send list, so none reads as used.
     if (this.attachedIncludeIds().length > 1) {
@@ -960,18 +1143,40 @@ export class AudienceBuilderTabComponent {
     });
   });
 
-  /** Excluded lists with display names, for the review step — the grid alone cannot name copied ones. */
+  /**
+   * Excluded lists with display names, for the review step — the grid alone cannot name copied ones.
+   *
+   * The standard rows are one chip, as they are one entry in the grid: a per-row chip let the
+   * operator drop a single standard row, and the standing list then silently stopped applying.
+   */
   protected readonly suppressionEntries = computed(() => {
-    const gridNames = new Map(this.suppressionLists().map((row) => [row.key, row.name || row.label]));
+    const rows = new Map(this.suppressionLists().map((row) => [row.key, row]));
     const copied = this.copiedSuppressionNames();
-    return [...this.suppression()]
-      .filter(([, listId]) => !this.inclusion().has(listId))
-      .map(([key, listId]) => ({
-        key,
-        listId,
-        name: gridNames.get(key) ?? copied.get(listId) ?? `List ${listId}`,
-        hubspotUrl: this.urlIndex().get(listId) ?? '',
-      }));
+    const ticked = [...this.suppression()].filter(([, listId]) => !this.inclusion().has(listId));
+    const standardCount = ticked.filter(([key]) => rows.get(key)?.category === 'standard').length;
+    const standing = this.standardList();
+    const entries = ticked
+      .filter(([key]) => rows.get(key)?.category !== 'standard')
+      .map(([key, listId]) => {
+        const row = rows.get(key);
+        return {
+          key,
+          listId,
+          name: (row ? row.name || row.label : undefined) ?? copied.get(listId) ?? `List ${listId}`,
+          hubspotUrl: this.urlIndex().get(listId) ?? '',
+        };
+      });
+    if (standardCount === 0) {
+      return entries;
+    }
+    const resolved = this.standardRowIds().length;
+    const group = {
+      key: AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY,
+      listId: standing?.listId ?? '',
+      name: standardCount === resolved ? `Standard suppressions (${standardCount})` : `Standard suppressions (${standardCount} of ${resolved})`,
+      hubspotUrl: this.standardApplied() ? (standing?.hubspotUrl ?? '') : '',
+    };
+    return [group, ...entries];
   });
 
   /** Lists marked Exclude in steps 2, 4 and 5, for their own chip group in the review step. */
@@ -1087,11 +1292,7 @@ export class AudienceBuilderTabComponent {
       return 'The suppression lists in step 3 could not be loaded. Reload them before attaching.';
     }
     if (this.suppressionMissing()) {
-      // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
-      // list when none resolves in this portal gave them an instruction they could not follow.
-      return this.suppressionLists().some((list) => list.listId !== '')
-        ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
-        : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
+      return this.suppressionMissingMessage();
     }
     if (this.conflictingIds().length > 0) {
       return 'A list is ticked both to send to and to suppress. Untick one side first.';
@@ -1155,6 +1356,7 @@ export class AudienceBuilderTabComponent {
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
+      this.listNameConflict() === null &&
       // A stranded compose in THIS project is unreconciled work: lists may already exist under
       // a name the next compose would reuse. The warning alone did not stop it, so an operator
       // could compose without ever acknowledging it. Scoped to the affected project — composing
@@ -1288,7 +1490,7 @@ export class AudienceBuilderTabComponent {
         const differentEvent = this.isDifferentEvent(previousKey, nextKey, previousUrl, advertised);
         // Work started without discovery (a created, reused or searched list; a planned event; a
         // create in flight) belongs to its event as much as discovered lists do.
-        const handWork = this.inclusion().size > 0 || this.exclusion().size > 0 || this.plannedEvent() !== null || this.customCreating();
+        const handWork = this.hasHandWork();
         if (handWork && differentEvent) {
           this.resetForNewContext(this.projectSlug());
           this.eventUrlControl.reset(advertised, { emitEvent: false });
@@ -1350,7 +1552,11 @@ export class AudienceBuilderTabComponent {
     this.strandedProject.set('');
   }
 
-  protected onDiscover(): void {
+  /**
+   * `confirmed` is true when the operator has accepted starting over (see `pendingStartOver`):
+   * discovery resets the run, which wipes lists included, excluded, created or planned by hand.
+   */
+  protected onDiscover(confirmed = false): void {
     const eventUrl = this.eventUrlControl.value.trim();
     // Not while an attach is on the wire, either. Discovery resets the run, which discards that
     // attach's reply -- so its outcome, success or error, would never be shown for the brief it was
@@ -1366,6 +1572,12 @@ export class AudienceBuilderTabComponent {
     // Returning early keeps the composed result — and its link — on screen, which is the thing
     // the operator actually needs. A different url is a different event and still starts over.
     if (this.composeAttempted() && eventUrl === this.composedEventUrl()) {
+      return;
+    }
+    // Hand work is lost to the reset below, so it is wiped only once the operator says so -- the
+    // same test the event-change reset uses.
+    if (!confirmed && this.hasHandWork()) {
+      this.pendingStartOver.set('discover');
       return;
     }
 
@@ -1587,7 +1799,14 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const next = new Map(this.suppression());
-    next.delete(key);
+    if (key === AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY) {
+      // The standard rows go as one, as the grid's single toggle drops them.
+      this.suppressionLists()
+        .filter((list) => list.category === 'standard')
+        .forEach((list) => next.delete(list.key));
+    } else {
+      next.delete(key);
+    }
     this.suppression.set(next);
     this.invalidatePreview();
   }
@@ -1622,9 +1841,23 @@ export class AudienceBuilderTabComponent {
    * itself (the service reads it), so no discovery is needed first. It is drafted into the custom
    * builder, so the same review, property checks, preview and confirmation apply.
    */
-  protected onGenerateEventPlan(): void {
+  protected onGenerateEventPlan(confirmed = false): void {
     const url = this.eventUrlControl.value.trim();
     if (url === '' || this.degraded() || this.selectionLocked() || this.customCreating()) return;
+    // Lists discovered for ANOTHER event page must not be mixed with this one: discovery's event
+    // would keep driving QA and the registrants suppression while the draft planned a different
+    // event. Drafting it starts over, once confirmed, so one event drives all three.
+    const otherEvent = (this.hasDiscovered() || this.discovering()) && url !== this.discoveredEventUrl();
+    if (otherEvent && !confirmed) {
+      this.pendingStartOver.set('draft');
+      return;
+    }
+    this.pendingStartOver.set(null);
+    if (otherEvent) {
+      // The preset below resets the builder itself; bumping its reset key as well would clear the
+      // preset it is about to apply.
+      this.resetRunState(false);
+    }
     this.mode.set('build');
     this.customPreset.set({
       version: ++this.customPresetVersion,
@@ -1633,6 +1866,39 @@ export class AudienceBuilderTabComponent {
         'Regional expansion audience for this event: mailable contacts in its host city and country, contacts who registered for any event held there, ' +
         "education enrollees there limited to the brand's own courses, and visitors of the event page.",
     });
+  }
+
+  /** Runs the Discover or draft the operator confirmed starting over for. */
+  protected onConfirmStartOver(): void {
+    const action = this.pendingStartOver();
+    this.pendingStartOver.set(null);
+    if (action === 'discover') {
+      this.onDiscover(true);
+    } else if (action === 'draft') {
+      this.onGenerateEventPlan(true);
+    }
+  }
+
+  protected onCancelStartOver(): void {
+    this.pendingStartOver.set(null);
+  }
+
+  /**
+   * The operator renamed or removed the squatting list in HubSpot. A 409 compose created no master,
+   * so its latch is released too; the rows are reloaded so a standing list created before the
+   * refusal, or a registrants list now free to create, shows as it is.
+   */
+  protected onNameConflictResolved(): void {
+    const conflict = this.listNameConflict();
+    if (conflict === null) {
+      return;
+    }
+    this.listNameConflict.set(null);
+    if (conflict.fromCompose) {
+      this.composeAttempted.set(false);
+      this.composedEventUrl.set('');
+    }
+    this.reloadSuppressionRows();
   }
 
   protected onSetMode(mode: AudienceBuildMode): void {
@@ -1871,6 +2137,7 @@ export class AudienceBuilderTabComponent {
     const dispatchProject = this.projectSlug();
     const dispatchScope = this.audienceScope();
     const registrantsCreated = this.registrantsToCreate() !== '';
+    const dispatchContext = this.writeDispatchContext();
     this.composeBriefId.set(dispatchBriefId);
     this.composeScope.set(dispatchScope);
     this.looseComposedMaster.set(null);
@@ -1884,8 +2151,8 @@ export class AudienceBuilderTabComponent {
     this.campaignService
       .composeAudienceMaster(this.projectSlug(), {
         listIds: [...this.inclusion().keys()],
-        excludeListIds: this.excludeIds(),
-        currentRegistrantsEvent: this.registrantsToCreate() || undefined,
+        excludeListIds: this.sentExcludeIds(),
+        currentRegistrantsEvent: this.registrantsEvent() || undefined,
         eventUrl: this.eventUrlControl.value.trim() || undefined,
         brandShort: event?.brandShort,
         eventName: event?.eventName,
@@ -1920,11 +2187,12 @@ export class AudienceBuilderTabComponent {
             }
             return;
           }
+          this.composeDispatch.set(dispatchContext);
           this.composeResult.set(result);
           // This compose recorded after any earlier attach; see `attachedListId`.
           this.lastWriteWasAttach.set(false);
           this.composing.set(false);
-          this.refreshCreatedSuppressionRows(registrantsCreated);
+          this.refreshCreatedSuppressionRows(registrantsCreated || (!!result.suppression && !dispatchContext.standingExisted));
 
           // Both this emission and the stale one above rely on the parent's `onAudienceComposed`,
           // which accepts a row only when `audience.briefId` is the brief it is addressing now.
@@ -1952,7 +2220,11 @@ export class AudienceBuilderTabComponent {
           // error and telling the operator to reconcile a list that does not exist. The
           // suppression object with a real list id is what actually distinguishes the two.
           const partial = httpErr.status === 502 ? this.asComposePartialBody(httpErr.error) : null;
-          if (partial) {
+          if (httpErr.status === 409) {
+            // A squatted list name, refused before the master was created. Kept apart from
+            // `composeError` so it is shown with its fix rather than as a dead end.
+            this.listNameConflict.set({ message: serverAuthoredMessage(httpErr, 'A HubSpot list already uses a name this compose needs.'), fromCompose: true });
+          } else if (partial) {
             this.composePartial.set(partial);
             // The fifth partial shape: both lists exist and only the attach failed. It is the one
             // partial whose master is CONFIRMED, so the parent can offer the same reconcile
@@ -2185,11 +2457,12 @@ export class AudienceBuilderTabComponent {
       .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName, edition)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (lists) => {
+        next: ({ lists, standardList }) => {
           if (run !== this.runGeneration) {
             return;
           }
           this.suppressionLists.set(lists);
+          this.standardList.set(standardList ?? null);
           this.loadedRegistrantsEdition.set(edition);
           lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
           this.fillCreatedSuppressionIds(lists);
@@ -2205,14 +2478,17 @@ export class AudienceBuilderTabComponent {
           // The edition can gain its year after this load went out (the brief's dates arrive
           // asynchronously); the rows must describe the edition attach will send.
           this.reconcileRegistrantsEdition();
+          this.runPendingSuppressionReload();
         },
         error: () => {
           if (run !== this.runGeneration) {
             return;
           }
           this.suppressionLists.set([]);
+          this.standardList.set(null);
           this.suppressionFailed.set(true);
           this.suppressionLoading.set(false);
+          this.runPendingSuppressionReload();
         },
       });
   }
@@ -2275,10 +2551,29 @@ export class AudienceBuilderTabComponent {
   /** Reloads the current scope's rows, keeping every tick and pre-ticking only rows it adds. */
   private reloadSuppressionRows(): void {
     if (this.suppressionLoading()) {
+      // Queued, not dropped: this may be the reload that fills in a list an attach just created.
+      this.suppressionReloadPending = true;
       return;
     }
     const event = this.identity() ?? this.plannedEvent();
     this.loadSuppression(event?.brandShort ?? '', event?.eventName ?? '', new Set(this.loadedSuppressionKeys));
+  }
+
+  /** What a write dispatched now may create: the standing list when absent, a registrants list to create. */
+  private writeDispatchContext(): AudienceWriteDispatchContext {
+    const edition = this.registrantsToCreate();
+    return {
+      standingExisted: this.standardList() !== null,
+      registrantsName: edition === '' ? '' : this.registrantsRow()?.name || `${edition} - Current Registrants`,
+    };
+  }
+
+  /** Runs a reload that was asked for while the previous load was on the wire. */
+  private runPendingSuppressionReload(): void {
+    if (this.suppressionReloadPending) {
+      this.suppressionReloadPending = false;
+      this.reloadSuppressionRows();
+    }
   }
 
   /**
@@ -2300,7 +2595,9 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const includeSet = new Set(includes);
-    const requestedExclusions = [...new Set([...extraExclusions, ...this.excludeIds()])];
+    // The registrants list goes up as its edition, never as a plain id -- a past send's copy of it too.
+    const registrantsId = this.registrantsSentId();
+    const requestedExclusions = [...new Set([...extraExclusions.filter((id) => registrantsId === '' || id !== registrantsId), ...this.sentExcludeIds()])];
     // REFUSED, not filtered: dropping an exclusion that is also being sent to recorded a send that
     // reaches contacts the operator marked for exclusion -- a reused master marked Exclude, or a past
     // send's list now ticked for suppression. The tab's own conflict gate only sees the step-6
@@ -2323,7 +2620,9 @@ export class AudienceBuilderTabComponent {
     }
     const run = this.runGeneration;
     const dispatchProject = this.projectSlug();
-    const registrants = this.registrantsToCreate();
+    const registrants = this.registrantsEvent();
+    const registrantsCreated = this.registrantsToCreate() !== '';
+    const dispatchContext = this.writeDispatchContext();
     const base = {
       briefId,
       suppressionListIds: sentExclusions,
@@ -2363,9 +2662,10 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.attachingId.set(null);
+          this.attachDispatch.set(dispatchContext);
           this.attachResult.set(result);
           this.lastWriteWasAttach.set(true);
-          this.refreshCreatedSuppressionRows(registrants !== '');
+          this.refreshCreatedSuppressionRows(registrantsCreated || (!!result.standardSuppression && !dispatchContext.standingExisted));
         },
         error: (httpErr: HttpErrorResponse) => {
           if (run !== this.runGeneration) {
@@ -2376,6 +2676,10 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.attachingId.set(null);
+          if (httpErr.status === 409) {
+            this.listNameConflict.set({ message: serverAuthoredMessage(httpErr, 'A HubSpot list already uses a name this attach needs.'), fromCompose: false });
+            return;
+          }
           this.attachError.set(serverAuthoredMessage(httpErr, 'Failed to attach the lists to this email'));
         },
       });
@@ -2484,6 +2788,14 @@ export class AudienceBuilderTabComponent {
     this.audienceComposeUnattached.emit({ master, briefId, projectSlug, scope });
   }
 
+  /**
+   * Work a reset would lose that discovery cannot rebuild: a created, reused or searched list, an
+   * exclusion, a planned event, or a create in flight.
+   */
+  private hasHandWork(): boolean {
+    return this.inclusion().size > 0 || this.exclusion().size > 0 || this.plannedEvent() !== null || this.customCreating();
+  }
+
   /** Whether a brief arriving now is for a different event than the panel's work. See the reset. */
   private isDifferentEvent(previousKey: string, nextKey: string, previousUrl: string, advertised: string): boolean {
     const edited = this.eventUrlControl.dirty;
@@ -2535,7 +2847,7 @@ export class AudienceBuilderTabComponent {
    * -- a project switch and a different event's brief -- go through `resetForNewContext`, which
    * records the create as stranded instead of losing it.
    */
-  private resetRunState(): void {
+  private resetRunState(resetBuilder = true): void {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
     this.runGeneration += 1;
@@ -2567,6 +2879,8 @@ export class AudienceBuilderTabComponent {
     this.composedMasterLists.set([]);
     this.looseComposedMaster.set(null);
     this.suppressionLists.set([]);
+    this.standardList.set(null);
+    this.suppressionReloadPending = false;
     this.suppressionFailed.set(false);
     this.mastersFailed.set(false);
     this.emailsFailed.set(false);
@@ -2578,6 +2892,7 @@ export class AudienceBuilderTabComponent {
     this.suppressionSeeded.set(false);
     this.loadedRegistrantsEdition.set('');
     this.composeResult.set(null);
+    this.composeDispatch.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
@@ -2589,12 +2904,17 @@ export class AudienceBuilderTabComponent {
     // still running, and their own `finalize` releases them when they settle.
     this.attachingId.set(null);
     this.attachResult.set(null);
+    this.attachDispatch.set(null);
     this.attachError.set(null);
+    this.listNameConflict.set(null);
     this.copiedSuppressionNames.set(new Map());
     // The custom builder and its planned event belong to the old context too: list ids are
     // portal-scoped, and QA must not judge the next event against the previous one.
     this.plannedEvent.set(null);
-    this.customResetKey.update((k) => k + 1);
+    if (resetBuilder) {
+      this.customResetKey.update((k) => k + 1);
+    }
+    this.pendingStartOver.set(null);
     // The suppression count and the existing-list search are portal-scoped too: list ids repeat
     // across portals, so a late or completed result from the old project could read as current.
     this.suppressionCountSeq += 1;

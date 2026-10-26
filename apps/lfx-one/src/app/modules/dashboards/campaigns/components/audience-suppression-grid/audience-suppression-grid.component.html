@@ -106,6 +106,30 @@
               <p class="text-xs text-gray-500">
                 GDPR, global opt-out and portfolio hygiene lists, applied as one shared list that every email in this project reuses.
               </p>
+              @if (std.allSelected) {
+                @if (standardList(); as standing) {
+                  <p class="text-xs text-gray-600" data-testid="audience-suppression-standard-standing">
+                    Applied through the shared list
+                    @if (standing.hubspotUrl) {
+                      <a
+                        [href]="standing.hubspotUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-blue-600 hover:underline"
+                        data-testid="audience-suppression-standard-standing-link"
+                        >{{ standing.name }}</a
+                      >.
+                    } @else {
+                      <span class="font-medium">{{ standing.name }}</span
+                      >.
+                    }
+                  </p>
+                } @else {
+                  <p class="text-xs text-blue-700" data-testid="audience-suppression-standard-will-create">
+                    The shared list does not exist yet: it is created in HubSpot on the first attach or compose.
+                  </p>
+                }
+              }
               @if (std.partlySelected) {
                 <p class="text-xs text-amber-700" data-testid="audience-suppression-standard-partial">
                   Only some are ticked, so they are applied one by one instead of through the shared list.

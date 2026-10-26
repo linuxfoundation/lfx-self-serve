@@ -26,7 +26,7 @@ import {
   AudiencePreviewCountRequest,
   AudienceQaResult,
   AudienceQaRunRequest,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -808,9 +808,10 @@ export class CampaignService {
    *
    * Every filter is optional: the portfolio-wide lists are found by fixed name, so the answer is
    * already useful before discovery has identified the event. `registrantsEvent` (the edition, with
-   * its year) adds the current-registrants row.
+   * its year) adds the current-registrants row. `standardList` is the project's standing standard
+   * suppression list, present only once it exists.
    */
-  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionList[]> {
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionListsResult> {
     let params = new HttpParams().set('project', projectSlug);
     if (brandShort !== '') {
       params = params.set('brandShort', brandShort);
@@ -821,7 +822,7 @@ export class CampaignService {
     if (registrantsEvent !== '') {
       params = params.set('registrantsEvent', registrantsEvent);
     }
-    return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
+    return this.http.get<AudienceSuppressionListsResult>('/api/campaigns/audience-builder/suppression-lists', { params });
   }
 
   /**

@@ -174,6 +174,30 @@
           Drafts a segmented audience: contacts in the host city and country, past registrants of events there, education enrollees in the brand's courses, and
           the event page's visitors.
         </p>
+        @if (pendingStartOver() === 'draft') {
+          <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-draft">
+            <p class="text-xs text-gray-800">
+              The lists discovered below are for a different event page. Drafting from this one starts over: the discovered lists, your selection and step 3's
+              ticks are cleared, so one event drives the draft, the registrants suppression and QA.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                (click)="onConfirmStartOver()"
+                class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                data-testid="campaigns-audience-start-over-confirm">
+                Start over and draft
+              </button>
+              <button
+                type="button"
+                (click)="onCancelStartOver()"
+                class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                data-testid="campaigns-audience-start-over-cancel">
+                Cancel
+              </button>
+            </div>
+          </div>
+        }
       </div>
     }
     @if (mode() === 'reuse') {
@@ -279,6 +303,30 @@
           }
         </button>
       </div>
+      @if (pendingStartOver() === 'discover') {
+        <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-discover">
+          <p class="text-xs text-gray-800">
+            Discovering starts over: the lists you included or excluded, any list built on the Build tab and its planned event, and step 3's ticks are cleared.
+            Lists already created in HubSpot stay there.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              (click)="onConfirmStartOver()"
+              class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+              data-testid="campaigns-audience-start-over-confirm">
+              Start over and discover
+            </button>
+            <button
+              type="button"
+              (click)="onCancelStartOver()"
+              class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              data-testid="campaigns-audience-start-over-cancel">
+              Cancel
+            </button>
+          </div>
+        </div>
+      }
 
       @if (progressMessage(); as message) {
         <div class="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" aria-live="polite" data-testid="campaigns-audience-progress">
@@ -447,8 +495,8 @@
               No exclusion list is applied.
             }
           </p>
-          <p class="text-xs text-gray-600">
-            No new list was created in HubSpot. It appears on the Implement tab's send-audience step; run QA below before scheduling.
+          <p class="text-xs text-gray-600" data-testid="campaigns-audience-attach-created">
+            {{ attachCreationText() }} It appears on the Implement tab's send-audience step; run QA below before scheduling.
           </p>
           <button
             type="button"
@@ -462,6 +510,23 @@
       }
       @if (attachError(); as message) {
         <p class="text-xs text-red-700" role="alert" data-testid="campaigns-audience-attach-error">{{ message }}</p>
+      }
+      @if (listNameConflict(); as conflict) {
+        <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-name-conflict">
+          <p class="text-xs font-medium text-gray-900">A HubSpot list is using a name this send needs</p>
+          <p class="text-xs text-gray-700" data-testid="campaigns-audience-name-conflict-message">{{ conflict.message }}</p>
+          <p class="text-xs text-gray-600">
+            Nothing was attached{{ conflict.fromCompose ? ' and no master list was created' : '' }}. Trying again gets the same answer until that list is
+            renamed or removed in HubSpot.
+          </p>
+          <button
+            type="button"
+            (click)="onNameConflictResolved()"
+            class="w-fit rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            data-testid="campaigns-audience-name-conflict-resolved">
+            I renamed or removed it in HubSpot
+          </button>
+        </div>
       }
     </section>
 
@@ -508,6 +573,7 @@
         [selectedKeys]="suppressionKeys()"
         [loading]="suppressionLoading()"
         [failed]="suppressionFailed()"
+        [standardList]="standardList()"
         [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)"
         (toggleStandard)="onToggleStandardSuppression($event)" />
@@ -547,7 +613,7 @@
       }
       @if (suppressionMissing() && !suppressionLoading()) {
         <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-suppression-required">
-          Select at least one suppression list. Composing and attaching stay blocked until one is ticked.
+          {{ suppressionMissingMessage() }}
         </p>
       }
     </lfx-audience-step-card>
@@ -576,7 +642,7 @@
           [attachingId]="attachingId()"
           [attachedListId]="attachedListId()"
           [attachedMasterId]="attachedMasterId()"
-          [attachedExclusionIds]="attachedExclusions()"
+          [attachedExclusionIds]="recordedExclusions()"
           [attachedIncludeIds]="attachedIncludeIds()"
           [pendingExclusionIds]="excludeIds()"
           (addList)="onAddListBrief($event)"
@@ -659,11 +725,12 @@
         }
 
         <h5 class="text-sm font-semibold text-gray-900">Suppression lists ({{ suppressionEntries().length }})</h5>
-        @if (suppressionEntries().length === 0) {
+        @if (suppressionMissing()) {
           <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-exclude-none">
-            Select at least one suppression list in step 3. Nothing can be composed or attached without one.
+            {{ suppressionMissingMessage() }}
           </p>
-        } @else {
+        }
+        @if (suppressionEntries().length > 0) {
           <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">{{ excludeIds().length }} list(s) will be excluded in total.</p>
           <div class="flex flex-wrap gap-2">
             @for (entry of suppressionEntries(); track entry.key) {
@@ -908,6 +975,9 @@
               }
             }
             <p class="text-xs text-gray-600">Built from {{ result.sourceListIds.length }} list(s). Run QA below before scheduling the send.</p>
+            @if (composeSuppressionText(); as text) {
+              <p class="text-xs text-gray-600" data-testid="campaigns-audience-compose-suppression">{{ text }}</p>
+            }
             <!-- Says whether the email will actually use it. "Master list created" alone read as done
                  even when no plan was saved and nothing was attached. -->
             @if (composeForOtherSend()) {

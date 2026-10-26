@@ -430,7 +430,7 @@ export class AudienceBuilderController {
       // Every param is optional: the portfolio-wide hygiene lists are found by fixed name, and
       // the brand, event and current-registrants tiers only add to them. An empty answer is a
       // real answer.
-      const lists = await this.audienceBuilder.getSuppressionLists(
+      const result = await this.audienceBuilder.getSuppressionLists(
         req,
         projectSlug,
         queryString(req, 'brandShort'),
@@ -438,8 +438,8 @@ export class AudienceBuilderController {
         registrantsQuery(queryString(req, 'registrantsEvent'))
       );
 
-      logger.success(req, 'audience_suppression_lists', startTime, { count: lists.length });
-      res.json(lists);
+      logger.success(req, 'audience_suppression_lists', startTime, { count: result.lists.length, standard_list: result.standardList !== undefined });
+      res.json(result);
     } catch (error) {
       next(error);
     }

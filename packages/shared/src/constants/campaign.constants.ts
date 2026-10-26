@@ -3455,6 +3455,12 @@ export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
 export const AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX = 'LFX Standard Suppressions - ';
 
 /**
+ * The review step's key for the standard suppression rows shown as one chip. The grid treats them
+ * as one entry, so removing one from the review removes the group, never a single standard row.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY = 'group:standard';
+
+/**
  * Resource bounds on the Google creative and bidding strings the create route normalises.
  *
  * The same hazard `MAX_HUBSPOT_BODY_HTML_LENGTH` answers, reached through the other half of the same

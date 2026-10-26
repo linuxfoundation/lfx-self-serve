@@ -3,7 +3,7 @@
 
 import { Component, computed, input, output, signal } from '@angular/core';
 
-import type { AudienceStandardSuppressionToggle, AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-one/shared/interfaces';
+import type { AudienceComposedList, AudienceStandardSuppressionToggle, AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-one/shared/interfaces';
 
 /**
  * The exclusion picker: current registrants, event-specific, brand, then portfolio-wide hygiene.
@@ -38,6 +38,11 @@ export class AudienceSuppressionGridComponent {
    * the two render identically, so an outage reads as a verified absence of regulatory exclusions.
    */
   public readonly failed = input(false);
+  /**
+   * The project's standing standard suppression list, null until it exists: the entry then says
+   * the first attach or compose creates it, rather than implying nothing new is made.
+   */
+  public readonly standardList = input<AudienceComposedList | null>(null);
   public readonly disabled = input(false);
 
   // === Outputs ===

@@ -32,7 +32,7 @@ import type {
   AudienceSignal,
   AudienceSpeakerScope,
   AudienceSuppressionCategory,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   CampaignAudience,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -152,6 +152,7 @@ interface WireComposeMasterResult {
   master: WireComposedList;
   suppression?: WireComposedList;
   source_list_ids: string[];
+  suppression_list_ids?: string[];
   recorded?: boolean;
   audience?: WireRecordedAudience;
 }
@@ -705,16 +706,16 @@ export class AudienceBuilderProxyService {
     brandShort: string,
     eventName: string,
     registrantsEvent = ''
-  ): Promise<AudienceSuppressionList[]> {
+  ): Promise<AudienceSuppressionListsResult> {
     // Every param is optional upstream and omitted rather than sent empty: an empty
     // `event_name` is a filter that matches nothing, where an absent one means "do not filter".
-    const wire = await this.get<{ lists?: WireSuppressionList[] }>(req, projectSlug, 'suppression-lists', {
+    const wire = await this.get<{ lists?: WireSuppressionList[]; standard_list?: WireComposedList }>(req, projectSlug, 'suppression-lists', {
       ...(brandShort === '' ? {} : { brand_short: brandShort }),
       ...(eventName === '' ? {} : { event_name: eventName }),
       ...(registrantsEvent === '' ? {} : { registrants_event: registrantsEvent }),
     });
 
-    return required(wire.lists, 'lists').map((list) => ({
+    const lists = required(wire.lists, 'lists').map((list) => ({
       key: list.key,
       label: list.label,
       listId: list.list_id,
@@ -724,6 +725,10 @@ export class AudienceBuilderProxyService {
       hubspotUrl: httpHref(list.hubspot_url),
       ...(list.will_create ? { willCreate: true } : {}),
     }));
+    // Present only once the project's standing list exists; its absence tells the tab that the next
+    // attach or compose applying every standard row CREATES it. One without an id is no evidence it
+    // exists, so it is dropped rather than reported as an existing list.
+    return { lists, ...(confirmedWireList(wire.standard_list) ? { standardList: toComposedList(wire.standard_list) } : {}) };
   }
 
   public async getLastSent(req: Request, projectSlug: string, eventName: string, brandShort: string, limit: number): Promise<AudienceLastSentEmail[]> {
@@ -844,6 +849,10 @@ export class AudienceBuilderProxyService {
         master: toCreatedList(required(wire.master, 'master'), 'master'),
         suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
         sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
+        // Optional: an older upstream omits it, and the UI then falls back to what it sent.
+        ...(Array.isArray(wire.suppression_list_ids)
+          ? { suppressionListIds: wire.suppression_list_ids.filter((id) => typeof id === 'string' && id !== '') }
+          : {}),
         recorded,
         // Validated with `required` exactly as `master` is, and for the same reason: this is the
         // object the UI reads to say "attached". A rewritten `audience: {}` beside `recorded: true`

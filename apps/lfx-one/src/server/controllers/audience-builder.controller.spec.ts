@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
+import { MicroserviceError } from '../errors/microservice.error';
 
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -346,17 +347,27 @@ describe('searchLists', () => {
 
 describe('getSuppressionLists', () => {
   it('accepts an empty brand and event, since the standard lists are portfolio-wide', async () => {
-    proxyMethods.getSuppressionLists.mockResolvedValue([]);
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [] });
     const res = buildRes();
 
     await controller.getSuppressionLists(buildReq({}, {}), res, next);
 
     expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '', '');
-    expect(res.json).toHaveBeenCalledWith([]);
+    expect(res.json).toHaveBeenCalledWith({ lists: [] });
+  });
+
+  it("returns the project's standing standard list beside the rows", async () => {
+    const standardList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [], standardList });
+    const res = buildRes();
+
+    await controller.getSuppressionLists(buildReq({}, {}), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ lists: [], standardList });
   });
 
   it('passes the registrants edition through, and drops one over the limit rather than truncating it', async () => {
-    proxyMethods.getSuppressionLists.mockResolvedValue([]);
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [] });
 
     await controller.getSuppressionLists(buildReq({}, { registrantsEvent: ' Synthetic Summit 2026 ' }), buildRes(), next);
     expect(proxyMethods.getSuppressionLists).toHaveBeenLastCalledWith(expect.anything(), 'tlf', '', '', 'Synthetic Summit 2026');
@@ -552,6 +563,27 @@ describe('composeMaster', () => {
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.json).toHaveBeenCalledWith({ suppression, error: 'Master list create failed' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a 409 squatted-name conflict on compose and attach through with its message', async () => {
+    // Not a partial: upstream refuses before creating the master, and its message names the list
+    // squatting the standing or current-registrants name, so it must reach the tab unchanged.
+    const message = 'a HubSpot list "LFX Standard Suppressions - tlf" (id 4242) already uses this name; rename or remove it in HubSpot';
+    const conflict = MicroserviceError.fromMicroserviceResponse(409, 'Conflict', { code: '409', message }, 'LFX_V2_CAMPAIGN_SERVICE', '/x', 'compose');
+    proxyMethods.composeMaster.mockRejectedValue(conflict);
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], excludeListIds: ['201'] }), res, next);
+
+    expect(res.status, 'a 409 was rewritten as a compose partial').not.toHaveBeenCalled();
+    const forwarded = vi.mocked(next).mock.calls[0]?.[0] as unknown as MicroserviceError;
+    expect(forwarded.statusCode).toBe(409);
+    expect(forwarded.toResponse()['error']).toBe(message);
+
+    proxyMethods.attachExisting.mockRejectedValue(conflict);
+    vi.mocked(next).mockClear();
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'] }), buildRes(), next);
+    expect((vi.mocked(next).mock.calls[0]?.[0] as unknown as MicroserviceError).statusCode).toBe(409);
   });
 
   it('sends any other failure to the error middleware', async () => {

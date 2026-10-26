@@ -5640,6 +5640,16 @@ export interface AudienceSuppressionList {
 }
 
 /**
+ * The suppression rows for a scope, and the project's standing standard suppression list when it
+ * already exists. `standardList` is absent until the first attach or compose that applies every
+ * resolved standard row creates it, so its absence is how the tab knows that write will CREATE it.
+ */
+export interface AudienceSuppressionListsResult {
+  lists: AudienceSuppressionList[];
+  standardList?: AudienceComposedList;
+}
+
+/**
  * A list referenced by a past send, resolved to something displayable.
  *
  * `missing: true` means the recovery path failed and the list is genuinely gone or unmatchable —
@@ -5795,6 +5805,12 @@ export interface AudienceComposeMasterResult {
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * The suppression list ids the master actually excludes: the standing list first (in place of
+   * the standard rows), then the other exclusions, then the edition's current-registrants list.
+   * Not the ids sent. Absent from an upstream that predates it, so every reader needs a fallback.
+   */
+  suppressionListIds?: string[];
   /**
    * Whether the master was recorded as the brief's built send audience.
    *
@@ -6129,6 +6145,29 @@ export interface AudienceCustomRequest {
   /** Explicit list name; derived when omitted. A taken name is versioned, never reused. */
   name?: string;
 }
+
+/**
+ * What an attach or compose expected to create, captured at dispatch so its result can say what
+ * actually happened: whether the standing standard list existed, and the name of the
+ * current-registrants list it was asked to create ('' when none).
+ */
+export interface AudienceWriteDispatchContext {
+  standingExisted: boolean;
+  registrantsName: string;
+}
+
+/**
+ * A 409 from compose or attach: a HubSpot list already holds the name of the standing standard
+ * suppression list or of the edition's current-registrants list. `message` is upstream's, naming
+ * the list and its id; `fromCompose` says whether the compose latch waits on the operator's fix.
+ */
+export interface AudienceListNameConflict {
+  message: string;
+  fromCompose: boolean;
+}
+
+/** An action that starts the Audience tab over and so waits for the operator to confirm it. */
+export type AudienceStartOverAction = 'discover' | 'draft';
 
 /** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
 export interface AudienceStandardSuppressionToggle {
