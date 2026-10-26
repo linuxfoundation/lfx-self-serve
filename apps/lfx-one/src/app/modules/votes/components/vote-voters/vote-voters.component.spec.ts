@@ -256,6 +256,47 @@ describe('VoteVotersComponent', () => {
     }
   });
 
+  it.each([
+    ['manual', 25],
+    ['manual', 50],
+    ['manual', 100],
+    ['reminder', 25],
+    ['reminder', 50],
+    ['reminder', 100],
+  ] as const)('clamps an invalid page after a %s refresh while retaining %s rows per page', async (reason, size) => {
+    const voters = Array.from({ length: 250 }, (_, index) => ({ ...VOTERS[1], uid: `voter-${index}`, user_name: `Synthetic voter ${index}` }));
+    const { fixture, component, dialogClose$, getVoteVoters } = await mount({ voters: () => of(voters) });
+    current = fixture;
+    component['onStatusFilterChange'](VoteVoterStatus.NOT_VOTED);
+    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    table.onPage.emit({ first: 200, rows: size });
+    await settle(fixture);
+    expect(rowUids(fixture).length).toBeGreaterThan(0);
+
+    const pending = new Subject<VoteVoter[]>();
+    getVoteVoters.mockReturnValueOnce(pending);
+    if (reason === 'reminder') {
+      component['openReminder']();
+      dialogClose$.next(true);
+    } else {
+      component['refresh']();
+    }
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'vote-voters-loading')).not.toBeNull();
+    expect(component['tableFirst']()).toBe(200);
+
+    pending.next(voters.map((voter, index) => (index < 220 ? { ...voter, status: VoteVoterStatus.VOTED } : voter)));
+    pending.complete();
+    await settle(fixture);
+
+    const expectedFirst = size === 25 ? 25 : 0;
+    const refreshed = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    expect(refreshed.first()).toBe(expectedFirst);
+    expect(refreshed.rows()).toBe(size);
+    expect(rowUids(fixture)).toEqual(voters.slice(220 + expectedFirst).map((voter) => voter.uid));
+    expect(statusLabels(component)).toContain('Not voted yet (30)');
+  });
+
   it('retains the selected page size when a page event omits rows', async () => {
     const { fixture, component } = await mount();
     current = fixture;

@@ -19,6 +19,7 @@ function makeVote(overrides: Partial<Vote> = {}): Vote {
     project_uid: 'proj-1',
     committee_name: 'Synthetic Steering Committee',
     poll_type: PollType.GENERIC,
+    pseudo_anonymity: false,
     total_voting_request_invitations: 12,
     ...overrides,
   } as Vote;
@@ -57,6 +58,15 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-privacy')).toContain('Named ballot');
     expect(text('vote-detail-header-close-date')).toMatch(/^Closes /);
     expect(text('vote-detail-header-invited')).toBe('12 invited voters');
+  });
+
+  it.each([undefined, null])('shows unavailable privacy for missing metadata (%s)', (privacy) => {
+    const vote = makeVote();
+    // A malformed/partial payload can carry null even though the typed contract does not.
+    Object.assign(vote, { pseudo_anonymity: privacy });
+    render({ vote });
+
+    expect(text('vote-detail-header-privacy')).toBe('Ballot privacy unavailable');
   });
 
   it('labels a majority vote as majority, not as a ranked method', () => {

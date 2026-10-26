@@ -54,7 +54,7 @@ export class VoteDetailHeaderComponent {
     const pollType = this.vote().poll_type ?? PollType.GENERIC;
     return VOTE_METHOD_LABELS[pollType] || pollType;
   });
-  protected readonly privacyLabel: Signal<string> = computed(() => (this.vote().pseudo_anonymity ? 'Pseudo-anonymous ballot' : 'Named ballot'));
+  protected readonly privacyLabel: Signal<string> = this.initPrivacyLabel();
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
@@ -82,6 +82,14 @@ export class VoteDetailHeaderComponent {
   }
 
   // === Private Initializers ===
+  private initPrivacyLabel(): Signal<string> {
+    return computed(() => {
+      const privacy = this.vote().pseudo_anonymity;
+      if (privacy === undefined || privacy === null) return 'Ballot privacy unavailable';
+      return privacy ? 'Pseudo-anonymous ballot' : 'Named ballot';
+    });
+  }
+
   private initCloseDateText(): Signal<string> {
     return computed(() => {
       const vote = this.vote();
