@@ -1078,8 +1078,9 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
-      if (view?.type.agentKey === 'aeo-geo' && view.revision.createdAt) {
-        label += ` · ${formatDate(view.revision.createdAt, 'd MMM y', 'en-US', 'UTC')}`;
+      const createdAt = view?.revision.createdAt;
+      if (view?.type.agentKey === 'aeo-geo' && typeof createdAt === 'string' && createdAt.trim() && !Number.isNaN(Date.parse(createdAt))) {
+        label += ` · ${formatDate(createdAt, 'd MMM y', 'en-US', 'UTC')}`;
       }
       return mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), label);
     });

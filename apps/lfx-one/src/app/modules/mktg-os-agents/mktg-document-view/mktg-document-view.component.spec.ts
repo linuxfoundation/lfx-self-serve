@@ -1406,6 +1406,19 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
   });
 
+  it('keeps the AEO/GEO crumb plain on an unparseable report date without throwing', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'aeo-geo');
+    if (!type) throw new Error('Synthetic AEO/GEO document type missing');
+    const response = { ...revisionResponse(LATEST), type };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/project/mktg-os-agents/documents/aeo-geo/living?project=proj-1');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['view'].set({ ...response, revision: { ...LATEST, createdAt: 'not-a-date' } });
+    expect(() => component['crumbs']()).not.toThrow();
+    expect(component['crumbs']().at(-1)?.label).toBe(type.itemLabel);
+  });
+
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {
     await render(`/project/mktg-os-agents/documents/brand-kit/living?project=stale&type=brand-kit&revision=${LATEST.id}`);
     activeContext.set({ ...PROJECT, uid: 'next', slug: 'current' });
