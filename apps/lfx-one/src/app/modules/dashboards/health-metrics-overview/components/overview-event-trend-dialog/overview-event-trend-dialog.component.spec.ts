@@ -132,6 +132,14 @@ describe('OverviewEventTrendDialogComponent', () => {
     expect(query('overview-trend-chart')?.querySelector('line[stroke-dasharray="3 3"]')).toBeNull();
   });
 
+  it('says so in place of an empty chart when a past event has no history', async () => {
+    await render({ eventId: '', formats: [] }, true);
+
+    expect(query('overview-trend-empty')?.textContent).toContain('No registration history for this event yet.');
+    expect(query('overview-trend-chart')).toBeNull();
+    expect(query('overview-trend-kpi-final')).not.toBeNull();
+  });
+
   it('opens with focus on its title rather than the close button', async () => {
     await render(oneFormat);
 

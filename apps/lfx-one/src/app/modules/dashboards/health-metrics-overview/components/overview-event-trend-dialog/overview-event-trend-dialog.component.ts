@@ -70,6 +70,12 @@ export class OverviewEventTrendDialogComponent {
     return buildHealthMetricsOverviewTrendView(this.event, headline, series);
   });
 
+  /** An event the view holds no curve for shows a note in place of an empty chart. */
+  protected readonly hasCurve = computed(() => {
+    const view = this.view();
+    return !!(view.currentPath || view.lastYearPath || view.predictedPath);
+  });
+
   public constructor() {
     // The title takes focus, so a screen reader names the event and no ring lands on the close button.
     afterNextRender(() => this.heading().nativeElement.focus());

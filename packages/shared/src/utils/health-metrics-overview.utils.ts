@@ -4,7 +4,8 @@
 import {
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
-  HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS,
+  HEALTH_METRICS_OVERVIEW_EVENT_PACE,
+  HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
@@ -39,7 +40,7 @@ import type {
   HealthMetricsOverviewDonutSegmentView,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
-  HealthMetricsOverviewEventBarView,
+  HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewEventsView,
@@ -640,33 +641,41 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
   };
 }
 
-/** Without a goal the bar is full and green; otherwise upcoming events take their pace and past ones their share of the goal. */
-function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventBarView {
+/**
+ * Without a goal the bar is full and green; otherwise upcoming events take their pace and past ones their share of
+ * the goal. An unmeasured count draws a grey bar with no status, so it never reads as missed.
+ */
+function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRegistrationsView {
   const goal = event.registrationsGoal;
   const countLabel = formatCount(event.registrations);
-  if (goal === null || goal <= 0) {
-    return { countLabel, sideLabel: 'No goal set', widthPct: 100, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high };
+  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', widthPct: 100, ...statusFields(HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack) };
+  if (event.registrations === null) {
+    return { countLabel, sideLabel: `of ${formatCount(goal)}`, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
   }
 
-  const share = (event.registrations ?? 0) / goal;
+  const share = event.registrations / goal;
   return {
     countLabel,
     sideLabel: `of ${formatCount(goal)}`,
     widthPct: clampPct(share * 100),
-    barClass: isPast ? goalShareFill(share) : paceFill(event.compScore),
+    ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)),
   };
 }
 
-function paceFill(compScore: string | null): string {
-  return compScore && compScore in HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS
-    ? HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS[compScore as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS]
-    : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue;
+function statusFields(status: { label: string; fillClass: string } | null): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel'> {
+  return status ? { barClass: status.fillClass, statusLabel: status.label } : { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null };
 }
 
-function goalShareFill(share: number): string {
-  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high;
-  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium;
-  return HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low;
+function paceStatus(compScore: string | null): { label: string; fillClass: string } | null {
+  return compScore && compScore in HEALTH_METRICS_OVERVIEW_EVENT_PACE
+    ? HEALTH_METRICS_OVERVIEW_EVENT_PACE[compScore as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE]
+    : null;
+}
+
+function goalShareStatus(share: number): { label: string; fillClass: string } {
+  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack;
+  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk;
+  return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;
 }
 
 /** "Dec 15, 2026", "Dec 8–10, 2026", "Nov 30 – Dec 2, 2026" or "Dec 30, 2026 – Jan 2, 2027". */

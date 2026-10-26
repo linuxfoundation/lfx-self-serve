@@ -180,22 +180,29 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
 /** The forecast range band behind the predicted line: the progress blue at 10%. */
 export const HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL = `${lfxColors.blue[500]}1A`;
 
-/** An upcoming event's `comp_score` → its registrations bar; an unknown or empty score keeps the neutral blue. */
-export const HEALTH_METRICS_OVERVIEW_EVENT_PACE_FILLS = {
-  high: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high,
-  medium: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
-  low: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low,
+/** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {
+  onTrack: { label: 'On track', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
+  atRisk: { label: 'At risk', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
+  action: { label: 'Action required', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+} as const;
+
+/** An upcoming event's `comp_score` → its status; an unknown or empty score keeps the neutral blue, with no status. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_PACE = {
+  high: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack,
+  medium: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk,
+  low: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action,
 } as const;
 
 /** The design's thresholds for a past event's registrations against its goal: at or above the first green, the second amber, else red. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES = { onTrack: 1, atRisk: 0.8 } as const;
 
 /** The status legend beside the event list; the registrations bar's fill carries the same three tones. */
-export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = [
-  { key: 'on-track', label: 'On track', dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
-  { key: 'at-risk', label: 'At risk', dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
-  { key: 'action', label: 'Action required', dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
-] as const;
+export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRICS_OVERVIEW_EVENT_STATUS).map(([key, status]) => ({
+  key,
+  label: status.label,
+  dotClass: status.fillClass,
+}));
 
 /** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
 export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;

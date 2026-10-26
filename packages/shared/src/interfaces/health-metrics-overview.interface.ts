@@ -332,6 +332,11 @@ export interface HealthMetricsOverviewEventBarView {
   barClass: string;
 }
 
+/** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
+export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetricsOverviewEventBarView {
+  statusLabel: string | null;
+}
+
 /** Accepted speaking proposals as a bar when there are proposals, otherwise the call for proposals' stage. */
 export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
   hasProposals: boolean;
@@ -344,8 +349,7 @@ export interface HealthMetricsOverviewEventRowView {
   meta: string;
   /** Past events read their history, upcoming ones their forecast. */
   isPast: boolean;
-  /** The bar's fill carries the status; there is no badge. */
-  registrations: HealthMetricsOverviewEventBarView;
+  registrations: HealthMetricsOverviewEventRegistrationsView;
   talks: HealthMetricsOverviewEventTalksView;
 }
 

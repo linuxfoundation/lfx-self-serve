@@ -153,7 +153,7 @@ describe('OverviewEventsCardComponent', () => {
     await render();
 
     // The count and its goal sit apart in a flex row, so the text runs together.
-    expect(text('overview-events-row-u0-registrations')).toBe('Registrations328of 1,000');
+    expect(text('overview-events-row-u0-registrations')).toBe('Registrations328of 1,000Status: At risk');
     expect(query('overview-events-row-u0-registrations-bar')?.className).toContain('bg-amber-400');
     expect(text('overview-events-row-u0-talks')).toBe('Accepted speaking proposals0of 185');
     expect(text('overview-events-legend')).toBe('On trackAt riskAction required');

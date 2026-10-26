@@ -362,7 +362,7 @@ export class HealthMetricsEventsService {
     const sql = `
       SELECT
         h.days_to_event,
-        h.event_registration_type,
+        NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type,
         MAX(h.cumulative_avg_predicted_registrations) AS registrations,
         MAX(h.prior_event_cumulative_registrations) AS prior_year
       FROM ${REGISTRATION_HISTORY_VIEW} h
@@ -376,8 +376,8 @@ export class HealthMetricsEventsService {
             AND p.is_all_projects = TRUE
             AND p.event_id = h.event_id
         )
-      GROUP BY h.event_registration_type, h.days_to_event
-      ORDER BY h.event_registration_type ASC NULLS LAST, h.days_to_event ASC
+      GROUP BY NULLIF(TRIM(h.event_registration_type), ''), h.days_to_event
+      ORDER BY event_registration_type ASC NULLS LAST, h.days_to_event ASC
     `;
 
     const result = await executeSnowflakeViewRead<RegistrationHistoryRow>(

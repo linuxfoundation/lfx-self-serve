@@ -250,7 +250,9 @@ describe('HealthMetricsEventsService.getRegistrationHistory', () => {
     expect(sql).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS');
     expect(sql).toContain('event_start_date < CURRENT_DATE()');
     expect(sql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS p\s*WHERE p\.foundation_slug = \?/);
-    expect(sql).toContain('GROUP BY h.event_registration_type, h.days_to_event');
+    // Blank or padded formats fold into one series rather than splitting the curve.
+    expect(sql).toContain("NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type");
+    expect(sql).toContain("GROUP BY NULLIF(TRIM(h.event_registration_type), ''), h.days_to_event");
   });
 
   it('maps every day as measured, by format, with no forecast', async () => {
