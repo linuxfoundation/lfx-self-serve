@@ -93,9 +93,12 @@ import {
   merge,
   throwError,
   timer,
+  TimeoutError,
   Observable,
   shareReplay,
   take,
+  takeUntil,
+  Subject,
 } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -193,6 +196,9 @@ export class MktgDocumentViewComponent {
   protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
+  protected readonly downloadingWorkbook = signal(false);
+  protected readonly workbookError = signal('');
+  private readonly cancelWorkbookDownload = new Subject<void>();
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
@@ -417,7 +423,12 @@ export class MktgDocumentViewComponent {
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
         .pipe(
-          tap(() => this.writer.set(false)),
+          tap(() => {
+            this.cancelWorkbookDownload.next();
+            this.downloadingWorkbook.set(false);
+            this.workbookError.set('');
+            this.writer.set(false);
+          }),
           switchMap(([request]) => (request.slug ? this.projectService.getProject(request.slug, false) : of(null))),
           takeUntilDestroyed()
         )
@@ -501,6 +512,8 @@ export class MktgDocumentViewComponent {
                           this.failureDetails.set(result.message ?? '');
                         }
                       }),
+                      // Keep needs_input out of the stored read while the tap above shows the prompt.
+                      // Polling continues; a later ready/failed emission clears that prompt.
                       filter((result) => result.status !== 'needs_input')
                     )
                 : of(null);
@@ -532,12 +545,16 @@ export class MktgDocumentViewComponent {
                     })
                   );
                 }),
-                catchError((error: HttpErrorResponse) => {
-                  this.errorText.set(
-                    pending
-                      ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                      : this.loadErrorText(error.status, error.error?.code)
-                  );
+                catchError((error: HttpErrorResponse | TimeoutError) => {
+                  if (error instanceof TimeoutError) {
+                    this.errorText.set('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+                  } else {
+                    this.errorText.set(
+                      pending
+                        ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                        : this.loadErrorText(error.status, error.error?.code)
+                    );
+                  }
                   return of(null);
                 })
               );
@@ -736,6 +753,50 @@ export class MktgDocumentViewComponent {
     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
       queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
     });
+  }
+
+  protected onDownloadWorkbook(): void {
+    const view = this.view();
+    const envelope = view?.member360;
+    if (!isPlatformBrowser(this.platformId) || !view || !envelope || !this.writer() || this.loading() || this.downloadingWorkbook()) return;
+    const selection = this.revisionParam();
+    const subject = this.userService.user()?.sub;
+    const current = () => this.userService.user()?.sub === subject && this.sameView(view.project, view, selection) && this.writer();
+    if (!current()) return;
+    this.downloadingWorkbook.set(true);
+    this.workbookError.set('');
+    this.member360
+      .download(view.project, view.documentId)
+      .pipe(
+        take(1),
+        takeUntil(this.cancelWorkbookDownload),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.downloadingWorkbook.set(false))
+      )
+      .subscribe({
+        next: (blob) => {
+          if (!current()) return;
+          try {
+            const url = URL.createObjectURL(blob);
+            // Cleanup outlives the click, but not the document page.
+            timer(1000)
+              .pipe(
+                takeUntilDestroyed(this.destroyRef),
+                finalize(() => URL.revokeObjectURL(url))
+              )
+              .subscribe();
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Member360_${envelope.project}_${envelope.period.label}.xlsx`;
+            link.click();
+          } catch {
+            this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+          }
+        },
+        error: () => {
+          if (current()) this.workbookError.set('The workbook could not be prepared. Try downloading again.');
+        },
+      });
   }
 
   protected onRetryRun(): void {
