@@ -188,8 +188,33 @@ describe('Member360Service workbook transport', () => {
     const expired = vi.fn();
     reloaded.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ error: expired });
     vi.advanceTimersByTime(1);
-    expect(expired).toHaveBeenCalledWith(expect.objectContaining({ name: 'TimeoutError' }));
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(expired).not.toHaveBeenCalled();
+    check.flush({ status: 'pending' });
+    expect(expired).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'TimeoutError' }));
     expect(reloaded.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('delivers a stored result from one slow check after the ceiling and forgets the pending run', () => {
+    startPending();
+    vi.advanceTimersByTime(MEMBER_360_RUN_CEILING_MS + 1);
+    const received = vi.fn();
+    const completed = vi.fn();
+    const error = vi.fn();
+    api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe({ next: received, complete: completed, error });
+    vi.advanceTimersByTime(1);
+    const check = http.expectOne('/api/mktg-agents/member-360/result');
+    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    expect(check.cancelled).toBe(false);
+    expect(error).not.toHaveBeenCalled();
+    http.expectNone('/api/mktg-agents/member-360/result');
+    check.flush({ status: 'ready', stored: true });
+    expect(received).toHaveBeenCalledExactlyOnceWith({ status: 'ready', stored: true });
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    expect(sessionStorage.length).toBe(0);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');
   });
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
