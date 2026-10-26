@@ -9,12 +9,7 @@
     [ariaLabelledBy]="idPrefix() + '-compliance-text'"
     [attr.data-testid]="idPrefix() + '-compliance-checkbox'" />
   <div [id]="idPrefix() + '-compliance-text'" class="min-w-0 flex-1 flex flex-col gap-2">
-    <span class="text-sm text-gray-800 leading-5">
-      @if (markRequired()) {
-        <span class="text-red-500">*</span>
-      }
-      {{ lead }}
-    </span>
+    <span class="text-sm text-gray-800 leading-5"> <span class="text-red-500">*</span> {{ lead }} </span>
     <ul class="list-disc pl-5 flex flex-col gap-2 text-sm text-gray-600 leading-5">
       @for (item of items; track item) {
         <li>{{ item }}</li>

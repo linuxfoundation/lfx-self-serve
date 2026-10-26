@@ -35,13 +35,8 @@ describe('ComplianceConfirmationComponent', () => {
     expect(element().querySelector('[aria-labelledby="mentorship-mentee-compliance-text"]')).not.toBeNull();
   });
 
-  it('marks the text as required unless the caller turns the asterisk off', () => {
+  it('marks the text as required with the red asterisk', () => {
     expect(element().querySelector('#mentorship-mentee-compliance-text .text-red-500')?.textContent?.trim()).toBe('*');
-
-    fixture.componentRef.setInput('markRequired', false);
-    fixture.detectChanges();
-
-    expect(element().querySelector('#mentorship-mentee-compliance-text .text-red-500')).toBeNull();
   });
 
   it('shows the error the caller passes down', () => {

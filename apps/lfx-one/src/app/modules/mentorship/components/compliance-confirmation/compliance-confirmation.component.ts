@@ -26,8 +26,6 @@ export class ComplianceConfirmationComponent {
   public readonly idPrefix = input.required<string>();
   public readonly control = input('complianceAccepted');
   public readonly error = input<string | undefined>(undefined);
-  /** Leads the text with the red required asterisk. */
-  public readonly markRequired = input(true);
 
   protected readonly lead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
   protected readonly items = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;

@@ -29,8 +29,6 @@ export class MenteeEligibilityChecksComponent {
   /** Prefixes each checkbox id, the text id it points at, and the test ids. */
   public readonly idPrefix = input.required<string>();
   public readonly errors = input<MentorshipMenteeRegisterFieldErrors>({});
-  /** Leads each label with the red required asterisk. */
-  public readonly markRequired = input(true);
 
   protected readonly ageLabel = MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL;
   protected readonly workAuthorizedLabel = MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL;

@@ -10,10 +10,7 @@
       [ariaLabelledBy]="idPrefix() + '-age-eligible-text'"
       [attr.data-testid]="idPrefix() + '-age-eligible-checkbox'" />
     <span [id]="idPrefix() + '-age-eligible-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
-      @if (markRequired()) {
-        <span class="text-red-500">*</span>
-      }
-      {{ ageLabel }}
+      <span class="text-red-500">*</span> {{ ageLabel }}
     </span>
   </div>
   @if (errors().ageEligible) {
@@ -30,10 +27,7 @@
       [ariaLabelledBy]="idPrefix() + '-work-authorized-text'"
       [attr.data-testid]="idPrefix() + '-work-authorized-checkbox'" />
     <span [id]="idPrefix() + '-work-authorized-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
-      @if (markRequired()) {
-        <span class="text-red-500">*</span>
-      }
-      {{ workAuthorizedLabel }}
+      <span class="text-red-500">*</span> {{ workAuthorizedLabel }}
     </span>
   </div>
   @if (errors().workAuthorized) {
@@ -50,10 +44,7 @@
       [ariaLabelledBy]="idPrefix() + '-no-duplicate-profile-text'"
       [attr.data-testid]="idPrefix() + '-no-duplicate-profile-checkbox'" />
     <span [id]="idPrefix() + '-no-duplicate-profile-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
-      @if (markRequired()) {
-        <span class="text-red-500">*</span>
-      }
-      {{ noDuplicateProfileLabel }}
+      <span class="text-red-500">*</span> {{ noDuplicateProfileLabel }}
     </span>
   </div>
   @if (errors().noDuplicateProfile) {
