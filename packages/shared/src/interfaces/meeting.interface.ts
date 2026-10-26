@@ -875,6 +875,26 @@ export interface ComposerGuestRow {
 }
 
 /**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
+}
+
+/**
  * A resource-link row, with the strings the list renders already read off the control
  * @description Links live in an `important_links` FormArray of FormGroups, and the row template read
  * four values off each control on every change-detection pass. Projecting the array into these once
