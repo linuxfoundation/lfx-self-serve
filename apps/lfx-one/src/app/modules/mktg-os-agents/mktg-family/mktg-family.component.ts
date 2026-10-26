@@ -62,9 +62,9 @@ export class MktgFamilyComponent {
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly actions = this.initActions();
-  protected readonly headerQueryParams = computed(() => {
+  protected readonly headerQueryParams = computed((): Record<string, string> => {
     const header = this.actions()?.header;
-    if (header?.link) return { ...this.kit.projectQueryParams(), ...header.link.queryParams };
+    if (header?.link) return { ...this.runQueryParams().plain, ...header.link.queryParams };
     return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
   protected readonly rows = computed(() => Object.values(this.actions()?.rows ?? {}));
