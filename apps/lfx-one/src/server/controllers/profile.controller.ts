@@ -8,7 +8,11 @@ import {
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_REGEX,
   EMAIL_VERIFICATION_FAILED_ERROR,
   EMAIL_VERIFICATION_FAILED_MESSAGE,
@@ -32,6 +36,7 @@ import {
   CombinedProfile,
   DeveloperTokenInfo,
   EmailManagementData,
+  EmailVerificationCallbackStatus,
   EnrichedIdentity,
   IdentityDisplayState,
   LinuxAliasData,
@@ -46,6 +51,8 @@ import {
   UserMetadataUpdateRequest,
   UserMetadataUpdateResponse,
   UserProfile,
+  VerifyAndLinkEmailResponse,
+  VerifyEmailOtpNatsResponse,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
 import { emailsEqual, isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
@@ -1857,70 +1864,13 @@ export class ProfileController {
       // Store token in session
       this.profileAuthService.storeManagementToken(req, tokenResponse);
 
-      // Auto-complete pending email verification if present
+      // Auto-complete pending email verification if present. One-shot: the attempt is removed from
+      // the session before anything else, so whatever the outcome its code is never replayed again.
       const pending = req.appSession?.pendingEmailVerification;
+      let emailStatus: EmailVerificationCallbackStatus | undefined;
       if (pending) {
         delete req.appSession!.pendingEmailVerification;
-
-        try {
-          const otpResponse = await this.emailVerificationService.verifyOtp(req, pending.email, pending.otp);
-
-          if (otpResponse.success && otpResponse.data?.id_token) {
-            const mgmtToken = this.profileAuthService.getManagementToken(req);
-            if (mgmtToken) {
-              const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
-
-              if (linkResponse.success) {
-                // This route's auth config skips the middleware's gateway-token exchange — populate
-                // it here (session-cached, fail-open) so the v1 sync below has a token to work with.
-                await populateApiGatewayToken(req);
-
-                // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
-                await this.userService.syncVerifiedEmailToUserService(req, pending.email);
-
-                // Fire-and-forget CDP verification
-                const lfid = getEffectiveUsername(req);
-
-                if (lfid) {
-                  this.cdpService
-                    .getIdentitiesForUser(req, lfid)
-                    .then((identities) => {
-                      const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
-                      if (emailIdentity) {
-                        this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
-                          logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
-                            err,
-                          });
-                        });
-                      }
-                    })
-                    .catch((err: unknown) => {
-                      logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-                        err,
-                      });
-                    });
-                }
-
-                logger.info(req, 'profile_auth_callback', 'Pending email verification completed', { email: pending.email });
-              } else {
-                logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
-                  email: pending.email,
-                  error: linkResponse.error,
-                });
-              }
-            }
-          } else {
-            logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
-              email: pending.email,
-              error: otpResponse.error,
-            });
-          }
-        } catch (err) {
-          logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
-            email: pending.email,
-            err,
-          });
-        }
+        emailStatus = await this.completePendingEmailVerification(req, pending);
       }
 
       // Check for pending social connection (chained from social → Flow C → social)
@@ -1940,10 +1890,14 @@ export class ProfileController {
         token_type: tokenResponse.token_type,
         scope: tokenResponse.scope,
         expires_in: tokenResponse.expires_in,
-        pending_verification_completed: !!pending,
+        pending_verification_completed: !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+        pending_email_status: emailStatus,
       });
 
-      res.redirect(`${returnTo}?success=profile_token_obtained`);
+      // The email outcome rides alongside the authorization flag, which on its own proves only that
+      // authorization succeeded. A newly linked address adds no marker (unchanged behavior).
+      const emailStatusQuery = emailStatus ? `&${EMAIL_CALLBACK_STATUS_PARAM}=${emailStatus}` : '';
+      res.redirect(`${returnTo}?success=profile_token_obtained${emailStatusQuery}`);
     } catch (err) {
       logger.error(req, 'profile_auth_callback', startTime, err, {});
       res.redirect(`${returnTo}?error=token_exchange_failed`);
@@ -2251,6 +2205,9 @@ export class ProfileController {
       const isProfileAuthConfigured = this.profileAuthService.isProfileAuthConfigured();
 
       let authToken: string;
+      // The caller's own Flow C token, also sent with the OTP so auth-service can recognize an
+      // address already connected to this account. Never set from the link-only M2M fallback below.
+      let userManagementToken: string | undefined;
 
       if (!isAuthelia && isProfileAuthConfigured) {
         const mgmtToken = this.profileAuthService.getManagementToken(req);
@@ -2275,6 +2232,7 @@ export class ProfileController {
           return;
         }
         authToken = mgmtToken;
+        userManagementToken = mgmtToken;
       } else {
         const authServiceAudience = new URL('api/v2/', issuerBaseUrl).toString();
         authToken = await generateM2MToken(req, { audience: authServiceAudience });
@@ -2282,7 +2240,7 @@ export class ProfileController {
 
       // Step 2: Verify OTP via NATS
       const otpStartedAt = Date.now();
-      const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp);
+      const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp, userManagementToken);
 
       if (!otpResponse.success) {
         logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
@@ -2301,6 +2259,15 @@ export class ProfileController {
         }
         await this.holdUntilFloor(otpStartedAt);
         res.status(400).json({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
+        return;
+      }
+
+      // Already connected to the caller's own account: a proven, successful no-op. Nothing is
+      // linked, synced, or verified — the address is already part of the account.
+      if (userManagementToken && this.isEmailAlreadyConnected(otpResponse)) {
+        logger.success(req, 'verify_and_link_email', startTime, { status: EMAIL_ALREADY_CONNECTED_STATUS });
+        const response: VerifyAndLinkEmailResponse = { success: true, status: EMAIL_ALREADY_CONNECTED_STATUS, message: EMAIL_ALREADY_CONNECTED_MESSAGE };
+        res.json(response);
         return;
       }
 
@@ -2538,6 +2505,100 @@ export class ProfileController {
   /** Keep pre-proof conflict details request-correlated without logging another account's identity. */
   private logLinkedEmailConflict(req: Request, operation: string): void {
     logger.warning(req, operation, 'Email already linked to another account');
+  }
+
+  /**
+   * The explicit own-account outcome: OTP proof succeeded and auth-service reports the address is
+   * already connected to the caller. Only meaningful when the request carried the caller's own
+   * token; any other tokenless success stays malformed.
+   */
+  private isEmailAlreadyConnected(otpResponse: VerifyEmailOtpNatsResponse): boolean {
+    return otpResponse.success === true && otpResponse.data?.status === EMAIL_ALREADY_CONNECTED_STATUS;
+  }
+
+  /**
+   * Replays a pending email verification during the Flow C callback, after the caller has already
+   * removed it from the session. Returns the outcome to surface on the redirect: `already_connected`,
+   * `retry_required` for any attempt that did not finish, or undefined when a new address was linked.
+   * Never throws — the authorization itself has already succeeded.
+   */
+  private async completePendingEmailVerification(req: Request, pending: { email: string; otp: string }): Promise<EmailVerificationCallbackStatus | undefined> {
+    // Resolve the freshly stored user token before replaying the code, so its absence never consumes it.
+    const mgmtToken = this.profileAuthService.getManagementToken(req);
+    if (!mgmtToken) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable');
+      return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+    }
+
+    try {
+      const otpResponse = await this.emailVerificationService.verifyOtp(req, pending.email, pending.otp, mgmtToken);
+
+      if (this.isEmailAlreadyConnected(otpResponse)) {
+        logger.info(req, 'profile_auth_callback', 'Pending email already connected to this account');
+        return EMAIL_ALREADY_CONNECTED_STATUS;
+      }
+
+      if (!otpResponse.success || !otpResponse.data?.id_token) {
+        logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
+          error: otpResponse.error,
+          has_token: !!otpResponse.data?.id_token,
+        });
+        return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+      }
+
+      const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
+      if (!linkResponse.success) {
+        logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
+          error: linkResponse.error,
+        });
+        return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+      }
+    } catch (err) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
+        err,
+      });
+      return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+    }
+
+    // Linked — the follow-up writes below are fail-open and never turn a completed link into a retry.
+    try {
+      // This route's auth config skips the middleware's gateway-token exchange — populate
+      // it here (session-cached, fail-open) so the v1 sync below has a token to work with.
+      await populateApiGatewayToken(req);
+
+      // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
+      await this.userService.syncVerifiedEmailToUserService(req, pending.email);
+    } catch (err) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification follow-up sync failed (non-blocking)', {
+        err,
+      });
+    }
+
+    // Fire-and-forget CDP verification
+    const lfid = getEffectiveUsername(req);
+
+    if (lfid) {
+      this.cdpService
+        .getIdentitiesForUser(req, lfid)
+        .then((identities) => {
+          const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
+          if (emailIdentity) {
+            this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
+              logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
+                err,
+              });
+            });
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
+            err,
+          });
+        });
+    }
+
+    logger.info(req, 'profile_auth_callback', 'Pending email verification completed');
+    return undefined;
   }
 
   /**

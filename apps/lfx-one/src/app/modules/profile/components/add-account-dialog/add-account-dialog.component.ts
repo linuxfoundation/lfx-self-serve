@@ -5,12 +5,18 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signa
 import { FormsModule, NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { IDENTITY_PROVIDER_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  IDENTITY_PROVIDER_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
 import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
+import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
 
@@ -25,6 +31,8 @@ export class AddAccountDialogComponent {
   private readonly config = inject(DynamicDialogConfig<AddAccountDialogData>);
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly userService = inject(UserService);
+  // Root instance — the app's <p-toast/> reads it, so a notice survives the dialog closing.
+  private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly existingProviders: IdentityProvider[] = this.config.data?.existingProviders ?? [];
@@ -106,6 +114,10 @@ export class AddAccountDialogComponent {
     this.userService.verifyAndLinkEmail(email, code).subscribe({
       next: (response) => {
         if (response.success) {
+          // Already part of this account: nothing new was added, so say so instead of staying silent.
+          if (response.status === EMAIL_ALREADY_CONNECTED_STATUS) {
+            this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+          }
           const result: AddAccountDialogResult = {
             provider: 'email',
             identifier: email,

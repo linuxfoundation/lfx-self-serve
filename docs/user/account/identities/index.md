@@ -4,7 +4,7 @@ description: Link, verify, and remove the GitHub, social, and email identities u
 audience: [all]
 product_area: Account
 tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-10-14
+last_updated: 2026-10-25
 intercom_collection: Account
 ---
 
@@ -38,13 +38,14 @@ Identities are grouped into two sections:
 2. Choose a provider:
    - For a social account (for example GitHub, Google, or LinkedIn), select **Continue with _[provider]_** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. If the address can be added, a 6-digit code is sent to it; enter that code and select **Verify email**. Use **Resend Code** if needed. If no code arrives, the address may already be linked to another LFX account — select **contact support** in the code step.
+   - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If verification instead reports that the address is already linked to an LFX account, select **contact support**.
 
 ## Verify an unverified identity
 
 1. Find the account under **Unverified identities**.
 2. Select **Verify**.
    - For a social account, select **Continue with _[provider]_** to confirm through the provider.
-   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**.
+   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**. If the address is already connected to your account, LFX confirms **This email is already connected to your account.** and refreshes your identities.
 
 If an unverified identity is not yours, select **This is not me** to reject it.
 
