@@ -1553,8 +1553,8 @@ describe('MktgDocumentViewComponent', () => {
     await render('/project/mktg-os-agents/documents/aeo-geo/living?project=proj-1');
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['view'].set({ ...response, revision: { ...LATEST, createdAt: 'not-a-date' } });
-    expect(() => component['crumbs']()).not.toThrow();
-    expect(component['crumbs']().at(-1)?.label).toBe(type.itemLabel);
+    expect(() => component['breadcrumbPage']()).not.toThrow();
+    expect(component['breadcrumbPage']()).toEqual(expect.objectContaining({ kind: 'asset', label: type.itemLabel }));
   });
 
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {

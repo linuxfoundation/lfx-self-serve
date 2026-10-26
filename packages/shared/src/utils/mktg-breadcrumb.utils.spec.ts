@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import { MKTG_KIT_TABS } from '../constants/mktg-kit.constants';
-import type { MktgBreadcrumbPage } from '../interfaces/mktg-breadcrumb.interface';
+import type { MktgBreadcrumbPage, MktgKitTabPath } from '../interfaces/mktg-breadcrumb.interface';
 import { buildMktgBreadcrumbs } from './mktg-breadcrumb.utils';
 
 describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadcrumb table at %s', (root) => {
@@ -23,6 +23,12 @@ describe.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('breadc
           ]
         : []
     ),
+    {
+      route: '/unknown-tab',
+      page: { kind: 'kit-tab', tab: 'unknown-tab' as MktgKitTabPath },
+      labels: ['Synthetic kit', 'Tab not found'],
+      parents: [[root]],
+    },
     {
       route: '/families/positioning-brand',
       page: { kind: 'family', familyId: 'positioning-brand' },

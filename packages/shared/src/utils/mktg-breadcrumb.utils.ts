@@ -11,7 +11,7 @@ export function buildMktgBreadcrumbs(page: MktgBreadcrumbPage, kitRootPath: stri
   if (page.kind === 'kit') return [];
   const root: MktgBreadcrumbItem = { label: projectName ? `${projectName} kit` : 'Marketing kit', route: [kitRootPath] };
   if (page.kind === 'kit-tab') {
-    return [root, { label: MKTG_KIT_TABS.find((tab) => tab.path === page.tab)?.label ?? '' }];
+    return [root, { label: MKTG_KIT_TABS.find((tab) => tab.path === page.tab)?.label ?? 'Tab not found' }];
   }
   if (page.kind === 'family') {
     return [root, { label: MKTG_KIT_FAMILIES.find((family) => family.id === page.familyId)?.name ?? 'Family not found' }];
