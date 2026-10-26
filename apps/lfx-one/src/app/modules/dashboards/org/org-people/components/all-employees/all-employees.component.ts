@@ -364,36 +364,49 @@ export class AllEmployeesComponent {
 
   /**
    * Current and former rows for the selected view, reconciled by LF username. Someone in the former roster can
-   * also arrive from the live roster before the next warehouse build:
-   * - with a live seat or key-contact role, they are current again: keep that live row, drop the former one;
-   * - with only Org Lens access, they are still former: show the former row.
-   * Either way a separate access-only live row for them is folded in: its badge moves to the row that is shown.
+   * also arrive from the live roster before the next warehouse build. Only a seat or an Org Lens access principal
+   * carries a verified username; a key contact's username is resolved from its address, so — as in the server
+   * merge — it is never joined on, and a key-contact-only row is left alone.
+   * - With a live board or committee seat, they are current again: one row, the former row's warehouse activity
+   *   plus the live seats, untagged.
+   * - With only Org Lens access, they are still former: the former row, carrying the access badge.
    */
   private initRosterRows(): OrgAllEmployeeRow[] {
     const formerRows = this.showFormer() ? this.formerResponse().rows : [];
     const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
-    const isLiveMatch = (row: OrgAllEmployeeRow): row is OrgAllEmployeeRow & { lfUsername: string } =>
-      !!row.lfUsername && formerUsernames.has(row.lfUsername) && !row.sources.includes('snowflake');
-    const accessOnly = new Map<string, OrgAllEmployeeRow['accessBadge']>();
-    const liveRoles = new Set<string>();
+    const liveSeats = new Map<string, OrgAllEmployeeRow>();
+    const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
+    const folded = new Set<OrgAllEmployeeRow>();
     for (const row of this.response().rows) {
-      if (!isLiveMatch(row)) continue;
-      if (row.sources.every((source) => source === 'access')) {
-        accessOnly.set(row.lfUsername, row.accessBadge);
-      } else {
-        liveRoles.add(row.lfUsername);
+      if (!row.lfUsername || !formerUsernames.has(row.lfUsername) || row.sources.includes('snowflake')) continue;
+      if (row.sources.includes('board') || row.sources.includes('committee')) {
+        liveSeats.set(row.lfUsername, row);
+        folded.add(row);
+      } else if (row.sources.every((source) => source === 'access')) {
+        liveAccess.set(row.lfUsername, row.accessBadge);
+        folded.add(row);
       }
     }
-    const currentRows = this.showCurrent()
-      ? this.response().rows.flatMap((row) => {
-          if (!isLiveMatch(row)) return [row];
-          if (accessOnly.has(row.lfUsername) && row.sources.every((source) => source === 'access')) return [];
-          return [{ ...row, accessBadge: row.accessBadge ?? accessOnly.get(row.lfUsername) }];
-        })
-      : [];
-    const shownFormerRows = formerRows
-      .filter((row) => !(row.lfUsername && liveRoles.has(row.lfUsername)))
-      .map((row) => (row.lfUsername && accessOnly.has(row.lfUsername) ? { ...row, accessBadge: accessOnly.get(row.lfUsername) } : row));
+    const shownFormerRows: OrgAllEmployeeRow[] = [];
+    const rejoinedRows: OrgAllEmployeeRow[] = [];
+    for (const row of formerRows) {
+      const seat = row.lfUsername ? liveSeats.get(row.lfUsername) : undefined;
+      const accessBadge = (row.lfUsername ? liveAccess.get(row.lfUsername) : undefined) ?? row.accessBadge;
+      if (!seat) {
+        shownFormerRows.push({ ...row, accessBadge });
+        continue;
+      }
+      rejoinedRows.push({
+        ...row,
+        isFormer: false,
+        sources: [...new Set([...row.sources, ...seat.sources])],
+        seatsCount: seat.seatsCount,
+        boardSeatsCount: seat.boardSeatsCount,
+        committeeSeatsCount: seat.committeeSeatsCount,
+        accessBadge: seat.accessBadge ?? accessBadge,
+      });
+    }
+    const currentRows = this.showCurrent() ? [...this.response().rows.filter((row) => !folded.has(row)), ...rejoinedRows] : [];
     return [...currentRows, ...shownFormerRows];
   }
 

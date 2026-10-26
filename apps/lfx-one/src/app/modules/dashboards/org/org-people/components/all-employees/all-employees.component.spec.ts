@@ -362,33 +362,17 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
     });
 
-    it('keeps someone with a live seat as current and drops their former row, with tiles counted over the rows shown, under "All"', async () => {
-      await mount('browser', '/?employment=all');
-      await answerCurrent();
-      live$.next(
-        response([row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['committee'] })], 2)
-      );
-      live$.complete();
-      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
-      former$.complete();
-      await settle();
-
-      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace', 'org-people-all-employees-row-p-1']);
-      expect(formerTags()).toEqual([]);
-      expect(activeStat()).toContain('2');
-    });
-
-    it('keeps one current row carrying the access badge when a former employee has both a live key-contact row and an access-only row, under "All"', async () => {
+    it('shows someone with a live seat as one current row that keeps their code and takes their access badge, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();
       live$.next(
         response(
           [
             row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
-            row('live-grace-kc', 'Grace Hopper', { lfUsername: 'grace', sources: ['keyContact'] }),
+            row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 }),
             row('live-grace-access', 'Grace Hopper', { lfUsername: 'grace', sources: ['access'], accessBadge: 'admin' }),
           ],
-          1
+          2
         )
       );
       live$.complete();
@@ -396,9 +380,26 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       former$.complete();
       await settle();
 
-      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace-kc', 'org-people-all-employees-row-p-1']);
-      expect(el().querySelector('[data-testid="org-people-all-employees-access-live-grace-kc"]')?.textContent).toContain('Admin');
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual([]);
+      expect(el().querySelector('[data-testid="org-people-all-employees-row-p-9"]')?.textContent).toContain('4 commits');
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Admin');
+      expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('2');
+    });
+
+    it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response([row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('live-grace-kc', 'Grace Hopper', { lfUsername: 'grace', sources: ['keyContact'] })], 1)
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace-kc', 'org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
     });
   });
 
