@@ -105,6 +105,18 @@ describe('mentorshipEnabledGuard', () => {
     expect(result).toEqual({ redirected: '/' });
   });
 
+  it('redirects to / when the provider becomes ready during the wait and the flag is off', async () => {
+    providerReady.set(false);
+    waitForReady.mockResolvedValue(true);
+    getBooleanFlag.mockReturnValue(signal(false));
+
+    const result = await runGuard();
+
+    expect(waitForReady).toHaveBeenCalled();
+    expect(router.parseUrl).toHaveBeenCalledWith('/');
+    expect(result).toEqual({ redirected: '/' });
+  });
+
   it('fails open when the provider never becomes ready', async () => {
     vi.useFakeTimers();
     providerReady.set(false);
