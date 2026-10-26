@@ -17,22 +17,22 @@ const PLAN: CreativeAssetPlan = {
   platforms: ['google-ads'],
   assignments: [
     {
-      slotKey: 'google-ads/performance-max/marketing_image',
+      slotKey: 'google-ads/PERFORMANCE_MAX/MARKETING_IMAGE',
       platform: 'google-ads',
-      channel: 'performance-max',
-      slot: 'marketing_image',
-      label: 'Marketing image',
+      channel: 'PERFORMANCE_MAX',
+      slot: 'MARKETING_IMAGE',
+      label: 'Performance Max marketing image',
       requirement: '1200x628 or wider, at least 1 image',
       assetIds: ['a-1'],
       minCount: 1,
       maxCount: 20,
     },
     {
-      slotKey: 'google-ads/performance-max/logo',
+      slotKey: 'google-ads/PERFORMANCE_MAX/LOGO',
       platform: 'google-ads',
-      channel: 'performance-max',
-      slot: 'logo',
-      label: 'Logo',
+      channel: 'PERFORMANCE_MAX',
+      slot: 'LOGO',
+      label: 'Performance Max logo',
       requirement: '1:1 square, at least 2 images',
       assetIds: ['a-2'],
       minCount: 2,
@@ -42,17 +42,17 @@ const PLAN: CreativeAssetPlan = {
   gaps: [
     {
       platform: 'google-ads',
-      channel: 'performance-max',
-      slotKey: 'google-ads/performance-max/logo',
-      label: 'Logo',
+      channel: 'PERFORMANCE_MAX',
+      slotKey: 'google-ads/PERFORMANCE_MAX/LOGO',
+      label: 'Performance Max logo',
       need: 1,
       reason: 'One more square logo is required.',
     },
     {
       platform: 'google-ads',
-      channel: 'performance-max',
-      slotKey: 'google-ads/performance-max/portrait_image',
-      label: 'Portrait image',
+      channel: 'PERFORMANCE_MAX',
+      slotKey: 'google-ads/PERFORMANCE_MAX/PORTRAIT_MARKETING_IMAGE',
+      label: 'Performance Max portrait marketing image',
       need: 1,
       reason: 'No stored image is 4:5.',
     },
@@ -114,15 +114,15 @@ describe('CreativeSlotGridComponent', () => {
 
   it('folds a gap into its assignment instead of rendering the slot twice', () => {
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
-    const logoRows = fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/performance-max/logo"]');
+    const logoRows = fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/PERFORMANCE_MAX/LOGO"]');
     expect(logoRows.length).toBe(1);
-    expect(text('creative-slot-row-google-ads/performance-max/logo')).toContain('Partly covered');
-    expect(text('creative-slot-row-google-ads/performance-max/logo')).toContain('1 of 2 needed');
+    expect(text('creative-slot-row-google-ads/PERFORMANCE_MAX/LOGO')).toContain('Partly covered');
+    expect(text('creative-slot-row-google-ads/PERFORMANCE_MAX/LOGO')).toContain('1 of 2 needed');
   });
 
   it('reports a slot with no assignment as missing', () => {
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
-    const row = text('creative-slot-row-google-ads/performance-max/portrait_image');
+    const row = text('creative-slot-row-google-ads/PERFORMANCE_MAX/PORTRAIT_MARKETING_IMAGE');
     expect(row).toContain('Missing');
     expect(row).toContain('0 of 1 needed');
     expect(row).toContain('No stored image is 4:5.');
@@ -130,13 +130,30 @@ describe('CreativeSlotGridComponent', () => {
 
   it('reports a slot with no gap as covered', () => {
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
-    expect(text('creative-slot-row-google-ads/performance-max/marketing_image')).toContain('Covered');
+    expect(text('creative-slot-row-google-ads/PERFORMANCE_MAX/MARKETING_IMAGE')).toContain('Covered');
   });
 
   it('counts only the open rows', () => {
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
     expect(text('creative-slot-grid-open-count')).toContain('2 slots still need an image');
     expect(q('creative-slot-grid-complete')).toBeNull();
+  });
+
+  // The channel arrives as Google's own enum spelling — campaign-service documents the field as
+  // carrying `PERFORMANCE_MAX`, `DEMAND_GEN` and `DISPLAY` — which is a wire value, not copy for an
+  // operator. Rendering it raw would shout a constant in the heading.
+  it('reads the channel as a name, not as its wire spelling', () => {
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+    expect(text('creative-slot-group-google-ads/PERFORMANCE_MAX')).toContain('Google Ads · Performance Max');
+    expect(text('creative-slot-group-google-ads/PERFORMANCE_MAX')).not.toContain('PERFORMANCE_MAX');
+  });
+
+  // `track row.key` raises NG0955 on a repeated key. Upstream states one assignment per slot, but
+  // nothing between here and the wire enforces it, so the claim is guarded on both loops.
+  it('renders one row for a slot upstream assigned twice', async () => {
+    await build({ ...PLAN, assignments: [PLAN.assignments[0], { ...PLAN.assignments[0], assetIds: ['a-99'] }] });
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/PERFORMANCE_MAX/MARKETING_IMAGE"]').length).toBe(1);
   });
 
   // The honesty rule: campaign-service drops a platform it publishes no slot rules for rather than
@@ -152,6 +169,15 @@ describe('CreativeSlotGridComponent', () => {
     expect(text('creative-slot-grid-unplanned')).toContain('Reddit Ads');
     expect(q('creative-slot-grid-empty')).not.toBeNull();
     expect(q('creative-slot-grid-complete')).toBeNull();
+  });
+
+  // An empty plan is where `unused` is most likely to be FULL — nothing was placed, so nothing was
+  // used — and "spare" against a selection nothing is known about is the reassuring reading.
+  it('calls nothing spare when there are no slots to be spare of', async () => {
+    await build({ ...EMPTY_PLAN, unused: ['a-7'] });
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['reddit-ads'] });
+    expect(q('creative-slot-grid-empty')).not.toBeNull();
+    expect(q('creative-slot-grid-unused')).toBeNull();
   });
 
   it('calls a fully covered library complete', async () => {
@@ -188,9 +214,11 @@ describe('CreativeSlotGridComponent', () => {
     expect(q('creative-slot-grid-complete')).toBeNull();
   });
 
-  // `extractErrorMessage` discards a 5xx body on purpose — it is the envelope's own log line or an
-  // upstream Go string, neither written for a reader — so the component's fallback has to be one
-  // an operator can act on rather than a placeholder.
+  // `extractErrorMessage` discards EVERY 5xx body whose code is status-derived, which is what the
+  // BFF labels this route's failures with — `getCreativeAssetPlan` throws `BAD_GATEWAY`, as its
+  // four siblings in the same service do. So its `clientMessage` is unreadable by policy and the
+  // component's own fallback is what an operator actually sees; it has to be wording they can act
+  // on rather than a placeholder. (Below 500 the body IS shown — the 400 case above pins that.)
   it('falls back to its own wording when the service fails', async () => {
     await build(new HttpErrorResponse({ status: 503, error: { message: 'dial tcp: connection refused' } }));
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
@@ -205,15 +233,15 @@ describe('CreativeSlotGridComponent', () => {
       ...PLAN,
       assignments: [],
       gaps: [
-        { platform: 'google-ads', channel: 'performance-max', label: 'Landscape or square', need: 1, reason: 'Either shape satisfies this.' },
-        { platform: 'google-ads', channel: 'performance-max', label: 'Portrait or square', need: 1, reason: 'Either shape satisfies this.' },
+        { platform: 'google-ads', channel: 'PERFORMANCE_MAX', label: 'Landscape or square', need: 1, reason: 'Either shape satisfies this.' },
+        { platform: 'google-ads', channel: 'PERFORMANCE_MAX', label: 'Portrait or square', need: 1, reason: 'Either shape satisfies this.' },
       ],
     });
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
 
     const rows = fixture.nativeElement.querySelectorAll('[data-testid^="creative-slot-row-"]');
     expect(rows.length).toBe(2);
-    const row = text('creative-slot-row-google-ads/performance-max/Landscape or square');
+    const row = text('creative-slot-row-rule:google-ads/PERFORMANCE_MAX/Landscape or square');
     expect(row).toContain('Missing');
     expect(row).toContain('Either shape satisfies this.');
     expect(row).not.toContain('needed');
@@ -229,7 +257,7 @@ describe('CreativeSlotGridComponent', () => {
     });
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
 
-    expect(fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/performance-max/portrait_image"]').length).toBe(1);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/PERFORMANCE_MAX/PORTRAIT_MARKETING_IMAGE"]').length).toBe(1);
   });
 
   // The read is asynchronous and its OUTCOME is the point of the panel, so the answer is announced,
@@ -247,6 +275,15 @@ describe('CreativeSlotGridComponent', () => {
     await build(EMPTY_PLAN);
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['reddit-ads'] });
     expect(text('creative-slot-grid-live')).toBe('No image slots to report for the platforms you picked.');
+  });
+
+  // The visible pair says this in two elements — amber banner above, green banner below — but the
+  // region is `aria-atomic` on one sentence, so an unqualified "covered" is all a listener gets.
+  it('announces the unplanned platforms alongside full coverage', async () => {
+    await build({ ...PLAN, gaps: [] });
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads', 'reddit-ads'] });
+    expect(q('creative-slot-grid-complete')).not.toBeNull();
+    expect(text('creative-slot-grid-live')).toBe('Every image slot below is covered, but no image slot rules are published yet for Reddit Ads.');
   });
 
   it('re-reads when Refresh is pressed', () => {

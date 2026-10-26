@@ -110,7 +110,11 @@
           {{ plan.unclassified.length === 1 ? 'it was' : 'they were' }} not matched against any slot.
         </p>
       }
-      @if (plan.unused.length > 0 && openCount() === 0) {
+      <!-- `groups().length > 0` as well as a zero open count: with no slots at all, `openCount()`
+           is also zero, and calling a library "spare" against a selection nothing is known about
+           is the reassuring reading this panel exists to prevent. An empty plan is also where
+           `unused` is MOST likely to be full — nothing was placed, so nothing was used. -->
+      @if (plan.unused.length > 0 && groups().length > 0 && openCount() === 0) {
         <p class="text-2xs text-gray-500" data-testid="creative-slot-grid-unused">
           {{ plan.unused.length }} stored image{{ plan.unused.length === 1 ? ' is' : 's are' }} spare — no slot above needs
           {{ plan.unused.length === 1 ? 'it' : 'them' }}.

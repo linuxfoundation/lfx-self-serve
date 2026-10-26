@@ -173,6 +173,12 @@ export class CreativeSlotGridComponent {
       const emitted = new Set<string>();
 
       for (const assignment of plan.assignments) {
+        // Claimed on this side too, not just below. Upstream states one assignment per slot, but
+        // nothing between here and the wire enforces it, and a repeated `slot_key` would push two
+        // rows carrying the same `track` key — the NG0955 crash the gap loop already guards.
+        if (emitted.has(assignment.slotKey)) {
+          continue;
+        }
         const gap = slotGaps.get(assignment.slotKey);
         emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
@@ -191,8 +197,11 @@ export class CreativeSlotGridComponent {
 
       for (const gap of plan.gaps) {
         const slotKey = gap.slotKey ?? '';
-        // A cross-slot rule has no slot to key on; its label is what distinguishes it.
-        const key = slotKey === '' ? `${gap.platform}/${gap.channel ?? ''}/${gap.label}` : slotKey;
+        // A cross-slot rule has no slot to key on; its label is what distinguishes it. Prefixed
+        // because an unprefixed `platform/channel/label` is the same shape as an upstream
+        // `slot_key`, and a rule whose label matched a sibling slot's wire name would then collide
+        // with that slot's row and be dropped instead of rendered.
+        const key = slotKey === '' ? `rule:${gap.platform}/${gap.channel ?? ''}/${gap.label}` : slotKey;
         if (emitted.has(key)) {
           continue;
         }
@@ -266,6 +275,14 @@ export class CreativeSlotGridComponent {
       }
       const open = this.openCount();
       if (open === 0) {
+        // The visible pair carries this caveat in two elements — the amber unplanned banner sits
+        // directly above the green one — but this region is `aria-atomic` on a single sentence, so
+        // a listener would hear only the covered half. Full coverage of the platforms that HAVE
+        // rules is the exact case where "covered" is most likely to be heard as launch-ready.
+        const unplanned = this.unplannedPlatforms();
+        if (unplanned.length > 0) {
+          return `Every image slot below is covered, but no image slot rules are published yet for ${unplanned.join(', ')}.`;
+        }
         return 'Every image slot below is covered.';
       }
       // Worded as the visible count line is, so the two cannot drift into saying different things
@@ -285,7 +302,7 @@ export class CreativeSlotGridComponent {
     }
     groups.set(key, {
       key,
-      label: channel ? `${this.platformLabel(platform)} · ${channel}` : this.platformLabel(platform),
+      label: channel ? `${this.platformLabel(platform)} · ${this.channelLabel(channel)}` : this.platformLabel(platform),
       rows: [row],
       openCount: 0,
     });
@@ -303,6 +320,23 @@ export class CreativeSlotGridComponent {
       return 'Covered';
     }
     return filled > 0 ? 'Partly covered' : 'Missing';
+  }
+
+  /**
+   * `PERFORMANCE_MAX` reads as `Performance Max`.
+   *
+   * The channel arrives as Google's own enum spelling — campaign-service's `design/brief.go`
+   * documents the field as carrying `"PERFORMANCE_MAX"`, `"DEMAND_GEN"` and `"DISPLAY"` — which is
+   * a wire value, not operator copy, and rendering it raw would shout a constant at the operator.
+   * Converted rather than looked up in a table, so a channel Google adds later still reads as a
+   * name and there is no list here to keep in step with upstream.
+   */
+  private channelLabel(channel: string): string {
+    return channel
+      .split('_')
+      .filter((word) => word !== '')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   }
 
   /** The platform id upstream uses is the one the picker uses, so a plan row joins without translation. */
