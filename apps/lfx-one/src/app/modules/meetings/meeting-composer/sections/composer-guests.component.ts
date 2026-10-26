@@ -72,8 +72,8 @@ export class ComposerGuestsComponent {
   /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
   protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
   protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
-  /** The last removal when editing, offered back as Undo until the next add or remove replaces it. */
-  protected readonly lastRemoval = signal<ComposerGuestRemoval | null>(null);
+  /** Removals since the last add or dismiss, oldest first; Undo puts them all back. */
+  protected readonly removals = signal<ComposerGuestRemoval[]>([]);
   /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
   protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
@@ -226,20 +226,24 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * The removal Undo can still put back; `null` once putting it back would be wrong.
+   * The removals Undo can still put back, oldest first; each drops out once putting it back would be wrong.
    * @description A removed direct guest isn't suppressed, so a group picked afterwards can re-add the
    * same person; restoring the row on top would queue a duplicate invite. Rows that already shared the
    * email at removal don't count. A group guest's row also carries the group it came through, which a
    * change of selected groups can make stale, so Undo is withdrawn for them on any group change.
    */
-  protected readonly undoableRemoval: Signal<ComposerGuestRemoval | null> = computed(() => {
-    const removal = this.lastRemoval();
-    if (!removal) return null;
+  protected readonly undoableRemovals: Signal<ComposerGuestRemoval[]> = computed(() => {
+    const committeeKey = this.committeeKey();
+    return this.removals().filter(
+      (removal) =>
+        this.liveEmailCount(removal.guest.email) <= removal.liveSameEmail && !(removal.guest.type === 'committee' && committeeKey !== removal.committeeKey)
+    );
+  });
 
-    if (this.liveEmailCount(removal.guest.email) > removal.liveSameEmail) return null;
-    if (removal.guest.type === 'committee' && this.committeeKey() !== removal.committeeKey) return null;
-
-    return removal;
+  /** One removal names the guest; more are counted, since Undo brings them all back together. */
+  protected readonly undoMessage: Signal<string> = computed(() => {
+    const removals = this.undoableRemovals();
+    return removals.length === 1 ? `${removals[0].label} removed.` : `${removals.length} guests removed.`;
   });
 
   /** Each selected group with its voting-status filter: narrowing a filter can drop a group guest as surely as deselecting the group. */
@@ -274,43 +278,24 @@ export class ComposerGuestsComponent {
   }
 
   /**
-   * Puts the last removed guest back exactly as they were.
-   * @description A saved guest is still in the list marked deleted, so its row is swapped back for the
-   * original; a never-saved one was dropped, so it goes back where it sat. A group guest's email was
-   * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
+   * Puts every guest removed since the last add or dismiss back exactly as they were.
+   * @description Newest first, so each never-saved row's recorded position is the list it was taken from.
    */
   protected onUndoRemove(): void {
-    const removal = this.undoableRemoval();
-    this.lastRemoval.set(null);
-    if (!removal) return;
+    const removals = this.undoableRemovals();
+    this.removals.set([]);
+    if (!removals.length) return;
 
-    const { guest, index, label } = removal;
-    const key = guest.uid || guest.tempId || null;
-    const email = guest.email?.toLowerCase() ?? '';
+    [...removals].reverse().forEach((removal) => this.restoreRemoval(removal));
 
-    if (guest.type === 'committee') {
-      this.formService.unsuppressGuestEmail(guest.email);
-    }
-
-    this.formService.updateGuests((current) => {
-      // A keyless saved row was replaced by a deleted copy, so the reference is gone; its email is what is left.
-      const at = current.findIndex((candidate) =>
-        key === null ? candidate.state === 'deleted' && candidate.email?.toLowerCase() === email : (candidate.uid || candidate.tempId) === key
-      );
-
-      if (at !== -1) {
-        return current.map((candidate, i) => (i === at ? guest : candidate));
-      }
-
-      return [...current.slice(0, index), guest, ...current.slice(index)];
-    });
-
-    void this.liveAnnouncer.announce(`${label} restored to the guest list.`, 'polite');
-    this.focusGuestRemoveButton(key);
+    const message = removals.length === 1 ? `${removals[0].label} restored to the guest list.` : `${removals.length} guests restored to the guest list.`;
+    void this.liveAnnouncer.announce(message, 'polite');
+    const first = removals[0].guest;
+    this.focusGuestRemoveButton(first.uid || first.tempId || null);
   }
 
   protected onDismissUndo(): void {
-    this.lastRemoval.set(null);
+    this.removals.set([]);
     // The dismiss button held focus and is gone with the notice; no row to return to, so the search takes it.
     this.focusGuestRemoveButton(null);
   }
@@ -354,14 +339,17 @@ export class ComposerGuestsComponent {
     if (this.formService.isEditMode()) {
       const index = this.formService.guests().findIndex((candidate) => (key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key));
       const original = index === -1 ? guest : this.formService.guests()[index];
-      this.lastRemoval.set({
-        guest: original,
-        index: Math.max(index, 0),
-        label,
-        // Counted without the removed row itself, so a guest with no email starts from 0 rather than -1.
-        liveSameEmail: this.liveEmailCount(original.email, original),
-        committeeKey: this.committeeKey(),
-      });
+      this.removals.update((current) => [
+        ...current,
+        {
+          guest: original,
+          index: Math.max(index, 0),
+          label,
+          // Counted without the removed row itself, so a guest with no email starts from 0 rather than -1.
+          liveSameEmail: this.liveEmailCount(original.email, original),
+          committeeKey: this.committeeKey(),
+        },
+      ]);
     }
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
@@ -522,8 +510,36 @@ export class ComposerGuestsComponent {
 
     this.formService.updateGuests((current) => [guest, ...current]);
     // Undo restores a row by position and identity, so it is only offered while nothing else has moved.
-    this.lastRemoval.set(null);
+    this.removals.set([]);
     void this.liveAnnouncer.announce(`${this.guestLabel(guest)} added to the guest list.`, 'polite');
+  }
+
+  /**
+   * Puts one removed guest back exactly as they were.
+   * @description A saved guest is still in the list marked deleted, so its row is swapped back for the
+   * original; a never-saved one was dropped, so it goes back where it sat. A group guest's email was
+   * suppressed on removal and is released, or group reconciliation would keep treating it as removed.
+   */
+  private restoreRemoval({ guest, index }: ComposerGuestRemoval): void {
+    const key = guest.uid || guest.tempId || null;
+    const email = guest.email?.toLowerCase() ?? '';
+
+    if (guest.type === 'committee') {
+      this.formService.unsuppressGuestEmail(guest.email);
+    }
+
+    this.formService.updateGuests((current) => {
+      // A keyless saved row was replaced by a deleted copy, so the reference is gone; its email is what is left.
+      const at = current.findIndex((candidate) =>
+        key === null ? candidate.state === 'deleted' && candidate.email?.toLowerCase() === email : (candidate.uid || candidate.tempId) === key
+      );
+
+      if (at !== -1) {
+        return current.map((candidate, i) => (i === at ? guest : candidate));
+      }
+
+      return [...current.slice(0, index), guest, ...current.slice(index)];
+    });
   }
 
   private liveEmailCount(email: string | null | undefined, excluding?: MeetingRegistrantWithState): number {
