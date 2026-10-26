@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { logger } from './logger.service';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -55,7 +56,7 @@ vi.mock('./mktg-document-store.service', () => ({
     recordGeneration = mocks.recordGeneration;
   },
 }));
-vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 
 // SDK persisted tool-call/result transcript parts, paired by call id.
 function finalized(envelope: unknown): string {
@@ -84,7 +85,7 @@ describe('Member 360 entitlement and generation', () => {
     const envelope = member360Fixture();
     if (mode === 'schema') Object.assign(envelope, { kind: 'invalid' });
     if (mode === 'hash') envelope.content_sha256 = '0'.repeat(64);
-    if (mode === 'project') envelope.project_uid = 'other-project';
+    if (mode === 'project') envelope.project_name = 'Other Foundation';
     let payload = finalized(envelope);
     if (mode === 'raw') payload = JSON.stringify(envelope);
     if (mode === 'other-tool') payload = payload.replace(MEMBER_360_FINALIZE_TOOL, 'web_search');
@@ -220,8 +221,66 @@ describe('Member 360 entitlement and generation', () => {
     expect(envelope.tabs.member_ranking[0].key_contact).not.toBeNull();
   });
   it('never stores an envelope scoped to a different project', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_uid: 'other-project' })]);
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_name: 'Other Foundation' })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'pending', activity: [] });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('accepts a different MCP uid by exact name and slug and normalizes the stored uid', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][2]).toBe('sample-project');
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    expect(stored.lfx_project_uid).toBe('mcp-project');
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(stored.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.tabs)).digest('hex'));
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(envelope.project_uid).toBe('mcp-project');
+  });
+  it.each(['sample-project', 'mcp-project'])('does not trust agent-supplied uid provenance when the project uid is %s', async (projectUid) => {
+    const envelope = { ...member360Fixture(), project_uid: projectUid, project_slug: 'sample-foundation', lfx_project_uid: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    if (projectUid === 'sample-project') {
+      expect(stored).not.toHaveProperty('lfx_project_uid');
+    } else {
+      expect(stored.lfx_project_uid).toBe(projectUid);
+    }
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(envelope.lfx_project_uid).toBe('owner@example.test');
+  });
+  it.each(['project_uid', 'project_slug'] as const)('rejects an email-valued %s without logging the identity', async (field) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation', [field]: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalled();
+    const logs = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logs).toContain('Rejected envelope scope');
+    expect(logs).not.toContain('owner@example.test');
+    expect(logs).toContain('[contact redacted]');
+  });
+  it.each(['other-foundation', undefined])('rejects a different uid when the slug is %s despite an exact name', async (projectSlug) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: projectSlug };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('still accepts an exact uid and name without a slug', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'sample-project', project_slug: undefined };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][3].member360).not.toHaveProperty('lfx_project_uid');
+  });
+  it('rejects an exact uid with a conflicting slug', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_slug: 'other-foundation' })]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
@@ -347,7 +406,7 @@ describe('Member 360 entitlement and generation', () => {
     const candidate =
       rejection === 'schema'
         ? { contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-contact-2' }] } }
-        : { ...member360Fixture(), project_uid: 'other-project' };
+        : { ...member360Fixture(), project_name: 'Other Foundation' };
     candidate.tabs.member_ranking[0].key_contact = 'opaque-contact-2';
     if ('content_sha256' in candidate) candidate.content_sha256 = createHash('sha256').update(JSON.stringify(candidate.tabs)).digest('hex');
     const message = 'Cannot complete this run; contact opaque-contact-2 or owner@example.test.';
