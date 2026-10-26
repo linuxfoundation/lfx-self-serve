@@ -20,7 +20,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -296,7 +296,7 @@ export class ProfileLayoutComponent {
     const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
     const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
     const name = `${givenName} ${familyName}`.trim();
-    if (name) {
+    if (name && name !== currentUser.name) {
       this.userService.user.set({ ...currentUser, name });
     }
   }
@@ -436,6 +436,9 @@ export class ProfileLayoutComponent {
         switchMap(() =>
           user$.pipe(
             filter((user) => user !== null),
+            // Key on identity, not object: syncSharedUserName replaces the user object on a name save, and
+            // that must not refetch the eventually-consistent profile over the optimistic merge.
+            distinctUntilChanged((previous, current) => previous?.sub === current?.sub),
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
                 map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
