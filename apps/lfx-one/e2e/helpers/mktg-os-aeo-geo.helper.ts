@@ -14,7 +14,7 @@ import { expect, Page } from '@playwright/test';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
-import { aeoGeoRunQuestions } from '@lfx-one/shared/utils';
+import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
 
 export const PAGE_LOAD_TIMEOUT = 20_000;
 export const AUDIT_PROJECT = { uid: 'audit-project-1', slug: 'audit-e2e-project', name: 'Synthetic Audit Project' };
