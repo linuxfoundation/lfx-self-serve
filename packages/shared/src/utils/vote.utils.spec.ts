@@ -34,6 +34,7 @@ import {
   buildRankedQuestionViews,
   buildUpdateVoteRequest,
   buildVoteBallotQuestions,
+  buildVoteParticipationRowView,
   buildVoteResultsQuestions,
   buildVoteVoterChoiceFilterOptions,
   buildVoteVoterChoiceSummaries,
@@ -42,6 +43,7 @@ import {
   compareVotesByRecency,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  countVoteParticipationByStatus,
   countVoteVotersByStatus,
   getVoteVisibilityRules,
   getVoteVoterStatus,
@@ -1088,6 +1090,16 @@ describe('voter results helpers', () => {
       expect(getVoteVisibilityRules('creator', true, false, false)).toContain('No one sees how another voter voted on this page.');
     });
 
+    it.each([true, undefined, null])('tells managers of an open vote with privacy %s that totals and comments wait for close (#3916)', (pseudoAnonymous) => {
+      const rules = getVoteVisibilityRules('creator', pseudoAnonymous, false);
+      expect(rules[0]).toBe('As a manager, you can follow who has responded. Totals and comments appear when the vote closes.');
+      expect(rules.join(' ')).not.toContain('live totals');
+    });
+
+    it('keeps the closed pseudo-anonymous manager copy on final totals (#3916)', () => {
+      expect(getVoteVisibilityRules('creator', true, true)[0]).toBe('As a manager, you can see the final totals and comments.');
+    });
+
     it('tells managers they see live totals while voters wait for close', () => {
       expect(getVoteVisibilityRules('creator', false, false)).toEqual([
         'As a manager, you can follow live totals and comments until the vote closes.',
@@ -1387,6 +1399,52 @@ describe('voter list helpers (#3914)', () => {
 
     it('returns zeros for no rows', () => {
       expect(countVoteVotersByStatus([])).toEqual({ all: 0, voted: 0, abstained: 0, not_voted: 0 });
+    });
+  });
+
+  describe('buildVoteParticipationRowView (#3916)', () => {
+    it('maps identity and a Responded / Not responded status', () => {
+      expect(
+        buildVoteParticipationRowView({
+          user_name: ' Avery Example ',
+          user_org_name: 'Acme Motors',
+          user_role: 'Chair',
+          user_voting_status: 'Voting Rep',
+          status: 'responded',
+        })
+      ).toEqual({
+        displayName: 'Avery Example',
+        organization: 'Acme Motors',
+        role: 'Voting Rep',
+        committeeRole: 'Chair',
+        status: 'responded',
+        statusLabel: 'Responded',
+      });
+    });
+
+    it('falls back to "Unknown voter" and drops empty identity fields', () => {
+      expect(buildVoteParticipationRowView({ user_name: ' ', user_org_name: '', status: 'pending' })).toEqual({
+        displayName: 'Unknown voter',
+        organization: undefined,
+        role: undefined,
+        committeeRole: undefined,
+        status: 'pending',
+        statusLabel: 'Not responded',
+      });
+    });
+  });
+
+  describe('countVoteParticipationByStatus (#3916)', () => {
+    it('counts each status and the total', () => {
+      expect(countVoteParticipationByStatus([{ status: 'responded' }, { status: 'pending' }, { status: 'responded' }])).toEqual({
+        all: 3,
+        responded: 2,
+        pending: 1,
+      });
+    });
+
+    it('returns zeros for no rows', () => {
+      expect(countVoteParticipationByStatus([])).toEqual({ all: 0, responded: 0, pending: 0 });
     });
   });
 

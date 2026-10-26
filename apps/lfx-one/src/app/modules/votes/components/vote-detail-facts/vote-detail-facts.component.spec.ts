@@ -104,6 +104,13 @@ describe('VoteDetailFactsComponent', () => {
     expect(rules()).toEqual(getVoteVisibilityRules('creator', true, true));
   });
 
+  it('tells a manager of an open pseudo-anonymous vote that totals and comments wait for close (#3916)', () => {
+    render(makeVote({ status: PollStatus.ACTIVE, pseudo_anonymity: true }), 'creator');
+
+    expect(rules()[0]).toBe('As a manager, you can follow who has responded. Totals and comments appear when the vote closes.');
+    expect(rules().join(' ')).not.toContain('live totals');
+  });
+
   it.each<['voter' | 'creator', PollStatus]>([
     ['creator', PollStatus.ACTIVE],
     ['creator', PollStatus.ENDED],

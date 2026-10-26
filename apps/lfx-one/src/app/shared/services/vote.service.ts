@@ -29,6 +29,7 @@ import {
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  VoteParticipationVoter,
   VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
@@ -335,9 +336,12 @@ export class VoteService {
     return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
   }
 
-  /** Every invited voter with their status and current ballot — vote managers on named votes only (#3911). */
-  public getVoteVoters(voteUid: string): Observable<VoteVoter[]> {
-    return this.http.get<VoteVoter[]>(`/api/votes/${encodeURIComponent(voteUid)}/voters`).pipe(take(1));
+  /**
+   * Every invited voter — vote managers only. Named votes return each voter's status and current ballot (#3911);
+   * pseudo-anonymous votes return participation-only rows (#3916).
+   */
+  public getVoteVoters(voteUid: string): Observable<VoteVoter[] | VoteParticipationVoter[]> {
+    return this.http.get<VoteVoter[] | VoteParticipationVoter[]>(`/api/votes/${encodeURIComponent(voteUid)}/voters`).pipe(take(1));
   }
 
   /** Resends the vote email to the given recipients (#3769). */

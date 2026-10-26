@@ -24,6 +24,8 @@ export class VoteCommentResultsComponent {
   public readonly commentResults = input.required<PollCommentResult[]>();
   /** Adds a "View ballot" link on each response — vote managers on named votes only (#3914). */
   public readonly showBallotLinks = input<boolean>(false);
+  /** Pseudo-anonymous vote (#3916): responses render as text only — no author, date, abstained label or ballot link. */
+  public readonly anonymous = input<boolean>(false);
 
   // === Outputs ===
   /** The response's `vote_id` — the vote response (ballot) uid the Voters tab opens. */

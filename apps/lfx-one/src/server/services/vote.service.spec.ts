@@ -14,15 +14,9 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  VOTE_REMINDER_INACTIVE,
-  VOTE_REMINDER_PRECHECK_FAILED,
-  VOTE_REMINDER_SELECTION_STALE,
-  VOTE_VOTERS_DRAFT,
-  VOTE_VOTERS_PSEUDO_ANONYMOUS,
-} from '@lfx-one/shared/constants';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE, VOTE_VOTERS_DRAFT } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
-import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse, VoteVoter } from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
@@ -64,7 +58,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
   const { compareVotesByRecency, isVoteClosingSoon } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
-  const { countVotesByStatus, normalizePollStatus } =
+  const { countVotesByStatus, normalizePollStatus, sortCommentResponsesByText } =
     await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
   const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
   return {
@@ -75,6 +69,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     normalizePollStatus,
     maskIdentifierForLogs,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
+    sortCommentResponsesByText,
   };
 });
 vi.mock('./logger.service', () => ({
@@ -959,18 +954,130 @@ describe('VoteService', () => {
   });
 
   describe('getVoteResults', () => {
+    const RESULTS_UID = 'v0000000-0000-0000-0000-00000000c001';
+    const namedEndedVote = { ...voteFixture, uid: RESULTS_UID, status: 'ended', pseudo_anonymity: false, poll_questions: [{ question_id: 'q-1' }] };
+    const pseudoVote = (overrides: Record<string, unknown> = {}) => ({ ...namedEndedVote, status: 'active', pseudo_anonymity: true, ...overrides });
+    const upstreamResults = (overrides: Record<string, unknown> = {}) => ({
+      poll_results: [{ question_id: 'q-1', total_voting_request_invitations: 5 }],
+      comment_results: [
+        {
+          prompt: { prompt_id: 'p-1', prompt: 'Any concerns?' },
+          responses: [
+            {
+              vote_id: 'b-1',
+              user_id: 'u-1',
+              user_name: 'Avery Example',
+              profile_picture: 'https://avatars.example/avery.png',
+              comment_text: 'Zebra crossing',
+              vote_creation_time: '2026-10-02T09:30:00Z',
+              abstained: false,
+            },
+            { vote_id: 'b-2', comment_text: 'apple pie', vote_creation_time: '2026-10-03T09:30:00Z', abstained: true },
+          ],
+        },
+      ],
+      num_recipients: 5,
+      num_votes_cast: 2,
+      num_abstained: 1,
+      poll_end_time: '2026-10-10T18:00:00Z',
+      poll_end_time_timezone: 'UTC',
+      ...overrides,
+    });
+    const heldPayload = {
+      poll_results: [],
+      comment_results: [],
+      num_recipients: 5,
+      num_votes_cast: 2,
+      poll_end_time: '2026-10-10T18:00:00Z',
+      poll_end_time_timezone: 'UTC',
+      results_held: true,
+    };
+    /** Routes the concurrent vote lookup and results fetch by path. */
+    const mockVoteAndResults = (vote: unknown, results: unknown) =>
+      proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => (path.endsWith('/results') ? results : vote));
+
     it('encodes the uid in the /results path', async () => {
-      proxyRequest.mockResolvedValue({ poll_results: [], comment_results: [], num_votes_cast: 0 });
+      mockVoteAndResults({ ...namedEndedVote, uid: HOSTILE_UID }, { poll_results: [], comment_results: [], num_votes_cast: 0 });
 
       await service.getVoteResults(req, HOSTILE_UID);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/results', 'GET');
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef', 'GET');
     });
 
     it('rejects a dot-segment uid without proxying', async () => {
       await expect(service.getVoteResults(req, '..')).rejects.toThrow(ServiceValidationError);
 
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an open pseudo-anonymous vote', pseudoVote()],
+      ['a disabled pseudo-anonymous vote', pseudoVote({ status: 'disabled' })],
+      ['an open vote with no pseudo_anonymity flag', pseudoVote({ pseudo_anonymity: undefined })],
+      ['an open pseudo-anonymous vote with a legacy mixed-case status', pseudoVote({ status: 'Active' })],
+    ])('holds totals, the abstention count and comments on %s (#3916)', async (_label, vote) => {
+      mockVoteAndResults(vote, upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID);
+
+      expect(results).toEqual(heldPayload);
+      expect(results).not.toHaveProperty('num_abstained');
+    });
+
+    it.each([
+      ['upstream marks the results held', upstreamResults({ results_held: true })],
+      ['upstream returns no poll_results for a vote with questions', upstreamResults({ poll_results: [] })],
+      ['upstream omits poll_results for a vote with questions', upstreamResults({ poll_results: undefined })],
+    ])('holds an ended pseudo-anonymous vote when %s (#3916)', async (_label, upstream) => {
+      mockVoteAndResults(pseudoVote({ status: 'ended' }), upstream);
+
+      expect(await service.getVoteResults(req, RESULTS_UID)).toEqual(heldPayload);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_vote_results', expect.stringContaining('still holding'), expect.any(Object));
+    });
+
+    it('passes an ended named vote with empty upstream results through unheld', async () => {
+      const upstream = upstreamResults({ poll_results: [], comment_results: [] });
+      mockVoteAndResults(namedEndedVote, upstream);
+
+      const results = await service.getVoteResults(req, RESULTS_UID);
+
+      expect(results).toEqual(upstream);
+      expect(results.results_held).toBeUndefined();
+    });
+
+    it('returns text-only comments in text order on an ended pseudo-anonymous vote (#3916)', async () => {
+      mockVoteAndResults(pseudoVote({ status: 'ended' }), upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID);
+
+      expect(results.results_held).toBeUndefined();
+      expect(results.num_abstained).toBe(1);
+      expect(results.poll_results).toHaveLength(1);
+      expect(results.comment_results[0].total_responses).toBe(2);
+      expect(results.comment_results[0].responses).toEqual([{ comment_text: 'apple pie' }, { comment_text: 'Zebra crossing' }]);
+    });
+
+    it('leaves a named vote unchanged, with attributed comments', async () => {
+      const upstream = upstreamResults();
+      mockVoteAndResults(namedEndedVote, upstreamResults());
+
+      const results = await service.getVoteResults(req, RESULTS_UID);
+
+      expect(results).toEqual({
+        ...upstream,
+        comment_results: [{ ...upstream.comment_results[0], total_responses: 2 }],
+      });
+    });
+
+    it('rejects when the vote lookup fails, never falling back to unheld results (#3916)', async () => {
+      const upstream = new MicroserviceError('vote lookup failed', 502, 'BAD_GATEWAY', {});
+      proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+        if (path.endsWith('/results')) return upstreamResults();
+        throw upstream;
+      });
+
+      await expect(service.getVoteResults(req, RESULTS_UID)).rejects.toBe(upstream);
     });
   });
 
@@ -2053,6 +2160,8 @@ describe('VoteService', () => {
     });
     const namedVote = { ...voteFixture, uid: VOTE_UID, status: 'active', pseudo_anonymity: false, end_time: '2099-06-01T18:00:00Z' };
     const queryResourceCalls = () => proxyRequest.mock.calls.filter(([, , path]) => path === '/query/resources');
+    /** Named votes return full `VoteVoter` rows; narrows the union return for field assertions. */
+    const getNamedVoters = async () => (await service.getVoteVoters(req, VOTE_UID)) as VoteVoter[];
 
     beforeEach(() => {
       proxyRequest.mockResolvedValue(namedVote);
@@ -2083,13 +2192,53 @@ describe('VoteService', () => {
       { status: 'active', pseudo_anonymity: undefined },
       { status: 'ended', pseudo_anonymity: undefined },
       { status: 'active', pseudo_anonymity: null },
-    ])('refuses a vote that is not explicitly named (%j) with 403 before reading any ballot (AC-4)', async (state) => {
+    ])('returns name-sorted participation-only rows on a vote that is not explicitly named (%j) (#3916)', async (state) => {
       proxyRequest.mockResolvedValue({ ...namedVote, ...state });
+      fetchAllQueryResources.mockResolvedValue([
+        row({
+          uid: 'b-voted',
+          user_name: 'Casey Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-02T09:30:00Z',
+          abstained: false,
+          poll_answers: [genericAnswer],
+          comment_responses: [comment],
+        }),
+        row({
+          uid: 'b-abstained',
+          user_name: 'Blake Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-03T11:00:00Z',
+          abstained: true,
+          poll_answers: [],
+          comment_responses: [comment],
+        }),
+        row({ uid: 'b-pending', user_name: 'Avery Example' }),
+      ]);
 
-      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 403, code: VOTE_VOTERS_PSEUDO_ANONYMOUS });
+      const voters = await service.getVoteVoters(req, VOTE_UID);
 
-      expect(fetchAllQueryResources).not.toHaveBeenCalled();
-      expect(queryResourceCalls()).toHaveLength(0);
+      const identity = { user_org_name: 'Acme Motors', user_role: 'Member', user_voting_status: 'Voting Rep' };
+      expect(voters).toEqual([
+        { user_name: 'Avery Example', ...identity, status: 'pending' },
+        { user_name: 'Blake Example', ...identity, status: 'responded' },
+        { user_name: 'Casey Example', ...identity, status: 'responded' },
+      ]);
+      for (const voter of voters) {
+        for (const field of [
+          'uid',
+          'poll_answers',
+          'comment_responses',
+          'abstained',
+          'submitted_at',
+          'vote_creation_time',
+          'user_email',
+          'username',
+          'profile_picture',
+        ]) {
+          expect(voter).not.toHaveProperty(field);
+        }
+      }
     });
 
     it('propagates a vote lookup failure without reading any ballot', async () => {
@@ -2168,7 +2317,7 @@ describe('VoteService', () => {
         row({ vote_status: IndexedVoteResponseStatus.RESPONDED, poll_answers: [genericAnswer, rankedAnswer, unanswered] }),
       ]);
 
-      const [voter] = await service.getVoteVoters(req, VOTE_UID);
+      const [voter] = await getNamedVoters();
 
       expect(voter.poll_answers).toEqual([
         { ...genericAnswer, ranked_user_choice: [] },
@@ -2243,7 +2392,7 @@ describe('VoteService', () => {
         row({ uid: undefined }),
       ]);
 
-      const voters = await service.getVoteVoters(req, VOTE_UID);
+      const voters = await getNamedVoters();
 
       expect(voters.map((voter) => voter.uid).sort()).toEqual(['current', 'legacy']);
     });
@@ -2255,7 +2404,7 @@ describe('VoteService', () => {
         row({ uid: 'b-avery', user_name: 'Avery Example' }),
       ]);
 
-      const voters = await service.getVoteVoters(req, VOTE_UID);
+      const voters = await getNamedVoters();
 
       expect(voters.map((voter) => voter.uid)).toEqual(['b-unnamed', 'b-avery', 'b-zed']);
     });
@@ -2297,7 +2446,12 @@ describe('VoteService', () => {
 
       await service.getVoteVoters(req, VOTE_UID);
 
-      expect(logger.debug).toHaveBeenCalledWith(req, 'get_vote_voters', 'Mapped vote voters', { vote_uid: VOTE_UID, row_count: 2, voter_count: 1 });
+      expect(logger.debug).toHaveBeenCalledWith(req, 'get_vote_voters', 'Mapped vote voters', {
+        vote_uid: VOTE_UID,
+        row_count: 2,
+        voter_count: 1,
+        participation_only: false,
+      });
       const loggedMetadata = JSON.stringify(vi.mocked(logger.debug).mock.calls);
       expect(loggedMetadata).not.toContain('avery@acme-motors.example');
       expect(loggedMetadata).not.toContain('Avery Example');

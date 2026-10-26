@@ -6,7 +6,7 @@ import { By } from '@angular/platform-browser';
 import { TableComponent } from '@components/table/table.component';
 import { VOTE_VOTER_STATUS_FILTER_LABELS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType, VoteVoterStatus } from '@lfx-one/shared/enums';
-import { Vote, VoteBallotDialogData, VoteVoter } from '@lfx-one/shared/interfaces';
+import { Vote, VoteBallotDialogData, VoteParticipationVoter, VoteVoter } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -58,7 +58,7 @@ const VOTERS: VoteVoter[] = [
 
 interface MountOptions {
   vote?: Vote;
-  voters?: () => Observable<VoteVoter[]>;
+  voters?: () => Observable<VoteVoter[] | VoteParticipationVoter[]>;
   initialChoice?: string | null;
   initialBallotUid?: string | null;
 }
@@ -492,5 +492,83 @@ describe('VoteVotersComponent', () => {
     current = fixture;
 
     expect(byTestId(fixture, 'vote-voters-empty')).not.toBeNull();
+  });
+
+  describe('participation-only mode on a pseudo-anonymous vote (#3916)', () => {
+    const PSEUDO_VOTE: Vote = { ...VOTE, pseudo_anonymity: true };
+    /** Name-sorted, as the server returns them — no uid, ballot, abstention or submission time. */
+    const PARTICIPATION: VoteParticipationVoter[] = [
+      { user_name: 'Avery Example', user_org_name: 'Acme Motors', user_voting_status: 'Voting Rep', status: 'responded' },
+      { user_name: 'Blake Example', user_org_name: 'Beta Coastal', user_voting_status: 'Alternate', status: 'pending' },
+      { user_name: 'Casey Example', user_org_name: 'Acme Motors', user_voting_status: 'Voting Rep', user_role: 'Chair', status: 'responded' },
+    ];
+    const mountPseudo = (options: MountOptions = {}) => mount({ vote: PSEUDO_VOTE, voters: () => of(PARTICIPATION), ...options });
+    const headers = (fixture: ComponentFixture<VoteVotersComponent>) =>
+      [...fixture.nativeElement.querySelectorAll('th')].map((th: Element) => th.textContent?.trim());
+
+    it('shows Voter, Role and Status columns in server (name) order, keyed by position', async () => {
+      const { fixture } = await mountPseudo();
+      current = fixture;
+
+      expect(headers(fixture)).toEqual(['Voter', 'Role', 'Status']);
+      expect(rowUids(fixture)).toEqual(['0', '1', '2']);
+      expect(byTestId(fixture, 'vote-voters-name-0')!.textContent!.trim()).toBe('Avery Example');
+      expect(byTestId(fixture, 'vote-voters-status-0')!.textContent).toContain('Responded');
+      expect(byTestId(fixture, 'vote-voters-status-1')!.textContent).toContain('Not responded');
+      expect(fixture.nativeElement.querySelector('[data-testid^="vote-voters-open-ballot-"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid^="vote-voters-choice-"]')).toBeNull();
+    });
+
+    it('offers All, Responded and Not responded pills and no choice filter, with the lock notice', async () => {
+      const { fixture, component } = await mountPseudo();
+      current = fixture;
+
+      expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (3)', 'Responded (2)', 'Not responded (1)']);
+      expect(byTestId(fixture, 'vote-voters-choice-filter')).toBeNull();
+      expect(byTestId(fixture, 'vote-voters-manager-notice')).toBeNull();
+      expect(byTestId(fixture, 'vote-voters-anonymous-notice')!.textContent).toContain(
+        'Pseudo-anonymous vote. You can see who has responded, but not how anyone voted.'
+      );
+    });
+
+    it('filters by status pill and by role', async () => {
+      const { fixture, component } = await mountPseudo();
+      current = fixture;
+
+      component['onStatusFilterChange']('pending');
+      fixture.detectChanges();
+      expect(rowUids(fixture)).toEqual(['0']);
+      expect(byTestId(fixture, 'vote-voters-name-0')!.textContent!.trim()).toBe('Blake Example');
+
+      component['onStatusFilterChange']('all');
+      component['filterForm'].controls.role.setValue('Voting Rep');
+      fixture.detectChanges();
+      expect(rowUids(fixture)).toEqual(['0', '1']);
+      expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (2)', 'Responded (2)', 'Not responded (0)']);
+    });
+
+    it('ignores the voters_choice and voters_ballot deep links', async () => {
+      const { fixture, component, open } = await mountPseudo({ initialChoice: 'q-1:c-yes', initialBallotUid: 'b-avery' });
+      current = fixture;
+
+      expect(component['filterForm'].controls.choice.value).toBeNull();
+      expect(rowUids(fixture)).toEqual(['0', '1', '2']);
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it('treats a vote with no pseudo_anonymity flag as participation-only', async () => {
+      const { fixture } = await mountPseudo({ vote: { ...VOTE, pseudo_anonymity: undefined } });
+      current = fixture;
+
+      expect(headers(fixture)).toEqual(['Voter', 'Role', 'Status']);
+    });
+
+    it('still offers Send reminder on an open vote with voters who have not responded', async () => {
+      const { fixture, open } = await mountPseudo();
+      current = fixture;
+
+      byTestId(fixture, 'vote-voters-send-reminder')!.querySelector('button')!.click();
+      expect(open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: PSEUDO_VOTE } }));
+    });
   });
 });

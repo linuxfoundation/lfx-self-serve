@@ -54,7 +54,7 @@ describe('VoteCommentResultsComponent', () => {
     expect(text).toContain('Synthetic p1 comment 01');
     expect(text).toContain('Synthetic Voter 1');
     // DatePipe formats in local time; derive the expectation the same way so the spec passes in any timezone.
-    expect(text).toContain(formatDate(first.vote_creation_time, 'MMM d, y', 'en-US'));
+    expect(text).toContain(formatDate(first.vote_creation_time!, 'MMM d, y', 'en-US'));
     expect(text).toContain('(Abstained)');
     expect(el.querySelector('lfx-expandable-text.comment-text')).toBeTruthy();
   });
@@ -116,6 +116,47 @@ describe('VoteCommentResultsComponent', () => {
     expect(squash(el.textContent)).toContain(squash('Synthetic p1 comment 26'));
     expect(squash(el.textContent)).toContain(squash('Synthetic p1 comment 30'));
     expect(squash(el.textContent)).not.toContain(squash('Synthetic p1 comment 25'));
+  });
+
+  describe('pseudo-anonymous votes (#3916)', () => {
+    /** Text-only responses, as the BFF returns them for a pseudo-anonymous vote. */
+    const textOnly = (...texts: string[]): PollCommentResponse[] => texts.map((text) => ({ comment_text: text }));
+
+    it('renders text only, with no author, date, abstained label or ballot link, plus the lock notice', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      fixture.componentRef.setInput('showBallotLinks', true);
+      const el = render([result('p1', [{ ...responses('p1', 1)[0], abstained: true }])]);
+
+      expect(el.textContent).toContain('Synthetic p1 comment 01');
+      expect(el.textContent).not.toContain('Synthetic Voter 1');
+      expect(el.textContent).not.toContain('Anonymous');
+      expect(el.textContent).not.toContain('(Abstained)');
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeNull();
+      expect(el.querySelector('[data-testid^="vote-results-comment-view-ballot-"]')).toBeNull();
+      expect(byTestId(el, 'vote-results-comments-anonymous-notice')?.textContent).toContain('Pseudo-anonymous vote.');
+    });
+
+    it('keys responses with no vote_id by position, keeping duplicates and server order', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      const el = render([result('p1', textOnly('alpha', 'alpha', 'bravo'))]);
+
+      const texts = [...el.querySelectorAll('lfx-expandable-text')].map((node) => node.textContent?.trim());
+      expect(texts).toEqual(['alpha', 'alpha', 'bravo']);
+    });
+
+    it('discloses truncation without claiming recency', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      const el = render([result('p1', textOnly('alpha', 'bravo'), 5)]);
+
+      expect(byTestId(el, 'vote-results-comments-truncated-p1')?.textContent?.trim()).toBe('Showing 2 of 5 responses.');
+    });
+
+    it('shows no lock notice on a named vote', () => {
+      const el = render([result('p1', responses('p1', 1))]);
+
+      expect(byTestId(el, 'vote-results-comments-anonymous-notice')).toBeNull();
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeTruthy();
+    });
   });
 
   describe('ballot links (#3914)', () => {

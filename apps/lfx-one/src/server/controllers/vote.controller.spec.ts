@@ -31,10 +31,10 @@ vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success, sanitize: vi.fn((value: unknown) => value) } }));
 vi.mock('@lfx-one/shared/utils', () => ({ codePointLength: (value: string) => [...value].length }));
 
-import { VOTE_VOTERS_DRAFT, VOTE_VOTERS_PSEUDO_ANONYMOUS } from '@lfx-one/shared/constants';
+import { VOTE_VOTERS_DRAFT } from '@lfx-one/shared/constants';
 import { VoteVoterStatus } from '@lfx-one/shared/enums';
 
-import { AuthorizationError, ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
 import { VoteController } from './vote.controller';
 
 describe('VoteController management reads', () => {
@@ -313,10 +313,23 @@ describe('VoteController voters (#3911)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it.each([
-    new ConflictError('This vote is still a draft.', VOTE_VOTERS_DRAFT, {}),
-    new AuthorizationError('Individual ballots are not available for pseudo-anonymous votes.', { code: VOTE_VOTERS_PSEUDO_ANONYMOUS }),
-  ])('passes the service refusal $code to next(error) unchanged (AC-2, AC-4)', async (refusal) => {
+  it('returns 200 with the participation-only rows of a pseudo-anonymous vote (#3916)', async () => {
+    const voters = [
+      { user_name: 'Avery Example', user_org_name: 'Acme Motors', status: 'pending' },
+      { user_name: 'Blake Example', user_org_name: 'Acme Motors', status: 'responded' },
+    ];
+    assertVoteWrite.mockResolvedValue(undefined);
+    getVoteVoters.mockResolvedValue(voters);
+    const req = request({ uid: 'vote-1' });
+    await controller.getVoteVoters(req, res, next);
+    expect(assertVoteWrite.mock.invocationCallOrder[0]).toBeLessThan(getVoteVoters.mock.invocationCallOrder[0]);
+    expect(json).toHaveBeenCalledWith(voters);
+    expect(success).toHaveBeenCalledWith(req, 'get_vote_voters', undefined, { vote_uid: 'vote-1', voter_count: 2 });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes the service draft refusal to next(error) unchanged (AC-2)', async () => {
+    const refusal = new ConflictError('This vote is still a draft.', VOTE_VOTERS_DRAFT, {});
     assertVoteWrite.mockResolvedValue(undefined);
     getVoteVoters.mockRejectedValue(refusal);
     await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);

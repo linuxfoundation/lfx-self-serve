@@ -367,6 +367,7 @@ export class VoteController {
         vote_uid: uid,
         num_poll_results: results?.poll_results?.length ?? 0,
         num_votes_cast: results?.num_votes_cast,
+        results_held: results?.results_held === true,
       });
 
       res.json(results);
@@ -619,9 +620,10 @@ export class VoteController {
   }
 
   /**
-   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * GET /votes/:uid/voters — every invited voter with their status, plus their current ballot on a
+   * named vote (#3911) or participation only on a pseudo-anonymous vote (#3916).
    * Gated on `vote#writer` before any read: every vote auditor can read the underlying
-   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   * `vote_response` rows. The service refuses drafts before reading them.
    */
   public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;

@@ -1,10 +1,19 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+@if (anonymous()) {
+  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 flex items-start gap-2" data-testid="vote-results-comments-anonymous-notice">
+    <i class="fa-light fa-lock text-slate-500 mt-0.5" aria-hidden="true"></i>
+    <p class="text-sm text-slate-700">
+      Pseudo-anonymous vote. Comments are shown without names or dates, in alphabetical order. A comment's wording can still reveal who wrote it.
+    </p>
+  </div>
+}
 @for (commentResult of paginatedCommentResults(); track commentResult.prompt.prompt_id) {
   <div class="flex flex-col gap-2">
     <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
-    @for (response of commentResult.responses; track response.vote_id) {
+    <!-- Pseudo-anonymous responses carry no vote_id (#3916), so they are keyed by position. -->
+    @for (response of commentResult.responses; track response.vote_id ?? $index) {
       <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
         <lfx-expandable-text [maxHeight]="150" class="comment-text">
           <div class="flex flex-col gap-3 whitespace-normal text-sm text-slate-700">
@@ -13,24 +22,26 @@
             }
           </div>
         </lfx-expandable-text>
-        <div class="flex items-center gap-2 text-xs text-slate-500">
-          <span>{{ response.user_name || 'Anonymous' }}</span>
-          <span>•</span>
-          <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
-          @if (response.abstained) {
-            <span class="text-slate-400">(Abstained)</span>
-          }
-          @if (showBallotLinks()) {
-            <lfx-button
-              label="View ballot"
-              [text]="true"
-              size="small"
-              styleClass="ml-auto"
-              [ariaLabel]="'View ballot of ' + (response.user_name || 'this voter')"
-              (onClick)="viewBallot.emit(response.vote_id)"
-              [attr.data-testid]="'vote-results-comment-view-ballot-' + response.vote_id" />
-          }
-        </div>
+        @if (!anonymous()) {
+          <div class="flex items-center gap-2 text-xs text-slate-500" data-testid="vote-results-comment-meta">
+            <span>{{ response.user_name || 'Anonymous' }}</span>
+            <span>•</span>
+            <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
+            @if (response.abstained) {
+              <span class="text-slate-400">(Abstained)</span>
+            }
+            @if (showBallotLinks() && response.vote_id; as voteId) {
+              <lfx-button
+                label="View ballot"
+                [text]="true"
+                size="small"
+                styleClass="ml-auto"
+                [ariaLabel]="'View ballot of ' + (response.user_name || 'this voter')"
+                (onClick)="viewBallot.emit(voteId)"
+                [attr.data-testid]="'vote-results-comment-view-ballot-' + voteId" />
+            }
+          </div>
+        }
       </div>
     } @empty {
       <p class="text-sm text-slate-500 italic" [attr.data-testid]="'vote-results-comments-empty-' + commentResult.prompt.prompt_id">No responses yet.</p>
@@ -50,7 +61,11 @@
     <!-- The BFF caps each prompt's list at VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT; disclose truncation honestly. -->
     @if (commentResult.total_responses && commentResult.total_responses > commentResult.totalResponses) {
       <p class="text-xs text-slate-500" [attr.data-testid]="'vote-results-comments-truncated-' + commentResult.prompt.prompt_id">
-        Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
+        @if (anonymous()) {
+          Showing {{ commentResult.totalResponses }} of {{ commentResult.total_responses }} responses.
+        } @else {
+          Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
+        }
       </p>
     }
   </div>

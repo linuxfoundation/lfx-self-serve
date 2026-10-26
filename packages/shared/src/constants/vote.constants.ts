@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
-import type { VoteDetailTab, VoteDetailTabOption, VoteVoterStatusFilter } from '../interfaces/poll.interface';
+import type { VoteDetailTab, VoteDetailTabOption, VoteParticipationStatusFilter, VoteVoterStatusFilter } from '../interfaces/poll.interface';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -63,9 +63,6 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
 
-/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
-export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
-
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
@@ -113,6 +110,13 @@ export const VOTE_VOTER_STATUS_FILTER_LABELS: Record<VoteVoterStatusFilter, stri
   [VoteVoterStatus.VOTED]: 'Voted',
   [VoteVoterStatus.ABSTAINED]: 'Abstained',
   [VoteVoterStatus.NOT_VOTED]: 'Not voted yet',
+};
+
+/** Status pill and Status column labels on the participation-only Voters tab of a pseudo-anonymous vote (#3916). */
+export const VOTE_PARTICIPATION_STATUS_FILTER_LABELS: Record<VoteParticipationStatusFilter, string> = {
+  all: 'All',
+  responded: 'Responded',
+  pending: 'Not responded',
 };
 
 /** A not-voted voter can still vote while the vote is open; after it closes they did not vote. */

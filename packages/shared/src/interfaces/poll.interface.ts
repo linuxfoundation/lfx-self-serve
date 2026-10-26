@@ -440,9 +440,8 @@ export interface VoteReminderRecipient {
 /**
  * Invited voter with their participation status and current ballot, returned by
  * GET /api/votes/:uid/voters (#3911) to vote writers on named votes.
- * @description A projection of an `IndexedVoteResponse` row. The ballot fields (`submitted_at`,
- * `poll_answers`, `comment_responses`) are optional so a participation-only mode for
- * pseudo-anonymous votes (#3916) can omit them without changing the response shape.
+ * @description A projection of an `IndexedVoteResponse` row. Pseudo-anonymous votes return
+ * `VoteParticipationVoter` rows instead (#3916).
  */
 export interface VoteVoter {
   /** Vote response row identifier */
@@ -470,6 +469,35 @@ export interface VoteVoter {
   /** The invitee's current responses to comment prompts */
   comment_responses?: CommentResponseInput[];
 }
+
+/** Whether an invitee on a pseudo-anonymous vote has submitted a ballot (#3916). Abstaining counts as `responded`. */
+export type VoteParticipationStatus = 'responded' | 'pending';
+
+/**
+ * Invited voter on a pseudo-anonymous vote, returned by GET /api/votes/:uid/voters (#3916).
+ * @description A participation-only projection of an `IndexedVoteResponse` row, sorted by name. It
+ * deliberately carries no `uid`, ballot content, abstention, submission time or contact details, so a
+ * row can't be joined to comments or to any other endpoint. Not a subset of `VoteVoter`, whose status
+ * would reveal abstention.
+ */
+export interface VoteParticipationVoter {
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+  /** Whether the invitee has responded */
+  status: VoteParticipationStatus;
+}
+
+/** Status pill on the Voters tab of a pseudo-anonymous vote (#3916): every voter, or one participation status. */
+export type VoteParticipationStatusFilter = 'all' | VoteParticipationStatus;
+
+/** Per-status voter totals behind the pseudo-anonymous Voters tab's status pills (#3916). */
+export type VoteParticipationStatusCounts = Record<VoteParticipationStatusFilter, number>;
 
 /** Status pill on the vote detail page's Voters tab (#3914): every voter, or one participation status. */
 export type VoteVoterStatusFilter = 'all' | VoteVoterStatus;
@@ -525,6 +553,23 @@ export interface VoteVoterRowView {
   /** Voted or abstained — only these rows open the ballot dialog */
   hasBallot: boolean;
   voter: VoteVoter;
+}
+
+/**
+ * Display row on the participation-only Voters tab of a pseudo-anonymous vote (#3916).
+ * @description Carries no identifier, so rows are keyed by position and can't be joined to comments.
+ */
+export interface VoteParticipationVoterRowView {
+  /** Name, or "Unknown voter" */
+  displayName: string;
+  organization?: string;
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  role?: string;
+  /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
+  committeeRole?: string;
+  status: VoteParticipationStatus;
+  /** "Responded" or "Not responded" */
+  statusLabel: string;
 }
 
 /** One choice in the read-only ballot dialog (#3914). */
@@ -869,12 +914,13 @@ export interface PollQuestionResult {
 
 /**
  * Single voter's response to a comment prompt in results
- * @description Voter identity fields (`user_id`, `user_name`, `profile_picture`) are absent
- * (not empty) when the vote is pseudo-anonymous
+ * @description On pseudo-anonymous votes the BFF returns `comment_text` only: identity fields
+ * (`user_id`, `user_name`, `profile_picture`) and the ballot-linking fields (`vote_id`,
+ * `vote_creation_time`, `abstained`) are absent, not empty (#3916)
  */
 export interface PollCommentResponse {
-  /** Vote response (ballot) identifier */
-  vote_id: string;
+  /** Vote response (ballot) identifier — absent when the vote is pseudo-anonymous, since it would re-link the comment to its author */
+  vote_id?: string;
   /** Voter's user identifier — absent when the vote is pseudo-anonymous */
   user_id?: string;
   /** Submitted comment text */
@@ -883,10 +929,10 @@ export interface PollCommentResponse {
   user_name?: string;
   /** Voter's profile picture URL — absent when the vote is pseudo-anonymous. Reserved for future avatar rendering; the vote detail page does not render it yet. */
   profile_picture?: string;
-  /** Timestamp when the voter submitted their vote */
-  vote_creation_time: string;
-  /** Whether the voter abstained from voting */
-  abstained: boolean;
+  /** Timestamp when the voter submitted their vote — absent when the vote is pseudo-anonymous */
+  vote_creation_time?: string;
+  /** Whether the voter abstained from voting — absent when the vote is pseudo-anonymous */
+  abstained?: boolean;
 }
 
 /**
@@ -951,10 +997,16 @@ export interface VoteResultsResponse {
   num_recipients: number;
   /** Number of votes cast */
   num_votes_cast: number;
-  /** Number of voters who abstained */
-  num_abstained: number;
+  /** Number of voters who abstained — absent when `results_held` is true */
+  num_abstained?: number;
   /** Poll end/deadline timestamp */
   poll_end_time: string;
+  /**
+   * True while a pseudo-anonymous vote's totals, abstention count and comments are held (#3916):
+   * the vote has not ended, or upstream is still holding. `poll_results` and `comment_results` are
+   * then empty and `num_abstained` is absent; `num_recipients` and `num_votes_cast` are kept.
+   */
+  results_held?: boolean;
   /** IANA timezone of the poll deadline. Read surfaces render viewer-local; retained for backend display metadata. Absent on legacy votes. */
   poll_end_time_timezone?: string;
 }
