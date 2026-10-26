@@ -73,6 +73,17 @@ describe('VoteDetailFactsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-ended-early"]')).toBeNull();
   });
 
+  it.each([1, 2])('uses the page-resolved count for %s result-only comment prompts', (count) => {
+    fixture.componentRef.setInput('commentPromptCount', count);
+    render(makeVote({ poll_comment_prompts: [] }));
+
+    expect(value('comments')).toBe(`Optional · ${count} ${count === 1 ? 'prompt' : 'prompts'}`);
+
+    fixture.componentRef.setInput('commentPromptCount', 0);
+    fixture.detectChanges();
+    expect(value('comments')).toBe('Not enabled');
+  });
+
   it('notes an early close under the scheduled close date', () => {
     render(makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
 

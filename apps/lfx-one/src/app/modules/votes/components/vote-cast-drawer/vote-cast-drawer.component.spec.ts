@@ -79,7 +79,7 @@ function el(testid: string): HTMLElement | null {
 
 /**
  * Covers the GH-2350 null-`listVote` states that e2e/vote-cast-drawer.spec.ts cannot reach: the
- * My Votes host always passes a non-null listVote (so `startWith(listVote)` renders the header
+ * vote page always passes the full vote as listVote (so `startWith(listVote)` renders the header
  * even on the pre-fix template), and the dashboard-cast-drawer-host gates on a pending-actions
  * prefetch that shares the 10s voteDetailCache — a failed prefetch shows a toast and never opens
  * the drawer. Mounting the component directly with listVote=null is the only harness that

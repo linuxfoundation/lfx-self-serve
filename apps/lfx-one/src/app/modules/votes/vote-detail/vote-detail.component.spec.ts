@@ -963,6 +963,8 @@ describe('VoteDetailComponent', () => {
 
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
       expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Second synthetic comment');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Optional written responses');
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
       expect(viewAll.properties['label']).toBe('View all 2 comments');
       viewAll.triggerEventHandler('onClick', undefined);
@@ -1006,6 +1008,7 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'audience')).toBe('voter');
       expect(read(fixture, 'activeTab')).toBe('comments');
       expect(testId(fixture, 'vote-detail-comments')).not.toBeNull();
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const list = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
       expect((list.properties['commentResults'] as PollCommentResult[])[0].responses[0].comment_text).toBe('Synthetic linked comment');
     });

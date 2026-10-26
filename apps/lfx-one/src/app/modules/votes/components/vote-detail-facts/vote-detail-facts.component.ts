@@ -32,6 +32,8 @@ export class VoteDetailFactsComponent {
   // === Inputs ===
   public readonly vote = input.required<Vote>();
   public readonly audience = input<'voter' | 'creator'>('voter');
+  /** The page includes prompts recovered from authorized results; standalone callers fall back to vote metadata. */
+  public readonly commentPromptCount = input<number | null>(null);
 
   // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -68,7 +70,7 @@ export class VoteDetailFactsComponent {
     return privacy ? 'Pseudo-anonymous' : 'Named';
   });
   protected readonly commentsText: Signal<string> = computed(() => {
-    const prompts = this.vote().poll_comment_prompts?.length ?? 0;
+    const prompts = this.commentPromptCount() ?? this.vote().poll_comment_prompts?.length ?? 0;
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'prompt' : 'prompts'}`;
   });

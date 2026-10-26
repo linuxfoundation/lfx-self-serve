@@ -192,6 +192,9 @@ export class VoteDetailComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
+  protected readonly commentPromptCount: Signal<number> = computed(() =>
+    Math.max(this.vote()?.poll_comment_prompts?.length ?? 0, this.commentResults().length)
+  );
   protected readonly commentCount: Signal<number> = computed(() =>
     this.commentResults().reduce((sum, result) => sum + (result.total_responses ?? result.responses.length), 0)
   );
@@ -407,7 +410,7 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Managers always load results; voters only after close with a settled, matching, non-removed response (same gate as the drawer). */
+  /** Managers always load results; voters only after close with a settled, matching, non-removed response. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
     const key = computed(() => {
       const id = this.voteId();
@@ -475,7 +478,7 @@ export class VoteDetailComponent {
   /** Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it. */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
-      const hasPrompts = (this.vote()?.poll_comment_prompts?.length ?? 0) > 0 || this.commentResults().length > 0;
+      const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
     });
@@ -492,7 +495,7 @@ export class VoteDetailComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       if (normalizePollStatus(this.vote()?.status) === PollStatus.ENDED) return true;
-      // Treat 100% participation as finalized even if the vote hasn't formally ended (same rule as the drawer).
+      // Treat 100% participation as finalized even if the vote hasn't formally ended.
       const stats = this.participationStats();
       return stats.eligibleVoters > 0 && stats.participationRate >= 100;
     });
@@ -556,7 +559,7 @@ export class VoteDetailComponent {
         {
           value: loaded ? this.commentCount() : dash,
           label: 'Comments',
-          subLine: (this.vote()?.poll_comment_prompts?.length ?? 0) > 0 ? 'Optional written responses' : 'Comments not enabled',
+          subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
         },
