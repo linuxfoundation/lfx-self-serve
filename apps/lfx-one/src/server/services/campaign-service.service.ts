@@ -74,6 +74,8 @@ import type {
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceCreativeAsset,
+  CampaignServiceCreativeAssetList,
+  CampaignServiceCreativeAssetPlan,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
   CampaignServiceHubSpotEmailMonitor,
@@ -87,8 +89,12 @@ import type {
   CampaignServiceNegativeKeywords,
   CampaignSitelink,
   CampaignToggleStatus,
+  CreativeAssetLibrary,
   CreativeAssetMimeType,
+  CreativeAssetPlan,
   CreativeAssetUploadResult,
+  CreativeSlotAssignment,
+  CreativeSlotGap,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
@@ -102,6 +108,7 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
+  StoredCreativeAsset,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -538,6 +545,143 @@ export function canUseRedditCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAssets);
 }
 
+/**
+ * Whether a Google create may reference uploaded images by asset id.
+ *
+ * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
+ * Reddit sibling the flag is NOT about URL signing — Google's dispatch path POSTs the stored bytes
+ * to `assets:mutate` and never builds a URL — it is about whether the deployed service resolves the
+ * ids at all. Either half missing is silent: the legacy creator reads no Google creative key, and an
+ * older campaign-service ignores the ids and dispatches a campaign with no images.
+ *
+ * It gates the upload route alongside `canUseRedditCreativeAssets` — either flag admits an upload,
+ * because the stored library is one library and either platform having a use for it is reason enough
+ * to let an image into it.
+ */
+export function canUseGoogleCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleAssets);
+}
+
+/**
+ * One stored creative asset, snake_case upstream shape to the camelCase one the browser reads.
+ *
+ * Returns `null` rather than a partly-filled object when the answer is unusable, so the caller can
+ * refuse the whole read: an asset whose id or mime type did not survive is an asset a slot grid
+ * would render and an operator would then try to attach, and failing late on the ad platform is a
+ * worse answer than failing here.
+ *
+ * `width`/`height` are carried only when upstream sent a usable pixel count. They are OPTIONAL
+ * upstream and absent means UNKNOWN — the service began recording them in migration 000047, so an
+ * asset stored before it has none. A fabricated 0 would read to a slot matcher as "fails every
+ * minimum", which is a different and wrong answer, so an absent or unusable value stays absent.
+ */
+function toStoredCreativeAsset(asset: CampaignServiceCreativeAsset | undefined, briefId: string): StoredCreativeAsset | null {
+  const usable =
+    typeof asset?.id === 'string' &&
+    asset.id.length > 0 &&
+    typeof asset.project_id === 'string' &&
+    asset.project_id.length > 0 &&
+    typeof asset.brief_id === 'string' &&
+    asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+    isCreativeAssetMimeType(asset.mime_type) &&
+    typeof asset.byte_size === 'number' &&
+    typeof asset.checksum === 'string';
+  if (!usable) {
+    return null;
+  }
+
+  const stored: StoredCreativeAsset = {
+    id: asset.id,
+    projectId: asset.project_id,
+    briefId: asset.brief_id,
+    mimeType: asset.mime_type as CreativeAssetMimeType,
+    byteSize: asset.byte_size,
+    checksum: asset.checksum,
+  };
+  // `Minimum(1)` upstream, so a 0 or a negative is not a dimension this service recorded.
+  if (typeof asset.width === 'number' && asset.width >= 1) {
+    stored.width = asset.width;
+  }
+  if (typeof asset.height === 'number' && asset.height >= 1) {
+    stored.height = asset.height;
+  }
+  return stored;
+}
+
+/**
+ * One slot assignment, upstream shape to the browser's.
+ *
+ * `channel` is OPTIONAL upstream ("absent where the platform has a single ad shape") and stays
+ * optional here — an empty string in its place would render as a channel named "" in a grid that
+ * groups rows by it.
+ */
+function toCreativeSlotAssignment(entry: CampaignServiceCreativeAssetPlan['assignments'][number] | undefined): CreativeSlotAssignment | null {
+  const usable =
+    typeof entry?.slot_key === 'string' &&
+    entry.slot_key.length > 0 &&
+    typeof entry.platform === 'string' &&
+    entry.platform.length > 0 &&
+    typeof entry.slot === 'string' &&
+    typeof entry.label === 'string' &&
+    typeof entry.requirement === 'string' &&
+    Array.isArray(entry.asset_ids) &&
+    entry.asset_ids.every((id) => typeof id === 'string') &&
+    typeof entry.min_count === 'number' &&
+    typeof entry.max_count === 'number';
+  if (!usable) {
+    return null;
+  }
+
+  const assignment: CreativeSlotAssignment = {
+    slotKey: entry.slot_key,
+    platform: entry.platform,
+    slot: entry.slot,
+    label: entry.label,
+    requirement: entry.requirement,
+    assetIds: entry.asset_ids,
+    minCount: entry.min_count,
+    maxCount: entry.max_count,
+  };
+  if (typeof entry.channel === 'string' && entry.channel.length > 0) {
+    assignment.channel = entry.channel;
+  }
+  return assignment;
+}
+
+/**
+ * One slot gap, upstream shape to the browser's.
+ *
+ * Both `channel` and `slot_key` are OPTIONAL upstream, and `slot_key` is absent for a real reason
+ * rather than as an omission: a requirement can span several slots with none of them required on
+ * its own (Google wants Demand Gen's landscape and square marketing images only of each other), and
+ * there is then no single slot to name. A banner reading such a gap shows the `label` and `reason`.
+ */
+function toCreativeSlotGap(entry: CampaignServiceCreativeAssetPlan['gaps'][number] | undefined): CreativeSlotGap | null {
+  const usable =
+    typeof entry?.platform === 'string' &&
+    entry.platform.length > 0 &&
+    typeof entry.label === 'string' &&
+    typeof entry.need === 'number' &&
+    typeof entry.reason === 'string';
+  if (!usable) {
+    return null;
+  }
+
+  const gap: CreativeSlotGap = {
+    platform: entry.platform,
+    label: entry.label,
+    need: entry.need,
+    reason: entry.reason,
+  };
+  if (typeof entry.channel === 'string' && entry.channel.length > 0) {
+    gap.channel = entry.channel;
+  }
+  if (typeof entry.slot_key === 'string' && entry.slot_key.length > 0) {
+    gap.slotKey = entry.slot_key;
+  }
+  return gap;
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -605,6 +749,7 @@ export class CampaignServiceClient {
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+        googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
       };
     }
@@ -663,6 +808,7 @@ export class CampaignServiceClient {
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+      googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
     };
   }
@@ -2040,6 +2186,228 @@ export class CampaignServiceClient {
       // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.
       created: response.status === 201,
     };
+  }
+
+  /**
+   * The brief's stored creative-asset library, with the quota the next upload will be judged
+   * against (`list-creative-assets`).
+   *
+   * Metadata only — the image bytes are never returned inline, which is why `byte_size`, `width`
+   * and `height` exist: a caller can size and classify an asset without pulling a blob.
+   *
+   * The LIMITS travel with the list rather than only in the 409 an upload returns, so a caller
+   * planning a multi-file upload knows before it starts how many assets and bytes the brief may
+   * still take, instead of discovering the brief is full by sending the file that is refused.
+   *
+   * Each asset is VALIDATED, not cast, and one unusable entry refuses the whole read: a partly
+   * decoded library would show an operator an image they could then try to attach, and the failure
+   * would land later, on the ad platform, where it is far more expensive to understand.
+   */
+  public async listCreativeAssets(req: Request, projectSlug: string, briefId: string): Promise<CreativeAssetLibrary> {
+    if (projectSlug === '') {
+      // Same refusal as the keyword reads: an empty segment addresses a different route.
+      throw ServiceValidationError.forField('project', 'A creative-asset read requires the project it is scoped to.', {
+        operation: 'list_creative_assets',
+        service: 'campaign_service_client',
+      });
+    }
+    if (briefId === '') {
+      throw ServiceValidationError.forField('brief_id', 'A creative-asset read requires the brief it is scoped to.', {
+        operation: 'list_creative_assets',
+        service: 'campaign_service_client',
+      });
+    }
+
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
+    logger.debug(req, 'list_creative_assets', 'Reading the brief creative-asset library', { brief_id: briefId });
+
+    const list = await this.microserviceProxy.proxyRequest<CampaignServiceCreativeAssetList>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
+
+    const countable =
+      Array.isArray(list?.assets) &&
+      typeof list.count === 'number' &&
+      typeof list.count_limit === 'number' &&
+      typeof list.bytes_used === 'number' &&
+      typeof list.bytes_limit === 'number';
+    const assets = countable ? list.assets.map((asset) => toStoredCreativeAsset(asset, briefId)) : [];
+    if (!countable || assets.some((asset) => asset === null)) {
+      logger.warning(req, 'list_creative_assets', 'Upstream answered the asset list with an unusable body', {
+        brief_id: briefId,
+        countable,
+        returned: Array.isArray(list?.assets) ? list.assets.length : null,
+      });
+      throw new MicroserviceError('Creative asset list answer was unusable', 502, 'BAD_GATEWAY', {
+        operation: 'list_creative_assets',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: 'The stored images could not be read. Please try again.',
+      });
+    }
+
+    return {
+      assets: assets as StoredCreativeAsset[],
+      count: list.count,
+      countLimit: list.count_limit,
+      bytesUsed: list.bytes_used,
+      bytesLimit: list.bytes_limit,
+    };
+  }
+
+  /**
+   * One stored creative asset's metadata (`get-creative-asset`).
+   *
+   * The image bytes are not served here. An asset belonging to another project or brief, or to an
+   * archived brief, is a 404 upstream exactly as one that does not exist — so this never becomes a
+   * way to probe which asset ids exist elsewhere.
+   */
+  public async getCreativeAsset(req: Request, projectSlug: string, briefId: string, assetId: string): Promise<StoredCreativeAsset> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A creative-asset read requires the project it is scoped to.', {
+        operation: 'get_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+    if (briefId === '' || assetId === '') {
+      throw ServiceValidationError.forField('asset_id', 'A creative-asset read requires the brief and asset it names.', {
+        operation: 'get_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets/${encodePathSegment(assetId)}`;
+    logger.debug(req, 'get_creative_asset', 'Reading one stored creative asset', { brief_id: briefId, asset_id: assetId });
+
+    const asset = await this.microserviceProxy.proxyRequest<CampaignServiceCreativeAsset>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
+
+    // The brief match inside the mapper is the one that matters here: a 200 carrying another
+    // brief's asset would otherwise be handed back as this brief's.
+    const stored = toStoredCreativeAsset(asset, briefId);
+    if (!stored) {
+      logger.warning(req, 'get_creative_asset', 'Upstream answered the asset read with an unusable body', {
+        brief_id: briefId,
+        asset_id: assetId,
+        echoed_brief_id: asset?.brief_id,
+      });
+      throw new MicroserviceError('Creative asset read answer was unusable', 502, 'BAD_GATEWAY', {
+        operation: 'get_creative_asset',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: 'The stored image could not be read. Please try again.',
+      });
+    }
+
+    return stored;
+  }
+
+  /**
+   * Match the brief's stored assets against each platform's image slots (`get-asset-plan`).
+   *
+   * A pure READ: nothing is stored and no asset is attached to anything, so an unchanged library
+   * always produces the same plan. Assets stored before the service recorded dimensions come back
+   * under `unclassified` rather than being judged against a shape they never declared.
+   *
+   * `platforms` is a REPEATABLE query parameter upstream (`?platforms=a&platforms=b`), which is what
+   * the API client produces for an array value — a comma-joined string would be read as one
+   * platform named "a,b" and silently match nothing. An EMPTY array appends no parameter at all,
+   * and absent means every platform the service publishes slot rules for, which is the answer an
+   * operator asking "is my library ready" wants. An unknown platform is ignored upstream, not
+   * refused, so a client asking for one a deployment has not shipped still gets the rest.
+   */
+  public async getCreativeAssetPlan(req: Request, projectSlug: string, briefId: string, platforms: string[] = []): Promise<CreativeAssetPlan> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An asset plan requires the project it is scoped to.', {
+        operation: 'get_creative_asset_plan',
+        service: 'campaign_service_client',
+      });
+    }
+    if (briefId === '') {
+      throw ServiceValidationError.forField('brief_id', 'An asset plan requires the brief it is scoped to.', {
+        operation: 'get_creative_asset_plan',
+        service: 'campaign_service_client',
+      });
+    }
+
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets/plan`;
+    logger.debug(req, 'get_creative_asset_plan', 'Computing the brief creative-asset plan', {
+      brief_id: briefId,
+      platforms: platforms.length === 0 ? null : platforms,
+    });
+
+    const plan = await this.microserviceProxy.proxyRequest<CampaignServiceCreativeAssetPlan>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      path,
+      'GET',
+      platforms.length === 0 ? undefined : { platforms }
+    );
+
+    const shaped =
+      Array.isArray(plan?.platforms) &&
+      plan.platforms.every((platform) => typeof platform === 'string') &&
+      Array.isArray(plan.assignments) &&
+      Array.isArray(plan.gaps) &&
+      Array.isArray(plan.unclassified) &&
+      plan.unclassified.every((id) => typeof id === 'string') &&
+      Array.isArray(plan.unused) &&
+      plan.unused.every((id) => typeof id === 'string');
+    const assignments = shaped ? plan.assignments.map(toCreativeSlotAssignment) : [];
+    const gaps = shaped ? plan.gaps.map(toCreativeSlotGap) : [];
+    if (!shaped || assignments.some((entry) => entry === null) || gaps.some((entry) => entry === null)) {
+      logger.warning(req, 'get_creative_asset_plan', 'Upstream answered the asset plan with an unusable body', {
+        brief_id: briefId,
+        shaped,
+        assignments: Array.isArray(plan?.assignments) ? plan.assignments.length : null,
+        gaps: Array.isArray(plan?.gaps) ? plan.gaps.length : null,
+      });
+      throw new MicroserviceError('Creative asset plan answer was unusable', 502, 'BAD_GATEWAY', {
+        operation: 'get_creative_asset_plan',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: 'The image slot coverage could not be read. Please try again.',
+      });
+    }
+
+    return {
+      platforms: plan.platforms,
+      assignments: assignments as CreativeSlotAssignment[],
+      gaps: gaps as CreativeSlotGap[],
+      unclassified: plan.unclassified,
+      unused: plan.unused,
+    };
+  }
+
+  /**
+   * Permanently delete a stored creative asset, freeing its bytes against the brief's quota
+   * (`delete-creative-asset`).
+   *
+   * A HARD delete — unlike a campaign or a brief, which are retired by a status flip — because
+   * reclaiming the storage is the whole reason the endpoint exists. Upstream refuses with 409
+   * `reason=creative_asset_in_use` while any live campaign on the brief could still need the image,
+   * and that refusal carries its own remedy text, so it is left to pass through rather than being
+   * restated here.
+   *
+   * The 204 needs no special handling: the API client parses an empty body as `null` rather than
+   * attempting JSON on it (`api-client.service.ts`), so there is nothing to validate and nothing
+   * to return.
+   */
+  public async deleteCreativeAsset(req: Request, projectSlug: string, briefId: string, assetId: string): Promise<void> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A creative-asset delete requires the project it is scoped to.', {
+        operation: 'delete_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+    if (briefId === '' || assetId === '') {
+      throw ServiceValidationError.forField('asset_id', 'A creative-asset delete requires the brief and asset it names.', {
+        operation: 'delete_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets/${encodePathSegment(assetId)}`;
+    logger.debug(req, 'delete_creative_asset', 'Deleting a stored creative asset', { brief_id: briefId, asset_id: assetId });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'DELETE');
   }
 
   /**
