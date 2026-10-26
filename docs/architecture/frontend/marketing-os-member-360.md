@@ -96,6 +96,19 @@ as a binary.
 the project's writer grant, reads the stored hash-checked run, and assembles its six
 tabs on demand, without a Key Contact column. It accepts no client-supplied tabs and
 does not persist the XLSX blob.
+
+The Summary is a width-bounded QBR canvas with metadata, a tier table/bar chart,
+optional movers, the complete watchlist, team action counts and data coverage;
+large watchlists continue vertically. Ranking dates are real date cells; values,
+scores and contact counts remain numbers with currency/decimal/integer formats.
+A single category-block heat scale accompanies engagement, renewal, tier and
+priority highlighting. The workbook and result page read renewal thresholds and
+tier tones from shared constants. Widths, formats, LFX fill shades and
+chart layout stay in server-side presentation constants. ExcelJS has no chart API, so JSZip injects native DrawingML parts,
+relationships and content-type overrides after writing. This writer requires
+Summary to be the first worksheet and to contain table parts; an unexpected layout
+fails with `500 MEMBER_360_WORKBOOK_INVALID` rather than emitting a partial chart.
+
 Workbook metadata and ZIP entry dates are normalized to the run date inside `tabs`,
 so repeated downloads are byte-identical. Downloads are private, non-cacheable XLSX
 attachments; browser Blob URLs are revoked after download or immediately on view destruction. Empty Evidence exports a header-only worksheet without a structured table definition or invented evidence row. ExcelJS and JSZip are server-only; neither is in the client bundle.
