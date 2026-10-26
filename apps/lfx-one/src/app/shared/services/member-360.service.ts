@@ -4,7 +4,14 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MEMBER_360_API, MEMBER_360_TRACKER_FILENAME_HEADER, MKTG_RUN_POLL, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import {
+  MEMBER_360_API,
+  MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+  MEMBER_360_RUN_CEILING_MS,
+  MEMBER_360_TRACKER_FILENAME_HEADER,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_TTL_MS,
+} from '@lfx-one/shared/constants';
 import {
   Member360GenerateRequest,
   Member360PendingRun,
@@ -13,7 +20,24 @@ import {
   Member360Tracker,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { catchError, exhaustMap, filter, Observable, of, take, tap, throwError, timeout, TimeoutError, timer } from 'rxjs';
+import {
+  catchError,
+  defer,
+  EMPTY,
+  exhaustMap,
+  filter,
+  mergeMap,
+  mergeWith,
+  Observable,
+  of,
+  take,
+  takeWhile,
+  tap,
+  throwError,
+  timeout,
+  TimeoutError,
+  timer,
+} from 'rxjs';
 
 import { UserService } from './user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -74,36 +98,50 @@ export class Member360Service {
   public waitForStored(project: string, documentId: string, onActivity?: (activity: MktgRunActivity[]) => void): Observable<Member360Result> {
     const pending = this.readPending(project, documentId);
     if (!pending) return throwError(() => new Error('No pending run for this user and project'));
-    return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http
-          .post<Member360Result>(`${MEMBER_360_API}/result`, { project, sessionId: pending.session.sessionId, ownerToken: pending.session.ownerToken })
-          .pipe(
-            catchError((error) => {
-              if (!isTransientHttpError(error)) return throwError(() => error);
-              console.warn('Member 360 result poll temporarily unavailable; retrying.');
-              return of<Member360Result>({ status: 'pending' });
-            })
-          )
-      ),
-      // Report progress without releasing the document's persistence gate. A transient
-      // poll failure has no activity, so it must not erase the last successful feed.
-      tap((result) => {
-        if (result.activity) onActivity?.(result.activity);
-      }),
-      filter((result) => result.status === 'failed' || result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
-      take(1),
-      timeout(MKTG_RUN_POLL.timeoutMs),
-      tap({
-        next: (result) => {
-          if (result.status === 'ready' || result.status === 'failed') this.forget(project, documentId);
-        },
-        // A timed-out poll may resume from the document. Permanent errors cannot.
-        error: (error: unknown) => {
-          if (!(error instanceof TimeoutError)) this.forget(project, documentId);
-        },
-      })
-    );
+    const deadline = pending.startedAt + MEMBER_360_RUN_CEILING_MS;
+    return defer(() => {
+      // At or near the ceiling, check once instead of timing out before the first poll.
+      const expired = Date.now() >= deadline - MKTG_RUN_POLL.initialDelayMs;
+      let waitingSince: number | null = null;
+      return (expired ? timer(0) : timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs)).pipe(
+        exhaustMap(() => {
+          if (waitingSince !== null && Date.now() - waitingSince < MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS) return EMPTY;
+          const poll = this.http
+            .post<Member360Result>(`${MEMBER_360_API}/result`, { project, sessionId: pending.session.sessionId, ownerToken: pending.session.ownerToken })
+            .pipe(
+              catchError((error) => {
+                if (!isTransientHttpError(error)) return throwError(() => error);
+                console.warn('Member 360 result poll temporarily unavailable; retrying.');
+                return of<Member360Result>({ status: 'pending' });
+              })
+            );
+          return expired ? poll.pipe(timeout({ first: MKTG_RUN_POLL.timeoutMs })) : poll;
+        }),
+        // Report progress without releasing the document's persistence gate. A transient
+        // poll failure has no activity, so it must not erase the last successful feed.
+        tap((result) => {
+          waitingSince = result.status === 'needs_input' ? Date.now() : null;
+          if (result.activity) onActivity?.(result.activity);
+        }),
+        mergeMap((result) =>
+          expired && !(result.status === 'failed' || (result.status === 'ready' && result.stored === true)) ? throwError(() => new TimeoutError()) : of(result)
+        ),
+        filter((result) => result.status === 'failed' || result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
+        // Absolute ceiling from startedAt; needs_input does not extend it.
+        mergeWith(expired ? EMPTY : timer(new Date(deadline)).pipe(mergeMap(() => throwError(() => new TimeoutError())))),
+        // Include the terminal result before completing; needs_input keeps the poll open.
+        takeWhile((result) => !(result.status === 'failed' || (result.status === 'ready' && result.stored === true)), true),
+        tap({
+          next: (result) => {
+            if (result.status === 'ready' || result.status === 'failed') this.forget(project, documentId);
+          },
+          // A timed-out poll may resume from the document. Permanent errors cannot.
+          error: (error: unknown) => {
+            if (!(error instanceof TimeoutError)) this.forget(project, documentId);
+          },
+        })
+      );
+    });
   }
 
   private readPending(project: string, documentId: string): Member360PendingRun | null {
