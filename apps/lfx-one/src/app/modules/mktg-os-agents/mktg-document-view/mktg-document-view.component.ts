@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -12,6 +12,11 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
+  AEO_GEO_CATEGORIES,
+  AEO_GEO_INTAKE,
+  AEO_GEO_TIMEOUT_MESSAGE,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
@@ -72,6 +77,8 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
+import { MktgPrintService } from '@services/mktg-print.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
@@ -103,6 +110,7 @@ import {
 
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
@@ -137,6 +145,8 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
   imports: [
     DatePipe,
     ButtonComponent,
+    DecimalPipe,
+    AeoGeoReportComponent,
     NgClass,
     NgTemplateOutlet,
     MktgAssetMetaComponent,
@@ -381,7 +391,7 @@ export class MktgDocumentViewComponent {
     computed(() => ({
       project: this.projectContext.activeContextUid(),
       slug: this.projectContext.activeContext()?.slug ?? '',
-      user: this.params().agentKey === 'member-360' ? this.userService.user()?.sub : undefined,
+      user: this.params().agentKey === 'member-360' || this.isPendingReportAgent(this.params().agentKey) ? this.userService.user()?.sub : undefined,
       subject: this.userService.user()?.sub ?? '',
       ...this.params(),
       revisionId: this.revisionParam(),
@@ -415,9 +425,40 @@ export class MktgDocumentViewComponent {
     () => this.view()?.type.kind === 'living' && !!this.assetViewKind() && !this.asset() && !this.boilerplates() && !this.brandKit() && !this.faq()
   );
 
+  // === AEO/GEO state seam (fields precede the constructor by repository lint) ===
+  private readonly pendingDocuments = inject(MktgPendingDocumentService);
+  private readonly printService = inject(MktgPrintService);
+  private aeoPrintRequested = false;
+  protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+  protected readonly activity = signal<MktgRunActivity[]>([]);
+  protected readonly activityStartedAt = signal(0);
+  protected readonly retryGenerating = signal(false);
+  protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
+  protected readonly aeoTitle = computed(() => this.view()?.aeoGeoReport?.report_filename.replace(/\.md$/, '') ?? 'AEO/GEO report');
+  protected readonly scoreRows = computed(() => {
+    const report = this.view()?.aeoGeoReport;
+    return report?.report?.scorecard ?? (report ? AEO_GEO_CATEGORIES.map((category) => ({ ...category, score: report.scores[category.key] })) : []);
+  });
+  protected readonly runAgent = computed(() => {
+    const id = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.catalogAgentId;
+    return MKTG_AGENTS.find((agent) => agent.id === id);
+  });
+  protected readonly activityIconClass = computed(
+    () =>
+      ({
+        blue: 'bg-blue-50 text-blue-600',
+        emerald: 'bg-emerald-50 text-emerald-600',
+        violet: 'bg-violet-50 text-violet-600',
+        amber: 'bg-amber-50 text-amber-600',
+        red: 'bg-red-50 text-red-600',
+        gray: 'bg-gray-100 text-gray-500',
+      })[this.runAgent()?.accent ?? 'gray']
+  );
+
   public constructor() {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
+      this.destroyRef.onDestroy(() => this.clearAeoPrint());
       let observedSubject = this.userService.user()?.sub ?? '';
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
@@ -455,6 +496,7 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            this.clearAeoPrint();
             this.errorText.set('');
             this.notice.set('');
             this.runHistory.set([]);
@@ -491,6 +533,10 @@ export class MktgDocumentViewComponent {
             }
           }),
           switchMap((request) => {
+            if (this.isPendingReportAgent(request.agentKey)) {
+              this.loading.set(true);
+              return this.loadAeoReport(request.project, request.agentKey, request.documentId, request.revisionId, request.user);
+            }
             if (!request.project || !request.agentKey || !request.documentId) {
               this.generating.set(false);
               return EMPTY;
@@ -853,6 +899,17 @@ export class MktgDocumentViewComponent {
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
     this.reloads.update((count) => count + 1);
+  }
+
+  protected onRunAgain(): void {
+    const project = this.projectContext.activeContextUid();
+    if (project) this.pendingDocuments.clear(project, this.params().documentId);
+  }
+
+  protected onDownload(): void {
+    if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
+    this.aeoPrintRequested = true;
+    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
   }
 
   protected onToggleAllRevisions(): void {
@@ -1236,5 +1293,71 @@ export class MktgDocumentViewComponent {
         queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
       });
     }
+  }
+
+  // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private clearAeoPrint(): void {
+    if (this.aeoPrintRequested) {
+      this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+      this.aeoPrintRequested = false;
+    }
+  }
+
+  private isPendingReportAgent(agentKey: string): boolean {
+    return agentKey === AEO_GEO_INTAKE.agentId;
+  }
+
+  private loadAeoReport(project: string, agentKey: string, documentId: string, revisionId: string, user: string | undefined) {
+    this.generating.set(false);
+    this.activity.set([]);
+    this.retryGenerating.set(false);
+    this.view.set(null);
+    if (!project || !documentId || !user) return EMPTY;
+    const pending = this.pendingDocuments.load(project, documentId);
+    const intake = pending ? MKTG_AGENT_INTAKES[pending.agentId] : null;
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    const canResume = !!(
+      this.isPendingReportAgent(agentKey) &&
+      pending &&
+      intake?.oneOffDocument &&
+      type?.catalogAgentId === agentKey &&
+      pending.agentId === agentKey
+    );
+    const startedAt = Date.parse(pending?.savedAt ?? '');
+    this.activityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
+    const read = () =>
+      revisionId
+        ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
+        : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
+            switchMap((detail) => {
+              const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+              return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
+            })
+          );
+    return read().pipe(
+      catchError((error: HttpErrorResponse) => {
+        if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+        this.generating.set(true);
+        return this.pendingDocuments.waitForStorage(pending, intake, (activity) => this.activity.set(activity)).pipe(switchMap(() => read()));
+      }),
+      tap(() => this.pendingDocuments.clear(project, documentId)),
+      catchError((error: unknown) => {
+        console.error('Failed to load the audit document', error);
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        const refused = error instanceof MktgRunRefusalError;
+        this.retryGenerating.set((this.generating() || canResume) && !refused && (status === undefined || isTransientHttpError(error)));
+        if (refused) {
+          this.errorText.set(error.message);
+        } else if (error instanceof TimeoutError) {
+          this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+        } else if (this.retryGenerating()) {
+          this.errorText.set('The report has not been stored yet. Try checking again; starting a new audit creates a separate report.');
+        } else {
+          this.errorText.set(this.loadErrorText(status ?? 0, error instanceof HttpErrorResponse ? error.error?.code : undefined));
+        }
+        return of(null);
+      }),
+      tap(() => this.generating.set(false))
+    );
   }
 }
