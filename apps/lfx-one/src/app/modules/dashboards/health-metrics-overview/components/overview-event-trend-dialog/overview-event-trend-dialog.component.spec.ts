@@ -99,6 +99,14 @@ describe('OverviewEventTrendDialogComponent', () => {
     expect(query('overview-trend-format')).toBeNull();
   });
 
+  it('draws the goal line and names every line, the range and the goal in its legend', async () => {
+    await render(oneFormat);
+
+    expect(query('overview-trend-goal')).not.toBeNull();
+    expect(query('overview-trend-dialog')?.textContent).toContain('Predicted range');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
+  });
+
   it('offers a format toggle only when the event has both, opening on the larger', async () => {
     await render({
       eventId: 'e1',
@@ -120,6 +128,7 @@ describe('OverviewEventTrendDialogComponent', () => {
     expect(query('overview-trend-kpi-days-left')?.textContent).toContain('Event held');
     expect(query('overview-trend-kpi-predicted')).toBeNull();
     expect(query('overview-trend-dialog')?.textContent).not.toContain('Predicted');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
     expect(query('overview-trend-chart')?.querySelector('line[stroke-dasharray="3 3"]')).toBeNull();
   });
 

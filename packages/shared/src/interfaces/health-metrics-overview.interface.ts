@@ -451,6 +451,8 @@ export interface HealthMetricsOverviewTrendView {
   bandPath: string;
   /** `null` once the event is past the chart's window or has no actuals. */
   todayX: string | null;
+  /** The registration goal's dashed line; `null` without a goal. */
+  goalY: string | null;
 }
 
 /** One Overview card's read: the response once it lands, and where the read stands. */

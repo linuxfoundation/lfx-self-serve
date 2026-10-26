@@ -449,7 +449,7 @@ export function buildHealthMetricsOverviewPastTrendView(
   };
 }
 
-/** The trend chart's lines; the forecast and its band start at the last measured day, so the lines meet. */
+/** The trend chart's lines and goal; the forecast and its band start at the last measured day, so the lines meet. */
 function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, goal: number | null): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
   const window = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -window && point.daysToEvent <= 0);
@@ -481,6 +481,7 @@ function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, 
         ])} Z`
       : '',
     todayX: lastActual ? x(lastActual.daysToEvent).toFixed(1) : null,
+    goalY: goal !== null && goal > 0 ? y(goal).toFixed(1) : null,
   };
 }
 

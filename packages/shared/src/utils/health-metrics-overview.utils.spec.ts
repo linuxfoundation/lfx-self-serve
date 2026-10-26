@@ -725,6 +725,11 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1080) * 220).toFixed(1)}`)).toBe(true);
     expect(view.bandPath.endsWith(' Z')).toBe(true);
     expect(view.todayX).toBe('446.7');
+    expect(view.goalY).toBe((220 - (1000 / 1080) * 220).toFixed(1));
+  });
+
+  it('draws no goal line without a goal', () => {
+    expect(buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, { ...headline, goal: null }, series).goalY).toBeNull();
   });
 
   it('draws only what it has without a curve', () => {
@@ -777,6 +782,7 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
     expect(view.currentPath.split('L')).toHaveLength(3);
     expect(view.lastYearPath).not.toBe('');
     expect([view.predictedPath, view.bandPath, view.todayX]).toEqual(['', '', null]);
+    expect(view.goalY).not.toBeNull();
   });
 
   it('leaves last year out without a curve', () => {
