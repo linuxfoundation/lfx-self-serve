@@ -2,7 +2,48 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { buildAeoGeoFormPayload, normalizeAeoGeoDomain, renderAeoGeoFormText, validateAeoGeoIntakeAnswers } from './aeo-geo.utils';
+import { AEO_GEO_CATEGORIES, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
+import type { AeoGeoEnvelope } from '../interfaces/aeo-geo.interface';
+import {
+  buildAeoGeoFormPayload,
+  extractAeoGeoEnvelopeCandidates,
+  isAeoGeoEnvelope,
+  isAeoGeoReport,
+  normalizeAeoGeoDomain,
+  renderAeoGeoFormText,
+  validateAeoGeoIntakeAnswers,
+} from './aeo-geo.utils';
+
+import { aeoGeoEnvelopeFixture, aeoGeoReportFixture } from './aeo-geo.fixture';
+
+function envelope(): AeoGeoEnvelope {
+  return {
+    contract: 'aeo-geo-output/v1',
+    kind: 'aeo-geo-report',
+    domain: 'project.example',
+    report_filename: 'project.example AEO-GEO Report.md',
+    version: 1,
+    document_markdown: [
+      '# AEO/GEO Analysis: project.example',
+      'Overall score: **6.0 / 10** — A useful baseline.',
+      AEO_GEO_SECTIONS[0],
+      '| Category | Score | Summary |',
+      '|---|---|---|',
+      ...AEO_GEO_CATEGORIES.map(({ label }) => `| ${label} | 6/10 | Evidence from the audited source. |`),
+      ...AEO_GEO_SECTIONS.slice(1).flatMap((heading) => [heading, 'Synthetic evidence and actionable recommendations for the site.']),
+      'https://project.example/',
+    ].join('\n'),
+    content_sha256: 'a'.repeat(64),
+    overall_score: 6,
+    verdict: 'A useful baseline',
+    scores: { ai_crawler_access: 6, llms_txt: 6, content_answerability: 6, technical_metadata: 6, external_authority: 6, content_depth_freshness: 6 },
+    inputs: { key_pages_provided: false, pages_audited: ['https://project.example/'] },
+    capabilities: { web_fetch: true, web_search: true },
+    intake: { mode: 'form', completed_at: '2026-10-15T10:00:00Z' },
+    generated_at: '2026-10-15T10:00:00Z',
+    agent: { agent_version: '1.0.0', prompt_manifest_sha256: 'b'.repeat(64) },
+  };
+}
 
 describe('AEO/GEO intake and renderer', () => {
   it('normalizes domain and URL inputs exactly like the live agent', () => {
@@ -62,5 +103,136 @@ describe('AEO/GEO intake and renderer', () => {
     expect(renderAeoGeoFormText(buildAeoGeoFormPayload({ domain: 'project.example' }))).toContain(
       'KEY PAGES (Phase 2): none provided — identify and fetch 2–5 key pages'
     );
+  });
+});
+
+describe('AEO/GEO envelope gates', () => {
+  it.each(['project', 'domain'] as const)('accepts the full recorded %s 2.0 report with its original metrics and section counts', (kind) => {
+    const recorded = aeoGeoEnvelopeFixture(kind);
+    expect(isAeoGeoEnvelope(recorded)).toBe(true);
+    const report = recorded.report;
+    if (!report) {
+      throw new Error('Recorded report fixture is missing.');
+    }
+    expect(report.findings).toHaveLength(5);
+    expect(report.recommendations).toHaveLength(kind === 'project' ? 7 : 6);
+    expect(report.caveats).toHaveLength(kind === 'project' ? 9 : 7);
+    expect(report.sources).toHaveLength(kind === 'project' ? 11 : 15);
+  });
+  it('mirrors report min(1) strings and regex URL gates', () => {
+    const report = aeoGeoReportFixture();
+    report.headline = ' ';
+    report.verdict = ' ';
+    report.scorecard.forEach((row) => {
+      row.summary = ' ';
+    });
+    report.findings.forEach((row) => {
+      row.title = ' ';
+      row.detail = ' ';
+      row.evidence = [' '];
+    });
+    report.recommendations.forEach((row) => {
+      row.title = ' ';
+      row.detail = ' ';
+    });
+    report.caveats = [' '];
+    report.sources.push({ url: 'https://fixture-user@reference.example/source', role: 'external' });
+    expect(isAeoGeoReport(report)).toBe(true);
+    expect(isAeoGeoReport({ ...report, headline: '' })).toBe(false);
+  });
+
+  it('accepts legacy envelopes and validates every typed-report equality and required section', () => {
+    const legacy = envelope();
+    expect(isAeoGeoEnvelope(legacy)).toBe(true);
+    expect(isAeoGeoEnvelope({ ...legacy, document_markdown: legacy.document_markdown.replace(/^(Overall score:.*)$/m, '$1\t ') })).toBe(true);
+    const report = aeoGeoReportFixture(legacy, legacy.inputs.pages_audited);
+    expect(isAeoGeoReport({ ...report, future: true })).toBe(true);
+    expect(isAeoGeoEnvelope({ ...legacy, report })).toBe(true);
+    for (const invalid of [
+      { ...report, overall_score: 7 },
+      { ...report, verdict: 'Different verdict' },
+      { ...report, scorecard: [...report.scorecard].reverse() },
+      { ...report, scorecard: report.scorecard.map((row) => ({ ...row, score: 6.5 })) },
+      { ...report, findings: [] },
+      { ...report, sources: [] },
+      { ...report, recommendations: [{ ...report.recommendations[0], priority: 0 }] },
+      { ...report, recommendations: [{ ...report.recommendations[0], priority: 2 }] },
+      { ...report, sources: report.sources.map((source) => ({ ...source, role: 'search' })) },
+      { ...report, sources: [{ url: 'javascript:alert(1)', role: 'audited' }] },
+    ]) {
+      expect(isAeoGeoEnvelope({ ...legacy, report: invalid })).toBe(false);
+    }
+    expect(isAeoGeoReport({ ...report, caveats: null })).toBe(false);
+  });
+  it('accepts the full contract and extracts finalize tool result wrappers', () => {
+    const valid = envelope();
+    expect(isAeoGeoEnvelope(valid)).toBe(true);
+    expect(extractAeoGeoEnvelopeCandidates(JSON.stringify({ result: { envelope_json: JSON.stringify(valid) } }))).toEqual([valid]);
+  });
+  it('accepts extra N/10 rows outside the Scorecard, matching the upstream G1 gate', () => {
+    const report = envelope();
+    report.document_markdown = report.document_markdown.replace(
+      '## Recommendations (priority order)',
+      '## Recommendations (priority order)\n\n| Next audit target | 8/10 | A separate recommendation metric. |'
+    );
+    expect(isAeoGeoEnvelope(report)).toBe(true);
+  });
+  it('still rejects missing, reordered or mismatched category rows among extra scores', () => {
+    for (const change of [
+      (doc: string) => doc.replace('| llms.txt |', '| Other metric |'),
+      (doc: string) =>
+        doc
+          .replace('| AI crawler access |', '| Temporary label |')
+          .replace('| llms.txt |', '| AI crawler access |')
+          .replace('| Temporary label |', '| llms.txt |'),
+      (doc: string) => doc.replace('| llms.txt | 6/10', '| llms.txt | 5/10'),
+    ]) {
+      const report = envelope();
+      report.document_markdown = change(report.document_markdown) + '\n| Unrelated metric | 9/10 | Extra evidence. |';
+      expect(isAeoGeoEnvelope(report)).toBe(false);
+    }
+  });
+  it('rejects schema drift, score/headline disagreement, missing sources and structural drift', () => {
+    for (const mutate of [
+      (e: AeoGeoEnvelope) => {
+        e.scores.llms_txt = 11;
+      },
+      (e: AeoGeoEnvelope) => {
+        e.overall_score = 9;
+      },
+      (e: AeoGeoEnvelope) => {
+        e.report_filename = 'other.md';
+      },
+      (e: AeoGeoEnvelope) => {
+        e.verdict = 'Invented verdict';
+      },
+      (e: AeoGeoEnvelope) => {
+        e.inputs.key_pages_provided = true;
+      },
+      (e: AeoGeoEnvelope) => {
+        e.inputs.pages_audited.push('https://project.example/missing');
+      },
+      (e: AeoGeoEnvelope) => {
+        e.inputs.pages_audited.push(e.inputs.pages_audited[0]);
+      },
+      (e: AeoGeoEnvelope) => {
+        e.document_markdown = e.document_markdown.replace('## Scorecard', '## Missing');
+      },
+      (e: AeoGeoEnvelope) => {
+        e.document_markdown = e.document_markdown.replace('| llms.txt | 6/10', '| llms.txt | 8/10');
+      },
+      (e: AeoGeoEnvelope) => {
+        e.agent.prompt_manifest_sha256 = 'bad';
+      },
+      (e: AeoGeoEnvelope) => {
+        e.generated_at = 'yesterday';
+      },
+    ]) {
+      const candidate = envelope();
+      mutate(candidate);
+      expect(isAeoGeoEnvelope(candidate)).toBe(false);
+    }
+    expect(isAeoGeoEnvelope({ ...envelope(), extra: true })).toBe(false);
+    expect(isAeoGeoEnvelope({ ...envelope(), inputs: { ...envelope().inputs, extra: true } })).toBe(false);
   });
 });

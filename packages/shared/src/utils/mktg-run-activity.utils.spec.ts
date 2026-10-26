@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_RUN_ACTIVITY_HIDDEN_TOOLS, MKTG_RUN_ACTIVITY_TOOLS } from '../constants/mktg-run-activity.constants';
 import { noQuestionsActivityPayloads } from './__fixtures__/mktg-run-activity.no-questions';
 import type { MktgRunActivity } from '../interfaces';
+import { AEO_GEO_FINALIZE_TOOL } from '../constants/aeo-geo.constants';
+import { aeoGeoQuestionsEventFixture } from './aeo-geo.fixture';
 import { buildMktgRunActivity, mktgRunActivityPhases, mktgRunActivityReadingLabel, mktgRunQuestionShortLabel } from './mktg-run-activity.utils';
 
 // A live Messaging Document 3.0.0 session (OpenSearch, 15 Oct 2026), trimmed:
@@ -346,6 +348,27 @@ describe('mktgRunActivityPhases', () => {
       ['Writing', 'pending'],
       ['Checking', 'pending'],
     ]);
+  });
+});
+
+describe('AEO/GEO session activity', () => {
+  it('uses the common questions, writing and finalize phases for the audit round', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-19T10:00:00Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'synthetic-ask', name: 'ask_requester' }),
+      }),
+      aeoGeoQuestionsEventFixture(),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T10:01:00Z' }),
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-19T10:01:05Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'synthetic-finalize', name: AEO_GEO_FINALIZE_TOOL }),
+      }),
+    ]);
+    expect(activity.map((step) => step.kind)).toEqual(['questions', 'writing', 'checking']);
+    expect(mktgRunActivityPhases(activity).find((phase) => phase.id === 'questions')?.state).toBe('done');
   });
 });
 
