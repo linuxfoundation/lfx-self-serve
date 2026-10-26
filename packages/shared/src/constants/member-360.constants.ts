@@ -79,6 +79,12 @@ export const MEMBER_360_REDACTED_SUMMARY =
 /** Bound ZIP metadata and actual inflated bytes before ExcelJS parses XML. */
 export const MEMBER_360_MAX_ZIP_ENTRIES = 1000;
 export const MEMBER_360_WORKBOOK_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/**
+ * Live 21-member runs take 5–6 minutes; a 291-member run remained active past 10.
+ * Work scales with members and reads. Two hours exceeds plausible run time, stays
+ * inside the 24-hour pending TTL, and only stops polling sessions Guild never closes.
+ */
+export const MEMBER_360_RUN_CEILING_MS = 7_200_000;
 export const MEMBER_360_TRACKER_KINDS = ['event_sponsors', 'attendees', 'speaking', 'ambassadors', 'content', 'webinars', 'other'] as const;
 export const MEMBER_360_HEAT_ORDER = ['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social'] as const;
 export const MEMBER_360_WINDOW_OPTIONS = [

@@ -280,14 +280,16 @@ describe('Member 360 entitlement and generation', () => {
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
-  it('ends an error event without exposing a raw error object or inventing an agent reason', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([
-      JSON.stringify({
-        type: 'runtime_error',
-        task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
-        content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
-      }),
-    ]);
+  it('keeps an error event pending until session end without exposing its raw details', async () => {
+    const error = JSON.stringify({
+      type: 'runtime_error',
+      task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
+      content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
+    });
+    mocks.getRawEventPayloads.mockResolvedValue([error]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('pending');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    mocks.getRawEventPayloads.mockResolvedValue([error, JSON.stringify({ type: 'session_status', session: { status: 'DONE' } })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
       reason: 'agent_stopped',

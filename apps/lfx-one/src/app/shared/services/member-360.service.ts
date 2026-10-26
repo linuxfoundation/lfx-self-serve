@@ -4,7 +4,13 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MEMBER_360_API, MEMBER_360_TRACKER_FILENAME_HEADER, MKTG_RUN_POLL, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import {
+  MEMBER_360_API,
+  MEMBER_360_RUN_CEILING_MS,
+  MEMBER_360_TRACKER_FILENAME_HEADER,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_TTL_MS,
+} from '@lfx-one/shared/constants';
 import {
   Member360GenerateRequest,
   Member360PendingRun,
@@ -93,7 +99,7 @@ export class Member360Service {
       }),
       filter((result) => result.status === 'failed' || result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
       take(1),
-      timeout(MKTG_RUN_POLL.timeoutMs),
+      timeout(Math.max(1, pending.startedAt + MEMBER_360_RUN_CEILING_MS - Date.now())),
       tap({
         next: (result) => {
           if (result.status === 'ready' || result.status === 'failed') this.forget(project, documentId);

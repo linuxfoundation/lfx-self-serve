@@ -93,6 +93,7 @@ import {
   merge,
   throwError,
   timer,
+  TimeoutError,
   Observable,
   shareReplay,
   take,
@@ -532,12 +533,16 @@ export class MktgDocumentViewComponent {
                     })
                   );
                 }),
-                catchError((error: HttpErrorResponse) => {
-                  this.errorText.set(
-                    pending
-                      ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                      : this.loadErrorText(error.status, error.error?.code)
-                  );
+                catchError((error: HttpErrorResponse | TimeoutError) => {
+                  if (error instanceof TimeoutError) {
+                    this.errorText.set('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+                  } else {
+                    this.errorText.set(
+                      pending
+                        ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                        : this.loadErrorText(error.status, error.error?.code)
+                    );
+                  }
                   return of(null);
                 })
               );

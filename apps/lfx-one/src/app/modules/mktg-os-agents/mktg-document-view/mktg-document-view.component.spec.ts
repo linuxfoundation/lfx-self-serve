@@ -607,6 +607,10 @@ describe('MktgDocumentViewComponent', () => {
       .mockReturnValueOnce(throwError(() => new TimeoutError()))
       .mockReturnValueOnce(completion);
     await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-document-view-error')?.textContent).toContain('This run is still being checked. Reload to check the same run; nothing is overwritten.');
+    expect(query('member-360-failure-details')).toBeNull();
+    expect(query('member-360-run-again')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
     const retry = query('mktg-document-view-retry')?.querySelector('button');
     if (!retry) throw new Error('Missing synthetic timeout Retry');
     retry.click();

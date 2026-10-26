@@ -8,7 +8,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), resolveRunOutcome: vi.fn() }));
+vi.mock('../services/guild.service', () => ({
+  GuildService: class {
+    resolveRunOutcome = mocks.resolveRunOutcome;
+  },
+}));
 vi.mock('../services/member-360.service', () => ({
   Member360Service: class {
     start = mocks.start;
@@ -47,10 +52,12 @@ describe('Member 360 HTTP boundary', () => {
     }
     expect(mocks.result).not.toHaveBeenCalled();
   });
-  it('accepts only the creator/project/agent-bound token', async () => {
+  it('returns the creator/project/agent-bound result as-is without the settled-error overlay', async () => {
     const json = vi.fn();
     const next = vi.fn();
-    mocks.result.mockResolvedValue({ status: 'pending' });
+    const pending = { status: 'pending', activity: [] };
+    mocks.result.mockResolvedValue(pending);
+    mocks.resolveRunOutcome.mockResolvedValue({ status: 'failed', reason: 'agent_stopped' });
     await new Member360Controller().result(
       {
         body: {
@@ -62,7 +69,8 @@ describe('Member 360 HTTP boundary', () => {
       { json } as unknown as Response,
       next
     );
-    expect(json).toHaveBeenCalledWith({ status: 'pending' });
+    expect(json.mock.calls[0]?.[0]).toBe(pending);
+    expect(mocks.resolveRunOutcome).not.toHaveBeenCalled();
     expect(mocks.result).toHaveBeenCalledWith(expect.anything(), 'session-1', 'sample-project');
     expect(next).not.toHaveBeenCalled();
   });
