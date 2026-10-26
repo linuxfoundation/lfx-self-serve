@@ -513,14 +513,25 @@ export class ComposerGuestsComponent {
   }
 
   /**
-   * Each row's identity and state, in order.
+   * Each row's identity, state and group attribution, in order.
    * @description Compared rather than the array itself: group reconciliation rebuilds the array on every
-   * emission even when nothing changed, which would withdraw Undo for no visible reason.
+   * emission even when nothing changed, which would withdraw Undo for no visible reason. The attribution
+   * fields are the ones reconciliation rewrites on an unsaved group guest, so a re-attribution counts.
    */
   private guestListSignature(): string {
     return this.formService
       .guests()
-      .map((guest) => `${guest.uid || guest.tempId || guest.email}:${guest.state}:${guest.type}`)
+      .map((guest) =>
+        [
+          guest.uid || guest.tempId || guest.email,
+          guest.state,
+          guest.type,
+          guest.committee_uid,
+          guest.committee_name,
+          guest.committee_role,
+          guest.committee_voting_status,
+        ].join(':')
+      )
       .join('|');
   }
 

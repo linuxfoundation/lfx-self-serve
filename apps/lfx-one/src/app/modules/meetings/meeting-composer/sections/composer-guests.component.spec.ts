@@ -486,6 +486,19 @@ describe('ComposerGuestsComponent', () => {
       expect(component['undoBatch']()).toBeNull();
     });
 
+    it('withdraws undo when a group only re-attributes an unsaved guest', () => {
+      const shared = { ...savedGroupGuest, uid: '', tempId: 'temp_shared', state: 'new' as const, committee_uid: 'committee-a', committee_name: 'Group A' };
+      const other = { ...savedGroupGuest, uid: 'other-1', email: 'other@example.com', type: 'direct' as const };
+      formService.setGuests([shared, other]);
+      component['onRemoveGuest'](other);
+      expect(component['undoBatch']()).not.toBeNull();
+
+      // Group B's roster lands late and claims the shared guest; only the attribution fields change.
+      reconcile([{ ...member, committee_uid: 'committee-b', committee_name: 'Group B' } as CommitteeMember]);
+
+      expect(component['undoBatch']()).toBeNull();
+    });
+
     it('offers undo for a guest with no email', () => {
       const emailless = { ...savedGroupGuest, uid: 'no-email', email: '', type: 'direct' as const };
       formService.setGuests([emailless]);
