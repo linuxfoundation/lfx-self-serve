@@ -111,19 +111,29 @@ export class OrgLensEmptyStateService {
 
   /**
    * #4314 — the employer probe is owed an answer *that the page decision will read*. Only the callers
-   * who reach rules 6–8 do: someone who holds the selection, reaches it as its CLA manager, or whom the
-   * read gate admitted renders their page at rules 1 and 5, and no employer answer can change that.
-   * Waiting on the probe for them would hold an already-admitted contractor on a skeleton while CDP
-   * and Snowflake run, for an answer that is then discarded.
+   * who reach rules 6–8 do; every earlier rule settles the page whatever the employer answer turns out
+   * to be, and waiting for it there is latency spent on a result that is then discarded — a skeleton
+   * held over an outage state and its Retry while CDP and Snowflake run.
+   *
+   * So this walks the same rules in the same order `pageState` does, and the two must stay in step:
+   * a rule that starts answering before rule 6 belongs here too.
    */
   private readonly employerAnswerOwed: Signal<boolean> = computed(() => {
     if (!this.employerAffiliation.pending()) {
       return false;
     }
+    // Rule 1 — the page renders.
     if (this.selectedHeld() || this.selectedClaOnly()) {
       return false;
     }
-    return this.contractorVerdict(this.accountContext.hasOrgSelectorAccess()) !== 'admitted';
+    const holdsAnything = this.accountContext.hasOrgSelectorAccess();
+    // Rules 2–4 — an outage answers first.
+    if (this.classifyLookup(holdsAnything)) {
+      return false;
+    }
+    // Rule 5 — a contractor verdict either way answers before rule 6; `null` is "not a contractor",
+    // or an answer still owed, which `settled` has already caught through `contractorProbePending`.
+    return this.contractorVerdict(holdsAnything) === null;
   });
 
   /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */

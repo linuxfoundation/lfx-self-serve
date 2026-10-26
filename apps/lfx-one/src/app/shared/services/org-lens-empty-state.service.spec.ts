@@ -643,6 +643,34 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     expect(h.service.pageState()).toBeNull();
   });
 
+  it('does not hold a refused contractor on the skeleton for the employer probe', () => {
+    h.affiliationPending.set(true);
+
+    // Nothing selected and nothing held: rule 5 refuses without asking the gate.
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('contractor-no-grant');
+  });
+
+  // An outage state carries the Retry that gets the caller out of it; holding it behind an unrelated
+  // lookup hides the control, and the employer answer cannot change which state they see.
+  it('does not hold a lookup outage behind the employer probe', () => {
+    h.isContractor.set(false);
+    h.affiliationPending.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
+  it('does not hold a failed staff check behind the employer probe', () => {
+    h.isContractor.set(false);
+    h.affiliationPending.set(true);
+    h.staffCheck.set('failed');
+
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
+  });
+
   it('still holds the skeleton for a caller whose page decision reads the employer answer', () => {
     h.isContractor.set(false);
     h.affiliationPending.set(true);
