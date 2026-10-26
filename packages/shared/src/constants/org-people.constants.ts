@@ -82,9 +82,6 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
 /** Default employment filter — the URL drops `?employment=` when it is active. */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
 
-/** Used to validate `?employment=` query-param input. */
-export const VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT: ReadonlySet<OrgAllEmployeeEmploymentFilter> = new Set(ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.map((o) => o.value));
-
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */

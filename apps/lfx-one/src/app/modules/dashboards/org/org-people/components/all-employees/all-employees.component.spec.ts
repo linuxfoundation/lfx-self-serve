@@ -336,5 +336,39 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
       expect(activeStat()).toContain('2');
     });
+    it('follows ?employment= when the URL changes after load', async () => {
+      await mount('browser');
+      await answerCurrent();
+
+      await TestBed.inject(Router).navigateByUrl('/?employment=former');
+      await settle();
+      await answerFormer();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+    });
+
+    it('shows a former employee who still holds Org Lens access once, as former, with the access badge, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response([row('p-1', 'Ada Lovelace'), row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['access'], accessBadge: 'viewer' })], 1)
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+  });
+
+  describe('on the server, with ?employment=former', () => {
+    it('keeps the skeleton and requests nothing, so the browser render replaces it', async () => {
+      await mount('server', '/?employment=former');
+
+      expect(getFormerEmployees).not.toHaveBeenCalled();
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+    });
   });
 });

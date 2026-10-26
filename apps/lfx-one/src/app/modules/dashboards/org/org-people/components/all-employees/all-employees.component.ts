@@ -40,7 +40,6 @@ import {
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
-  VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
@@ -100,8 +99,10 @@ export class AllEmployeesComponent {
   protected readonly searchTerm = signal<string>('');
   protected readonly selectedFoundationId = signal<string>('');
   protected readonly selectedActivity = signal<OrgAllEmployeeActivityFilter>('all');
-  // Seeded from `?employment=` so a shared link opens the same view; written back on change (default dropped from the URL).
-  protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(this.initialEmployment());
+  // Follows `?employment=` so a shared link or a back/forward step opens the same view; written back on change (default dropped from the URL).
+  protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(
+    AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'))
+  );
   private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
   private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
 
@@ -133,8 +134,9 @@ export class AllEmployeesComponent {
   // Seeded true: toSignal seeds EMPTY_ORG_ALL_EMPLOYEES_RESPONSE and a real fetch fires synchronously on mount.
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
-  // Former employees load only once a view that shows them is selected (lfx-self-serve#4311).
-  private readonly formerLoadingState = signal<boolean>(false);
+  // Former employees load only once a view that shows them is selected (lfx-self-serve#4311). Seeded like `loadingState`
+  // so a `?employment=former` render shows the skeleton until the browser fetch lands.
+  private readonly formerLoadingState = signal<boolean>(this.selectedEmployment() !== 'current');
   private readonly formerErrorState = signal<boolean>(false);
 
   protected readonly isLoading = computed(() => (this.showCurrent() && this.loadingState()) || (this.showFormer() && this.formerLoadingState()));
@@ -166,8 +168,13 @@ export class AllEmployeesComponent {
   protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = toSignal(
     combineLatest([this.orgUid$, toObservable(this.showFormer), toObservable(this.retryTrigger)]).pipe(
       switchMap(([orgUid, showFormer]) => {
-        if (!orgUid || !showFormer || !isPlatformBrowser(this.platformId)) {
+        if (!orgUid || !showFormer) {
+          this.formerLoadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+        }
+        // Same SSR guard as `loadRoster`: the server render fetches nothing and keeps the skeleton.
+        if (!isPlatformBrowser(this.platformId)) {
+          return EMPTY;
         }
         this.formerLoadingState.set(true);
         this.formerErrorState.set(false);
@@ -233,6 +240,19 @@ export class AllEmployeesComponent {
     ])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.limit.set(ORG_ALL_EMPLOYEES_INITIAL_LIMIT));
+
+    this.route.queryParamMap
+      .pipe(
+        map((params) => AllEmployeesComponent.parseEmployment(params.get('employment'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((employment) => this.selectedEmployment.set(employment));
+
+    // The foundation list is rebuilt per view, so a foundation picked in one view may not exist in the next.
+    toObservable(this.selectedEmployment)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.selectedFoundationId.set(''));
   }
 
   protected onSort(column: OrgAllEmployeeSortColumn): void {
@@ -357,7 +377,21 @@ export class AllEmployeesComponent {
   private initViewRows(): OrgAllEmployeeRowVm[] {
     // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
     // on each one, so there is neither a client-side synthetic UNION nor an address join here.
-    const rows = [...(this.showCurrent() ? this.response().rows : []), ...(this.showFormer() ? this.formerResponse().rows : [])];
+    // A former employee who still holds Org Lens access also arrives from the live roster as a live-only row; show
+    // them once, as the former row, carrying that access badge.
+    const formerRows = this.showFormer() ? this.formerResponse().rows : [];
+    const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
+    const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
+    for (const row of this.response().rows) {
+      if (row.lfUsername && formerUsernames.has(row.lfUsername) && !row.sources.includes('snowflake')) {
+        liveAccess.set(row.lfUsername, row.accessBadge);
+      }
+    }
+    const currentRows = this.showCurrent() ? this.response().rows.filter((row) => !(row.lfUsername && liveAccess.has(row.lfUsername))) : [];
+    const rows = [
+      ...currentRows,
+      ...formerRows.map((row) => (row.lfUsername && liveAccess.has(row.lfUsername) ? { ...row, accessBadge: liveAccess.get(row.lfUsername) } : row)),
+    ];
     return rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
@@ -427,11 +461,6 @@ export class AllEmployeesComponent {
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT
     );
-  }
-
-  private initialEmployment(): OrgAllEmployeeEmploymentFilter {
-    const value = this.route.snapshot.queryParamMap.get('employment') as OrgAllEmployeeEmploymentFilter | null;
-    return value && VALID_ORG_ALL_EMPLOYEE_EMPLOYMENT.has(value) ? value : DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
   }
 
   private initAriaSortMap(): Record<OrgAllEmployeeSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -647,6 +676,11 @@ export class AllEmployeesComponent {
    */
   private static resolveAccessBadge(row: OrgAllEmployeeRow): OrgAccessBadgeState | null {
     return row.accessBadge ?? null;
+  }
+
+  /** `?employment=` value → filter; anything unknown (or absent) is the default view. */
+  private static parseEmployment(value: string | null): OrgAllEmployeeEmploymentFilter {
+    return ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
   }
 
   private static computeInitials(name: string): string {

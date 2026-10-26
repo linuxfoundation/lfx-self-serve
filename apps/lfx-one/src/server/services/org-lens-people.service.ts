@@ -138,13 +138,14 @@ export class OrgLensPeopleService {
    * Former employees at the account (lfx-self-serve#4311), from ORG_PEOPLE_FORMER. That model is kept
    * apart from ORG_PEOPLE_ALL so the shared people directory — and the reassign pickers that read it —
    * never sees a former employee; only this read opts in. Stats are computed over these rows, so the
-   * tiles match the rows the "Former employees" view shows.
+   * tiles match the rows the "Former employees" view shows. No address is sent for someone who left,
+   * and none stands in for a blank name.
    */
   public async getFormerEmployees(accountId: string): Promise<OrgAllEmployeesResponse> {
     const raw = await this.getFormerEmployeesRaw(accountId);
     const response = toWireResponse({
       accountId,
-      rows: raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow(row), isFormer: true })),
+      rows: raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, EMAIL: null }), isFormer: true })),
       stats: EMPTY_ORG_ALL_EMPLOYEE_STATS,
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     });
@@ -230,6 +231,9 @@ export class OrgLensPeopleService {
       const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(accountId, personKey);
+      }
+      if (await this.isFormerEmployee(accountId, { username: normalizedUsername })) {
+        return UNAVAILABLE_COMPANY_EMAILS;
       }
       return await withOrgCache(
         accountId,
@@ -324,7 +328,7 @@ export class OrgLensPeopleService {
         CDP_MEMBER_ID,
         NAME,
         TITLE,
-        EMAIL,
+        NULL AS EMAIL,
         PHOTO,
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
@@ -357,17 +361,35 @@ export class OrgLensPeopleService {
 
   /**
    * A former employee's company addresses are never read: they left, and the address model covers the
-   * account's current people only. A failed lookup answers `false` so it can never block the address
-   * read for anyone else.
+   * account's current people only. One keyed read per person, cached either way. A failed read
+   * (e.g. before ORG_PEOPLE_FORMER exists) answers `false` and is cached too, so it costs at most one
+   * warehouse round trip per person per TTL and never blocks the address read.
    */
-  private async isFormerEmployee(accountId: string, personKey: string): Promise<boolean> {
-    try {
-      const { rowsRaw } = await this.getFormerEmployeesRaw(accountId);
-      return rowsRaw.some((row) => row.PERSON_KEY === personKey);
-    } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_former_lookup', 'former employee lookup failed', { err: error });
-      return false;
+  private async isFormerEmployee(accountId: string, identity: { personKey: string } | { username: string }): Promise<boolean> {
+    const byPersonKey = 'personKey' in identity;
+    const fetcher = async (): Promise<{ isFormer: boolean }> => {
+      try {
+        const result = await this.snowflakeService.execute<{ IS_FORMER: number }>(
+          `
+            SELECT 1 AS IS_FORMER
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_FORMER
+            WHERE ACCOUNT_ID = ? AND ${byPersonKey ? 'PERSON_KEY = ?' : 'LOWER(TRIM(LF_USERNAME)) = ?'}
+            LIMIT 1
+          `,
+          [accountId, byPersonKey ? identity.personKey : identity.username]
+        );
+        return { isFormer: result.rows.length > 0 };
+      } catch (error) {
+        logger.info(undefined, 'get_org_lens_people_former_lookup', 'former employee lookup failed', { err: error });
+        return { isFormer: false };
+      }
+    };
+    if (byPersonKey && !isFilterSafeIdentifier(identity.personKey)) {
+      return (await fetcher()).isFormer;
     }
+    const key = byPersonKey ? `people-former-check:${identity.personKey}` : `people-former-check:username:${usernameDigest(identity.username)}`;
+    const { isFormer } = await withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck);
+    return isFormer;
   }
 
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
@@ -514,7 +536,7 @@ export class OrgLensPeopleService {
    * short-circuit to `unavailable` before the cache: not available, never "none on record".
    */
   private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (personKey.startsWith('cdp:') || (await this.isFormerEmployee(accountId, personKey))) {
+    if (personKey.startsWith('cdp:') || (await this.isFormerEmployee(accountId, { personKey }))) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
@@ -826,6 +848,10 @@ function isEmployeeActivityRaw(value: unknown): boolean {
 function isFormerEmployeesRaw(value: unknown): boolean {
   const v = value as { rowsRaw?: unknown; foundationRaw?: unknown } | null;
   return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.foundationRaw);
+}
+
+function isFormerCheck(value: unknown): boolean {
+  return !!value && typeof value === 'object' && 'isFormer' in value && typeof value.isFormer === 'boolean';
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */

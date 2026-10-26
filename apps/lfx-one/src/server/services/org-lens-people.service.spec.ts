@@ -211,7 +211,8 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    expect(cacheValues.size).toBe(4);
+    // Per account: person-key lookup, former check, and the address result (both reads cache their answer).
+    expect(cacheValues.size).toBe(6);
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
@@ -423,7 +424,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       `);
       database
         .prepare('INSERT INTO ORG_PEOPLE_FORMER VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(ACCOUNT, formerKey, formerKey, 'leftuser', null, 'Left Dev', null, null, null, 0, 0, 0, 4, 0, 0, '["foundation-two"]');
+        .run(ACCOUNT, formerKey, formerKey, 'leftuser', null, '[[Unknown]]', null, 'left@personal.example', null, 0, 0, 0, 4, 0, 0, '["foundation-two"]');
       database
         .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(ACCOUNT, formerKey, 'project-two', 'Project Two', 'foundation-two', 'Foundation Two', 4, 0, '2026-05-01');
@@ -432,15 +433,24 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('returns former employees flagged as former, with tiles counted over them and the foundations of their code', async () => {
       const response = await service.getFormerEmployees(ACCOUNT);
 
-      expect(response.rows).toEqual([expect.objectContaining({ personKey: formerKey, name: 'Left Dev', commitsCount: 4, isFormer: true })]);
+      expect(response.rows).toEqual([expect.objectContaining({ personKey: formerKey, commitsCount: 4, isFormer: true })]);
       expect(response.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
       expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
     });
 
-    it('answers unavailable for a former employee even when addresses are on record', async () => {
+    it('never sends an address for a former employee, not even as the fallback for a placeholder name', async () => {
+      const [formerRow] = (await service.getFormerEmployees(ACCOUNT)).rows;
+
+      expect(formerRow?.email).toBeNull();
+      expect(formerRow?.name).toBe('Unknown member');
+      expect(JSON.stringify(formerRow)).not.toContain('left@personal.example');
+    });
+
+    it('answers unavailable for a former employee by person key and by LF username, even when addresses are on record', async () => {
       addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
 
       expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
+      expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'LeftUser')).toEqual(UNAVAILABLE);
     });
   });
 
