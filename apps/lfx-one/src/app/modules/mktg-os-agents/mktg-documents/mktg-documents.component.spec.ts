@@ -429,7 +429,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
     expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
-    if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Paused — the run needs input');
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
       expect(store.listDocuments).toHaveBeenCalledTimes(1);
@@ -599,7 +599,8 @@ describe('MktgDocumentsComponent', () => {
     await render();
     vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
     expect(store.listDocuments).toHaveBeenCalledTimes(1);
-    expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Paused — the run needs input');
+    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Waiting for your answers');
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {

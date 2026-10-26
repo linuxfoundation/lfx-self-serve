@@ -44,6 +44,21 @@ test('shared Member document has linked parents and New run drops asset-only URL
   await page.screenshot({ path: info.outputPath('member-document-back.png'), fullPage: true });
 });
 
+test('Sources and Method use plain-English connection labels for legacy envelopes', async ({ page }, info) => {
+  await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+  const view = member360Revision();
+  if (!view.member360) throw new Error('Member 360 fixture is missing');
+  view.member360.tabs.summary.data_coverage.sources_unavailable = ['CRM (not wired)', 'Web research'];
+  view.member360.content_sha256 = createHash('sha256').update(JSON.stringify(view.member360.tabs)).digest('hex');
+  await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  await expect(page.getByTestId('member-360-result')).toContainText('CRM (not connected yet), Web research');
+  await page.getByTestId('member-360-method-toggle').click();
+  await expect(page.getByTestId('member-360-method')).toContainText('hubspot: not connected yet');
+  await expect(page.getByTestId('member-360-method')).not.toContainText('not_wired');
+  await page.screenshot({ path: info.outputPath('plain-source-labels.png'), fullPage: true });
+});
+
 test('ranking filters push shareable URLs and Back restores each preceding view', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);

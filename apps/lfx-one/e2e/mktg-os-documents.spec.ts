@@ -28,7 +28,7 @@ test.describe('Marketing OS current revisions', () => {
 
   for (const [state, text] of [
     ['writing', 'Writing the document'],
-    ['questions', 'Waiting for your answers'],
+    ['questions', 'Paused — the run needs input'],
     ['storing', 'Storing the revision'],
     ['failed', 'A previous run did not finish'],
   ] as const) {

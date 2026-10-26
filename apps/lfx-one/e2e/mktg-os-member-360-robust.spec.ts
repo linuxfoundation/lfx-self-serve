@@ -164,9 +164,11 @@ test('evidence and method disclosures are keyboard accessible', async ({ page },
   const heat = page.getByRole('img', { name: /no data/ }).first();
   await heat.focus();
   await expect(heat).toBeFocused();
-  await expect(heat.locator('span')).toBeVisible();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toHaveText((await heat.getAttribute('aria-label')) ?? '');
+  expect(await tooltip.evaluate((element) => element.parentElement === document.body)).toBe(true);
   await page.keyboard.press('Escape');
-  await expect(heat.locator('span')).toBeHidden();
+  await expect(tooltip).toHaveCount(0);
   await expect(heat).toBeFocused();
   const evidence = page.getByTestId('member-360-evidence');
   await evidence.locator('summary').focus();
