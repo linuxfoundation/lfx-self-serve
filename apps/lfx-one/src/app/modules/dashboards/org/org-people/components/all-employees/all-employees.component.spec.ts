@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
@@ -17,6 +17,7 @@ import { AllEmployeesService } from '../../services/all-employees.service';
 import { AllEmployeesComponent } from './all-employees.component';
 
 const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
+const OTHER_ORG = 'other-org-account-id';
 
 function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
   return {
@@ -42,8 +43,8 @@ function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> =
   };
 }
 
-function response(rows: OrgAllEmployeeRow[], activeInOss: number): OrgAllEmployeesResponse {
-  return { accountId: ORG, rows, stats: { ...EMPTY_ORG_ALL_EMPLOYEE_STATS, activeInOss }, foundations: [] };
+function response(rows: OrgAllEmployeeRow[], activeInOss: number, accountId: string = ORG): OrgAllEmployeesResponse {
+  return { accountId, rows, stats: { ...EMPTY_ORG_ALL_EMPLOYEE_STATS, activeInOss }, foundations: [] };
 }
 
 describe('AllEmployeesComponent — Snowflake and live merge in parallel', () => {
@@ -54,6 +55,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let getAllEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
   let former$: Subject<OrgAllEmployeesResponse>;
   let getFormerEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const rowKeys = (): string[] =>
@@ -74,7 +76,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useValue: platformId },
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: AccountContextService, useValue: { selectedAccount } },
         { provide: AllEmployeesService, useValue: { getAllEmployees, getFormerEmployees, getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
@@ -93,6 +95,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     getAllEmployees = vi.fn(() => snowflake$);
     former$ = new Subject();
     getFormerEmployees = vi.fn(() => former$);
+    selectedAccount = signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME });
     // Failure paths log before falling back; keep the expected noise out of the test output.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -423,6 +426,70 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(formerTags()).toEqual([]);
       expect(el().querySelector('[data-testid="org-people-all-employees-row-p-9"]')?.textContent).toContain('4 commits');
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+
+    it('never joins a key contact a pending invite folded into: the key-contact row and the former row both stay, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace-kc', 'Grace Hopper', { lfUsername: 'grace', sources: ['keyContact', 'access'], accessBadge: 'invited' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-grace-kc', 'org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+    });
+
+    it("never joins the previous account's live roster to the next account's former employees during a switch", async () => {
+      await mount('browser', '/?employment=former');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['access'], accessBadge: 'admin' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+
+      // The next account's reads: its live roster is still pending while its former roster lands.
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      former$ = new Subject();
+      selectedAccount.set({ uid: OTHER_ORG, accountName: 'Other Org' });
+      await settle();
+      former$.next(
+        response(
+          [
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 }),
+            row('p-8', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 2 }),
+          ],
+          2,
+          OTHER_ORG
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG);
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-8', 'org-people-all-employees-row-p-9']);
+      expect(formerTags().sort()).toEqual(['org-people-all-employees-row-p-8-former', 'org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-8"]')?.textContent).not.toContain('Admin');
     });
   });
 

@@ -364,12 +364,14 @@ export class AllEmployeesComponent {
 
   /**
    * Current and former rows for the selected view, reconciled by LF username. Someone in the former roster can
-   * also arrive from the live roster before the next warehouse build. Only a seat or an Org Lens access principal
-   * carries a verified username; a key contact's username is resolved from its address, so — as in the server
-   * merge — a key-contact-only row is never joined on. A key contact the server already merged into a verified
-   * principal (`['access', 'keyContact']`) is joined through that principal.
-   * - With a live seat or key-contact role, they are current again: one row, the former row's warehouse activity
-   *   plus the live sources, seats and access badge, untagged.
+   * also arrive from the live roster before the next warehouse build. A live row's username is only verified when
+   * the row was created by a seat or an Org Lens access principal. The server merges seats, then key contacts,
+   * then access, so the first source is the creating one. A row created by a key contact carries member-service's
+   * resolution of the contact's address, which the server never joins on, even after a pending invite for that
+   * address folds into it. Such rows are left alone here too. A key contact absorbed into a verified row is
+   * joined through that row.
+   * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
+   *   activity plus the live sources, seats and access badge, untagged.
    * - With only Org Lens access, they are still former: the former row, carrying the access badge.
    * Rows are only reconciled once both reads belong to the selected account, so a previous account's live roster
    * never joins the next account's former employees.
@@ -384,8 +386,9 @@ export class AllEmployeesComponent {
     const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
     const folded = new Set<OrgAllEmployeeRow>();
     for (const row of liveRows) {
-      if (!row.lfUsername || !formerUsernames.has(row.lfUsername) || row.sources.includes('snowflake')) continue;
-      if (!row.sources.some((source) => source === 'access' || source === 'board' || source === 'committee')) continue;
+      if (!row.lfUsername || !formerUsernames.has(row.lfUsername)) continue;
+      const [createdBy] = row.sources;
+      if (createdBy !== 'board' && createdBy !== 'committee' && createdBy !== 'access') continue;
       if (row.sources.some((source) => source === 'board' || source === 'committee' || source === 'keyContact')) {
         liveRoles.set(row.lfUsername, row);
       } else {
