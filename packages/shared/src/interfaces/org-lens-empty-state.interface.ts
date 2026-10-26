@@ -100,6 +100,9 @@ export interface OrgLensEmployerAffiliation {
    * Display name of a job the caller holds *now* (a work-history entry with no end date); `null` when
    * they have none, a profile of only past jobs included — someone between jobs is not affiliated.
    * With several concurrent jobs it is the LF-member one where there is one, else the first.
+   *
+   * Always as the caller's own profile spells it, never as the matched Salesforce account spells it:
+   * it is read back to them in their own sentence, and the match is deliberately looser than equality.
    */
   employerName: string | null;
   /** Salesforce account `employerName` resolved to, or `null` when no LF account matches the name. */

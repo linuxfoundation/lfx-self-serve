@@ -163,6 +163,29 @@ describe('OrgLensEmployerAffiliationService', () => {
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['ACME']);
   });
 
+  // `employerName` is read back to the caller in their own sentence, so it must not switch to the
+  // Salesforce spelling on one answer and the profile spelling on another.
+  it('reports the profile spelling, not the matched account name', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('bank pekao'), experience('the linux foundation')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-lf', ACCOUNT_NAME: 'The Linux Foundation, Inc.', ACTIVE_MEMBERSHIP_COUNT: 4 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
+      employerName: 'the linux foundation',
+      accountId: 'acc-lf',
+      hasActiveMembership: true,
+    });
+  });
+
+  it('keeps the profile spelling for the non-member answer too', async () => {
+    getWorkExperiencesForUser.mockResolvedValue([experience('bank pekao')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bp', ACCOUNT_NAME: 'Bank Pekao S.A.', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
+      employerName: 'bank pekao',
+      accountId: 'acc-bp',
+    });
+  });
+
   // An exact-name miss would state "not a member" about a company that is one. A trailing legal form
   // is the one part of a company name routinely written on one side and omitted on the other.
   it('matches a member account whose name carries a legal-form suffix the profile omits', async () => {

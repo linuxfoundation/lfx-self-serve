@@ -128,7 +128,12 @@ export class OrgLensEmployerAffiliationService {
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
     const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
-    const employerName = member ? member.ACCOUNT_NAME : employerNames[0];
+    // Always the caller's own spelling, never the account's: `employerName` is read back to them in
+    // their own sentence, and a field that means the profile name on one answer and the Salesforce
+    // name on another is a contract the next consumer cannot rely on. The member row is mapped back
+    // through the key it was found by.
+    const memberKey = member ? employerMatchKey(member.ACCOUNT_NAME) : null;
+    const employerName = (memberKey && employerNames.find((name) => employerMatchKey(name) === memberKey)) || employerNames[0];
 
     logger.debug(req, 'get_employer_affiliation', 'Resolved employer membership', {
       current_employer_count: employerNames.length,
