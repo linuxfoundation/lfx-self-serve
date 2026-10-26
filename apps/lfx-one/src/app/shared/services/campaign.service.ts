@@ -382,7 +382,15 @@ export class CampaignService {
       (carry, platform) => carry.append('platforms', platform),
       new HttpParams().set('project', projectSlug).set('brief_id', briefId)
     );
-    return this.http.get<CreativeAssetPlan>('/api/campaigns/brief/creative-assets/plan', { params });
+    // Logged and rethrown, never defaulted: a plan with no gaps is exactly how a launch-ready
+    // library reads, so a defaulted empty plan would state the opposite of what happened. The
+    // caller renders the failure as such (frontend-checklist §13).
+    return this.http.get<CreativeAssetPlan>('/api/campaigns/brief/creative-assets/plan', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the creative asset plan:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {

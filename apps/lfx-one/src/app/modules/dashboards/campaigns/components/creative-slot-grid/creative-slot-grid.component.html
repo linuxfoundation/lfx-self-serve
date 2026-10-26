@@ -17,6 +17,16 @@
     </button>
   </div>
 
+  <!-- Always mounted, like the upload and save status regions on the tab: a live region inserted
+       with its text already present is not reliably announced — the region has to exist first and
+       then have its CONTENTS change, so no placement inside the @if branches below would work.
+
+       Polite, not `role="alert"`, on every arm including the failed read: this panel reports on
+       the library and blocks nothing, so even a refused read leaves submit exactly as it was.
+       Interrupting an operator mid-field for it would be the wrong urgency. The visible lines
+       below carry no role of their own, or the same sentence would be announced twice. -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-live">{{ liveMessage() }}</div>
+
   @if (state().status === 'loading') {
     <p class="text-xs text-gray-500" data-testid="creative-slot-grid-loading">Checking which slots this library covers…</p>
   } @else if (state().status === 'error') {

@@ -274,7 +274,12 @@ export interface CreativeSlotCoverageRow {
   reason: string;
   status: 'filled' | 'short' | 'missing';
   statusLabel: string;
-  /** `filled` against the slot's minimum, or empty for a gap that names no slot. */
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in.
+   */
   countText: string;
 }
 

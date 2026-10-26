@@ -19,7 +19,7 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
 const PLATFORM_ORDER: readonly string[] = CAMPAIGN_PLATFORMS.map((platform) => platform.id);
 
 /** Open rows first: what an operator still has to do is the reason this grid exists. */
-const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> = { missing: 0, short: 1, filled: 2 };
+const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> = { missing: 0, short: 1, filled: 2 } as const;
 
 /**
  * Which of a brief's stored images fill which platform image slots, and what is still missing.
@@ -42,11 +42,13 @@ const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> 
  */
 @Component({
   selector: 'lfx-creative-slot-grid',
-  imports: [],
   templateUrl: './creative-slot-grid.component.html',
   styleUrl: './creative-slot-grid.component.scss',
 })
 export class CreativeSlotGridComponent {
+  // === Injections ===
+  private readonly campaignService = inject(CampaignService);
+
   // === Inputs ===
   public readonly projectSlug = input('');
   /** Empty until the brief is saved — campaign-service has nothing to plan against before then. */
@@ -56,11 +58,8 @@ export class CreativeSlotGridComponent {
    * so a platform the service publishes no slot rules for can be named as such.
    */
   public readonly platforms = input<readonly CampaignPlatform[]>([]);
-  /** Bumped by the host when the library changes (an upload, a delete), to re-read the plan. */
+  /** Bumped by the host when an upload adds an asset to the library, to re-read the plan. */
   public readonly reloadToken = input(0);
-
-  // === Injections ===
-  private readonly campaignService = inject(CampaignService);
 
   // === Signals ===
   /** Bumped by Refresh. Part of the request identity, so each press is one more read. */
@@ -71,6 +70,7 @@ export class CreativeSlotGridComponent {
   protected readonly groups: Signal<CreativeSlotCoverageGroup[]> = this.initGroups();
   protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
+  protected readonly liveMessage: Signal<string> = this.initLiveMessage();
 
   // === Protected Methods ===
   protected refresh(): void {
@@ -128,7 +128,7 @@ export class CreativeSlotGridComponent {
               of<CreativeSlotCoverageState>({
                 status: 'error',
                 plan: null,
-                message: extractErrorMessage(error, 'The image slot coverage could not be read.'),
+                message: extractErrorMessage(error, 'Failed to load image slot coverage'),
               })
             ),
             startWith<CreativeSlotCoverageState>({ status: 'loading', plan: null, message: '' })
@@ -156,22 +156,25 @@ export class CreativeSlotGridComponent {
       }
 
       // Only gaps that NAME a slot can be folded into an assignment row. A gap with no `slot_key`
-      // is a requirement spanning several slots and keeps a row of its own.
+      // is a requirement spanning several slots and keeps a row of its own. Upstream omits the
+      // field for those rather than sending an empty one, so absent and empty are normalized to
+      // the same thing once here instead of being re-tested in three different shapes below.
       const slotGaps = new Map<string, CreativeSlotGap>();
       for (const gap of plan.gaps) {
-        if (gap.slotKey !== undefined && gap.slotKey !== '' && !slotGaps.has(gap.slotKey)) {
-          slotGaps.set(gap.slotKey, gap);
+        const slotKey = gap.slotKey ?? '';
+        if (slotKey !== '' && !slotGaps.has(slotKey)) {
+          slotGaps.set(slotKey, gap);
         }
       }
 
       const groups = new Map<string, CreativeSlotCoverageGroup>();
-      const folded = new Set<string>();
+      // Every row key already pushed. `track row.key` in the template needs these unique, so a key
+      // is claimed when its row is pushed rather than only when an assignment folded a gap away.
+      const emitted = new Set<string>();
 
       for (const assignment of plan.assignments) {
         const gap = slotGaps.get(assignment.slotKey);
-        if (gap) {
-          folded.add(assignment.slotKey);
-        }
+        emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
         this.push(groups, assignment.platform, assignment.channel, {
           key: assignment.slotKey,
@@ -187,12 +190,15 @@ export class CreativeSlotGridComponent {
       }
 
       for (const gap of plan.gaps) {
-        if (gap.slotKey !== undefined && folded.has(gap.slotKey)) {
+        const slotKey = gap.slotKey ?? '';
+        // A cross-slot rule has no slot to key on; its label is what distinguishes it.
+        const key = slotKey === '' ? `${gap.platform}/${gap.channel ?? ''}/${gap.label}` : slotKey;
+        if (emitted.has(key)) {
           continue;
         }
+        emitted.add(key);
         this.push(groups, gap.platform, gap.channel, {
-          // A cross-slot rule has no slot to key on; its label is what distinguishes it.
-          key: gap.slotKey ?? `${gap.platform}/${gap.channel ?? ''}/${gap.label}`,
+          key,
           label: gap.label,
           requirement: '',
           filled: 0,
@@ -201,7 +207,7 @@ export class CreativeSlotGridComponent {
           status: 'missing',
           statusLabel: 'Missing',
           // Only a named slot can state a count; a cross-slot rule has no single slot to count in.
-          countText: gap.slotKey === undefined || gap.slotKey === '' ? '' : `0 of ${gap.need} needed`,
+          countText: slotKey === '' ? '' : `0 of ${gap.need} needed`,
         });
       }
 
@@ -232,6 +238,40 @@ export class CreativeSlotGridComponent {
       return this.platforms()
         .filter((platform) => !planned.has(platform))
         .map((platform) => this.platformLabel(platform));
+    });
+  }
+
+  /**
+   * What a screen reader hears each time the answer changes.
+   *
+   * The ANSWER is announced, not just the wait: the read is asynchronous and its outcome — covered,
+   * still short, or nothing known — is the whole reason the panel is on the tab. An empty plan is
+   * named as "nothing to report" rather than as coverage, for the same reason the visible branch
+   * does: a plan with no gaps is also exactly how a launch-ready library reads.
+   */
+  private initLiveMessage(): Signal<string> {
+    return computed(() => {
+      const state = this.state();
+      if (state.status === 'loading') {
+        return 'Checking which image slots this library covers.';
+      }
+      if (state.status === 'error') {
+        return state.message;
+      }
+      if (state.status !== 'ready') {
+        return '';
+      }
+      if (this.groups().length === 0) {
+        return 'No image slots to report for the platforms you picked.';
+      }
+      const open = this.openCount();
+      if (open === 0) {
+        return 'Every image slot below is covered.';
+      }
+      // Worded as the visible count line is, so the two cannot drift into saying different things
+      // about the same number. "an image" is the floor, not the total: a slot that is PARTLY
+      // covered is counted here too, and what it is short of is one more image.
+      return open === 1 ? '1 image slot still needs an image.' : `${open} image slots still need an image.`;
     });
   }
 

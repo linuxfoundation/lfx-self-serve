@@ -194,7 +194,68 @@ describe('CreativeSlotGridComponent', () => {
   it('falls back to its own wording when the service fails', async () => {
     await build(new HttpErrorResponse({ status: 503, error: { message: 'dial tcp: connection refused' } }));
     render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
-    expect(text('creative-slot-grid-error')).toBe('The image slot coverage could not be read.');
+    expect(text('creative-slot-grid-error')).toBe('Failed to load image slot coverage');
+  });
+
+  // A requirement spanning several slots carries NO `slot_key` upstream — Google's reciprocal
+  // landscape-or-square pair belongs to neither member alone. It keeps a row of its own, keyed on
+  // its label, and states no count because there is no single slot to count in.
+  it('gives a gap that names no slot its own row with no count', async () => {
+    await build({
+      ...PLAN,
+      assignments: [],
+      gaps: [
+        { platform: 'google-ads', channel: 'performance-max', label: 'Landscape or square', need: 1, reason: 'Either shape satisfies this.' },
+        { platform: 'google-ads', channel: 'performance-max', label: 'Portrait or square', need: 1, reason: 'Either shape satisfies this.' },
+      ],
+    });
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+
+    const rows = fixture.nativeElement.querySelectorAll('[data-testid^="creative-slot-row-"]');
+    expect(rows.length).toBe(2);
+    const row = text('creative-slot-row-google-ads/performance-max/Landscape or square');
+    expect(row).toContain('Missing');
+    expect(row).toContain('Either shape satisfies this.');
+    expect(row).not.toContain('needed');
+  });
+
+  // `@for (row of group.rows; track row.key)` raises NG0955 on a repeated key, so two gaps that
+  // name the same slot must collapse to one row rather than being emitted twice.
+  it('renders one row when two gaps name the same slot', async () => {
+    await build({
+      ...PLAN,
+      assignments: [],
+      gaps: [PLAN.gaps[1], { ...PLAN.gaps[1], need: 2, reason: 'A second gap for the same slot.' }],
+    });
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="creative-slot-row-google-ads/performance-max/portrait_image"]').length).toBe(1);
+  });
+
+  // The read is asynchronous and its OUTCOME is the point of the panel, so the answer is announced,
+  // not just the wait.
+  it('announces the outcome in a live region', () => {
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+    const live = q('creative-slot-grid-live');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+    expect(text('creative-slot-grid-live')).toBe('2 image slots still need an image.');
+  });
+
+  // An empty plan is named as "nothing to report", never as coverage: a plan with no gaps is also
+  // exactly how a launch-ready library reads.
+  it('does not announce an unplanned selection as covered', async () => {
+    await build(EMPTY_PLAN);
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['reddit-ads'] });
+    expect(text('creative-slot-grid-live')).toBe('No image slots to report for the platforms you picked.');
+  });
+
+  it('re-reads when Refresh is pressed', () => {
+    render({ projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] });
+    expect(getCreativeAssetPlan).toHaveBeenCalledTimes(1);
+
+    (q('creative-slot-grid-refresh') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(getCreativeAssetPlan).toHaveBeenCalledTimes(2);
   });
 
   it('re-reads when the host bumps the reload token', () => {
