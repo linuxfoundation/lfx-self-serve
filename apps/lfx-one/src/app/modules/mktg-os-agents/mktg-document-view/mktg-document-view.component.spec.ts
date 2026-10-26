@@ -926,6 +926,13 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).toHaveBeenCalledWith(PROJECT.uid, 'aeo-geo', 'run-012345678901234567890123', OLDER.id);
     });
 
+    it('offers Check again after a stored report revision read fails transiently', async () => {
+      store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('The report could not be loaded. Check again.');
+      expect(query('mktg-document-view-retry')?.textContent).toContain('Check again');
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+    });
     it('preserves the missing-document code in the audit error copy without Check again', async () => {
       store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })));
       await render('/documents/aeo-geo/run-012345678901234567890123');

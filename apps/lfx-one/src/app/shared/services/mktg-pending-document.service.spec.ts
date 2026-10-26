@@ -79,10 +79,11 @@ describe('MktgPendingDocumentService', () => {
       answers,
     });
   });
-  it.each(['refused', 'bad-request', 'timeout'])('handles a writing %s with terminal cleanup or resumable timeout', (failure) => {
+  it.each(['refused', 'failed', 'bad-request', 'timeout'])('handles a writing %s with terminal cleanup or resumable timeout', (failure) => {
     service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }).subscribe();
     service.markWriting(run());
     if (failure === 'refused') post.mockReturnValue(of({ status: 'refused', reply: 'x'.repeat(AEO_GEO_REFUSAL_MAX_CHARS + 100) }));
+    else if (failure === 'failed') post.mockReturnValue(of({ status: 'failed', failureText: 'The audit ended without a report.' }));
     else if (failure === 'bad-request') post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
     else post.mockReturnValue(NEVER);
     const error = vi.fn();
@@ -92,6 +93,11 @@ describe('MktgPendingDocumentService', () => {
     if (failure === 'refused') {
       expect(error.mock.calls[0][0]).toBeInstanceOf(MktgRunRefusalError);
       expect(error.mock.calls[0][0].message).toHaveLength(AEO_GEO_REFUSAL_MAX_CHARS);
+    }
+    if (failure === 'failed') {
+      expect(error.mock.calls[0][0]).toBeInstanceOf(MktgRunRefusalError);
+      expect(error.mock.calls[0][0].message).toBe('The audit ended without a report.');
+      expect(post).toHaveBeenCalledTimes(2); // Start + first poll only, despite advancing past the deadline.
     }
     const reloaded = TestBed.runInInjectionContext(() => new MktgPendingDocumentService());
     if (failure === 'timeout') {

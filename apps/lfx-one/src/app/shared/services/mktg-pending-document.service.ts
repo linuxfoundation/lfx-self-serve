@@ -225,9 +225,13 @@ export class MktgPendingDocumentService {
     return this.poll(run, intake).pipe(
       // Activity is optional on old runs and the first poll; storage remains the completion gate.
       tap((result) => {
-        if (result.status === 'refused') {
+        if (result.status === 'refused' || result.status === 'failed') {
           this.clear(run.projectUid, run.documentId);
-          throw new MktgRunRefusalError(result.reply ?? '');
+          throw new MktgRunRefusalError(
+            result.status === 'failed'
+              ? result.failure?.reason || result.failureText || 'The audit ended without a report. Start a new audit.'
+              : (result.reply ?? '')
+          );
         }
         if (intake.liveActivity && result.activity) {
           onActivity?.(result.activity);

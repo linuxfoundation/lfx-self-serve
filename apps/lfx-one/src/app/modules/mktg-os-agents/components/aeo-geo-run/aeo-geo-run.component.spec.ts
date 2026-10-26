@@ -148,6 +148,27 @@ describe('AeoGeoRunComponent', () => {
       expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { mode: null } })
     );
   });
+  it('recovers a cancelled document handoff without discarding its writing capability', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['busy']()).toBe(false);
+    expect(query('mktg-aeo-run-error').textContent).toContain('The report page could not be opened.');
+    expect(query('aeo-geo-open-document').getAttribute('href')).toContain(`/documents/aeo-geo/${run().documentId}`);
+    expect(clear).not.toHaveBeenCalled();
+  });
+  it('ends a failed run with the supplied failure reason', async () => {
+    poll.mockReturnValue(of({ status: 'failed', failureText: 'Synthetic audit failure.' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-aeo-run-error').textContent).toContain('Synthetic audit failure.');
+    expect(clear).toHaveBeenCalledWith('project-1', run().documentId);
+    expect(fixture.componentInstance['busy']()).toBe(false);
+  });
   it('stays on the run page for questions and sends answers before navigating to the document', async () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());

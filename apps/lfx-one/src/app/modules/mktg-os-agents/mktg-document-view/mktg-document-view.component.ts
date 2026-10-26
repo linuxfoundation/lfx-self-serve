@@ -1369,13 +1369,17 @@ export class MktgDocumentViewComponent {
         console.error('Failed to load the audit document', error);
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         const refused = error instanceof MktgRunRefusalError;
-        this.retryGenerating.set((this.generating() || canResume) && !refused && (status === undefined || isTransientHttpError(error)));
+        this.retryGenerating.set(!refused && (status === undefined || isTransientHttpError(error)));
         if (refused) {
           this.errorText.set(error.message);
         } else if (error instanceof TimeoutError) {
           this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
         } else if (this.retryGenerating()) {
-          this.errorText.set('The report has not been stored yet. Try checking again; starting a new audit creates a separate report.');
+          this.errorText.set(
+            !this.generating() && !canResume
+              ? 'The report could not be loaded. Check again.'
+              : 'The report has not been stored yet. Try checking again; starting a new audit creates a separate report.'
+          );
         } else {
           this.errorText.set(this.loadErrorText(status ?? 0, error instanceof HttpErrorResponse ? error.error?.code : undefined));
         }

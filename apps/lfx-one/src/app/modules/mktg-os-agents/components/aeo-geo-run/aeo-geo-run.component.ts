@@ -75,6 +75,7 @@ export class AeoGeoRunComponent {
   protected readonly writer = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly documentLink = signal<string[] | null>(null);
   protected readonly previousError = signal('');
   protected readonly previousLoading = signal(true);
   protected readonly runs = signal<MktgRevisionResponse[]>([]);
@@ -139,6 +140,7 @@ export class AeoGeoRunComponent {
           this.runs.set([]);
           this.runCount.set(0);
           this.error.set('');
+          this.documentLink.set(null);
           this.previousError.set('');
           this.previousLoading.set(true);
           if (!context || !sub) {
@@ -218,6 +220,7 @@ export class AeoGeoRunComponent {
     if (stale) this.pending.clear(stale.projectUid, stale.documentId);
     this.busy.set(true);
     this.error.set('');
+    this.documentLink.set(null);
     this.answerValues.set({});
     this.questionDraft.set(null);
     this.questions.set([]);
@@ -248,6 +251,7 @@ export class AeoGeoRunComponent {
     this.questionDraft.set(null);
     this.busy.set(false);
     this.error.set('');
+    this.documentLink.set(null);
   }
 
   protected onQuestionDraft(draft: MktgRunQuestionDraft): void {
@@ -353,6 +357,8 @@ export class AeoGeoRunComponent {
       this.busy.set(false);
     } else if (result.status === 'refused') {
       this.failRun(run, result.reply || 'The agent did not produce a report. Start a new audit.');
+    } else if (result.status === 'failed') {
+      this.failRun(run, result.failure?.reason || result.failureText || 'The audit ended without a report. Start a new audit.');
     } else if (result.status === 'ready') {
       this.openDocument(run);
     } else if (result.status !== 'pending') {
@@ -374,10 +380,26 @@ export class AeoGeoRunComponent {
     if (!type || !this.pending.markWriting(run)) {
       return;
     }
-    this.router.navigate(['..', 'documents', type.agentKey, run.documentId], {
+    const destination = ['..', 'documents', type.agentKey, run.documentId];
+    this.documentLink.set(destination);
+    const navigation = this.router.navigate(destination, {
       relativeTo: this.route,
       queryParamsHandling: 'merge',
       queryParams: { mode: null },
     });
+    void navigation.then(
+      (ok) => {
+        if (!ok) this.onOpenDocumentFailed();
+      },
+      (error: unknown) => {
+        console.error('Failed to open the audit document', error);
+        this.onOpenDocumentFailed();
+      }
+    );
+  }
+
+  private onOpenDocumentFailed(): void {
+    this.busy.set(false);
+    this.error.set('The report page could not be opened. Open it from Documents or try again.');
   }
 }
