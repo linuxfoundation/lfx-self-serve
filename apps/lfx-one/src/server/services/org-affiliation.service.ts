@@ -130,8 +130,9 @@ export class OrgAffiliationService {
    *
    * An employer with no crowd.dev id is unknowable here, not absent, so it answers `failed`: the
    * caller may well work for a member company this lookup simply cannot reach, and the two must not
-   * be conflated. An employer whose id matches no row IS an answer — that organization has no LF
-   * account, so it is not a member.
+   * be conflated. An employer whose id matches no row is unknowable for the same reason — the view
+   * is account-grain and holds only each account's representative org — so it answers `failed` too,
+   * never "not a member".
    */
   private async resolve(req: Request, username: string): Promise<OrgLensAffiliationVerdict> {
     const experiences = await this.cdp.getWorkExperiencesForKnownUser(req, username);
@@ -151,7 +152,18 @@ export class OrgAffiliationService {
 
     try {
       const account = await this.organizations.getOrgLensAccountContextByCdevOrgId(employer.id);
-      return { hasEmployer: true, employerIsMember: account?.isMember === true, lookup: 'ok' };
+      if (!account) {
+        // A miss is NOT proof of non-membership (PR #4318 review). `ORG_LENS_ACCOUNT_CONTEXT` is
+        // account-grain: its upstream keeps one representative crowd.dev org per Salesforce account
+        // (`_silver_dim_cdev_org_to_account_id`, `account_rank = 1`), so an employer that is a
+        // company's second mapped org is absent from the view even though its account IS a member.
+        // Saying "not a member" there would assert something we cannot know, so this answers unknown
+        // and the caller keeps today's copy. Closing the gap needs an org-keyed consumer view over
+        // `_silver_dim_cdev_org_to_account_id_all`, which has no platinum consumer view yet.
+        logger.debug(req, ORG_AFFILIATION_OPERATION, 'Employer not found in the account-grain mapping; membership is unknown, not absent');
+        return ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN;
+      }
+      return { hasEmployer: true, employerIsMember: account.isMember === true, lookup: 'ok' };
     } catch (error) {
       // The employer is already known, so report that much: `ORG_AFFILIATION_UNKNOWN` would log `hasEmployer: false`
       // for a caller whose employer we had in hand, which misreads as "no affiliation" during triage.

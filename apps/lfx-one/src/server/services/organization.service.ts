@@ -991,8 +991,17 @@ export class OrganizationService {
   }
 
   /**
-   * #4225 — the LF account behind a crowd.dev (CDP) organization id, or `null` when that organization
-   * has no LF account at all. The reverse of {@link getOrgLensAccountContext}: the caller here holds
+   * #4225 — the LF account behind a crowd.dev (CDP) organization id, or `null` when this view does not
+   * list that organization.
+   *
+   * KNOWN GAP: `null` is not proof that the organization has no LF account. This view is
+   * account-grain — its upstream `_silver_dim_cdev_org_to_account_id` keeps one representative
+   * crowd.dev org per Salesforce account (`account_rank = 1`) — so a company's other mapped orgs are
+   * absent even when the account IS a member. Callers must treat a miss as unknown, never as
+   * "not a member". `_silver_dim_cdev_org_to_account_id_all` holds every mapping and is the basis for
+   * the org-keyed consumer view that would close this; none exists yet.
+   *
+   * The reverse of {@link getOrgLensAccountContext}: the caller here holds
    * no Org Lens grant, so the only identifier they can be described by is the CDP organization on
    * their own work history, and the one fact wanted is `isMember`.
    *

@@ -82,11 +82,14 @@ describe('OrgAffiliationService.getRoleGrantAffiliation', () => {
     });
   });
 
-  it('treats an employer unknown to LFX as not a member rather than unresolved', async () => {
+  // PR #4318 review: the mapping view is account-grain, keeping one representative crowd.dev org per
+  // Salesforce account, so a miss can mean "this is the company's second mapped org" rather than
+  // "no LF account". Asserting non-membership there would be a claim the data cannot support.
+  it('treats an employer the account-grain mapping does not list as unknown, never as a non-member', async () => {
     const { svc } = service({ experiences: experience(CDEV_ORG), account: null });
 
     await expect(svc.getRoleGrantAffiliation(req(), grants())).resolves.toEqual({
-      affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'ok' },
+      affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'failed' },
     });
   });
 
