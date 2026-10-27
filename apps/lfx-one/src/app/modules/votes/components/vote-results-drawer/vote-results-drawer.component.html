@@ -166,6 +166,33 @@
               <i class="fa-light fa-presentation-screen" aria-hidden="true"></i>
               Present
             </a>
+            <button
+              type="button"
+              (click)="copySlide()"
+              [disabled]="slideState() === 'busy'"
+              class="inline-flex w-fit items-center justify-center gap-2 min-h-[44px] px-4 rounded-md border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              data-testid="vote-results-drawer-copy-slide">
+              <i class="fa-light fa-image" aria-hidden="true"></i>
+              Copy slide
+            </button>
+            <span class="text-sm text-slate-600" role="status" data-testid="vote-results-drawer-copy-slide-status">
+              @switch (slideState()) {
+                @case ('copied') {
+                  Slide copied.
+                }
+                @case ('downloaded') {
+                  Slide downloaded.
+                }
+                @case ('failed') {
+                  Couldn't create the slide image.
+                }
+              }
+            </span>
+            @if (isBrowserRender) {
+              <div class="fixed -left-[10000px] top-0 pointer-events-none" aria-hidden="true">
+                <div #slide><lfx-vote-slide [title]="voteData.name" [link]="slideLink()" /></div>
+              </div>
+            }
           }
         }
       </div>

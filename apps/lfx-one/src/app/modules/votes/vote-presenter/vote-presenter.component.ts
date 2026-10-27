@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -25,6 +25,7 @@ import {
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { exportVoteSlide, voteSlideFileName, VoteSlideExportResult } from '@shared/utils/vote-slide.util';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { filter, map, switchMap, timer } from 'rxjs';
@@ -34,6 +35,7 @@ import { VoteOptionResultsComponent } from '../components/vote-option-results/vo
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
+import { VoteSlideComponent } from '../components/vote-slide/vote-slide.component';
 
 /** How long the "Link copied" confirmation stays before the button label returns. */
 const COPY_CONFIRMATION_MS = 2000;
@@ -56,6 +58,7 @@ const COPY_CONFIRMATION_MS = 2000;
     VoteParticipationCardComponent,
     VoteQrComponent,
     VoteRankedQuestionResultsComponent,
+    VoteSlideComponent,
   ],
   templateUrl: './vote-presenter.component.html',
   host: { '(document:keydown.escape)': 'exit()' },
@@ -83,6 +86,9 @@ export class VotePresenterComponent {
   protected readonly nowMs = signal(Date.now());
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
+  private readonly retryTick = signal(0);
+  protected readonly slideState = signal<VoteSlideExportResult | 'busy' | null>(null);
+  private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
 
   // === Computed Signals ===
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
@@ -131,6 +137,12 @@ export class VotePresenterComponent {
     void this.router.navigateByUrl(id ? votePermalinkPath(id) : '/votes');
   }
 
+  /** Restarts the poll loop from the error state without waiting out the backoff. */
+  protected retry(): void {
+    this.failures.set(0);
+    this.retryTick.update((n) => n + 1);
+  }
+
   protected async copyLink(): Promise<void> {
     try {
       await navigator.clipboard.writeText(this.voteLink());
@@ -144,10 +156,20 @@ export class VotePresenterComponent {
     }
   }
 
+  /** Exports the static slide (#4145): PNG to the clipboard where the browser allows, else a download. */
+  protected async copySlide(): Promise<void> {
+    const element = this.slideRef()?.nativeElement;
+    const name = this.vote()?.name;
+    if (!element || !name || this.slideState() === 'busy') return;
+    this.slideState.set('busy');
+    this.slideState.set(await exportVoteSlide(element, voteSlideFileName(name)));
+  }
+
   // === Private Initializers ===
   private startPolling(): void {
-    toObservable(this.voteId)
+    toObservable(computed(() => ({ id: this.voteId(), retry: this.retryTick() })))
       .pipe(
+        map(({ id }) => id),
         filter((id): id is string => !!id),
         // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick.
         switchMap((id) =>

@@ -1761,6 +1761,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@axe-core/playwright@npm:^4.14.0":
+  version: 4.14.0
+  resolution: "@axe-core/playwright@npm:4.14.0"
+  dependencies:
+    axe-core: "npm:~4.14.0"
+  peerDependencies:
+    playwright-core: ">= 1.0.0"
+  checksum: 10c0/a42bca2305bbb80a374be9ff6642cac7b45f5f0aef1be9170ae42617c3423501ab1a33c8581641a71554a0c6a69f6ca512a5cc6e320ed197339a9ac4edfa713c
+  languageName: node
+  linkType: hard
+
 "@azure/abort-controller@npm:^2.0.0, @azure/abort-controller@npm:^2.1.2":
   version: 2.1.2
   resolution: "@azure/abort-controller@npm:2.1.2"
@@ -9770,6 +9781,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"axe-core@npm:~4.14.0":
+  version: 4.14.0
+  resolution: "axe-core@npm:4.14.0"
+  checksum: 10c0/8aaa0bf748e0dcf202e8f837951a37b28b4b62d639bed58c07a6890bf035ed6a11ede9f4006db9ca8041db821dc80476c27cff08fd70afa9195ee58fb995a958
+  languageName: node
+  linkType: hard
+
 "axios@npm:^1.12.2":
   version: 1.12.2
   resolution: "axios@npm:1.12.2"
@@ -15267,6 +15285,7 @@ __metadata:
     "@angular/router": "npm:^20.3.15"
     "@angular/ssr": "npm:^20.3.13"
     "@aws-sdk/client-s3": "npm:^3.1098.0"
+    "@axe-core/playwright": "npm:^4.14.0"
     "@datadog/browser-rum": "npm:6.25.4"
     "@eslint/js": "npm:^9.39.1"
     "@fullcalendar/angular": "npm:6.1.20"

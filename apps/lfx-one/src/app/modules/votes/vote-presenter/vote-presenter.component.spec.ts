@@ -186,6 +186,25 @@ describe('VotePresenterComponent', () => {
     expect(has('vote-presenter-error')).toBe(true);
   });
 
+  it('uses the handoff copy: secrecy line, eligibility line, and Copy slide in the footer', async () => {
+    fetchVote.mockReturnValue(of(baseVote({ pseudo_anonymity: true, description: '<p>Resolved: approve it.</p>' })));
+    await mount();
+    expect(text('vote-presenter-secrecy')).toBe('Ballots are secret. Results show after the vote closes.');
+    expect(text('vote-presenter-share')).toContain('Sign in with your LF account. Only eligible voters can cast.');
+    expect(text('vote-presenter-question')).toBe('Resolved: approve it.');
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-presenter-footer"] [data-testid="vote-presenter-copy-slide"]')).toBeTruthy();
+  });
+
+  it('Retry from the error state restarts polling', async () => {
+    fetchVote.mockReturnValueOnce(throwError(() => new Error('down'))).mockReturnValue(of(baseVote()));
+    await mount();
+    expect(has('vote-presenter-error')).toBe(true);
+    (fixture.componentInstance as unknown as { retry(): void }).retry();
+    fixture.detectChanges();
+    await tick(0);
+    expect(has('vote-presenter-open')).toBe(true);
+  });
+
   it('exits to the vote permalink', async () => {
     await mount();
     (fixture.componentInstance as unknown as { exit(): void }).exit();

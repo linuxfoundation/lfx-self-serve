@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -25,11 +25,14 @@ import {
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isRankedPollType,
+  toAbsoluteUrl,
+  votePermalinkPath,
   votePresenterPath,
   isVoteEndedEarly,
   mergeCommentResults,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
+import { exportVoteSlide, voteSlideFileName, VoteSlideExportResult } from '@shared/utils/vote-slide.util';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
@@ -43,6 +46,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, s
 import { VoteAbstainResultComponent } from '../vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentResultsComponent } from '../vote-comment-results/vote-comment-results.component';
 import { VoteOptionResultsComponent } from '../vote-option-results/vote-option-results.component';
+import { VoteSlideComponent } from '../vote-slide/vote-slide.component';
 import { VoteParticipationCardComponent } from '../vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-results/vote-ranked-question-results.component';
 
@@ -63,6 +67,7 @@ import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-resu
     VoteAbstainResultComponent,
     VoteRankedQuestionResultsComponent,
     VoteCommentResultsComponent,
+    VoteSlideComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -145,6 +150,10 @@ export class VoteResultsDrawerComponent {
     const v = this.vote();
     return this.audience() === 'creator' && !!v && v.writer !== false && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
   });
+  protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
+  protected readonly isBrowserRender = isPlatformBrowser(this.platformId);
+  protected readonly slideState = signal<VoteSlideExportResult | 'busy' | null>(null);
+  private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
   protected readonly presenterPath: Signal<string> = computed(() => votePresenterPath(this.vote()?.uid ?? ''));
 
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
@@ -152,6 +161,15 @@ export class VoteResultsDrawerComponent {
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Protected Methods ===
+  /** Exports the static vote slide (#4145): PNG to the clipboard where the browser allows, else a download. */
+  protected async copySlide(): Promise<void> {
+    const element = this.slideRef()?.nativeElement;
+    const name = this.vote()?.name;
+    if (!element || !name || this.slideState() === 'busy') return;
+    this.slideState.set('busy');
+    this.slideState.set(await exportVoteSlide(element, voteSlideFileName(name)));
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }

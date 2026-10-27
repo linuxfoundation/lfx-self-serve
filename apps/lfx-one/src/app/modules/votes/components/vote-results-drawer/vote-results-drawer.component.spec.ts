@@ -879,3 +879,26 @@ describe('VoteResultsDrawerComponent — mobile layout (#4148)', () => {
     expect(byTestId('vote-results-drawer-close')?.className).toContain('min-w-[44px]');
   });
 });
+
+describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => {
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('offers Present and Copy slide to a creator on a %s vote', async (status) => {
+    await setupDrawer(makeVote(status), of(null), 'creator');
+
+    const present = document.querySelector<HTMLAnchorElement>('[data-testid="vote-results-drawer-present"]');
+    expect(present?.getAttribute('href')).toBe('/votes/vote-1/present');
+    expect(present?.getAttribute('target')).toBe('_blank');
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+  });
+
+  it('hides both from a voter', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE), of(null), 'voter');
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeNull();
+  });
+
+  it('hides Present for a draft vote', async () => {
+    await setupDrawer(makeVote(PollStatus.DISABLED), of(null), 'creator');
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
+  });
+});

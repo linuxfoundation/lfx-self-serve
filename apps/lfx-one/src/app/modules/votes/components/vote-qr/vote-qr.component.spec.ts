@@ -12,9 +12,11 @@ describe('VoteQrComponent', () => {
     fixture.componentRef.setInput('value', 'https://example.com/votes/abc');
     fixture.componentRef.setInput('label', 'QR code for https://example.com/votes/abc');
     fixture.detectChanges();
-    await fixture.whenStable();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    fixture.detectChanges();
+    // The encoder is a dynamic import, so wait for the path rather than a fixed delay.
+    for (let attempt = 0; attempt < 100 && !fixture.nativeElement.querySelector('path')?.getAttribute('d'); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      fixture.detectChanges();
+    }
 
     const svg = fixture.nativeElement.querySelector('svg') as SVGElement;
     expect(svg.getAttribute('role')).toBe('img');
