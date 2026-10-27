@@ -44,7 +44,11 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     ],
     training: [],
   });
-  const emails = (companyEmails: string[] = []): OrgPersonCompanyEmailsResponse => ({ companyEmails, companyEmailsStatus: 'resolved' });
+  const emails = (companyEmails: string[] = [], primaryEmail: string | null = null): OrgPersonCompanyEmailsResponse => ({
+    companyEmails,
+    primaryEmail,
+    companyEmailsStatus: 'resolved',
+  });
   // One subject per URL, created on first request, so each test answers activity and addresses independently.
   const reply = (url: string): Subject<unknown> => {
     let subject = responses.get(url);
@@ -311,5 +315,74 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     await render();
     expect(emailState('0')?.textContent?.trim()).toBe('first@example.org');
     expect(drawer.error()).toBe(false);
+  });
+  it('renders each address as a mailto link and marks the primary one', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['primary@example.org', 'second@example.org'], 'primary@example.org'));
+    await render();
+
+    expect(emailState('0')?.getAttribute('href')).toBe('mailto:primary@example.org');
+    expect(emailState('1')?.getAttribute('href')).toBe('mailto:second@example.org');
+    // One marker, on the primary's own line.
+    const markers = document.querySelectorAll('[data-testid="person-detail-drawer-email-primary"]');
+    expect(markers).toHaveLength(1);
+    expect(markers[0].closest('span')?.parentElement?.textContent).toContain('primary@example.org');
+  });
+
+  it('marks no address primary when the warehouse flags none', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+
+    expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
+    expect(byTestId('person-detail-drawer-email-primary')).toBeNull();
+  });
+
+  it('copies an address and confirms it, without confirming the others', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org', 'second@example.org']));
+    await render();
+
+    (byTestId('person-detail-drawer-email-copy-1') as HTMLButtonElement).click();
+    await render();
+    expect(writeText).toHaveBeenCalledWith('second@example.org');
+    expect(document.querySelector('[role="status"]')?.textContent?.trim()).toBe('second@example.org copied');
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the opener-supplied address when there is no identity to look addresses up with', async () => {
+    drawer.open({ name: 'Board member', email: 'Chair@Example.Org' });
+    await render();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(emailState('0')?.getAttribute('href')).toBe('mailto:chair@example.org');
+    expect(byTestId('person-detail-drawer-email-context')).not.toBeNull();
+    // The fallback is one known address, not a resolved lookup — neither the empty nor the unavailable message belongs.
+    expect(emailState('not-available')).toBeNull();
+    expect(emailState('none')).toBeNull();
+  });
+
+  it('ignores an opener address that is a memberUid fallback rather than an address', async () => {
+    drawer.open({ name: 'Board member', email: 'member-uid-123' });
+    await render();
+
+    expect(emailState('0')).toBeNull();
+    expect(emailState('not-available')).not.toBeNull();
+  });
+
+  it('prefers the looked-up addresses over the opener-supplied one', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', email: 'stale@example.org' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['fetched@example.org']));
+    await render();
+
+    expect(emailState('0')?.getAttribute('href')).toBe('mailto:fetched@example.org');
+    expect(byTestId('person-detail-drawer-email-context')).toBeNull();
+    expect(emailState('1')).toBeNull();
   });
 });

@@ -16,7 +16,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
-const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 
 /** The person's API base: keyed on the warehouse personKey when the opener has one, else on the LF username (resolved server-side). */
 function personPath(orgUid: string, context: PersonDrawerContext | null): string | null {
@@ -86,12 +86,13 @@ export class PersonDetailDrawerService {
           map((response) => ({
             request,
             companyEmails: response.companyEmailsStatus === 'resolved' ? response.companyEmails : [],
+            primaryEmail: response.companyEmailsStatus === 'resolved' ? (response.primaryEmail ?? null) : null,
             companyEmailsStatus: response.companyEmailsStatus,
           })),
           // A failed optional address lookup never turns into a detail error.
           catchError((emailError: unknown) => {
             console.error('Failed to load company emails:', emailError);
-            return of({ request, companyEmails: [], companyEmailsStatus: 'failed' as const });
+            return of({ request, companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' as const });
           })
         );
       })
@@ -128,6 +129,7 @@ export class PersonDetailDrawerService {
   public readonly identityUnavailable = computed(() => this.currentEmails()?.companyEmailsStatus === 'unavailable');
   public readonly companyEmailsResolved = computed(() => this.currentEmails()?.companyEmailsStatus === 'resolved');
   public readonly companyEmails = computed<string[]>(() => this.currentEmails()?.companyEmails ?? NO_COMPANY_EMAILS.companyEmails);
+  public readonly primaryCompanyEmail = computed<string | null>(() => this.currentEmails()?.primaryEmail ?? null);
 
   public open(context: PersonDrawerContext): void {
     this._activeTab.set(context.defaultTab ?? 'events');

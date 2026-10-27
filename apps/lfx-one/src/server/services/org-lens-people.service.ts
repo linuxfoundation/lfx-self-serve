@@ -90,11 +90,18 @@ interface EmployeeActivityRaw {
   trainingRows: TrainingRow[];
 }
 
+/** One row of ORG_PEOPLE_COMPANY_EMAILS. */
+interface CompanyEmailRow {
+  EMAIL: string | null;
+  /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
+  IS_PRIMARY: boolean | number | null;
+}
+
 /** No unique identity is available — distinct from a resolved empty lookup. */
-const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
-const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'failed' };
+const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
 /** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
@@ -434,7 +441,7 @@ export class OrgLensPeopleService {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
-      companyEmails: await this.fetchCompanyEmails(accountId, personKey),
+      ...toCompanyEmails(await this.fetchCompanyEmails(accountId, personKey)),
       companyEmailsStatus: 'resolved',
     });
     try {
@@ -465,15 +472,15 @@ export class OrgLensPeopleService {
    * Keyed on identity only. Resolving a person from an address is prohibited: that direction contains
    * false links and would attribute one person's addresses to another.
    */
-  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<string[]> {
+  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<CompanyEmailRow[]> {
     const query = `
-      SELECT EMAIL
+      SELECT EMAIL, IS_PRIMARY
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
       ORDER BY IS_PRIMARY DESC, EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string }>(query, [accountId, personKey]);
-    return result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
+    const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, personKey]);
+    return result.rows;
   }
 
   /**
@@ -493,18 +500,18 @@ export class OrgLensPeopleService {
         GROUP BY ACCOUNT_ID
         HAVING COUNT(DISTINCT PERSON_KEY) = 1
       )
-      SELECT emails.EMAIL
+      SELECT emails.EMAIL, emails.IS_PRIMARY
       FROM resolved_person AS person
       INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
         ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
       ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
-    const companyEmails = result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
-    if (companyEmails.length === 0) {
+    const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, username]);
+    const resolved = toCompanyEmails(result.rows);
+    if (resolved.companyEmails.length === 0) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    return { companyEmails, companyEmailsStatus: 'resolved' };
+    return { ...resolved, companyEmailsStatus: 'resolved' };
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -755,6 +762,18 @@ function usernameDigest(normalizedUsername: string): string {
   return createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
 }
 
+/**
+ * Split the warehouse rows into the ordered address list plus the primary. `IS_PRIMARY` is advisory:
+ * the list order already comes from the query, and a person with no primary flagged simply has none.
+ */
+function toCompanyEmails(rows: CompanyEmailRow[]): { companyEmails: string[]; primaryEmail: string | null } {
+  const named = rows.filter((row): row is CompanyEmailRow & { EMAIL: string } => !!row.EMAIL);
+  return {
+    companyEmails: named.map((row) => row.EMAIL),
+    primaryEmail: named.find((row) => row.IS_PRIMARY === true || row.IS_PRIMARY === 1)?.EMAIL ?? null,
+  };
+}
+
 /** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */
 function isCompanyEmailsResponse(value: unknown): boolean {
   const response = value as Partial<OrgPersonCompanyEmailsResponse> | null;
@@ -762,6 +781,8 @@ function isCompanyEmailsResponse(value: unknown): boolean {
     !!response &&
     Array.isArray(response.companyEmails) &&
     response.companyEmails.every((email) => typeof email === 'string') &&
+    // Written before `primaryEmail` existed → undefined, and read as "no primary on record".
+    (response.primaryEmail === undefined || response.primaryEmail === null || typeof response.primaryEmail === 'string') &&
     (response.companyEmailsStatus === 'resolved' || (response.companyEmailsStatus === 'unavailable' && response.companyEmails.length === 0))
   );
 }

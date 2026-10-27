@@ -44,10 +44,46 @@
           }
           @if (companyEmails().length) {
             <span class="mt-1 flex flex-col gap-0.5" data-testid="person-detail-drawer-email">
-              @for (companyEmail of companyEmails(); track companyEmail; let i = $index) {
-                <span class="truncate text-xs text-gray-500" [title]="companyEmail" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
-                  companyEmail
-                }}</span>
+              @for (companyEmail of companyEmails(); track companyEmail.email; let i = $index) {
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <a
+                    class="truncate text-xs text-gray-500 hover:text-blue-700 hover:underline"
+                    [href]="'mailto:' + companyEmail.email"
+                    [title]="companyEmail.email"
+                    [attr.data-testid]="'person-detail-drawer-email-' + i"
+                    >{{ companyEmail.email }}</a
+                  >
+                  @if (companyEmail.isPrimary) {
+                    <span class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-500" data-testid="person-detail-drawer-email-primary">
+                      Primary
+                    </span>
+                  }
+                  @if (companyEmail.isContextFallback) {
+                    <span
+                      class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-500"
+                      title="The address this view already had. Other company addresses can't be looked up from here."
+                      data-testid="person-detail-drawer-email-context">
+                      Contact
+                    </span>
+                  }
+                  <button
+                    type="button"
+                    class="shrink-0 text-gray-400 hover:text-gray-600"
+                    [attr.aria-label]="'Copy ' + companyEmail.email"
+                    [attr.data-testid]="'person-detail-drawer-email-copy-' + i"
+                    (click)="onCopyEmail(companyEmail.email)">
+                    <i
+                      class="fa-light text-xs"
+                      [class.fa-copy]="copiedEmail() !== companyEmail.email"
+                      [class.fa-check]="copiedEmail() === companyEmail.email"
+                      aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+            </span>
+            <span class="sr-only" role="status" aria-live="polite">
+              @if (copiedEmail(); as copied) {
+                {{ copied }} copied
               }
             </span>
           } @else if (companyEmailFeatureEnabled() && drawer.emailsLoading()) {
