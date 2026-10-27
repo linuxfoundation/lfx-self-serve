@@ -10,6 +10,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT } from '@lfx-one/shared';
 import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_INVITATION_COUNT_REFRESH_MS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -126,6 +127,8 @@ export class VotesDashboardComponent {
   // Me-lens cast drawer (#4330): opened in place for an active vote still awaiting the viewer's ballot.
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVoteId = signal<string | null>(null);
+  /** Accepted ballots stay submitted for this dashboard's lifetime, even if a later indexed read still lags. */
+  private readonly submittedVoteIds = signal<ReadonlySet<string>>(new Set());
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -266,7 +269,8 @@ export class VotesDashboardComponent {
   }
 
   // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
-  protected onCastVoteSubmitted(): void {
+  protected onCastVoteSubmitted(voteId: string): void {
+    this.submittedVoteIds.update((ids) => new Set(ids).add(voteId));
     this.refresh$.next();
   }
 
@@ -714,7 +718,7 @@ export class VotesDashboardComponent {
   private initMyVotes(): Signal<Vote[]> {
     const lens$ = toObservable(this.lensService.activeLens);
 
-    return toSignal(
+    const fetchedVotes = toSignal(
       combineLatest([lens$, this.refresh$]).pipe(
         switchMap(([lens]) => {
           this.myVotesComplete.set(false);
@@ -744,6 +748,11 @@ export class VotesDashboardComponent {
       ),
       { initialValue: [] }
     );
+    // Overlay only returned rows, never insert a vote or change its authoritative status/access scope.
+    return computed(() => {
+      const submitted = this.submittedVoteIds();
+      return fetchedVotes().map((vote) => (submitted.has(vote.uid) ? { ...vote, response_status: VoteResponseStatus.RESPONDED } : vote));
+    });
   }
 
   private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {

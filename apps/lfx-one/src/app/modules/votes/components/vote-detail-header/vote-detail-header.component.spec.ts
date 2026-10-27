@@ -125,16 +125,15 @@ describe('VoteDetailHeaderComponent', () => {
     });
   });
 
-  it('hides the invited count, View results and the tab strip when limited (#4330)', () => {
-    render({ limited: true });
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows only title, status and back navigation when limited on a %s vote (#4330)', (status) => {
+    render({ limited: true, vote: makeVote({ status, early_end_time: '2026-10-20T12:00:00Z' }) });
 
-    expect(exists('vote-detail-header-invited')).toBe(false);
-    expect(exists('vote-detail-header-view-results')).toBe(false);
-    expect(exists('vote-detail-header-tabs')).toBe(false);
+    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+      expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
+    }
     expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
-    expect(text('vote-detail-header-status')).toContain('Active');
-    expect(text('vote-detail-header-close-date')).toMatch(/^Closes /);
+    expect(exists('vote-detail-header-status')).toBe(true);
     expect(exists('vote-detail-header-back')).toBe(true);
   });
 

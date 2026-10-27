@@ -860,12 +860,14 @@ export function getVoteVisibilityRules(
     rules.push(
       isClosed ? 'Invited voters now see the final totals and comments, without commenter names.' : 'Voters see only their own response until the vote closes.'
     );
-  } else {
+  } else if (isClosed) {
     rules.push(
-      isClosed
+      pseudoAnonymous === false
         ? 'Invited voters see the final totals and comments. Only vote managers see who wrote each comment.'
-        : 'You see only your own response. Totals and comments stay hidden until the vote closes.'
+        : 'Invited voters see the final totals and comments. Comments are shown without names, including for vote managers.'
     );
+  } else {
+    rules.push('You see only your own response. Totals and comments stay hidden until the vote closes.');
   }
   // Only explicitly named votes permit individual ballots; missing privacy metadata fails closed.
   if (pseudoAnonymous !== false) {

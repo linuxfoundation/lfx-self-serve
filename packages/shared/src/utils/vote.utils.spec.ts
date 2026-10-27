@@ -1152,6 +1152,13 @@ describe('voter results helpers', () => {
       expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments, without commenter names.');
     });
 
+    it.each([true, undefined, null])('never promises comment attribution to managers for closed privacy %s', (pseudoAnonymous) => {
+      const rules = getVoteVisibilityRules('voter', pseudoAnonymous, true, true, false);
+
+      expect(rules[0]).toBe('Invited voters see the final totals and comments. Comments are shown without names, including for vote managers.');
+      expect(rules.join(' ')).not.toContain('Only vote managers see who wrote each comment.');
+    });
+
     it('names the ballot privacy for named and pseudo-anonymous votes', () => {
       for (const audience of ['voter', 'creator'] as const) {
         for (const isClosed of [true, false]) {

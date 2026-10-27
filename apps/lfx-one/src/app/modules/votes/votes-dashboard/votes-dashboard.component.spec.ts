@@ -1070,15 +1070,56 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.visible()).toBe(false);
     });
 
-    it('refreshes My Votes after the drawer submits a ballot', async () => {
+    it('shows a successful ballot as voted even when the refreshed feed still awaits it', async () => {
       table.viewVote.emit('soon');
       await settle();
       const callsBeforeSubmit = getMyVotes.mock.calls.length;
+      const neededBefore = cards()[1].value as number;
 
       drawer()!.voteSubmitted.emit('soon');
       await settle();
 
       expect(getMyVotes).toHaveBeenCalledTimes(callsBeforeSubmit + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(cards()[1].value).toBe(neededBefore - 1);
+      await selectSummary('needs-vote');
+      expect(rows()).not.toContain('soon');
+      await selectSummary('needs-vote');
+      element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon']);
+      expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
+    });
+
+    it('keeps accepted ballot state through a failed refresh and a stale retry', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      getMyVotes.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-load-error')).not.toBeNull();
+
+      element('votes-retry')!.querySelector<HTMLButtonElement>('button')!.click();
+      await settle();
+      expect(element('votes-load-error')).toBeNull();
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      table.viewVote.emit('later');
+      await settle();
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent?.trim()).toBe('Vote');
+
+      drawer()!.voteSubmitted.emit('later');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent).toContain('Review');
     });
 
     it("navigates in the Project lens even for a row awaiting the viewer's ballot", async () => {

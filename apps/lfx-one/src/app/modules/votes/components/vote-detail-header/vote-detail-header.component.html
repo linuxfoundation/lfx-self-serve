@@ -17,15 +17,17 @@
         <!-- Exact 20px title matches the committee detail header (styling.md accepts an arbitrary px size for a design value). -->
         <h1 class="font-display font-light text-[20px] break-words" data-testid="vote-detail-header-title">{{ vote().name }}</h1>
         <lfx-tag [value]="vote().status | pollStatusLabel" [severity]="vote().status | pollStatusSeverity" data-testid="vote-detail-header-status" />
-        <lfx-tag
-          [value]="privacyLabel()"
-          [severity]="vote().pseudo_anonymity ? 'warn' : 'secondary'"
-          icon="fa-light fa-lock"
-          data-testid="vote-detail-header-privacy" />
+        @if (!limited()) {
+          <lfx-tag
+            [value]="privacyLabel()"
+            [severity]="vote().pseudo_anonymity ? 'warn' : 'secondary'"
+            icon="fa-light fa-lock"
+            data-testid="vote-detail-header-privacy" />
+        }
       </div>
 
       <div class="flex items-center gap-2 flex-wrap shrink-0" data-testid="vote-detail-header-actions">
-        @if (canSendReminder()) {
+        @if (canSendReminder() && !limited()) {
           <lfx-button
             label="Send reminder"
             icon="fa-light fa-envelope"
@@ -35,7 +37,7 @@
             (onClick)="sendReminder.emit()"
             data-testid="vote-detail-header-send-reminder" />
         }
-        @if (canCastVote()) {
+        @if (canCastVote() && !limited()) {
           <lfx-button label="Cast vote" icon="fa-light fa-check-to-slot" size="small" (onClick)="castVote.emit()" data-testid="vote-detail-header-cast-vote" />
         }
         @if (!limited()) {
@@ -51,30 +53,30 @@
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2" data-testid="vote-detail-header-tags">
-      <lfx-tag [value]="vote().committee_name || 'Unknown group'" icon="fa-light fa-people-group" data-testid="vote-detail-header-group" />
-      <lfx-tag [value]="methodLabel()" data-testid="vote-detail-header-method" />
-    </div>
+    @if (!limited()) {
+      <div class="flex flex-wrap items-center gap-2" data-testid="vote-detail-header-tags">
+        <lfx-tag [value]="vote().committee_name || 'Unknown group'" icon="fa-light fa-people-group" data-testid="vote-detail-header-group" />
+        <lfx-tag [value]="methodLabel()" data-testid="vote-detail-header-method" />
+      </div>
 
-    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600" data-testid="vote-detail-header-meta">
-      @if (closeDateText()) {
-        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-close-date">
-          <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
-        </span>
-      }
-      @if (endedEarlyNote(); as endedEarly) {
-        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-ended-early">
-          <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ endedEarly }}
-        </span>
-      }
-      @if (!limited()) {
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600" data-testid="vote-detail-header-meta">
+        @if (closeDateText()) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-close-date">
+            <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
+          </span>
+        }
+        @if (endedEarlyNote(); as endedEarly) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-ended-early">
+            <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ endedEarly }}
+          </span>
+        }
         @if (invitedText(); as invited) {
           <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-invited">
             <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}
           </span>
         }
-      }
-    </div>
+      </div>
+    }
   </div>
 
   @if (!limited()) {

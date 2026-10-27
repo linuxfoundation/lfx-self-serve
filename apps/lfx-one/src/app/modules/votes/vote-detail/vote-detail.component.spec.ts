@@ -27,6 +27,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteDetailComponent } from './vote-detail.component';
 
@@ -95,7 +96,7 @@ describe('VoteDetailComponent', () => {
   let queryParamMap: BehaviorSubject<ParamMap>;
   let reqContext: ServerRequestContext;
 
-  async function setup(platform: 'browser' | 'server' = 'browser'): Promise<ComponentFixture<VoteDetailComponent>> {
+  async function setup(platform: 'browser' | 'server' = 'browser', includeRealHeader = false): Promise<ComponentFixture<VoteDetailComponent>> {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
@@ -110,9 +111,13 @@ describe('VoteDetailComponent', () => {
         { provide: REQUEST_CONTEXT, useValue: reqContext },
       ],
     })
-      // Keep the real template (for the region assertions) but stub child components out.
+      // Keep the real page template; opt into the real header for composed outsider visibility assertions.
       .overrideComponent(VoteDetailComponent, {
-        set: { imports: [NgClass, NgTemplateOutlet], schemas: [NO_ERRORS_SCHEMA], providers: [{ provide: DialogService, useValue: dialogService }] },
+        set: {
+          imports: [NgClass, NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : [])],
+          schemas: [NO_ERRORS_SCHEMA],
+          providers: [{ provide: DialogService, useValue: dialogService }],
+        },
       })
       .compileComponents();
 
@@ -1272,6 +1277,24 @@ describe('VoteDetailComponent', () => {
       expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
       expect(voteService.getVoteResults).not.toHaveBeenCalled();
     });
+
+    it.each([null, makeResponse(IndexedVoteResponseStatus.RESPONDED, { voter_removed: true })])(
+      'hides all non-basic metadata in the real header for outsider response %j',
+      async (response) => {
+        voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
+        voteService.getMyVoteResponse.mockReturnValue(of(response));
+        queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+        const fixture = await setup('browser', true);
+
+        expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
+        expect(testId(fixture, 'vote-detail-header-status')?.textContent).toContain('Ended');
+        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+          expect(testId(fixture, `vote-detail-header-${suffix}`)).toBeNull();
+        }
+        expect(testId(fixture, response ? 'vote-detail-voter-access-denied' : 'vote-detail-voter-not-participant')).not.toBeNull();
+        expect(voteService.getVoteResults).not.toHaveBeenCalled();
+      }
+    );
 
     it('keeps the limited header pieces hidden while access is still loading', async () => {
       const myResponse = new Subject<MyVoteResponse | null>();

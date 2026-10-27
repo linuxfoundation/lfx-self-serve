@@ -120,6 +120,6 @@
     [(visible)]="castDrawerVisible"
     [voteId]="castDrawerVoteId()"
     [listVote]="castDrawerVote()"
-    (voteSubmitted)="onCastVoteSubmitted()"
+    (voteSubmitted)="onCastVoteSubmitted($event)"
     data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>
 }

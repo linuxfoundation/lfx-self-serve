@@ -29,7 +29,7 @@ Select a poll to view its current results and status.
 
 On a pseudo-anonymous poll, totals, abstentions and comments stay hidden until the poll closes and its results are finalized. Managers can see who has responded on the **Voters** tab, but not how anyone voted, both while the poll is open and after it closes. Comments appear without names or dates once results are released.
 
-When a poll closes, invited voters see the final totals and comments. Voters see comments without names. Only users who can manage the poll see who wrote each comment. People who weren't invited to a poll, or were removed from it, see only its title, status and close date, not its results or comments.
+When a poll closes, invited voters see the final totals and comments. Voters see comments without names. On named polls, only users who can manage the poll see who wrote each comment; pseudo-anonymous comments remain unattributed for everyone. People who weren't invited to a poll, or were removed from it, see only its title, status and a message that they aren't a voter, not its other details, results or comments.
 
 ## Send a reminder
 

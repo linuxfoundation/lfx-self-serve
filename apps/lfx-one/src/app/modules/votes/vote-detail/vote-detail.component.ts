@@ -63,8 +63,8 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
- * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and where every
- * in-app vote link lands (#3915).
+ * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and the
+ * in-app vote destination (#3915), except active My Votes ballots still awaiting a response, which open on the list (#4330).
  *
  * The manager view follows write access on the vote (project writer, then committee writer — `resolveVoteCanManage`),
  * never the lens. Voters see only their own response, and totals and comments

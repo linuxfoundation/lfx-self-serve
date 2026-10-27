@@ -34,8 +34,8 @@ export class VoteDetailHeaderComponent {
   /** Active vote awaiting the viewer's ballot — shows Cast vote. */
   public readonly canCastVote = input<boolean>(false);
   /**
-   * Hides the invited count, View results and the tab strip (#4330): set for a viewer who was never invited or was
-   * removed, and while access is still loading so those pieces never flash for them.
+   * Shows only the title, status and back navigation (#4330): set for a viewer who was never invited or was
+   * removed, and while access is still loading so vote metadata and actions never flash for them.
    */
   public readonly limited = input<boolean>(false);
 
