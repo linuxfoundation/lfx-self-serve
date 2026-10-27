@@ -41,12 +41,13 @@ export class OrgPeopleContributorsService {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    // `people-contributors:v3:{timeRange}:{projectScope}` (lfx-self-serve#4164): the read is scoped by project and
-    // carries authored and merged commits, so a `v2` entry (LF projects, main-branch rows) must miss. The commit
-    // scope and metric only pick counts after the read, so they share the entry.
+    // `people-contributors:v4:{timeRange}:{projectScope}` (lfx-self-serve#4164): the read is scoped by project and
+    // carries authored and merged commits; a scoped read sums the per-scope commit credit, so a `v3` entry (summed
+    // from the all-projects credit) must miss. The commit scope and metric only pick counts after the read, so they
+    // share the entry.
     const rows = await withOrgCompactCache(
       accountId,
-      `people-contributors:v3:${timeRange}:${filters.projectScope}`,
+      `people-contributors:v4:${timeRange}:${filters.projectScope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope),
       { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
@@ -54,7 +55,12 @@ export class OrgPeopleContributorsService {
     return buildResponse(accountId, timeRange, filters, rows);
   }
 
-  /** Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots. */
+  /**
+   * Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots.
+   * A commit can be authored on an LF and a non-LF project (a mirror). `daily_commits` credits it once across all
+   * projects, so a scoped read sums `daily_scope_commits`, which credits it once within the row's own scope: the
+   * per-scope count then matches the Code page's distinct commits for that scope.
+   */
   private async fetchPersonProjectRows(
     accountId: string,
     timeRange: OrgPeopleTimeRange,
@@ -62,6 +68,8 @@ export class OrgPeopleContributorsService {
   ): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
     const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
+    const [commitsColumn, mergedCommitsColumn] =
+      projectScope === 'all' ? ['daily_commits', 'daily_merged_commits'] : ['daily_scope_commits', 'daily_scope_merged_commits'];
 
     const query = `
       SELECT
@@ -77,8 +85,8 @@ export class OrgPeopleContributorsService {
         MAX(foundation_id) AS foundation_id,
         MAX(foundation_name) AS foundation_name,
         MAX(foundation_slug) AS foundation_slug,
-        SUM(daily_commits) AS commits,
-        SUM(daily_merged_commits) AS merged_commits,
+        SUM(${commitsColumn}) AS commits,
+        SUM(${mergedCommitsColumn}) AS merged_commits,
         SUM(daily_code_activities) AS code_activities,
         MAX(activity_date) AS last_active_date,
         BOOLOR_AGG(is_declared_maintainer_for_project) AS is_declared_maintainer_for_project,

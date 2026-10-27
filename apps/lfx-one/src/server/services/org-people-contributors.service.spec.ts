@@ -210,7 +210,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, commitScope: 'merged' });
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, metric: 'code' });
 
-    expect([...cacheValues.keys()]).toEqual(['all:all', '30d:all', '30d:lf'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v3:${suffix}`)));
+    expect([...cacheValues.keys()]).toEqual(['all:all', '30d:all', '30d:lf'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v4:${suffix}`)));
     expect(execute).toHaveBeenCalledTimes(3);
   });
 
@@ -328,7 +328,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.
     const legacy = [{ PERSON_KEY: 'stale', PROJECT_ID: 'stale-project' }];
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v3:all:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v4:all:all')!, JSON.stringify(legacy));
 
     const response = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
@@ -388,6 +388,14 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     expect(authored.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(40);
     expect(merged.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(15);
     expect(merged.projects.find((row) => row.projectId === 'project-one' && row.personKey === 'person-one')?.commits).toBe(15);
+  });
+
+  it.each(['lf', 'non_lf'] as const)('sums the per-scope commit credit for project scope %s', async (projectScope) => {
+    await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, projectScope });
+
+    expect(lastQuery()).toContain('SUM(daily_scope_commits) AS commits');
+    expect(lastQuery()).toContain('SUM(daily_scope_merged_commits) AS merged_commits');
+    expect(lastQuery()).not.toMatch(/SUM\(daily_commits\)|SUM\(daily_merged_commits\)/);
   });
 
   it('sends code activities on every row and picks the most active project by the metric', async () => {
