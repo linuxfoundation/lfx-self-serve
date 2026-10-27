@@ -427,6 +427,25 @@ describe('OrgLensPeopleService person-key company emails', () => {
       primaryEmail: 'z-primary@company.example',
       companyEmailsStatus: 'resolved',
     });
+
+    // The row assertion above cannot catch this on its own: SQLite already sorts NULLs last on DESC,
+    // so it passes either way. Snowflake does the opposite, so the clause itself is what is pinned.
+    const addressQueries = (execute.mock.calls as [string][]).map(([query]) => query).filter((query) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
+    expect(addressQueries.length).toBeGreaterThan(0);
+    for (const query of addressQueries) {
+      expect(query).toMatch(/ORDER BY\s+(?:\w+\.)?IS_PRIMARY DESC NULLS LAST/);
+    }
+  });
+
+  it('pins NULLS LAST on the username-keyed address query too', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
+
+    // Two people collide on the folded username, so this falls through to the username-keyed query.
+    await service.getCompanyEmailsByUsername(ACCOUNT, 'MixedUser');
+
+    const usernameQuery = (execute.mock.calls as [string][]).map(([query]) => query).find((query) => /resolved_person/.test(query));
+    expect(usernameQuery).toMatch(/ORDER BY\s+emails\.IS_PRIMARY DESC NULLS LAST/);
   });
 
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
