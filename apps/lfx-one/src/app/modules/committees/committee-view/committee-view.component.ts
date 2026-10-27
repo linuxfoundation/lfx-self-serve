@@ -391,27 +391,37 @@ export class CommitteeViewComponent {
    * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
    * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
    * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   * Tagged with the committee uid it was fetched for: this view is reused across `/groups/:id`
+   * navigations, so an untagged result from the previous group would stay visible until the next
+   * lookup settles.
    */
-  private readonly projectWriter: Signal<boolean> = toSignal(
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean } | null> = toSignal(
     toObservable(this.committee).pipe(
-      map((committee) => (committee?.writer ? resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) : null)),
-      distinctUntilChanged(),
-      switchMap((projectKey) =>
-        projectKey
-          ? this.projectService.getProject(projectKey, false).pipe(
-              map((project) => project?.writer === true),
-              catchError(() => of(false))
-            )
-          : of(false)
-      )
+      map((committee) =>
+        committee?.writer ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) } : null
+      ),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key),
+      switchMap((target) => {
+        if (!target) {
+          return of(null);
+        }
+        if (!target.key) {
+          return of({ uid: target.uid, writer: false });
+        }
+        return this.projectService.getProject(target.key, false).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true })),
+          catchError(() => of({ uid: target.uid, writer: false }))
+        );
+      })
     ),
-    { initialValue: false }
+    { initialValue: null }
   );
 
   /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
   public editLink: Signal<GroupEditLink | null> = computed(() => {
     const committee = this.committee();
-    return committee?.uid && this.projectWriter() ? getGroupEditLink(committee) : null;
+    const access = this.projectWriter();
+    return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
   });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
@@ -744,7 +754,12 @@ export class CommitteeViewComponent {
   public onSettingsSaved(): void {
     const committee = this.committee();
     if (committee?.uid && this.committeeId() !== committee.uid) {
-      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], { queryParamsHandling: 'merge', replaceUrl: true });
+      // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+        queryParams: { tab: this.activeTab() },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
       return;
     }
     this.refreshCommittee();

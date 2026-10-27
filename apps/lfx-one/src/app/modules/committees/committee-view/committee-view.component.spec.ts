@@ -579,10 +579,44 @@ describe('CommitteeViewComponent', () => {
       component.onSettingsSaved();
 
       expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(getGroupCommands(currentCommittee) ?? ['/groups', 'committee-1'], {
+        queryParams: { tab: 'overview' },
         queryParamsHandling: 'merge',
         replaceUrl: true,
       });
       expect(refresh).not.toHaveBeenCalled();
+    });
+    it('keeps the tab the user was on when the redirect moves a slug-opened group to its UID route', () => {
+      asWriter();
+      routeParams.next(convertToParamMap({ id: 'old-vanity-slug' }));
+      const component = createComponent();
+      flush();
+      component.activeTab.set('settings');
+
+      component.onSettingsSaved();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ queryParams: { tab: 'settings' } }));
+    });
+
+    it("hides the link from a newly loaded group until that group's own project lookup settles", () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: true }));
+      const component = createComponent();
+      flush();
+      expect(component.editLink()).not.toBeNull();
+
+      const pending = new Subject<{ writer: boolean }>();
+      getProject().mockReturnValue(pending);
+      asWriter({ uid: 'committee-2', project_slug: 'other-project' });
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      flush();
+
+      expect(component.committee()?.uid).toBe('committee-2');
+      expect(component.editLink()).toBeNull();
+
+      pending.next({ writer: true });
+      flush();
+
+      expect(component.editLink()).not.toBeNull();
     });
   });
 });
