@@ -97,7 +97,9 @@ describe('OrgLensPeopleController getCompanyEmails', () => {
 
 describe('OrgLensPeopleController per-person key contacts', () => {
   const controller = new OrgLensPeopleController();
-  const personKeyReq = (personKey: string): Request => ({ params: { orgUid: ORG_UID, personKey }, query: {}, path: '/test' }) as unknown as Request;
+  const personKeyReq = (personKey: string, query: Record<string, string> = {}): Request =>
+    ({ params: { orgUid: ORG_UID, personKey }, query, path: '/test' }) as unknown as Request;
+  const PERSON_KEY = 'k'.repeat(32);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,62 +115,81 @@ describe('OrgLensPeopleController per-person key contacts', () => {
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
-  it('rejects an unsafe username before any lookup', async () => {
+  it('rejects an unsafe username before any lookup, in the path or the query', async () => {
     for (const username of ['a/b', "x' OR '1'='1", 'u'.repeat(257)]) {
-      const next = vi.fn();
-      await controller.getPersonKeyContactsByUsername(buildReq(username), buildRes(), next);
-      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      const pathNext = vi.fn();
+      await controller.getPersonKeyContactsByUsername(buildReq(username), buildRes(), pathNext);
+      expect(pathNext).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+
+      const queryNext = vi.fn();
+      await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username }), buildRes(), queryNext);
+      expect(queryNext).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     }
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
-  it('matches a person key on its resolved company addresses', async () => {
+  it('identifies a person key by its resolved addresses, with no username when the opener carries none', async () => {
     getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [{ role: 'Billing Contact' }], identified: true });
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
     const res = buildRes();
     const next = vi.fn();
 
-    await controller.getPersonKeyContacts(personKeyReq('k'.repeat(32)), res, next);
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { emails: ['first.person@vendor-corp.example'] });
-    expect(res.json).toHaveBeenCalledWith({ assignments: [{ role: 'Billing Contact' }], identified: true });
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+      username: null,
+      emails: ['first.person@vendor-corp.example'],
+      emailsStatus: 'resolved',
+    });
+    expect(res.json).toHaveBeenCalledWith({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
   });
 
-  it.each(['unavailable', 'failed'])(
-    'answers an identity the %s address lookup could not establish as unidentified, not empty',
-    async (companyEmailsStatus) => {
-      getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus });
-      const res = buildRes();
-      const next = vi.fn();
+  it('passes an opener-supplied username through as the stronger key', async () => {
+    getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
 
-      await controller.getPersonKeyContacts(personKeyReq('k'.repeat(32)), res, next);
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username: 'jdoe' }), buildRes(), vi.fn());
 
-      expect(next).not.toHaveBeenCalled();
-      // No identity means no filter to apply — asking for the roles anyway would match on an empty set.
-      expect(getKeyContactsForPerson).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith({ assignments: [], identified: false });
-    }
-  );
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+      username: 'jdoe',
+      emails: ['first.person@vendor-corp.example'],
+      emailsStatus: 'resolved',
+    });
+  });
 
-  it('passes the username through as an identity and widens it with resolved addresses', async () => {
+  // The address status decides what an unmatched identity may claim, so it must reach the service intact
+  // rather than being flattened into an empty address list.
+  it.each(['unavailable', 'failed'])('forwards a %s address status instead of passing addresses it does not have', async (companyEmailsStatus) => {
+    getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus });
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: companyEmailsStatus === 'failed' ? 'failed' : 'unidentified' });
+
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), buildRes(), vi.fn());
+
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { username: null, emails: [], emailsStatus: companyEmailsStatus });
+  });
+
+  it('identifies a by-username read on the username plus any resolved addresses', async () => {
     getCompanyEmailsByUsername.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [], identified: true });
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
 
     await controller.getPersonKeyContactsByUsername(buildReq('jdoe'), buildRes(), vi.fn());
 
     expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
       username: 'jdoe',
       emails: ['first.person@vendor-corp.example'],
+      emailsStatus: 'resolved',
     });
   });
 
-  it('still looks a username up when its address lookup fails', async () => {
+  it('still looks a username up when its address lookup fails, and says the answer is retryable', async () => {
     getCompanyEmailsByUsername.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'failed' });
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [], identified: true });
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'failed' });
+    const res = buildRes();
 
-    await controller.getPersonKeyContactsByUsername(buildReq('jdoe'), buildRes(), vi.fn());
+    await controller.getPersonKeyContactsByUsername(buildReq('jdoe'), res, vi.fn());
 
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { username: 'jdoe', emails: [] });
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { username: 'jdoe', emails: [], emailsStatus: 'failed' });
+    expect(res.json).toHaveBeenCalledWith({ assignments: [], status: 'failed' });
   });
 });

@@ -121,7 +121,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(drawer.emailsLoading()).toBe(true);
     expect(httpGet).not.toHaveBeenCalled();
     await render();
-    expect(requested().sort()).toEqual([`${base}/company-emails`, `${base}/detail`, `${base}/key-contacts`]);
+    expect(requested().sort()).toEqual([`${base}/company-emails`, `${base}/detail`]);
     expect(emailState('loading')).not.toBeNull();
 
     reply(`${base}/detail`).next(detail());
@@ -281,14 +281,15 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
   it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {
     drawer.open(person);
     await render();
+    drawer.setTab('key-contacts');
+    await render();
     reply(`${BY_USERNAME}/key-contacts`).next({
-      identified: true,
+      status: 'resolved',
       assignments: [
         { ...assignment, contactUid: 'contact-2', role: 'Marketing Contact', foundationName: 'Foundation Two' },
         { ...assignment, contactUid: 'contact-1', role: 'Billing Contact', foundationName: 'Foundation One' },
       ],
     });
-    drawer.setTab('key-contacts');
     await render();
 
     const rows = [...document.querySelectorAll('[data-testid="person-detail-drawer-key-contacts-list"] li')].map((li) =>
@@ -298,23 +299,58 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-key-contacts-empty')).toBeNull();
   });
 
+  it('asks for the roles only once the tab is opened, then keeps them across tab switches', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    // Most drawer opens never visit this tab, and the read costs a company-address lookup.
+    expect(requested()).not.toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('events');
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested().filter((url) => url === `${BY_PERSON_KEY}/key-contacts`)).toHaveLength(1);
+  });
+
+  it('opens straight into the roles request when the opener defaults to that tab', async () => {
+    drawer.open({ ...person, defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_USERNAME}/key-contacts`);
+  });
+
+  // The person key identifies by address alone; a username the opener holds is the stronger key.
+  it('passes an opener-supplied username alongside a person key', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', username: 'first-person', defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts?username=first-person`);
+  });
+
   it('renders roles supplied by the opener without requesting them', async () => {
     drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
     await render();
 
     expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
     expect(drawer.keyContactsLoading()).toBe(false);
+    expect(drawer.keyContactsIdentified()).toBe(true);
     expect(document.body.textContent).toContain('Billing Contact');
   });
 
   it.each([
-    { label: 'an identified person with no roles', response: { identified: true, assignments: [] }, testId: 'empty' },
-    { label: 'a person the lookup never identified', response: { identified: false, assignments: [] }, testId: 'unavailable' },
+    { label: 'an identified person with no roles', response: { status: 'resolved', assignments: [] }, testId: 'empty' },
+    { label: 'a person the lookup never identified', response: { status: 'unidentified', assignments: [] }, testId: 'unavailable' },
+    { label: 'a lookup that errored upstream', response: { status: 'failed', assignments: [] }, testId: 'error' },
+    // A response with no status at all is a failure, never a verified empty list.
+    { label: 'a response missing its status', response: { assignments: [] }, testId: 'error' },
   ])('keeps $label distinct in the Key Contacts tab', async ({ response, testId }) => {
     drawer.open(person);
     await render();
-    reply(`${BY_USERNAME}/key-contacts`).next(response);
     drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).next(response);
     await render();
 
     expect(byTestId(`person-detail-drawer-key-contacts-${testId}`)).not.toBeNull();
@@ -324,8 +360,9 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.open(person);
     await render();
     reply(`${BY_USERNAME}/detail`).next(detail());
-    reply(`${BY_USERNAME}/key-contacts`).error(new HttpErrorResponse({ status: 500 }));
     drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).error(new HttpErrorResponse({ status: 500 }));
     await render();
     expect(byTestId('person-detail-drawer-key-contacts-error')).not.toBeNull();
 

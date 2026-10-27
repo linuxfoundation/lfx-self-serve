@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import type {
   OrgAllEmployeeDetail,
   OrgDrawerDetailResult,
+  OrgDrawerKeyContactsResult,
   OrgKeyContactAssignment,
   OrgPersonCompanyEmailsResponse,
   OrgPersonKeyContactsResponse,
@@ -19,7 +20,7 @@ import { catchError, map, Observable, of, switchMap } from 'rxjs';
 const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 
 /** No identity to look up, or the opener already supplied the roles: either way the request is not made. */
-const NO_KEY_CONTACTS: OrgPersonKeyContactsResponse = { assignments: [], identified: false };
+const NO_KEY_CONTACTS: OrgDrawerKeyContactsResult = { assignments: [], status: 'unidentified', error: false };
 
 /** The person's API base: keyed on the warehouse personKey when the opener has one, else on the LF username (resolved server-side). */
 function personPath(orgUid: string, context: PersonDrawerContext | null): string | null {
@@ -48,9 +49,15 @@ export class PersonDetailDrawerService {
   private readonly _activeTab = signal<PersonDrawerTab>('events');
   public readonly activeTab = this._activeTab.asReadonly();
 
+  // The roles read costs a company-address lookup, which is the slow Snowflake view the header's own read was
+  // split out of. Most drawer opens never visit this tab, so it is fetched only once the tab is actually asked
+  // for — and stays fetched for that person afterwards, so flipping back and forth does not refetch.
+  private readonly _keyContactsRequested = signal(false);
+
   public readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
-  // Activity and addresses are two requests off the same key, so neither waits on the other.
+  // Activity, addresses and roles are separate requests off the same key, so none waits on another.
   private readonly detailRequest = computed(() => ({ orgUid: this.orgUid(), context: this._activeContext() }));
+  private readonly keyContactsRequest = computed(() => ({ ...this.detailRequest(), keyContactsRequested: this._keyContactsRequested() }));
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
   private readonly detailResult = toSignal(
@@ -100,19 +107,23 @@ export class PersonDetailDrawerService {
   );
 
   private readonly keyContactsResult = toSignal(
-    toObservable(this.detailRequest).pipe(
-      switchMap((request): Observable<OrgPersonKeyContactsResponse & { request: typeof request }> => {
+    toObservable(this.keyContactsRequest).pipe(
+      switchMap((request): Observable<OrgDrawerKeyContactsResult & { request: typeof request }> => {
         const path = request.orgUid ? personPath(request.orgUid, request.context) : null;
-        // Nothing to look up, or the opener handed us the person's roles already — the Key Contacts tab does.
-        if (!path || request.context?.keyContactAssignments) {
+        // Tab never opened, nothing to look up, or the opener handed us the roles already — no request at all.
+        if (!path || !request.keyContactsRequested || request.context?.keyContactAssignments) {
           return of({ request, ...NO_KEY_CONTACTS });
         }
-        return this.http.get<OrgPersonKeyContactsResponse>(`${path}/key-contacts`).pipe(
-          map((response) => ({ request, ...response })),
+        // The username is the stronger match when the opener carries one alongside a person key.
+        const username = request.context?.personKey && request.context.username ? request.context.username : null;
+        const query = username ? `?username=${encodeURIComponent(username)}` : '';
+        return this.http.get<OrgPersonKeyContactsResponse>(`${path}/key-contacts${query}`).pipe(
+          // A missing status is a failure, never a verified empty — same rule as the address read.
+          map((response) => ({ request, ...response, status: response.status ?? 'failed', error: false })),
           // A failed roles read is its own state; it never turns into a detail error.
           catchError((keyContactsError: unknown) => {
             console.error('Failed to load key contact roles:', keyContactsError);
-            return of({ request, assignments: [], identified: false, error: true });
+            return of({ request, assignments: [], status: 'failed' as const, error: true });
           })
         );
       })
@@ -133,7 +144,7 @@ export class PersonDetailDrawerService {
 
   private readonly currentKeyContacts = computed(() => {
     const result = this.keyContactsResult();
-    return this._activeContext() && this.orgUid() && result?.request === this.detailRequest() ? result : null;
+    return this._activeContext() && this.orgUid() && result?.request === this.keyContactsRequest() ? result : null;
   });
 
   public readonly loading = computed(() => {
@@ -161,15 +172,28 @@ export class PersonDetailDrawerService {
     () => this._activeContext()?.keyContactAssignments ?? this.currentKeyContacts()?.assignments ?? []
   );
   public readonly keyContactsLoading = computed(() => {
-    const { orgUid, context } = this.detailRequest();
-    return !!(orgUid && context && !context.keyContactAssignments && (context.personKey || context.username) && !this.currentKeyContacts());
+    const { orgUid, context, keyContactsRequested } = this.keyContactsRequest();
+    return !!(
+      keyContactsRequested &&
+      orgUid &&
+      context &&
+      !context.keyContactAssignments &&
+      (context.personKey || context.username) &&
+      !this.currentKeyContacts()
+    );
   });
-  public readonly keyContactsError = computed(() => !!(this.currentKeyContacts() as { error?: boolean } | null)?.error);
+  /** A read that errored or answered `failed` — retryable, unlike the two states below. */
+  public readonly keyContactsError = computed(() => {
+    const result = this.currentKeyContacts();
+    return !!result && (result.error || result.status === 'failed');
+  });
   /** False when the lookup never worked out who this is — distinct from a verified empty list. */
-  public readonly keyContactsIdentified = computed(() => !!this._activeContext()?.keyContactAssignments || !!this.currentKeyContacts()?.identified);
+  public readonly keyContactsIdentified = computed(() => !!this._activeContext()?.keyContactAssignments || this.currentKeyContacts()?.status === 'resolved');
 
   public open(context: PersonDrawerContext): void {
-    this._activeTab.set(context.defaultTab ?? 'events');
+    const tab = context.defaultTab ?? 'events';
+    this._keyContactsRequested.set(tab === 'key-contacts');
+    this._activeTab.set(tab);
     this._activeContext.set(context);
   }
 
@@ -178,6 +202,9 @@ export class PersonDetailDrawerService {
   }
 
   public setTab(tab: PersonDrawerTab): void {
+    if (tab === 'key-contacts') {
+      this._keyContactsRequested.set(true);
+    }
     this._activeTab.set(tab);
   }
 }

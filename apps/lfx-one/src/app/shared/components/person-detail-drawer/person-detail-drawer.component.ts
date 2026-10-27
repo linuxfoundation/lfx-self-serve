@@ -16,6 +16,8 @@ import { isMailtoSafeEmail, orgKeyContactRolePillClass } from '@lfx-one/shared/u
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
 
+const compareLabels = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: 'base' });
+
 /** Shared Org Lens person-detail drawer — opened via PersonDetailDrawerService (LFXV2-2195). */
 @Component({
   selector: 'lfx-person-detail-drawer',
@@ -136,15 +138,19 @@ export class PersonDetailDrawerComponent implements OnDestroy {
    * holding several roles across several foundations reads in a stable order rather than upstream's.
    */
   private initKeyContactRoles(): PersonDrawerKeyContactRow[] {
-    return this.drawer
-      .keyContacts()
-      .map((assignment) => ({
-        contactUid: assignment.contactUid,
-        role: assignment.role,
-        pillClass: orgKeyContactRolePillClass(assignment.role),
-        foundationLabel: assignment.foundationName ?? assignment.foundationSlug,
-      }))
-      .sort((a, b) => a.foundationLabel.localeCompare(b.foundationLabel) || a.role.localeCompare(b.role));
+    return (
+      this.drawer
+        .keyContacts()
+        .map((assignment) => ({
+          contactUid: assignment.contactUid,
+          role: assignment.role,
+          pillClass: orgKeyContactRolePillClass(assignment.role),
+          foundationLabel: assignment.foundationName ?? assignment.foundationSlug,
+        }))
+        // Base sensitivity so a foundation upstream left unnamed — shown by its lowercase slug — still sorts
+        // among the display names rather than being pushed to one end by case.
+        .sort((a, b) => compareLabels(a.foundationLabel, b.foundationLabel) || compareLabels(a.role, b.role))
+    );
   }
 
   private initCodeTotals(): { commits: number; projects: number } {

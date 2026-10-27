@@ -7,6 +7,7 @@ import type {
   OrgKeyContactAssignment,
   OrgKeyContactsResponse,
   OrgKeyContactsStats,
+  OrgPersonKeyContactsIdentity,
   OrgPersonKeyContactsResponse,
   ProjectMembershipIndexedDoc,
   QueryServiceResponse,
@@ -57,6 +58,10 @@ function isKeyContactsResponse(value: unknown): boolean {
  * Does this assignment belong to the person the drawer is showing? The LF username is the stronger key, so it
  * decides when both sides carry one; otherwise the assignment's own address must be one of the person's. Both
  * comparisons are case- and whitespace-insensitive, matching how the warehouse address view is keyed.
+ *
+ * The address fallback inherits the limit the People tab's own email grouping has (hence `agreedUsername`
+ * there): a role mailbox two employees share attributes both their roles to whichever of them is on screen.
+ * That is a mis-attribution within one org's already-readable bundle, never a cross-org read.
  */
 function assignmentBelongsToPerson(assignment: OrgKeyContactAssignment, username: string, emails: ReadonlySet<string>): boolean {
   const assignmentUsername = assignment.username?.trim().toLowerCase() ?? '';
@@ -95,26 +100,31 @@ export class OrgPeopleKeyContactsService {
   /**
    * The org-wide bundle narrowed to one person, for the person-detail drawer's Key Contacts tab. It reads
    * through the same per-caller cache as the tab, so a drawer opened from the People page costs no extra
-   * upstream round trip. Identity is the caller's to resolve: an identity with neither a username nor an
-   * address yields `identified: false` rather than an empty list, so the drawer can tell "no roles" from
-   * "we never worked out who this is".
+   * upstream round trip.
+   *
+   * Identity is the caller's to resolve, and how far it got decides what an empty result is allowed to
+   * mean. Only an identity whose addresses resolved can produce a verified "holds no roles": matching on a
+   * username alone cannot rule out the assignments upstream records with no username at all, which is most
+   * of them, so an unmatched partial identity is reported as unidentified (or failed, when the address
+   * lookup errored and the answer is worth retrying) rather than as an empty list.
    */
-  public async getKeyContactsForPerson(
-    req: Request,
-    orgUid: string,
-    identity: { username?: string | null; emails?: readonly string[] }
-  ): Promise<OrgPersonKeyContactsResponse> {
+  public async getKeyContactsForPerson(req: Request, orgUid: string, identity: OrgPersonKeyContactsIdentity): Promise<OrgPersonKeyContactsResponse> {
     const username = identity.username?.trim().toLowerCase() ?? '';
     const emails = new Set((identity.emails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean));
+    const unmatched: OrgPersonKeyContactsResponse = {
+      assignments: [],
+      status: identity.emailsStatus === 'failed' ? 'failed' : 'unidentified',
+    };
     if (!username && emails.size === 0) {
-      return { assignments: [], identified: false };
+      return unmatched;
     }
 
     const { assignments } = await this.getKeyContacts(req, orgUid);
-    return {
-      assignments: assignments.filter((assignment) => assignmentBelongsToPerson(assignment, username, emails)),
-      identified: true,
-    };
+    const matched = assignments.filter((assignment) => assignmentBelongsToPerson(assignment, username, emails));
+    if (matched.length === 0 && identity.emailsStatus !== 'resolved') {
+      return unmatched;
+    }
+    return { assignments: matched, status: 'resolved' };
   }
 
   private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {

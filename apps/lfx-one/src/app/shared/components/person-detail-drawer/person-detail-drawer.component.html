@@ -204,7 +204,7 @@
             @for (row of keyContactRoles(); track row.contactUid) {
               <li class="flex items-center justify-between gap-3 px-4 py-3">
                 <span class="whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium" [class]="row.pillClass">{{ row.role }}</span>
-                <span class="min-w-0 truncate text-xs text-gray-500">{{ row.foundationLabel }}</span>
+                <span class="min-w-0 truncate text-xs text-gray-500" [title]="row.foundationLabel">{{ row.foundationLabel }}</span>
               </li>
             }
           </ul>

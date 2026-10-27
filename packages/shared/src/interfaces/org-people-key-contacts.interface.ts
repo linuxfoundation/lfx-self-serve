@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgMembershipKeyContactType } from './org-memberships.interface';
+import type { OrgCompanyEmailsStatus } from './org-people.interface';
 
 /** Canonical member-service role strings — 9 values. */
 export type OrgKeyContactRole =
@@ -50,15 +51,43 @@ export interface OrgKeyContactsResponse {
 }
 
 /**
+ * Outcome of narrowing the org-wide assignments to one person. Follows `OrgCompanyEmailsStatus`, and for
+ * the same reason: an empty list only means "none on record" when the lookup actually established who the
+ * person is and could check every assignment.
+ *
+ * `resolved`: the person was identified and every assignment was checked, so an empty list is a verified
+ * "holds no roles". `unidentified`: no usable identity, or only a partial one that matched nothing — the
+ * assignments upstream records without a username could not be ruled in or out. `failed`: the identity
+ * lookup errored, so the answer is retryable rather than a fact about the person. A missing status must be
+ * treated as `failed`, never as `resolved`.
+ */
+export type OrgPersonKeyContactsStatus = 'resolved' | 'unidentified' | 'failed';
+
+/**
  * Per-person GET response for `/api/orgs/:orgUid/lens/people/:personKey/key-contacts` and its
  * `by-username` twin — the org-wide assignments narrowed to one person. No stats: the stat strip is an
- * account-level figure that means nothing on a single person. An empty list is a verified "none on
- * record"; a person the lookup could not identify at all is a 200 with `identified: false`, so the drawer
- * never claims someone holds no roles when it never found out who they are.
+ * account-level figure that means nothing on a single person.
  */
 export interface OrgPersonKeyContactsResponse {
   assignments: OrgKeyContactAssignment[];
-  identified: boolean;
+  status: OrgPersonKeyContactsStatus;
+}
+
+/** The identity a per-person narrowing runs on. The address status is carried, not just the addresses,
+ *  because "matched nothing" means different things depending on whether the addresses were trustworthy. */
+export interface OrgPersonKeyContactsIdentity {
+  username?: string | null;
+  emails?: readonly string[];
+  emailsStatus: OrgCompanyEmailsStatus;
+}
+
+/**
+ * Internal roles-fetch result for `PersonDetailDrawerService`, mirroring `OrgDrawerDetailResult`: the
+ * wire response plus whether the read itself failed, which is a different state from an identified person
+ * with no roles.
+ */
+export interface OrgDrawerKeyContactsResult extends OrgPersonKeyContactsResponse {
+  error: boolean;
 }
 
 // ============================================================

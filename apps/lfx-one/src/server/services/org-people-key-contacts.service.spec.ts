@@ -4,11 +4,36 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchAllQueryResources } = vi.hoisted(() => ({ fetchAllQueryResources: vi.fn() }));
+/** Upstream docs the stubbed query service answers with, keyed by resource type (set per test). */
+const { upstreamContacts, proxyRequest } = vi.hoisted(() => {
+  const upstreamContacts: Record<string, unknown>[] = [];
+  const MEMBERSHIP = { uid: 'membership-1', status: 'active', project_slug: 'foundation-one', project_name: 'Foundation One' };
+  return {
+    upstreamContacts,
+    // Answer by the `type` param rather than call order, so the fixture does not depend on the
+    // service's Promise.all ordering.
+    proxyRequest: vi.fn((_req: unknown, _service: string, _path: string, _method: string, params: { type?: string }) =>
+      Promise.resolve({
+        resources: (params.type === 'key_contact' ? upstreamContacts : [MEMBERSHIP]).map((data) => ({ data })),
+        page_token: null,
+      })
+    ),
+  };
+});
 
-vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
+// Drive the real page callback once so the `type` above is what decides the answer.
+vi.mock('../helpers/query-service.helper', () => ({
+  fetchAllQueryResources: async (_req: unknown, fetchPage: (token?: string) => Promise<{ resources: { data: unknown }[] }>) => {
+    const response = await fetchPage(undefined);
+    return response.resources.map((resource) => resource.data);
+  },
+}));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'caller' }));
-vi.mock('./microservice-proxy.service', () => ({ MicroserviceProxyService: class {} }));
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
 // Exercise the real read path, not the cache: every call recomputes from the stubbed query service.
 vi.mock('./valkey.service', () => ({
   withPerUserCache: (_ns: string, _user: string, _key: string, _ttl: number, compute: () => unknown) => compute(),
@@ -17,7 +42,6 @@ vi.mock('./valkey.service', () => ({
 import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 
 const ORG_UID = '001410000000000AAA';
-const MEMBERSHIP = { uid: 'membership-1', status: 'active', project_slug: 'foundation-one', project_name: 'Foundation One' };
 
 /** One upstream key_contact doc; `username` is left off unless a test is about username matching. */
 function contact(overrides: Record<string, unknown>): Record<string, unknown> {
@@ -33,29 +57,29 @@ function contact(overrides: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
+function upstream(contacts: Record<string, unknown>[]): void {
+  upstreamContacts.length = 0;
+  upstreamContacts.push(...contacts);
+}
+
 describe('OrgPeopleKeyContactsService getKeyContactsForPerson', () => {
   const service = new OrgPeopleKeyContactsService();
   const req = {} as Request;
 
-  function upstream(contacts: Record<string, unknown>[]): void {
-    fetchAllQueryResources.mockReset();
-    fetchAllQueryResources.mockImplementation((_req: unknown, page: unknown, opts?: unknown) => {
-      void page;
-      void opts;
-      return Promise.resolve(fetchAllQueryResources.mock.calls.length === 1 ? contacts : [MEMBERSHIP]);
-    });
-  }
-
   beforeEach(() => {
-    vi.clearAllMocks();
+    proxyRequest.mockClear();
+    upstream([]);
   });
 
   it('matches a person on their address, ignoring case and surrounding space', async () => {
     upstream([contact({}), contact({ uid: 'contact-2', email: 'someone.else@vendor-corp.example', role: 'Legal Contact' })]);
 
-    const result = await service.getKeyContactsForPerson(req, ORG_UID, { emails: ['  FIRST.PERSON@vendor-corp.example '] });
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, {
+      emails: ['  FIRST.PERSON@vendor-corp.example '],
+      emailsStatus: 'resolved',
+    });
 
-    expect(result.identified).toBe(true);
+    expect(result.status).toBe('resolved');
     expect(result.assignments.map((a) => a.role)).toEqual(['Billing Contact']);
   });
 
@@ -69,6 +93,7 @@ describe('OrgPeopleKeyContactsService getKeyContactsForPerson', () => {
     const result = await service.getKeyContactsForPerson(req, ORG_UID, {
       username: 'JDoe',
       emails: ['first.person@vendor-corp.example'],
+      emailsStatus: 'resolved',
     });
 
     // 'rroe' shares the address but not the username; contact-3 has no username, so it falls back to the address.
@@ -78,17 +103,39 @@ describe('OrgPeopleKeyContactsService getKeyContactsForPerson', () => {
   it('reports an identity with neither key as unidentified without reading upstream', async () => {
     upstream([contact({})]);
 
-    const result = await service.getKeyContactsForPerson(req, ORG_UID, { username: '  ', emails: ['', '   '] });
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, { username: '  ', emails: ['', '   '], emailsStatus: 'unavailable' });
 
-    expect(result).toEqual({ assignments: [], identified: false });
-    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+    expect(result).toEqual({ assignments: [], status: 'unidentified' });
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('reports a person with no matching assignment as identified and empty', async () => {
+  it('reports a fully identified person with no matching assignment as a verified empty list', async () => {
     upstream([contact({})]);
 
-    const result = await service.getKeyContactsForPerson(req, ORG_UID, { emails: ['nobody@vendor-corp.example'] });
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, { emails: ['nobody@vendor-corp.example'], emailsStatus: 'resolved' });
 
-    expect(result).toEqual({ assignments: [], identified: true });
+    expect(result).toEqual({ assignments: [], status: 'resolved' });
+  });
+
+  // The decisive case: a username alone cannot rule out the assignments upstream records without one,
+  // so an unmatched partial identity must never be reported as "holds no roles".
+  it.each([
+    { label: 'the address lookup errored', emailsStatus: 'failed' as const, expected: 'failed' },
+    { label: 'no address was available', emailsStatus: 'unavailable' as const, expected: 'unidentified' },
+  ])('does not claim an empty list from a username-only identity when $label', async ({ emailsStatus, expected }) => {
+    upstream([contact({})]);
+
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, { username: 'jdoe', emails: [], emailsStatus });
+
+    expect(result).toEqual({ assignments: [], status: expected });
+  });
+
+  it('still trusts a username-only identity that did match, whatever the address lookup did', async () => {
+    upstream([contact({ username: 'jdoe' })]);
+
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, { username: 'jdoe', emails: [], emailsStatus: 'failed' });
+
+    expect(result.status).toBe('resolved');
+    expect(result.assignments.map((a) => a.role)).toEqual(['Billing Contact']);
   });
 });
