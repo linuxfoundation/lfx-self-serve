@@ -314,14 +314,16 @@ export class OrgLensPeopleService {
 
   /**
    * Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact
-   * sources). Read on the widest (`all`) range: the roster closest to the whole account, and the one
-   * the reassign pickers share.
+   * sources). Read on the narrowest (`30d`) range: the ranges are nested, so someone live-only in any range is
+   * live-only in `30d` too (a stored row in `30d` would be in every wider range), and their `live-` key comes
+   * from the merge key, not the range. A wider range would miss someone who is live-only in the range on
+   * screen but has a stored row in the wider one.
    */
   private async resolveLiveOnlyUsername(req: Request, accountId: string, personKey: string): Promise<string | null> {
     if (!personKey.startsWith('live-')) {
       return null;
     }
-    const { rows } = await this.getDirectoryService().getLive(req, accountId, 'all');
+    const { rows } = await this.getDirectoryService().getLive(req, accountId, '30d');
     return rows.find((row) => row.personKey === personKey)?.lfUsername ?? null;
   }
 

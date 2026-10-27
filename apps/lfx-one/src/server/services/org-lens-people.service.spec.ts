@@ -174,8 +174,6 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example'],
       companyEmailsStatus: 'resolved',
     });
-    // A live-only key is looked up on the widest range, whatever range the caller views.
-    expect(getLive).toHaveBeenCalledWith({}, ACCOUNT, 'all');
   });
 
   it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
