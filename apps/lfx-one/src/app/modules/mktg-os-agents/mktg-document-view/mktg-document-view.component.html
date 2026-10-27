@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="runAgainParams().project" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
         <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">{{ title() }}</h1>
         @if (header(); as meta) {
@@ -35,6 +35,12 @@
             }
           </span>
         }
+        <lfx-button
+          label="Draft another post"
+          [text]="true"
+          styleClass="text-blue-700"
+          (onClick)="onDraftAnother()"
+          data-testid="mktg-linkedin-draft-another" />
       } @else if (view(); as current) {
         @if (!isLinkedinDocument() && !hasAssetView() && current.revision.format !== 'json') {
           <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
@@ -47,6 +53,26 @@
             }
           </span>
         }
+      }
+      @if (memberResult(); as result) {
+        <div class="ml-auto flex flex-wrap items-start gap-4" data-testid="member-360-result-actions">
+          <a
+            [routerLink]="result.runRoute()"
+            [queryParams]="result.projectParams()"
+            class="py-3 text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            data-testid="member-360-new-run"
+            >Create another Member 360</a
+          >
+          <div class="flex min-w-0 flex-col items-end gap-1">
+            <lfx-button
+              label="Download workbook"
+              icon="fa-light fa-download"
+              [loading]="result.downloading()"
+              (onClick)="result.download()"
+              data-testid="member-360-download" />
+            <span class="break-all text-xs text-gray-500" data-testid="member-360-workbook-filename">{{ result.workbookFilename() }} · Excel workbook</span>
+          </div>
+        </div>
       }
     </div>
 
@@ -174,13 +200,15 @@
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
           @if (content.source; as source) {
             <p class="min-w-0 grow break-words text-sm" data-testid="mktg-linkedin-document-source">
-              <span class="font-semibold">Drafted from</span> {{ source.label }} · {{ source.fetched ? 'fetched' : 'provided' }}
+              <span class="font-semibold">Drafted from</span> {{ source.label }}
+              @if (source.label !== 'pasted text') {
+                · {{ source.fetched ? 'fetched' : 'provided' }}
+              }
               @if (source.words) {
                 · {{ source.words }} words
               }
             </p>
           }
-          <lfx-button label="Draft another post" [text]="true" (onClick)="onDraftAnother()" data-testid="mktg-linkedin-draft-another" />
           <p class="text-sm text-gray-500">A new draft is a new run, stored under LinkedIn posts.</p>
           <div class="flex w-full flex-wrap items-center gap-3">
             <label for="linkedin-document-share-link" class="font-semibold">Link to share</label>

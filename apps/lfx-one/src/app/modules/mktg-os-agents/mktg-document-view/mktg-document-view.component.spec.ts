@@ -361,6 +361,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-linkedin-option"]').length).toBe(3);
     expectNoKitAssetChrome();
     expect(query('mktg-linkedin-draft-another')).not.toBeNull();
+    expect(query('mktg-document-view-title-card')?.contains(query('mktg-linkedin-draft-another'))).toBe(true);
+    expect(query('mktg-document-view-document')?.contains(query('mktg-linkedin-draft-another'))).toBe(false);
     expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/shared');
     expect(query('mktg-document-view-revisions')).toBeNull();
     expect(query('mktg-linkedin-document-author')).toBeNull();
@@ -410,6 +412,18 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValueOnce(of(response));
     await render(`/documents/linkedin-post/${response.documentId}${urlQuery}`);
   }
+  it.each([
+    { label: 'pasted text', fetched: false, expected: 'Drafted from pasted text · 52 words' },
+    { label: 'https://source.example/post', fetched: true, expected: 'Drafted from https://source.example/post · fetched · 52 words' },
+    { label: 'source.txt', fetched: false, expected: 'Drafted from source.txt · provided · 52 words' },
+  ])('keeps the correct provenance wording for $label', async ({ label, fetched, expected }) => {
+    const response = linkedinResponse();
+    if (!response.linkedinPost) throw new Error('Missing fixture post');
+    response.linkedinPost.source = { label, fetched, words: 52 };
+    await renderLinkedin(response);
+    expect(query('mktg-linkedin-document-source')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(expected);
+  });
+
   it('preserves other answer keys after a share-link Enter save without adding a nested main landmark', async () => {
     const response = linkedinResponse('https://public.example/original');
     if (!response.linkedinPost) throw new Error('Expected synthetic LinkedIn cards');
@@ -773,6 +787,25 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('member-360-result')).not.toBeNull();
     expect(query('member-360-ranking')?.textContent).toContain(SYNTHETIC_ORG_NAME);
     expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-breadcrumb-current')?.textContent).toBe(`Member 360 · ${member360.period.label}`);
+    const title = query('mktg-document-view-title-card');
+    const actions = query('member-360-result-actions');
+    expect(title?.contains(actions)).toBe(true);
+    expect(query('member-360-result')?.contains(actions)).toBe(false);
+    const create = query('member-360-new-run');
+    const download = query('member-360-download');
+    expect(create?.textContent).toBe('Create another Member 360');
+    expect(create?.classList.contains('text-blue-700')).toBe(true);
+    expect(create && download && create.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(download?.textContent?.trim()).toBe('Download workbook');
+    expect(download?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
+    expect(query('member-360-workbook-filename')?.textContent).toContain(`Member360_${member360.project}_${member360.period.label}.xlsx · Excel workbook`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const result = component['memberResult']();
+    if (!result) throw new Error('Missing Member result action owner');
+    const invoke = vi.spyOn(result, 'download').mockResolvedValue(undefined);
+    download?.querySelector('button')?.click();
+    expect(invoke).toHaveBeenCalledOnce();
   });
 
   it('opens a stored Member 360 report without a subject, including after a user-context flicker', async () => {

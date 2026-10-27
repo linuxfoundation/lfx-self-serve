@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -240,15 +240,18 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly crumbs = computed(() =>
     mktgKitCrumbsFor(
       this.params().agentKey,
       this.projectName(),
       mktgKitRootPath(this.router.url),
-      this.view()?.type.itemLabel ??
-        this.runDetail()?.type.itemLabel ??
-        MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ??
-        'Document'
+      this.view()?.member360
+        ? this.title()
+        : (this.view()?.type.itemLabel ??
+            this.runDetail()?.type.itemLabel ??
+            MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ??
+            'Document')
     )
   );
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
