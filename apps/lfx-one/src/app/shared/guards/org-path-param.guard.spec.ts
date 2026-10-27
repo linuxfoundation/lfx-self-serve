@@ -31,6 +31,8 @@ describe('orgPathParamGuard', () => {
   let resolve: Mock;
   let noteAddressed: Mock;
   let selectRollUp: Mock;
+  let setAccount: Mock;
+  let rollUpFallbackOrganization: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -71,6 +73,8 @@ describe('orgPathParamGuard', () => {
     resolve = vi.fn().mockReturnValue(of(null));
     noteAddressed = vi.fn();
     selectRollUp = vi.fn(() => true);
+    setAccount = vi.fn((next: Account) => selectedAccount.set(next));
+    rollUpFallbackOrganization = vi.fn(() => null);
 
     TestBed.configureTestingModule({
       providers: [
@@ -78,7 +82,16 @@ describe('orgPathParamGuard', () => {
         { provide: PLATFORM_ID, useFactory: () => platformId },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord, selectRollUp },
+          useValue: {
+            selectedAccount,
+            adoptFromAddress,
+            pinSelection,
+            clearAccount,
+            refreshCanonicalRecord,
+            selectRollUp,
+            setAccount,
+            rollUpFallbackOrganization,
+          },
         },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
@@ -329,6 +342,30 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       selectedAccount.set(placeholder);
       expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
+    });
+
+    /**
+     * Regression, PR #4415 review 7. A caller whose organizations are all inherited grants has no
+     * persona seeds, so nothing has selected one and `selectedAccount()` is the placeholder.
+     * Falling back to it alone sent them to the dead end while they held an organization the
+     * roll-up had been counting a moment earlier.
+     */
+    it('re-points a grant-only caller at their organization rather than the dead end', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(placeholder);
+      rollUpFallbackOrganization.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome('all', '/org/all/people')).toBe('/org/beta-llc/people');
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+    });
+
+    it('prefers an already-selected organization over the grant fallback', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      rollUpFallbackOrganization.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
+      expect(setAccount).not.toHaveBeenCalled();
     });
 
     it('renders without a selection on the server rather than redirecting', async () => {

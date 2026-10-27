@@ -450,6 +450,38 @@ export class AccountContextService {
     return true;
   }
 
+  /**
+   * The organization to fall back on when the roll-up is not available to this caller — on a
+   * demotion, or when `orgPathParamGuard` turns an ineligible `/org/all` address into a concrete
+   * one.
+   *
+   * Persona seeds first, since they carry display fields; otherwise a uid from the grant sets as a
+   * stub for the canonical fetch to hydrate. Eligibility counts direct and inherited grants, so a
+   * caller can hold an organization with no seed behind it at all — seeds alone sent them to the
+   * placeholder (and, from the guard, to `/org/not-found`) while they still held one.
+   *
+   * Public because the guard needs the same answer: it previously fell back to `selectedAccount()`
+   * alone, which for a grant-only caller is the placeholder (#4415 review 7).
+   */
+  public rollUpFallbackOrganization(): Account | null {
+    const seed = this.userOrganizations()[0];
+    if (seed) {
+      return seed;
+    }
+    for (const set of [
+      this.orgRoleGrantsService.writerSet(),
+      this.orgRoleGrantsService.auditorSet(),
+      this.orgRoleGrantsService.inheritedWriterSet(),
+      this.orgRoleGrantsService.inheritedAuditorSet(),
+    ]) {
+      for (const uid of set) {
+        // Same shape the cookie-restore path uses for an id with no seed behind it.
+        return { ...PLACEHOLDER_ACCOUNT, uid };
+      }
+    }
+    return null;
+  }
+
   /** Spec 050: select the organization the `/org/{segment}/…` address names (resolver hit, or the uid-only stub of FR-020) and pin it against bootstrap re-seeding — see `addressedUid`. */
   public adoptFromAddress(account: Account): void {
     this.setAccount(account);
@@ -694,7 +726,7 @@ export class AccountContextService {
     // caller: the roll-up is now *wrong* for them, so the cookie is updated like any other switch.
     const preserveStoredChoice = !this.rollUpFlag();
 
-    const fallback = this.demotionFallback();
+    const fallback = this.rollUpFallbackOrganization();
     if (!fallback) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       if (!preserveStoredChoice) {
@@ -710,31 +742,6 @@ export class AccountContextService {
       void this.refreshCanonicalRecord(fallback);
     }
     this.repointAddressAfterDemotion(fallback);
-  }
-
-  /**
-   * The organization a demoted caller lands on. Persona seeds first, since they carry display
-   * fields — but eligibility counts direct and inherited grants too, and the caller this feature
-   * targets can hold organizations with no seed at all. Falling back to seeds alone dropped such a
-   * caller to the placeholder and cleared their cookie even though they still held an organization.
-   */
-  private demotionFallback(): Account | null {
-    const seed = this.userOrganizations()[0];
-    if (seed) {
-      return seed;
-    }
-    for (const set of [
-      this.orgRoleGrantsService.writerSet(),
-      this.orgRoleGrantsService.auditorSet(),
-      this.orgRoleGrantsService.inheritedWriterSet(),
-      this.orgRoleGrantsService.inheritedAuditorSet(),
-    ]) {
-      for (const uid of set) {
-        // Same shape the cookie-restore path uses for an id with no seed behind it.
-        return { ...PLACEHOLDER_ACCOUNT, uid };
-      }
-    }
-    return null;
   }
 
   /**
