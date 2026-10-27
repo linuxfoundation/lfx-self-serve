@@ -247,15 +247,18 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly crumbs = computed(() =>
     mktgKitCrumbsFor(
       this.params().agentKey,
       this.projectName(),
       mktgKitRootPath(this.router.url),
-      this.view()?.type.itemLabel ??
-        this.runDetail()?.type.itemLabel ??
-        MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ??
-        'Document'
+      this.view()?.member360
+        ? this.title()
+        : (this.view()?.type.itemLabel ??
+            this.runDetail()?.type.itemLabel ??
+            MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ??
+            'Document')
     )
   );
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);

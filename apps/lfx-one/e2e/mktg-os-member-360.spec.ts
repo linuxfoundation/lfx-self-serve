@@ -42,12 +42,14 @@ test('Kit → Member family → run has fixed linked parents and browser Back', 
   await page.screenshot({ path: info.outputPath('member-family-back.png'), fullPage: true });
 });
 
-test('shared Member document has linked parents and New run drops asset-only URL state', async ({ page }, info) => {
+test('shared Member document has linked parents and Create another Member 360 drops asset-only URL state', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   await expect(page.getByTestId('member-360-result')).toBeVisible();
   await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/member-sponsor\?project=sample-foundation$/);
   await expect(page.getByTestId('member-360-new-run')).toHaveAttribute('href', '/project/mktg-os-agents/member-360?project=sample-foundation');
+  await expect(page.getByTestId('member-360-new-run')).toHaveText('Create another Member 360');
+  await expect(page.getByTestId('mktg-breadcrumb-current')).toHaveText('Member 360 · 2026-Q3');
   await page.getByTestId('member-360-new-run').click();
   await expect(page.getByTestId('member-360-run-page')).toBeVisible();
   await page.goBack();
@@ -327,6 +329,8 @@ test('ranking sorts, filters, expands evidence, copies team actions and exports 
   await page.getByRole('button', { name: 'Copy Member Success list' }).click();
   await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   const download = page.waitForEvent('download');
+  await expect(page.getByTestId('member-360-download').getByRole('button')).toHaveText('Download workbook');
+  await expect(page.getByTestId('member-360-workbook-filename')).toHaveText('Member360_sample-foundation_2026-Q3.xlsx · Excel workbook');
   await page.getByTestId('member-360-download').getByRole('button').click();
   expect((await download).suggestedFilename()).toBe('Member360_sample-foundation_2026-Q3.xlsx');
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });

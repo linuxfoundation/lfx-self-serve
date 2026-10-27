@@ -46,8 +46,8 @@ export class Member360ResultComponent {
   protected readonly tierOptions = MEMBER_360_TIER_OPTIONS;
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;
   protected readonly columns = MEMBER_360_SORT_COLUMNS;
-  protected readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
-  protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
+  public readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
+  public readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   public readonly filters = new FormGroup({
     tier: new FormControl(this.tierOptions[0].label, { nonNullable: true }),
     owner: new FormControl(this.ownerOptions[0].label, { nonNullable: true }),
@@ -57,7 +57,8 @@ export class Member360ResultComponent {
   protected readonly direction = signal<'ascending' | 'descending'>('descending');
   protected readonly expanded = signal<number | null>(null);
   protected readonly notice = signal('');
-  protected readonly downloading = signal(false);
+  public readonly downloading = signal(false);
+  public readonly workbookFilename = computed(() => `Member360_${this.envelope().project}_${this.envelope().period.label}.xlsx`);
   protected readonly tooltipDismissed = signal(false);
   private readonly filterValues = toSignal(this.filters.valueChanges.pipe(map(() => this.readFilters())), { initialValue: this.readFilters() });
   protected readonly rows = this.initRows();
@@ -171,7 +172,7 @@ export class Member360ResultComponent {
       this.notice.set('Copy failed. You can select the actions and copy them manually.');
     }
   }
-  protected async download(): Promise<void> {
+  public async download(): Promise<void> {
     if (!isPlatformBrowser(this.platformId) || this.downloading()) return;
     this.downloading.set(true);
     try {
@@ -180,7 +181,7 @@ export class Member360ResultComponent {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Member360_${this.envelope().project}_${this.envelope().period.label}.xlsx`;
+      link.download = this.workbookFilename();
       link.click();
       timer(1000)
         .pipe(
