@@ -35,12 +35,16 @@
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-contributions-kpis" />
     <p class="-mt-2 flex items-start gap-1 text-xs text-gray-500">
       <span data-testid="org-contributions-window-caption">{{ windowCaption() }}</span>
-      <i
-        class="fa-light fa-circle-info mt-0.5 text-gray-400"
+      <button
+        type="button"
+        class="mt-0.5 inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        aria-label="How the count is defined"
         [pTooltip]="metricDefinition()"
         tooltipPosition="top"
-        aria-hidden="true"
-        data-testid="org-contributions-metric-definition"></i>
+        tooltipEvent="both"
+        data-testid="org-contributions-metric-definition">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+      </button>
     </p>
 
     <!-- Content card: tabs + shared filter bar + active table -->

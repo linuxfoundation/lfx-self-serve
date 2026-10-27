@@ -89,12 +89,16 @@
                             <th class="py-2 font-medium text-right">
                               <span class="inline-flex items-center justify-end gap-1" data-testid="org-overview-foundations-and-projects-commits-header">
                                 Commits (last 12 months)
-                                <i
-                                  class="fa-light fa-circle-info text-gray-400"
+                                <button
+                                  type="button"
+                                  class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  aria-label="How commits are counted"
                                   [pTooltip]="commitsDefinition"
                                   tooltipPosition="top"
-                                  aria-hidden="true"
-                                  data-testid="org-overview-foundations-and-projects-commits-info"></i>
+                                  tooltipEvent="both"
+                                  data-testid="org-overview-foundations-and-projects-commits-info">
+                                  <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                                </button>
                               </span>
                             </th>
                           </tr>

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -158,6 +158,12 @@ export class AllEmployeesComponent {
     projectScope: new FormControl<OrgProjectScope>(this.selectedCodeFilters().projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.selectedCodeFilters().metric, { nonNullable: true }),
   });
+  private readonly filterFormValue = computed(() => ({
+    employment: this.selectedEmployment(),
+    range: this.selectedRange(),
+    projectScope: this.selectedCodeFilters().projectScope,
+    metric: this.selectedCodeFilters().metric,
+  }));
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
@@ -345,10 +351,19 @@ export class AllEmployeesComponent {
     controls.projectScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((projectScope) => this.onFiltersChange({ projectScope }));
     controls.metric.valueChanges.pipe(takeUntilDestroyed()).subscribe((metric) => this.onFiltersChange({ metric }));
     // URL changes, Clear filters and the handlers write the signals; mirror them back without re-firing the handlers.
-    effect(() => {
-      const { projectScope, metric } = this.selectedCodeFilters();
-      this.filterForm.setValue({ employment: this.selectedEmployment(), range: this.selectedRange(), projectScope, metric }, { emitEvent: false });
-    });
+    toObservable(this.filterFormValue)
+      .pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        const current = this.filterForm.getRawValue();
+        if (
+          current.employment !== value.employment ||
+          current.range !== value.range ||
+          current.projectScope !== value.projectScope ||
+          current.metric !== value.metric
+        ) {
+          this.filterForm.setValue(value, { emitEvent: false });
+        }
+      });
 
     // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten once the page has rendered.
     if (!orgCommitFiltersUrlMatches(this.selectedFilters(), (name) => this.route.snapshot.queryParamMap.get(name))) {
