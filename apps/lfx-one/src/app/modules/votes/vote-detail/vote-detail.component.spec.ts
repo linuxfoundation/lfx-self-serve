@@ -169,15 +169,19 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
     });
 
-    it('never auto-opens or casts an awaiting ballot while impersonating', async () => {
+    it.each([false, true, undefined, null])('explains why an awaiting ballot cannot be cast during impersonation (privacy %s)', async (privacy) => {
       impersonating.set(true);
+      const vote = makeVote();
+      Reflect.set(vote, 'pseudo_anonymity', privacy);
+      voteService.fetchVote.mockReturnValue(of(vote));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
       const fixture = await setup();
       expect(read(fixture, 'canCastVote')).toBe(false);
       expect(read(fixture, 'castDrawerVisible')).toBe(false);
       call(fixture, 'onCastVote');
       expect(read(fixture, 'castDrawerVisible')).toBe(false);
-      expect(testId(fixture, 'vote-detail-impersonation-notice')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-impersonation-notice')?.textContent).toContain('You cannot cast or change their vote.');
+      expect(testId(fixture, 'vote-detail-impersonation-notice')?.textContent).not.toContain('This ballot is private');
     });
 
     it('still loads named recorded ballots during impersonation', async () => {

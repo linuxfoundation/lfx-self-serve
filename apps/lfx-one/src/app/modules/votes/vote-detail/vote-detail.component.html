@@ -300,7 +300,7 @@
     <ng-template #voterStatePanel>
       @if (impersonating()) {
         <p class="text-sm text-gray-700" role="note" data-testid="vote-detail-impersonation-notice">
-          {{ ballotPrivacyRestricted() ? impersonationPrivateNotice : impersonationReadOnlyNotice }}
+          {{ voterState() === 'submitted' && ballotPrivacyRestricted() ? impersonationPrivateNotice : impersonationReadOnlyNotice }}
         </p>
       }
       @if (myResponseError()) {

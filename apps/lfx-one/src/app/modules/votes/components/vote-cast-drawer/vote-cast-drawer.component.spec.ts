@@ -463,12 +463,13 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(submitButton()).toBeNull();
   });
 
-  it('does not expose a first-ballot form or submit during impersonation', async () => {
+  it.each([false, true, undefined, null])('explains why a first ballot cannot be cast during impersonation (privacy %s)', async (privacy) => {
     const submitMyResponse = vi.fn();
-    await setup(vi.fn().mockReturnValue(of(REVIEW_VOTE)), { submitMyResponse });
+    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { submitMyResponse });
     impersonating.set(true);
     await openWithoutListVote();
-    expect(el('vote-cast-impersonation-notice')).not.toBeNull();
+    expect(el('vote-cast-impersonation-notice')?.textContent).toContain('You cannot cast or change their vote.');
+    expect(el('vote-cast-impersonation-notice')?.textContent).not.toContain('This ballot is private');
     expect(el('vote-cast-question-q1')).toBeNull();
     expect(submitButton()).toBeNull();
     fixture.componentInstance['onSubmit']();

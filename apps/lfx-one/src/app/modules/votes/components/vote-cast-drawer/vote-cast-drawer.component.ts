@@ -120,7 +120,7 @@ export class VoteCastDrawerComponent {
   protected readonly impersonating = this.userService.impersonating;
   protected readonly ballotPrivacyRestricted = computed(() => this.impersonating() && this.vote()?.pseudo_anonymity !== false);
   protected readonly impersonationNotice = computed(() =>
-    this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
+    this.readOnly() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
   );
   protected readonly reviewNotice = 'Your vote has been recorded.';
   protected readonly ballotLoadError = "Couldn't load your current ballot. Close this panel and try again.";
