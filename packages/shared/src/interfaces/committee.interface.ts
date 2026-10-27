@@ -16,6 +16,18 @@ export interface CommitteeWriterProbeResult {
   transientFailure: boolean;
 }
 
+/** Router target for a group's edit wizard — tier-aware commands plus the `?project=` query param when the group carries a project slug. */
+export interface GroupEditLink {
+  commands: string[];
+  queryParams: Record<string, string>;
+}
+
+/** Option for the parent-group select; `value: null` is the "No Parent" choice. */
+export interface ParentCommitteeOption {
+  label: string;
+  value: string | null;
+}
+
 /** Pre-computed link target for the "Mailing list associated" Channels entry on My Groups rows/cards. */
 export interface CommitteeMailingListLink {
   /** Router commands: the single list's detail page, or the group's page when several lists are associated. */

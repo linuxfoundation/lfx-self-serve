@@ -391,4 +391,11 @@ describe('CommitteeSettingsTabComponent — general settings (name, type, parent
 
     expect(updateCommittee.mock.calls[0][1].parent_uid).toBeNull();
   });
+
+  it('marks the form invalid for a whitespace-only name, so Save is disabled instead of silently dropping it', () => {
+    component.form.patchValue({ name: '   ' });
+
+    expect(component.form.controls.name.invalid).toBe(true);
+    expect(component.form.invalid).toBe(true);
+  });
 });

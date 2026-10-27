@@ -86,7 +86,8 @@ export class CommitteeSettingsTabComponent {
 
   // Form
   public form = new FormGroup({
-    name: new FormControl('', [Validators.required]),
+    // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
+    name: new FormControl('', [Validators.required, Validators.pattern(/\S/)]),
     category: new FormControl('', [Validators.required]),
     parent_uid: new FormControl<string | null>(null),
     member_visibility: new FormControl(''),
