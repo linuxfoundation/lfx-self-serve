@@ -54,6 +54,10 @@ test.describe('Marketing kit home content', () => {
     await expect(page.getByTestId('mktg-kit-family-positioning-brand')).toContainText('No assets in this state');
     await page.getByTestId('filter-pill-draft').click();
     await expect(page.getByTestId('mktg-kit-asset-brand-kit')).toContainText('Draft');
+    const next = page.getByTestId('mktg-kit-next-step-action').getByRole('link');
+    await expect(next).toHaveAttribute('href', /documents\/foundation-message\/living/);
+    await next.click();
+    await expect(page).toHaveURL(/documents\/foundation-message\/living/);
   });
   test('empty projects distinguish missing, unbuilt and zero runs', async ({ page }) => {
     await setupKit(page);
@@ -65,8 +69,13 @@ test.describe('Marketing kit home content', () => {
     for (const family of MKTG_KIT_FAMILIES.filter((family) => family.assets.every((asset) => !asset.agentKey))) {
       await expect(page.getByTestId(`mktg-kit-family-availability-${family.id}`)).toHaveText('Coming soon');
       await expect(page.getByTestId(`mktg-kit-family-${family.id}`)).toContainText(family.description);
+      await expect(page.getByTestId(`mktg-kit-family-${family.id}`).getByRole('link')).toHaveCount(0);
     }
     await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-next-step')).toContainText('Nothing in the kit yet; create the messaging framework to start.');
+    await expect(page.getByTestId('mktg-kit-next-step-action').getByRole('link')).toHaveAccessibleName('Create messaging framework');
+    await expect(page.getByTestId('filter-pill-all')).toHaveCSS('background-color', 'rgb(236, 244, 255)');
+    await page.screenshot({ path: test.info().outputPath('kit-next-step-empty.png'), fullPage: true });
   });
   test('loading never claims zero assets', async ({ page }) => {
     let release = () => {};

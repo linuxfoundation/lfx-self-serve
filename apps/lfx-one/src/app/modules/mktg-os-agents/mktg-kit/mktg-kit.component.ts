@@ -7,9 +7,9 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
-import { resolveMktgFamilyActions } from '@lfx-one/shared/utils';
+import { resolveMktgFamilyActions, resolveMktgFamilyNextStep } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
@@ -31,6 +31,7 @@ export class MktgKitComponent {
   protected readonly familyCount = MKTG_KIT_FAMILIES.length;
   protected readonly selectedFilter = this.initSelectedFilter();
   protected readonly cards = this.initCards();
+  protected readonly nextStep = this.initNextStep();
 
   protected selectFilter(id: string): void {
     const filter = this.filters.find((option) => option.id === id);
@@ -40,6 +41,19 @@ export class MktgKitComponent {
         queryParams: { ...this.kit.projectQueryParams(), state: filter.id === 'all' ? null : filter.id },
         queryParamsHandling: 'merge',
       });
+  }
+
+  private initNextStep() {
+    return computed(() => {
+      const family = this.kit.families().find((view) => view.family.id === MKTG_KIT_POSITIONING_FAMILY_ID);
+      if (!family) return null;
+      const step = resolveMktgFamilyNextStep(family, {
+        loaded: !this.kit.loading() && !this.kit.error(),
+        canWrite: this.context.canWrite(),
+        approvedFramework: !!this.kit.documents()?.approvedFramework,
+      });
+      return step ? { ...step, queryParams: { project: this.kit.projectQueryParams().project ?? '', ...step.queryParams } } : null;
+    });
   }
 
   private initSelectedFilter(): Signal<MktgKitFilter> {

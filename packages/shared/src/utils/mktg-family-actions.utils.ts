@@ -18,7 +18,7 @@ import {
   MKTG_KIT_STATE_LABELS,
 } from '../constants/mktg-kit.constants';
 import { MKTG_RUN_NEW_MODE } from '../constants/mktg-last-intake.constants';
-import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction } from '../interfaces/mktg-family-actions.interface';
+import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction, MktgFamilyNextStep } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitAssetRow, MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 
 /** Catalog availability is shared by canonical row states and action selection. */
@@ -155,6 +155,48 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
   const exportable =
     mktgFamilyExportAgentKeys(view.family.id).length > 0 && available.length > 0 && available.every(({ row }) => row.document && row.state === 'approved');
   return { rows, header: exportable ? { kind: 'export', label: MKTG_FAMILY_ACTION_LABELS.export(), agentId: null, mode: null, link: null } : null };
+}
+
+/** Present the existing family policy, never select a second action independently of its header. */
+export function resolveMktgFamilyNextStep(view: MktgKitFamilyView, ctx: MktgFamilyActionContext): MktgFamilyNextStep | null {
+  if (!view.live) return null;
+  const actions = resolveMktgFamilyActions(view, ctx);
+  const header = actions.header;
+  if (!header) return null;
+  const rows = Object.values(actions.rows).map((entry) => entry.row);
+  const target =
+    rows.find((row) => header.link && row.asset.agentKey === header.link.commands[1]) ??
+    rows.find((row) => MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.asset.agentKey && type.catalogAgentId === header.agentId));
+  const asset = target?.asset.runName ?? target?.asset.label.toLowerCase();
+  const commands =
+    header.link?.commands.map((command) => (command === '../../documents' ? 'documents' : command)) ??
+    (header.agentId ? [header.agentId] : ['families', view.family.id]);
+  let sentence = header.label;
+  if (header.kind === 'create' && asset) {
+    sentence = rows.some((row) => row.document) ? `Create the ${asset} next.` : `Nothing in the kit yet; create the ${asset} to start.`;
+  } else if ((header.kind === 'review' || header.kind === 'blocked') && target?.state === 'draft' && asset) {
+    const dependants = rows
+      .slice(rows.indexOf(target) + 1)
+      .filter((row) => row.state !== 'coming-soon')
+      .map((row) => row.asset.runName ?? row.asset.label.toLowerCase());
+    const names = dependants.length > 1 ? `${dependants.slice(0, -1).join(', ')} and the ${dependants.at(-1)}` : dependants[0];
+    sentence = `The ${asset} is drafted; approve it${names ? ` so ${names} can be created` : ''}.`;
+  } else if (header.kind === 'blocked') {
+    sentence = Object.values(actions.rows).find((entry) => entry.action?.blockedReason)?.action?.blockedReason ?? header.label;
+  } else if (header.kind === 'rebuild') {
+    const count = rows.filter((row) => row.state === 'needs-rebuild').length;
+    sentence = `${count} ${count === 1 ? 'asset is' : 'assets are'} stale; rebuild ${count === 1 ? 'it' : 'them'}.`;
+  } else if (header.kind === 'export') {
+    sentence = 'The kit is complete; export it.';
+  }
+  let hint = `Opens ${view.family.name}, where the stale assets are rebuilt.`;
+  if (header.kind === 'export') hint = `Opens ${view.family.name}, where the kit can be exported.`;
+  if (header.link) hint = `Opens the ${asset ?? 'required'} document in ${view.family.name}.`;
+  else if (header.agentId) {
+    const agent = view.agents.find((agent) => agent.id === header.agentId);
+    hint = `Opens the ${agent?.name ?? asset ?? 'asset'} run page in ${view.family.name}.`;
+  }
+  return { header, commands, queryParams: header.link?.queryParams ?? (header.mode ? { mode: header.mode } : {}), sentence, hint };
 }
 
 function missingDependency(agentId: string, ctx: MktgFamilyActionContext) {

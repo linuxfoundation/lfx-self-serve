@@ -86,7 +86,7 @@ describe('MktgDocumentsComponent', () => {
   let fixture: ComponentFixture<MktgDocumentsComponent>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let effectiveUser: ReturnType<typeof signal<{ sub: string } | null>>;
-  let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn>; restoreRevision: ReturnType<typeof vi.fn> };
+  let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
@@ -105,12 +105,6 @@ describe('MktgDocumentsComponent', () => {
     store = {
       listDocuments: vi.fn(() => of(documentsResponse())),
       getDocument: vi.fn(() => of(detail)),
-      restoreRevision: vi.fn(() => {
-        const restored = { ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) };
-        store.listDocuments.mockReturnValue(of(documentsResponse(1)));
-        store.getDocument.mockReturnValue(of(restored));
-        return of(restored);
-      }),
     };
     activeContext = signal<ProjectContext | null>(PROJECT);
     effectiveUser = signal<{ sub: string } | null>({ sub: 'synthetic-subject' });
@@ -121,7 +115,7 @@ describe('MktgDocumentsComponent', () => {
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
         provideRouter([{ path: '**', children: [] }]),
         provideNoopAnimations(),
-        { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
+        { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? ''), canWrite: signal(true) } },
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: UserService, useValue: { user: effectiveUser } },
       ],
@@ -257,7 +251,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-revision-2')).toBeNull();
   });
 
-  it('shows the selected document’s Revisions table: latest first, Open and Restore on older revisions', async () => {
+  it('shows the selected document’s Revisions table: current pill and only Open on older revisions', async () => {
     await render();
 
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
@@ -285,10 +279,16 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-revision-count')?.textContent?.trim()).toBe('2 revisions');
   });
 
-  it('heads the document with one way in, the current revision, and a New revision link only when the agent is in the catalog', async () => {
+  it('heads the document with one primary Open and a quieter Create a new version link', async () => {
     await render();
-    expect(query('mktg-documents-view-latest')?.textContent).toContain('Open document');
-    expect(query('mktg-documents-run-again-brand-kit')?.getAttribute('href')).toContain(BRAND_KIT.catalogAgentId!);
+    expect(query('mktg-documents-view-latest')?.textContent?.trim()).toBe('Open');
+    expect(query('mktg-documents-view-latest')?.tagName).toBe('LFX-BUTTON');
+    expect(query('mktg-documents-run-again-brand-kit')?.textContent?.trim()).toBe('Create a new version');
+    expect(query('mktg-documents-run-again-brand-kit')?.getAttribute('href')).toContain(BRAND_KIT.catalogAgentId ?? '');
+    expect(query('mktg-documents-revisions')?.querySelector('button')).toBeNull();
+    expect(query('mktg-documents-document-brand-kit')?.textContent).toContain(
+      'To switch back to an older one, open it and choose Make current there; nothing is added or deleted.'
+    );
     expect(query('mktg-documents-document-current')?.textContent?.replace(/\s+/g, ' ')).toContain('v2 written');
     expect(query('mktg-documents-document-current')?.textContent).toContain('generated from the form');
     expect(query('mktg-documents-revisions')?.querySelectorAll('th[scope="col"]')).toHaveLength(4);
@@ -305,18 +305,46 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-document-subtitle')?.textContent).toContain('Draft — pre-filled from your documents');
   });
 
-  it('makes an older revision current without changing the revision count', async () => {
-    await render();
+  it('uses the family header for an empty type instead of offering a blocked agent run', async () => {
+    const listing = documentsResponse();
+    const framework = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    const document = listing.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0];
+    if (!framework || !document) throw new Error('Synthetic framework and document must exist');
+    listing.groups = listing.groups.map((group) =>
+      group.type.agentKey === framework.agentKey ? { type: framework, documents: [{ ...document, agentKey: framework.agentKey }] } : group
+    );
+    store.listDocuments.mockReturnValue(of(listing));
+    await render('/?type=boilerplates');
+    const action = query('mktg-documents-run-agent-boilerplates');
+    expect(action?.textContent).toContain('Review and approve the framework');
+    expect(action?.querySelector('a')?.getAttribute('href')).toContain('/documents/foundation-message/living');
+    expect(query('mktg-documents-empty-living')?.textContent).not.toContain('Boilerplates Agent');
+    expect(query('mktg-documents-empty-living')?.querySelector('p')?.textContent).toBe(
+      'Nothing written yet. Opens the messaging framework document in Positioning & brand.'
+    );
+  });
 
-    query('mktg-documents-restore-1')?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
+  it('offers Create boilerplates after the framework is approved', async () => {
+    const listing = documentsResponse();
+    const document = listing.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0];
+    if (!document) throw new Error('Synthetic document must exist');
+    listing.groups = listing.groups.map((group) =>
+      group.type.agentKey === 'foundation-message'
+        ? { ...group, documents: [{ ...document, agentKey: 'foundation-message', approvedCurrent: { revisionId: revision(1).id, number: 1 } }] }
+        : group
+    );
+    listing.approvedFramework = { agentKey: 'foundation-message', revisionId: revision(1).id, revisionNumber: 1, contentSha256: 'a'.repeat(64) };
+    store.listDocuments.mockReturnValue(of(listing));
+    await render('/?type=boilerplates');
+    const action = query('mktg-documents-run-agent-boilerplates');
+    expect(action?.textContent).toContain('Create boilerplates');
+    expect(action?.querySelector('a')?.getAttribute('href')).toContain('mode=new');
+  });
 
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', detail.revisions[1].id);
-    expect(store.listDocuments).toHaveBeenCalledTimes(2); // Cancel stale polls and reload the acknowledged current pointer.
-    expect(query('mktg-documents-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
-    expect(query('mktg-documents-document-subtitle')?.textContent).toContain('revision 1 of 2');
+  it('keeps the empty sentence complete without a trailing space when no family action exists', async () => {
+    await render('/?type=icp');
+    expect(query('mktg-documents-empty-living')?.querySelector('p')?.textContent).toBe('Nothing written yet.');
+    expect(query('mktg-documents-run-agent-icp')).toBeNull();
   });
 
   it.each(['The writer', null])('shows resolved name %j or the no-name label', async (name) => {
@@ -338,65 +366,6 @@ describe('MktgDocumentsComponent', () => {
     expect(row).toMatch(/v3.*13 Oct.*revised from 4 comments · based on v1.*Current/);
     expect(row).toContain(`revised from 4 comments · based on v1 · ${name || 'name unavailable'}`);
     expect(query('mktg-documents-revision-1')?.textContent).toContain('no name (stored before names were recorded)');
-  });
-
-  it('updates the initiating type badge after a type switch without replacing the new detail or notice', async () => {
-    const pending = new Subject<unknown>();
-    store.restoreRevision.mockReturnValue(pending);
-    await render();
-    query('mktg-documents-restore-1')?.click();
-    await TestBed.inject(Router).navigateByUrl('/?type=foundation-message');
-    await fixture.whenStable();
-    store.listDocuments.mockReturnValue(of(documentsResponse(1)));
-    pending.next({ ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) });
-    pending.complete();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
-    expect(query('mktg-documents-empty-living')).not.toBeNull();
-    expect(query('mktg-documents-document-subtitle')).toBeNull();
-    expect(query('mktg-documents-notice')).toBeNull();
-  });
-
-  it('cancels a pre-restore type refetch and reads the committed current pointer instead', async () => {
-    const restore = new Subject<unknown>();
-    const stale = new Subject<MktgDocumentsResponse>();
-    const fresh = new Subject<MktgDocumentsResponse>();
-    store.restoreRevision.mockReturnValue(restore);
-    store.listDocuments.mockReturnValueOnce(of(documentsResponse())).mockReturnValueOnce(stale).mockReturnValueOnce(fresh);
-    await render();
-    query('mktg-documents-restore-1')?.click();
-    await TestBed.inject(Router).navigateByUrl('/?type=foundation-message');
-    await fixture.whenStable();
-    expect(stale.observed).toBe(true);
-    restore.next({ ...detail, revision: revision(1, { latest: true }) });
-    restore.complete();
-    expect(stale.observed).toBe(false);
-    expect(fresh.observed).toBe(true);
-    stale.next(documentsResponse());
-    await fixture.whenStable();
-    expect(query('mktg-documents-loading')).not.toBeNull();
-    const committed = documentsResponse();
-    const document = committed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0];
-    if (!document) throw new Error('Synthetic brand kit must exist');
-    document.latestRevisionId = detail.revisions[1].id;
-    document.currentRevisionNumber = 1;
-    fresh.next(committed);
-    await fixture.whenStable();
-    expect(store.listDocuments).toHaveBeenCalledTimes(3);
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
-    expect(query('mktg-documents-empty-living')).not.toBeNull();
-    expect(query('mktg-documents-notice')).toBeNull();
-  });
-
-  it('clears the success notice when another project is opened', async () => {
-    await render();
-    query('mktg-documents-restore-1')?.click();
-    await fixture.whenStable();
-    activeContext.set({ uid: 'proj-2', name: 'OtherOrbit', slug: 'otherorbit' });
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(query('mktg-documents-notice')).toBeNull();
   });
 
   it.each(['unavailable', 'started'])('never asserts no one-off runs while %s progress exists', async (state) => {
@@ -428,6 +397,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.textContent?.trim()).toBe('Open');
     expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
     if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
     if (state === 'failed') {
@@ -454,30 +424,6 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')).toBeNull();
     expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
-  });
-
-  it('retains the acknowledged current pointer on a transient same-scope non-poll reload', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    await render();
-    store.restoreRevision.mockImplementationOnce(() => {
-      const restored = { ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) };
-      store.getDocument.mockReturnValue(of(restored));
-      store.listDocuments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 }))).mockReturnValue(of(documentsResponse(1)));
-      return of(restored);
-    });
-    query('mktg-documents-restore-1')?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenNthCalledWith(2, PROJECT.uid);
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('last loaded');
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
-    expect(query('mktg-documents-revisions')).not.toBeNull();
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenNthCalledWith(3, PROJECT.uid, true);
-    expect(query('mktg-documents-refresh-warning')).toBeNull();
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
   });
 
   it.each(['unavailable', 'transient'])('backs off and bounds consecutive %s reads, then manual refresh resets the budget', async (kind) => {
@@ -701,24 +647,6 @@ describe('MktgDocumentsComponent', () => {
     const calls = store.listDocuments.mock.calls.length;
     vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
     expect(store.listDocuments).toHaveBeenCalledTimes(calls);
-  });
-
-  it('lets an accepted current-pointer write finish but ignores its receipt after an effective-subject switch', async () => {
-    const pending = new Subject<unknown>();
-    store.restoreRevision.mockReturnValue(pending);
-    await render();
-    query('mktg-documents-restore-1')?.click();
-    store.listDocuments.mockReturnValue(NEVER);
-    effectiveUser.set({ sub: 'other-synthetic-subject' });
-    await fixture.whenStable();
-    expect(pending.observed).toBe(true);
-    pending.next({ ...detail, revision: revision(1, { latest: true }) });
-    pending.complete();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(query('mktg-documents-notice')).toBeNull();
-    expect(query('mktg-documents-document-subtitle')).toBeNull();
-    expect(store.listDocuments).toHaveBeenCalledTimes(2);
   });
 
   it('cancels polling when the page is destroyed', async () => {
