@@ -100,6 +100,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // against the writer's actual contract rather than a copy that could silently drift from it.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-commit-filters.constants')),
   VALKEY_CACHE: {
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
@@ -1051,6 +1052,27 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     expect(response.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Sam Seat']);
     expect(response.rows.find((row) => row.name === 'Sam Seat')?.seatsCount).toBe(1);
     expect(response.stats.inGovernance).toBe(2);
+  });
+
+  // The unranged roster has one shared entry — what the reassign pickers, Access and Key Contacts read — so an
+  // unranged caller's filters must not shape it: a non-LF request cached there would hand the next picker a
+  // roster without seats or live-only people until the entry expired.
+  it('serves the full unranged roster to an unfiltered read after a non-LF unranged request', async () => {
+    cache.serveHits = true;
+
+    const nonLf = await run(null, { projectScope: 'non_lf', commitScope: 'merged', metric: 'code' });
+    const picker = await run(null);
+
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:roster']);
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
+    expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
+    for (const response of [nonLf, picker]) {
+      expect(response.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Sam Seat']);
+      expect(response.rows.find((row) => row.name === 'Sam Seat')?.seatsCount).toBe(1);
+      expect(response.stats.inGovernance).toBe(2);
+    }
+    expect(nonLf).toStrictEqual(picker);
   });
 });
 

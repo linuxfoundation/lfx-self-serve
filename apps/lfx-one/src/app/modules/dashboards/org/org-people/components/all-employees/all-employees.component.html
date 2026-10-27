@@ -39,42 +39,20 @@
         ariaLabel="Filter by activity" />
     </div>
     <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
-      <p-select
-        [options]="employmentOptions"
-        [ngModel]="selectedEmployment()"
-        (ngModelChange)="onEmploymentChange($event)"
-        optionLabel="label"
-        optionValue="value"
-        styleClass="w-full"
-        ariaLabel="Filter by employment" />
+      <lfx-select [form]="filterForm" control="employment" size="small" [options]="employmentOptions" styleClass="w-full" ariaLabel="Filter by employment" />
     </div>
     <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
-      <p-select
-        [options]="rangeOptions"
-        [ngModel]="selectedRange()"
-        (ngModelChange)="onRangeChange($event)"
-        optionLabel="label"
-        optionValue="value"
-        styleClass="w-full"
-        ariaLabel="Filter by time range" />
+      <lfx-select [form]="filterForm" control="range" size="small" [options]="rangeOptions" styleClass="w-full" ariaLabel="Filter by time range" />
     </div>
     <div class="w-full md:w-44" data-testid="org-people-all-employees-project-scope-filter">
-      <p-select
-        [options]="projectScopeOptions"
-        [ngModel]="selectedFilters().projectScope"
-        (ngModelChange)="onFiltersChange({ projectScope: $event })"
-        optionLabel="label"
-        optionValue="value"
-        styleClass="w-full"
-        ariaLabel="Filter by projects" />
+      <lfx-select [form]="filterForm" control="projectScope" size="small" [options]="projectScopeOptions" styleClass="w-full" ariaLabel="Filter by projects" />
     </div>
     <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
-      <p-select
+      <lfx-select
+        [form]="filterForm"
+        control="metric"
+        size="small"
         [options]="metricOptions"
-        [ngModel]="selectedCodeFilters().metric"
-        (ngModelChange)="onFiltersChange({ metric: $event })"
-        optionLabel="label"
-        optionValue="value"
         styleClass="w-full"
         ariaLabel="Count all commits, only main branch commits or all code contributions" />
     </div>

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   catchError,
@@ -30,6 +30,7 @@ import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -66,12 +67,14 @@ import type {
   OrgAllEmployeeSortDirection,
   OrgAllEmployeeStats,
   OrgCodeFilterValues,
+  OrgCodeMeasure,
   OrgCodeMeasureOption,
   OrgCommitFilters,
   OrgCountUnit,
   OrgDropdownOption,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
+  OrgProjectScope,
   OrgProjectScopeOption,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -93,7 +96,18 @@ import { AllEmployeesDetailComponent } from './all-employees-detail.component';
 /** All Employees tab body — filter bar, 5 stat cards, sortable table with chevron-toggled detail rows. */
 @Component({
   selector: 'lfx-org-people-all-employees',
-  imports: [DecimalPipe, FormsModule, InputTextModule, SelectModule, SkeletonModule, TooltipModule, EmptyStateComponent, AllEmployeesDetailComponent],
+  imports: [
+    DecimalPipe,
+    FormsModule,
+    ReactiveFormsModule,
+    InputTextModule,
+    SelectModule,
+    SkeletonModule,
+    TooltipModule,
+    EmptyStateComponent,
+    SelectComponent,
+    AllEmployeesDetailComponent,
+  ],
   templateUrl: './all-employees.component.html',
 })
 export class AllEmployeesComponent {
@@ -137,6 +151,13 @@ export class AllEmployeesComponent {
   protected readonly selectedFilters = signal<OrgCommitFilters>(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
   private readonly selectedFilters$ = toObservable(this.selectedFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
   protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
+  // The URL-backed selects; the signals above stay the source of truth and are mirrored into this form.
+  protected readonly filterForm = new FormGroup({
+    employment: new FormControl<OrgAllEmployeeEmploymentFilter>(this.selectedEmployment(), { nonNullable: true }),
+    range: new FormControl<OrgLensTimeRange>(this.selectedRange(), { nonNullable: true }),
+    projectScope: new FormControl<OrgProjectScope>(this.selectedCodeFilters().projectScope, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMeasure>(this.selectedCodeFilters().metric, { nonNullable: true }),
+  });
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
@@ -317,6 +338,17 @@ export class AllEmployeesComponent {
         takeUntilDestroyed()
       )
       .subscribe((filters) => this.selectedFilters.set(filters));
+
+    const controls = this.filterForm.controls;
+    controls.employment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onEmploymentChange(value));
+    controls.range.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onRangeChange(value));
+    controls.projectScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((projectScope) => this.onFiltersChange({ projectScope }));
+    controls.metric.valueChanges.pipe(takeUntilDestroyed()).subscribe((metric) => this.onFiltersChange({ metric }));
+    // URL changes, Clear filters and the handlers write the signals; mirror them back without re-firing the handlers.
+    effect(() => {
+      const { projectScope, metric } = this.selectedCodeFilters();
+      this.filterForm.setValue({ employment: this.selectedEmployment(), range: this.selectedRange(), projectScope, metric }, { emitEvent: false });
+    });
 
     // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten once the page has rendered.
     if (!orgCommitFiltersUrlMatches(this.selectedFilters(), (name) => this.route.snapshot.queryParamMap.get(name))) {
