@@ -4,11 +4,14 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeDetail, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { Tooltip } from 'primeng/tooltip';
 import { finalize, Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -296,6 +299,31 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.setTab('governance');
     await render();
     expect(document.body.textContent).toContain('Gold Members');
+  });
+
+  it('labels the Code tab total "Commits" with the shared commits definition tooltip', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next({
+      ...detail(),
+      code: [
+        {
+          projectId: 'project-1',
+          projectName: 'Project One',
+          foundationId: 'foundation-1',
+          foundationName: 'Foundation One',
+          totalCommits: 7,
+          lastActivityDate: null,
+          isMaintainer: false,
+        },
+      ],
+    });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
+    const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+    expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
   });
 
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {

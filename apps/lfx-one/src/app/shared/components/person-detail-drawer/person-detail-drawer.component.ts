@@ -3,16 +3,17 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, type Signal } from '@angular/core';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
+import { ORG_COMMITS_DEFINITION, ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeCommitteeMembership, PersonDrawerTab } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 
 /** Shared Org Lens person-detail drawer — opened via PersonDetailDrawerService (LFXV2-2195). */
 @Component({
   selector: 'lfx-person-detail-drawer',
-  imports: [DatePipe, DecimalPipe, DrawerModule],
+  imports: [DatePipe, DecimalPipe, DrawerModule, TooltipModule],
   templateUrl: './person-detail-drawer.component.html',
 })
 export class PersonDetailDrawerComponent implements OnDestroy {
@@ -26,6 +27,8 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'code', label: 'Code Contributions' },
     { id: 'governance', label: 'Governance' },
   ];
+
+  protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
 
   protected readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());

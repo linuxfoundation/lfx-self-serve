@@ -18,7 +18,7 @@ import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } fr
 export const ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES: OrgLeaderboardDetailCategory[] = [
   { key: 'maintainer', name: 'Maintainers' },
   { key: 'contributors', name: 'Contributors' },
-  { key: 'commits', name: 'Commit Activities' },
+  { key: 'commits', name: 'Commits' },
   { key: 'prs', name: 'PRs Opened' },
 ];
 
@@ -83,7 +83,7 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     bullets: [
       { label: 'Maintainers', text: '— 10 pts if the company has 1+ project maintainers, else 0.' },
       {
-        label: 'Contributors, Commit Activities, PRs Opened',
+        label: 'Contributors, Commits, PRs Opened',
         text: '— each 0.1% share of the project total earns 0.1 pt, plus a +1 bonus for any share above 0%.',
       },
     ],

@@ -108,7 +108,17 @@
                   <th class="border-b border-gray-200 px-3 py-2">Project</th>
                   <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
                   <th class="border-b border-gray-200 px-3 py-2">Role</th>
-                  <th class="border-b border-gray-200 px-3 py-2">Commits</th>
+                  <th class="border-b border-gray-200 px-3 py-2">
+                    <span class="inline-flex items-center gap-1" data-testid="org-people-all-employees-detail-commits-header">
+                      Commits
+                      <i
+                        class="fa-light fa-circle-info text-gray-400"
+                        [pTooltip]="commitsDefinition"
+                        tooltipPosition="top"
+                        aria-hidden="true"
+                        data-testid="org-people-all-employees-detail-commits-info"></i>
+                    </span>
+                  </th>
                   <th class="border-b border-gray-200 px-3 py-2">Last Active</th>
                 </tr>
               </thead>
