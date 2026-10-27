@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -532,6 +532,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
     loaded: WritableSignal<boolean>;
+    lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
 
   beforeEach(() => {
@@ -547,6 +548,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
       loaded: signal(true),
+      lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -713,5 +715,40 @@ describe('AccountContextService — All Organizations roll-up', () => {
     service.initializeUserOrganizations([seedA, seedB]);
     service.selectRollUp();
     expect(service.getAccountId()).toBe('all');
+  });
+
+  /**
+   * Regression, PR #4415 review 2. `OrgRoleGrantsService.refresh()` sets `loaded` true in its
+   * `catchError` branch as well, after clearing every grant set — its own comment calls the grants
+   * "unknown, not empty" and raises `lookupOutcome: 'failed'`. Reading that as settled demoted a
+   * genuine conglomerate admin on a transient outage AND persisted the concrete uid over their
+   * `all` cookie, so the choice did not come back once the outage cleared.
+   */
+  it('keeps the roll-up when the grants lookup failed rather than answered empty', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+    expect(service.isRollUp()).toBe(true);
+
+    // The outage: loaded flips true, every grant set is empty, outcome is 'failed'.
+    grants.loaded.set(true);
+    grants.lookupOutcome.set('failed');
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(true);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // A partial roll-up expansion is a lower bound for the same reason.
+  it('keeps the roll-up while the grants lookup is only partial', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    grants.lookupOutcome.set('partial');
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(true);
   });
 });

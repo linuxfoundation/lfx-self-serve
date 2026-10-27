@@ -30,6 +30,7 @@ describe('orgPathParamGuard', () => {
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
   let noteAddressed: Mock;
+  let selectRollUp: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -69,12 +70,16 @@ describe('orgPathParamGuard', () => {
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
     noteAddressed = vi.fn();
+    selectRollUp = vi.fn(() => true);
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord, selectRollUp },
+        },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
       ],
@@ -287,6 +292,76 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(httpError(503));
       expect(await outcome('bravo-llc', '/org/bravo-llc/projects')).toBe('/org/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * lfx-self-serve#4125/#4133 — the All Organizations roll-up. Added after PR #4415 review 2 noted
+   * that three behaviour changes here shipped untested, one of them (`prefer`) a single condition
+   * whose loss had been a high-severity regression in round 1.
+   */
+  describe('All Organizations roll-up', () => {
+    it('adopts /org/all without asking the resolver', async () => {
+      expect(await runGuard('all', '/org/all/people')).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith({ admitWhilePending: true });
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    /**
+     * On a cold deep link the grant sets have not answered. A conglomerate admin whose siblings are
+     * inherited grants would otherwise be bounced to their single persona seed before anyone knows
+     * better; the service admits on `admitWhilePending` and its reconciliation effect settles it.
+     */
+    it('admits the roll-up while eligibility is still pending', async () => {
+      selectRollUp.mockImplementation((options?: { admitWhilePending?: boolean }) => options?.admitWhilePending === true);
+      expect(await runGuard('all', '/org/all/people')).toBe(true);
+    });
+
+    // Re-pointed at the organization they do hold, keeping the page they asked for — not bounced to
+    // overview, and not sent to the dead end: the address names something that shrank, not something
+    // unreachable.
+    it('re-points an ineligible caller at their own organization, same page', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
+    });
+
+    // Nothing concrete to fall back to: the dead end is correct there.
+    it('lands on not-found when an ineligible caller holds no addressable organization', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(placeholder);
+      expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
+    });
+
+    it('renders without a selection on the server rather than redirecting', async () => {
+      platformId = 'server';
+      selectRollUp.mockReturnValue(false);
+      expect(await runGuard('all', '/org/all/people')).toBe(true);
+      expect(clearAccount).toHaveBeenCalled();
+    });
+
+    /**
+     * Regression guard, PR #4415 review round 1. The server validates `prefer` against
+     * `ORG_ACCOUNT_ID_PATTERN` and rejects anything else outright, so leaving roll-up mode by a Back
+     * or a concrete-organization link sent `prefer=all`, drew a 400, and landed a perfectly valid
+     * address on `/org/not-found`.
+     */
+    it('never offers the roll-up sentinel to the slug resolver as a preference', async () => {
+      selectedAccount.set(account({ uid: 'all', accountId: 'all', slug: null }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', null);
+    });
+
+    it('still prefers a concrete SFID selection when breaking a slug tie', async () => {
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', UID_A);
     });
   });
 });

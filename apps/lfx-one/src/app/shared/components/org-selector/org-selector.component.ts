@@ -356,11 +356,6 @@ export class OrgSelectorComponent {
   }
 
   /**
-   * Pick the roll-up. Mirrors `selectItem`'s contract: re-picking the current selection changes
-   * nothing, and a real pick re-addresses the current Org Lens page to `/org/all/…` rather than
-   * bouncing to overview. No canonical fetch — the roll-up names a set, not a `b2b_org` row.
-   */
-  /**
    * Activate the focused `[role=option]`, resolved by IDENTITY rather than by its position.
    *
    * `listboxOptions()` is every option in the DOM; `displayedRows()` is only the organization rows.
@@ -383,6 +378,12 @@ export class OrgSelectorComponent {
     return true;
   }
 
+  /**
+   * Pick the roll-up. Mirrors `selectItem`'s contract: re-picking the current selection changes
+   * nothing, except on the not-found dead end, where the pick is the viewer's way out. A new pick
+   * lands on `/org/all/overview` (#4133) rather than carrying the current page across. No canonical
+   * fetch — the roll-up names a set, not a `b2b_org` row.
+   */
   protected selectRollUp(): void {
     // Re-picking the current selection changes nothing — FR-014, as `selectItem` applies it — with
     // the same not-found exception: on the dead end the pick is the viewer's way out, and the

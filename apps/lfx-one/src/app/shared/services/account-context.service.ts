@@ -31,10 +31,11 @@ export const ROLLUP_MIN_ORGANIZATIONS = 2;
 
 /**
  * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
- * `b2b_org` row: `accountId` is empty because there is no Salesforce account behind it, and `slug` is
- * a confirmed `null` so nothing tries to learn one from the index. `uid` carries the reserved
- * segment, which is what every address, cookie and `:orgUid` request built from this selection ends
- * up spelling, and what `isRollUp` keys on.
+ * `b2b_org` row: there is no Salesforce account behind it, so both identifier fields carry the
+ * reserved segment instead (see the note on `accountId` below), and `slug` is a confirmed `null` so
+ * nothing tries to learn one from the index. The segment is what every address, cookie and
+ * `:orgUid` / `:accountId` request built from this selection ends up spelling, and what `isRollUp`
+ * keys on.
  */
 const ROLLUP_ACCOUNT: Account = {
   // The sentinel sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
@@ -157,13 +158,25 @@ export class AccountContextService {
   public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
 
   /**
-   * True while eligibility cannot be judged yet: the grant sets are still loading, so
-   * `rollUpOrganizationCount()` is a lower bound. A conglomerate's sibling organizations arrive as
-   * *inherited* grants rather than persona seeds, so during this window a caller who does qualify
-   * can still count as one organization. Callers restoring or adopting a roll-up admit it
-   * optimistically here and let `reconcileRollUpEligibility` settle it.
+   * True while eligibility cannot be judged: `rollUpOrganizationCount()` is a lower bound, so a
+   * caller who does qualify can still count as one organization. A conglomerate's sibling
+   * organizations arrive as *inherited* grants rather than persona seeds, which is what makes the
+   * difference. Callers restoring or adopting a roll-up admit it optimistically here and let the
+   * constructor's reconciliation effect (`demoteFromRollUp`) settle it.
+   *
+   * Two windows, not one. The obvious one is `!loaded()`. The other is a lookup that finished
+   * *badly*: `OrgRoleGrantsService.refresh()` sets `loaded` true in its `catchError` branch too,
+   * having cleared every grant set — its own comment says the grants are then "unknown, not empty",
+   * and it raises `degraded` / `lookupOutcome: 'failed'` to say so. Reading that as a settled answer
+   * would demote a genuine conglomerate admin on a transient BFF outage and persist the concrete uid
+   * over their `all` cookie, so the choice would not come back when the outage cleared. Anything but
+   * `'ok'` therefore stays pending: a `'partial'` roll-up expansion is a lower bound for the same
+   * reason. Staying in the roll-up through a degraded lookup is recoverable; silently overwriting
+   * the cookie is not.
    */
-  public readonly rollUpEligibilityPending: Signal<boolean> = computed(() => this.rollUpFlag() && !this.orgRoleGrantsService.loaded());
+  public readonly rollUpEligibilityPending: Signal<boolean> = computed(
+    () => this.rollUpFlag() && (!this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok')
+  );
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
