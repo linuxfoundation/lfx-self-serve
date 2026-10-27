@@ -331,20 +331,6 @@ export class OrgLensEventsService {
 }
 
 /**
- * Account-wide coverage probe for the address table, as an UNCORRELATED CTE.
- *
- * Rows whose address is null or blank are not counted: they cannot match any registration, so letting
- * one stand for coverage would switch the fallback off while supplying nothing to filter by — every
- * count on the page would go to 0, which is the exact outcome the fallback exists to prevent.
- *
- * It exists in this shape for a dialect reason, not a stylistic one: Snowflake does not allow a
- * correlated `EXISTS` as an argument to `OR`, so the obvious spelling of the fallback —
- * `EXISTS (…matches…) OR NOT EXISTS (…any row for this account…)` — fails to compile. Both query
- * paths catch and degrade to empty, so the failure would have surfaced as a silently blank page on
- * every cache miss rather than as an error. Hoisting coverage into a one-row CTE keeps both `OR`
- * operands plain column predicates. Takes one bind (the account id).
- */
-/**
  * Snowflake's single-argument `TRIM` removes spaces and nothing else — its docs are explicit that
  * "a specification of `' '` in characters does not remove other whitespace characters". A tab- or
  * newline-padded address would therefore survive normalization and match nothing, excluding a real
@@ -365,6 +351,20 @@ function normalizedEmail(column: string): string {
   return `LOWER(TRIM(${column}, ${EMAIL_WHITESPACE}))`;
 }
 
+/**
+ * Account-wide coverage probe for the address table, as an UNCORRELATED CTE.
+ *
+ * Rows whose address is null or blank are not counted: they cannot match any registration, so letting
+ * one stand for coverage would switch the fallback off while supplying nothing to filter by — every
+ * count on the page would go to 0, which is the exact outcome the fallback exists to prevent.
+ *
+ * It exists in this shape for a dialect reason, not a stylistic one: Snowflake does not allow a
+ * correlated `EXISTS` as an argument to `OR`, so the obvious spelling of the fallback —
+ * `EXISTS (…matches…) OR NOT EXISTS (…any row for this account…)` — fails to compile. Both query
+ * paths catch and degrade to empty, so the failure would have surfaced as a silently blank page on
+ * every cache miss rather than as an error. Hoisting coverage into a one-row CTE keeps both `OR`
+ * operands plain column predicates. Takes one bind (the account id).
+ */
 const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
         SELECT COUNT(*) AS COVERAGE_ROWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
