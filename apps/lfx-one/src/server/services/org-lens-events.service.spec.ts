@@ -483,24 +483,21 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.total).toBe(2);
   });
 
-  it('does not cache results produced while the org had no coverage', async () => {
+  it('caches zero-coverage results rather than querying live on every load', async () => {
     addEvent(EVENT, 99);
     addRegistration('someone@gmail.example', 'Someone Else');
 
-    // Zero coverage, so the in-SQL fallback let this registration through unfiltered.
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
     expect(list.data[0].orgAttendeeCount).toBe(1);
-    expect(drawer.total).toBe(1);
 
-    // Unfiltered rows are a fallback by another mechanism and must not be stored, or coverage
-    // arriving mid-TTL leaves a cached unfiltered list beside a freshly filtered drawer.
-    expect([...cacheValues.keys()]).toEqual([]);
+    // Refusing the write would make every load for such an org run the account-wide aggregate live —
+    // a permanent cost on exactly the orgs the fallback exists for, to avoid a staleness window that
+    // opens once, when coverage first lands, and closes within one TTL.
+    expect([...cacheValues.keys()].filter((key) => key.includes('events:v2'))).toHaveLength(1);
 
-    addCompanyEmail('grace@company.example');
-
-    expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].orgAttendeeCount).toBe(0);
-    expect((await service.getEventAttendees(REQ, ACCOUNT, EVENT)).total).toBe(0);
+    // The stored value is the answer itself, so the write was not merely attempted and discarded.
+    const [storedKey] = [...cacheValues.keys()].filter((key) => key.includes('events:v2'));
+    expect(JSON.parse(cacheValues.get(storedKey)!)).toHaveLength(1);
   });
 
   it('does not cache the unscoped fallback, for either surface', async () => {

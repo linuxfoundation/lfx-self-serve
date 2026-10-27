@@ -89,7 +89,6 @@ export class OrgLensEventsService {
         oe.EVENT_URL,
         oe.EVENT_REGISTRATION_URL,
         ${countExpression} AS ORG_REGISTRATION_COUNT,
-        ${scoped ? 'cov.COVERAGE_ROWS' : '-1'} AS COVERAGE_ROWS,
         NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
         oe.ORG_SPEAKER_ACCEPTED_COUNT,
         oe.ORG_SPEAKER_SUBMITTED_COUNT,
@@ -97,7 +96,6 @@ export class OrgLensEventsService {
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
       ${mode === 'platinum' ? '' : 'LEFT JOIN event_registration_counts cr ON cr.EVENT_ID = oe.EVENT_ID'}
-      ${scoped ? 'CROSS JOIN company_email_coverage cov' : ''}
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
         ${searchQueryFilter}
@@ -124,8 +122,7 @@ export class OrgLensEventsService {
         `events:v2:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventListRows(scopedQuery.sql, scopedQuery.binds, true),
-        isEventRowArray,
-        hasCompanyEmailCoverage
+        isEventRowArray
       );
     } catch (scopedError) {
       /**
@@ -256,8 +253,7 @@ export class OrgLensEventsService {
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
         MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
-        MAX(er.EVENT_NAME)                             AS EVENT_NAME,
-        ${scoped ? 'MAX(cov.COVERAGE_ROWS)' : '-1'}        AS COVERAGE_ROWS
+        MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
       ${scoped ? COMPANY_EMAIL_JOINS : ''}
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
@@ -289,8 +285,7 @@ export class OrgLensEventsService {
         `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds, true),
-        isContactRowArray,
-        hasCompanyEmailCoverage
+        isContactRowArray
       );
     } catch (scopedError) {
       // Same reasoning as the list, including the missing-object guard: any other failure must not
@@ -525,6 +520,12 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
  *
+ * KNOWN GAP, NOT CLOSED HERE. A zero-coverage result is unfiltered, and it IS cached. Refusing the
+ * write (as an earlier revision did) meant every list load and every drawer open for such an org ran
+ * the account-wide aggregate live — a permanent cost on exactly the orgs this fallback exists for, to
+ * avoid a staleness window that opens once, when coverage first lands, and closes within one TTL.
+ * Wrong trade; the window is documented instead.
+ *
  * KNOWN GAP, NOT CLOSED HERE. The list and the drawer are separate requests with separate cache
  * entries, so each picks its own spelling. During an address-table outage a list row served from a
  * cache entry written while the table was healthy (scoped) can sit next to a drawer that just fell
@@ -602,27 +603,9 @@ function registrationCountsCte(scoped: boolean): string {
         ${scoped ? COMPANY_EMAIL_JOINS : ''}
         WHERE er.ACCOUNT_ID = ?
           AND ${REGISTRANT_HAS_ADDRESS}
-          AND ${REGISTRANT_HAS_ADDRESS}
         ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         GROUP BY er.EVENT_ID
       )`;
-}
-
-/**
- * Refuses to cache a result produced while the account had NO address coverage.
- *
- * Those rows are unfiltered — the `cov.COVERAGE_ROWS = 0` arm of the rule let every registration
- * through — so they are a fallback by a different mechanism than the missing-table retry, and they
- * deserve the same treatment. Cached, they would keep a list unfiltered for up to a full TTL after
- * coverage first lands for an org, while an uncached drawer alongside it already applied the new
- * filter. Reads are unaffected; only the write is skipped, so a zero-coverage org simply queries
- * live until it has coverage worth caching.
- *
- * An empty result carries no flag and is cacheable: with zero coverage nothing is filtered out, so
- * no rows means no rows either way.
- */
-function hasCompanyEmailCoverage(rows: readonly { COVERAGE_ROWS?: unknown }[]): boolean {
-  return !rows.some((row) => row.COVERAGE_ROWS === 0);
 }
 
 /** scoped → company-email filtered; unscoped → same grain, no filter; platinum → ORG_EVENTS alone. */
