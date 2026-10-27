@@ -4,7 +4,7 @@ description: Frequently asked questions about committees in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, faq, governance]
-last_updated: 2026-10-20
+last_updated: 2026-10-27
 intercom_collection: Committees
 ---
 

@@ -4,7 +4,7 @@ description: Frequently asked questions about project documents in LFX Self Serv
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, faq]
-last_updated: 2026-08-17
+last_updated: 2026-10-27
 intercom_collection: Documents
 ---
 

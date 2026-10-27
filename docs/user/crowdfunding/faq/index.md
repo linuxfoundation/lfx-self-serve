@@ -4,7 +4,7 @@ description: Frequently asked questions about crowdfunding initiatives and donat
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, faq, initiatives, donations, recurring, refunds]
-last_updated: 2026-08-17
+last_updated: 2026-10-27
 intercom_collection: Crowdfunding
 ---
 
