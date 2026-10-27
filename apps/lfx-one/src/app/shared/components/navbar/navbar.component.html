@@ -470,7 +470,7 @@
 <p-popover
   #brandMenu
   appendTo="body"
-  [styleClass]="'lfxn-brand-popover' + (bannerOffset() ? ' lfxn-brand-popover--banner-offset' : '') + (railVisible() ? ' lfxn-brand-popover--rail' : '')"
+  [styleClass]="bannerOffset() ? 'lfxn-brand-popover lfxn-brand-popover--banner-offset' : 'lfxn-brand-popover'"
   (onShow)="brandMenuOpen.set(true)"
   (onHide)="brandMenuOpen.set(false)">
   <ng-template #content>
@@ -540,12 +540,7 @@
 </p-popover>
 
 <!-- Account menu — pinned just above the footer, styled like the brand menu. -->
-<p-popover
-  #userMenu
-  appendTo="body"
-  [styleClass]="railVisible() ? 'lfxn-menu-popover lfxn-account-popover lfxn-account-popover--rail' : 'lfxn-menu-popover lfxn-account-popover'"
-  (onShow)="userMenuOpen.set(true)"
-  (onHide)="userMenuOpen.set(false)">
+<p-popover #userMenu appendTo="body" styleClass="lfxn-menu-popover lfxn-account-popover" (onShow)="userMenuOpen.set(true)" (onHide)="userMenuOpen.set(false)">
   <ng-template #content>
     <div class="lfxn-account-menu" data-testid="navbar-account-menu">
       <div class="lfxn-account-menu__head">

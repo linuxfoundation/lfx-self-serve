@@ -1453,18 +1453,6 @@
   max-height: calc(100dvh - 100px);
 }
 
-// Beside the rail rather than over it: level with the logo, 8px right of the 56px gutter.
-.lfxn-brand-popover.lfxn-brand-popover--rail.p-popover {
-  top: 8px !important;
-  left: 64px !important;
-  max-height: calc(100dvh - 16px);
-}
-
-.lfxn-brand-popover.lfxn-brand-popover--banner-offset.lfxn-brand-popover--rail.p-popover {
-  top: 44px !important;
-  max-height: calc(100dvh - 52px);
-}
-
 .lfxn-brand-menu {
   display: flex;
   flex-direction: column;
@@ -1585,12 +1573,6 @@
   box-shadow:
     0 10px 24px -8px theme('colors.gray.900 / 18%'),
     0 2px 6px -2px theme('colors.gray.900 / 8%');
-}
-
-// Beside the rail: level with the footer, 8px right of the 56px gutter.
-.lfxn-account-popover.lfxn-account-popover--rail.p-popover {
-  bottom: 8px !important;
-  left: 64px !important;
 }
 
 .lfxn-account-menu {
