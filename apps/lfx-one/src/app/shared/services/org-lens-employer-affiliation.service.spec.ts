@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -27,6 +27,8 @@ interface Harness {
   affiliatedToMember: WritableSignal<boolean>;
   /** `OrgRoleGrantsService.refresh`, which re-asks that verdict. */
   refreshGrants: Mock<(bypassCache?: boolean) => Observable<void>>;
+  /** One subject per grants refresh, in call order, so a response can be delayed or left in flight. */
+  grantRefreshes: Subject<void>[];
 }
 
 interface SetupOptions {
@@ -44,7 +46,12 @@ function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded 
   const loaded = signal(grantsLoaded);
   const isStaff = signal(staff);
   const affiliatedToMember = signal(memberEmployer);
-  const refreshGrants: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
+  const grantRefreshes: Subject<void>[] = [];
+  const refreshGrants: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => {
+    const refreshed = new Subject<void>();
+    grantRefreshes.push(refreshed);
+    return refreshed.asObservable();
+  });
   const hasOrgSelectorAccess = signal(holdsOrg);
   const answers: Subject<OrgLensEmployerAffiliation>[] = [];
   const workExperienceRevision = signal(0);
@@ -76,6 +83,7 @@ function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded 
     workExperienceRevision,
     affiliatedToMember,
     refreshGrants,
+    grantRefreshes,
   };
   flush();
   return harness;
@@ -153,6 +161,22 @@ describe('OrgLensEmployerAffiliationService', () => {
     flush();
 
     expect(h.refreshGrants).toHaveBeenCalledWith(true);
+  });
+
+  // Two edits in quick succession must not leave an older grants response free to land last and
+  // restore the member verdict the newer edit cleared.
+  it('cancels a superseded grants refresh, so an out-of-order response cannot restore the old verdict', () => {
+    h = setup({ memberEmployer: true });
+
+    h.workExperienceRevision.set(1);
+    flush();
+    h.workExperienceRevision.set(2);
+    flush();
+
+    expect(h.grantRefreshes).toHaveLength(2);
+    // Unsubscribed, so its `tap` never applies and Angular cancels the request in the real service.
+    expect(h.grantRefreshes[0].observed).toBe(false);
+    expect(h.grantRefreshes[1].observed).toBe(true);
   });
 
   // Nobody outside the population has a verdict worth re-asking, so an edit must not spend a
