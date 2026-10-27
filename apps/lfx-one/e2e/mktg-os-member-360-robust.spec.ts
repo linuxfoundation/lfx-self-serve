@@ -58,18 +58,24 @@ for (const width of [1440, 1280, 390]) {
     await expect(method.locator('summary')).toHaveText('Method');
     await expect(page.getByTestId('member-360-trend')).toHaveText(['—', '—']);
     await expect(page.getByLabel('no trend', { exact: true })).toHaveCount(2);
-    const header = page.getByTestId('member-360-result-header');
+    const header = page.getByTestId('mktg-document-view-title-card');
+    await expect(header.getByTestId('member-360-download').getByRole('button')).toHaveText('Download workbook');
     const positions = await header.evaluate((element) => {
-      const title = element.querySelector('h2')?.getBoundingClientRect();
-      const subtitle = element.querySelector('p')?.getBoundingClientRect();
-      const actions = element.querySelector('[data-testid="member-360-result-actions"]')?.getBoundingClientRect();
-      if (!title || !subtitle || !actions) throw new Error('Result header is incomplete');
-      return { titleTop: title.top, subtitleBottom: subtitle.bottom, actionsTop: actions.top, titleRight: title.right, actionsLeft: actions.left };
+      const card = element.getBoundingClientRect();
+      const create = element.querySelector('[data-testid="member-360-new-run"]');
+      const download = element.querySelector('[data-testid="member-360-download"]');
+      if (!create || !download) throw new Error('Title-row actions are incomplete');
+      return {
+        cardRight: card.right,
+        createRight: create.getBoundingClientRect().right,
+        downloadLeft: download.getBoundingClientRect().left,
+        downloadRight: download.getBoundingClientRect().right,
+        follows: !!(create.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING),
+      };
     });
-    if (width >= 1280) {
-      expect(positions.actionsTop).toBe(positions.titleTop);
-      expect(positions.actionsLeft).toBeGreaterThanOrEqual(positions.titleRight);
-    } else expect(positions.actionsTop).toBeGreaterThan(positions.subtitleBottom);
+    expect(positions.follows).toBe(true);
+    expect(positions.downloadRight).toBeLessThanOrEqual(positions.cardRight);
+    if (width >= 1280) expect(positions.downloadLeft).toBeGreaterThanOrEqual(positions.createRight);
     // The wrapper has no selected-label/placeholder hook; only these internal classes distinguish the two visual states.
     for (const id of ['member-360-tier', 'member-360-owner']) {
       await expect(page.getByTestId(id).locator('.p-select-label')).toHaveText('All');

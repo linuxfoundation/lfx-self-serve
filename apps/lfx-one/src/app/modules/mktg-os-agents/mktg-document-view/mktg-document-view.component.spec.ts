@@ -362,6 +362,7 @@ describe('MktgDocumentViewComponent', () => {
     expectNoKitAssetChrome();
     expect(query('mktg-linkedin-draft-another')).not.toBeNull();
     expect(query('mktg-document-view-title-card')?.contains(query('mktg-linkedin-draft-another'))).toBe(true);
+    expect(query('mktg-linkedin-draft-another')?.querySelector('button')?.classList.contains('!p-0')).toBe(true);
     expect(query('mktg-document-view-document')?.contains(query('mktg-linkedin-draft-another'))).toBe(false);
     expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/shared');
     expect(query('mktg-document-view-revisions')).toBeNull();
@@ -796,6 +797,7 @@ describe('MktgDocumentViewComponent', () => {
     const download = query('member-360-download');
     expect(create?.textContent).toBe('Create another Member 360');
     expect(create?.classList.contains('text-blue-700')).toBe(true);
+    expect(create?.classList.contains('py-3')).toBe(false);
     expect(create && download && create.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(download?.textContent?.trim()).toBe('Download workbook');
     expect(download?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);

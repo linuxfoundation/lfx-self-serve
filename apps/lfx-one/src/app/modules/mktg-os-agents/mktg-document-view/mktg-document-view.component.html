@@ -38,7 +38,7 @@
         <lfx-button
           label="Draft another post"
           [text]="true"
-          styleClass="text-blue-700"
+          styleClass="text-sm font-medium text-blue-700 !p-0"
           (onClick)="onDraftAnother()"
           data-testid="mktg-linkedin-draft-another" />
       } @else if (view(); as current) {
@@ -59,7 +59,7 @@
           <a
             [routerLink]="result.runRoute()"
             [queryParams]="result.projectParams()"
-            class="py-3 text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            class="text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
             data-testid="member-360-new-run"
             >Create another Member 360</a
           >
