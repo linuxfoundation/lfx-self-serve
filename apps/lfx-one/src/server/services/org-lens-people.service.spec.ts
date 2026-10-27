@@ -581,7 +581,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(response.rows.map((row) => row.personKey)).toEqual(['person-non-lf']);
       expect(response.foundations).toEqual([{ foundationId: 'foundation-x', foundationName: 'Foundation X' }]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:12mo:non_lf:all:commits')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:12mo:non_lf')!)).toBe(true);
     });
 
     it('does not remember a failed former check, so the next read applies the guard', async () => {
@@ -642,25 +642,26 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(response.stats.codeContributors).toBe(codeContributors);
     });
 
-    it('caches each range and filter combination under its own key', async () => {
+    it('caches per range and project scope, one entry serving every commit scope and metric', async () => {
       addRangeRow(ACCOUNT, personKey, '30d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
-      addRangeRow(ACCOUNT, personKey, 'all', false, 'recent', 'Recent Person', 'recent@company.example', 9, { merged: 5 });
+      addRangeRow(ACCOUNT, personKey, 'all', false, 'recent', 'Recent Person', 'recent@company.example', 9, { merged: 5, code: 40 });
 
       expect((await service.getAllEmployees(ACCOUNT, '30d', FILTERS)).rows[0]?.commitsCount).toBe(3);
       expect((await service.getAllEmployees(ACCOUNT, 'all', FILTERS)).rows[0]?.commitsCount).toBe(9);
+      const readsBeforeSwitch = execute.mock.calls.length;
       expect((await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, commitScope: 'merged' })).rows[0]?.commitsCount).toBe(5);
+      expect((await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, metric: 'code' })).rows[0]?.commitsCount).toBe(40);
+      // Switching commit scope or metric re-projects the cached rows; it does not read the warehouse again.
+      expect(execute.mock.calls.length).toBe(readsBeforeSwitch);
       await service.getFormerEmployees(ACCOUNT, '30d', FILTERS);
       await service.getFormerEmployees(ACCOUNT, 'all', { ...FILTERS, metric: 'code' });
+      await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, projectScope: 'lf' });
 
-      for (const subResource of [
-        'people-all:v4:30d:all:all:commits',
-        'people-all:v4:all:all:all:commits',
-        'people-all:v4:all:all:merged:commits',
-        'people-former:v3:30d:all:all:commits',
-        'people-former:v3:all:all:all:code',
-      ]) {
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, subResource)!)).toBe(true);
-      }
+      expect([...cacheValues.keys()].sort()).toEqual(
+        ['people-all:v4:30d:all', 'people-all:v4:all:all', 'people-all:v4:all:lf', 'people-former:v3:30d:all', 'people-former:v3:all:all']
+          .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
+          .sort()
+      );
     });
 
     // The reassign pickers ask for no range: they keep the pre-#4163 roster.
@@ -678,7 +679,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:12mo:all:all:commits')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:12mo:all')!)).toBe(true);
     });
   });
 
@@ -725,6 +726,8 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
             BOARD_SEATS_COUNT: 0,
             COMMITTEE_SEATS_COUNT: 0,
             COMMITS_COUNT: 0,
+            MERGED_COMMITS_COUNT: 0,
+            CODE_ACTIVITIES_COUNT: 0,
             EVENTS_COUNT: 0,
             COURSES_COUNT: 0,
             ENGAGED_FOUNDATION_IDS: [],
@@ -742,7 +745,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
     expect(wire.rows[0].email).toBe('WireUser@Example.COM');
 
     // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
-    const internal = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const internal = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
     expect(execute).toHaveBeenCalledTimes(2);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
   });
@@ -768,6 +771,8 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
             BOARD_SEATS_COUNT: 1,
             COMMITTEE_SEATS_COUNT: 1,
             COMMITS_COUNT: 30,
+            MERGED_COMMITS_COUNT: 12,
+            CODE_ACTIVITIES_COUNT: 90,
             EVENTS_COUNT: 2,
             COURSES_COUNT: 1,
             ENGAGED_FOUNDATION_IDS: '["foundation-one","foundation-two"]',
@@ -786,6 +791,8 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
             BOARD_SEATS_COUNT: 0,
             COMMITTEE_SEATS_COUNT: 0,
             COMMITS_COUNT: 0,
+            MERGED_COMMITS_COUNT: 0,
+            CODE_ACTIVITIES_COUNT: 0,
             EVENTS_COUNT: 0,
             COURSES_COUNT: 0,
             ENGAGED_FOUNDATION_IDS: ['foundation-one'],
@@ -797,11 +804,11 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
 
   it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
     mockRoster();
-    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     // Second call reads the entry the first one wrote, through the real serialize/parse round trip
     // the in-memory Valkey fixture performs.
-    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     // `toStrictEqual` distinguishes null from undefined from an absent key — the distinction this
     // exercises via `accessBadge`, which is optional and unset on a stored-only roster row. The
@@ -810,8 +817,15 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(execute).toHaveBeenCalledTimes(2);
-    // Tiles are counted over the rows, so a cache hit recomputes the same numbers.
-    expect(fromHit.stats).toEqual({ activeInOss: 1, inGovernance: 1, codeContributors: 1, eventAttendees: 1, trainees: 1 });
+    // Tiles are counted over the projected rows, so a cache hit recomputes the same numbers.
+    expect((await service.getAllEmployees(ACCOUNT, '12mo', FILTERS)).stats).toEqual({
+      activeInOss: 1,
+      inGovernance: 1,
+      codeContributors: 1,
+      eventAttendees: 1,
+      trainees: 1,
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
     // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
     // column is stored verbatim, so a decode that normalized it would show up here.
     expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
@@ -827,7 +841,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // reaches `mapEmployeeRow`, which calls `.trim()` on it — so without this check a cache HIT
     // becomes a 500 rather than a miss.
     mockRoster();
-    await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
     const usernameIndex = stored.rowsRaw.k.indexOf('LF_USERNAME');
@@ -835,7 +849,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     cacheValues.set(key, JSON.stringify(stored));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
   });
@@ -845,14 +859,14 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // missing data, so the guard has to reject the entry up front rather than serve a roster with
     // holes in it — silently dropping LF_USERNAME returns the directory to email-only matching.
     mockRoster();
-    await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
     stored.rowsRaw.k = stored.rowsRaw.k.filter((column) => column !== 'LF_USERNAME');
     cacheValues.set(key, JSON.stringify(stored));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
   });
@@ -862,9 +876,9 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // it from — or an org with no roster would refetch on every request forever.
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
-    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
@@ -875,10 +889,10 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
     const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v4:12mo:all:all:commits')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v4:12mo:all')!, JSON.stringify(legacy));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', FILTERS);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '12mo', 'all');
 
     expect(response.rows.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
   });

@@ -3,7 +3,7 @@
 
 import type { ColumnarTable } from './compact-cache.interface';
 import type { CommitteeServiceOrgSeat } from './org-memberships.interface';
-import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeStats } from './org-people.interface';
+import type { OrgAllEmployeeFoundationOption } from './org-people.interface';
 
 /**
  * The seat-level fields that repeat across the seats of one committee, stored once per distinct
@@ -46,13 +46,13 @@ export interface CompactOrgSeatsEntry {
 
 /**
  * Stored form of the per-caller merged people directory cache (GH-1906, namespace
- * `org-people-dir:v4:{range}`). `stats` and `foundations` are small fixed-size structures and are kept
- * verbatim; only `rows` — where the same ~19 field names repeat on every person — is compacted.
+ * `org-people-dir:v5:{range}:{projectScope}` or `:roster`). `foundations` is small and kept verbatim; only
+ * `rows` — where the same ~21 field names repeat on every person — is compacted. The rows carry every code
+ * count and no tiles: the request's commit filters pick the count and the tiles are counted after the read.
  */
 export interface CompactOrgPeopleDirectoryEntry {
   accountId: string;
-  /** `OrgAllEmployeeRow`s, columnar. */
+  /** `OrgAllEmployeeCountedRow`s, columnar. */
   r: ColumnarTable;
-  stats: OrgAllEmployeeStats;
   foundations: OrgAllEmployeeFoundationOption[];
 }

@@ -18,20 +18,11 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgPeopleTimeRange,
+  OrgProjectScope,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import {
-  computeOrgAllEmployeeStats,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  isFilterSafeIdentifier,
-  orgCommitFiltersKey,
-  splitDisplayName,
-  toColumnar,
-} from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -124,30 +115,30 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not apply to); the wire projection of the internal roster. */
+  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not scope); the wire projection of the internal roster. */
   public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters));
+    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters.projectScope), filters);
   }
 
   /**
    * Internal roster with merge-only fields retained — the live directory's stored seed. A time range
-   * reads that range's current employees in the project scope, with `commitsCount` carrying the code
-   * count the filters pick (authored commits, merged commits, or code activities); `null` reads the
-   * unranged ORG_PEOPLE_ALL roster the reassign pickers use. The cache holds raw warehouse rows and both
-   * accessors map after every read. Stats are counted over the rows, so the tiles match the table.
+   * reads that range's current employees in the project scope, each row carrying all three code counts
+   * (authored commits, merged commits, code activities) for the wire projection to pick from; `null`
+   * reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use. The cache holds raw warehouse rows
+   * and both accessors map after every read.
    */
   public async getAllEmployeesInternal(
     accountId: string,
     range: OrgPeopleTimeRange | null,
-    filters: OrgCommitFilters
+    projectScope: OrgProjectScope
   ): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v4:{range}:{projectScope}:{commitScope}:{metric}` | `people-all:v4:roster` (lfx-self-serve#4164):
-    // a ranged read is scoped by project and its count column follows the filters, so a `v3` entry must miss.
+    // `people-all:v4:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164): a ranged read is
+    // scoped by project and carries every code count, so one entry serves every commit scope and metric.
     const raw = await withOrgCompactCache(
       accountId,
-      `people-all:v4:${range ? `${range}:${orgCommitFiltersKey(filters)}` : 'roster'}`,
+      `people-all:v4:${range ? `${range}:${projectScope}` : 'roster'}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId, range, filters),
+      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
       {
         encode: encodeAllEmployeesRaw,
         decode: decodeAllEmployeesRaw,
@@ -155,11 +146,9 @@ export class OrgLensPeopleService {
       }
     );
 
-    const rows = raw.rowsRaw.map((row) => this.mapEmployeeRow(row));
     return {
       accountId,
-      rows,
-      stats: computeOrgAllEmployeeStats(rows),
+      rows: raw.rowsRaw.map((row) => this.mapEmployeeRow(row)),
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     };
   }
@@ -168,18 +157,16 @@ export class OrgLensPeopleService {
    * Former employees at the account active in the time range and project scope (lfx-self-serve#4311), the
    * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
    * directory — and the reassign pickers that read it — never sees a former employee. Stats are
-   * computed over these rows, so the tiles match the rows the "Former employees" view shows. No
-   * address is sent for someone who left, and none stands in for a blank name.
+   * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
+   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name.
    */
   public async getFormerEmployees(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    const raw = await this.getFormerEmployeesRaw(accountId, range, filters);
+    const raw = await this.getFormerEmployeesRaw(accountId, range, filters.projectScope);
     const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, EMAIL: null }), isFormer: true }));
-    return toWireResponse({
-      accountId,
-      rows,
-      stats: computeOrgAllEmployeeStats(rows),
-      foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
-    });
+    return toWireResponse(
+      { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
+      filters
+    );
   }
 
   /**
@@ -351,20 +338,20 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
-  private getFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
-    // `people-former:v3:{range}:{projectScope}:{commitScope}:{metric}` (lfx-self-serve#4164): scoped by project,
-    // count column per the filters, so a `v2` entry must miss.
+  private getFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
+    // `people-former:v3:{range}:{projectScope}` (lfx-self-serve#4164): scoped by project and carrying every
+    // code count, so a `v2` entry must miss and one entry serves every commit scope and metric.
     return withOrgCache(
       accountId,
-      `people-former:v3:${range}:${orgCommitFiltersKey(filters)}`,
+      `people-former:v3:${range}:${projectScope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFormerEmployeesRaw(accountId, range, filters),
+      () => this.fetchFormerEmployeesRaw(accountId, range, projectScope),
       isFormerEmployeesRaw
     );
   }
 
   /** Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations of their code rows in that scope. */
-  private async fetchFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
+  private async fetchFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -379,7 +366,9 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        ${rosterCountColumn(filters)} AS COMMITS_COUNT,
+        COMMITS_COUNT,
+        MERGED_COMMITS_COUNT,
+        CODE_ACTIVITIES_COUNT,
         EVENTS_COUNT,
         COURSES_COUNT,
         ENGAGED_FOUNDATION_IDS
@@ -395,13 +384,13 @@ export class OrgLensPeopleService {
         ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
       WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
         AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
-        ${orgProjectScopePredicate(filters.projectScope, 'c.IS_LF_PROJECT')}
+        ${orgProjectScopePredicate(projectScope, 'c.IS_LF_PROJECT')}
       ORDER BY c.FOUNDATION_NAME ASC
     `;
 
     const [rowsResult, foundationResult] = await Promise.all([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, filters.projectScope]),
-      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, filters.projectScope]),
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, projectScope]),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, projectScope]),
     ]);
 
     return { rowsRaw: rowsResult.rows, foundationRaw: foundationResult.rows };
@@ -447,18 +436,23 @@ export class OrgLensPeopleService {
   /**
    * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
    * mapping happens after the cache read. A range reads that range's current rows of
-   * ORG_PEOPLE_ALL_RANGES in the project scope, `COMMITS_COUNT` carrying the count the filters pick;
-   * `null` reads the unranged ORG_PEOPLE_ALL roster.
+   * ORG_PEOPLE_ALL_RANGES in the project scope, with all three code counts; `null` reads the unranged
+   * ORG_PEOPLE_ALL roster, whose one code count stands in for all three.
    */
-  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
+  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     const source = range
       ? {
           from: 'ORG_PEOPLE_ALL_RANGES',
-          count: rosterCountColumn(filters),
+          counts: 'COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT',
           where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE',
-          binds: [accountId, range, filters.projectScope],
+          binds: [accountId, range, projectScope],
         }
-      : { from: 'ORG_PEOPLE_ALL', count: 'COMMITS_COUNT', where: 'ACCOUNT_ID = ?', binds: [accountId] };
+      : {
+          from: 'ORG_PEOPLE_ALL',
+          counts: 'COMMITS_COUNT, COMMITS_COUNT AS MERGED_COMMITS_COUNT, COMMITS_COUNT AS CODE_ACTIVITIES_COUNT',
+          where: 'ACCOUNT_ID = ?',
+          binds: [accountId],
+        };
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -473,7 +467,7 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        ${source.count} AS COMMITS_COUNT,
+        ${source.counts},
         EVENTS_COUNT,
         COURSES_COUNT,
         ENGAGED_FOUNDATION_IDS
@@ -534,6 +528,8 @@ export class OrgLensPeopleService {
       boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
       committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
       commitsCount: row.COMMITS_COUNT ?? 0,
+      mergedCommitsCount: row.MERGED_COMMITS_COUNT ?? 0,
+      codeActivitiesCount: row.CODE_ACTIVITIES_COUNT ?? 0,
       eventsCount: row.EVENTS_COUNT ?? 0,
       coursesCount: row.COURSES_COUNT ?? 0,
       engagedFoundationIds: this.parseFoundationIdArray(row.ENGAGED_FOUNDATION_IDS),
@@ -788,14 +784,6 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
-}
-
-/** ORG_PEOPLE_ALL_RANGES column a row's displayed code count reads for the filters (aliased to COMMITS_COUNT, so the cached raw shape is one column whatever the filters). */
-function rosterCountColumn(filters: OrgCommitFilters): string {
-  if (filters.metric === 'code') {
-    return 'CODE_ACTIVITIES_COUNT';
-  }
-  return filters.commitScope === 'merged' ? 'MERGED_COMMITS_COUNT' : 'COMMITS_COUNT';
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */

@@ -419,7 +419,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       const between = { padding: 'x'.repeat(3.5 * 1_048_576) };
       setMock.mockResolvedValue('OK');
 
-      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:12mo:all:all:commits')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:12mo:all')!, between, 60)).resolves.toBe(false);
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
     } finally {
       tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
@@ -433,7 +433,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
     // release decision, not a runtime knob, and a test that overwrote it would be changing
     // production behaviour for every later test in the run.
-    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:all:all:all:commits')!;
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:all:all')!;
     const serialized = JSON.stringify(oversized);
     expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
     setMock.mockResolvedValue('OK');
@@ -466,10 +466,10 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // storable for exactly these caches and refused for their siblings.
     setMock.mockResolvedValue('OK');
 
-    for (const subResource of ['people-all:v4:12mo:all:all:commits', 'people-all:v4:roster', 'people-event-attendees:v2', 'people-trainees:v2']) {
+    for (const subResource of ['people-all:v4:12mo:all', 'people-all:v4:roster', 'people-event-attendees:v2', 'people-trainees:v2']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
     }
-    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-all:v3:12mo', 'people-contributors:v3:all:all:all']) {
+    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-all:v3:12mo', 'people-contributors:v3:all:all']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
     for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, ...allOrgPeopleDirectoryNamespaces()]) {

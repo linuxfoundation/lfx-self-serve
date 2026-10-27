@@ -5,6 +5,7 @@ import { createHmac } from 'crypto';
 
 import type {
   OrgAccessUser,
+  OrgAllEmployeeCountedRow,
   OrgAllEmployeeRowInternal,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
@@ -31,7 +32,7 @@ const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAc
     readThroughs: 0,
     /** Namespace of every read-through, in call order. */
     namespaces: [] as string[],
-    /** JSON of the rows handed to the encoder — the uncached response exactly as the wire would carry it. */
+    /** JSON of the rows handed to the encoder — the uncached stored rows, every code count included. */
     encodedRows: null as string | null,
   },
 }));
@@ -103,12 +104,6 @@ vi.mock('@lfx-one/shared/constants', async () => ({
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
-  EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
-    accountId: '',
-    rows: [],
-    stats: { activeInOss: 0, inGovernance: 0, codeContributors: 0, eventAttendees: 0, trainees: 0 },
-    foundations: [],
-  },
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 // The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
@@ -141,6 +136,7 @@ import { toColumnar } from '@lfx-one/shared/utils';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { evictPerUserOrgFetch, resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directory.service';
+import { toWireRow } from './org-people-wire.mapper';
 
 const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const req = {} as never;
@@ -164,6 +160,8 @@ function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmploye
     boardSeatsCount: 2,
     committeeSeatsCount: 20,
     commitsCount: 0,
+    mergedCommitsCount: 0,
+    codeActivitiesCount: 0,
     eventsCount: 13,
     coursesCount: 0,
     engagedFoundationIds: [],
@@ -172,7 +170,7 @@ function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmploye
 }
 
 function baseResponse(rows: OrgAllEmployeeRowInternal[]): OrgAllEmployeesInternalResponse {
-  return { accountId: ACCOUNT, rows, stats: { activeInOss: 0, inGovernance: 0, codeContributors: 0, eventAttendees: 0, trainees: 0 }, foundations: [] };
+  return { accountId: ACCOUNT, rows, foundations: [] };
 }
 
 function seat(over: Record<string, unknown> = {}): never {
@@ -824,7 +822,7 @@ describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-190
   // miss path returns the decoded envelope too, so hit-vs-miss would only prove self-consistency.
   // Compared as JSON because that is the contract: a pre-compaction row carries
   // `accessBadge: undefined`, which the wire drops, so `toStrictEqual` would flag a difference no
-  // client can observe. Key order is uniform because every row passes through `toWireRow`.
+  // client can observe. Key order is uniform because every row passes through `toStoredRow` and `toWireRow`.
   it('serves exactly the uncached wire rows on a miss and on a hit, including which fields were absent', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
@@ -838,11 +836,15 @@ describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-190
     expect(miss.rows.length).toBeGreaterThan(1);
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
     expect(wire).not.toBeNull();
-    expect(JSON.stringify(miss.rows)).toBe(wire);
-    expect(JSON.stringify(hit.rows)).toBe(wire);
+    // The stored rows carry every code count; the wire carries the one the filters pick.
+    const expected = JSON.stringify((JSON.parse(wire!) as OrgAllEmployeeCountedRow[]).map((row) => toWireRow(row, FILTERS)));
+    expect(JSON.stringify(miss.rows)).toBe(expected);
+    expect(JSON.stringify(hit.rows)).toBe(expected);
+    expect(miss.rows.every((row) => !('mergedCommitsCount' in row) && !('codeActivitiesCount' in row))).toBe(true);
     // One row carries a badge and the rest never had the key at all — both must survive.
-    expect(hit.rows.some((row) => row.accessBadge === 'admin')).toBe(true);
-    expect(hit.rows.some((row) => !('accessBadge' in row))).toBe(true);
+    const hitJson = JSON.parse(JSON.stringify(hit.rows)) as Record<string, unknown>[];
+    expect(hitJson.some((row) => row['accessBadge'] === 'admin')).toBe(true);
+    expect(hitJson.some((row) => !('accessBadge' in row))).toBe(true);
   });
 
   // A pre-compaction (`org-people-dir:v2`) entry is a wire response with a `rows` array. It must
@@ -941,7 +943,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v5:12mo:all:all:commits', 'tester', ACCOUNT);
+    evictPerUserOrgFetch('org-people-dir:v5:12mo:all', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
@@ -967,25 +969,31 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await recent).rows[0].name).toBe('Last 30 Days');
     expect(allTime.rows[0].name).toBe('All Time');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, '30d', FILTERS],
-      [ACCOUNT, 'all', FILTERS],
+      [ACCOUNT, '30d', 'all'],
+      [ACCOUNT, 'all', 'all'],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v5:30d:all:all:commits', 'org-people-dir:v5:all:all:all:commits']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:30d:all', 'org-people-dir:v5:all:all']);
   });
 
-  it('keeps each commit-filter combination apart: its own stored read and cache namespace', async () => {
+  it('keeps each project scope apart, while one entry serves every commit scope and metric, projected per request', async () => {
     getAllEmployeesInternal
-      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'LF Commits' })]))
-      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'LF Code' })]));
-    const lfCode: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'LF', commitsCount: 10, mergedCommitsCount: 4, codeActivitiesCount: 25 })]))
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'Non-LF' })]));
+    cache.serveHits = true;
 
-    expect((await run('12mo', { ...FILTERS, projectScope: 'lf' })).rows[0].name).toBe('LF Commits');
-    expect((await run('12mo', lfCode)).rows[0].name).toBe('LF Code');
-    expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, '12mo', { ...FILTERS, projectScope: 'lf' }],
-      [ACCOUNT, '12mo', lfCode],
-    ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v5:12mo:lf:all:commits', 'org-people-dir:v5:12mo:lf:all:code']);
+    const commits = await run('12mo', { ...FILTERS, projectScope: 'lf' });
+    const code = await run('12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    const merged = await run('12mo', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+
+    expect([commits, code, merged].map((response) => response.rows[0].commitsCount)).toEqual([10, 25, 4]);
+    expect(code.stats.codeContributors).toBe(1);
+    expect(getAllEmployeesInternal.mock.calls).toEqual([[ACCOUNT, '12mo', 'lf']]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:12mo:lf', 'org-people-dir:v5:12mo:lf', 'org-people-dir:v5:12mo:lf']);
+
+    cache.entry = null;
+    expect((await run('12mo', { ...FILTERS, projectScope: 'non_lf' })).rows[0].name).toBe('Non-LF');
+    expect(getAllEmployeesInternal).toHaveBeenLastCalledWith(ACCOUNT, '12mo', 'non_lf');
+    expect(cache.namespaces.at(-1)).toBe('org-people-dir:v5:12mo:non_lf');
   });
 
   it('serves the unranged roster (no range) from its own cache namespace and stored read', async () => {
@@ -996,9 +1004,9 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await run(null)).rows[0].name).toBe('Roster');
     expect((await run('12mo')).rows[0].name).toBe('Ranged');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, null, FILTERS],
-      [ACCOUNT, '12mo', FILTERS],
+      [ACCOUNT, null, 'all'],
+      [ACCOUNT, '12mo', 'all'],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:12mo:all:all:commits']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:12mo:all']);
   });
 });

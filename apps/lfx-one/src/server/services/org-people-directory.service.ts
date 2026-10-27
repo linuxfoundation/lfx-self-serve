@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -10,25 +10,18 @@ import type {
   KeyContactEmployee,
   OrgAccessBadgeState,
   OrgAccessUser,
+  OrgAllEmployeeCountedRow,
   OrgAllEmployeeFoundationOption,
-  OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
-  OrgAllEmployeeStats,
+  OrgAllEmployeesCountedResponse,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
   OrgPeopleTimeRange,
   OrgPersonSource,
+  OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
-import {
-  computeOrgAllEmployeeStats,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  splitDisplayName,
-  toColumnar,
-} from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -40,7 +33,7 @@ import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
-import { toWireRow } from './org-people-wire.mapper';
+import { toStoredRow, toWireResponse } from './org-people-wire.mapper';
 import { withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -69,7 +62,7 @@ function isStoredString(value: unknown): boolean {
  * Switched on the row's own key union, so a misspelled case fails to compile instead of silently
  * leaving that column unchecked.
  */
-function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boolean {
+function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknown): boolean {
   switch (key) {
     case 'personKey':
     case 'name':
@@ -84,6 +77,8 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boo
     case 'boardSeatsCount':
     case 'committeeSeatsCount':
     case 'commitsCount':
+    case 'mergedCommitsCount':
+    case 'codeActivitiesCount':
     case 'eventsCount':
     case 'coursesCount':
       return typeof value === 'number';
@@ -157,18 +152,6 @@ function isFoundationOption(value: unknown): boolean {
   return isObject(value) && typeof f.foundationId === 'string' && typeof f.foundationName === 'string';
 }
 
-function isAllEmployeeStats(value: unknown): boolean {
-  const s = value as Partial<OrgAllEmployeeStats>;
-  return (
-    isObject(value) &&
-    typeof s.activeInOss === 'number' &&
-    typeof s.inGovernance === 'number' &&
-    typeof s.codeContributors === 'number' &&
-    typeof s.eventAttendees === 'number' &&
-    typeof s.trainees === 'number'
-  );
-}
-
 /**
  * Rejects a corrupt or pre-compaction merged-roster entry (degrades to a miss) — a `v2` value, with
  * its `rows` array of wire objects, has no columnar `r` and fails here rather than decoding into
@@ -182,24 +165,22 @@ function isCompactDirectoryEntry(value: unknown): boolean {
     isColumnarTable(entry.r) &&
     isDirectoryRowTable(entry.r) &&
     Array.isArray(entry.foundations) &&
-    entry.foundations.every(isFoundationOption) &&
-    isAllEmployeeStats(entry.stats)
+    entry.foundations.every(isFoundationOption)
   );
 }
 
-/** Projects the merged response onto the stored cache shape (GH-1906): `rows` columnar, `stats`/`foundations` verbatim (both are small, fixed-size structures). */
-function toCompactDirectory(response: OrgAllEmployeesResponse): CompactOrgPeopleDirectoryEntry {
+/** Projects the merged roster onto the stored cache shape (GH-1906): `rows` columnar, `foundations` verbatim (small, fixed-size). */
+function toCompactDirectory(response: OrgAllEmployeesCountedResponse): CompactOrgPeopleDirectoryEntry {
   return {
     accountId: response.accountId,
     r: toColumnar(response.rows, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS),
-    stats: response.stats,
     foundations: response.foundations,
   };
 }
 
-/** Rebuilds the exact `OrgAllEmployeesResponse` stored by {@link toCompactDirectory}. */
-function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmployeesResponse {
-  return { accountId: entry.accountId, rows: fromColumnar<OrgAllEmployeeRow>(entry.r), stats: entry.stats, foundations: entry.foundations };
+/** Rebuilds the exact counted roster stored by {@link toCompactDirectory}. */
+function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmployeesCountedResponse {
+  return { accountId: entry.accountId, rows: fromColumnar<OrgAllEmployeeCountedRow>(entry.r), foundations: entry.foundations };
 }
 
 /**
@@ -231,9 +212,10 @@ export class OrgPeopleDirectoryService {
    * Merged stored + live roster for one time range and its commit filters (`null` range: the unranged
    * roster), served through the per-caller shared cache: the merge folds in request-scoped
    * permission-filtered reads (committee seats, FGA-filtered key contacts, the caller's access view), so
-   * keying by caller + org stops one caller's roster from being replayed to another within the TTL. Each
-   * scope — range plus filters, or the unranged roster — has its own namespace, so the key and the
-   * in-process flight below both carry it.
+   * keying by caller + org stops one caller's roster from being replayed to another within the TTL. Only
+   * the range and project scope change who is listed, so each (range, project scope) — and the unranged
+   * roster — has its own namespace, holding every code count; the commit scope and metric pick the count
+   * and the tiles are counted after the read.
    *
    * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
    * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
@@ -243,15 +225,15 @@ export class OrgPeopleDirectoryService {
    * connection the session store shares. For monitoring: an oversize warning now counts a burst,
    * not a caller, so fewer warnings alone does not mean the value started to fit.
    *
-   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `stats`,
-   * `foundations` and each row's array fields (`sources`, `engagedFoundationIds`) are shared by
-   * reference between them, since they come from one parsed entry. That is safe only because the
-   * response is read-only downstream — it is serialized to the client or searched by
-   * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
+   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `foundations`
+   * and each row's array fields (`sources`, `engagedFoundationIds`) are shared by reference between
+   * them, since they come from one parsed entry. That is safe only because the response is read-only
+   * downstream — it is serialized to the client or searched by `OrgLensPeopleService`, never mutated.
+   * A consumer that needs to mutate it must copy first.
    */
   public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    const namespace = orgPeopleDirectoryNamespace(range, filters);
+    const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
@@ -262,27 +244,31 @@ export class OrgPeopleDirectoryService {
         username,
         accountId,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactDirectory(await this.computeLive(req, accountId, range, filters)),
+        async () => toCompactDirectory(await this.computeLive(req, accountId, range, filters.projectScope)),
         isCompactDirectoryEntry,
         isCurrent
       )
     );
-    return fromCompactDirectory(entry);
+    return toWireResponse(fromCompactDirectory(entry), filters);
   }
 
-  private async computeLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+  private async computeLive(
+    req: Request,
+    accountId: string,
+    range: OrgPeopleTimeRange | null,
+    projectScope: OrgProjectScope
+  ): Promise<OrgAllEmployeesCountedResponse> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
     const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
-      this.peopleService.getAllEmployeesInternal(accountId, range, filters),
+      this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
       this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
     ]);
 
-    const base: OrgAllEmployeesInternalResponse =
-      snowflake.status === 'fulfilled' ? snowflake.value : { ...EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, accountId, rows: [] };
+    const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
     if (snowflake.status === 'rejected') {
       logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only', {
         org_uid: accountId,
@@ -301,7 +287,7 @@ export class OrgPeopleDirectoryService {
     seats: PromiseSettledResult<CommitteeServiceOrgSeat[]>,
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
     access: PromiseSettledResult<OrgAccessUser[]>
-  ): OrgAllEmployeesResponse {
+  ): OrgAllEmployeesCountedResponse {
     const byKey = new Map<string, OrgAllEmployeeRowInternal>();
     const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
 
@@ -391,8 +377,7 @@ export class OrgPeopleDirectoryService {
     const merged = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
-      rows: merged.map(toWireRow),
-      stats: computeOrgAllEmployeeStats(merged),
+      rows: merged.map(toStoredRow),
       // Foundation options stay sourced from Snowflake (authoritative id↔name pairs). Live-only people
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,
@@ -561,6 +546,8 @@ export class OrgPeopleDirectoryService {
       boardSeatsCount: 0,
       committeeSeatsCount: 0,
       commitsCount: 0,
+      mergedCommitsCount: 0,
+      codeActivitiesCount: 0,
       eventsCount: 0,
       coursesCount: 0,
       engagedFoundationIds: [],

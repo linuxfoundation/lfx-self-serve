@@ -49,11 +49,12 @@ export const VALKEY_CACHE = {
   /**
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
-   * `{range}:{projectScope}:{commitScope}:{metric}` — placed before the principal, so the redacted key and the
-   * cache family stay `org-people-dir:v5`. `v2`: merge-only fields are stripped before the write and the
-   * validator asserts their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163):
-   * keyed by time range. `v5` (lfx-self-serve#4164): keyed by the commit filters too, which scope the stored
-   * roster and pick its code count. A write that invalidates the directory clears every scope.
+   * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
+   * `org-people-dir:v5`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
+   * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
+   * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
+   * directory clears every scope.
    */
   ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
 
@@ -238,8 +239,8 @@ export const VALKEY_CACHE = {
     // This roster compacts least of the five (×2.2) because its rows are mostly long values —
     // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
     // `v3` (lfx-self-serve#4163) is read per time range and for the unranged roster, and drops the
-    // stats table; `v4` (lfx-self-serve#4164) is also read per commit-filter combination. `all` is the
-    // widest range and has not been measured yet, so the `v2` cap carries over.
+    // stats table; `v4` (lfx-self-serve#4164) is also read per project scope and carries three code counts
+    // per row. `all` is the widest range and has not been measured yet, so the `v2` cap carries over.
     'org-lens-sf:v1:people-all:v4': 3 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
@@ -276,7 +277,7 @@ export const VALKEY_CACHE = {
     // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
     // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
     // `v4` (lfx-self-serve#4163) keys the roster by time range (plus the unranged picker roster), `v5`
-    // (lfx-self-serve#4164) by the commit filters too; the `v3` cap carries over until the widest (`all`) range is measured.
+    // (lfx-self-serve#4164) by project scope too, with three code counts per row; the `v3` cap carries over until the widest (`all`) range is measured.
     'org-people-dir:v5': 3 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

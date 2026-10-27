@@ -72,6 +72,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: 'CNCF',
         FOUNDATION_SLUG: 'cncf',
         COMMITS: 40,
+        MERGED_COMMITS: 15,
         CODE_ACTIVITIES: 120,
         LAST_ACTIVE_DATE: '2026-04-12',
         IS_DECLARED_MAINTAINER_FOR_PROJECT: true,
@@ -91,6 +92,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: null,
         FOUNDATION_SLUG: null,
         COMMITS: null,
+        MERGED_COMMITS: null,
         CODE_ACTIVITIES: null,
         LAST_ACTIVE_DATE: null,
         IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
@@ -110,6 +112,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: 'CNCF',
         FOUNDATION_SLUG: 'cncf',
         COMMITS: 3,
+        MERGED_COMMITS: 1,
         CODE_ACTIVITIES: 9,
         LAST_ACTIVE_DATE: '2026-01-05',
         IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
@@ -199,18 +202,16 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it('keys each time range, project scope and commit scope separately so one read cannot serve another', async () => {
+  it('keys each time range and project scope separately, one entry serving every commit scope and metric', async () => {
     await service.getContributors(ACCOUNT, 'all', FILTERS);
     await service.getContributors(ACCOUNT, '30d', FILTERS);
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, projectScope: 'lf' });
+    // Commit scope and metric only pick counts after the read, so they reuse the entry.
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, commitScope: 'merged' });
-    // The metric only picks the most-active project after the read, so it reuses the entry.
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, metric: 'code' });
 
-    expect([...cacheValues.keys()]).toEqual(
-      ['all:all:all', '30d:all:all', '30d:lf:all', '30d:all:merged'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v3:${suffix}`))
-    );
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect([...cacheValues.keys()]).toEqual(['all:all', '30d:all', '30d:lf'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v3:${suffix}`)));
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   it.each([
@@ -306,6 +307,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
           FOUNDATION_NAME: null,
           FOUNDATION_SLUG: null,
           COMMITS: null,
+          MERGED_COMMITS: null,
           CODE_ACTIVITIES: null,
           LAST_ACTIVE_DATE: null,
           IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
@@ -326,7 +328,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.
     const legacy = [{ PERSON_KEY: 'stale', PROJECT_ID: 'stale-project' }];
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v3:all:all:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v3:all:all')!, JSON.stringify(legacy));
 
     const response = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
@@ -354,6 +356,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
       FOUNDATION_NAME: null,
       FOUNDATION_SLUG: null,
       COMMITS: commits,
+      MERGED_COMMITS: Math.floor(commits / 2),
       CODE_ACTIVITIES: codeActivities,
       LAST_ACTIVE_DATE: '2026-04-12',
       IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
@@ -373,12 +376,18 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     expect(execute.mock.calls.at(-1)![1]).toEqual([ACCOUNT]);
   });
 
-  it('sums authored commits by default and merged commits under commitScope=merged', async () => {
+  it("reads authored and merged commits in one query and shows the commit scope's count", async () => {
     await service.getContributors(ACCOUNT, '12mo', FILTERS);
     expect(lastQuery()).toContain('SUM(daily_commits) AS commits');
+    expect(lastQuery()).toContain('SUM(daily_merged_commits) AS merged_commits');
 
-    await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, commitScope: 'merged' });
-    expect(lastQuery()).toContain('SUM(daily_merged_commits) AS commits');
+    const authored = await service.getContributors(ACCOUNT, '12mo', FILTERS);
+    const merged = await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, commitScope: 'merged' });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(authored.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(40);
+    expect(merged.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(15);
+    expect(merged.projects.find((row) => row.projectId === 'project-one' && row.personKey === 'person-one')?.commits).toBe(15);
   });
 
   it('sends code activities on every row and picks the most active project by the metric', async () => {

@@ -149,9 +149,15 @@ export interface ContributorPersonProjectRow {
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
   FOUNDATION_SLUG: string | null;
+  /** Authored commits, any branch. */
   COMMITS: number | null;
+  /** Authored commits merged to the main branch. */
+  MERGED_COMMITS: number | null;
   CODE_ACTIVITIES: number | null;
   LAST_ACTIVE_DATE: Date | string | null;
   IS_DECLARED_MAINTAINER_FOR_PROJECT: boolean | null;
   IS_DECLARED_MAINTAINER_FOR_ORG: boolean | null;
 }
+
+/** The count columns of {@link ContributorPersonProjectRow} the commit filters pick between. */
+export type ContributorCountColumn = 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES';

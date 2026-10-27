@@ -472,19 +472,15 @@ describe('seat reassign — caller cache invalidation', () => {
 
     expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
-    // The People directory is cached per time range and commit filters, and for the unranged picker roster; every one shows the reassigned seat.
+    // The People directory is cached per time range and project scope, and for the unranged picker roster; every one shows the reassigned seat.
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v5:roster', 'tester', ORG);
     for (const range of ['30d', '90d', '12mo', 'all']) {
       for (const projectScope of ['all', 'lf', 'non_lf']) {
-        for (const commitScope of ['all', 'merged']) {
-          for (const metric of ['commits', 'code']) {
-            expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v5:${range}:${projectScope}:${commitScope}:${metric}`, 'tester', ORG);
-          }
-        }
+        expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v5:${range}:${projectScope}`, 'tester', ORG);
       }
     }
     // Plus the seat roster itself: nothing else is cleared.
-    expect(invalidatePerUserCache).toHaveBeenCalledTimes(1 + 1 + 4 * 3 * 2 * 2);
+    expect(invalidatePerUserCache).toHaveBeenCalledTimes(1 + 1 + 4 * 3);
   });
 
   it.each(paths)('%s: an upstream failure leaves the caller’s caches alone', async (_label, reassign) => {

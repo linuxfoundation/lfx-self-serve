@@ -7,20 +7,37 @@
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.
 
-import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgAllEmployeeStats } from './org-people.interface';
+import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow } from './org-people.interface';
 
-/** In-memory merge row — the wire shape plus the field the identity merge accumulates. Never cached, never sent. */
-export interface OrgAllEmployeeRowInternal extends OrgAllEmployeeRow {
+/**
+ * Roster row carrying every code count the commit filters can pick (lfx-self-serve#4164): `commitsCount` is
+ * authored commits here, and the wire projection replaces it with the count the request's `commitScope` /
+ * `metric` select. The stored roster and the cached directory hold this shape, so one entry serves every
+ * commit scope and metric. Never sent.
+ */
+export interface OrgAllEmployeeCountedRow extends OrgAllEmployeeRow {
+  /** Authored commits merged to the main branch. */
+  mergedCommitsCount: number;
+  /** Code-contribution activities (commits, pull requests, reviews, comments). */
+  codeActivitiesCount: number;
+}
+
+/** In-memory merge row — the counted shape plus the field the identity merge accumulates. Never cached, never sent. */
+export interface OrgAllEmployeeRowInternal extends OrgAllEmployeeCountedRow {
   /** Every lowercased address that contributed to this row. Length > 1 is the normal result of a merge. */
   emails: string[];
 }
 
-/** In-memory merge payload — the stored seed and the pre-strip merge result. Never cached, never sent. */
-export interface OrgAllEmployeesInternalResponse {
+/** Counted roster payload, before the commit filters pick a count and the tiles are counted. Never sent. */
+export interface OrgAllEmployeesCountedResponse {
   accountId: string;
-  rows: OrgAllEmployeeRowInternal[];
-  stats: OrgAllEmployeeStats;
+  rows: OrgAllEmployeeCountedRow[];
   foundations: OrgAllEmployeeFoundationOption[];
+}
+
+/** In-memory merge payload — the stored seed. Never cached, never sent. */
+export interface OrgAllEmployeesInternalResponse extends OrgAllEmployeesCountedResponse {
+  rows: OrgAllEmployeeRowInternal[];
 }
 
 /** Per-(account, person) roster row: one time range of `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`, or the unranged `ORG_PEOPLE_ALL`. */
@@ -37,7 +54,12 @@ export interface OrgPeopleAllRow {
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
+  /** Authored commits (any branch) in the range and project scope; the unranged roster's code count. */
   COMMITS_COUNT: number;
+  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. */
+  MERGED_COMMITS_COUNT: number;
+  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. */
+  CODE_ACTIVITIES_COUNT: number;
   EVENTS_COUNT: number;
   COURSES_COUNT: number;
 }
