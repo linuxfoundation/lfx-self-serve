@@ -16,13 +16,14 @@ import {
 import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeInput, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
 import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { createHash } from 'node:crypto';
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { ObjectStoreService } from './object-store.service';
 
-/** One private scalar snapshot per project/registered intake. No listing or session-record reads. */
+/** Shared project snapshots for living intakes; writer-scoped LinkedIn snapshots. No listing or session-record reads. */
 export class MktgLastIntakeService {
   private readonly store = new ObjectStoreService();
   private readonly runs = new MktgDocumentRunService();
@@ -31,9 +32,11 @@ export class MktgLastIntakeService {
   public async read(req: Request, rawProject: unknown, rawAgentKey: unknown): Promise<MktgLastIntake | null> {
     const { agentKey, intake } = this.registration(rawAgentKey);
     const project = await this.runs.resolveProject(req, rawProject);
+    const subject = agentKey === LINKEDIN_POST_INTAKE.agentId ? getEffectiveSub(req) : null;
+    if (agentKey === LINKEDIN_POST_INTAKE.agentId && !subject) throw new AuthenticationError('A signed-in writer subject is required.');
     logger.debug(req, 'mktg_last_intake_read', 'Reading scalar intake history', { project, agentKey });
     try {
-      const stored = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, agentKey));
+      const stored = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, agentKey, subject));
       if (!stored) return null;
       if (Buffer.byteLength(stored.body) > MKTG_LAST_INTAKE_MAX_BYTES) throw this.unavailable();
       // Parse errors can quote source text. Never log or return the original error.
@@ -67,7 +70,8 @@ export class MktgLastIntakeService {
   public async recordStartBestEffort(req: Request, input: MktgLastIntakeInput): Promise<void> {
     try {
       const { agentKey, intake } = this.registration(MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === input.agentId)?.agentKey);
-      if (!getEffectiveSub(req)) throw new AuthenticationError('A signed-in writer subject is required.');
+      const subject = getEffectiveSub(req);
+      if (!subject) throw new AuthenticationError('A signed-in writer subject is required.');
       if (!MKTG_STARTED_RUN_ID_REGEX.test(input.runId) || !this.validCount(input.documentCount) || !this.validCount(input.logoCount)) {
         throw ServiceValidationError.forField('intake', 'Invalid accepted intake metadata.');
       }
@@ -91,7 +95,7 @@ export class MktgLastIntakeService {
       await this.store.putContentAddressedObject(
         req,
         'marketing-os-artifacts',
-        this.key(input.project, agentKey),
+        this.key(input.project, agentKey, subject),
         body,
         'application/json; charset=utf-8',
         'private, no-store',
@@ -148,9 +152,13 @@ export class MktgLastIntakeService {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
   }
 
-  private key(project: string, agentKey: string): string {
+  private key(project: string, agentKey: string, subject: string | null): string {
     if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project)) throw ServiceValidationError.forField('project', 'A single-segment project uid is required.');
-    return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}.json`;
+    if (agentKey !== LINKEDIN_POST_INTAKE.agentId) return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}.json`;
+    if (!subject) throw new AuthenticationError('A signed-in writer subject is required.');
+    const writer = createHash('sha256').update(subject).digest('hex');
+    // Never fall back to LinkedIn's former project-wide key: its writer cannot be established.
+    return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}/${writer}.json`;
   }
 
   private unavailable(): MicroserviceError {
