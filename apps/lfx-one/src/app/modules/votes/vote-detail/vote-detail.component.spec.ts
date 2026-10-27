@@ -374,6 +374,47 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
     });
 
+    it.each(['success', 'error'])('shows a loading placeholder until the ballot read settles with %s', async (outcome) => {
+      const pending = new Subject<MyVoteBallot | null>();
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(pending);
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+
+      if (outcome === 'success') {
+        pending.next(ballot);
+        pending.complete();
+      } else {
+        pending.error(new HttpErrorResponse({ status: 500 }));
+      }
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, outcome === 'success' ? 'vote-detail-my-ballot' : 'vote-detail-my-ballot-error')).not.toBeNull();
+    });
+
+    it('clears ballot loading when navigation cancels a pending read', async () => {
+      const pending = new Subject<MyVoteBallot | null>();
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(pending);
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).not.toBeNull();
+      voteService.fetchVote.mockReturnValue(of(makeVote({ uid: 'vote-2' })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2' })));
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(pending.observed).toBe(false);
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
     it('does not read a ballot for a voter who has not voted', async () => {
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
       const fixture = await setup();

@@ -135,6 +135,7 @@ export class VoteDetailComponent {
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
+  protected readonly myBallotLoading = signal<boolean>(false);
   protected readonly myBallotError = signal<boolean>(false);
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
@@ -436,12 +437,17 @@ export class VoteDetailComponent {
         distinctUntilChanged((a, b) => a.uid === b.uid && a.tick === b.tick && a.submitted === b.submitted),
         switchMap(({ uid, submitted }) => {
           this.myBallotError.set(false);
-          if (!uid || !submitted) return of(null);
+          if (!uid || !submitted) {
+            this.myBallotLoading.set(false);
+            return of(null);
+          }
+          this.myBallotLoading.set(true);
           return this.voteService.getMyVoteBallot(uid).pipe(
             catchError(() => {
               this.myBallotError.set(true);
               return of(null);
-            })
+            }),
+            finalize(() => this.myBallotLoading.set(false))
           );
         })
       ),

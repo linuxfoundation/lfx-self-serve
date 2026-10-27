@@ -4,6 +4,7 @@
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import {
+  INVITATION_NOT_FOUND,
   RECENTLY_OPENED_VOTE_TTL_MS,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
@@ -732,14 +733,53 @@ describe('VoteService', () => {
       expect(http.put).toHaveBeenCalledWith('/api/votes/responses/vr%2F1', payload);
     });
 
-    it('submitMyResponse updates a row that already responded and always sends comment_responses', () => {
+    it('submitMyResponse replaces only the explicitly selected ballot and always sends comment_responses', () => {
       http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
       http.put.mockReturnValue(of(undefined));
+      const params = { abstain: false, userVoteContent: answers, replaceResponseUid: 'vr-1' };
 
-      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+      service.submitMyResponse('vote-1', params).subscribe();
 
       expect(http.put).toHaveBeenCalledWith('/api/votes/responses/vr-1', { abstain: false, user_vote_content: answers, comment_responses: [] });
       expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('never silently replaces a recorded ballot when submitting from a stale first-vote form', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      http.put.mockReturnValue(of(undefined));
+      const error = vi.fn();
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe({ error });
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', expect.objectContaining({ vote_response_uid: 'vr-1' }));
+      expect(http.put).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 409 }));
+    });
+
+    it('honors explicit replacement even when the indexed status still awaits a response', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }));
+      http.post.mockReturnValue(of(undefined));
+      http.put.mockReturnValue(of(undefined));
+      const params = { abstain: false, userVoteContent: answers, replaceResponseUid: 'vr-1' };
+
+      service.submitMyResponse('vote-1', params).subscribe();
+
+      expect(http.put).toHaveBeenCalledWith('/api/votes/responses/vr-1', { abstain: false, user_vote_content: answers, comment_responses: [] });
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('does not replace a different invitation when the ballot response uid has changed', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-new', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.put.mockReturnValue(of(undefined));
+      const params = { abstain: false, userVoteContent: answers, replaceResponseUid: 'vr-old' };
+      const error = vi.fn();
+
+      service.submitMyResponse('vote-1', params).subscribe({ error });
+
+      expect(http.put).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: INVITATION_NOT_FOUND }));
     });
 
     it('submitMyResponse creates the ballot for a row still awaiting a response', () => {

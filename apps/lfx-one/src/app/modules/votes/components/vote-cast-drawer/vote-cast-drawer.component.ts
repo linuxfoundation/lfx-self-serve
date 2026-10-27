@@ -231,6 +231,8 @@ export class VoteCastDrawerComponent {
 
     const isAbstain = this.abstain();
     const changing = this.changingBallot();
+    const ballot = this.myBallot();
+    if (changing && (!ballot?.vote_response_uid || ballot.vote_uid !== vote.uid || this.loadingBallot() || this.ballotError())) return;
     if (!isAbstain && this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -246,7 +248,12 @@ export class VoteCastDrawerComponent {
     this.submitting.set(true);
 
     this.voteService
-      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
+      .submitMyResponse(vote.uid, {
+        abstain: isAbstain,
+        userVoteContent,
+        commentResponses,
+        replaceResponseUid: changing ? ballot?.vote_response_uid : undefined,
+      })
       .pipe(
         takeUntil(this.cancelSubmit$),
         takeUntilDestroyed(this.destroyRef),

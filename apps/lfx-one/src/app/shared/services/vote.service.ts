@@ -11,7 +11,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
+import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
@@ -577,17 +577,18 @@ export class VoteService {
 
   /**
    * Wraps getMyVoteResponse + createVoteResponse/updateVoteResponse; throws INVITATION_NOT_FOUND if no row exists.
-   * A row that already responded is updated in place (#4331) — upstream rejects a second POST for it.
+   * Only an explicit replacement target can update a ballot (#4331); a first-vote form always uses POST.
    */
   public submitMyResponse(
     voteUid: string,
-    params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
+    params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[]; replaceResponseUid?: string }
   ): Observable<void> {
     return this.getMyVoteResponse(voteUid).pipe(
       take(1),
       switchMap((myResponse) => {
         if (!myResponse?.uid) return throwError(() => new Error(INVITATION_NOT_FOUND));
-        if (myResponse.vote_status === IndexedVoteResponseStatus.RESPONDED) {
+        if (params.replaceResponseUid) {
+          if (myResponse.uid !== params.replaceResponseUid) return throwError(() => new Error(INVITATION_NOT_FOUND));
           // Always send comment_responses on an update: upstream keeps the old comments when it is omitted.
           return this.updateVoteResponse(myResponse.uid, {
             abstain: params.abstain,

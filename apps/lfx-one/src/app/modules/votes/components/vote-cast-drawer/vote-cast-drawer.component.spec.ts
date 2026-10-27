@@ -465,6 +465,7 @@ describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
 
     expect(submitMyResponse).toHaveBeenCalledWith(VOTE.uid, {
       abstain: false,
+      replaceResponseUid: RANKED_BALLOT.vote_response_uid,
       userVoteContent: [
         {
           question_id: 'q1',
@@ -682,7 +683,7 @@ describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
 
     expect(submitMyResponse).toHaveBeenCalledWith(
       VOTE.uid,
-      expect.objectContaining({ commentResponses: [{ prompt_id: 'p1', comment_text: 'Needs a second reading' }] })
+      expect.objectContaining({ replaceResponseUid: BALLOT.vote_response_uid, commentResponses: [{ prompt_id: 'p1', comment_text: 'Needs a second reading' }] })
     );
     expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: 'Ballot updated', detail: 'Your changes have been recorded.' })
