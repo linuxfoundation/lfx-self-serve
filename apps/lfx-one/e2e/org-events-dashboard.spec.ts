@@ -231,6 +231,8 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-events-data-table')).toBeVisible();
     // Shared columns still render, but the Action column is dropped on the past tab.
     await expect(page.getByTestId('org-event-attendees-event-1')).toBeVisible();
+    // The org's own registrant count only — never the event-wide goal the stub still carries.
+    await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
 
@@ -262,6 +264,9 @@ test.describe('Org Events Dashboard', () => {
   test('opens attendee and speaker drawers with non-PII row test ids', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Upcoming tab: the cell is the org's count alone, with no `/ 1500` goal beside it.
+    await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
 
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();

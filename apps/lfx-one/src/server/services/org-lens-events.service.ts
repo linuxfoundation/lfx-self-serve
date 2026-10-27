@@ -51,7 +51,8 @@ export class OrgLensEventsService {
     const searchQueryFilter = searchQuery ? 'AND oe.EVENT_NAME ILIKE ?' : '';
     let statusFilter = '';
     if (status === 'registered') {
-      statusFilter = 'AND oe.ORG_REGISTRATION_COUNT > 0';
+      // Reads the recomputed count, not oe.ORG_REGISTRATION_COUNT, or the filter offers rows whose company-email count is 0.
+      statusFilter = 'AND COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0) > 0';
     } else if (status === 'speaker-submitted') {
       statusFilter = 'AND oe.ORG_SPEAKER_SUBMITTED_COUNT > 0';
     } else if (status === 'speaker-accepted') {
@@ -63,6 +64,7 @@ export class OrgLensEventsService {
     const pastCondition = isPast ? 'oe.IS_PAST_EVENT = TRUE' : 'oe.IS_PAST_EVENT = FALSE';
 
     const sql = `
+      ${COMPANY_EMAIL_REGISTRATION_COUNTS_CTE}
       SELECT
         oe.EVENT_ID,
         oe.EVENT_NAME,
@@ -74,13 +76,15 @@ export class OrgLensEventsService {
         oe.EVENT_COUNTRY,
         oe.EVENT_URL,
         oe.EVENT_REGISTRATION_URL,
-        oe.ORG_REGISTRATION_COUNT,
+        COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0) AS ORG_REGISTRATION_COUNT,
         NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
         oe.ORG_SPEAKER_ACCEPTED_COUNT,
         oe.ORG_SPEAKER_SUBMITTED_COUNT,
         oe.IS_ORG_SPONSOR,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+      LEFT JOIN company_email_registrations cr
+        ON cr.EVENT_ID = oe.EVENT_ID
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
         ${searchQueryFilter}
@@ -89,14 +93,16 @@ export class OrgLensEventsService {
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
-    const binds: string[] = [accountId];
+    // The CTE's `?` precedes the WHERE clause's in the statement text, and Snowflake binds positionally.
+    const binds: string[] = [accountId, accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`);
 
     let rows: OrgEventRow[];
     try {
       rows = await withOrgCache(
         accountId,
-        `events:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
+        // `:v2` — the count is now company-email-scoped; entries written before this ship hold unfiltered counts.
+        `events:v2:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventListRows(sql, binds),
         isEventRowArray
@@ -176,6 +182,7 @@ export class OrgLensEventsService {
         ON UPPER(p.EMAIL) = UPPER(er.EMAIL) AND p.ACCOUNT_ID = ?
       WHERE er.EVENT_ID = ?
         AND er.ACCOUNT_ID = ?
+        AND ${COMPANY_EMAIL_EXISTS}
         ${searchFilter}
       GROUP BY er.EMAIL
       ORDER BY NAME ASC NULLS LAST
@@ -190,7 +197,8 @@ export class OrgLensEventsService {
     try {
       rows = await withOrgCache(
         accountId,
-        `event-attendees:${paramSignature([eventId, searchQuery ?? null])}`,
+        // `:v2` — the row set is now company-email-scoped; see the `events:v2` note above.
+        `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(sql, binds),
         isContactRowArray
@@ -318,6 +326,36 @@ export class OrgLensEventsService {
     };
   }
 }
+
+/**
+ * A registration counts for this org only when its address is one the warehouse already holds for the
+ * org — `ORG_PEOPLE_COMPANY_EMAILS` is the employer ∩ employee intersection the person-detail drawer
+ * reads. Upstream `ACCOUNT_ID` attribution does not require a company address (a personal address on a
+ * profile that links to the org still lands there), which is exactly what this excludes. Correlates on
+ * `er.ACCOUNT_ID` so the fragment needs no bind of its own.
+ */
+const COMPANY_EMAIL_EXISTS = `EXISTS (
+          SELECT 1
+          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
+          WHERE ce.ACCOUNT_ID = er.ACCOUNT_ID
+            AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))
+        )`;
+
+/**
+ * Per-event registrant count under the same rule, so a row and the drawer it opens never disagree.
+ * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used: it is precomputed with no company-email scoping.
+ * `COUNT(DISTINCT er.EMAIL)` matches the drawer's `GROUP BY er.EMAIL` grain exactly. Takes one bind
+ * (the account id). Replacing this with a scoped column on the platinum model is #4409.
+ */
+const COMPANY_EMAIL_REGISTRATION_COUNTS_CTE = `WITH company_email_registrations AS (
+        SELECT
+          er.EVENT_ID,
+          COUNT(DISTINCT er.EMAIL) AS COMPANY_EMAIL_REGISTRATION_COUNT
+        FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
+        WHERE er.ACCOUNT_ID = ?
+          AND ${COMPANY_EMAIL_EXISTS}
+        GROUP BY er.EVENT_ID
+      )`;
 
 /** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
 function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
