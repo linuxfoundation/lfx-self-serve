@@ -25,6 +25,7 @@ import {
   countVotesByStatus,
   findCursorWalkStartIndex,
   getUserTimezone,
+  isVoteAwaitingMyBallot,
   matchesMyVotesQuickFilter,
   recordPageToken,
   resolveCursorWalkOutcome,
@@ -55,12 +56,23 @@ import {
   timer,
 } from 'rxjs';
 
+import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-votes-dashboard',
-  imports: [LowerCasePipe, ButtonComponent, VotesTableComponent, RouterLink, EmptyStateComponent, SkeletonModule, StatCardGridComponent, PageHeaderComponent],
+  imports: [
+    LowerCasePipe,
+    ButtonComponent,
+    VotesTableComponent,
+    VoteCastDrawerComponent,
+    RouterLink,
+    EmptyStateComponent,
+    SkeletonModule,
+    StatCardGridComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
 })
@@ -111,6 +123,9 @@ export class VotesDashboardComponent {
   protected readonly managementSummaryError = signal(false);
   protected readonly managementStatusCountsLoading = signal(true);
   protected readonly managementStatusCountsError = signal(false);
+  // Me-lens cast drawer (#4330): opened in place for an active vote still awaiting the viewer's ballot.
+  protected readonly castDrawerVisible = signal<boolean>(false);
+  protected readonly castDrawerVoteId = signal<string | null>(null);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -142,6 +157,8 @@ export class VotesDashboardComponent {
   private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
+  // List row for the open cast drawer — seeds the ballot so it renders before the vote fetch returns.
+  protected readonly castDrawerVote: Signal<Vote | null> = computed(() => this.myVotes().find((v) => v.uid === this.castDrawerVoteId()) ?? null);
   protected readonly totalCount: Signal<number> = this.initTotalCount();
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
@@ -226,13 +243,31 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
   }
 
-  /** A vote opened from the list navigates to its page, which opens the cast drawer itself for a voter awaiting a ballot. */
+  /**
+   * The table's Vote button, title and row click all land here. In the Me lens, an active vote still awaiting the
+   * viewer's ballot opens the cast drawer on the list (#4330) — looked up synchronously in myVotes(), since
+   * castDrawerVote() hasn't re-derived yet. Every other vote, and every vote in the Project/Foundation lens, navigates
+   * to its page, which opens the cast drawer itself for a voter awaiting a ballot.
+   */
   protected onViewVote(voteId: string): void {
+    if (this.isMeLens()) {
+      const vote = this.myVotes().find((v) => v.uid === voteId);
+      if (vote && isVoteAwaitingMyBallot(vote)) {
+        this.castDrawerVoteId.set(voteId);
+        this.castDrawerVisible.set(true);
+        return;
+      }
+    }
     void this.router.navigate(['/votes', voteId]);
   }
 
   protected onViewResults(voteId: string): void {
     void this.router.navigate(['/votes', voteId], { queryParams: { tab: 'results' } });
+  }
+
+  // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
+  protected onCastVoteSubmitted(): void {
+    this.refresh$.next();
   }
 
   protected refreshVotes(): void {

@@ -22,7 +22,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
-import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { assertVoteWrite, hasVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -344,6 +344,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid/results
+   * Vote writers get today's results; everyone else goes through the service's non-writer gate (#4330).
    */
   public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -361,10 +362,12 @@ export class VoteController {
         return;
       }
 
-      const results = await this.voteService.getVoteResults(req, uid);
+      const canWrite = await hasVoteWrite(req, uid, 'get_vote_results');
+      const results = await this.voteService.getVoteResults(req, uid, { canWrite });
 
       logger.success(req, 'get_vote_results', startTime, {
         vote_uid: uid,
+        can_write: canWrite,
         num_poll_results: results?.poll_results?.length ?? 0,
         num_votes_cast: results?.num_votes_cast,
         results_held: results?.results_held === true,

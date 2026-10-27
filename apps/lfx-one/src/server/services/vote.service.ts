@@ -502,15 +502,27 @@ export class VoteService {
    * held until the vote has ended, and comments are returned as text only, in text order. The vote
    * is loaded alongside the results so a failed lookup fails the request rather than leaking
    * un-held results.
+   *
+   * A caller without `vote#writer` (`options.canWrite === false`, #4330) only gets results for an
+   * ended vote they were invited to and not removed from — anything else is a 403 before upstream
+   * results are fetched — and always gets comments as text only, in text order.
    */
-  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
-    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+  public async getVoteResults(req: Request, voteUid: string, options: { canWrite: boolean }): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid, can_write: options.canWrite });
 
     const path = `/votes/${this.encodeVoteUid(voteUid)}/results`;
-    const [vote, results] = await Promise.all([
-      this.getVoteById(req, voteUid),
-      this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
-    ]);
+    let vote: Vote;
+    let results: VoteResultsResponse;
+    if (options.canWrite) {
+      [vote, results] = await Promise.all([
+        this.getVoteById(req, voteUid),
+        this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
+      ]);
+    } else {
+      vote = await this.getVoteById(req, voteUid);
+      await this.assertVoterCanReadResults(req, voteUid, vote);
+      results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET');
+    }
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
@@ -551,7 +563,9 @@ export class VoteService {
       // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
       const responses = commentResult.responses ?? [];
       commentResult.total_responses = responses.length;
-      if (pseudoAnonymous) {
+      // A non-writer gets the same text-only payload on a named vote too (#4330): only vote managers
+      // may see who wrote each comment, so the identity is stripped here rather than in the browser.
+      if (pseudoAnonymous || !options.canWrite) {
         // Text only: `vote_id` equals the vote_response uid other endpoints expose, and
         // `vote_creation_time` / `abstained` (or recency order) could re-link a comment to its author.
         commentResult.responses = sortCommentResponsesByText(responses.map((response) => ({ comment_text: response.comment_text }))).slice(
@@ -568,6 +582,7 @@ export class VoteService {
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
+      can_write: options.canWrite,
       num_poll_results: results?.poll_results?.length ?? 0,
       num_votes_cast: results?.num_votes_cast,
       results_held: false,
@@ -1046,6 +1061,31 @@ export class VoteService {
       num_abstained: results.num_abstained,
       questions,
     };
+  }
+
+  /**
+   * Non-writer results gate (#4330): the vote has ended, and the caller holds a `vote_response` row
+   * for it that was not removed. Runs before upstream results are fetched, so a caller who fails it
+   * never reaches the data. Mirrors the browser's `canVoterFetchVoteResults`, which never asks for
+   * results outside these conditions, so a 403 here is only visible to direct API callers.
+   */
+  private async assertVoterCanReadResults(req: Request, voteUid: string, vote: Vote): Promise<void> {
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new MicroserviceError('Results are available after the vote closes.', 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
+
+    const mine = await this.getMyVoteResponse(req, voteUid);
+    if (!mine || mine.voter_removed) {
+      throw new MicroserviceError("You do not have access to this vote's results.", 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
   }
 
   /**

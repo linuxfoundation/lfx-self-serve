@@ -4,9 +4,7 @@
 @if (anonymous()) {
   <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 flex items-start gap-2" data-testid="vote-results-comments-anonymous-notice">
     <i class="fa-light fa-lock text-slate-500 mt-0.5" aria-hidden="true"></i>
-    <p class="text-sm text-slate-700">
-      Pseudo-anonymous vote. Comments are shown without names or dates, in alphabetical order. A comment's wording can still reveal who wrote it.
-    </p>
+    <p class="text-sm text-slate-700">{{ anonymousNotice() }}</p>
   </div>
 }
 @for (commentResult of paginatedCommentResults(); track commentResult.prompt.prompt_id) {

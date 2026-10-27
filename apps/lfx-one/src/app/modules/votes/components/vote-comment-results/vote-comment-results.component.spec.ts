@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
+import { VOTE_COMMENT_ANONYMOUS_NOTICES } from '@lfx-one/shared/constants';
 import { PollCommentResponse, PollCommentResult } from '@lfx-one/shared/interfaces';
 import { PaginatorState } from 'primeng/paginator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -182,6 +183,20 @@ describe('VoteCommentResultsComponent', () => {
 
       expect(byTestId(el, 'vote-results-comments-anonymous-notice')).toBeNull();
       expect(byTestId(el, 'vote-results-comment-meta')).toBeTruthy();
+    });
+  });
+
+  describe('voter view of a named vote (#4330)', () => {
+    it('renders text only with the voter-view notice instead of the pseudo-anonymous one', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      fixture.componentRef.setInput('anonymousReason', 'voter_view');
+      const el = render([result('p1', [{ comment_text: 'Synthetic p1 comment 01' }])]);
+
+      const notice = byTestId(el, 'vote-results-comments-anonymous-notice')?.textContent?.trim();
+      expect(notice).toBe(VOTE_COMMENT_ANONYMOUS_NOTICES.voter_view);
+      expect(notice).not.toContain('Pseudo-anonymous vote.');
+      expect(el.textContent).toContain('Synthetic p1 comment 01');
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeNull();
     });
   });
 

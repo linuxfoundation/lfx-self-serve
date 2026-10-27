@@ -4,18 +4,31 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getVotes, getVotesSummary, getVoteStatusCounts, getMyVotes, getVoteReminderRecipients, getVoteVoters, sendVoteReminders, assertVoteWrite, success } =
-  vi.hoisted(() => ({
-    getVotes: vi.fn(),
-    getVotesSummary: vi.fn(),
-    getVoteStatusCounts: vi.fn(),
-    getMyVotes: vi.fn(),
-    getVoteReminderRecipients: vi.fn(),
-    getVoteVoters: vi.fn(),
-    sendVoteReminders: vi.fn(),
-    assertVoteWrite: vi.fn(),
-    success: vi.fn(),
-  }));
+const {
+  getVotes,
+  getVotesSummary,
+  getVoteStatusCounts,
+  getMyVotes,
+  getVoteReminderRecipients,
+  getVoteVoters,
+  getVoteResults,
+  sendVoteReminders,
+  assertVoteWrite,
+  hasVoteWrite,
+  success,
+} = vi.hoisted(() => ({
+  getVotes: vi.fn(),
+  getVotesSummary: vi.fn(),
+  getVoteStatusCounts: vi.fn(),
+  getMyVotes: vi.fn(),
+  getVoteReminderRecipients: vi.fn(),
+  getVoteVoters: vi.fn(),
+  getVoteResults: vi.fn(),
+  sendVoteReminders: vi.fn(),
+  assertVoteWrite: vi.fn(),
+  hasVoteWrite: vi.fn(),
+  success: vi.fn(),
+}));
 vi.mock('../services/vote.service', () => ({
   VoteService: class {
     public getVotes = getVotes;
@@ -24,10 +37,11 @@ vi.mock('../services/vote.service', () => ({
     public getMyVotes = getMyVotes;
     public getVoteReminderRecipients = getVoteReminderRecipients;
     public getVoteVoters = getVoteVoters;
+    public getVoteResults = getVoteResults;
     public sendVoteReminders = sendVoteReminders;
   },
 }));
-vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite }));
+vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite, hasVoteWrite }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success, sanitize: vi.fn((value: unknown) => value) } }));
 vi.mock('@lfx-one/shared/utils', () => ({ codePointLength: (value: string) => [...value].length }));
 
@@ -334,6 +348,53 @@ describe('VoteController voters (#3911)', () => {
     getVoteVoters.mockRejectedValue(refusal);
     await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);
     expect(next).toHaveBeenCalledWith(refusal);
+    expect(json).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoteController results (#4330)', () => {
+  const controller = new VoteController();
+  const json = vi.fn();
+  const res = { json } as unknown as Response;
+  const next = vi.fn();
+  const request = (params: Record<string, unknown>) => ({ params, path: '/votes/vote-1/results' }) as unknown as Request;
+  beforeEach(() => vi.resetAllMocks());
+
+  it.each([true, false])('resolves vote write access first and passes canWrite=%s to the service', async (canWrite) => {
+    const results = { poll_results: [], comment_results: [], num_votes_cast: 0 };
+    hasVoteWrite.mockResolvedValue(canWrite);
+    getVoteResults.mockResolvedValue(results);
+    const req = request({ uid: 'vote-1' });
+
+    await controller.getVoteResults(req, res, next);
+
+    expect(hasVoteWrite).toHaveBeenCalledWith(req, 'vote-1', 'get_vote_results');
+    expect(hasVoteWrite.mock.invocationCallOrder[0]).toBeLessThan(getVoteResults.mock.invocationCallOrder[0]);
+    expect(getVoteResults).toHaveBeenCalledWith(req, 'vote-1', { canWrite });
+    expect(json).toHaveBeenCalledWith(results);
+    expect(success).toHaveBeenCalledWith(req, 'get_vote_results', undefined, expect.objectContaining({ vote_uid: 'vote-1', can_write: canWrite }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes an access-check outage to next(error) without reading results', async () => {
+    const unavailable = new MicroserviceError("Couldn't verify your access to this vote right now. Please try again.", 503, 'ACCESS_CHECK_UNAVAILABLE', {});
+    hasVoteWrite.mockRejectedValue(unavailable);
+
+    await controller.getVoteResults(request({ uid: 'vote-1' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(unavailable);
+    expect(getVoteResults).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's non-writer 403 to next(error) unchanged", async () => {
+    const forbidden = new MicroserviceError('Results are available after the vote closes.', 403, 'FORBIDDEN', {});
+    hasVoteWrite.mockResolvedValue(false);
+    getVoteResults.mockRejectedValue(forbidden);
+
+    await controller.getVoteResults(request({ uid: 'vote-1' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(forbidden);
     expect(json).not.toHaveBeenCalled();
   });
 });

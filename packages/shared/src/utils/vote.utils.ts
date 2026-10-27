@@ -72,10 +72,18 @@ export function isVoteClosingSoon(vote: Vote, nowMs: number): boolean {
   return Number.isFinite(endMs) && nowMs < endMs && endMs <= nowMs + VOTES_STATS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * True when the viewer can cast a ballot on this vote right now: it is active and their response is still awaited.
+ * Shared by the My Votes "needs vote" filter and the My Votes cast drawer, so both agree on which rows await a ballot.
+ */
+export function isVoteAwaitingMyBallot(vote: Vote): boolean {
+  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+}
+
 /** Matches the personal summary's status/response semantics at a shared time snapshot. */
 export function matchesMyVotesQuickFilter(vote: Vote, filter: MyVotesQuickFilter, nowMs: number): boolean {
   if (filter === 'closing-soon') return isVoteClosingSoon(vote, nowMs);
-  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+  return isVoteAwaitingMyBallot(vote);
 }
 
 /**
@@ -849,10 +857,14 @@ export function getVoteVisibilityRules(
     rules.push('Voting has closed. Totals and comments will appear once they are finalized.');
   } else if (audience === 'creator') {
     rules.push(isClosed ? 'As a manager, you can see the final totals and comments.' : creatorOpenVisibilityRule(pseudoAnonymous));
-    rules.push(isClosed ? 'Invited voters now see the final totals and comments.' : 'Voters see only their own response until the vote closes.');
+    rules.push(
+      isClosed ? 'Invited voters now see the final totals and comments, without commenter names.' : 'Voters see only their own response until the vote closes.'
+    );
   } else {
     rules.push(
-      isClosed ? 'Invited voters see the final totals and comments.' : 'You see only your own response. Totals and comments stay hidden until the vote closes.'
+      isClosed
+        ? 'Invited voters see the final totals and comments. Only vote managers see who wrote each comment.'
+        : 'You see only your own response. Totals and comments stay hidden until the vote closes.'
     );
   }
   // Only explicitly named votes permit individual ballots; missing privacy metadata fails closed.

@@ -48,6 +48,7 @@ import {
   getVoteVisibilityRules,
   getVoteVoterStatus,
   isRankedPollType,
+  isVoteAwaitingMyBallot,
   isVoteClosingSoon,
   mapFiltersToEligibility,
   mapVoteToCloneFormValue,
@@ -128,6 +129,30 @@ describe('matchesMyVotesQuickFilter', () => {
     expect(matchesMyVotesQuickFilter(active, 'closing-soon', nowMs)).toBe(true);
     expect(isVoteClosingSoon(active, nowMs)).toBe(true);
     expect(matchesMyVotesQuickFilter(active, 'needs-vote', nowMs)).toBe(true);
+  });
+});
+
+describe('isVoteAwaitingMyBallot', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    response_status: VoteResponseStatus.AWAITING_RESPONSE,
+    ...overrides,
+  });
+
+  it.each([PollStatus.ACTIVE, 'ACTIVE'])('is true for an awaiting response on status %s', (status) => {
+    expect(isVoteAwaitingMyBallot(vote({ status: status as PollStatus }))).toBe(true);
+  });
+
+  it('is false once the viewer has responded', () => {
+    expect(isVoteAwaitingMyBallot(vote({ response_status: VoteResponseStatus.RESPONDED }))).toBe(false);
+  });
+
+  it.each([PollStatus.ENDED, PollStatus.DISABLED])('is false for status %s', (status) => {
+    expect(isVoteAwaitingMyBallot(vote({ status }))).toBe(false);
   });
 });
 
@@ -1121,8 +1146,10 @@ describe('voter results helpers', () => {
 
     it('tells voters totals are hidden until close and shared with invited voters after', () => {
       expect(getVoteVisibilityRules('voter', false, false)[0]).toBe('You see only your own response. Totals and comments stay hidden until the vote closes.');
-      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe('Invited voters see the final totals and comments.');
-      expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments.');
+      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe(
+        'Invited voters see the final totals and comments. Only vote managers see who wrote each comment.'
+      );
+      expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments, without commenter names.');
     });
 
     it('names the ballot privacy for named and pseudo-anonymous votes', () => {

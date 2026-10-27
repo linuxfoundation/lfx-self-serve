@@ -113,3 +113,13 @@
     }
   }
 </div>
+
+<!-- Vote Cast Drawer (#4330) — Me lens only: opens in place for an active vote still awaiting the viewer's ballot. -->
+@if (isMeLens()) {
+  <lfx-vote-cast-drawer
+    [(visible)]="castDrawerVisible"
+    [voteId]="castDrawerVoteId()"
+    [listVote]="castDrawerVote()"
+    (voteSubmitted)="onCastVoteSubmitted()"
+    data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>
+}

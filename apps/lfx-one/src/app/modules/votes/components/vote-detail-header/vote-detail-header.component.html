@@ -38,14 +38,16 @@
         @if (canCastVote()) {
           <lfx-button label="Cast vote" icon="fa-light fa-check-to-slot" size="small" (onClick)="castVote.emit()" data-testid="vote-detail-header-cast-vote" />
         }
-        <lfx-button
-          label="View results"
-          icon="fa-light fa-chart-simple"
-          size="small"
-          [severity]="canCastVote() ? 'secondary' : undefined"
-          [outlined]="canCastVote()"
-          (onClick)="viewResults.emit()"
-          data-testid="vote-detail-header-view-results" />
+        @if (!limited()) {
+          <lfx-button
+            label="View results"
+            icon="fa-light fa-chart-simple"
+            size="small"
+            [severity]="canCastVote() ? 'secondary' : undefined"
+            [outlined]="canCastVote()"
+            (onClick)="viewResults.emit()"
+            data-testid="vote-detail-header-view-results" />
+        }
       </div>
     </div>
 
@@ -65,36 +67,40 @@
           <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ endedEarly }}
         </span>
       }
-      @if (invitedText(); as invited) {
-        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-invited">
-          <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}
-        </span>
+      @if (!limited()) {
+        @if (invitedText(); as invited) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-invited">
+            <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}
+          </span>
+        }
       }
     </div>
   </div>
 
-  <!-- Roving tabindex: only the selected tab is a Tab stop; Left/Right/Home/End move between tabs. The page renders the one panel. -->
-  <div
-    class="border-t border-gray-200 px-6 py-4 flex gap-2 flex-wrap"
-    role="tablist"
-    aria-label="Vote information"
-    (keydown)="onTabKeydown($event)"
-    data-testid="vote-detail-header-tabs">
-    @for (tab of tabs(); track tab.key) {
-      <button
-        #tabBtn
-        type="button"
-        role="tab"
-        [id]="'vote-detail-tab-' + tab.key"
-        [attr.aria-selected]="activeTab() === tab.key"
-        [attr.aria-controls]="activeTab() === tab.key ? 'vote-detail-tab-panel' : null"
-        [attr.tabindex]="activeTab() === tab.key ? 0 : -1"
-        (click)="tabChange.emit(tab.key)"
-        class="flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-        [ngClass]="activeTab() === tab.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-        [attr.data-testid]="'vote-detail-header-tab-' + tab.key">
-        <i class="fa-light {{ tab.icon }} mr-1.5" aria-hidden="true"></i>{{ tab.label }}
-      </button>
-    }
-  </div>
+  @if (!limited()) {
+    <!-- Roving tabindex: only the selected tab is a Tab stop; Left/Right/Home/End move between tabs. The page renders the one panel. -->
+    <div
+      class="border-t border-gray-200 px-6 py-4 flex gap-2 flex-wrap"
+      role="tablist"
+      aria-label="Vote information"
+      (keydown)="onTabKeydown($event)"
+      data-testid="vote-detail-header-tabs">
+      @for (tab of tabs(); track tab.key) {
+        <button
+          #tabBtn
+          type="button"
+          role="tab"
+          [id]="'vote-detail-tab-' + tab.key"
+          [attr.aria-selected]="activeTab() === tab.key"
+          [attr.aria-controls]="activeTab() === tab.key ? 'vote-detail-tab-panel' : null"
+          [attr.tabindex]="activeTab() === tab.key ? 0 : -1"
+          (click)="tabChange.emit(tab.key)"
+          class="flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+          [ngClass]="activeTab() === tab.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+          [attr.data-testid]="'vote-detail-header-tab-' + tab.key">
+          <i class="fa-light {{ tab.icon }} mr-1.5" aria-hidden="true"></i>{{ tab.label }}
+        </button>
+      }
+    </div>
+  }
 </lfx-card>

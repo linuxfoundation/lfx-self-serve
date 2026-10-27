@@ -33,6 +33,11 @@ export class VoteDetailHeaderComponent {
   public readonly tabs = input.required<readonly VoteDetailTabOption[]>();
   /** Active vote awaiting the viewer's ballot — shows Cast vote. */
   public readonly canCastVote = input<boolean>(false);
+  /**
+   * Hides the invited count, View results and the tab strip (#4330): set for a viewer who was never invited or was
+   * removed, and while access is still loading so those pieces never flash for them.
+   */
+  public readonly limited = input<boolean>(false);
 
   // === Outputs ===
   public readonly tabChange = output<VoteDetailTab>();

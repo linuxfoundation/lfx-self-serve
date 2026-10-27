@@ -4,7 +4,7 @@ description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 intercom_collection: Votes
 ---
 
@@ -19,15 +19,17 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 ## Cast your vote
 
-1. Open an active poll from the votes dashboard.
+1. Select **Votes** from the left navigation sidebar in the **Me** lens, then select an open poll you haven't voted on yet. Its ballot opens on the list. You can also open the poll's page, for example from a reminder email, and select **Cast vote**.
 2. Select your preferred option or options from the poll.
-3. Submit your vote.
+3. Submit your vote. The list then shows the poll as voted.
 
 ## View results
 
 Select a poll to view its current results and status.
 
 On a pseudo-anonymous poll, totals, abstentions and comments stay hidden until the poll closes and its results are finalized. Managers can see who has responded on the **Voters** tab, but not how anyone voted, both while the poll is open and after it closes. Comments appear without names or dates once results are released.
+
+When a poll closes, invited voters see the final totals and comments. Voters see comments without names. Only users who can manage the poll see who wrote each comment. People who weren't invited to a poll, or were removed from it, see only its title, status and close date, not its results or comments.
 
 ## Send a reminder
 

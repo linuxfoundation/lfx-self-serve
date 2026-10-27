@@ -27,6 +27,7 @@
         [activeTab]="activeTab()"
         [tabs]="tabs()"
         [canCastVote]="canCastVote()"
+        [limited]="!showVoteDetails()"
         (tabChange)="switchTab($event)"
         (sendReminder)="onSendReminder()"
         (castVote)="onCastVote()"
@@ -46,13 +47,13 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div
             class="lg:col-span-2 flex flex-col gap-6 min-w-0"
-            role="tabpanel"
+            [attr.role]="isOutsider() ? null : 'tabpanel'"
             id="vote-detail-tab-panel"
-            [attr.aria-labelledby]="'vote-detail-tab-' + activeTab()"
+            [attr.aria-labelledby]="isOutsider() ? null : 'vote-detail-tab-' + activeTab()"
             [attr.data-testid]="'vote-detail-panel-' + activeTab()">
             @switch (activeTab()) {
               @case ('overview') {
-                @if (voteData.description) {
+                @if (voteData.description && !isOutsider()) {
                   <lfx-card data-testid="vote-detail-description">
                     <div class="flex flex-col gap-2">
                       <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
@@ -184,7 +185,8 @@
                         [commentResults]="commentResults()"
                         [(pageState)]="commentPaginatorState"
                         [showBallotLinks]="showNamedBallotLinks()"
-                        [anonymous]="isPseudoAnonymous()"
+                        [anonymous]="isPseudoAnonymous() || audience() === 'voter'"
+                        [anonymousReason]="commentAnonymityReason()"
                         (viewBallot)="onViewBallot($event)" />
                     }
                   </lfx-card>
@@ -207,7 +209,9 @@
             }
           </div>
 
-          <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" [resultsHeld]="resultsHeld()" />
+          @if (!isOutsider()) {
+            <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" [resultsHeld]="resultsHeld()" />
+          }
         </div>
       }
     </div>

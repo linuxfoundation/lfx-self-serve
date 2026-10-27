@@ -1273,6 +1273,12 @@ export interface RankedQuestionView {
  */
 export type CursorWalkOutcome = { action: 'show' } | { action: 'restart'; refetch: boolean } | { action: 'clamp'; clampIndex: number };
 
+/**
+ * Why comment results render as text only (#4330): `pseudo_anonymous` for a pseudo-anonymous vote (#3916), and
+ * `voter_view` for a non-manager on a named vote — only vote managers see who wrote each comment.
+ */
+export type VoteCommentAnonymityReason = 'pseudo_anonymous' | 'voter_view';
+
 /** Tabs on the vote detail page (#3913); Overview is the default and is omitted from the `?tab=` query param. */
 export type VoteDetailTab = 'overview' | 'results' | 'comments' | 'voters';
 

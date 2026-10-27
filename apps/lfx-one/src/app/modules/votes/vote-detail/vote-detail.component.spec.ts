@@ -217,6 +217,7 @@ describe('VoteDetailComponent', () => {
 
     it('keeps the line breaks of a plain-text description', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ description: 'First paragraph\n\nSecond paragraph' })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
       const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-line"]');
@@ -924,6 +925,11 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('tabs', () => {
+    // An invited viewer: someone never invited gets Overview alone (#4330), covered under "voter comments and outsiders".
+    beforeEach(() => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+    });
+
     it('reads the tab from ?tab=', async () => {
       queryParamMap.next(convertToParamMap({ tab: 'results' }));
       const fixture = await setup();
@@ -1202,6 +1208,85 @@ describe('VoteDetailComponent', () => {
         [],
         expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: 'question-1:choice-yes', voters_ballot: null } })
       );
+    });
+  });
+
+  describe('voter comments and outsiders (#4330)', () => {
+    const header = (fixture: ComponentFixture<VoteDetailComponent>) => fixture.debugElement.query(By.css('lfx-vote-detail-header'));
+    const comments = (fixture: ComponentFixture<VoteDetailComponent>) => fixture.debugElement.query(By.css('lfx-vote-comment-results'));
+    const namedClosedVote = () => makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, description: 'Synthetic description' });
+
+    it('shows a voter the comments of a closed named vote as text only, with the voter-view notice', async () => {
+      voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'audience')).toBe('voter');
+      expect(comments(fixture).properties['anonymous']).toBe(true);
+      expect(comments(fixture).properties['anonymousReason']).toBe('voter_view');
+      expect(comments(fixture).properties['showBallotLinks']).toBe(false);
+      expect(header(fixture).properties['limited']).toBe(false);
+      const content = testId(fixture, 'vote-detail-panel-comments');
+      expect(content?.getAttribute('role')).toBe('tabpanel');
+      expect(content?.getAttribute('aria-labelledby')).toBe('vote-detail-tab-comments');
+    });
+
+    it('keeps names and ballot links for a manager on the same vote, even in the Me lens', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'audience')).toBe('creator');
+      expect(comments(fixture).properties['anonymous']).toBe(false);
+      expect(comments(fixture).properties['showBallotLinks']).toBe(true);
+      expect(header(fixture).properties['limited']).toBe(false);
+      expect(read(fixture, 'isOutsider')).toBe(false);
+    });
+
+    it.each([
+      { label: 'a viewer who was never invited', response: null, panel: 'vote-detail-voter-not-participant' },
+      {
+        label: 'a removed voter',
+        response: makeResponse(IndexedVoteResponseStatus.RESPONDED, { voter_removed: true }),
+        panel: 'vote-detail-voter-access-denied',
+      },
+    ])('trims the page to the header basics and the voter-state panel for $label', async ({ response, panel }) => {
+      voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
+      voteService.getMyVoteResponse.mockReturnValue(of(response));
+      queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+      const fixture = await setup();
+
+      expect(read(fixture, 'isOutsider')).toBe(true);
+      expect(header(fixture).properties['limited']).toBe(true);
+      expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toEqual(['overview']);
+      expect(read(fixture, 'activeTab')).toBe('overview');
+      expect(testId(fixture, panel)).not.toBeNull();
+      const content = testId(fixture, 'vote-detail-panel-overview');
+      expect(content?.hasAttribute('role')).toBe(false);
+      expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+      expect(testId(fixture, 'vote-detail-description')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
+      expect(testId(fixture, 'vote-detail-summary')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
+      expect(voteService.getVoteResults).not.toHaveBeenCalled();
+    });
+
+    it('keeps the limited header pieces hidden while access is still loading', async () => {
+      const myResponse = new Subject<MyVoteResponse | null>();
+      voteService.getMyVoteResponse.mockReturnValue(myResponse);
+      const fixture = await setup();
+
+      expect(read(fixture, 'accessLoading')).toBe(true);
+      expect(header(fixture).properties['limited']).toBe(true);
+
+      myResponse.next(makeResponse(IndexedVoteResponseStatus.RESPONDED));
+      myResponse.complete();
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(header(fixture).properties['limited']).toBe(false);
     });
   });
 

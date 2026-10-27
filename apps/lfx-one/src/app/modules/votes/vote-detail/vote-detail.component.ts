@@ -20,6 +20,7 @@ import {
   ServerRequestContext,
   StatCardItem,
   Vote,
+  VoteCommentAnonymityReason,
   VoteDetailState,
   VoteDetailTab,
   VoteDetailTabOption,
@@ -80,6 +81,9 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
  *
  * On a pseudo-anonymous vote the BFF holds totals, the abstention count and comments until the vote ends (`results_held`,
  * #3916): the page shows a held panel in their place and keeps the participation numbers.
+ *
+ * Non-managers see comments as text only, on named votes too (#4330) — the BFF strips commenter identity for them. A
+ * viewer who was never invited or was removed (`isOutsider`) sees only the header basics and the voter-state panel.
  */
 @Component({
   selector: 'lfx-vote-detail',
@@ -189,6 +193,16 @@ export class VoteDetailComponent {
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
   protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
+  /** A settled voter view for someone never invited or removed from the vote (#4330) — the page trims to the voter-state panel. */
+  protected readonly isOutsider: Signal<boolean> = computed(
+    () => !this.accessLoading() && this.audience() === 'voter' && (this.voterState() === 'not_participant' || this.voterState() === 'access_denied')
+  );
+  /** Invited count, View results, tabs and the facts card — hidden while access loads so an outsider never sees them flash (#4330). */
+  protected readonly showVoteDetails: Signal<boolean> = computed(() => !this.accessLoading() && !this.isOutsider());
+  /** Why comments render without names: the vote is pseudo-anonymous, or the viewer is not a manager (#4330). */
+  protected readonly commentAnonymityReason: Signal<VoteCommentAnonymityReason> = computed(() =>
+    this.isPseudoAnonymous() ? 'pseudo_anonymous' : 'voter_view'
+  );
   /** Results (and comments) render for a manager, or for a voter once the vote closed; every other voter gets a state panel. */
   protected readonly showsResults: Signal<boolean> = computed(
     () => this.audience() === 'creator' || (this.voterState() === 'closed' && !this.myResponseError())
@@ -494,9 +508,13 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it. */
+  /**
+   * Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it.
+   * An outsider gets Overview alone (#4330), so a `?tab=` deep link falls back to it.
+   */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
+      if (this.isOutsider()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
       const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));

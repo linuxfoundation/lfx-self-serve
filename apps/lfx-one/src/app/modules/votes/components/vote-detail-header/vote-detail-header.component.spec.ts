@@ -36,10 +36,11 @@ describe('VoteDetailHeaderComponent', () => {
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
   });
 
-  function render(inputs: { vote?: Vote; audience?: 'voter' | 'creator'; canCastVote?: boolean } = {}): void {
+  function render(inputs: { vote?: Vote; audience?: 'voter' | 'creator'; canCastVote?: boolean; limited?: boolean } = {}): void {
     fixture.componentRef.setInput('vote', inputs.vote ?? makeVote());
     fixture.componentRef.setInput('audience', inputs.audience ?? 'voter');
     fixture.componentRef.setInput('canCastVote', inputs.canCastVote ?? false);
+    fixture.componentRef.setInput('limited', inputs.limited ?? false);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
     fixture.detectChanges();
@@ -122,6 +123,19 @@ describe('VoteDetailHeaderComponent', () => {
 
       expect(emitted).toEqual(['reminder', 'cast', 'results', 'back']);
     });
+  });
+
+  it('hides the invited count, View results and the tab strip when limited (#4330)', () => {
+    render({ limited: true });
+
+    expect(exists('vote-detail-header-invited')).toBe(false);
+    expect(exists('vote-detail-header-view-results')).toBe(false);
+    expect(exists('vote-detail-header-tabs')).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
+    expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
+    expect(text('vote-detail-header-status')).toContain('Active');
+    expect(text('vote-detail-header-close-date')).toMatch(/^Closes /);
+    expect(exists('vote-detail-header-back')).toBe(true);
   });
 
   it('renders the tab strip and emits the clicked tab', () => {
