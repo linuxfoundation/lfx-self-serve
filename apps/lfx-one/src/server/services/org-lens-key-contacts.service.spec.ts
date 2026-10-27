@@ -92,6 +92,26 @@ describe('OrgLensKeyContactsService.getEmployees — roles are scoped to active 
     expect(await roles([contact()], [membership({ status: 'Expired' })])).toEqual([]);
   });
 
+  it("drops a role whose contact is 'Pending', which the Key Contacts tab also omits", async () => {
+    expect(await roles([contact({ status: 'Pending' })], [membership()])).toEqual([]);
+  });
+
+  it('treats an absent contact status as active, as the Key Contacts tab does', async () => {
+    expect(await roles([contact({ status: undefined })], [membership()])).toEqual(['Billing Contact']);
+  });
+
+  it('matches the contact status case-insensitively', async () => {
+    expect(await roles([contact({ status: 'ACTIVE' })], [membership()])).toEqual(['Billing Contact']);
+  });
+
+  it('keeps only the active half when one person holds an active and a pending role on live memberships', async () => {
+    const held = await roles(
+      [contact({ uid: 'kc-1', role: 'Billing Contact' }), contact({ uid: 'kc-2', role: 'Legal Contact', status: 'Pending' })],
+      [membership()]
+    );
+    expect(held).toEqual(['Billing Contact']);
+  });
+
   it('drops a role whose membership is absent from the org entirely', async () => {
     expect(await roles([contact({ project_membership_uid: 'm-unknown' })], [membership()])).toEqual([]);
   });

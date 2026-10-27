@@ -255,7 +255,7 @@ export class OrgLensKeyContactsService {
         roles: [
           ...new Set(
             group
-              .filter((doc) => OrgLensKeyContactsService.isOnActiveMembership(doc, activeMembershipUids))
+              .filter((doc) => OrgLensKeyContactsService.holdsLiveRole(doc, activeMembershipUids))
               .map((doc) => doc.role?.trim())
               .filter((role): role is string => !!role)
           ),
@@ -266,13 +266,23 @@ export class OrgLensKeyContactsService {
   }
 
   /**
-   * Whether the contact document hangs off a membership that is still active.
+   * Whether the document describes a role the person actually holds right now.
    *
-   * A document carries its membership under either key depending on the index, and one with neither is
-   * dropped rather than trusted: an unattributable role cannot be shown to be live, and showing a stale
-   * one is the worse failure — it would have the column claim a signatory the Key Contacts tab does not.
+   * Both halves mirror OrgPeopleKeyContactsService, because the Key Contact column and the Key Contacts
+   * tab have to agree about who holds what:
+   *
+   * - The contact must itself be active. A set status that is anything other than 'active' is dropped,
+   *   not just 'inactive' — the tab reads it that way, so a 'Pending' contact would otherwise earn a pill
+   *   here and appear nowhere on the tab. An absent status is treated as active, as the tab treats it.
+   * - The membership behind it must still be live. A document carries its membership under either key
+   *   depending on the index, and one with neither is dropped rather than trusted: an unattributable role
+   *   cannot be shown to be live, and showing a stale one is the worse failure.
+   *
+   * This gates the ROLE only. The employee list keeps its own looser filter, because the reassign pickers
+   * share that read and search the whole org.
    */
-  private static isOnActiveMembership(doc: KeyContactDoc, activeMembershipUids: ReadonlySet<string>): boolean {
+  private static holdsLiveRole(doc: KeyContactDoc, activeMembershipUids: ReadonlySet<string>): boolean {
+    if (doc.status && doc.status.toLowerCase() !== 'active') return false;
     const membershipUid = doc.project_membership_uid ?? doc.membership_uid;
     return !!membershipUid && activeMembershipUids.has(membershipUid);
   }
