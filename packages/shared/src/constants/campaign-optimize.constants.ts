@@ -947,6 +947,13 @@ export const REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE =
   "This campaign can't take negative keywords from here any more (the page changed project or brief, or the campaign changed). Nothing was sent.";
 
 /**
+ * The `read` of a Reddit keyword "Not sent" note recorded after the page LEFT the note's project (an
+ * add abandoned by that move). No read of that project is current, so the note takes the first read
+ * of the next visit instead. A real read id always contains `|`, so this never matches one.
+ */
+export const REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ = 'next-visit';
+
+/**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
  * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
  * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything
