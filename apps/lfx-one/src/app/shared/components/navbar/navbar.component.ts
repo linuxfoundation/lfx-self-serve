@@ -2,21 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import {
-  afterNextRender,
-  afterRenderEffect,
-  Component,
-  computed,
-  effect,
-  ElementRef,
-  inject,
-  Injector,
-  input,
-  Signal,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
+import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, Injector, input, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -51,6 +37,7 @@ import {
   LensOption,
   NavbarBrandApp,
   NavbarMenuBlock,
+  NavbarMorphFocus,
   NavbarRoleMark,
   NavbarRoleProject,
   NavbarTabIndicator,
@@ -72,7 +59,7 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
-import { filter } from 'rxjs';
+import { filter, pairwise, skip } from 'rxjs';
 
 import { NavMenuBase } from './nav-menu-base.directive';
 
@@ -312,6 +299,7 @@ export class NavbarComponent extends NavMenuBase {
   private readonly panelEl = viewChild<ElementRef<HTMLElement>>('panel');
   private peekOpenTimer: ReturnType<typeof setTimeout> | null = null;
   private peekCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private morphSettleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
   private pointer: { x: number; y: number } | null = null;
 
@@ -329,19 +317,23 @@ export class NavbarComponent extends NavMenuBase {
     this.initCollapse();
   }
 
-  /** The sidebar toggle: dock open or closed on wide viewports; open (pinned) or close a peek on narrow ones. */
-  protected onToggleClick(): void {
+  /**
+   * The sidebar toggle: dock open or closed on wide viewports; open (pinned) or close a peek on narrow ones. A keyboard
+   * press (no click count) keeps focus in the navbar; a pointer click drops it.
+   */
+  protected onToggleClick(event: MouseEvent): void {
     this.clearPeekOpenTimer();
+    const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
     if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peek() ? this.collapse.closePeek() : this.collapse.openPeek(true)));
+      this.morph(() => (this.collapse.peek() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
     }
     if (this.collapse.peek()) {
       // Already as wide as docked: the panel just stops floating, and the page gutter grows under it.
-      this.morph(() => this.collapse.setCollapsed(false));
+      this.morph(() => this.collapse.setCollapsed(false), focus);
       return;
     }
-    this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()));
+    this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()), focus);
   }
 
   /** Hovering the rail's toggle peeks the panel open — the only hover that does, so a collapse click never reopens it. */
@@ -499,14 +491,16 @@ export class NavbarComponent extends NavMenuBase {
 
   /**
    * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
-   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click when
-   * pinned, or on Escape, but never while a menu or panel opened from it is still up.
+   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
+   * focus leaving it when pinned, on Escape, or on a navigation from a pinned peek — but never while a menu or panel
+   * opened from it is still up.
    */
   private initCollapse(): void {
     afterNextRender(() => {
       if (this.mobile()) return;
       this.collapse.init();
       const doc = this.elementRef.nativeElement.ownerDocument;
+      const panel = this.panelEl()?.nativeElement;
 
       const onMove = (event: MouseEvent): void => {
         this.pointer = { x: event.clientX, y: event.clientY };
@@ -521,120 +515,58 @@ export class NavbarComponent extends NavMenuBase {
       const onDown = (event: MouseEvent): void => {
         if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
         const target = event.target instanceof Element ? event.target : null;
-        if (target && (this.panelEl()?.nativeElement.contains(target) || target.closest('.lfxn-tooltip'))) return;
+        if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());
       };
       const onKey = (event: KeyboardEvent): void => {
-        if (event.key === 'Escape' && this.collapse.peek() && !this.navbarMenuOpen()) this.morph(() => this.collapse.closePeek());
+        if (event.key === 'Escape' && this.collapse.peek() && !this.navbarMenuOpen()) this.morph(() => this.collapse.closePeek(), 'keyboard');
+      };
+      // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
+      const onFocusOut = (event: FocusEvent): void => {
+        const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+        if (!next || !this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        if (panel?.contains(next) || next.closest('.lfxn-tooltip, .p-popover')) return;
+        this.morph(() => this.collapse.closePeek(), 'none');
       };
 
       doc.addEventListener('mousemove', onMove, { passive: true });
       doc.documentElement.addEventListener('mouseleave', onLeaveWindow);
       doc.addEventListener('mousedown', onDown, true);
       doc.addEventListener('keydown', onKey);
+      panel?.addEventListener('focusout', onFocusOut);
       this.destroyRef.onDestroy(() => {
         doc.removeEventListener('mousemove', onMove);
         doc.documentElement.removeEventListener('mouseleave', onLeaveWindow);
         doc.removeEventListener('mousedown', onDown, true);
         doc.removeEventListener('keydown', onKey);
-        this.clearPeekOpenTimer();
-        this.clearPeekCloseTimer();
+        panel?.removeEventListener('focusout', onFocusOut);
         this.collapse.resetPeek();
       });
     });
 
-    // A pick from a click-opened peek navigates under it: close it, as an outside click would.
-    effect(() => {
-      this.navigatedUrl();
-      if (untracked(() => this.collapse.peekPinned())) untracked(() => this.morph(() => this.collapse.closePeek()));
+    this.destroyRef.onDestroy(() => {
+      this.clearPeekOpenTimer();
+      this.clearPeekCloseTimer();
+      if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
     });
+
+    // A pick from a click-opened peek navigates under it: close it, as an outside click would.
+    toObservable(this.navigatedUrl)
+      .pipe(
+        skip(1),
+        filter(() => this.collapse.peekPinned()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.morph(() => this.collapse.closePeek(), 'none'));
 
     // A menu or panel opened from a hover peek just closed: give the pointer a moment, then close if it is outside.
-    let menuWasOpen = false;
-    effect(() => {
-      const open = this.navbarMenuOpen();
-      if (menuWasOpen && !open && untracked(() => this.collapse.peek() && !this.collapse.peekPinned())) {
-        this.schedulePeekClose(NAVBAR_PEEK_RECHECK_DELAY_MS);
-      }
-      menuWasOpen = open;
-    });
-  }
-
-  /** Create, Impersonate and What's New open over the page: the peek closes with them, leaving the rail under the backdrop. */
-  private closePeekForDialog(): void {
-    if (!this.mobile() && this.collapse.peek()) this.morph(() => this.collapse.closePeek());
-  }
-
-  private schedulePeekClose(delay: number): void {
-    this.clearPeekCloseTimer();
-    this.peekCloseTimer = setTimeout(() => {
-      this.peekCloseTimer = null;
-      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.pointerInsidePanel()) return;
-      this.morph(() => this.collapse.closePeek());
-    }, delay);
-  }
-
-  /** Keyboard-only use leaves no pointer position: count it as inside, so only a pointer that left closes the peek. */
-  private pointerInsidePanel(): boolean {
-    const panel = this.panelEl()?.nativeElement;
-    if (!panel || !this.pointer) return true;
-    const rect = panel.getBoundingClientRect();
-    const { x, y } = this.pointer;
-    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  }
-
-  /**
-   * Applies a collapse-state change as one morph: the panel's widths and fades are CSS transitions, but the header
-   * buttons swap between a row and a column, so they FLIP from where they were to where they land. Also closes the
-   * open tooltip and drops focus from the toggle, and re-fits width-measuring page layouts once the morph settles.
-   */
-  private morph(change: () => void): void {
-    const host = this.elementRef.nativeElement;
-    const wasRail = this.collapse.visualCollapsed();
-    const wasDockedCollapsed = this.collapse.effectiveCollapsed();
-    const before = new Map<string, DOMRect>();
-    host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width && el.dataset['flip']) before.set(el.dataset['flip'], rect);
-    });
-
-    change();
-    NavTooltipDirective.hideWithin(host);
-    const active = host.ownerDocument.activeElement;
-    if (active instanceof HTMLElement && host.contains(active)) active.blur();
-
-    const view = host.ownerDocument.defaultView;
-    if (this.collapse.effectiveCollapsed() !== wasDockedCollapsed) {
-      // Pages that size themselves from window resizes would otherwise keep the width measured mid-morph.
-      setTimeout(() => view?.dispatchEvent(new Event('resize')), NAVBAR_MORPH_SETTLE_MS);
-    }
-    if (this.collapse.visualCollapsed() === wasRail || !this.collapse.animated() || view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-
-    const duration = this.collapse.overlay() ? NAVBAR_PEEK_MORPH_MS : NAVBAR_DOCK_MORPH_MS;
-    afterNextRender(
-      () => {
-        host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
-          const from = el.dataset['flip'] ? before.get(el.dataset['flip']) : undefined;
-          const to = el.getBoundingClientRect();
-          if (!from || !to.width || typeof el.animate !== 'function') return;
-          el.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }], {
-            duration,
-            easing: NAVBAR_MORPH_EASING,
-          });
-        });
-      },
-      { injector: this.injector }
-    );
-  }
-
-  private clearPeekOpenTimer(): void {
-    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
-    this.peekOpenTimer = null;
-  }
-
-  private clearPeekCloseTimer(): void {
-    if (this.peekCloseTimer) clearTimeout(this.peekCloseTimer);
-    this.peekCloseTimer = null;
+    toObservable(this.navbarMenuOpen)
+      .pipe(
+        pairwise(),
+        filter(([wasOpen, open]) => wasOpen && !open && this.collapse.peek() && !this.collapse.peekPinned()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.schedulePeekClose(NAVBAR_PEEK_RECHECK_DELAY_MS));
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {
@@ -728,6 +660,110 @@ export class NavbarComponent extends NavMenuBase {
       host.addEventListener('click', commitOnPick, true);
       this.destroyRef.onDestroy(() => host.removeEventListener('click', commitOnPick, true));
     });
+  }
+
+  /** Create, Impersonate and What's New open over the page: the peek closes with them, leaving the rail under the backdrop. */
+  private closePeekForDialog(): void {
+    if (!this.mobile() && this.collapse.peek()) this.morph(() => this.collapse.closePeek(), 'none');
+  }
+
+  private schedulePeekClose(delay: number): void {
+    this.clearPeekCloseTimer();
+    this.peekCloseTimer = setTimeout(() => {
+      this.peekCloseTimer = null;
+      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.pointerInsidePanel()) return;
+      this.morph(() => this.collapse.closePeek());
+    }, delay);
+  }
+
+  /** Keyboard-only use leaves no pointer position: count it as inside, so only a pointer that left closes the peek. */
+  private pointerInsidePanel(): boolean {
+    const panel = this.panelEl()?.nativeElement;
+    if (!panel || !this.pointer) return true;
+    const rect = panel.getBoundingClientRect();
+    const { x, y } = this.pointer;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  /**
+   * Applies a collapse-state change as one morph: the panel's widths and fades are CSS transitions, but the header
+   * buttons swap between a row and a column, so they FLIP from where they were to where they land. Also closes the
+   * open tooltip, settles focus as `focus` says, and re-fits width-measuring page layouts once the morph settles.
+   */
+  private morph(change: () => void, focus: NavbarMorphFocus = 'pointer'): void {
+    const host = this.elementRef.nativeElement;
+    const wasRail = this.collapse.visualCollapsed();
+    const wasDockedCollapsed = this.collapse.effectiveCollapsed();
+    const before = new Map<string, DOMRect>();
+    host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width && el.dataset['flip']) before.set(el.dataset['flip'], rect);
+    });
+
+    change();
+    NavTooltipDirective.hideWithin(host);
+    const active = host.ownerDocument.activeElement;
+    if (focus === 'pointer' && active instanceof HTMLElement && host.contains(active)) active.blur();
+
+    const view = host.ownerDocument.defaultView;
+    if (this.collapse.effectiveCollapsed() !== wasDockedCollapsed) {
+      // Pages that size themselves from window resizes would otherwise keep the width measured mid-morph. One per burst.
+      if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
+      this.morphSettleTimer = setTimeout(() => {
+        this.morphSettleTimer = null;
+        view?.dispatchEvent(new Event('resize'));
+      }, NAVBAR_MORPH_SETTLE_MS);
+    }
+    const flip = this.collapse.visualCollapsed() !== wasRail && this.collapse.animated() && !view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!flip && focus !== 'keyboard') return;
+
+    const duration = this.collapse.overlay() ? NAVBAR_PEEK_MORPH_MS : NAVBAR_DOCK_MORPH_MS;
+    afterNextRender(
+      () => {
+        if (focus === 'keyboard') this.settleKeyboardFocus();
+        if (!flip) return;
+        host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+          const from = el.dataset['flip'] ? before.get(el.dataset['flip']) : undefined;
+          const to = el.getBoundingClientRect();
+          if (!from || !to.width || typeof el.animate !== 'function') return;
+          el.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }], {
+            duration,
+            easing: NAVBAR_MORPH_EASING,
+          });
+        });
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * After a keyboard-driven change, keep focus on a control the new state still shows: on the rail, the rail's own
+   * controls (else the toggle); open, where it was — or, when the toggle is hidden (a narrow peek), the brand button.
+   */
+  private settleKeyboardFocus(): void {
+    const host = this.elementRef.nativeElement;
+    const active = host.ownerDocument.activeElement;
+    const toggle = host.querySelector<HTMLElement>('[data-flip="side"]');
+    const toggleShown = !!toggle && toggle.getClientRects().length > 0;
+    const focused = active instanceof HTMLElement && host.contains(active) ? active : null;
+    if (this.collapse.visualCollapsed()) {
+      if (focused?.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
+      toggle?.focus();
+      return;
+    }
+    if (focused && (focused !== toggle || toggleShown)) return;
+    if (toggleShown) toggle?.focus();
+    else host.querySelector<HTMLElement>('.lfxn__brand')?.focus();
+  }
+
+  private clearPeekOpenTimer(): void {
+    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
+    this.peekOpenTimer = null;
+  }
+
+  private clearPeekCloseTimer(): void {
+    if (this.peekCloseTimer) clearTimeout(this.peekCloseTimer);
+    this.peekCloseTimer = null;
   }
 
   /**

@@ -29,7 +29,7 @@
                 type="button"
                 class="lfxn__icon-btn lfxn__icon-btn--toggle"
                 data-flip="side"
-                (click)="onToggleClick()"
+                (click)="onToggleClick($event)"
                 (mouseenter)="onToggleEnter()"
                 (mouseleave)="onToggleLeave()"
                 [attr.aria-label]="toggleLabel()"

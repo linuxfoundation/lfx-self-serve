@@ -5,7 +5,7 @@ import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, Router } from '@angular/router';
-import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
+import { ALL_LENSES, NAVBAR_PEEK_CLOSE_DELAY_MS, NAVBAR_PEEK_RECHECK_DELAY_MS, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
 import type {
   Lens,
   LensOption,
@@ -61,7 +61,8 @@ interface NavbarView {
   railDocked: Signal<boolean>;
   toggleLabel: Signal<string>;
   headTooltipPlacement: Signal<string>;
-  onToggleClick(): void;
+  onToggleClick(event: MouseEvent): void;
+  brandMenuOpen: WritableSignal<boolean>;
 }
 
 /**
@@ -572,6 +573,8 @@ describe('NavbarComponent', () => {
       );
     };
 
+    const click = new MouseEvent('click', { detail: 1 });
+
     it('docks to the rail and back from the toggle, relabelling it and moving rail tooltips beside their triggers', async () => {
       stubViewport(false);
       const fixture = await createNavbarFixture([]);
@@ -581,7 +584,7 @@ describe('NavbarComponent', () => {
       expect(navbar.toggleLabel()).toBe('Close sidebar');
       expect(navbar.headTooltipPlacement()).toBe('bottom');
 
-      navbar.onToggleClick();
+      navbar.onToggleClick(click);
       await fixture.whenStable();
       expect(collapse.collapsed()).toBe(true);
       expect(navbar.railVisible()).toBe(true);
@@ -589,7 +592,7 @@ describe('NavbarComponent', () => {
       expect(navbar.headTooltipPlacement()).toBe('right');
       expect(fixture.nativeElement.classList).toContain('is-collapsed');
 
-      navbar.onToggleClick();
+      navbar.onToggleClick(click);
       await fixture.whenStable();
       expect(collapse.collapsed()).toBe(false);
       expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
@@ -605,7 +608,7 @@ describe('NavbarComponent', () => {
 
       expect(navbar.toggleLabel()).toBe('Keep sidebar open');
       expect(navbar.railDocked()).toBe(true);
-      navbar.onToggleClick();
+      navbar.onToggleClick(click);
 
       expect(collapse.collapsed()).toBe(false);
       expect(collapse.peek()).toBe(false);
@@ -619,12 +622,100 @@ describe('NavbarComponent', () => {
       const collapse = TestBed.inject(NavbarCollapseService);
 
       expect(navbar.railVisible()).toBe(true);
-      navbar.onToggleClick();
+      navbar.onToggleClick(click);
 
       expect(collapse.peek()).toBe(true);
       expect(collapse.peekPinned()).toBe(true);
       expect(collapse.collapsed()).toBe(false);
       expect(navbar.railVisible()).toBe(false);
+    });
+
+    describe('closing a peek', () => {
+      const panelTemplate = '<nav #panel><button type="button" class="inside">Menu item</button></nav><button type="button" class="outside">Page</button>';
+      const move = (x: number): void => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 100 }));
+      };
+
+      /** A desktop navbar docked to the rail, its panel laid out 280px wide from x=8 when it peeks. */
+      const createPeekFixture = async () => {
+        stubViewport(false);
+        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate });
+        const panel = fixture.nativeElement.querySelector('nav') as HTMLElement;
+        vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 8, 280, 800));
+        const collapse = TestBed.inject(NavbarCollapseService);
+        collapse.setCollapsed(true);
+        vi.useFakeTimers();
+        return { fixture, panel, collapse, navbar: fixture.componentInstance as unknown as NavbarView };
+      };
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('closes a hover peek 150ms after the pointer leaves the panel, unless it comes back', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        move(600);
+        vi.advanceTimersByTime(100);
+        move(100);
+        vi.advanceTimersByTime(200);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('stays open under a menu opened from it, and re-checks the pointer once the menu closes', async () => {
+        const { collapse, navbar } = await createPeekFixture();
+        collapse.openPeek();
+        navbar.brandMenuOpen.set(true);
+        TestBed.tick();
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        navbar.brandMenuOpen.set(false);
+        TestBed.tick();
+        vi.advanceTimersByTime(NAVBAR_PEEK_RECHECK_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes on Escape', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps a pinned peek open as the pointer leaves, and closes it on an outside click', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek(true);
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        panel.querySelector('.inside')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(true);
+
+        (fixture.nativeElement.querySelector('.outside') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a pinned peek when keyboard focus leaves it', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek(true);
+        const inside = panel.querySelector('.inside') as HTMLElement;
+        const outside = fixture.nativeElement.querySelector('.outside') as HTMLElement;
+
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: panel }));
+        expect(collapse.peek()).toBe(true);
+
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+        expect(collapse.peek()).toBe(false);
+      });
     });
 
     it('never collapses the mobile drawer’s navbar', async () => {
