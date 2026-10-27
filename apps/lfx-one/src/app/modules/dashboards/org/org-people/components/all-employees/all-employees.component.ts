@@ -40,6 +40,8 @@ import {
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
+  ORG_PEOPLE_DEFAULT_TIME_RANGE,
+  ORG_PEOPLE_TIME_RANGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
@@ -55,6 +57,8 @@ import type {
   OrgAllEmployeeSortDirection,
   OrgAllEmployeeStats,
   OrgDropdownOption,
+  OrgPeopleTimeRange,
+  OrgPeopleTimeRangeOption,
 } from '@lfx-one/shared/interfaces';
 import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
 
@@ -86,6 +90,7 @@ export class AllEmployeesComponent {
   // Spread to a mutable array so PrimeNG's mutable [options] input type accepts it without an unsafe cast.
   protected readonly activityOptions: OrgAllEmployeeActivityOption[] = [...ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS];
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
+  protected readonly rangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
 
   protected readonly statSkeletonLabels: readonly string[] = [
     'Employees Active in Open Source',
@@ -106,6 +111,9 @@ export class AllEmployeesComponent {
   );
   private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
   private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
+  // Follows `?range=` the same way; the roster, its tiles and the former employees are all read for this range.
+  protected readonly selectedRange = signal<OrgPeopleTimeRange>(AllEmployeesComponent.parseRange(this.route.snapshot.queryParamMap.get('range')));
+  private readonly selectedRange$ = toObservable(this.selectedRange);
 
   // Default sort: Code Contributions (commits) descending.
   protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
@@ -149,17 +157,17 @@ export class AllEmployeesComponent {
   );
 
   protected readonly response: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, toObservable(this.retryTrigger)]).pipe(
+    combineLatest([this.orgUid$, this.selectedRange$, toObservable(this.retryTrigger)]).pipe(
       tap(() => {
         this.loadingState.set(true);
         this.fetchErrorState.set(false);
       }),
-      switchMap(([orgUid]) => {
+      switchMap(([orgUid, range]) => {
         if (!orgUid) {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.loadRoster(orgUid);
+        return this.loadRoster(orgUid, range);
       })
     ),
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
@@ -167,8 +175,8 @@ export class AllEmployeesComponent {
 
   // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
   protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, toObservable(this.showFormer), toObservable(this.retryTrigger)]).pipe(
-      switchMap(([orgUid, showFormer]) => {
+    combineLatest([this.orgUid$, toObservable(this.showFormer), this.selectedRange$, toObservable(this.retryTrigger)]).pipe(
+      switchMap(([orgUid, showFormer, range]) => {
         if (!orgUid || !showFormer) {
           this.formerLoadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
@@ -179,7 +187,7 @@ export class AllEmployeesComponent {
         }
         this.formerLoadingState.set(true);
         this.formerErrorState.set(false);
-        return this.dataService.getFormerEmployees(orgUid).pipe(
+        return this.dataService.getFormerEmployees(orgUid, range).pipe(
           take(1),
           catchError((error: unknown) => {
             console.error('Failed to load former employees:', error);
@@ -238,6 +246,7 @@ export class AllEmployeesComponent {
       toObservable(this.selectedFoundationId),
       toObservable(this.selectedActivity),
       toObservable(this.selectedEmployment),
+      this.selectedRange$,
       toObservable(this.sortColumn),
       toObservable(this.sortDirection),
     ])
@@ -252,10 +261,28 @@ export class AllEmployeesComponent {
       )
       .subscribe((employment) => this.selectedEmployment.set(employment));
 
+    this.route.queryParamMap
+      .pipe(
+        map((params) => AllEmployeesComponent.parseRange(params.get('range'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((range) => this.selectedRange.set(range));
+
     // The foundation list is rebuilt per view, so a foundation picked in one view may not exist in the next.
     toObservable(this.selectedEmployment)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.selectedFoundationId.set(''));
+
+    // A range change rebuilds the foundation list too; once the new range has loaded, drop a picked foundation it no longer lists.
+    combineLatest([toObservable(this.foundationOptions), toObservable(this.isLoading)])
+      .pipe(takeUntilDestroyed())
+      .subscribe(([options, loading]) => {
+        const selected = this.selectedFoundationId();
+        if (!loading && selected && !options.some((option) => option.value === selected)) {
+          this.selectedFoundationId.set('');
+        }
+      });
   }
 
   protected onSort(column: OrgAllEmployeeSortColumn): void {
@@ -315,6 +342,16 @@ export class AllEmployeesComponent {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { employment: value === DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ? null : value },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected onRangeChange(value: OrgPeopleTimeRange): void {
+    this.selectedRange.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { range: value === ORG_PEOPLE_DEFAULT_TIME_RANGE ? null : value },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -500,7 +537,8 @@ export class AllEmployeesComponent {
       this.searchTerm().trim().length > 0 ||
       !!this.selectedFoundationId() ||
       this.selectedActivity() !== 'all' ||
-      this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT
+      this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
+      this.selectedRange() !== ORG_PEOPLE_DEFAULT_TIME_RANGE
     );
   }
 
@@ -553,7 +591,7 @@ export class AllEmployeesComponent {
    * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
    * established, so this is guarded like org-groups (#2063).
    */
-  private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
+  private loadRoster(orgUid: string, range: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
     if (!isPlatformBrowser(this.platformId)) {
       return EMPTY;
     }
@@ -577,7 +615,7 @@ export class AllEmployeesComponent {
     };
     const missingStoredRoster = (): Error => new Error('Live directory is missing the stored roster');
 
-    const snowflake$ = this.dataService.getAllEmployees(orgUid).pipe(
+    const snowflake$ = this.dataService.getAllEmployees(orgUid, range).pipe(
       take(1),
       mergeMap((res) => {
         if (state.liveLanded) return EMPTY;
@@ -598,7 +636,7 @@ export class AllEmployeesComponent {
         return state.liveFailed ? bothFailed() : EMPTY;
       })
     );
-    const live$ = this.directory.getDirectory(orgUid).pipe(
+    const live$ = this.directory.getDirectory(orgUid, range).pipe(
       take(1),
       mergeMap((res) => {
         if (!res.rows.some((row) => row.sources.includes('snowflake'))) {
@@ -722,6 +760,11 @@ export class AllEmployeesComponent {
   /** `?employment=` value → filter; anything unknown (or absent) is the default view. */
   private static parseEmployment(value: string | null): OrgAllEmployeeEmploymentFilter {
     return ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
+  }
+
+  /** `?range=` value → time range; anything unknown (or absent) is the default range. */
+  private static parseRange(value: string | null): OrgPeopleTimeRange {
+    return ORG_PEOPLE_TIME_RANGE_OPTIONS.find((option) => option.value === value)?.value ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
   }
 
   private static computeInitials(name: string): string {

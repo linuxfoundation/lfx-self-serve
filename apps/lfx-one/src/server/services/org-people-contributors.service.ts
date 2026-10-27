@@ -11,7 +11,7 @@ import type {
   OrgContributorRow,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgContributorTimeRange,
+  OrgPeopleTimeRange,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
@@ -28,7 +28,7 @@ export class OrgPeopleContributorsService {
   }
 
   /** Aggregates contributors-daily to (account, person, project) for the window, rolled up to person-grain with argmax-most-active-project. */
-  public async getContributors(accountId: string, timeRange: OrgContributorTimeRange): Promise<OrgContributorsResponse> {
+  public async getContributors(accountId: string, timeRange: OrgPeopleTimeRange): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
@@ -47,7 +47,7 @@ export class OrgPeopleContributorsService {
   }
 
   /** Single SQL pass; cutoff inlined as Snowflake `DATEADD(...)` for plan-time folding, only `account_id` is bound. dbt model gates retired projects + bots. */
-  private async fetchPersonProjectRows(accountId: string, timeRange: OrgContributorTimeRange): Promise<ContributorPersonProjectRow[]> {
+  private async fetchPersonProjectRows(accountId: string, timeRange: OrgPeopleTimeRange): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
     const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
 
@@ -81,8 +81,8 @@ export class OrgPeopleContributorsService {
   }
 }
 
-/** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (dbt caps at 3yr rolling). */
-function timeRangeCutoffSnowflake(timeRange: OrgContributorTimeRange): string | null {
+/** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
+function timeRangeCutoffSnowflake(timeRange: OrgPeopleTimeRange): string | null {
   switch (timeRange) {
     case '30d':
       return 'DATEADD(day, -30, CURRENT_DATE())';
@@ -96,7 +96,7 @@ function timeRangeCutoffSnowflake(timeRange: OrgContributorTimeRange): string | 
 }
 
 /** Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active), stats, foundationOptions[], projectOptions[]. */
-function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
+function buildResponse(accountId: string, timeRange: OrgPeopleTimeRange, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
   const projects: OrgContributorProjectRow[] = [];
   const personMap = new Map<string, OrgContributorRow>();
   const personMostActive = new Map<string, ContributorPersonProjectRow>();

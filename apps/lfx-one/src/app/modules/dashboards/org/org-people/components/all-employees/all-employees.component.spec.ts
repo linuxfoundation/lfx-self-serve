@@ -5,7 +5,7 @@ import { PLATFORM_ID, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeEmploymentFilter, OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeEmploymentFilter, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -51,10 +51,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let snowflake$: Subject<OrgAllEmployeesResponse>;
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
-  let getDirectory: Mock<(orgUid: string) => Observable<OrgAllEmployeesResponse>>;
-  let getAllEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let getDirectory: Mock<(orgUid: string, range: OrgPeopleTimeRange) => Observable<OrgAllEmployeesResponse>>;
+  let getAllEmployees: Mock<(orgUid: string, range: OrgPeopleTimeRange) => Subject<OrgAllEmployeesResponse>>;
   let former$: Subject<OrgAllEmployeesResponse>;
-  let getFormerEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let getFormerEmployees: Mock<(orgUid: string, range: OrgPeopleTimeRange) => Subject<OrgAllEmployeesResponse>>;
   let selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
 
   const el = (): HTMLElement => fixture.nativeElement;
@@ -125,7 +125,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('requests the live merge without waiting for the Snowflake roster', () => {
-      expect(getDirectory).toHaveBeenCalledWith(ORG);
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '12mo');
       expect(live$.observed).toBe(true);
     });
 
@@ -323,7 +323,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
       await answerFormer();
 
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '12mo');
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
       expect(activeStat()).toContain('1');
@@ -544,10 +544,110 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       former$.complete();
       await settle();
 
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG);
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '12mo');
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-8', 'org-people-all-employees-row-p-9']);
       expect(formerTags().sort()).toEqual(['org-people-all-employees-row-p-8-former', 'org-people-all-employees-row-p-9-former']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-8"]')?.textContent).not.toContain('Admin');
+    });
+  });
+
+  // lfx-self-serve#4163 — every roster read follows the selected time range, which lives in `?range=`.
+  describe('in the browser, with the time range filter', () => {
+    const component = (): { onRangeChange(value: OrgPeopleTimeRange): void; selectedFoundationId: WritableSignal<string> } =>
+      fixture.componentInstance as unknown as { onRangeChange(value: OrgPeopleTimeRange): void; selectedFoundationId: WritableSignal<string> };
+    const answer = async (subject: Subject<OrgAllEmployeesResponse>, value: OrgAllEmployeesResponse): Promise<void> => {
+      subject.next(value);
+      subject.complete();
+      await settle();
+    };
+
+    it('reads ?range= on load and requests the stored, live and former rosters for it', async () => {
+      await mount('browser', '/?range=30d&employment=all');
+
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '30d');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '30d');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '30d');
+    });
+
+    it('ignores an unknown ?range= and reads the default range', async () => {
+      await mount('browser', '/?range=3y');
+
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '12mo');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '12mo');
+    });
+
+    it('refetches current and former employees on a range change and writes ?range=, dropping the default', async () => {
+      await mount('browser', '/?employment=all');
+      await answer(snowflake$, response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
+      await answer(former$, response([], 0));
+
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      former$ = new Subject();
+      component().onRangeChange('all');
+      await settle();
+      await answer(snowflake$, response([row('p-1', 'Ada Lovelace', { commitsCount: 9 }), row('p-2', 'Alan Turing', { commitsCount: 3 })], 2));
+      await answer(former$, response([row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4 })], 1));
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, 'all');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, 'all');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, 'all');
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2', 'org-people-all-employees-row-p-9']);
+      expect(activeStat()).toContain('3');
+      expect(TestBed.inject(Router).url).toContain('range=all');
+
+      component().onRangeChange('12mo');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '12mo');
+      expect(TestBed.inject(Router).url).not.toContain('range=');
+      expect(TestBed.inject(Router).url).toContain('employment=all');
+    });
+
+    it('follows ?range= when the URL changes after load', async () => {
+      await mount('browser');
+
+      await TestBed.inject(Router).navigateByUrl('/?range=90d');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '90d');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '90d');
+    });
+
+    it('drops a picked foundation the new range no longer lists, once that range has loaded', async () => {
+      await mount('browser');
+      const foundation = { foundationId: 'f-1', foundationName: 'Foundation One' };
+      await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations: [foundation] });
+      component().selectedFoundationId.set('f-1');
+      await settle();
+
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      component().onRangeChange('30d');
+      await settle();
+      expect(component().selectedFoundationId()).toBe('f-1');
+
+      await answer(snowflake$, response([row('p-2', 'Alan Turing', { commitsCount: 1 })], 1));
+
+      expect(component().selectedFoundationId()).toBe('');
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-2']);
+    });
+
+    it('keeps a picked foundation the new range still lists', async () => {
+      await mount('browser');
+      const foundation = { foundationId: 'f-1', foundationName: 'Foundation One' };
+      await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations: [foundation] });
+      component().selectedFoundationId.set('f-1');
+      await settle();
+
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      component().onRangeChange('all');
+      await settle();
+      await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 5, engagedFoundationIds: ['f-1'] })], 1), foundations: [foundation] });
+
+      expect(component().selectedFoundationId()).toBe('f-1');
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
     });
   });
 

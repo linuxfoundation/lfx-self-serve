@@ -23,7 +23,7 @@ export interface OrgAllEmployeesInternalResponse {
   foundations: OrgAllEmployeeFoundationOption[];
 }
 
-/** Per-(account, person) row from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL`. */
+/** Per-(account, person) roster row for one time range, from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`. */
 export interface OrgPeopleAllRow {
   ACCOUNT_ID: string;
   PERSON_KEY: string;
@@ -44,16 +44,6 @@ export interface OrgPeopleAllRow {
 
 /** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
 export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
-
-/** One-row aggregate from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS`. */
-export interface OrgPeopleAllStatsRow {
-  ACCOUNT_ID: string;
-  ACTIVE_IN_OSS: number;
-  IN_GOVERNANCE: number;
-  CODE_CONTRIBUTORS: number;
-  EVENT_ATTENDEES: number;
-  TRAINEES: number;
-}
 
 /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pair powering the All Foundations dropdown. */
 export interface OrgPeopleFoundationOptionRow {

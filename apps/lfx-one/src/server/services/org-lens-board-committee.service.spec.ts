@@ -91,7 +91,16 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
   isVotingStatus: () => true,
-  VALKEY_CACHE: { ORG_SEATS_NAMESPACE: 'org-seats:v2', ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
+  VALKEY_CACHE: {
+    ORG_SEATS_NAMESPACE: 'org-seats:v2',
+    ORG_PEOPLE_DIRECTORY_NAMESPACES: {
+      '30d': 'org-people-dir:v4:30d',
+      '90d': 'org-people-dir:v4:90d',
+      '12mo': 'org-people-dir:v4:12mo',
+      all: 'org-people-dir:v4:all',
+    },
+    ORG_LENS_PERUSER_TTL_SECONDS: 30,
+  },
 }));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/utils/compact-cache.utils')),
@@ -465,7 +474,10 @@ describe('seat reassign — caller cache invalidation', () => {
 
     expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
-    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v3', 'tester', ORG);
+    // The People directory is cached per time range; every range shows the reassigned seat.
+    for (const range of ['30d', '90d', '12mo', 'all']) {
+      expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v4:${range}`, 'tester', ORG);
+    }
   });
 
   it.each(paths)('%s: an upstream failure leaves the caller’s caches alone', async (_label, reassign) => {

@@ -3,15 +3,17 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
+import { ORG_PEOPLE_TIME_RANGE_OPTIONS } from '@lfx-one/shared/constants';
+import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
 import { map, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
- * Root-singleton cache for the unified live people directory (`/lens/people/all?live`).
+ * Root-singleton cache for the unified live people directory (`/lens/people/all?live&range=`).
  *
- * One fetch per org is shared between the All Employees tab roster and the "Assign to Email"
- * pickers in the Board/Committee/Key-Contacts modals. Concurrent callers are deduped via
- * `shareReplay`; resolved responses are memoized for a short TTL (or until `invalidate`, e.g. on retry).
+ * One fetch per (org, time range) is shared between the All Employees tab roster and the "Assign to
+ * Email" pickers in the Board/Committee/Key-Contacts modals (which always read the widest range,
+ * `all`). Concurrent callers are deduped via `shareReplay`; resolved responses are memoized for a
+ * short TTL (or until `invalidate`, e.g. on retry), and every map below is keyed by `${orgUid}:${range}`.
  */
 // Client-side TTL so a long-lived SPA session re-hits the merged endpoint and picks up newly added live
 // people, rather than replaying the first response forever (which would bypass the server's short TTL).
@@ -21,44 +23,45 @@ const DIRECTORY_CACHE_TTL_MS = 60_000;
 export class OrgPeopleDirectoryStateService {
   private readonly http = inject(HttpClient);
 
-  private readonly byOrg = new Map<string, { value: OrgAllEmployeesResponse; expiresAt: number }>();
+  private readonly byKey = new Map<string, { value: OrgAllEmployeesResponse; expiresAt: number }>();
   private readonly inFlight = new Map<string, Observable<OrgAllEmployeesResponse>>();
   // Bumped by `invalidate`. A request remembers the generation it started under and only writes its
-  // response into `byOrg` if that is still current, so a request already in flight when the cache was
+  // response into `byKey` if that is still current, so a request already in flight when the cache was
   // invalidated (e.g. started before a seat reassign) can't put the pre-invalidate roster back for the TTL.
   private readonly generation = new Map<string, number>();
 
-  /** Cached merged directory for the org; fetches once and replays until the TTL lapses. */
-  public getDirectory(orgUid: string): Observable<OrgAllEmployeesResponse> {
-    const cached = this.byOrg.get(orgUid);
+  /** Cached merged directory for the org and time range; fetches once and replays until the TTL lapses. */
+  public getDirectory(orgUid: string, range: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
+    const key = `${orgUid}:${range}`;
+    const cached = this.byKey.get(key);
     if (cached && cached.expiresAt > Date.now()) return of(cached.value);
-    if (cached) this.byOrg.delete(orgUid);
+    if (cached) this.byKey.delete(key);
 
-    const existing = this.inFlight.get(orgUid);
+    const existing = this.inFlight.get(key);
     if (existing) return existing;
 
-    const startedGeneration = this.generation.get(orgUid) ?? 0;
+    const startedGeneration = this.generation.get(key) ?? 0;
     const request$: Observable<OrgAllEmployeesResponse> = this.http
-      .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { live: 'true' } })
+      .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { live: 'true', range } })
       .pipe(
         tap({
           next: (res) => {
-            if ((this.generation.get(orgUid) ?? 0) !== startedGeneration) return;
-            this.byOrg.set(orgUid, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
+            if ((this.generation.get(key) ?? 0) !== startedGeneration) return;
+            this.byKey.set(key, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
           },
           finalize: () => {
-            if (this.inFlight.get(orgUid) === request$) this.inFlight.delete(orgUid);
+            if (this.inFlight.get(key) === request$) this.inFlight.delete(key);
           },
         }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
-    this.inFlight.set(orgUid, request$);
+    this.inFlight.set(key, request$);
     return request$;
   }
 
-  /** Picker projection: people with an email, mapped to the shared employee-picker shape. */
+  /** Picker projection: people with an email, mapped to the shared employee-picker shape. Reads the widest (`all`) range so the picker does not depend on the All Employees range. */
   public getEmployees(orgUid: string): Observable<KeyContactEmployee[]> {
-    return this.getDirectory(orgUid).pipe(
+    return this.getDirectory(orgUid, 'all').pipe(
       map((res) =>
         res.rows
           .filter((row): row is OrgAllEmployeeRow & { email: string } => !!row.email)
@@ -68,11 +71,14 @@ export class OrgPeopleDirectoryStateService {
     );
   }
 
-  /** Drop the cached directory for an org so the next `getDirectory` refetches (the tab's retry CTA, and after a seat reassign). A request still in flight keeps serving its own subscribers but no longer fills the cache. */
+  /** Drop the cached directory for an org, every range, so the next `getDirectory` refetches (the tab's retry CTA, and after a seat reassign). A request still in flight keeps serving its own subscribers but no longer fills the cache. */
   public invalidate(orgUid: string): void {
-    this.generation.set(orgUid, (this.generation.get(orgUid) ?? 0) + 1);
-    this.byOrg.delete(orgUid);
-    this.inFlight.delete(orgUid);
+    for (const { value: range } of ORG_PEOPLE_TIME_RANGE_OPTIONS) {
+      const key = `${orgUid}:${range}`;
+      this.generation.set(key, (this.generation.get(key) ?? 0) + 1);
+      this.byKey.delete(key);
+      this.inFlight.delete(key);
+    }
   }
 }
 

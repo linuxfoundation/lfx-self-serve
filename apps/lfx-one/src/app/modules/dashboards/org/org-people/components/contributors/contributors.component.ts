@@ -7,9 +7,9 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
-  ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE,
-  ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS,
   ORG_CONTRIBUTORS_INITIAL_LIMIT,
+  ORG_PEOPLE_DEFAULT_TIME_RANGE,
+  ORG_PEOPLE_TIME_RANGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgContributorExpandedRowVm,
@@ -19,9 +19,9 @@ import type {
   OrgContributorsResponse,
   OrgContributorSortColumn,
   OrgContributorSortDirection,
-  OrgContributorTimeRange,
-  OrgContributorTimeRangeOption,
   OrgDropdownOption,
+  OrgPeopleTimeRange,
+  OrgPeopleTimeRangeOption,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
@@ -49,7 +49,7 @@ export class ContributorsComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
-  protected readonly timeRangeOptions: OrgContributorTimeRangeOption[] = [...ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS];
+  protected readonly timeRangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
 
@@ -57,7 +57,7 @@ export class ContributorsComponent {
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     project: new FormControl<string>('', { nonNullable: true }),
-    timeRange: new FormControl<OrgContributorTimeRange>(ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, { nonNullable: true }),
+    timeRange: new FormControl<OrgPeopleTimeRange>(ORG_PEOPLE_DEFAULT_TIME_RANGE, { nonNullable: true }),
   });
 
   // Default sort per Item 4 R4.4 lock: Role asc then Commits desc — encoded as the active column 'role' with secondary tiebreak in initSortedRows.
@@ -272,8 +272,8 @@ export class ContributorsComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
-    const timeRange: OrgContributorTimeRange = values.timeRange ?? ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
-    const hasTimeFilter = timeRange !== ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
+    const timeRange: OrgPeopleTimeRange = values.timeRange ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
+    const hasTimeFilter = timeRange !== ORG_PEOPLE_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasProject || hasTimeFilter;
   }
 
@@ -350,14 +350,14 @@ export class ContributorsComponent {
   }
 
   /** Stable timeRange Signal — bypass the filter-trio debounce so BFF refetch fires per distinct value. */
-  private timeRangeControl(): Signal<OrgContributorTimeRange> {
+  private timeRangeControl(): Signal<OrgPeopleTimeRange> {
     return toSignal(this.filterForm.controls.timeRange.valueChanges, {
       initialValue: this.filterForm.controls.timeRange.value,
     });
   }
 
   private resetAllState(): void {
-    this.filterForm.reset({ search: '', foundation: '', project: '', timeRange: ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE });
+    this.filterForm.reset({ search: '', foundation: '', project: '', timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE });
     this.sortColumn.set('role');
     this.sortDirection.set(1);
     this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);

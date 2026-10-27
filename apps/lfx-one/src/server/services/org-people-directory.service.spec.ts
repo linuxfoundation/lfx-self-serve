@@ -8,6 +8,7 @@ import type {
   OrgAllEmployeeRowInternal,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
+  OrgPeopleTimeRange,
   KeyContactEmployee,
 } from '@lfx-one/shared/interfaces';
 import type * as CompactCacheUtils from '@lfx-one/shared/utils/compact-cache.utils';
@@ -27,6 +28,8 @@ const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAc
     entry: null as string | null,
     accept: null as ((value: unknown) => boolean) | null,
     readThroughs: 0,
+    /** Namespace of every read-through, in call order. */
+    namespaces: [] as string[],
     /** JSON of the rows handed to the encoder — the uncached response exactly as the wire would carry it. */
     encodedRows: null as string | null,
   },
@@ -61,7 +64,7 @@ vi.mock('./org-lens-access.service', () => ({
 // once expecting a fresh computation each time.
 vi.mock('./valkey.service', () => ({
   withPerUserCache: async (
-    _ns: string,
+    ns: string,
     _user: string,
     _org: string,
     _ttl: number,
@@ -70,6 +73,7 @@ vi.mock('./valkey.service', () => ({
     storable?: (value: unknown) => boolean
   ) => {
     cache.readThroughs += 1;
+    cache.namespaces.push(ns);
     cache.accept = accept ?? null;
     if (cache.serveHits && cache.entry !== null) {
       const stored = JSON.parse(cache.entry);
@@ -94,7 +98,15 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // against the writer's actual contract rather than a copy that could silently drift from it.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
-  VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
+  VALKEY_CACHE: {
+    ORG_PEOPLE_DIRECTORY_NAMESPACES: {
+      '30d': 'org-people-dir:v4:30d',
+      '90d': 'org-people-dir:v4:90d',
+      '12mo': 'org-people-dir:v4:12mo',
+      all: 'org-people-dir:v4:all',
+    },
+    ORG_LENS_PERUSER_TTL_SECONDS: 30,
+  },
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
     accountId: '',
     rows: [],
@@ -200,8 +212,8 @@ function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
   };
 }
 
-async function run(): Promise<OrgAllEmployeesResponse> {
-  return new OrgPeopleDirectoryService().getLive(req, ACCOUNT);
+async function run(range: OrgPeopleTimeRange = '12mo'): Promise<OrgAllEmployeesResponse> {
+  return new OrgPeopleDirectoryService().getLive(req, ACCOUNT, range);
 }
 
 beforeEach(() => {
@@ -211,6 +223,7 @@ beforeEach(() => {
   cache.entry = null;
   cache.accept = null;
   cache.readThroughs = 0;
+  cache.namespaces = [];
   cache.encodedRows = null;
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
@@ -931,12 +944,35 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v3', 'tester', ACCOUNT);
+    evictPerUserOrgFetch('org-people-dir:v4:12mo', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
     expect((await stale).rows[0].name).toBe('Before Reassign');
     expect((await run()).rows[0].name).toBe('After Reassign');
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps each time range apart: its own stored roster, cache namespace and in-flight computation', async () => {
+    let release!: (rows: OrgAllEmployeesInternalResponse) => void;
+    getAllEmployeesInternal
+      .mockReturnValueOnce(
+        new Promise<OrgAllEmployeesInternalResponse>((resolve) => {
+          release = resolve;
+        })
+      )
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'All Time' })]));
+
+    const recent = run('30d');
+    const allTime = await run('all');
+    release(baseResponse([storedRow({ name: 'Last 30 Days' })]));
+
+    expect((await recent).rows[0].name).toBe('Last 30 Days');
+    expect(allTime.rows[0].name).toBe('All Time');
+    expect(getAllEmployeesInternal.mock.calls).toEqual([
+      [ACCOUNT, '30d'],
+      [ACCOUNT, 'all'],
+    ]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v4:30d', 'org-people-dir:v4:all']);
   });
 });

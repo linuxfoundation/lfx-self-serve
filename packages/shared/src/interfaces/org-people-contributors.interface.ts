@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgPeopleTimeRange } from './org-people.interface';
+
 /** Role badge — declared-maintainer rule (Item 4 lock); Maintainer > Contributor at the org level on the parent row, per-project on the expansion. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
-
-/** Time-window slice the BFF aggregates over — drives a refetch per change (A1 architecture lock per Item 2). */
-export type OrgContributorTimeRange = '30d' | '90d' | '12mo' | 'all';
 
 /** Sortable columns on the Contributors main table. */
 export type OrgContributorSortColumn = 'name' | 'role' | 'commits' | 'lastActive' | 'mostActiveProject';
@@ -89,7 +88,7 @@ export interface OrgContributorStatsBaseline {
 export interface OrgContributorsResponse {
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
-  timeRange: OrgContributorTimeRange;
+  timeRange: OrgPeopleTimeRange;
   contributors: OrgContributorRow[];
   projects: OrgContributorProjectRow[];
   foundationOptions: OrgContributorFoundationOption[];
@@ -126,12 +125,6 @@ export interface OrgContributorExpandedRowVm {
   lastActiveTs: string | null;
   /** Pre-formatted `MMM dd, yyyy` of `lastActiveTs`, or em-dash. */
   lastActiveLabel: string;
-}
-
-/** Time-window dropdown option — label rendered as-is in `<lfx-select>`. */
-export interface OrgContributorTimeRangeOption {
-  label: string;
-  value: OrgContributorTimeRange;
 }
 
 // Server-internal Snowflake row shape (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.

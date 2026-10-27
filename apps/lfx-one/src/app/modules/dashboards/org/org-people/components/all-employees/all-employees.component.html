@@ -48,6 +48,16 @@
         styleClass="w-full"
         ariaLabel="Filter by employment" />
     </div>
+    <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
+      <p-select
+        [options]="rangeOptions"
+        [ngModel]="selectedRange()"
+        (ngModelChange)="onRangeChange($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        ariaLabel="Filter by time range" />
+    </div>
   </div>
 
   @if (fetchError()) {

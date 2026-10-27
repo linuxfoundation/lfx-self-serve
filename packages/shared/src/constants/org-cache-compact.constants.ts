@@ -9,7 +9,6 @@ import type {
   OrgLensProjectPerson,
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleAllRowRaw,
-  OrgPeopleAllStatsRow,
   OrgPeopleAllTraineeRow,
   OrgPeopleEventRow,
   OrgPeopleFoundationOptionRow,
@@ -87,16 +86,6 @@ export const ORG_PEOPLE_ALL_ROW_COLUMNS = [
   'COURSES_COUNT',
   'ENGAGED_FOUNDATION_IDS',
 ] as const satisfies readonly (keyof OrgPeopleAllRowRaw)[];
-
-/** `CompactOrgAllEmployeesRawCache.statsRaw`. */
-export const ORG_PEOPLE_ALL_STATS_COLUMNS = [
-  'ACCOUNT_ID',
-  'ACTIVE_IN_OSS',
-  'IN_GOVERNANCE',
-  'CODE_CONTRIBUTORS',
-  'EVENT_ATTENDEES',
-  'TRAINEES',
-] as const satisfies readonly (keyof OrgPeopleAllStatsRow)[];
 
 /** `CompactOrgAllEmployeesRawCache.foundationRaw`. */
 export const ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof OrgPeopleFoundationOptionRow)[];

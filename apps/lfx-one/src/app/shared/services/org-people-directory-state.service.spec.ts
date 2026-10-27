@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
 
-const URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
+const URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=12mo`;
+const urlFor = (range: string): string => `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}`;
 
 function roster(name: string): OrgAllEmployeesResponse {
   const row: OrgAllEmployeeRow = {
@@ -53,18 +54,18 @@ describe('OrgPeopleDirectoryStateService', () => {
   });
 
   it('serves a resolved directory from cache without a second request', async () => {
-    const first = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const first = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     http.expectOne(URL).flush(roster('Ada Lovelace'));
     await first;
 
-    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID))).resolves.toEqual(roster('Ada Lovelace'));
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'))).resolves.toEqual(roster('Ada Lovelace'));
     http.expectNone(URL);
   });
 
   // A reassign invalidates while a pre-reassign request is still pending. That request must not put
   // the old roster back into the cache when it lands, or the next read would replay it for the TTL.
   it('does not let a request started before invalidate() repopulate the cache', async () => {
-    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     const staleRequest = http.expectOne(URL);
 
     service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
@@ -72,26 +73,67 @@ describe('OrgPeopleDirectoryStateService', () => {
     // Its own subscriber still gets the answer it asked for.
     await expect(stale).resolves.toEqual(roster('Before Reassign'));
 
-    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     http.expectOne(URL).flush(roster('After Reassign'));
     await expect(fresh).resolves.toEqual(roster('After Reassign'));
   });
 
   it('does not let a superseded request drop its successor from the in-flight dedupe', async () => {
-    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     const staleRequest = http.expectOne(URL);
     service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
 
-    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     const freshRequest = http.expectOne(URL);
     staleRequest.flush(roster('Before Reassign'));
     await stale;
 
     // A caller arriving now joins the fresh request instead of issuing a third.
-    const joined = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    const joined = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
     http.expectNone(URL);
     freshRequest.flush(roster('After Reassign'));
     await expect(fresh).resolves.toEqual(roster('After Reassign'));
     await expect(joined).resolves.toEqual(roster('After Reassign'));
+  });
+
+  // lfx-self-serve#4163 — one cached roster per time range.
+  it('keeps each time range apart and does not serve one range from another', async () => {
+    const recent = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
+    const allTime = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
+    http.expectOne(urlFor('30d')).flush(roster('Last 30 Days'));
+    http.expectOne(urlFor('all')).flush(roster('All Time'));
+
+    await expect(recent).resolves.toEqual(roster('Last 30 Days'));
+    await expect(allTime).resolves.toEqual(roster('All Time'));
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'))).resolves.toEqual(roster('Last 30 Days'));
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'))).resolves.toEqual(roster('All Time'));
+    http.expectNone(urlFor('30d'));
+    http.expectNone(urlFor('all'));
+  });
+
+  it('invalidate() drops every range of the org, cached or in flight', async () => {
+    const cached = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
+    http.expectOne(urlFor('30d')).flush(roster('Before'));
+    await cached;
+    const pending = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
+    const pendingRequest = http.expectOne(urlFor('all'));
+
+    service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
+    pendingRequest.flush(roster('Before'));
+    await pending;
+
+    const recent = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
+    const allTime = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
+    http.expectOne(urlFor('30d')).flush(roster('After'));
+    http.expectOne(urlFor('all')).flush(roster('After'));
+    await expect(recent).resolves.toEqual(roster('After'));
+    await expect(allTime).resolves.toEqual(roster('After'));
+  });
+
+  it('serves the reassign pickers from the widest (all) range', async () => {
+    const employees = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
+    http.expectOne(urlFor('all')).flush(roster('Ada Lovelace'));
+
+    await expect(employees).resolves.toEqual([]);
   });
 });

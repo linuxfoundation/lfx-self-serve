@@ -4,7 +4,10 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getCompanyEmails, getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
+const { getAllEmployees, getFormerEmployees, getLive, getCompanyEmails, getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
+  getAllEmployees: vi.fn(),
+  getFormerEmployees: vi.fn(),
+  getLive: vi.fn(),
   getCompanyEmails: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -16,6 +19,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../..
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
   OrgLensPeopleService: class {
+    public getAllEmployees = getAllEmployees;
+    public getFormerEmployees = getFormerEmployees;
     public getCompanyEmails = getCompanyEmails;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
   },
@@ -23,7 +28,11 @@ vi.mock('../services/org-lens-people.service', () => ({
 vi.mock('../services/org-people-board-members.service', () => ({ OrgPeopleBoardMembersService: class {} }));
 vi.mock('../services/org-people-committee-members.service', () => ({ OrgPeopleCommitteeMembersService: class {} }));
 vi.mock('../services/org-people-contributors.service', () => ({ OrgPeopleContributorsService: class {} }));
-vi.mock('../services/org-people-directory.service', () => ({ OrgPeopleDirectoryService: class {} }));
+vi.mock('../services/org-people-directory.service', () => ({
+  OrgPeopleDirectoryService: class {
+    public getLive = getLive;
+  },
+}));
 vi.mock('../services/org-people-event-attendees.service', () => ({ OrgPeopleEventAttendeesService: class {} }));
 vi.mock('../services/org-people-key-contacts.service', () => ({ OrgPeopleKeyContactsService: class {} }));
 vi.mock('../services/org-people-trainees.service', () => ({ OrgPeopleTraineesService: class {} }));
@@ -40,6 +49,58 @@ function buildReq(username: string): Request {
 function buildRes(): Response {
   return { setHeader: vi.fn(), json: vi.fn() } as unknown as Response;
 }
+
+function buildRosterReq(query: Record<string, string>): Request {
+  return { params: { orgUid: ORG_UID }, query, path: '/test' } as unknown as Request;
+}
+
+const EMPTY_ROSTER = { accountId: ORG_UID, rows: [], stats: { activeInOss: 0 }, foundations: [] };
+
+describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)', () => {
+  const controller = new OrgLensPeopleController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAllEmployees.mockResolvedValue(EMPTY_ROSTER);
+    getFormerEmployees.mockResolvedValue(EMPTY_ROSTER);
+    getLive.mockResolvedValue(EMPTY_ROSTER);
+  });
+
+  it('defaults a missing range to 12mo on every roster read', async () => {
+    await controller.getAllEmployees(buildRosterReq({}), buildRes(), vi.fn());
+    await controller.getAllEmployees(buildRosterReq({ live: 'true' }), buildRes(), vi.fn());
+    await controller.getFormerEmployees(buildRosterReq({}), buildRes(), vi.fn());
+
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '12mo');
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '12mo');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo');
+  });
+
+  it('passes a valid range through to the stored, live and former reads', async () => {
+    await controller.getAllEmployees(buildRosterReq({ range: '30d' }), buildRes(), vi.fn());
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: 'all' }), buildRes(), vi.fn());
+    await controller.getFormerEmployees(buildRosterReq({ range: '90d' }), buildRes(), vi.fn());
+
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d');
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '90d');
+  });
+
+  it('rejects an unknown range with a 400 before any read', async () => {
+    for (const [read, query] of [
+      [controller.getAllEmployees, { range: '3y' }],
+      [controller.getAllEmployees, { live: 'true', range: '12m' }],
+      [controller.getFormerEmployees, { range: 'ALL' }],
+    ] as const) {
+      const next = vi.fn();
+      await read.call(controller, buildRosterReq(query), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    }
+    expect(getAllEmployees).not.toHaveBeenCalled();
+    expect(getLive).not.toHaveBeenCalled();
+    expect(getFormerEmployees).not.toHaveBeenCalled();
+  });
+});
 
 describe('OrgLensPeopleController getEmployeeDetailByUsername (lfx-self-serve-ops#894)', () => {
   const controller = new OrgLensPeopleController();

@@ -15,6 +15,15 @@ export interface PeopleTabConfig {
   readonly noun: string;
 }
 
+/** Time window shared by the People tabs that read windowed warehouse data (All Employees, Contributors). `all` is all time. */
+export type OrgPeopleTimeRange = '30d' | '90d' | '12mo' | 'all';
+
+/** Dropdown option for {@link OrgPeopleTimeRange} (typed value). */
+export interface OrgPeopleTimeRangeOption {
+  label: string;
+  value: OrgPeopleTimeRange;
+}
+
 // All Employees tab ----------------------------------------------------------
 
 /** Filter the All Employees table by activity dimension. */

@@ -12,11 +12,11 @@ import type {
   OrgAllEmployeeStats,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgContributorTimeRange,
-  OrgContributorTimeRangeOption,
   OrgEventAttendeesResponse,
   OrgEventAttendeeTimeWindow,
   OrgEventAttendeeTimeWindowOption,
+  OrgPeopleTimeRange,
+  OrgPeopleTimeRangeOption,
   OrgTraineesResponse,
   OrgTraineeTimeWindow,
   OrgTraineeTimeWindowOption,
@@ -82,6 +82,17 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
 /** Default employment filter — the URL drops `?employment=` when it is active. */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
 
+/** Default People time range (All Employees, Contributors) — Past 12 Months; the All Employees URL drops `?range=` when it is active. */
+export const ORG_PEOPLE_DEFAULT_TIME_RANGE: OrgPeopleTimeRange = '12mo';
+
+/** People time-range dropdown options (All Employees, Contributors) — ordered narrowest-first. Also the BFF's allow-list for `range` / `timeRange`. */
+export const ORG_PEOPLE_TIME_RANGE_OPTIONS: readonly OrgPeopleTimeRangeOption[] = [
+  { label: 'Last 30 Days', value: '30d' },
+  { label: 'Last 90 Days', value: '90d' },
+  { label: 'Last 12 Months', value: '12mo' },
+  { label: 'All Time', value: 'all' },
+] as const;
+
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
@@ -139,18 +150,6 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
 /** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
 export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
-/** Default Contributors time-range — Past 12 Months per the prototype default. */
-export const ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE: OrgContributorTimeRange = '12mo';
-
-/** Time-range dropdown options for the Contributors tab — ordered narrowest-first, matches Dano's JIRA description. */
-export const ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS: readonly OrgContributorTimeRangeOption[] = [
-  { label: 'Last 30 Days', value: '30d' },
-  { label: 'Last 90 Days', value: '90d' },
-  { label: 'Last 12 Months', value: '12mo' },
-  // `all` is not all-time: the ORG_PEOPLE_CONTRIBUTORS_DAILY dbt model is capped at a 3-year rolling window.
-  { label: 'Past 3 Years', value: 'all' },
-] as const;
-
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
   maintainers: 0,
@@ -162,7 +161,7 @@ export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
 /** Zero-valued Contributors response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
   accountId: '',
-  timeRange: ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE,
+  timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE,
   contributors: [],
   projects: [],
   foundationOptions: [],

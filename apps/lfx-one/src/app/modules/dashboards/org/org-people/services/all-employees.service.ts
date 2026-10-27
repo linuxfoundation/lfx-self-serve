@@ -5,19 +5,19 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import type { OrgAllEmployeeDetail, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeDetail, OrgAllEmployeesResponse, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
 
 /** HTTP client for the Org Lens "All Employees" BFF endpoints. Errors propagate to the component, which owns loading/error state and retry — mirrors OrgLensMembershipsService. */
 @Injectable({ providedIn: 'root' })
 export class AllEmployeesService {
   private readonly http = inject(HttpClient);
 
-  public getAllEmployees(orgUid: string): Observable<OrgAllEmployeesResponse> {
-    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`);
+  public getAllEmployees(orgUid: string, range: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
+    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { range } });
   }
 
-  public getFormerEmployees(orgUid: string): Observable<OrgAllEmployeesResponse> {
-    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/former`);
+  public getFormerEmployees(orgUid: string, range: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
+    return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/former`, { params: { range } });
   }
 
   public getEmployeeDetail(orgUid: string, personKey: string): Observable<OrgAllEmployeeDetail> {

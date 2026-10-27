@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_REGEX, ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
-import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import { EMAIL_REGEX, ORG_PEOPLE_DEFAULT_TIME_RANGE, ORG_PEOPLE_TIME_RANGE_OPTIONS, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgPeopleTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -18,8 +18,6 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
-
-const VALID_CONTRIBUTOR_TIME_RANGES: ReadonlySet<OrgContributorTimeRange> = new Set(['30d', '90d', '12mo', 'all']);
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -43,23 +41,27 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|12mo|all] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster (default `12mo`). */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_all';
     const live = parseLiveFlag(req);
-    const startTime = logger.startOperation(req, 'get_org_lens_people_all', {
-      org_uid: orgUid,
-      live,
-    });
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_all');
-
-      const response = live ? await this.directoryService.getLive(req, orgUid) : await this.service.getAllEmployees(orgUid);
-
-      logger.success(req, 'get_org_lens_people_all', startTime, {
+      assertOrgUid(orgUid, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
+      const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         live,
+        time_range: range,
+      });
+
+      const response = live ? await this.directoryService.getLive(req, orgUid, range) : await this.service.getAllEmployees(orgUid, range);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        live,
+        time_range: range,
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
@@ -72,20 +74,24 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/former — former employees with code credited to the account (lfx-self-serve#4311). Never merged into the live directory. */
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|12mo|all] — former employees active at the account in the range (lfx-self-serve#4311, default `12mo`). Never merged into the live directory. */
   public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const startTime = logger.startOperation(req, 'get_org_lens_people_former', {
-      org_uid: orgUid,
-    });
+    const operation = 'get_org_lens_people_former';
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_former');
-
-      const response = await this.service.getFormerEmployees(orgUid);
-
-      logger.success(req, 'get_org_lens_people_former', startTime, {
+      assertOrgUid(orgUid, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
+      const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
+        time_range: range,
+      });
+
+      const response = await this.service.getFormerEmployees(orgUid, range);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        time_range: range,
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
       });
@@ -424,7 +430,7 @@ export class OrgLensPeopleController {
 
     try {
       assertOrgUid(orgUid, operation);
-      const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'), operation);
+      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: timeRange,
@@ -502,13 +508,16 @@ function parseLiveFlag(req: Request): boolean {
   return raw === '' || raw === 'true' || raw === '1';
 }
 
-/** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
-function parseContributorTimeRange(raw: string | undefined, operation: string): OrgContributorTimeRange {
+/** Validate a People time-range query param (`range` / `timeRange`): missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
+function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgPeopleTimeRange {
   if (!raw) {
-    return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
+    return ORG_PEOPLE_DEFAULT_TIME_RANGE;
   }
-  if (!VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
-    throw ServiceValidationError.forField('timeRange', `Invalid timeRange value. Allowed: ${[...VALID_CONTRIBUTOR_TIME_RANGES].join(', ')}`, { operation });
+  const option = ORG_PEOPLE_TIME_RANGE_OPTIONS.find((candidate) => candidate.value === raw);
+  if (!option) {
+    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_PEOPLE_TIME_RANGE_OPTIONS.map((o) => o.value).join(', ')}`, {
+      operation,
+    });
   }
-  return raw as OrgContributorTimeRange;
+  return option.value;
 }
