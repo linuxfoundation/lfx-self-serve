@@ -1146,6 +1146,62 @@ describe('VoteService', () => {
         expect(resultsCalls()).toHaveLength(0);
       });
 
+      describe('re-invitation results access through the real personal-response lookup', () => {
+        const removedRow = { ...invitedRow, uid: 'vr-removed', username: 'spec-user', voter_removed: true };
+        const currentRow = { ...invitedRow, uid: 'vr-current', username: 'spec-user' };
+
+        beforeEach(() => {
+          getUsernameFromAuth.mockResolvedValue('spec-user');
+          getEffectiveEmail.mockReturnValue('spec-user@example.org');
+          fetchAllQueryResources.mockImplementation(async (_req: unknown, fetchPage: () => Promise<QueryServiceResponse<IndexedVoteResponse>>) => {
+            const page = await fetchPage();
+            return page.resources.map((resource) => resource.data);
+          });
+        });
+
+        it.each([
+          ['the removed row comes first', [removedRow, currentRow]],
+          ['the current row comes first', [currentRow, removedRow]],
+        ])('allows an ended vote when %s', async (_label, rows) => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+            if (path === '/query/resources') return { resources: rows.map((data) => ({ data })) };
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          const results = await service.getVoteResults(req, RESULTS_UID, nonWriter);
+
+          expect(results.num_votes_cast).toBe(2);
+          expect(results.comment_results[0].responses).toEqual([{ comment_text: 'apple pie' }, { comment_text: 'Zebra crossing' }]);
+          expect(resultsCalls()).toHaveLength(1);
+        });
+
+        it('allows a current legacy invitation when the vote_uid query finds only a removed invitation', async () => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string, _method: unknown, params?: { filters?: string[] }) => {
+            if (path === '/query/resources') {
+              const rows = params?.filters?.includes(`poll_id:${RESULTS_UID}`) ? [{ ...currentRow, vote_uid: undefined, poll_id: RESULTS_UID }] : [removedRow];
+              return { resources: rows.map((data) => ({ data })) };
+            }
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          const results = await service.getVoteResults(req, RESULTS_UID, nonWriter);
+
+          expect(results.num_votes_cast).toBe(2);
+          expect(resultsCalls()).toHaveLength(1);
+        });
+
+        it('rejects a removed-only invitation before fetching results', async () => {
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: string) => {
+            if (path === '/query/resources') return { resources: [{ data: removedRow }] };
+            return path.endsWith('/results') ? upstreamResults() : namedEndedVote;
+          });
+
+          await expect(service.getVoteResults(req, RESULTS_UID, nonWriter)).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+
+          expect(resultsCalls()).toHaveLength(0);
+        });
+      });
+
       it('returns text-only comments in text order on an ended named vote for an invitee', async () => {
         vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(invitedRow as never);
         mockVoteAndResults(namedEndedVote, upstreamResults());
@@ -2030,6 +2086,48 @@ describe('VoteService', () => {
         filters_or: ['user_email:spec-user@example.org', 'username:spec-user'],
       });
       expect(result).toMatchObject({ uid: 'vr-1', vote_uid: VOTE_UID });
+    });
+
+    describe.each(['vote_uid', 'poll_id'] as const)('current invitation selection via %s', (parentKey) => {
+      const removedRow = { uid: 'vr-removed', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: true };
+      const currentRow = { uid: 'vr-current', [parentKey]: VOTE_UID, username: 'spec-user', voter_removed: false };
+
+      it.each([
+        ['removed first', [removedRow, currentRow]],
+        ['current first', [currentRow, removedRow]],
+      ])('prefers the current invitation with %s', async (_label, rows) => {
+        proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: string, _method: unknown, params: { filters: string[] }) => ({
+          resources: params.filters.includes(`${parentKey}:${VOTE_UID}`) ? rows.map((data) => ({ data })) : [],
+        }));
+
+        await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-current', vote_uid: VOTE_UID, voter_removed: false });
+      });
+    });
+
+    it('prefers a current poll_id-only invitation over a removed vote_uid invitation', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }] })
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-current', poll_id: VOTE_UID, username: 'spec-user', voter_removed: false } }] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-current', vote_uid: VOTE_UID, voter_removed: false });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains the removed vote_uid invitation when the legacy query has no usable current match', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [{ data: { uid: 'vr-removed', vote_uid: VOTE_UID, username: 'spec-user', voter_removed: true } }],
+        })
+        .mockResolvedValueOnce({
+          resources: [
+            { data: { uid: 'vr-foreign', poll_id: VOTE_UID, username: 'someone-else', voter_removed: false } },
+            { data: { uid: 'vr-other-vote', poll_id: 'other-vote', username: 'spec-user', voter_removed: false } },
+            { data: { poll_id: VOTE_UID, username: 'spec-user', voter_removed: false } },
+          ],
+        });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toMatchObject({ uid: 'vr-removed', vote_uid: VOTE_UID, voter_removed: true });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
     });
 
     it('returns null when the only indexed row belongs to a different vote', async () => {

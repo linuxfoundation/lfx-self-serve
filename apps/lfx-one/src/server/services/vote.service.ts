@@ -967,10 +967,12 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
-    // the list surfaced this vote under) and requires a usable row id.
-    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
-      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+    // Apply the shared parent-key rule and require a usable row id. A re-invitation's current
+    // row wins over historical removed rows, regardless of query-service ordering.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined => {
+      const matches = rows.filter((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+      return matches.find((r) => !r.voter_removed) ?? matches[0];
+    };
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
@@ -980,11 +982,12 @@ export class VoteService {
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
     // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
     // The query service supports a single `filters_or` group (spent on identity), so the two
-    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
-    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
-    // non-match must still fall through to the legacy key.
-    if (!match) {
-      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    // scoped queries run sequentially. Fall through when no current match exists: an owned
+    // foreign-vote row or a historical removed invitation must not hide a current legacy row.
+    if (!match || match.voter_removed) {
+      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+      if (!legacyMatch?.voter_removed) match = legacyMatch ?? match;
+      else match ??= legacyMatch;
     }
 
     if (!match) return null;
