@@ -479,6 +479,34 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('3');
     });
 
+    it('leaves out of the Former view a stored current seat-holder still on a stale former roster', async () => {
+      await mount('browser', '/?employment=former');
+      snowflake$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', sources: ['snowflake', 'committee'], seatsCount: 1, committeeSeatsCount: 1 }),
+          ],
+          2
+        )
+      );
+      snowflake$.complete();
+      former$.next(
+        response(
+          [
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 }),
+            row('p-8', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 2 }),
+          ],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-8']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-8-former']);
+    });
+
     it("never joins the previous account's live roster to the next account's former employees during a switch", async () => {
       await mount('browser', '/?employment=former');
       await answerCurrent();

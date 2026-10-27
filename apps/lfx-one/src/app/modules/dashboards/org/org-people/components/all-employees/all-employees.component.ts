@@ -374,8 +374,8 @@ export class AllEmployeesComponent {
    *   activity plus the live sources, seats and access badge, untagged.
    * - With only Org Lens access, they are still former: the former row, carrying the access badge.
    * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
-   * be stale. Under "All", someone on both is shown once, as the stored current row (matched on person key or
-   * the stored username).
+   * be stale. Someone on both is treated as current (matched on person key or the stored username): under "All"
+   * they are shown once, as the stored current row, and the Former view leaves them out.
    * Rows are only reconciled once both reads belong to the selected account, so a previous account's live roster
    * never joins the next account's former employees.
    */
@@ -408,7 +408,7 @@ export class AllEmployeesComponent {
     const shownFormerRows: OrgAllEmployeeRow[] = [];
     const rejoinedRows: OrgAllEmployeeRow[] = [];
     for (const row of formerRows) {
-      if (this.showCurrent() && (storedKeys.has(`key:${row.personKey}`) || (row.lfUsername && storedKeys.has(`username:${row.lfUsername}`)))) continue;
+      if (storedKeys.has(`key:${row.personKey}`) || (row.lfUsername && storedKeys.has(`username:${row.lfUsername}`))) continue;
       const role = row.lfUsername ? liveRoles.get(row.lfUsername) : undefined;
       const accessBadge = (row.lfUsername ? liveAccess.get(row.lfUsername) : undefined) ?? row.accessBadge;
       if (!role) {
