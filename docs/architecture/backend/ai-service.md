@@ -227,8 +227,8 @@ short name resolves to:
 ```
 
 Sending the routing destination asks the router for a model it publishes no deployment for, and
-that answers `429` rather than a `400` that would name the real problem — the failure mode in
-#4333, where every AI feature returned `AI streaming request failed (429)`.
+that answers `429` rather than a `400` that would name the real problem — the failure mode in #4333,
+where every AI feature returned `AI streaming request failed (429)`.
 
 Read the status code when generation fails: a `429` is the model name not matching anything the
 proxy serves (or a genuine rate limit), a `400` is the request body being rejected with auth fine,
