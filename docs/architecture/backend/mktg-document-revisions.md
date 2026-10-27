@@ -253,12 +253,17 @@ their leftover artifact.
 
 ## Last scalar intake
 
-A separate private snapshot at
-`document-last-intake/{project}/{agentKey}.json` remembers the registered scalar
-fields of the latest accepted Generate for an active living agent, or a one-off intake
-that declares an explicit `lastIntakeFields` allowlist. LinkedIn opts into source kind,
-selected pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
-It uses the existing `marketing-os-artifacts` purpose and server-resolved writer partition.
+A separate private snapshot remembers the registered scalar fields of the latest accepted
+Generate. Active living agents keep the shared per-project key
+`document-last-intake/{project}/{agentKey}.json`: another writer of the same project
+can restore those inputs, including existing records, with no migration or extra subject
+check beyond the project-writer grant. LinkedIn instead uses
+`document-last-intake/{project}/linkedin-post/{sha256(effectiveSub)}.json`: only that writer's
+record is read, the subject is hashed (never raw in the key), and a missing subject cannot
+read a snapshot. Older per-project LinkedIn records are ignored, never read, shown or
+migrated. LinkedIn's explicit `lastIntakeFields` allowlist contains source kind, selected
+pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
+Both schemes use the existing `marketing-os-artifacts` purpose and server-resolved project partition.
 The BFF starts this best-effort write only after sending the Generate acknowledgement;
 a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
 blank fields are retained; absent fields are not invented as last-run answers.
@@ -270,9 +275,9 @@ The source page asks the writer to paste that omitted text again; uploads are ne
 
 This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
 conflict resolution. It holds run ID and start time, scalar answers, and document/logo
-counts only; it does not retain an author identifier because there is no audit consumer.
-Existing snapshots with the former author field remain readable, but that field is ignored
-and never projected in the response. It never stores uploaded bytes,
+counts only; the body does not retain an author identifier because there is no audit consumer.
+Existing living-agent snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response; this does not permit reading old per-project LinkedIn records. It never stores uploaded bytes,
 extracted source text, source filenames, Guild sessions or capability tokens.
 `GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
 `private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
