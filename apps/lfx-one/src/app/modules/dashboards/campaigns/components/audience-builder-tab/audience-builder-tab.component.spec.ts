@@ -3409,6 +3409,31 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'it is offered to add by hand').not.toBeNull();
       });
 
+      it('adds the held opt-ins when the draft reuses an existing list instead of creating one', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'fixture precondition').not.toBeNull();
+
+        draftBuilder().reuse.emit({ listId: '8888', name: 'Synthetic Summit - Existing audience', size: 900, hubspotUrl: 'https://app.hubspot.com/x/8888' });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-8888"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins waited forever after a reuse').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).toBeNull();
+      });
+
+      it('reads the opt-ins from a discovery already run for the same page instead of streaming another', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-discover');
+        completeDiscovery(discovered({ lists: [...discovered().lists, optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        expect(discoverAudience, 'fixture precondition').toHaveBeenCalledTimes(1);
+
+        click('campaigns-audience-event-generate');
+
+        expect(discoverAudience, 'a second discovery stream was opened for the same page').toHaveBeenCalledTimes(1);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).not.toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 
