@@ -34,4 +34,4 @@ Some badges may have expiry dates. Check the badge detail view for expiry inform
 
 ## Who do I contact if a badge is incorrect?
 
-Contact LFX support via in-app messaging. Include the badge name and the project it relates to so the support team can investigate.
+Contact LFX support. Include the badge name and the project it relates to so the support team can investigate.

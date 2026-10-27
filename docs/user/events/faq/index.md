@@ -55,4 +55,4 @@ Open the **Past** tab on the Events page, find the event, and select **Download 
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support via in-app messaging.
+Contact the event organizer listed on the event detail page, or reach out to LFX support.

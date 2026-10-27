@@ -26,7 +26,7 @@ Document upload availability depends on your project role. Contact your project 
 
 ## Who do I contact if a document is missing or incorrect?
 
-Contact your project administrator or LFX support via in-app messaging. Include the document name and the project it belongs to.
+Contact your project administrator or LFX support. Include the document name and the project it belongs to.
 
 ## Are documents shared across projects?
 
