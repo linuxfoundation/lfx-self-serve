@@ -4,10 +4,13 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeDetail, OrgKeyContactAssignment, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { Tooltip } from 'primeng/tooltip';
 import { finalize, Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -29,6 +32,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     boardSeats: [],
     committeeSeats: [],
     code: [],
+    totalCommits: 0,
     events: [
       {
         eventId: 'event-1',
@@ -189,6 +193,45 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     reply(`${PEOPLE}/second-person/company-emails`).next(emails());
     await render();
     expect(emailState('none')).not.toBeNull();
+  });
+
+  it('tags a former employee with the Former employee badge', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')?.textContent?.trim()).toBe('Former employee');
+  });
+
+  it.each([
+    { label: 'isFormer false', context: { name: 'First person', personKey: 'first-person', isFormer: false } },
+    { label: 'isFormer absent', context: { name: 'First person', personKey: 'first-person' } },
+  ])('shows no Former employee badge with $label', async ({ context }) => {
+    drawer.open(context);
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
+  it('drops the Former employee badge when the drawer switches from a former employee to a current one', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    drawer.open({ name: 'Second person', personKey: 'second-person' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
+  it('drops the Former employee badge when the account changes, since employment is per organization', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    selectedAccount.set({ uid: 'org-2' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
   });
 
   it('ignores an old address response before the switch effect runs, then cancels its subscription', async () => {
@@ -415,6 +458,74 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.setTab('governance');
     await render();
     expect(document.body.textContent).toContain('Gold Members');
+  });
+
+  it('labels the Code tab total "Commits" with the shared commits definition tooltip', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next({
+      ...detail(),
+      code: [
+        {
+          projectId: 'project-1',
+          projectName: 'Project One',
+          foundationId: 'foundation-1',
+          foundationName: 'Foundation One',
+          commits: 7,
+          lastActivityDate: null,
+          isMaintainer: false,
+        },
+      ],
+      totalCommits: 7,
+    });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
+    const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+    expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+  });
+
+  it("shows a mirrored commit in each project's count and once in the Commits total", async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    // 3 commits only in project-1 and 4 mirrored in project-1 and project-2: 7 distinct commits.
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 7), project('project-2', 4)], totalCommits: 7 });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('7');
+    expect(byTestId('person-detail-drawer-code-project-project-1')?.textContent).toContain('7 commits');
+    expect(byTestId('person-detail-drawer-code-project-project-2')?.textContent).toContain('4 commits');
+  });
+
+  it('says "1 commit" for a project with one commit and "N commits" otherwise', async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 1), project('project-2', 2)], totalCommits: 3 });
+    drawer.setTab('code');
+    await render();
+
+    const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+    expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
   });
 
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {

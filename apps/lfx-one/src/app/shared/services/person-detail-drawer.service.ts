@@ -69,6 +69,8 @@ export class PersonDetailDrawerService {
     const supplied = this._activeContext()?.keyContactAssignments;
     return supplied && this._openedOrgUid() === this.orgUid() ? supplied : null;
   });
+  /** The opener's Former tag, likewise only while its organization is still selected: employment status is per organization. */
+  public readonly isFormer = computed(() => !!this._activeContext()?.isFormer && this._openedOrgUid() === this.orgUid());
   private readonly keyContactsRequest = computed(() => ({
     ...this.detailRequest(),
     keyContactsRequested: this._keyContactsRequested(),
@@ -103,7 +105,10 @@ export class PersonDetailDrawerService {
         if (!path) {
           return of({ request, ...NO_COMPANY_EMAILS });
         }
-        return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`).pipe(
+        // A live-only person resolves against the directory the opener showed, which the page has already warmed.
+        const view = request.context?.directoryView;
+        const params = view ? { range: view.range, projectScope: view.projectScope } : undefined;
+        return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`, { params }).pipe(
           // Only a resolved lookup may expose addresses; a missing status surfaces as an email error.
           map((response) => ({
             request,

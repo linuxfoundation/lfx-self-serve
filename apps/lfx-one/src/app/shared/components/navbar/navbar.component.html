@@ -376,7 +376,7 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
-      [queryParams]="projectQueryParams()"
+      [queryParams]="carriedQueryParams()[item.trackKey] ?? projectQueryParams()"
       [routerLinkActive]="item.activeAliases?.length ? '' : 'is-active'"
       [routerLinkActiveOptions]="item.activeMatchOptions"
       #rla="routerLinkActive"

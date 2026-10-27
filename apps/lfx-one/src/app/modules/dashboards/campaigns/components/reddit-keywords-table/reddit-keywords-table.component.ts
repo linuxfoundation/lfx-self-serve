@@ -3,7 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, effect, inject, input, linkedSignal, Signal, signal, untracked } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, linkedSignal, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -14,6 +14,7 @@ import {
   REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR,
   REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE,
   REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE,
+  REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ,
   REDDIT_KEYWORDS_ERROR_MESSAGES,
   REDDIT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -81,13 +82,6 @@ import { catchError, filter, finalize, map, of, startWith, switchMap, take, take
  * No conversions (the read requests none). Amounts are in the ad account's own currency: no `$`.
  * Every read failure is worded by status in fixed text.
  */
-/**
- * The `read` of a note recorded after the page LEFT the note's project (an add abandoned by that move).
- * No read of that project is current, so it is stamped with the first read of the next visit instead;
- * `readId` always contains `|`, so this never matches a real read.
- */
-const NEXT_VISIT_READ = 'next-visit';
-
 @Component({
   selector: 'lfx-reddit-keywords-table',
   imports: [AdsPctPipe, ButtonComponent, ConfirmDialogModule, DecimalPipe],
@@ -424,7 +418,7 @@ export class RedditKeywordsTableComponent {
   private markNotSent(projectSlug: string, redditCampaignId: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
     // Recorded after leaving the add's project: no read of it is current, so the first read of the next
     // visit gets it (initStampNextVisitNotes). Stamping the read current NOW would hide it for good.
-    const read = projectSlug === this.projectSlug() ? this.readId() : NEXT_VISIT_READ;
+    const read = projectSlug === this.projectSlug() ? this.readId() : REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ;
     // Every outcome settled from now on has a larger `seq`: only such an outcome supersedes the note.
     const outcomeSeq = this.negativeKeywordsService.latestOutcomeSeq();
     this.notSent.update((all) => ({
@@ -473,21 +467,21 @@ export class RedditKeywordsTableComponent {
   }
 
   /**
-   * Gives a note recorded after the page left its project (`NEXT_VISIT_READ`) the read current when the
+   * Gives a note recorded after the page left its project (`REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ`) the read current when the
    * page is back on that project, so leaving never drops a confirmed add silently, and the next Refresh,
    * Retry, window or project change after the return clears it like any other note.
    */
   private initStampNextVisitNotes(): void {
-    effect(() => {
-      const projectSlug = this.projectSlug();
-      const read = this.readId();
-      untracked(() => {
-        const waiting = Object.entries(this.notSent()).filter(([, note]) => note.read === NEXT_VISIT_READ && note.projectSlug === projectSlug);
+    toObservable(computed(() => ({ projectSlug: this.projectSlug(), read: this.readId() })))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ projectSlug, read }) => {
+        const waiting = Object.entries(this.notSent()).filter(
+          ([, note]) => note.read === REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ && note.projectSlug === projectSlug
+        );
         if (waiting.length > 0) {
           this.notSent.update((all) => waiting.reduce((next, [key, note]) => ({ ...next, [key]: { ...note, read } }), all));
         }
       });
-    });
   }
 
   /** The keyword's outcome high-water mark for the campaign a note was recorded against. */

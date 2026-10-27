@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType } from '@lfx-one/shared/constants';
 import {
   AddKeyContactRequest,
   KeyContactDoc,
@@ -18,6 +18,7 @@ import { agreedUsername, isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { allOrgPeopleDirectoryNamespaces } from '../helpers/org-people-directory-cache.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { evictPerUserOrgFetch } from '../utils/single-flight';
@@ -200,8 +201,14 @@ export class OrgLensKeyContactsService {
    */
   private async invalidateCallerDirectoryCache(req: Request, b2bOrgUid: string): Promise<void> {
     const username = getEffectiveUsername(req) ?? '';
-    evictPerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, b2bOrgUid);
-    await invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, b2bOrgUid);
+    // The directory is cached per (time range, project scope) and for the unranged roster, so the bare
+    // family name is not a key any entry is stored under. Every scope goes, as the seat helper does it:
+    // a key contact's roles are range-independent, so there is no scope a write can leave standing.
+    const namespaces = allOrgPeopleDirectoryNamespaces();
+    for (const namespace of namespaces) {
+      evictPerUserOrgFetch(namespace, username, b2bOrgUid);
+    }
+    await Promise.all(namespaces.map((namespace) => invalidatePerUserCache(namespace, username, b2bOrgUid)));
   }
 
   // ── internals ────────────────────────────────────────────────────────────────

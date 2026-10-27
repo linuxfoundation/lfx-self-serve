@@ -47,15 +47,20 @@ export const VALKEY_CACHE = {
   ORG_ACCESS_LIST_NAMESPACE: 'org-access-list:v1',
 
   /**
-   * Domain + schema-version segment for the per-user org People directory cache. `v2`: merge-only
-   * fields are stripped before the write and the validator asserts their absence. `v3` (GH-1906):
-   * `rows` are stored columnar (`CompactOrgPeopleDirectoryEntry`) rather than as wire objects —
-   * stale `v1`/`v2` entries must never be served as the new shape. `v4` (#4401): rows carry
-   * `keyContactRoles`. The shape guard already rejects a `v3` entry, but sharing one key space
-   * across a rolling deploy would have old and new pods each reject and overwrite the other's
-   * entry, so the directory mostly misses until the rollout ends.
+   * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
+   * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
+   * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
+   * `org-people-dir:v7`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
+   * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
+   * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
+   * directory clears every scope. `v6` (lfx-self-serve#4378): a ranged row carries `isFormer` for an
+   * access-only principal who is a former employee in that range, so the current view never lists them.
+   * `v7` (#4401): rows carry `keyContactRoles`. The shape guard already rejects a `v6` entry, but sharing
+   * one key space across a rolling deploy would have old and new pods each reject and overwrite the
+   * other's entry, so the directory mostly misses until the rollout ends.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v4',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v7',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -215,7 +220,7 @@ export const VALKEY_CACHE = {
 
   /**
    * Per-sub-resource overrides of `MAX_VALUE_BYTES` (GH-1906), keyed by
-   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v2`.
+   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v4`.
    * The trailing per-request discriminators a sub-resource may carry (a time range, a param
    * signature, a person key) are deliberately *not* part of the lookup key: one cap covers every
    * variant of a cache, and no identifier can reach this table. See `ValkeyService.maxBytesFor`,
@@ -237,17 +242,37 @@ export const VALKEY_CACHE = {
     // bytes for the largest org measured (down from 4,446,040 pre-compaction).
     // This roster compacts least of the five (×2.2) because its rows are mostly long values —
     // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
-    'org-lens-sf:v1:people-all:v2': 3 * 1_048_576,
+    // `v3` (lfx-self-serve#4163) is read per time range and for the unranged roster, and drops the
+    // stats table; `v4` (lfx-self-serve#4164) is also read per project scope and carries three code counts
+    // per row. Measured 2026-10-27 on the dev build (lf-dbt#3118) with a SQL size estimate of each
+    // columnar value (string lengths + quotes, numbers, foundation arrays, no column names), calibrated
+    // against the 2026-09-24 measurement above (the estimate gives 1.94 MB for that 2,050,250-byte
+    // value, so compact ≈ estimate × 1.06): largest `all`-range value 4.04 MiB estimated (largest org
+    // measured, all projects; 3.29 MiB LF only), ≈ 4.3 MiB compact; the default 12-month all-projects view
+    // peaks at 1.85 MiB estimated. 4.3 MiB × 1.25 rounds up to 6 MiB.
+    'org-lens-sf:v1:people-all:v4': 6 * 1_048_576,
+    // `people-former:v3` is stored as named-key JSON rows (`withOrgCache`, not columnar). Measured 2026-10-27
+    // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
+    // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.
+    // 1,444,402 × 1.25 = 1,805,503, rounded up to 2 MiB.
+    'org-lens-sf:v1:people-former:v3': 2 * 1_048_576,
+    // Measured 2026-10-27 on the dev build (lf-dbt#3118), same SQL size estimate and × 1.06
+    // calibration as `people-all:v4`: person × project rows with the person's identity repeated on
+    // each. Largest `all`-range value 6.85 MiB estimated (largest org measured), ≈ 7.3 MiB compact; 12
+    // accounts exceed 1 MiB there and 5 exceed 3 MiB, and 3 accounts exceed 1 MiB on the default 12-month
+    // all-projects view (largest 1.21 MiB estimated). 7.3 MiB × 1.25 rounds up to 10 MiB.
+    'org-lens-sf:v1:people-contributors:v4': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
     // every detail row — so the remaining excess is real data, not repetition.
     'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
-    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,443,884
-    // bytes for the largest org measured (down from 6,440,061 pre-compaction). Same irreducible
-    // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
-    // every row, so there is nothing left to deduplicate.
-    'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+    // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
+    // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
+    // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three
+    // orgs needs more than 3 MiB: the default Past 365 days peaks at 0.91 MB. 6,782,106 × 1.25 = 8,477,633, rounded up
+    // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906).
+    'org-lens-sf:v1:people-trainees:v4': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**
@@ -272,10 +297,15 @@ export const VALKEY_CACHE = {
     // merge. 1.63 MiB × 1.25 rounds up to 3 MiB; 2 MiB would leave under 25% headroom. A reassign
     // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
     // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
-    // Moved from 'org-people-dir:v3' with the v4 bump (#4401); the cap is keyed by namespace, so
-    // leaving it behind would drop large orgs back to the 1 MiB default and stop them caching at all.
-    // The measurement above still holds: keyContactRoles adds a short string array per row, and only
-    // for the minority of people who hold a key-contact role.
-    'org-people-dir:v4': 3 * 1_048_576,
+    // `v4` (lfx-self-serve#4163) keys the roster by time range (plus the unranged picker roster), `v5`
+    // (lfx-self-serve#4164) by project scope too, with three code counts per row. Measured 2026-10-27 on
+    // the dev build (lf-dbt#3118) with the same SQL size estimate and × 1.06 calibration as
+    // `people-all:v4` (this value holds the same stored rows plus the live-only rows): largest `all`-range
+    // value ≈ 4.1 MiB estimated (≈ 4.3 MiB compact), ≈ 1.9 MiB on the default 12-month all-projects
+    // view. 4.3 MiB × 1.25 rounds up to 6 MiB. `v6` adds one mostly-absent `isFormer` cell per row (~7 bytes), well
+    // inside the headroom. `v7` (#4401) adds a short, usually-empty `keyContactRoles` array per row —
+    // only the minority of people holding a key-contact role carry any — likewise inside it. The cap is
+    // keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
+    'org-people-dir:v7': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

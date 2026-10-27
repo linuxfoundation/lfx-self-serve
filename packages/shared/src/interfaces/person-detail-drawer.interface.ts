@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
-import type { OrgAllEmployeeCommitteeMembership } from './org-people.interface';
+import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
 
 /** The five content tabs of the shared person-detail drawer (LFXV2-2195). */
 export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance' | 'key-contacts';
@@ -29,6 +29,10 @@ export interface PersonDrawerContext {
   profileUrl?: string | null;
   sourceIconClass?: string | null;
   defaultTab?: PersonDrawerTab;
+  /** `true` when the opener lists the person as a former employee of the account; the header shows a "Former employee" badge. */
+  isFormer?: boolean;
+  /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
+  directoryView?: OrgPeopleDirectoryView;
 }
 
 /** One rendered address line in the drawer header. */

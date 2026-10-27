@@ -224,8 +224,8 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
       .addKeyContact(req, ORG, 'cncf', { contactType: 'billing', email: 'new@lfx-partner.example', firstName: 'New', lastName: 'Person' } as never)
       .catch(() => undefined);
 
-    expect(evictPerUserOrgFetch).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
-    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+    expect(evictPerUserOrgFetch).toHaveBeenCalledWith('org-people-dir:v7:roster', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v7:roster', 'tester', ORG);
   });
 
   it('evicts the in-flight fill as well as the stored entry', async () => {
@@ -255,7 +255,7 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
       } as never)
     ).rejects.toThrow();
 
-    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v7:roster', 'tester', ORG);
   });
 
   // A create-then-delete replace leaves the role holding both contacts in between, so one eviction
@@ -272,9 +272,9 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
       lastName: 'Person',
     } as never);
 
-    // This service invalidates only the directory namespace, so every call here is one of ours.
-    expect(invalidatePerUserCache.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+    // Each invalidation sweeps every scope, so count the rounds by one representative namespace.
+    const rosterDrops = invalidatePerUserCache.mock.calls.filter((c) => (c as unknown as string[])[0] === 'org-people-dir:v7:roster').length;
+    expect(rosterDrops).toBeGreaterThanOrEqual(2);
   });
 
   it('leaves the cache alone when the write itself fails', async () => {

@@ -16,24 +16,23 @@ import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  CONTRIBUTIONS_DATE_RANGE_OPTIONS,
-  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE,
   MEMBERSHIP_TIER_ORDER,
   PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS,
+  PROJECT_PARTICIPATING_ORGS_DEFAULT_RANGE,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
   PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS,
+  PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS,
   PROJECT_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS,
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
   PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type {
-  ContributionsDateRangeOption,
   FilterPillOption,
   MembershipTierClass,
   ProjectParticipatingOrgRowVm,
@@ -43,6 +42,7 @@ import type {
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
+  ProjectParticipatingOrgsRangeOption,
   ProjectParticipatingOrgsSegment,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
@@ -87,7 +87,7 @@ export class ParticipatingOrgsComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dataService = inject(ParticipatingOrgsService);
 
-  protected readonly rangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
+  protected readonly rangeOptions: ProjectParticipatingOrgsRangeOption[] = [...PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
   protected readonly contributionOptions = PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS;
   /** Page-size choices only once there is more than one page, as on the Groups and Documents tables. */
@@ -103,7 +103,7 @@ export class ParticipatingOrgsComponent {
     contribution: new FormControl<ProjectParticipatingOrgsContributionFilter>('all', { nonNullable: true }),
   });
   protected readonly rangeForm = new FormGroup({
-    range: new FormControl<ProjectParticipatingOrgsRange>(CONTRIBUTIONS_DEFAULT_DATE_RANGE, { nonNullable: true }),
+    range: new FormControl<ProjectParticipatingOrgsRange>(PROJECT_PARTICIPATING_ORGS_DEFAULT_RANGE, { nonNullable: true }),
   });
 
   protected readonly segment = signal<ProjectParticipatingOrgsSegment>('all');

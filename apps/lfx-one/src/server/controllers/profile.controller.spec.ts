@@ -19,6 +19,7 @@ import {
   EMAIL_VERIFICATION_FAILED_MESSAGE,
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
 } from '../../../../../packages/shared/src/constants/profile.constants';
 // The real classifier — `@lfx-one/shared/utils` is mocked below, so link-failure specs opt into it.
 import { isIdentityAlreadyLinkedError } from '../../../../../packages/shared/src/utils/identity.utils';
@@ -156,6 +157,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // Only the member the write path sets. This factory replaces the module wholesale, so a name the
   // controller reads and this list omits fails as an undefined export rather than a wrong value.
   ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   PURCHASE_LINUX_URL: 'https://example.com',
   VALKEY_CACHE,
   PROFILE_EMAIL_PATH: '/profile/email',
@@ -1382,6 +1384,270 @@ describe('ProfileController social connect — returnTo', () => {
 
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
       expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// #4327: reconnecting a social identity whose token subject is the signed-in session's own subject
+// is a successful no-op — it must never surface the "another account" conflict, and must return
+// before the link call and the CDP verification continuation.
+describe('ProfileController social callback — already-connected identity (#4327)', () => {
+  const sessionSub = 'auth0|synthetic-user';
+  let controller: ProfileController;
+
+  function idTokenWith(payload: unknown): string {
+    return `synthetic-header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.synthetic-sig`;
+  }
+
+  function callbackReq(user: Record<string, unknown> | undefined = { sub: sessionSub }): any {
+    return buildReq({ path: '/social/callback', query: { code: 'c', state: 's' }, oidc: user ? { user } : undefined });
+  }
+
+  async function callbackWithToken(idToken: string, req: any = callbackReq()): Promise<any> {
+    socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: idToken });
+    const res = buildRes();
+    await controller.handleSocialCallback(req, res);
+    return res;
+  }
+
+  function expectNoCallbackWrites(): void {
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+    socialVerificationSvc.validateState.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('synthetic-mgmt-token');
+    getEffectiveUsernameMock.mockReturnValue('synthetic-user');
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    controller = new ProfileController();
+  });
+
+  it('redirects a same-subject reconnect to the already-connected marker without linking or touching CDP', async () => {
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+    expectNoCallbackWrites();
+    // State is still consumed — the no-op sits after every existing guard.
+    expect(socialVerificationSvc.clearState).toHaveBeenCalled();
+    expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
+  });
+
+  it.each([
+    { scenario: 'same-account reconnect', sub: sessionSub, linkResult: { success: true } },
+    { scenario: 'new link', sub: 'linkedin|synthetic-member', linkResult: { success: true } },
+    {
+      scenario: 'failed link',
+      sub: 'linkedin|synthetic-member',
+      linkResult: { success: false, error: 'internal', message: 'upstream unavailable' },
+    },
+  ])('does not log decoded identity values for $scenario', async ({ sub, linkResult }) => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue(linkResult);
+    const email = 'synthetic.user@example.com';
+    const idToken = idTokenWith({ sub, email });
+
+    const res = await callbackWithToken(idToken);
+
+    if (!linkResult.success) {
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+      expect(logger.error).toHaveBeenCalledOnce();
+    }
+
+    const loggedDetails = JSON.stringify(
+      [logger.startOperation, logger.success, logger.info, logger.warning, logger.error, logger.debug].flatMap((method) =>
+        vi.mocked(method).mock.calls.map((args) => args.slice(1))
+      )
+    );
+    expect(loggedDetails).not.toContain(sub);
+    expect(loggedDetails).not.toContain(email);
+    expect(loggedDetails).not.toContain(idToken);
+  });
+
+  it.each([
+    '/profile',
+    '/profile/email',
+    '/profile/emails',
+    '/profile/identities',
+    '/profile/password',
+    '/profile/linux-email',
+    '/profile/settings',
+    '/mentorship/mentor',
+  ])('returns the already-connected marker to the initiating page %s', async (page) => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(page);
+
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${page}?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+  });
+
+  it('falls back to the Identities tab when the stashed page is not allowlisted', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('https://evil.example.com/steal');
+
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+  });
+
+  it('never puts the subject, email, or token in the redirect', async () => {
+    const idToken = idTokenWith({ sub: sessionSub, email: 'synthetic.user@example.com' });
+
+    const res = await callbackWithToken(idToken);
+
+    const target = res.redirect.mock.calls[0][0] as string;
+    expect(target).not.toContain('synthetic-user');
+    expect(target).not.toContain('example.com');
+    expect(target).not.toContain(idToken);
+  });
+
+  it('links a different social subject and keeps the existing identity_linked outcome', async () => {
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+  });
+
+  it('keeps a different-account conflict on error=already_linked through the real classifier', async () => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue({
+      success: false,
+      error: 'validation',
+      message: 'the provided identity token belongs to an existing LFID account and cannot be linked',
+    });
+    isIdentityAlreadyLinkedErrorMock.mockImplementationOnce(isIdentityAlreadyLinkedError);
+
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=already_linked');
+  });
+
+  it('keeps any other link failure on error=link_failed', async () => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'internal', message: 'upstream unavailable' });
+
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+  });
+
+  // Only an exact, full-string match on two nonempty string subjects counts as ownership evidence.
+  describe('unusable or nonmatching subjects fall through to the existing link path', () => {
+    const encodedPayload = (raw: string): string => Buffer.from(raw).toString('base64url');
+
+    it.each([
+      ['no sub claim', idTokenWith({ email: 'synthetic.user@example.com' })],
+      ['an empty sub', idTokenWith({ sub: '' })],
+      ['a non-string sub', idTokenWith({ sub: 12345 })],
+      ['an array sub', idTokenWith({ sub: [sessionSub] })],
+      ['a null payload', idTokenWith(null)],
+      ['a non-JSON payload', `synthetic-header.${encodedPayload('not-json')}.synthetic-sig`],
+      ['a two-segment token', `synthetic-header.${encodedPayload(JSON.stringify({ sub: sessionSub }))}`],
+      ['a four-segment token', `synthetic-header.${encodedPayload(JSON.stringify({ sub: sessionSub }))}.synthetic-sig.extra`],
+      ['an empty payload segment', 'synthetic-header..synthetic-sig'],
+      ['a suffix of the session subject', idTokenWith({ sub: 'synthetic-user' })],
+      ['a longer subject sharing the session prefix', idTokenWith({ sub: `${sessionSub}-other` })],
+      ['a differently cased subject', idTokenWith({ sub: sessionSub.toUpperCase() })],
+    ])('links when the token carries %s', async (_label, idToken) => {
+      const res = await callbackWithToken(idToken);
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+      expect(res.redirect).not.toHaveBeenCalledWith(expect.stringContaining(IDENTITY_ALREADY_CONNECTED_STATUS));
+    });
+
+    it.each([
+      ['no oidc user', undefined],
+      ['no session sub', {}],
+      ['an empty session sub', { sub: '' }],
+      ['a non-string session sub', { sub: 12345 }],
+    ])('links when the session has %s, even if the token sub is also missing', async (_label, user) => {
+      await callbackWithToken(idTokenWith({}), callbackReq(user as Record<string, unknown> | undefined));
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+    });
+
+    it('links when the session has no sub but the token has one', async () => {
+      const res = await callbackWithToken(idTokenWith({ sub: sessionSub }), callbackReq({}));
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+    });
+  });
+
+  // Every existing prerequisite still wins over a same-subject token.
+  describe('guard precedence', () => {
+    const sameSubToken = idTokenWith({ sub: sessionSub });
+
+    beforeEach(() => {
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: sameSubToken });
+    });
+
+    async function run(req: any = callbackReq()): Promise<any> {
+      const res = buildRes();
+      await controller.handleSocialCallback(req, res);
+      return res;
+    }
+
+    it('impersonation is blocked before the code exchange', async () => {
+      isImpersonatingMock.mockReturnValue(true);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=impersonation_read_only');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+      expectNoCallbackWrites();
+    });
+
+    it('an Auth0 error wins', async () => {
+      const res = await run(buildReq({ path: '/social/callback', query: { error: 'access_denied' }, oidc: { user: { sub: sessionSub } } }));
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=social_auth_failed');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('an invalid state wins', async () => {
+      socialVerificationSvc.validateState.mockReturnValue(false);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=invalid_state');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a missing code wins', async () => {
+      const res = await run(buildReq({ path: '/social/callback', query: { state: 's' }, oidc: { user: { sub: sessionSub } } }));
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_code');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a missing management token wins', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_management_token');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a failed code exchange wins', async () => {
+      socialVerificationSvc.exchangeCodeForToken.mockRejectedValue(new Error('exchange failed'));
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=social_verification_failed');
+      expectNoCallbackWrites();
+    });
+
+    it('a missing id_token wins', async () => {
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({});
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_identity_token');
+      expectNoCallbackWrites();
     });
   });
 });
