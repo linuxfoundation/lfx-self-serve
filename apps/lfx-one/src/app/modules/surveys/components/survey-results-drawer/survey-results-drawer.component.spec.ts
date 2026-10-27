@@ -1,0 +1,73 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
+import { ProjectContextService } from '@services/project-context.service';
+import { SurveyService } from '@services/survey.service';
+import { of, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { SurveyResultsDrawerComponent } from './survey-results-drawer.component';
+
+const SURVEY = { uid: 's-1', survey_title: 'Board NPS', committees: [], total_recipients: 3, total_responses: 2 } as unknown as Survey;
+const answer = (text: string) => ({ survey_monkey_question_answers: [{ answers: [{ text }] }] }) as Partial<SurveyResponseItem>;
+const ROWS = [
+  { id: 'r-1', response_status: 'Responded', response_datetime: '2026-11-03T10:00:00Z', ...answer('Older') },
+  { id: 'r-2', response_status: 'Responded', response_datetime: '2026-11-05T10:00:00Z', ...answer('Newer') },
+  { id: 'r-3', response_status: 'Opened' },
+] as SurveyResponseItem[];
+
+async function mount(hasPMOAccess: boolean, responses$ = of(ROWS)) {
+  TestBed.resetTestingModule();
+  const getAllSurveyResponses = vi.fn().mockReturnValue(responses$);
+  TestBed.configureTestingModule({
+    imports: [SurveyResultsDrawerComponent],
+    providers: [
+      { provide: SurveyService, useValue: { getSurvey: vi.fn().mockReturnValue(of(SURVEY)), getAllSurveyResponses } },
+      { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'p-1' }) } },
+    ],
+  });
+  const fixture = TestBed.createComponent(SurveyResultsDrawerComponent);
+  fixture.componentRef.setInput('surveyId', 's-1');
+  fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return { fixture, component: fixture.componentInstance, getAllSurveyResponses };
+}
+
+describe('SurveyResultsDrawerComponent', () => {
+  let current: ComponentFixture<SurveyResultsDrawerComponent> | undefined;
+  afterEach(() => current?.destroy());
+
+  it('never loads per-recipient rows for users without Manage access', async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(false);
+    current = fixture;
+
+    expect(getAllSurveyResponses).not.toHaveBeenCalled();
+    expect(component['comments']()).toEqual([]);
+    expect(component['engagementRates']()).toBeNull();
+  });
+
+  it('builds comments (newest first) and engagement rates from every response row for Manage users', async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(true);
+    current = fixture;
+
+    expect(getAllSurveyResponses).toHaveBeenCalledWith('s-1', 'p-1');
+    expect(component['comments']().map((c) => c.comment)).toEqual(['Newer', 'Older']);
+    expect(component['engagementRates']()).toMatchObject({ recipients: 3, delivered: 3, opened: 3, responded: 2, commentRate: 100 });
+  });
+
+  it('flags an incomplete list when the rows fail to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, component } = await mount(
+      true,
+      throwError(() => new Error('boom'))
+    );
+    current = fixture;
+
+    expect(component['responsesLoadError']()).toBe(true);
+    expect(component['responses']()).toEqual([]);
+  });
+});

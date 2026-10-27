@@ -182,8 +182,13 @@ export class SurveyService {
   /**
    * Fetches a paginated page of individual per-recipient responses for a survey.
    * Thin passthrough to the upstream survey service — forwards only the supported
-   * query params (pagination + project scoping) and returns the page as-is.
+   * query params (pagination + project scoping).
    * The upstream maps V2 project UUIDs to V1 identifiers before forwarding to ITX.
+   *
+   * Upstream gates this list on `survey#viewer`, but each row's `survey_link` is the
+   * recipient's personal link (anyone holding it can answer as them). Links are kept
+   * only for `survey#writer` callers and checked against SURVEY_LINK_ALLOWLIST; every
+   * other caller, including a failed access check, gets rows without links (#4340).
    */
   public async getSurveyResponses(req: Request, surveyUid: string, query: Record<string, any> = {}): Promise<SurveyResponsesPage> {
     logger.debug(req, 'get_survey_responses', 'Fetching survey responses', {
@@ -203,15 +208,22 @@ export class SurveyService {
     if (query['project_uid'] !== undefined) params['project_uid'] = query['project_uid'];
     if (query['project_uids'] !== undefined) params['project_uids'] = query['project_uids'];
 
-    const page = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params);
+    const [page, canManage] = await Promise.all([
+      this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params),
+      this.accessCheckService.checkSingleAccess(req, { resource: 'survey', id: surveyUid, access: 'writer' }),
+    ]);
 
     // Defensive normalization: upstream is contractually { data, meta }, but guard
     // against a malformed body so the frontend always receives a consumable shape.
     // Upstream signals the last page with an empty-string page_token — normalize it
     // to undefined here so consumers can treat "no more pages" as a falsy token.
     const pageToken = page?.meta?.page_token;
+    const rows = Array.isArray(page?.data) ? page.data : [];
     return {
-      data: Array.isArray(page?.data) ? page.data : [],
+      data: rows.map(({ survey_link: surveyLink, ...row }) => {
+        const link = canManage && surveyLink ? validateAndSanitizeUrl(surveyLink.trim(), SURVEY_LINK_ALLOWLIST) : null;
+        return link ? { ...row, survey_link: link } : row;
+      }),
       meta: {
         ...(page?.meta ?? {}),
         page_token: pageToken && pageToken.trim() !== '' ? pageToken : undefined,
