@@ -44,6 +44,7 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
+import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -326,6 +327,16 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
       ],
     }).compileComponents();
+  });
+
+  it.each(['faq', 'linkedin-post'])('preserves %s capitalization in recorded-failure labels', async (agentKey) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!type) throw new Error('Missing fixture type');
+    const documentId = type.kind === 'run' ? 'run-0123456789abcdef01234567' : 'living';
+    store.getDocument.mockReturnValue(of({ ...detail, type, documentId, revisions: [], runs: [{ ...started('failed'), agentKey, documentId }] }));
+    await render(`/documents/${agentKey}/${documentId}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`The ${type.itemLabel} wasn't finished`);
+    expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${type.itemLabel} over`);
   });
 
   function expectNoKitAssetChrome(): void {
@@ -1163,7 +1174,7 @@ describe('MktgDocumentViewComponent', () => {
     events.next({ type: 'failed', failureText: '' });
     await settle();
     expect(query('mktg-document-view-failure-reply')?.textContent).toContain('The agent could not complete this run');
-    expect(query('mktg-document-view-live-state')?.textContent).toBe(`The ${BRAND_KIT.itemLabel.toLowerCase()} wasn't finished`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`The ${mktgSentenceCaseLabel(BRAND_KIT.itemLabel)} wasn't finished`);
   });
 
   it('logs a sanitized resume failure instead of silently losing the run, without leaking the owner proof', async () => {
@@ -1179,6 +1190,9 @@ describe('MktgDocumentViewComponent', () => {
       expect(log).toHaveBeenCalledWith('Failed to confirm Marketing OS run', { status: 503 });
       expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_PROOF');
       expect(query('mktg-document-view-failure-reply')?.textContent).toContain('could not be confirmed');
+      expect(query('mktg-document-view-live-state')?.textContent).toBe('The run could not be confirmed.');
+      expect(query('mktg-document-view-retry-note')?.textContent).toContain('Your intake is kept; open the intake form to continue.');
+      expect(query('mktg-document-view-retry-note')?.textContent).not.toContain('start the');
       expect(query('mktg-document-view-intake-link')).not.toBeNull();
     } finally {
       log.mockRestore();
@@ -1229,7 +1243,7 @@ describe('MktgDocumentViewComponent', () => {
         expect(details?.open).toBe(false);
         expect(details?.querySelector('summary')?.textContent).toContain('Details');
         expect(details?.querySelector('summary')?.textContent).toContain(started(state).failureText);
-        expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${BRAND_KIT.itemLabel.toLowerCase()} over`);
+        expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${mktgSentenceCaseLabel(BRAND_KIT.itemLabel)} over`);
         expect(query('mktg-document-view-intake-link')?.textContent?.trim()).toBe('Try again');
         expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
         expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');

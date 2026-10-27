@@ -83,7 +83,11 @@
             </details>
           }
           <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
-            Try again opens the run page with your sources kept, so you can start the {{ failureAssetLabel() }} over.
+            @if (unconfirmedFailure()) {
+              The run could not be confirmed. Your intake is kept; open the intake form to continue.
+            } @else {
+              Try again opens the run page with your sources kept, so you can start the {{ failureAssetLabel() }} over.
+            }
           </p>
           @if (errorText()) {
             <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />

@@ -43,6 +43,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
+import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -245,7 +246,7 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === 'foundation-setup');
     expect(query('mktg-agent-run-name')?.textContent).toBe(type?.itemLabel);
-    expect(query('mktg-agent-run-submit-button')?.textContent).toContain(`Create ${type?.itemLabel.toLowerCase()}`);
+    expect(query('mktg-agent-run-submit-button')?.textContent).toContain(`Create ${mktgSentenceCaseLabel(type?.itemLabel ?? '')}`);
     expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
     component['onSubmit']();
     await fixture.whenStable();
@@ -270,7 +271,7 @@ describe('MktgAgentRunComponent', () => {
       listDocuments.mockReturnValue(of({ groups: [{ type, documents: [] }] }));
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
-      expect(action()?.textContent?.trim()).toBe(`Create ${type.itemLabel.toLowerCase()}`);
+      expect(action()?.textContent?.trim()).toBe(`Create ${mktgSentenceCaseLabel(type.itemLabel)}`);
       expect(generate).not.toHaveBeenCalled();
     }
   );
@@ -285,9 +286,17 @@ describe('MktgAgentRunComponent', () => {
     lastIntake.mockReturnValue(of(null));
     activeContext.set(PROJECT_2);
     await fixture.whenStable();
-    expect(component['submitLabel']()).toBe(`Create ${component['assetName'].toLowerCase()}`);
+    expect(component['submitLabel']()).toBe(`Create ${mktgSentenceCaseLabel(component['assetName'])}`);
     expect(query(fresh ? 'mktg-run-start' : 'mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('preserves the FAQ acronym in the first-create action and catalog field labels in the hint', async () => {
+    await configure('server', 'faq');
+    expect(component['submitLabel']()).toBe('Create FAQ');
+    for (const field of MKTG_AGENT_INTAKES['faq'].fields.filter((field) => !field.optional)) {
+      expect(component['sourcesHint']).toContain(field.question);
+    }
   });
 
   describe('explicit new-run Sources', () => {
@@ -324,6 +333,11 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-sources')).toBeNull();
       expect(query('mktg-agent-run-leave-note')?.textContent).toContain('You can leave this page — the agent keeps working.');
       expect(query('mktg-agent-run-live')?.querySelector('lfx-button')).toBeNull();
+      const feed = query('mktg-run-activity');
+      const leaveNote = query('mktg-agent-run-leave-note');
+      expect(feed?.contains(leaveNote)).toBe(true);
+      expect(leaveNote?.querySelector('.fa-clock')).not.toBeNull();
+      expect(leaveNote && (query('mktg-run-activity-elapsed')?.compareDocumentPosition(leaveNote) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
       const pending: MktgRunQuestionsPending = {
         attempt: { session: { agentId, sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
@@ -621,6 +635,7 @@ describe('MktgAgentRunComponent', () => {
           : '2 files from last time are not kept here. Re-attach them, or carry on without them.'
       );
       expect(query('mktg-run-drop-missing')?.textContent?.trim()).toBe(count === 1 ? 'Continue without it' : 'Continue without them');
+      expect(query('mktg-run-drop-missing')?.parentElement).toBe(query('mktg-run-reattach-documents')?.parentElement);
       expect(query('mktg-run-start')?.querySelector('button')?.disabled).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
       component['onSubmit']();

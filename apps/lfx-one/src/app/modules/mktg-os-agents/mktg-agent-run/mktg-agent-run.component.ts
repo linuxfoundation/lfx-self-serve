@@ -52,7 +52,7 @@ import {
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitCrumbsFor, mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import { mktgKitCrumbsFor, mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgSentenceCaseLabel } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -304,7 +304,7 @@ export class MktgAgentRunComponent {
   );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly showIntakeForm = computed(() => !this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()));
-  protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${this.assetName.toLowerCase()}`));
+  protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${mktgSentenceCaseLabel(this.assetName)}`));
   protected readonly submitReason = computed(() => {
     if (this.sourcesLoading()) return 'Wait for your sources to load.';
     if (this.sourcesDenied()) return this.sourceNote() || 'You need write access to create this document.';
@@ -785,7 +785,7 @@ export class MktgAgentRunComponent {
   }
 
   private intakeSourcesHint(): string {
-    const required = (this.intake?.fields ?? []).filter((field) => !field.optional).map((field) => field.question.toLowerCase());
+    const required = (this.intake?.fields ?? []).filter((field) => !field.optional).map((field) => field.question);
     const intro = 'The agent reads these, searches the web and LFX for the rest, and may ask you a few questions.';
     if (!required.length) return `${intro} All sources are optional.`;
     const last = required.at(-1);

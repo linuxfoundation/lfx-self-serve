@@ -130,14 +130,14 @@
                     (onClick)="onEditSources('#mktg-run-logos')"
                     data-testid="mktg-run-reattach-logos" />
                 }
+                @if (phase() === 'form' && missingFiles()) {
+                  <lfx-button
+                    [label]="missingFiles() === 1 ? 'Continue without it' : 'Continue without them'"
+                    [text]="true"
+                    (onClick)="onDropPriorFiles()"
+                    data-testid="mktg-run-drop-missing" />
+                }
               </div>
-              @if (phase() === 'form' && (missingDocuments() || missingLogos())) {
-                <lfx-button
-                  [label]="missingFiles() === 1 ? 'Continue without it' : 'Continue without them'"
-                  [text]="true"
-                  (onClick)="onDropPriorFiles()"
-                  data-testid="mktg-run-drop-missing" />
-              }
             }
             <div class="flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 pt-4">
               <div class="flex items-center gap-2">
@@ -413,11 +413,14 @@
             }
 
             @case ('running') {
-              <p
-                class="mx-6 mt-6 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
-                data-testid="mktg-agent-run-leave-note">
-                You can leave this page — the agent keeps working.
-              </p>
+              <ng-template #leaveNote>
+                <p
+                  class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
+                  data-testid="mktg-agent-run-leave-note">
+                  <i class="fa-light fa-clock" aria-hidden="true"></i>
+                  You can leave this page — the agent keeps working.
+                </p>
+              </ng-template>
               @if (intake.liveActivity) {
                 <!-- What the agent is doing, step by step, as it happens: the feed alone in the page frame, as on the asset view (hand test, 18 Oct). -->
                 <div data-testid="mktg-agent-run-live">
@@ -426,10 +429,13 @@
                     [title]="activityTitle()"
                     [startedAt]="activityStartedAt()"
                     [icon]="agent.icon"
-                    [iconClass]="agentIconClass" />
+                    [iconClass]="agentIconClass">
+                    <ng-container run-status-note [ngTemplateOutlet]="leaveNote" />
+                  </lfx-mktg-run-activity>
                 </div>
               } @else {
                 <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">Opening the asset page…</div>
+                <ng-container [ngTemplateOutlet]="leaveNote" />
               }
             }
 

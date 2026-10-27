@@ -16,6 +16,8 @@
     </div>
   </div>
 
+  <ng-content select="[run-status-note]" />
+
   <!-- Phases: where the run is in the whole -->
   <ol class="flex flex-wrap items-center gap-1.5" aria-label="Progress" data-testid="mktg-run-activity-phases">
     @for (phase of phases(); track phase.id) {
