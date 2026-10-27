@@ -47,12 +47,12 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v3:{range}` (lfx-self-serve#4159): ORG_PEOPLE_TRAINING now holds enrollments of any age, so the
+    // `people-trainees:v4:{range}` (lfx-self-serve#4159): ORG_PEOPLE_TRAINING now holds enrollments of any age, so the
     // read is windowed per range here instead of shipping every row for the client to filter; a `v2` entry (the whole,
-    // 12-month-capped history) must miss.
+    // 12-month-capped history) must miss. `v4` reads identity from current-employee rows only; a `v3` entry may not have.
     const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v3:${range}`,
+      `people-trainees:v4:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
@@ -130,7 +130,8 @@ export class OrgPeopleTraineesService {
   /**
    * Identity of everyone with a training row in the range. ORG_PEOPLE_TRAINING has no name columns, and ORG_PEOPLE_ALL
    * counts only the last 12 months of enrollments, so identity comes from the all-time, all-projects ranges row, which
-   * every current employee with a course signal has (lf-dbt test).
+   * every current employee with a course signal has (lf-dbt test). Only the current-employee row: a former employee's
+   * row carries a personal address the People tabs must never send.
    */
   private async fetchTraineeRows(accountId: string, inRange: string): Promise<OrgPeopleAllTraineeRow[]> {
     const query = `
@@ -145,6 +146,7 @@ export class OrgPeopleTraineesService {
       WHERE ACCOUNT_ID = ?
         AND TIME_RANGE = 'all'
         AND PROJECT_SCOPE = 'all'
+        AND IS_FORMER = FALSE
         AND PERSON_KEY IN (
           SELECT PERSON_KEY
           FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING

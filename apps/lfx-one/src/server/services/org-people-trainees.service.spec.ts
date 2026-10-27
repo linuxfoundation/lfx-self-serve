@@ -277,7 +277,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
@@ -322,13 +322,32 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     expect(identity).toMatch(/PERSON_KEY IN \(\s*SELECT PERSON_KEY\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING[\s\S]*DATEADD\(day, -90,/);
   });
 
+  // A former employee's ranges row carries a personal address; the Trainees tab must never send it. The fake warehouse
+  // honours the predicate the way Snowflake would, so dropping `IS_FORMER = FALSE` lets the former row through.
+  it('reads identity from current-employee rows only, so a former row and its address never reach the response', async () => {
+    execute.mockImplementation(async (query: string) => {
+      if (query.includes('ORG_PEOPLE_ALL_RANGES')) {
+        const current = { PERSON_KEY: 'person-one', LFID: 'lfid-one', CDP_MEMBER_ID: null, NAME: 'Ada Lovelace', TITLE: null, EMAIL: 'ada@company.example' };
+        const former = { PERSON_KEY: 'person-one', LFID: 'lfid-one', CDP_MEMBER_ID: null, NAME: 'Ada Lovelace', TITLE: null, EMAIL: 'ada@personal.example' };
+        return { rows: /\bIS_FORMER = FALSE\b/.test(query) ? [current] : [current, former] };
+      }
+      return { rows: [] };
+    });
+
+    const response = await service.getTrainees(ACCOUNT, '365d');
+
+    expect(response.trainees).toHaveLength(1);
+    expect(response.trainees[0].email).toBe('ada@company.example');
+    expect(JSON.stringify(response)).not.toContain('ada@personal.example');
+  });
+
   it('caches each range under its own key', async () => {
     await service.getTrainees(ACCOUNT, '30d');
     await service.getTrainees(ACCOUNT, '365d');
     await service.getTrainees(ACCOUNT, '30d');
 
     expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:365d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:365d')!)).toBe(true);
   });
 });
