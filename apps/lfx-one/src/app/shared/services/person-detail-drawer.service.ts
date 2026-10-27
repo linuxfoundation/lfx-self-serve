@@ -53,11 +53,27 @@ export class PersonDetailDrawerService {
   // split out of. Most drawer opens never visit this tab, so it is fetched only once the tab is actually asked
   // for — and stays fetched for that person afterwards, so flipping back and forth does not refetch.
   private readonly _keyContactsRequested = signal(false);
+  /** The organization the open context was supplied under; roles handed over by an opener belong to it alone. */
+  private readonly _openedOrgUid = signal<string | null | undefined>(undefined);
 
   public readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
   // Activity, addresses and roles are separate requests off the same key, so none waits on another.
   private readonly detailRequest = computed(() => ({ orgUid: this.orgUid(), context: this._activeContext() }));
-  private readonly keyContactsRequest = computed(() => ({ ...this.detailRequest(), keyContactsRequested: this._keyContactsRequested() }));
+  /**
+   * Opener-supplied roles, but only while the organization they were read under is still selected. The
+   * drawer stays open across an account switch and every other read drops its stale answer at once; a
+   * static array on the context would otherwise keep showing one organization's roles under another's
+   * name, and suppress the fetch that would have corrected them.
+   */
+  private readonly suppliedKeyContacts = computed<OrgKeyContactAssignment[] | null>(() => {
+    const supplied = this._activeContext()?.keyContactAssignments;
+    return supplied && this._openedOrgUid() === this.orgUid() ? supplied : null;
+  });
+  private readonly keyContactsRequest = computed(() => ({
+    ...this.detailRequest(),
+    keyContactsRequested: this._keyContactsRequested(),
+    supplied: this.suppliedKeyContacts(),
+  }));
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
   private readonly detailResult = toSignal(
@@ -111,7 +127,7 @@ export class PersonDetailDrawerService {
       switchMap((request): Observable<OrgDrawerKeyContactsResult & { request: typeof request }> => {
         const path = request.orgUid ? personPath(request.orgUid, request.context) : null;
         // Tab never opened, nothing to look up, or the opener handed us the roles already — no request at all.
-        if (!path || !request.keyContactsRequested || request.context?.keyContactAssignments) {
+        if (!path || !request.keyContactsRequested || request.supplied) {
           return of({ request, ...NO_KEY_CONTACTS });
         }
         // The person-key route resolves the roster username itself; nothing identity-bearing goes in the URL.
@@ -166,16 +182,14 @@ export class PersonDetailDrawerService {
   public readonly primaryCompanyEmail = computed<string | null>(() => this.currentEmails()?.primaryEmail ?? null);
 
   /** Supplied roles win over the fetch, the way `governanceSeats` does for Governance. */
-  public readonly keyContacts = computed<OrgKeyContactAssignment[]>(
-    () => this._activeContext()?.keyContactAssignments ?? this.currentKeyContacts()?.assignments ?? []
-  );
+  public readonly keyContacts = computed<OrgKeyContactAssignment[]>(() => this.suppliedKeyContacts() ?? this.currentKeyContacts()?.assignments ?? []);
   public readonly keyContactsLoading = computed(() => {
     const { orgUid, context, keyContactsRequested } = this.keyContactsRequest();
     return !!(
       keyContactsRequested &&
       orgUid &&
       context &&
-      !context.keyContactAssignments &&
+      !this.suppliedKeyContacts() &&
       (context.personKey || context.username) &&
       !this.currentKeyContacts()
     );
@@ -186,11 +200,12 @@ export class PersonDetailDrawerService {
     return !!result && (result.error || result.status === 'failed');
   });
   /** False when the lookup never worked out who this is — distinct from a verified empty list. */
-  public readonly keyContactsIdentified = computed(() => !!this._activeContext()?.keyContactAssignments || this.currentKeyContacts()?.status === 'resolved');
+  public readonly keyContactsIdentified = computed(() => !!this.suppliedKeyContacts() || this.currentKeyContacts()?.status === 'resolved');
 
   public open(context: PersonDrawerContext): void {
     const tab = context.defaultTab ?? 'events';
     this._keyContactsRequested.set(tab === 'key-contacts');
+    this._openedOrgUid.set(this.orgUid());
     this._activeTab.set(tab);
     this._activeContext.set(context);
   }

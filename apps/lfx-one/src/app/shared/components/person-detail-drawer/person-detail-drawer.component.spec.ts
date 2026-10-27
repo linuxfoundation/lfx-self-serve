@@ -330,6 +330,24 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(requested().some((url) => url.includes('username='))).toBe(false);
   });
 
+  // The drawer stays open across an account switch, and every other read drops its stale answer at once.
+  // Supplied roles belong to the organization they were read under, so they must not outlive it.
+  it('drops opener-supplied roles when the account changes, and fetches for the new one', async () => {
+    drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
+    await render();
+    expect(drawer.keyContacts()).toEqual([assignment]);
+    expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
+
+    selectedAccount.set({ uid: 'org-2' });
+    // Synchronously, before any new response lands: the previous org's roles are already gone.
+    expect(drawer.keyContacts()).toEqual([]);
+    expect(drawer.keyContactsIdentified()).toBe(false);
+
+    await render();
+    expect(requested()).toContain('/api/orgs/org-2/lens/people/by-username/first-person/key-contacts');
+    expect(document.body.textContent).not.toContain('Billing Contact');
+  });
+
   it('renders roles supplied by the opener without requesting them', async () => {
     drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
     await render();
