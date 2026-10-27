@@ -1160,6 +1160,263 @@
   }
 }
 
+// ---------- Collapse / peek (desktop instance) ----------
+// One panel morphs between docked open (288px gutter, 280px panel), the docked rail (56px gutter, 48px
+// panel) and a peek (the rail's gutter, the full panel floating over the page). Nothing is swapped or
+// unmounted: the head, tabs, context card, menu and footer keep fixed widths so they never reflow while
+// the panel's width animates — the panel just clips them as they fade. The logo and avatar sit at the
+// same x in both states; the header actions move from a row to a column and the component FLIPs them.
+// Transitions apply only once `.is-animated` is set, after the stored preference has painted.
+.lfxn-host--dock {
+  position: relative;
+  width: 288px;
+
+  .lfxn__head {
+    position: relative;
+  }
+
+  .lfxn__brand-row {
+    width: 256px;
+    align-self: flex-start;
+  }
+
+  .lfxn__brand-symbol {
+    margin-left: 2px;
+  }
+
+  .lfxn__head > :not(.lfxn__brand-row) {
+    width: 256px;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  .lfxn__top > :not(.lfxn__head, .sr-only),
+  .lfxn__foot {
+    width: 280px;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  // The account button animates its max-width; its avatar never shrinks, so it can't squeeze into a sliver.
+  .lfxn__user {
+    max-width: 236px;
+    overflow: hidden;
+  }
+
+  .lfxn__avatar {
+    flex: 0 0 24px;
+    min-width: 24px;
+  }
+
+  .lfxn__collapse-sep {
+    display: none;
+  }
+
+  // ---------- Rail ----------
+  &.is-collapsed {
+    width: 56px;
+
+    .lfxn {
+      width: 48px;
+    }
+
+    // A 32px hit area centred on the logo, the apps "⋮" folded away.
+    .lfxn__brand {
+      gap: 0;
+      padding: 6px;
+      margin: -6px -6px -6px -4px;
+      border-radius: 9px;
+    }
+
+    .lfxn__brand-symbol {
+      margin-left: 0;
+    }
+
+    .lfxn__brand-menu {
+      width: 0;
+      overflow: hidden;
+      opacity: 0;
+    }
+
+    // Out of the flow, so the header doesn't grow and push the fading content down mid-morph.
+    .lfxn__head-actions {
+      position: absolute;
+      top: 52px;
+      left: 12px;
+      z-index: 2;
+      flex-direction: column-reverse;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .lfxn__collapse-sep {
+      display: block;
+      width: 24px;
+      height: 0;
+      border-top: 1.5px dotted theme('colors.gray.300 / 50%');
+    }
+
+    .lfxn__head > :not(.lfxn__brand-row),
+    .lfxn__top > :not(.lfxn__head),
+    .lfxn__user-name,
+    .lfxn__user > i,
+    .lfxn__foot-actions {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    // A round hover that hugs the avatar, and no divider above it.
+    .lfxn__user {
+      max-width: 32px;
+      height: 32px;
+      padding: 4px;
+      margin: -4px;
+      border-radius: 16px;
+    }
+
+    .lfxn__foot {
+      border-top-color: transparent;
+    }
+  }
+
+  // ---------- Peek: floats over the page; the gutter stays the rail's ----------
+  &.is-overlay {
+    width: 56px;
+
+    .lfxn-float {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 900;
+    }
+
+    .lfxn {
+      box-shadow:
+        0 24px 48px -12px theme('colors.gray.900 / 38%'),
+        0 4px 12px theme('colors.gray.900 / 14%');
+    }
+
+    &.is-collapsed .lfxn {
+      box-shadow: none;
+    }
+  }
+
+  // Narrow viewports can't dock open, so the open overlay has no toggle; Create closes the gap.
+  &.is-narrow:not(.is-collapsed) [data-flip='side'] {
+    display: none;
+  }
+
+  // ---------- Morph timings ----------
+  &.is-animated {
+    $dock: 340ms cubic-bezier(0.4, 0, 0.2, 1);
+    $peek: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+
+    transition: width $dock;
+
+    .lfxn {
+      transition: width $dock;
+      will-change: width;
+    }
+
+    .lfxn__foot {
+      transition: border-color 200ms ease;
+    }
+
+    .lfxn__user {
+      transition:
+        max-width $dock,
+        padding $dock,
+        margin $dock,
+        border-radius 340ms ease,
+        background 150ms;
+    }
+
+    // Fading back in on expand: after a short delay, once the panel has room.
+    .lfxn__head > :not(.lfxn__brand-row),
+    .lfxn__top > :not(.lfxn__head),
+    .lfxn__user-name,
+    .lfxn__user > i,
+    .lfxn__foot-actions {
+      transition:
+        opacity 220ms ease 100ms,
+        visibility 0s linear 0s;
+    }
+
+    // Fading out on collapse: quickly, and hidden only once the width has finished.
+    &.is-collapsed {
+      .lfxn__head > :not(.lfxn__brand-row),
+      .lfxn__top > :not(.lfxn__head),
+      .lfxn__user-name,
+      .lfxn__user > i,
+      .lfxn__foot-actions {
+        transition:
+          opacity 140ms ease,
+          visibility 0s linear 340ms;
+      }
+    }
+
+    &.is-overlay {
+      .lfxn {
+        transition:
+          width $peek,
+          box-shadow 220ms ease;
+      }
+
+      .lfxn__user {
+        transition:
+          max-width $peek,
+          padding $peek,
+          margin $peek,
+          border-radius 220ms ease,
+          background 150ms;
+      }
+
+      .lfxn__head > :not(.lfxn__brand-row),
+      .lfxn__top > :not(.lfxn__head),
+      .lfxn__user-name,
+      .lfxn__user > i,
+      .lfxn__foot-actions {
+        transition:
+          opacity 160ms ease 40ms,
+          visibility 0s linear 0s;
+      }
+
+      &.is-collapsed {
+        .lfxn__head > :not(.lfxn__brand-row),
+        .lfxn__top > :not(.lfxn__head),
+        .lfxn__user-name,
+        .lfxn__user > i,
+        .lfxn__foot-actions {
+          transition:
+            opacity 100ms ease,
+            visibility 0s linear 220ms;
+        }
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &,
+    * {
+      transition: none !important;
+    }
+  }
+}
+
+.lfxn-host {
+  // The sidebar toggle reads on the navy like the footer actions.
+  .lfxn__icon-btn--toggle {
+    color: theme('colors.gray.300');
+
+    &:hover,
+    &:focus-visible {
+      color: theme('colors.white');
+    }
+  }
+}
+
 // ---------- Body-level surfaces (popovers, tooltips) ----------
 // ---------- Popovers (appended to <body>) ----------
 .lfxn-menu-popover.p-popover,
@@ -1194,6 +1451,18 @@
 .lfxn-brand-popover.lfxn-brand-popover--banner-offset.p-popover {
   top: 92px !important;
   max-height: calc(100dvh - 100px);
+}
+
+// Beside the rail rather than over it: level with the logo, 8px right of the 56px gutter.
+.lfxn-brand-popover.lfxn-brand-popover--rail.p-popover {
+  top: 8px !important;
+  left: 64px !important;
+  max-height: calc(100dvh - 16px);
+}
+
+.lfxn-brand-popover.lfxn-brand-popover--banner-offset.lfxn-brand-popover--rail.p-popover {
+  top: 44px !important;
+  max-height: calc(100dvh - 52px);
 }
 
 .lfxn-brand-menu {
@@ -1318,6 +1587,12 @@
     0 2px 6px -2px theme('colors.gray.900 / 8%');
 }
 
+// Beside the rail: level with the footer, 8px right of the 56px gutter.
+.lfxn-account-popover.lfxn-account-popover--rail.p-popover {
+  bottom: 8px !important;
+  left: 64px !important;
+}
+
 .lfxn-account-menu {
   display: flex;
   flex-direction: column;
@@ -1381,6 +1656,16 @@
   font-size: 12px;
   line-height: 16px;
   color: theme('colors.gray.500');
+}
+
+// What's New has unseen updates (the rail's account menu; the footer button carries its own dot).
+.lfxn-account-menu__dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: theme('colors.blue.500');
 }
 
 .lfxn-account-menu__rule {
@@ -1571,4 +1856,9 @@
 
 .lfxn-tooltip--bottom {
   transform: translateY(-2px);
+}
+
+// Beside a rail trigger, vertically centred (the directive sets top/left); eases 2px in from the trigger.
+.lfxn-tooltip--right {
+  transform: translateX(-2px);
 }

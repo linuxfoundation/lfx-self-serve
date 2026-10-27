@@ -22,7 +22,7 @@
   }
 
   <!-- Main content -->
-  <main class="flex flex-1 flex-col" [ngClass]="isAuthenticated() ? 'lg:ml-[288px]' : 'lg:ml-16'" data-testid="docs-content">
+  <main class="flex flex-1 flex-col" [ngClass]="mainGutterClass()" data-testid="docs-content">
     <!-- Mobile / tablet top bar — surfaces the same docs and sign-in/account affordances
          that the lg+ left rail provides. Hidden at lg+ where the rail does the same job. -->
     <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden" data-testid="docs-shell-mobile">

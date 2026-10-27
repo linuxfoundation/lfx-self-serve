@@ -8,6 +8,7 @@ import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { NavbarComponent } from '@components/navbar/navbar.component';
 import { LensService } from '@services/lens.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { filter, map, startWith } from 'rxjs';
 
@@ -50,8 +51,18 @@ export class DocsLayoutComponent {
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  private readonly navbarCollapse = inject(NavbarCollapseService);
 
   protected readonly isAuthenticated = computed(() => this.userService.authenticated());
+
+  /** Left gutter: the lens navbar's docked width (288px open, 56px on its rail), or the public docs rail's. */
+  protected readonly mainGutterClass = computed(() => {
+    if (!this.isAuthenticated()) return 'lg:ml-16';
+    const gutter = this.navbarCollapse.effectiveCollapsed() ? 'lg:ml-[56px]' : 'lg:ml-[288px]';
+    return this.navbarCollapse.animated()
+      ? `${gutter} lg:transition-[margin-left] lg:duration-[340ms] lg:ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none`
+      : gutter;
+  });
 
   // Shared lens nav — the previously-active lens tab stays selected in the docs shell (no menu item is active on a /docs route) so the user can return to their last lens.
   protected readonly activeLens = this.lensService.activeLens;

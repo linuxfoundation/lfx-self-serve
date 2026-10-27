@@ -19,6 +19,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { AppService } from '@services/app.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -56,6 +57,11 @@ interface NavbarView {
   retryMenu(): void;
   switchLens(lens: Lens): void;
   onOrgSelected(): void;
+  railVisible: Signal<boolean>;
+  railDocked: Signal<boolean>;
+  toggleLabel: Signal<string>;
+  headTooltipPlacement: Signal<string>;
+  onToggleClick(): void;
 }
 
 /**
@@ -549,6 +555,86 @@ describe('NavbarComponent', () => {
 
       expect((fixture.componentInstance as unknown as NavbarView).tabIndicator()).toBeNull();
       expect(() => fixture.destroy()).not.toThrow();
+    });
+  });
+
+  describe('sidebar collapse', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      localStorage.clear();
+    });
+
+    /** Reports every viewport as narrow (and non-touch) when `narrow`; otherwise matches nothing. */
+    const stubViewport = (narrow: boolean): void => {
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        (media: string) =>
+          ({ matches: narrow && media.includes('max-width'), media, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList
+      );
+    };
+
+    it('docks to the rail and back from the toggle, relabelling it and moving rail tooltips beside their triggers', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+
+      expect(navbar.toggleLabel()).toBe('Close sidebar');
+      expect(navbar.headTooltipPlacement()).toBe('bottom');
+
+      navbar.onToggleClick();
+      await fixture.whenStable();
+      expect(collapse.collapsed()).toBe(true);
+      expect(navbar.railVisible()).toBe(true);
+      expect(navbar.toggleLabel()).toBe('Open sidebar');
+      expect(navbar.headTooltipPlacement()).toBe('right');
+      expect(fixture.nativeElement.classList).toContain('is-collapsed');
+
+      navbar.onToggleClick();
+      await fixture.whenStable();
+      expect(collapse.collapsed()).toBe(false);
+      expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
+    });
+
+    it('docks open from a wide-viewport peek instead of closing it', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      expect(navbar.toggleLabel()).toBe('Keep sidebar open');
+      expect(navbar.railDocked()).toBe(true);
+      navbar.onToggleClick();
+
+      expect(collapse.collapsed()).toBe(false);
+      expect(collapse.peek()).toBe(false);
+      expect(navbar.railDocked()).toBe(false);
+    });
+
+    it('opens a pinned peek from the toggle on a narrow viewport, without touching the preference', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+
+      expect(navbar.railVisible()).toBe(true);
+      navbar.onToggleClick();
+
+      expect(collapse.peek()).toBe(true);
+      expect(collapse.peekPinned()).toBe(true);
+      expect(collapse.collapsed()).toBe(false);
+      expect(navbar.railVisible()).toBe(false);
+    });
+
+    it('never collapses the mobile drawer’s navbar', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([], [], {}, { mobile: true });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+
+      expect(navbar.railVisible()).toBe(false);
+      expect(navbar.railDocked()).toBe(false);
+      expect(fixture.nativeElement.classList).not.toContain('lfxn-host--dock');
     });
   });
 });

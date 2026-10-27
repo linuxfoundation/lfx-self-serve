@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  afterRenderEffect,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  Signal,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -16,8 +30,15 @@ import {
   CREATABLE_ARTIFACTS,
   LINKS_CONFIG,
   NAVBAR_BRAND_SITE,
+  NAVBAR_DOCK_MORPH_MS,
   NAVBAR_LENS_OVERRIDES,
+  NAVBAR_MORPH_EASING,
+  NAVBAR_MORPH_SETTLE_MS,
   NAVBAR_NO_ACCESS_GHOST_ITEMS,
+  NAVBAR_PEEK_CLOSE_DELAY_MS,
+  NAVBAR_PEEK_MORPH_MS,
+  NAVBAR_PEEK_OPEN_DELAY_MS,
+  NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
   BOARD_SCOPED_PERSONAS,
@@ -34,12 +55,14 @@ import {
   NavbarRoleProject,
   NavbarTabIndicator,
   NavTooltipItem,
+  NavTooltipPlacement,
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
@@ -61,6 +84,10 @@ import { NavMenuBase } from './nav-menu-base.directive';
  * Menu building, active-route highlighting, context switching and the SSR hydration gate come from
  * {@link NavMenuBase}; this component renders them in the navbar markup and folds in the rail actions
  * that used to live in the former lens-switcher rail.
+ *
+ * The desktop instance also collapses to a 48px rail and peeks open over the page from it
+ * ({@link NavbarCollapseService}): one panel that morphs between the two, its header buttons moved
+ * with a FLIP animation. The mobile drawer's instance never collapses.
  *
  * Styles are unencapsulated (`lfxn-` prefixed) because the context card is also rendered by the
  * project/org selectors' `navbar` variant, inside their own host elements.
@@ -84,7 +111,14 @@ import { NavMenuBase } from './nav-menu-base.directive';
   providers: [DialogService],
   templateUrl: './navbar.component.html',
   styleUrl: './navbar.component.scss',
-  host: { class: 'lfxn-host' },
+  host: {
+    class: 'lfxn-host',
+    '[class.lfxn-host--dock]': '!mobile()',
+    '[class.is-collapsed]': 'railVisible()',
+    '[class.is-overlay]': '!mobile() && collapse.overlay()',
+    '[class.is-narrow]': '!mobile() && collapse.narrow()',
+    '[class.is-animated]': '!mobile() && collapse.animated()',
+  },
 })
 export class NavbarComponent extends NavMenuBase {
   private readonly dialogService = inject(DialogService);
@@ -93,6 +127,8 @@ export class NavbarComponent extends NavMenuBase {
   private readonly appService = inject(AppService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
+  protected readonly collapse = inject(NavbarCollapseService);
+  private readonly injector = inject(Injector);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
   public readonly bannerOffset = input<boolean>(false);
@@ -257,6 +293,28 @@ export class NavbarComponent extends NavMenuBase {
   /** The Documentation button reads as active anywhere under `/docs`, as the lens rail it replaced did. */
   protected readonly isDocsActive: Signal<boolean> = computed(() => isDocsPath(this.navigatedUrl()));
 
+  // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
+  /** The panel shows as the slim rail. */
+  protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
+  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
+  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /** Rail tooltips open beside the trigger; the open panel's below it. */
+  protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
+  /** A peek on a wide viewport docks open on click; otherwise the toggle opens or closes the sidebar. */
+  protected readonly toggleLabel: Signal<string> = computed(() => {
+    if (this.railVisible()) return 'Open sidebar';
+    return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
+  });
+  /** A menu or panel opened from the navbar is up: a peek must not close under it. */
+  private readonly navbarMenuOpen: Signal<boolean> = computed(
+    () => this.brandMenuOpen() || this.createMenuOpen() || this.userMenuOpen() || this.selectorPanelOpen()
+  );
+  private readonly panelEl = viewChild<ElementRef<HTMLElement>>('panel');
+  private peekOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  private peekCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
+  private pointer: { x: number; y: number } | null = null;
+
   public constructor() {
     super();
     // afterNextRender so input bindings have settled — the mobile drawer instance skips the fetch.
@@ -268,6 +326,36 @@ export class NavbarComponent extends NavMenuBase {
     this.initTabIndicator();
     this.initDrawerCloseCleanup();
     this.initPreviewPickCommit();
+    this.initCollapse();
+  }
+
+  /** The sidebar toggle: dock open or closed on wide viewports; open (pinned) or close a peek on narrow ones. */
+  protected onToggleClick(): void {
+    this.clearPeekOpenTimer();
+    if (this.collapse.narrow()) {
+      this.morph(() => (this.collapse.peek() ? this.collapse.closePeek() : this.collapse.openPeek(true)));
+      return;
+    }
+    if (this.collapse.peek()) {
+      // Already as wide as docked: the panel just stops floating, and the page gutter grows under it.
+      this.morph(() => this.collapse.setCollapsed(false));
+      return;
+    }
+    this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()));
+  }
+
+  /** Hovering the rail's toggle peeks the panel open — the only hover that does, so a collapse click never reopens it. */
+  protected onToggleEnter(): void {
+    if (!this.railVisible() || this.collapse.touch()) return;
+    this.clearPeekOpenTimer();
+    this.peekOpenTimer = setTimeout(() => {
+      this.peekOpenTimer = null;
+      if (this.railVisible()) this.morph(() => this.collapse.openPeek());
+    }, NAVBAR_PEEK_OPEN_DELAY_MS);
+  }
+
+  protected onToggleLeave(): void {
+    this.clearPeekOpenTimer();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -318,6 +406,8 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   protected openImpersonationDialog(): void {
+    this.userMenu()?.hide();
+    this.closePeekForDialog();
     this.dialogService.open(ImpersonationDialogComponent, {
       header: 'Impersonate User',
       width: '400px',
@@ -329,6 +419,7 @@ export class NavbarComponent extends NavMenuBase {
 
   protected openCreateDialog(artifact: CreatableArtifactConfig): void {
     this.createMenu()?.hide();
+    this.closePeekForDialog();
     const dialogRef = this.dialogService.open(CreateArtifactDialogComponent, {
       // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
       showHeader: false,
@@ -368,7 +459,14 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   protected openChangelogDrawer(): void {
+    this.userMenu()?.hide();
+    this.closePeekForDialog();
     this.changelogDrawerVisible.set(true);
+  }
+
+  protected navigateToDocs(): void {
+    this.userMenu()?.hide();
+    this.router.navigate(['/docs']);
   }
 
   /**
@@ -397,6 +495,146 @@ export class NavbarComponent extends NavMenuBase {
       if (group) measure(group);
     });
     this.destroyRef.onDestroy(() => observer?.disconnect());
+  }
+
+  /**
+   * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
+   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click when
+   * pinned, or on Escape, but never while a menu or panel opened from it is still up.
+   */
+  private initCollapse(): void {
+    afterNextRender(() => {
+      if (this.mobile()) return;
+      this.collapse.init();
+      const doc = this.elementRef.nativeElement.ownerDocument;
+
+      const onMove = (event: MouseEvent): void => {
+        this.pointer = { x: event.clientX, y: event.clientY };
+        if (!this.collapse.peek() || this.collapse.peekPinned()) return;
+        if (this.pointerInsidePanel()) this.clearPeekCloseTimer();
+        else this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+      };
+      const onLeaveWindow = (): void => {
+        this.pointer = { x: -1, y: -1 };
+        if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+      };
+      const onDown = (event: MouseEvent): void => {
+        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (this.panelEl()?.nativeElement.contains(target) || target.closest('.lfxn-tooltip'))) return;
+        this.morph(() => this.collapse.closePeek());
+      };
+      const onKey = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape' && this.collapse.peek() && !this.navbarMenuOpen()) this.morph(() => this.collapse.closePeek());
+      };
+
+      doc.addEventListener('mousemove', onMove, { passive: true });
+      doc.documentElement.addEventListener('mouseleave', onLeaveWindow);
+      doc.addEventListener('mousedown', onDown, true);
+      doc.addEventListener('keydown', onKey);
+      this.destroyRef.onDestroy(() => {
+        doc.removeEventListener('mousemove', onMove);
+        doc.documentElement.removeEventListener('mouseleave', onLeaveWindow);
+        doc.removeEventListener('mousedown', onDown, true);
+        doc.removeEventListener('keydown', onKey);
+        this.clearPeekOpenTimer();
+        this.clearPeekCloseTimer();
+        this.collapse.resetPeek();
+      });
+    });
+
+    // A pick from a click-opened peek navigates under it: close it, as an outside click would.
+    effect(() => {
+      this.navigatedUrl();
+      if (untracked(() => this.collapse.peekPinned())) untracked(() => this.morph(() => this.collapse.closePeek()));
+    });
+
+    // A menu or panel opened from a hover peek just closed: give the pointer a moment, then close if it is outside.
+    let menuWasOpen = false;
+    effect(() => {
+      const open = this.navbarMenuOpen();
+      if (menuWasOpen && !open && untracked(() => this.collapse.peek() && !this.collapse.peekPinned())) {
+        this.schedulePeekClose(NAVBAR_PEEK_RECHECK_DELAY_MS);
+      }
+      menuWasOpen = open;
+    });
+  }
+
+  /** Create, Impersonate and What's New open over the page: the peek closes with them, leaving the rail under the backdrop. */
+  private closePeekForDialog(): void {
+    if (!this.mobile() && this.collapse.peek()) this.morph(() => this.collapse.closePeek());
+  }
+
+  private schedulePeekClose(delay: number): void {
+    this.clearPeekCloseTimer();
+    this.peekCloseTimer = setTimeout(() => {
+      this.peekCloseTimer = null;
+      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.pointerInsidePanel()) return;
+      this.morph(() => this.collapse.closePeek());
+    }, delay);
+  }
+
+  /** Keyboard-only use leaves no pointer position: count it as inside, so only a pointer that left closes the peek. */
+  private pointerInsidePanel(): boolean {
+    const panel = this.panelEl()?.nativeElement;
+    if (!panel || !this.pointer) return true;
+    const rect = panel.getBoundingClientRect();
+    const { x, y } = this.pointer;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  /**
+   * Applies a collapse-state change as one morph: the panel's widths and fades are CSS transitions, but the header
+   * buttons swap between a row and a column, so they FLIP from where they were to where they land. Also closes the
+   * open tooltip and drops focus from the toggle, and re-fits width-measuring page layouts once the morph settles.
+   */
+  private morph(change: () => void): void {
+    const host = this.elementRef.nativeElement;
+    const wasRail = this.collapse.visualCollapsed();
+    const wasDockedCollapsed = this.collapse.effectiveCollapsed();
+    const before = new Map<string, DOMRect>();
+    host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width && el.dataset['flip']) before.set(el.dataset['flip'], rect);
+    });
+
+    change();
+    NavTooltipDirective.hideWithin(host);
+    const active = host.ownerDocument.activeElement;
+    if (active instanceof HTMLElement && host.contains(active)) active.blur();
+
+    const view = host.ownerDocument.defaultView;
+    if (this.collapse.effectiveCollapsed() !== wasDockedCollapsed) {
+      // Pages that size themselves from window resizes would otherwise keep the width measured mid-morph.
+      setTimeout(() => view?.dispatchEvent(new Event('resize')), NAVBAR_MORPH_SETTLE_MS);
+    }
+    if (this.collapse.visualCollapsed() === wasRail || !this.collapse.animated() || view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+    const duration = this.collapse.overlay() ? NAVBAR_PEEK_MORPH_MS : NAVBAR_DOCK_MORPH_MS;
+    afterNextRender(
+      () => {
+        host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+          const from = el.dataset['flip'] ? before.get(el.dataset['flip']) : undefined;
+          const to = el.getBoundingClientRect();
+          if (!from || !to.width || typeof el.animate !== 'function') return;
+          el.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }], {
+            duration,
+            easing: NAVBAR_MORPH_EASING,
+          });
+        });
+      },
+      { injector: this.injector }
+    );
+  }
+
+  private clearPeekOpenTimer(): void {
+    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
+    this.peekOpenTimer = null;
+  }
+
+  private clearPeekCloseTimer(): void {
+    if (this.peekCloseTimer) clearTimeout(this.peekCloseTimer);
+    this.peekCloseTimer = null;
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {

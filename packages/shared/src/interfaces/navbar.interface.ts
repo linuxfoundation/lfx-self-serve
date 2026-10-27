@@ -59,8 +59,8 @@ export interface NavbarMenuBlock<T> {
   items: T[];
 }
 
-/** Side of the trigger a navbar tooltip opens on. */
-export type NavTooltipPlacement = 'top' | 'bottom';
+/** Side of the trigger a navbar tooltip opens on. `right` is the collapsed rail's: beside the trigger, vertically centred. */
+export type NavTooltipPlacement = 'top' | 'bottom' | 'right';
 
 /** A chip in an interactive navbar tooltip. */
 export interface NavTooltipItem {
