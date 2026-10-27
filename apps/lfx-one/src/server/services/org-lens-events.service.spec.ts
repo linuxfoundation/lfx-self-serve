@@ -293,9 +293,12 @@ describe('OrgLensEventsService company-email scoping', () => {
     return (
       // `EXISTS` is prefix, so it sits flush against the OR (modulo parens and NOT).
       /\bOR\s*\(?\s*(NOT\s+)?EXISTS\s*\(\s*SELECT\b/i.test(normalized) ||
-      // `IN` / `ANY` / `ALL` are infix: an operand stands between the OR and the keyword. Requiring
-      // SELECT after the paren is what keeps a legal value list (`x IN (1, 2)`) from being flagged.
-      /\bOR\s*\(?\s*[^()]{0,80}?\b(NOT\s+)?(IN|ANY|ALL)\s*\(\s*SELECT\b/i.test(normalized) ||
+      // `IN` / `ANY` / `ALL` are infix: an operand stands between the OR and the keyword, and in this
+      // service that operand is usually a call — every address comparison here is wrapped in
+      // `LOWER(TRIM(...))`. The operand therefore has to admit nested parens, two deep, or the most
+      // likely next spelling of the mistake slips through. Requiring SELECT after the keyword's paren
+      // is what keeps a legal value list (`x IN (1, 2)`) from being flagged.
+      /\bOR\s*\(?\s*(?:[^()]|\((?:[^()]|\([^()]*\))*\)){0,80}?\b(NOT\s+)?(IN|ANY|ALL)\s*\(\s*SELECT\b/i.test(normalized) ||
       // The same two shapes with the subquery as the LEFT operand.
       /\b(EXISTS|IN|ANY|ALL)\s*\(\s*SELECT\b[\s\S]{0,400}?\)\s*\)?\s*OR\b/i.test(normalized)
     );
@@ -310,6 +313,9 @@ describe('OrgLensEventsService company-email scoping', () => {
       'WHERE a OR NOT EXISTS (SELECT 1 FROM t)',
       'WHERE a OR (NOT EXISTS (SELECT 1 FROM t))',
       'WHERE a OR x IN (SELECT 1 FROM t)',
+      'WHERE a OR LOWER(x) IN (SELECT 1 FROM t)',
+      // Two levels deep: the shape this service would actually produce.
+      'WHERE a OR LOWER(TRIM(er.EMAIL)) IN (SELECT 1 FROM t)',
       'WHERE EXISTS (SELECT 1 FROM t) OR a',
       'WHERE (EXISTS (SELECT 1 FROM t)) OR a',
     ]) {
@@ -321,8 +327,9 @@ describe('OrgLensEventsService company-email scoping', () => {
       'WHERE EXISTS (SELECT 1 FROM t) AND a',
       'WHERE ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0',
       'WHERE (UPPER(x) LIKE UPPER(?) OR UPPER(y) LIKE UPPER(?))',
-      // A value list is not a subquery and carries no such restriction.
+      // A value list is not a subquery and carries no such restriction, however it is spelled.
       'WHERE a OR x IN (1, 2, 3)',
+      'WHERE a OR LOWER(TRIM(er.EMAIL)) IN (1, 2, 3)',
     ]) {
       expect(findsSubqueryUnderOr(good), good).toBe(false);
     }
