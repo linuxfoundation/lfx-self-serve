@@ -24,6 +24,7 @@ import type {
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
+  OrgPersonCompanyEmailRow,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
@@ -88,13 +89,6 @@ interface EmployeeActivityRaw {
   codeRows: CodeContributionRow[];
   eventRows: EventRow[];
   trainingRows: TrainingRow[];
-}
-
-/** One row of ORG_PEOPLE_COMPANY_EMAILS. */
-interface CompanyEmailRow {
-  EMAIL: string | null;
-  /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
-  IS_PRIMARY: boolean | number | null;
 }
 
 /** No unique identity is available — distinct from a resolved empty lookup. */
@@ -472,7 +466,7 @@ export class OrgLensPeopleService {
    * Keyed on identity only. Resolving a person from an address is prohibited: that direction contains
    * false links and would attribute one person's addresses to another.
    */
-  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<CompanyEmailRow[]> {
+  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailRow[]> {
     const query = `
       SELECT EMAIL, IS_PRIMARY
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
@@ -481,7 +475,7 @@ export class OrgLensPeopleService {
       -- unflagged address ahead of the primary and break the primary-first contract.
       ORDER BY IS_PRIMARY DESC NULLS LAST, EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, personKey]);
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, personKey]);
     return result.rows;
   }
 
@@ -508,7 +502,7 @@ export class OrgLensPeopleService {
         ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
       ORDER BY emails.IS_PRIMARY DESC NULLS LAST, emails.EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, username]);
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, username]);
     const resolved = toCompanyEmails(result.rows);
     if (resolved.companyEmails.length === 0) {
       return UNAVAILABLE_COMPANY_EMAILS;
@@ -768,8 +762,8 @@ function usernameDigest(normalizedUsername: string): string {
  * Split the warehouse rows into the ordered address list plus the primary. `IS_PRIMARY` is advisory:
  * the list order already comes from the query, and a person with no primary flagged simply has none.
  */
-function toCompanyEmails(rows: CompanyEmailRow[]): { companyEmails: string[]; primaryEmail: string | null } {
-  const named = rows.filter((row): row is CompanyEmailRow & { EMAIL: string } => !!row.EMAIL);
+function toCompanyEmails(rows: OrgPersonCompanyEmailRow[]): { companyEmails: string[]; primaryEmail: string | null } {
+  const named = rows.filter((row): row is OrgPersonCompanyEmailRow & { EMAIL: string } => !!row.EMAIL);
   return {
     companyEmails: named.map((row) => row.EMAIL),
     primaryEmail: named.find((row) => row.IS_PRIMARY === true || row.IS_PRIMARY === 1)?.EMAIL ?? null,

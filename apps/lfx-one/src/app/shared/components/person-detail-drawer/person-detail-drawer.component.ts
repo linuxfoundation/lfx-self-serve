@@ -4,29 +4,16 @@
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeCommitteeMembership, PersonDrawerContext, PersonDrawerTab } from '@lfx-one/shared/interfaces';
+import type {
+  OrgAllEmployeeCommitteeMembership,
+  PersonDrawerContext,
+  PersonDrawerCopiedAddress,
+  PersonDrawerEmail,
+  PersonDrawerTab,
+} from '@lfx-one/shared/interfaces';
 import { isMailtoSafeEmail } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
-
-/** One rendered address line in the drawer header. */
-interface PersonDrawerEmail {
-  email: string;
-  isPrimary: boolean;
-  /**
-   * Precomputed `mailto:` target, or `null` when the address carries URI delimiters that would turn one
-   * recipient into several (or into a header field). Such an address still renders — as plain text, and
-   * still copyable — rather than as a link that mails the wrong person.
-   */
-  href: string | null;
-}
-
-/** Which person, at which org, a copy confirmation belongs to. */
-interface CopiedAddress {
-  context: PersonDrawerContext;
-  orgUid: string | null | undefined;
-  email: string;
-}
 
 /** Shared Org Lens person-detail drawer — opened via PersonDetailDrawerService (LFXV2-2195). */
 @Component({
@@ -48,7 +35,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
   protected readonly companyEmails: Signal<PersonDrawerEmail[]> = computed(() => this.initCompanyEmails());
-  private readonly copied = signal<CopiedAddress | null>(null);
+  private readonly copied = signal<PersonDrawerCopiedAddress | null>(null);
   /**
    * The address just copied, so only its own button shows the confirmation. Cleared on a timer, and
    * scoped to the person and org it was copied under: switching either drops the confirmation at once
@@ -100,7 +87,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
 
   protected async onCopyEmail(email: string): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
-    const copied: CopiedAddress = { context: this.drawer.activeContext() as PersonDrawerContext, orgUid: this.drawer.orgUid(), email };
+    const copied: PersonDrawerCopiedAddress = { context: this.drawer.activeContext() as PersonDrawerContext, orgUid: this.drawer.orgUid(), email };
     try {
       await navigator.clipboard.writeText(email);
     } catch (error) {
@@ -125,7 +112,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     return copied && this.isCurrent(copied) ? copied.email : null;
   }
 
-  private isCurrent(copied: CopiedAddress): boolean {
+  private isCurrent(copied: PersonDrawerCopiedAddress): boolean {
     return copied.context === this.drawer.activeContext() && copied.orgUid === this.drawer.orgUid();
   }
 
