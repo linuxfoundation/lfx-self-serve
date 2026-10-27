@@ -3,12 +3,11 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
+import { PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeCommitteeMembership, PersonDrawerContext, PersonDrawerTab } from '@lfx-one/shared/interfaces';
 import { isMailtoSafeEmail } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
-
-const COPIED_RESET_MS = 2000;
 
 /** One rendered address line in the drawer header. */
 interface PersonDrawerEmail {
@@ -109,15 +108,16 @@ export class PersonDetailDrawerComponent implements OnDestroy {
       console.error('Failed to copy email:', error);
       return;
     }
-    // The write is async: by the time it settles the drawer may be showing someone else, and that
-    // person must not inherit this confirmation.
+    // `copiedEmail` already hides a confirmation whose person or org no longer matches, so this is not
+    // what makes the stale case correct — it just avoids storing a superseded context and arming a timer
+    // for it when the write settles after the drawer has moved on.
     if (!this.isCurrent(copied)) return;
     this.copied.set(copied);
     window.setTimeout(() => {
       if (this.copied() === copied) {
         this.copied.set(null);
       }
-    }, COPIED_RESET_MS);
+    }, PERSON_DRAWER_COPIED_RESET_MS);
   }
 
   private initCopiedEmail(): string | null {

@@ -344,11 +344,12 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(liveRegion()).toBe('second@example.org copied');
   });
 
-  it.each([
-    { label: 'another person', open: (d: PersonDetailDrawerService) => d.open({ name: 'Second person', personKey: 'second-person' }) },
-    { label: 'another org', open: () => selectedAccount.set({ uid: 'org-2' }) },
-    { label: 'the drawer closing', open: (d: PersonDetailDrawerService) => d.close() },
-  ])('drops a copy confirmation when the drawer switches to $label', async ({ open }) => {
+  /**
+   * Copies first@example.org as "First person", then runs `switchAway`. Every case answers the
+   * follow-up company-emails request: the live region sits inside `@if (companyEmails().length)`, so
+   * asserting on an empty address list would pass with no guard in place at all.
+   */
+  const copyThenSwitch = async (switchAway: () => void, nextEmailsUrl: string): Promise<void> => {
     stubClipboard(vi.fn().mockResolvedValue(undefined));
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
@@ -358,8 +359,45 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     await render();
     expect(liveRegion()).toBe('first@example.org copied');
 
-    open(drawer);
+    switchAway();
     await render();
+    reply(nextEmailsUrl).next(emails(['next@example.org']));
+    await render();
+    // The new person's addresses are on screen, so the region is rendered — an empty one here is the guard.
+    expect(emailState('0')).not.toBeNull();
+  };
+
+  it('drops a copy confirmation when the drawer switches to another person', async () => {
+    await copyThenSwitch(() => drawer.open({ name: 'Second person', personKey: 'second-person' }), `${PEOPLE}/second-person/company-emails`);
+
+    expect(liveRegion()).toBe('');
+  });
+
+  it('drops a copy confirmation when the account switches', async () => {
+    await copyThenSwitch(() => selectedAccount.set({ uid: 'org-2' }), '/api/orgs/org-2/lens/people/first-person/company-emails');
+
+    expect(liveRegion()).toBe('');
+  });
+
+  it('drops a copy confirmation when the drawer closes and the same person is opened again', async () => {
+    stubClipboard(vi.fn().mockResolvedValue(undefined));
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    (byTestId('person-detail-drawer-email-copy-0') as HTMLButtonElement).click();
+    await render();
+    expect(liveRegion()).toBe('first@example.org copied');
+
+    // Reopening is its own context object, so the confirmation does not come back with the person.
+    drawer.close();
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    // Reopening resubscribes, and the subject only reaches live subscribers — answer it again so the
+    // region is actually on screen when the assertion runs.
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    expect(emailState('0')).not.toBeNull();
     expect(liveRegion()).toBe('');
   });
 
@@ -377,8 +415,11 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.open({ name: 'Second person', personKey: 'second-person' });
     settle();
     await render();
+    reply(`${PEOPLE}/second-person/company-emails`).next(emails(['second@example.org']));
+    await render();
 
     // The write belonged to the person who is no longer shown; the new one must not inherit it.
+    expect(emailState('0')?.textContent?.trim()).toBe('second@example.org');
     expect(liveRegion()).toBe('');
   });
 
