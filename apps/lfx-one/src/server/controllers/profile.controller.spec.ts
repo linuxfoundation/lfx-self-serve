@@ -1439,11 +1439,25 @@ describe('ProfileController social callback — already-connected identity (#432
     expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
   });
 
-  it.each([sessionSub, 'linkedin|synthetic-member'])('does not log decoded identity values for subject %s', async (sub) => {
+  it.each([
+    { scenario: 'same-account reconnect', sub: sessionSub, linkResult: { success: true } },
+    { scenario: 'new link', sub: 'linkedin|synthetic-member', linkResult: { success: true } },
+    {
+      scenario: 'failed link',
+      sub: 'linkedin|synthetic-member',
+      linkResult: { success: false, error: 'internal', message: 'upstream unavailable' },
+    },
+  ])('does not log decoded identity values for $scenario', async ({ sub, linkResult }) => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue(linkResult);
     const email = 'synthetic.user@example.com';
     const idToken = idTokenWith({ sub, email });
 
-    await callbackWithToken(idToken);
+    const res = await callbackWithToken(idToken);
+
+    if (!linkResult.success) {
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+      expect(logger.error).toHaveBeenCalledOnce();
+    }
 
     const loggedDetails = JSON.stringify(
       [logger.startOperation, logger.success, logger.info, logger.warning, logger.error, logger.debug].flatMap((method) =>

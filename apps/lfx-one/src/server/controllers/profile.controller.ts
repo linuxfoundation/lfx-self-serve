@@ -2065,7 +2065,6 @@ export class ProfileController {
         logger.error(req, 'social_auth_callback', startTime, new Error('Identity link failed'), {
           error: linkResponse.error,
           message: linkResponse.message,
-          social_sub: socialSub,
           is_already_linked: isAlreadyLinked,
         });
         // Do not include the owning LFID — leaking it would enable account enumeration.
