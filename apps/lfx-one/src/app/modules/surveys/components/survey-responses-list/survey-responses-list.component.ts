@@ -190,7 +190,7 @@ export class SurveyResponsesListComponent {
   /** Prefilled follow-up email (with their personal link) for the recipient's address. */
   protected mailtoFor(item: SurveyResponseItem): string {
     const survey = this.survey();
-    return (survey && buildSurveyFollowUpMailto(survey, item)) || `mailto:${item.email ?? ''}`;
+    return (survey && buildSurveyFollowUpMailto(survey, item)) || `mailto:${encodeURIComponent(item.email ?? '')}`;
   }
 
   protected comment(item: SurveyResponseItem): string | null {

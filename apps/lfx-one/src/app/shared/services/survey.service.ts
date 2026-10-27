@@ -5,7 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { SURVEY_DETAIL_CACHE_TTL_MS, SURVEY_RESPONSES_MAX_PAGES, SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponseItem, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
-import { catchError, EMPTY, expand, Observable, of, reduce, shareReplay, take, tap, throwError } from 'rxjs';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -116,7 +116,17 @@ export class SurveyService {
     return fetchPage().pipe(
       expand((page) => (page.meta?.page_token ? fetchPage(page.meta.page_token) : EMPTY)),
       take(SURVEY_RESPONSES_MAX_PAGES),
-      reduce((rows, page) => [...rows, ...(page.data ?? [])], [] as SurveyResponseItem[]),
+      reduce((acc, page) => ({ rows: [...acc.rows, ...(page.data ?? [])], nextToken: page.meta?.page_token }), {
+        rows: [] as SurveyResponseItem[],
+        nextToken: undefined as string | undefined,
+      }),
+      // Still holding a token after the page cap means the list is cut short — fail rather than return a partial list.
+      map(({ rows, nextToken }) => {
+        if (nextToken) {
+          throw new Error(`Survey ${surveyUid} has more than ${SURVEY_RESPONSES_MAX_PAGES} pages of responses`);
+        }
+        return rows;
+      }),
       catchError((error) => (error?.status === 404 ? of([] as SurveyResponseItem[]) : throwError(() => error)))
     );
   }

@@ -106,7 +106,7 @@ export class SurveySentEmailDialogComponent {
         anchor.textContent = fullMatch;
         if (url) {
           anchor.target = '_blank';
-          anchor.rel = 'noopener';
+          anchor.rel = 'noopener noreferrer';
         }
         fragment.append(anchor);
         lastIndex = index + fullMatch.length;

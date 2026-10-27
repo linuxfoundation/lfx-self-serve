@@ -460,22 +460,22 @@
 <ng-template #engagementRatesTpl>
   @if (engagementRates(); as rates) {
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200" data-testid="survey-engagement-rates">
-      <div class="text-center" pTooltip="Delivered out of all recipients" tooltipPosition="top">
+      <div class="text-center">
         <p class="text-xs text-slate-500">Delivery Rate</p>
         <p class="font-semibold text-slate-900" data-testid="survey-engagement-delivery-rate">{{ rates.deliveryRate }}%</p>
         <p class="text-xs text-slate-500">{{ rates.delivered }} / {{ rates.recipients }}</p>
       </div>
-      <div class="text-center" pTooltip="Opened out of delivered" tooltipPosition="top">
+      <div class="text-center">
         <p class="text-xs text-slate-500">Open Rate</p>
         <p class="font-semibold text-slate-900" data-testid="survey-engagement-open-rate">{{ rates.openRate }}%</p>
         <p class="text-xs text-slate-500">{{ rates.opened }} / {{ rates.delivered }}</p>
       </div>
-      <div class="text-center" pTooltip="Clicked the survey link out of delivered" tooltipPosition="top">
+      <div class="text-center">
         <p class="text-xs text-slate-500">Click Rate</p>
         <p class="font-semibold text-slate-900" data-testid="survey-engagement-click-rate">{{ rates.clickRate }}%</p>
         <p class="text-xs text-slate-500">{{ rates.clicked }} / {{ rates.delivered }}</p>
       </div>
-      <div class="text-center" pTooltip="Left a comment out of responded" tooltipPosition="top">
+      <div class="text-center">
         <p class="text-xs text-slate-500">Comment Rate</p>
         <p class="font-semibold text-slate-900" data-testid="survey-engagement-comment-rate">{{ rates.commentRate }}%</p>
         <p class="text-xs text-slate-500">{{ rates.commented }} / {{ rates.responded }}</p>

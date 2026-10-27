@@ -180,9 +180,9 @@ export class SurveyService {
   }
 
   /**
-   * Fetches a paginated page of individual per-recipient responses for a survey.
-   * Thin passthrough to the upstream survey service — forwards only the supported
-   * query params (pagination + project scoping).
+   * Fetches a page of per-recipient responses from the upstream survey service,
+   * forwarding only the supported query params (pagination + project scoping),
+   * and gates each row's personal link on `survey#writer`.
    * The upstream maps V2 project UUIDs to V1 identifiers before forwarding to ITX.
    *
    * Upstream gates this list on `survey#viewer`, but each row's `survey_link` is the
