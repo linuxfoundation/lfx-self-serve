@@ -268,6 +268,38 @@ describe('LinkedIn profile and post surface', () => {
       }),
     };
   }
+  it.each([true, false])('only implicitly recovers older same-project questions without fresh mode (fresh=%s)', async (freshMode) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save(intakePending());
+    const latest = vi.spyOn(attempts, 'latestPending');
+    const load = vi.spyOn(attempts, 'load');
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: 'text', content_text: 'Synthetic last input', share_link: '' }, documentCount: 0, logoCount: 0 })
+    );
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project' + (freshMode ? '&mode=new' : ''));
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]') !== null).toBe(freshMode);
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]') !== null).toBe(!freshMode);
+    expect(fixture.componentInstance['questions']()).toHaveLength(freshMode ? 0 : 1);
+    expect(fixture.componentInstance['pendingNotice']() !== null).toBe(!freshMode);
+    if (freshMode) {
+      expect(latest).not.toHaveBeenCalled();
+      expect(load).not.toHaveBeenCalled();
+      expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
+      expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text: 'Synthetic last input', share_link: '' });
+    } else {
+      expect(latest).toHaveBeenCalledWith('project-one', 'linkedin-post');
+      expect(load).toHaveBeenCalledWith('project-one', 'linkedin-post', intakePending().request.documentId);
+      expect(history.lastIntake).not.toHaveBeenCalled();
+    }
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
+
   async function questionsIntake() {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending = intakePending();
