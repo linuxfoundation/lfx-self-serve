@@ -458,6 +458,8 @@ export class VoteDetailComponent {
           }
           this.myBallotLoading.set(true);
           return this.voteService.getMyVoteBallot(uid).pipe(
+            // The service maps 404 to null; a submitted ballot must not disappear silently.
+            tap((ballot) => this.myBallotError.set(ballot === null)),
             catchError(() => {
               this.myBallotError.set(true);
               return of(null);

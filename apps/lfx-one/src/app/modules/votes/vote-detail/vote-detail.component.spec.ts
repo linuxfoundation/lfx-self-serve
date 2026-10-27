@@ -420,7 +420,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
     });
 
-    it.each(['success', 'error'])('shows a loading placeholder until the ballot read settles with %s', async (outcome) => {
+    it.each(['success', 'error', 'missing'])('shows a loading placeholder until the ballot read settles with %s', async (outcome) => {
       const pending = new Subject<MyVoteBallot | null>();
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       voteService.getMyVoteBallot.mockReturnValue(pending);
@@ -433,6 +433,9 @@ describe('VoteDetailComponent', () => {
       if (outcome === 'success') {
         pending.next(ballot);
         pending.complete();
+      } else if (outcome === 'missing') {
+        pending.next(null);
+        pending.complete();
       } else {
         pending.error(new HttpErrorResponse({ status: 500 }));
       }
@@ -441,6 +444,18 @@ describe('VoteDetailComponent', () => {
 
       expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
       expect(testId(fixture, outcome === 'success' ? 'vote-detail-my-ballot' : 'vote-detail-my-ballot-error')).not.toBeNull();
+    });
+
+    it('shows a ballot error without losing submission confirmation when the recorded ballot is missing', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(of(null));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')?.textContent).toContain("Couldn't load your ballot.");
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
     });
 
     it('clears ballot loading when navigation cancels a pending read', async () => {
