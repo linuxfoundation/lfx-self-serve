@@ -50,6 +50,7 @@ import {
   ORG_COMMITS_DEFINITION,
   ORG_PEOPLE_DEFAULT_TIME_RANGE,
   ORG_PEOPLE_TIME_RANGE_OPTIONS,
+  ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -433,11 +434,16 @@ export class AllEmployeesComponent {
     this.loadDetailIfNeeded(row);
   }
 
+  /**
+   * Foundations someone listed in the selected view engaged with in the selected range and project scope. The responses'
+   * foundation lists name every foundation the account ever engaged with, so they only supply the labels; offering one
+   * no listed row engaged with would empty the table.
+   */
   private initFoundationOptions(): OrgDropdownOption[] {
+    const engaged = new Set(this.rosterRows().flatMap((row) => row.engagedFoundationIds));
     const foundations = new Map<string, string>();
-    const sources = [...(this.showCurrent() ? this.response().foundations : []), ...(this.showFormer() ? this.formerResponse().foundations : [])];
-    for (const f of sources) {
-      foundations.set(f.foundationId, f.foundationName);
+    for (const f of [...this.response().foundations, ...this.formerResponse().foundations]) {
+      if (engaged.has(f.foundationId)) foundations.set(f.foundationId, f.foundationName);
     }
     const options = [...foundations].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
     return [{ label: 'All Foundations', value: '' }, ...options];
@@ -457,7 +463,8 @@ export class AllEmployeesComponent {
    * address folds into it. Such rows are left alone here too. A key contact absorbed into a verified row is
    * joined through that row.
    * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
-   *   activity plus the live sources, seats and access badge, untagged.
+   *   activity plus the live sources, seats and access badge, untagged. A former name the warehouse could not
+   *   supply (blank or the placeholder) and a missing title or photo are taken from the live row; an address never is.
    * - With only Org Lens access, they are still former: the former row, carrying the access badge.
    * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
    * be stale. Someone on both is treated as current (matched on person key or the stored username): under "All"
@@ -503,6 +510,7 @@ export class AllEmployeesComponent {
       }
       rejoinedRows.push({
         ...row,
+        ...AllEmployeesComponent.liveDisplayFields(row, role),
         isFormer: false,
         sources: [...new Set([...row.sources, ...role.sources])],
         seatsCount: role.seatsCount,
@@ -805,6 +813,27 @@ export class AllEmployeesComponent {
    */
   private static resolveAccessBadge(row: OrgAllEmployeeRow): OrgAccessBadgeState | null {
     return row.accessBadge ?? null;
+  }
+
+  /**
+   * Display fields for a rejoined person: the former row's own values, filled from the live row where the warehouse had
+   * none. The live row's name falls back to an address when the person has no name, so only a name built from its name
+   * parts, or one that is not an address, replaces the former placeholder.
+   */
+  private static liveDisplayFields(
+    former: OrgAllEmployeeRow,
+    live: OrgAllEmployeeRow
+  ): Pick<OrgAllEmployeeRow, 'name' | 'firstName' | 'lastName' | 'title' | 'avatarUrl'> {
+    const formerName = former.name.trim();
+    const liveName = [live.firstName, live.lastName].filter(Boolean).join(' ').trim() || (live.name.includes('@') ? '' : live.name.trim());
+    const takeLiveName = (!formerName || formerName === ORG_PEOPLE_UNKNOWN_MEMBER_NAME) && !!liveName;
+    return {
+      name: takeLiveName ? liveName : former.name,
+      firstName: takeLiveName ? live.firstName : former.firstName,
+      lastName: takeLiveName ? live.lastName : former.lastName,
+      title: former.title || live.title,
+      avatarUrl: former.avatarUrl || live.avatarUrl,
+    };
   }
 
   /** `?employment=` value → filter; anything unknown (or absent) is the default view. */

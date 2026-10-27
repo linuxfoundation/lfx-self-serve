@@ -399,6 +399,66 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('2');
     });
 
+    it('names a rejoined person from the live row when the former row only has the placeholder, never from an address', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace', 'Grace Hopper', {
+              lfUsername: 'grace',
+              firstName: 'Grace',
+              lastName: 'Hopper',
+              title: 'Rear Admiral',
+              avatarUrl: 'https://img.example/grace.png',
+              email: 'grace@navy.example',
+              sources: ['committee'],
+              seatsCount: 1,
+              committeeSeatsCount: 1,
+            }),
+            row('live-alan', 'alan@personal.example', {
+              lfUsername: 'alan',
+              email: 'alan@personal.example',
+              sources: ['board'],
+              seatsCount: 1,
+              boardSeatsCount: 1,
+            }),
+          ],
+          3
+        )
+      );
+      live$.complete();
+      former$.next(
+        response(
+          [
+            row('p-9', 'Unknown member', { lfUsername: 'grace', firstName: 'Unknown', lastName: 'member', isFormer: true, commitsCount: 4 }),
+            row('p-8', 'Unknown member', { lfUsername: 'alan', firstName: 'Unknown', lastName: 'member', isFormer: true, commitsCount: 2 }),
+          ],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      const rows = (fixture.componentInstance as unknown as { viewRows(): OrgAllEmployeeRow[] }).viewRows();
+      const grace = rows.find((r) => r.personKey === 'p-9');
+      expect(grace).toMatchObject({
+        name: 'Grace Hopper',
+        firstName: 'Grace',
+        lastName: 'Hopper',
+        title: 'Rear Admiral',
+        avatarUrl: 'https://img.example/grace.png',
+      });
+      expect(grace?.email).toBeNull();
+      expect(rows.find((r) => r.personKey === 'p-8')?.name).toBe('Unknown member');
+      expect(JSON.stringify(rows.filter((r) => r.personKey.startsWith('p-')))).not.toContain('@');
+
+      (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set('hopper');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+    });
+
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();
@@ -657,6 +717,52 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(component().selectedFoundationId()).toBe('f-1');
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+    });
+
+    it('offers only foundations a listed person engaged with in the range, and drops a picked one the new range lacks', async () => {
+      const foundations = [
+        { foundationId: 'f-1', foundationName: 'Foundation One' },
+        { foundationId: 'f-2', foundationName: 'Foundation Two' },
+      ];
+      const optionValues = (): string[] =>
+        (fixture.componentInstance as unknown as { foundationOptions(): { value: string }[] }).foundationOptions().map((option) => option.value);
+      await mount('browser');
+      await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations });
+
+      expect(optionValues()).toEqual(['', 'f-1']);
+      component().selectedFoundationId.set('f-1');
+      await settle();
+
+      // The foundation list still names both (it is not windowed), but nobody listed in 30 days engaged with f-1.
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      component().onRangeChange('30d');
+      await settle();
+      await answer(snowflake$, { ...response([row('p-2', 'Alan Turing', { commitsCount: 1, engagedFoundationIds: ['f-2'] })], 1), foundations });
+
+      expect(optionValues()).toEqual(['', 'f-2']);
+      expect(component().selectedFoundationId()).toBe('');
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-2']);
+    });
+
+    it('offers the former and "All" views only the foundations their listed rows engaged with', async () => {
+      const foundations = [
+        { foundationId: 'f-1', foundationName: 'Foundation One' },
+        { foundationId: 'f-2', foundationName: 'Foundation Two' },
+        { foundationId: 'f-3', foundationName: 'Foundation Three' },
+      ];
+      const optionValues = (): string[] =>
+        (fixture.componentInstance as unknown as { foundationOptions(): { value: string }[] }).foundationOptions().map((option) => option.value);
+      await mount('browser', '/?employment=former');
+      await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations });
+      await answer(former$, { ...response([row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4, engagedFoundationIds: ['f-2'] })], 1), foundations });
+
+      expect(optionValues()).toEqual(['', 'f-2']);
+
+      await TestBed.inject(Router).navigateByUrl('/?employment=all');
+      await settle();
+
+      expect(optionValues()).toEqual(['', 'f-1', 'f-2']);
     });
   });
 

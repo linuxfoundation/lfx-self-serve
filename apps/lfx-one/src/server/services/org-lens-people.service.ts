@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_ORG_COMMIT_FILTERS, ORG_PEOPLE_ALL_ROW_COLUMNS, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_COMMIT_FILTERS,
+  ORG_PEOPLE_ALL_ROW_COLUMNS,
+  ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
+  ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgAllEmployeesRawCache,
   OrgCommitFilters,
@@ -793,7 +799,7 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
   if (!isPlaceholder) {
     return name;
   }
-  return (email ?? '').trim() || 'Unknown member';
+  return (email ?? '').trim() || ORG_PEOPLE_UNKNOWN_MEMBER_NAME;
 }
 
 /**

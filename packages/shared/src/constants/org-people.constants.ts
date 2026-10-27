@@ -46,6 +46,9 @@ export const VALID_PEOPLE_TAB_IDS: ReadonlySet<PeopleTabId> = new Set(PEOPLE_TAB
 /** Initial visible-row cap on the All Employees table before "Show All" is clicked. */
 export const ORG_ALL_EMPLOYEES_INITIAL_LIMIT = 30;
 
+/** Display name of a roster row whose stored name is blank or a bracketed placeholder and that carries no address. */
+export const ORG_PEOPLE_UNKNOWN_MEMBER_NAME = 'Unknown member';
+
 /** Zero-valued OrgAllEmployeeStats — fallback when the stats query returns no rows. */
 export const EMPTY_ORG_ALL_EMPLOYEE_STATS: OrgAllEmployeeStats = {
   activeInOss: 0,
