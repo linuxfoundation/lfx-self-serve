@@ -12,6 +12,8 @@ export interface MktgKitAsset {
   label: string;
   /** Board action wording when its sentence case differs from the row heading. */
   runName?: string;
+  /** Sentence noun phrase for the Family's next-steps caption. */
+  captionName?: string;
   description: string;
   agentKey?: MktgDocumentAgentKey;
 }

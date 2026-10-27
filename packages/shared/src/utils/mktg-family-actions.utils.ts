@@ -109,6 +109,11 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
         header: {
           kind: 'blocked',
           label: MKTG_FAMILY_ACTION_LABELS.blocked(dependency.documentName),
+          caption: MKTG_FAMILY_ACTION_LABELS.caption(
+            Object.values(rows)
+              .filter(({ action }) => action)
+              .map(({ row }) => row.asset.captionName ?? row.asset.runName ?? row.asset.label.toLowerCase())
+          ),
           agentId: null,
           mode: null,
           link: link ?? { commands: commands ?? [], queryParams: {} },

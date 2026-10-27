@@ -177,7 +177,8 @@ describe('Marketing family page', () => {
     }
     // Nothing stale: the one header action runs the next asset not run yet.
     expect(root?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
-    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.textContent).toContain('Review and approve the messaging framework');
+    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.textContent).toContain('Review and approve the framework');
+    expect(root?.querySelector('[data-testid="mktg-family-next-caption"]')?.textContent).toBe('Then: boilerplates, FAQ and the brand kit');
     expect(root?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
     expect(root?.querySelector('lfx-mktg-family-export-actions')?.getAttribute('data-family-id')).toBe('positioning-brand');
     projectSlug.set('next');

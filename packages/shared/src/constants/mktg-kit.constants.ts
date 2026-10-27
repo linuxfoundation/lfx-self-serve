@@ -41,6 +41,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
         id: 'brand-kit',
         label: 'Brand kit',
         runName: 'brand kit',
+        captionName: 'the brand kit',
         agentKey: 'brand-kit',
         description: 'Colours, typeface, logo system, voice · the book as a print page',
       },

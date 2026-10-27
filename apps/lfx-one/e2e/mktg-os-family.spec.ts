@@ -99,7 +99,8 @@ test.describe('Marketing family content', () => {
     await setupKit(page, { listing });
     await openKit(page, '/families/positioning-brand');
     const primary = page.getByTestId('mktg-family-run').getByRole('link');
-    await expect(primary).toHaveText('Review and approve the messaging framework');
+    await expect(primary).toHaveText('Review and approve the framework');
+    await expect(page.getByTestId('mktg-family-next-caption')).toHaveText('Then: boilerplates, FAQ and the brand kit');
     await primary.click();
     await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('family-approve-next.png'), fullPage: true });

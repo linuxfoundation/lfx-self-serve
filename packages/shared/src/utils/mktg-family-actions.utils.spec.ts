@@ -108,9 +108,12 @@ describe('One rule for every family action', () => {
     expect(result.header).toMatchObject({
       kind: 'blocked',
       agentId: null,
-      label: 'Review and approve the messaging framework',
+      label: 'Review and approve the framework',
+      caption: 'Then: boilerplates, FAQ and the brand kit',
       link: { commands: ['../../documents', 'foundation-message', 'living'], queryParams: {} },
     });
+    view.rows[1] = built(view).rows[1];
+    expect(resolveMktgFamilyActions(view, context).header?.caption).toBe('Then: FAQ and the brand kit');
   });
   it('nothing to create means Review drafts, then Export the kit only for approved fresh exportable families', () => {
     const view = built(family());
@@ -138,6 +141,7 @@ describe('One rule for every family action', () => {
       agentId: 'foundation-setup',
       mode: 'new',
     });
+    expect(resolveMktgFamilyActions(family(), context).header?.caption).toBeUndefined();
   });
   it.each([
     ['positioning-brand', 'Run messaging framework'],

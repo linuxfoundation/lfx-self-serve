@@ -102,7 +102,7 @@ asset gives **Review and approve the <document>** linking to its missing approva
 **Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
 (singular **Review the draft**) links to the first draft in family order. One-off families
 always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
-Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. There is no caption/sub-line.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
 No header renders while loading, after a failed read, without write access (including
 403), or for an unavailable agent. The service still distinguishes access denial from
 read failure; loading status remains mounted. Accessible names equal the primary label.
