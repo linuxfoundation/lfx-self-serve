@@ -19,16 +19,20 @@ import type {
 import { formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 /** Service for org-lens event list endpoints — reads org event footprint from platinum ORG_EVENTS. */
 export class OrgLensEventsService {
   private readonly snowflakeService: SnowflakeService;
+  private readonly orgRoleGrants: OrgRoleGrantsService;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
+    this.orgRoleGrants = new OrgRoleGrantsService();
   }
 
   /** GET /api/orgs/:accountId/lens/events — paginated list of events for the org. */
@@ -89,6 +93,7 @@ export class OrgLensEventsService {
         oe.EVENT_URL,
         oe.EVENT_REGISTRATION_URL,
         ${countExpression} AS ORG_REGISTRATION_COUNT,
+        NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
         oe.ORG_SPEAKER_ACCEPTED_COUNT,
         oe.ORG_SPEAKER_SUBMITTED_COUNT,
         oe.IS_ORG_SPONSOR,
@@ -158,7 +163,7 @@ export class OrgLensEventsService {
         const directPlatinum = buildListQuery('platinum');
         try {
           rows = await this.fetchEventListRows(directPlatinum.sql, directPlatinum.binds);
-          return this.toEventsResponse(req, rows, pageSize, offset);
+          return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsStaff(req));
         } catch (platinumError) {
           logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
             err: platinumError,
@@ -209,7 +214,7 @@ export class OrgLensEventsService {
       }
     }
 
-    return this.toEventsResponse(req, rows, pageSize, offset);
+    return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsStaff(req));
   }
 
   /** GET /api/orgs/:accountId/lens/events/summary — org-wide total / past / upcoming counts for the stat strip. */
@@ -409,10 +414,33 @@ export class OrgLensEventsService {
     return { eventId, eventName, acceptedCount, submittedCount, data };
   }
 
+  /**
+   * Is the caller LF staff? #4432 removes the event-wide registration goal from EXTERNAL admins'
+   * view and payload; LF staff keep it.
+   *
+   * Fail-closed in every direction — no username, a throwing lookup, or `staffCheck === 'failed'`
+   * all answer `false`. For a disclosure rule the safe default is to withhold: showing an external
+   * admin a figure Angela Brown ruled out is the failure that matters, and a staff member briefly
+   * missing a number they can get elsewhere is not.
+   */
+  private async callerIsStaff(req: Request): Promise<boolean> {
+    const username = getEffectiveUsername(req);
+    if (!username) return false;
+    try {
+      const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
+      return access.staffCheck === 'ok' && access.isStaff === true;
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_events', 'Staff lookup failed, withholding the registration goal', {
+        err: error,
+      });
+      return false;
+    }
+  }
+
   /** Shared by the normal path and the early platinum return, so both shape the response identically. */
-  private toEventsResponse(req: Request, rows: OrgEventRow[], pageSize: number, offset: number): OrgEventsResponse {
+  private toEventsResponse(req: Request, rows: OrgEventRow[], pageSize: number, offset: number, includeGoal: boolean): OrgEventsResponse {
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
-    const data = rows.map((row) => this.mapRowToOrgEvent(row));
+    const data = rows.map((row) => this.mapRowToOrgEvent(row, includeGoal));
 
     logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
 
@@ -464,7 +492,7 @@ export class OrgLensEventsService {
     return result.rows;
   }
 
-  private mapRowToOrgEvent(row: OrgEventRow): OrgEvent {
+  private mapRowToOrgEvent(row: OrgEventRow, includeGoal: boolean): OrgEvent {
     return {
       eventId: row.EVENT_ID,
       eventName: row.EVENT_NAME,
@@ -478,6 +506,8 @@ export class OrgLensEventsService {
       eventUrl: normalizeToUrl(row.EVENT_URL ?? ''),
       eventRegistrationUrl: normalizeToUrl(row.EVENT_REGISTRATION_URL ?? ''),
       orgAttendeeCount: row.ORG_REGISTRATION_COUNT || 0,
+      // Spread, not a null: the key must be ABSENT for an external admin, not present-and-empty.
+      ...(includeGoal ? { eventRegistrationsGoal: row.EVENT_REGISTRATIONS_GOAL ?? null } : {}),
       orgSpeakerAcceptedCount: row.ORG_SPEAKER_ACCEPTED_COUNT || 0,
       orgSpeakerSubmittedCount: row.ORG_SPEAKER_SUBMITTED_COUNT || 0,
       isOrgSponsor: !!row.IS_ORG_SPONSOR,

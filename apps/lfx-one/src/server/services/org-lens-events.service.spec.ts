@@ -66,6 +66,14 @@ vi.mock('./valkey.service', async () => {
     ): Promise<T> => actual.ValkeyService.getInstance().withCache(actual.buildOrgCacheKey(account, key), ttl, fetcher, accept, storable),
   };
 });
+const { getAccessAwareOrgs } = vi.hoisted(() => ({ getAccessAwareOrgs: vi.fn() }));
+vi.mock('./org-role-grants.service', () => ({
+  OrgRoleGrantsService: class {
+    public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'someone' }));
+
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
@@ -185,6 +193,7 @@ beforeEach(() => {
     }
   });
 
+  getAccessAwareOrgs.mockResolvedValue({ isStaff: false, staffCheck: 'ok' });
   service = new OrgLensEventsService();
 });
 
@@ -403,20 +412,67 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
   });
 
-  it('never serves the event registration goal', async () => {
-    // The fixture carries a non-zero warehouse goal (10000), so this fails the moment the column is
-    // selected or mapped again.
+  it('never serves the event registration goal to an external admin', async () => {
+    // The fixture carries a non-zero warehouse goal (10000), so this fails the moment it leaks.
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
     addRegistration('ada@company.example', 'Ada Lovelace');
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
-    // #4432 is about disclosure, not display: the figure must be absent from the payload, not merely
-    // unrendered. Asserting on the serialized response too, since a future field could reintroduce
-    // the number under another name.
+    // #4432 is about disclosure, not display: the key must be ABSENT, not present-and-null. The
+    // serialized check also catches the number reappearing under some other field name.
     expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
     expect(JSON.stringify(list)).not.toContain('10000');
+  });
+
+  it('serves the goal to LF staff', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ isStaff: true, staffCheck: 'ok' });
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0].eventRegistrationsGoal).toBe(10000);
+  });
+
+  it('withholds the goal when the staff check cannot be trusted', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    // A failed check is not evidence of staff. For a disclosure rule the safe default is to
+    // withhold: an external admin seeing the figure is the failure that matters.
+    for (const grants of [
+      { isStaff: true, staffCheck: 'failed' },
+      { isStaff: false, staffCheck: 'ok' },
+    ]) {
+      getAccessAwareOrgs.mockResolvedValue(grants);
+      const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+      expect(list.data[0], JSON.stringify(grants)).not.toHaveProperty('eventRegistrationsGoal');
+    }
+
+    getAccessAwareOrgs.mockRejectedValue(new Error('authorizer down'));
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
+  });
+
+  it('does not leak a staff-populated cache entry to an external admin', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    // The Org Lens cache is keyed per ORG, not per user, so a staff read and an external read share
+    // one entry. Redaction therefore has to happen AFTER the cache, on every response path — if it
+    // moved into the cached fetcher, this is the test that would catch it.
+    getAccessAwareOrgs.mockResolvedValue({ isStaff: true, staffCheck: 'ok' });
+    expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].eventRegistrationsGoal).toBe(10000);
+
+    getAccessAwareOrgs.mockResolvedValue({ isStaff: false, staffCheck: 'ok' });
+    const external = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(external.data[0]).not.toHaveProperty('eventRegistrationsGoal');
+    expect(JSON.stringify(external)).not.toContain('10000');
   });
 
   it('still lists events when registrations are unavailable', async () => {

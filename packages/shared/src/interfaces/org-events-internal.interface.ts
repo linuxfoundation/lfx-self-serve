@@ -19,6 +19,7 @@ export interface OrgEventRow {
   EVENT_URL: string | null;
   EVENT_REGISTRATION_URL: string | null;
   ORG_REGISTRATION_COUNT: number;
+  EVENT_REGISTRATIONS_GOAL: number | null;
   ORG_SPEAKER_ACCEPTED_COUNT: number;
   ORG_SPEAKER_SUBMITTED_COUNT: number;
   IS_ORG_SPONSOR: boolean;

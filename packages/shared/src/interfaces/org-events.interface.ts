@@ -29,6 +29,12 @@ export interface OrgEvent {
   readonly eventUrl: string | null;
   readonly eventRegistrationUrl: string | null;
   readonly orgAttendeeCount: number;
+  /**
+   * Event-wide registration goal. OPTIONAL and absent for non-staff: #4432 requires the figure to be
+   * missing from the payload, not merely unrendered, for external admins. Present only when the
+   * caller is LF staff.
+   */
+  readonly eventRegistrationsGoal?: number | null;
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
   readonly isOrgSponsor: boolean;

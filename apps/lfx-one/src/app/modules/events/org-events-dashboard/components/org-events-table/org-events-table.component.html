@@ -45,7 +45,7 @@
       </th>
       <th scope="col" class="text-xs font-medium">
         <span class="text-gray-500">Event Attendees</span>
-        <span class="block text-gray-400 font-normal">My Org</span>
+        <span class="block text-gray-400 font-normal">My Org{{ showGoal() ? ' / Goal' : '' }}</span>
       </th>
       <th scope="col" class="text-xs font-medium">
         <span class="text-gray-500">Event Speakers</span>
@@ -107,7 +107,8 @@
         }
       </td>
 
-      <!-- Event Attendees: this org's registrants only -->
+      <!-- Event Attendees: this org's registrants. The event-wide goal rides alongside only for LF
+           staff — for an external admin the field is absent from the payload entirely (#4432). -->
       <td [attr.data-testid]="'org-event-attendees-' + event.eventId">
         @if (event.orgAttendeeCount > 0) {
           <button
@@ -115,9 +116,17 @@
             class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
             (click)="attendeesClick.emit(event)">
             {{ event.orgAttendeeCount | number }}
+            @if (event.eventRegistrationsGoal !== null && event.eventRegistrationsGoal !== undefined) {
+              <span class="text-gray-400"> / {{ event.eventRegistrationsGoal | number }}</span>
+            }
           </button>
         } @else {
-          <span class="text-sm text-gray-900 whitespace-nowrap">{{ event.orgAttendeeCount | number }}</span>
+          <span class="text-sm text-gray-900 whitespace-nowrap">
+            {{ event.orgAttendeeCount | number }}
+            @if (event.eventRegistrationsGoal !== null && event.eventRegistrationsGoal !== undefined) {
+              <span class="text-gray-400"> / {{ event.eventRegistrationsGoal | number }}</span>
+            }
+          </span>
         }
       </td>
 
