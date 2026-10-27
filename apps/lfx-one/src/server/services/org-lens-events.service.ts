@@ -148,6 +148,27 @@ export class OrgLensEventsService {
         return { data: [], total: 0, pageSize, offset };
       }
 
+      // Something else is missing, so the unscoped spelling — which reads the same core tables —
+      // cannot succeed either. Skip straight to the tier that might, instead of spending a breaker
+      // failure proving it.
+      if (!isMissingObject(scopedError, COMPANY_EMAILS_TABLE)) {
+        logger.warning(req, 'get_org_lens_events', 'Core table unavailable, falling back to the platinum count', {
+          err: scopedError,
+          account_id: accountId,
+        });
+        const directPlatinum = buildListQuery('platinum');
+        try {
+          rows = await this.fetchEventListRows(directPlatinum.sql, directPlatinum.binds);
+          return this.toEventsResponse(req, rows, pageSize, offset);
+        } catch (platinumError) {
+          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
+            err: platinumError,
+            account_id: accountId,
+          });
+          return { data: [], total: 0, pageSize, offset };
+        }
+      }
+
       logger.warning(req, 'get_org_lens_events', 'Address table unavailable, retrying unscoped', {
         err: scopedError,
         account_id: accountId,
@@ -189,12 +210,7 @@ export class OrgLensEventsService {
       }
     }
 
-    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
-    const data = rows.map((row) => this.mapRowToOrgEvent(row));
-
-    logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
-
-    return { data, total, pageSize, offset };
+    return this.toEventsResponse(req, rows, pageSize, offset);
   }
 
   /** GET /api/orgs/:accountId/lens/events/summary — org-wide total / past / upcoming counts for the stat strip. */
@@ -291,7 +307,10 @@ export class OrgLensEventsService {
       // Same reasoning as the list, including the missing-object guard: any other failure must not
       // quietly drop the filter. Both surfaces fall back on the same condition, so a row and the
       // drawer it opens still agree.
-      if (!SnowflakeService.isMissingObjectError(scopedError)) {
+      // Not a missing object, or the missing object is one the unscoped spelling needs too: either
+      // way the retry cannot succeed, and running it would spend a breaker failure to find that out.
+      // Concurrent drawer opens during an EVENT_REGISTRATIONS outage would do so once per request.
+      if (!isMissingObject(scopedError, COMPANY_EMAILS_TABLE)) {
         logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
           err: scopedError,
           account_id: accountId,
@@ -406,6 +425,16 @@ export class OrgLensEventsService {
    * reset window. The retry would then be blocked too, turning a degraded Events count into the
    * outage this path exists to prevent. The flag still rejects, so the fallback runs as before.
    */
+  /** Shared by the normal path and the early platinum return, so both shape the response identically. */
+  private toEventsResponse(req: Request, rows: OrgEventRow[], pageSize: number, offset: number): OrgEventsResponse {
+    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
+    const data = rows.map((row) => this.mapRowToOrgEvent(row));
+
+    logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
+
+    return { data, total, pageSize, offset };
+  }
+
   private async fetchEventListRows(sql: string, binds: string[], scoped = false): Promise<OrgEventRow[]> {
     const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
     return result.rows;
@@ -613,6 +642,21 @@ function registrationCountsCte(scoped: boolean): string {
         GROUP BY er.EVENT_ID
       )`;
 }
+
+/**
+ * True when the error says THIS object is the missing one. `isMissingObjectError` only answers "some
+ * object is absent", which is not enough to choose a fallback: the unscoped and platinum spellings
+ * still read the core tables, so retrying after `EVENT_REGISTRATIONS` goes missing cannot succeed and
+ * costs a breaker failure for nothing. Snowflake names the object in the message, so the tier can be
+ * chosen rather than guessed at.
+ */
+function isMissingObject(error: unknown, objectName: string): boolean {
+  if (!SnowflakeService.isMissingObjectError(error)) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toUpperCase().includes(objectName.toUpperCase());
+}
+
+const COMPANY_EMAILS_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
 
 /** scoped → company-email filtered; unscoped → same grain, no filter; platinum → ORG_EVENTS alone. */
 type ListQueryMode = 'scoped' | 'unscoped' | 'platinum';

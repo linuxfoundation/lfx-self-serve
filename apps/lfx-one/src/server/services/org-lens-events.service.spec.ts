@@ -419,6 +419,16 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data).toHaveLength(1);
     expect(list.data[0].orgAttendeeCount).toBe(99);
     expect(drawer.data).toEqual([]);
+
+    // And neither surface retried a spelling that reads the missing table. Each pointless retry
+    // costs a breaker failure, and concurrent drawer opens during such an outage would spend one
+    // per request — enough to open the breaker and take the platinum list down with it.
+    const queries = (execute.mock.calls as [string][]).map(([query]) => query);
+    // Qualified, because the platinum list still selects `oe.EVENT_REGISTRATIONS_GOAL` and a bare
+    // substring match counts that as a read of the missing table.
+    const registrationAttempts = queries.filter((query) => query.includes('SILVER_FACT.EVENT_REGISTRATIONS'));
+    expect(queries).toHaveLength(3); // list scoped, list platinum, drawer scoped
+    expect(registrationAttempts).toHaveLength(2); // the two scoped attempts only — neither retried
   });
 
   it('does not drop the company-email filter when the scoped query fails for another reason', async () => {
