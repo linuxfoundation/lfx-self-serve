@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import '@angular/compiler';
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import type { MktgLastIntakeStart, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
@@ -26,10 +27,15 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: mocks.author }));
 vi.mock('./logger.service', () => ({ logger: { warning: mocks.warning, debug: vi.fn() } }));
 
 import { MktgLastIntakeService } from './mktg-last-intake.service';
-import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 
 const req = {} as Request;
 const project = 'synthetic-project';
+const subject = 'auth0|synthetic-writer';
+const writerKey = (agentKey: string, writer = subject) =>
+  agentKey === 'linkedin-post'
+    ? `document-last-intake/${project}/${agentKey}/${createHash('sha256').update(writer).digest('hex')}.json`
+    : `document-last-intake/${project}/${agentKey}.json`;
 const types = MKTG_DOCUMENT_TYPES.filter(
   (type) =>
     type.kind === 'living' &&
@@ -83,7 +89,7 @@ describe('MktgLastIntakeService', () => {
     );
     expect(JSON.stringify(record)).not.toMatch(/private dependency|private session|private proof|private extraction/);
     const call = mocks.put.mock.calls[0];
-    expect(call.slice(0, 3)).toEqual([req, 'marketing-os-artifacts', `document-last-intake/${project}/${type.agentKey}.json`]);
+    expect(call.slice(0, 3)).toEqual([req, 'marketing-os-artifacts', writerKey(type.agentKey)]);
     expect(call[5]).toBe('private, no-store');
     expect(call[7].refreshMetadataWhen({})).toBe(true);
     mocks.get.mockResolvedValue({ body: JSON.stringify({ ...record, ownerToken: 'private proof' }) });
@@ -94,7 +100,7 @@ describe('MktgLastIntakeService', () => {
     });
   });
 
-  it('reads legacy snapshots without depending on or exposing their former author field', async () => {
+  it('projects only public scalar fields from the caller-owned snapshot regardless of extra private fields', async () => {
     const service = new MktgLastIntakeService();
     await service.recordStartBestEffort(req, input());
     const record = written();
@@ -109,7 +115,54 @@ describe('MktgLastIntakeService', () => {
   it('uses the canonical writer-resolved project and returns null only on confirmed absence', async () => {
     expect(await new MktgLastIntakeService().read(req, 'project-alias', types[0].agentKey)).toBeNull();
     expect(mocks.resolve).toHaveBeenCalledWith(req, 'project-alias');
-    expect(mocks.get).toHaveBeenCalledWith(req, 'marketing-os-artifacts', `document-last-intake/${project}/${types[0].agentKey}.json`);
+    expect(mocks.get).toHaveBeenCalledWith(req, 'marketing-os-artifacts', writerKey(types[0].agentKey));
+  });
+
+  it('isolates same-project writers by hashed subject and never reads the old project-wide key', async () => {
+    const objects = new Map<string, { body: string }>();
+    mocks.put.mockImplementation(async (_req, _bucket, key: string, body: Buffer) => {
+      objects.set(key, { body: body.toString() });
+      return true;
+    });
+    mocks.get.mockImplementation(async (_req, _bucket, key: string) => objects.get(key) ?? null);
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, { ...input('linkedin-post'), answers: { content_source: 'text', content_text: 'Writer A synthetic input' } });
+    const oldKey = `document-last-intake/${project}/linkedin-post.json`;
+    objects.set(oldKey, { body: JSON.stringify({ ...written(), answers: { content_source: 'text', content_text: 'Legacy private input' } }) });
+    expect(mocks.put.mock.calls[0][2]).toBe(writerKey('linkedin-post'));
+    expect(mocks.put.mock.calls[0][2]).not.toContain(subject);
+    expect(await service.read(req, project, 'linkedin-post')).toMatchObject({ answers: { content_text: 'Writer A synthetic input' } });
+    mocks.author.mockReturnValue('auth0|synthetic-writer-b');
+    expect(await service.read(req, project, 'linkedin-post')).toBeNull();
+    expect(mocks.get).toHaveBeenLastCalledWith(req, 'marketing-os-artifacts', writerKey('linkedin-post', 'auth0|synthetic-writer-b'));
+    expect(mocks.get.mock.calls.some((call) => call[2] === oldKey)).toBe(false);
+  });
+
+  it('lets another project writer restore living-agent inputs from the unchanged shared project key', async () => {
+    const objects = new Map<string, { body: string }>();
+    mocks.put.mockImplementation(async (_req, _bucket, key: string, body: Buffer) => {
+      objects.set(key, { body: body.toString() });
+      return true;
+    });
+    mocks.get.mockImplementation(async (_req, _bucket, key: string) => objects.get(key) ?? null);
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, input());
+    const key = `document-last-intake/${project}/foundation-message.json`;
+    expect(mocks.put.mock.calls[0][2]).toBe(key);
+    mocks.author.mockClear();
+    mocks.author.mockReturnValue('auth0|synthetic-writer-b');
+    expect(await service.read(req, project, 'foundation-message')).toMatchObject({ answers: { project_name: 'Synthetic project' } });
+    expect(mocks.get).toHaveBeenLastCalledWith(req, 'marketing-os-artifacts', key);
+    expect(mocks.author).not.toHaveBeenCalled();
+    mocks.author.mockReturnValue(null);
+    expect(await service.read(req, project, 'foundation-message')).not.toBeNull();
+    expect(mocks.author).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing LinkedIn writer subject before reading any snapshot', async () => {
+    mocks.author.mockReturnValue(null);
+    await expect(new MktgLastIntakeService().read(req, project, 'linkedin-post')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 
   it('owns LinkedIn source-aware projection without persisting inactive fields or uploads', async () => {
