@@ -445,6 +445,23 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data).toEqual([]);
   });
 
+  it('reports a missing core table normally rather than as an expected rollout', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    database.exec('DROP TABLE EVENT_REGISTRATIONS');
+
+    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    // The unscoped retry and the platinum last resort both read core tables. Flagging them would
+    // suppress the error telemetry for a genuinely broken warehouse and reset the shared breaker.
+    const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
+    expect(unscopedCalls.length).toBeGreaterThan(0);
+    for (const [, , options] of unscopedCalls) {
+      expect(options).toBeUndefined();
+    }
+  });
+
   it('keeps a missing address table out of the shared circuit breaker', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
@@ -457,10 +474,18 @@ describe('OrgLensEventsService company-email scoping', () => {
     // uncached — so every request would re-run it. Without this flag those failures reach
     // recordFailure() on the POD-WIDE breaker, and enough concurrent loads would fail every
     // Snowflake surface, blocking the very retry this path exists to perform.
-    const scopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => query.includes('company_email_coverage'));
+    const calls = execute.mock.calls as [string, string[], unknown?][];
+    const scopedCalls = calls.filter(([query]) => query.includes('company_email_coverage'));
     expect(scopedCalls).toHaveLength(2);
     for (const [, , options] of scopedCalls) {
       expect(options).toEqual({ expectMissingObject: true });
+    }
+
+    // And ONLY the scoped spellings. The flag means "this statement references an object that may
+    // legitimately not exist yet"; the unscoped and platinum spellings read core tables, whose
+    // absence must keep its telemetry and count toward the breaker.
+    for (const [, , options] of calls.filter(([query]) => !query.includes('company_email_coverage'))) {
+      expect(options).toBeUndefined();
     }
   });
 

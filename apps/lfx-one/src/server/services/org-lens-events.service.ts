@@ -154,7 +154,7 @@ export class OrgLensEventsService {
       });
       const fallbackQuery = buildListQuery('unscoped');
       try {
-        rows = await this.fetchEventListRows(fallbackQuery.sql, fallbackQuery.binds, true);
+        rows = await this.fetchEventListRows(fallbackQuery.sql, fallbackQuery.binds);
       } catch (unscopedError) {
         /**
          * Last resort. Recomputing the count made EVENT_REGISTRATIONS load-bearing for a list that
@@ -392,7 +392,13 @@ export class OrgLensEventsService {
   }
 
   /**
-   * `expectMissingObject` on the scoped spelling only. The whole point of the unscoped retry is that
+   * `expectMissingObject` marks one thing: this statement references an object that may legitimately
+   * not exist yet. Only the SCOPED spellings do — `ORG_PEOPLE_COMPANY_EMAILS`. The unscoped and
+   * platinum spellings read `ORG_EVENTS`, `EVENT_REGISTRATIONS` and `ORG_PEOPLE_ALL`, all core; their
+   * absence is a genuine fault that must keep its error telemetry and count toward the breaker, not
+   * be filed as an expected schema rollout.
+   *
+   * The whole point of the unscoped retry is that
    * `ORG_PEOPLE_COMPANY_EMAILS` may be absent or ungranted — a schema-rollout condition, not a
    * Snowflake outage. Without this flag that error calls `recordFailure()` on the POD-WIDE breaker,
    * and because the fallback is deliberately uncached every request re-runs the failing query: a
