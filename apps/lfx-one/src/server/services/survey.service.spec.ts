@@ -374,40 +374,66 @@ describe('SurveyService.getSurveys — caller-scoped committee writer grants', (
 
 describe('SurveyService.getSurveyResponses — personal link gate', () => {
   let service: SurveyService;
-  let checkSingleAccessSpy: MockInstance<AccessCheckService['checkSingleAccess']>;
+  let checkAccessSpy: MockInstance<AccessCheckService['checkAccess']>;
   const req = { path: '/api/surveys/s-1/responses', bearerToken: 'caller-token' } as Request;
+  // A multi-foundation survey: the caller writes p-1 only.
+  const survey = {
+    committees: [
+      { committee_uid: 'c-1', project_uid: 'p-1' },
+      { committee_uid: 'c-2', project_uid: 'p-2' },
+    ],
+  };
   const rows = [
-    { id: 'r-1', survey_link: ' https://www.surveymonkey.com/r/abc ' },
-    { id: 'r-2', survey_link: 'https://evil.example.com/phish' },
-    { id: 'r-3' },
+    { id: 'r-1', committee_uid: 'c-1', survey_link: ' https://www.surveymonkey.com/r/abc ' },
+    { id: 'r-2', committee_uid: 'c-1', survey_link: 'https://evil.example.com/phish' },
+    { id: 'r-3', committee_uid: 'c-2', survey_link: 'https://www.surveymonkey.com/r/other' },
   ];
 
   beforeEach(() => {
     vi.clearAllMocks();
-    proxyRequestMock.mockReset().mockResolvedValue({ data: rows, meta: { page_token: '' } });
+    proxyRequestMock
+      .mockReset()
+      .mockImplementation(async (_req: Request, _svc: string, path: string) =>
+        path.endsWith('/responses') ? { data: rows, meta: { page_token: '' } } : survey
+      );
     service = new SurveyService();
-    checkSingleAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkSingleAccess');
+    checkAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkAccess');
   });
 
   afterEach(() => {
-    checkSingleAccessSpy.mockRestore();
+    checkAccessSpy.mockRestore();
   });
 
-  it('keeps allowlisted links for survey writers and drops the rest', async () => {
-    checkSingleAccessSpy.mockResolvedValue(true);
+  it('keeps allowlisted links only on rows of committees in projects the caller writes', async () => {
+    checkAccessSpy.mockResolvedValue(
+      new Map([
+        ['p-1#writer_guard', true],
+        ['p-2#writer_guard', false],
+      ])
+    );
 
     const page = await service.getSurveyResponses(req, 's-1', {});
 
-    expect(checkSingleAccessSpy).toHaveBeenCalledWith(req, { resource: 'survey', id: 's-1', access: 'writer' });
-    expect(page.data).toEqual([{ id: 'r-1', survey_link: 'https://www.surveymonkey.com/r/abc' }, { id: 'r-2' }, { id: 'r-3' }]);
+    expect(checkAccessSpy).toHaveBeenCalledWith(req, [
+      { resource: 'project', id: 'p-1', access: 'writer_guard' },
+      { resource: 'project', id: 'p-2', access: 'writer_guard' },
+    ]);
+    expect(page.data).toEqual([
+      { id: 'r-1', committee_uid: 'c-1', survey_link: 'https://www.surveymonkey.com/r/abc' },
+      { id: 'r-2', committee_uid: 'c-1' },
+      { id: 'r-3', committee_uid: 'c-2' },
+    ]);
     expect(page.meta.page_token).toBeUndefined();
   });
 
-  it('strips every link for callers without survey write access', async () => {
-    checkSingleAccessSpy.mockResolvedValue(false);
+  it('strips every link when the survey lookup fails', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string) => {
+      if (path.endsWith('/responses')) return { data: rows, meta: {} };
+      throw new Error('upstream down');
+    });
 
     const page = await service.getSurveyResponses(req, 's-1', {});
 
-    expect(page.data).toEqual([{ id: 'r-1' }, { id: 'r-2' }, { id: 'r-3' }]);
+    expect(page.data.every((r) => r.survey_link === undefined)).toBe(true);
   });
 });
