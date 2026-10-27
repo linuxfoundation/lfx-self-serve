@@ -182,6 +182,7 @@
             [class.hover:bg-gray-100]="!isRollUpSelected()"
             (click)="selectRollUp()"
             data-testid="org-item-rollup"
+            data-option-kind="rollup"
             [attr.data-selected]="isRollUpSelected()"
             [attr.data-organization-count]="rollUpOrganizationCount()">
             <div class="bg-blue-100 overflow-clip rounded-lg shrink-0 size-9 border border-blue-200" data-testid="org-item-rollup-logo">
@@ -241,6 +242,8 @@
             [class.hover:bg-gray-100]="!displayItem.isSelected"
             (click)="selectItem(displayItem.item)"
             [attr.data-testid]="'org-item-' + displayItem.item.uid"
+            data-option-kind="org"
+            [attr.data-org-uid]="displayItem.item.uid"
             [attr.data-selected]="displayItem.isSelected"
             [attr.data-account-id]="displayItem.item.accountId">
             <div

@@ -93,6 +93,12 @@ export class OrgSelectorComponent {
   public readonly variant = input<ContextSelectorVariant>('default');
   /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
   public readonly itemSelected = output<OrgItem>();
+  /**
+   * The viewer picked the All Organizations roll-up. Separate from `itemSelected`, which carries an
+   * `OrgItem`: the roll-up is a view mode and has no org-items row to emit. Hosts that only need
+   * "the selection changed, commit the preview and close the drawer" listen to both.
+   */
+  public readonly rollUpSelected = output<void>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
@@ -117,8 +123,16 @@ export class OrgSelectorComponent {
   protected readonly showRollUpRow: Signal<boolean> = this.accountContextService.canSelectRollUp;
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
   protected readonly rollUpOrganizationCount: Signal<number> = this.accountContextService.rollUpOrganizationCount;
-  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view · ${this.rollUpOrganizationCount()} organizations`);
-  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => `${this.rollUpOrganizationCount()} organizations`);
+  /**
+   * The trigger renders this whenever the roll-up is selected, which includes the window where a
+   * cookie-restored roll-up is admitted before the grant sets have landed — the count can read 0 or
+   * 1 there, so the noun has to agree.
+   */
+  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => {
+    const count = this.rollUpOrganizationCount();
+    return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
+  });
+  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view · ${this.rollUpTriggerSubtitle()}`);
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
@@ -346,15 +360,52 @@ export class OrgSelectorComponent {
    * nothing, and a real pick re-addresses the current Org Lens page to `/org/all/…` rather than
    * bouncing to overview. No canonical fetch — the roll-up names a set, not a `b2b_org` row.
    */
+  /**
+   * Activate the focused `[role=option]`, resolved by IDENTITY rather than by its position.
+   *
+   * `listboxOptions()` is every option in the DOM; `displayedRows()` is only the organization rows.
+   * The pinned roll-up is an option that sits outside that loop, so indexing the rows by a DOM
+   * position selected the row *after* the focused one and dropped the last (PR #4415 review). Each
+   * option carries what it is (`data-option-kind`) and, for an organization, which one
+   * (`data-org-uid`), so the two lists cannot drift again.
+   *
+   * Returns whether something was activated, so the caller only restores focus when it was.
+   */
+  protected activateOption(active: HTMLElement): boolean {
+    if (active.dataset['optionKind'] === 'rollup') {
+      this.selectRollUp();
+      return true;
+    }
+    const uid = active.dataset['orgUid'];
+    const row = this.displayedRows().find((candidate) => candidate.display.item.uid === uid);
+    if (!row) return false;
+    this.selectItem(row.display.item);
+    return true;
+  }
+
   protected selectRollUp(): void {
+    // Re-picking the current selection changes nothing — FR-014, as `selectItem` applies it — with
+    // the same not-found exception: on the dead end the pick is the viewer's way out, and the
+    // selection there never made it into the address.
     if (this.isRollUpSelected()) {
+      if (this.orgLensNavigation.isOnNotFound()) {
+        this.orgLensNavigation.navigateToRollUpHome();
+      }
+      this.rollUpSelected.emit();
       this.popoverRef()?.hide();
       return;
     }
     if (!this.accountContextService.selectRollUp()) {
       return;
     }
-    this.orgLensNavigation.navigateToSelectedOrg('switch');
+    // #4133: a new roll-up pick lands on `/org/all/overview`, not the page it was made from. Unlike
+    // an organization switch, the roll-up does not support every page — Org Profile is single-org
+    // by definition (#4125) — so carrying the current page across can land on one that has no
+    // roll-up rendering at all.
+    this.orgLensNavigation.navigateToRollUpHome();
+    // The host (navbar) commits a mobile Org Lens preview and closes its drawer off this; without
+    // it a roll-up picked from the Me or Project lens stays an invisible selection change.
+    this.rollUpSelected.emit();
     this.popoverRef()?.hide();
   }
 
@@ -537,9 +588,13 @@ export class OrgSelectorComponent {
         // deterministic and identical for Enter and Space (whose native activation timings
         // differ), and keeps preventDefault from letting Space scroll the panel.
         event.preventDefault();
-        const row = this.displayedRows()[activeIndex];
-        if (!row) return;
-        this.selectItem(row.display.item);
+        // Dispatch through the focused ELEMENT, never `displayedRows()[activeIndex]`. `options` is
+        // every `[role=option]` in the DOM, and the pinned roll-up row is one of them while sitting
+        // outside the row loop — indexing the rows by a DOM position therefore selected the row
+        // after the focused one and dropped the last. Resolving by identity keeps the two lists
+        // independent, so another out-of-loop option cannot reintroduce the same off-by-one.
+        const active = options[activeIndex];
+        if (!active || !this.activateOption(active)) return;
         // The row is leaving the DOM; restore focus to the combobox trigger to match Escape's
         // contract (WAI-ARIA APG) rather than dumping the keyboard caller on `body`.
         queueMicrotask(() => this.triggerRef()?.nativeElement.focus());

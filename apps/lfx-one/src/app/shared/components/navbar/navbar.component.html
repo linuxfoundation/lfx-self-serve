@@ -111,7 +111,8 @@
             variant="navbar"
             [(isPanelOpen)]="selectorPanelOpen"
             [enabled]="effectiveShowOrgSelector()"
-            (itemSelected)="onOrgSelected()"></lfx-org-selector>
+            (itemSelected)="onOrgSelected()"
+            (rollUpSelected)="onOrgSelected()"></lfx-org-selector>
         </div>
 
         <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->

@@ -308,8 +308,11 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
   const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
   const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
   const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
+  /** What `AccountContextService` holds while the roll-up is the selection. */
+  const rollUpAccount: Account = { accountId: 'all', accountName: 'All Organizations', membershipTier: '', uid: 'all', slug: null };
 
   interface RollUpView {
+    activateOption(active: HTMLElement): boolean;
     showRollUpRow(): boolean;
     isRollUpSelected(): boolean;
     isSingleOrg(): boolean;
@@ -320,10 +323,25 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
 
   const selectRollUpSpy = vi.fn();
   const navigateSpy = vi.fn();
+  const rollUpHomeSpy = vi.fn();
+  const setAccountSpy = vi.fn();
+  let onNotFound: ReturnType<typeof vi.fn>;
 
-  const create = async (opts: { canSelectRollUp: boolean; isRollUp?: boolean; count?: number; items?: OrgItem[]; accepted?: boolean }): Promise<RollUpView> => {
+  const create = async (opts: {
+    canSelectRollUp: boolean;
+    isRollUp?: boolean;
+    count?: number;
+    items?: OrgItem[];
+    accepted?: boolean;
+    onNotFound?: boolean;
+    /** The current selection. Defaults to Acme; pass the roll-up account to make either row a real switch. */
+    selected?: Account;
+  }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
+    rollUpHomeSpy.mockReset();
+    setAccountSpy.mockReset();
+    onNotFound = vi.fn(() => opts.onNotFound ?? false);
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgSelectorComponent],
@@ -332,8 +350,8 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
         {
           provide: AccountContextService,
           useValue: {
-            selectedAccount: signal(acme),
-            setAccount: vi.fn(),
+            selectedAccount: signal(opts.selected ?? acme),
+            setAccount: setAccountSpy,
             refreshCanonicalRecord: vi.fn(),
             getStoredUid: () => null,
             canSelectRollUp: signal(opts.canSelectRollUp),
@@ -366,7 +384,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, isOnNotFound: vi.fn(() => false) } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
         { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
       ],
@@ -400,11 +418,17 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     expect(view.isSingleOrg()).toBe(false);
   });
 
-  it('selects the roll-up and re-addresses the current page', async () => {
+  /**
+   * #4133 requires a new pick to land on `/org/all/overview`. Not an organization switch, which
+   * keeps the current page: Org Profile is single-org by definition (#4125), so carrying the page
+   * across could address a page with no roll-up rendering.
+   */
+  it('selects the roll-up and lands on its overview rather than keeping the page', async () => {
     const view = await create({ canSelectRollUp: true, count: 4 });
     view.selectRollUp();
     expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy).toHaveBeenCalledWith('switch');
+    expect(rollUpHomeSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   // Mirrors `selectItem`'s FR-014 contract: re-picking what is already selected navigates nowhere.
@@ -412,7 +436,7 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4 });
     view.selectRollUp();
     expect(selectRollUpSpy).not.toHaveBeenCalled();
-    expect(navigateSpy).not.toHaveBeenCalled();
+    expect(rollUpHomeSpy).not.toHaveBeenCalled();
   });
 
   // The service re-derives eligibility; a refusal must leave the address alone rather than
@@ -421,6 +445,65 @@ describe('OrgSelectorComponent All Organizations roll-up', () => {
     const view = await create({ canSelectRollUp: true, count: 2, accepted: false });
     view.selectRollUp();
     expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy).not.toHaveBeenCalled();
+    expect(rollUpHomeSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression, PR #4415 review: the same-selection shortcut skipped `selectItem`'s not-found
+  // recovery, so a roll-up caller who reached the dead end could not click their way out of it.
+  it('recovers from the not-found dead end when the selected roll-up is re-picked', async () => {
+    const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4, onNotFound: true });
+    view.selectRollUp();
+    expect(rollUpHomeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression, PR #4415 review: the count is rendered during the optimistic restore window, where
+  // the grants have not landed and it can still read 1.
+  it('agrees with the noun at one organization', async () => {
+    const view = await create({ canSelectRollUp: true, isRollUp: true, count: 1 });
+    expect(view.rollUpTriggerSubtitle()).toBe('1 organization');
+    expect(view.rollUpSubtitle()).toBe('Combined view · 1 organization');
+  });
+
+  /**
+   * Regression, PR #4415 review (high severity). Keyboard activation resolved the focused option by
+   * its DOM index into `displayedRows()`. The pinned roll-up is a real `[role=option]` rendered
+   * before that loop, so every index was off by one: Enter on the roll-up selected the first
+   * organization, Enter on an organization selected the next, and the last row did nothing.
+   */
+  describe('keyboard activation resolves the focused option by identity', () => {
+    const optionEl = (dataset: Record<string, string>): HTMLElement => {
+      const el = document.createElement('button');
+      el.setAttribute('role', 'option');
+      Object.entries(dataset).forEach(([key, value]) => (el.dataset[key] = value));
+      return el;
+    };
+
+    it('activates the roll-up when the roll-up option is focused', async () => {
+      const view = await create({ canSelectRollUp: true, count: 4 });
+      expect(view.activateOption(optionEl({ optionKind: 'rollup' }))).toBe(true);
+      expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // The bug's signature: with the roll-up present, this used to land on rowB.
+    it('activates the focused organization, not the one after it', async () => {
+      const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4, selected: rollUpAccount });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: UID_A }))).toBe(true);
+      expect(setAccountSpy).toHaveBeenCalledTimes(1);
+      expect((setAccountSpy.mock.calls[0][0] as Account).uid).toBe(UID_A);
+      expect(selectRollUpSpy).not.toHaveBeenCalled();
+    });
+
+    // The last row used to fall off the end of `displayedRows()` and activate nothing.
+    it('activates the final organization', async () => {
+      const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4, selected: rollUpAccount });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: UID_B }))).toBe(true);
+      expect((setAccountSpy.mock.calls[0][0] as Account).uid).toBe(UID_B);
+    });
+
+    it('activates nothing for an option naming no known organization', async () => {
+      const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4, selected: rollUpAccount });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: 'nope' }))).toBe(false);
+      expect(setAccountSpy).not.toHaveBeenCalled();
+    });
   });
 });

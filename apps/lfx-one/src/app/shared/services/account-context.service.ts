@@ -3,8 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
+import { computed, effect, inject, Injectable, PLATFORM_ID, Signal, signal, untracked, WritableSignal } from '@angular/core';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ROLLUP_ENABLED_FLAG, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -13,6 +13,7 @@ import { take } from 'rxjs/operators';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
+import { FeatureFlagService } from './feature-flag.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -36,7 +37,10 @@ export const ROLLUP_MIN_ORGANIZATIONS = 2;
  * up spelling, and what `isRollUp` keys on.
  */
 const ROLLUP_ACCOUNT: Account = {
-  accountId: '',
+  // The sentinel sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
+  // Events family keys on `:accountId` (#4125's contract covers both), and consumers that filter on
+  // a falsy `accountId` would otherwise skip the roll-up and silently keep their previous result.
+  accountId: ORG_ROLLUP_SEGMENT,
   accountName: ROLLUP_ACCOUNT_NAME,
   membershipTier: '',
   uid: ORG_ROLLUP_SEGMENT,
@@ -51,6 +55,7 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -124,7 +129,10 @@ export class AccountContextService {
    */
   public readonly rollUpOrganizationCount: Signal<number> = computed(() => {
     const uids = new Set<string>();
-    for (const account of this.availableAccounts()) {
+    // The persona seeds, NOT `availableAccounts()`. That signal swaps each seed for its enriched
+    // Snowflake row, and `toAccount` does not carry `uid` — so counting it would drop every
+    // enriched organization and hide the roll-up row the moment enrichment succeeded.
+    for (const account of this.userOrganizations()) {
       if (account.uid) {
         uids.add(account.uid);
       }
@@ -142,8 +150,20 @@ export class AccountContextService {
     return uids.size;
   });
 
-  /** Whether the roll-up is offered at all: two or more organizations. A single-org caller never sees the entry (#4132). */
-  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
+  /** Dark-launch gate — off until the BFF accepts the sentinel (#4127). See `ORG_LENS_ROLLUP_ENABLED_FLAG`. */
+  private readonly rollUpFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ROLLUP_ENABLED_FLAG);
+
+  /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
+  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
+
+  /**
+   * True while eligibility cannot be judged yet: the grant sets are still loading, so
+   * `rollUpOrganizationCount()` is a lower bound. A conglomerate's sibling organizations arrive as
+   * *inherited* grants rather than persona seeds, so during this window a caller who does qualify
+   * can still count as one organization. Callers restoring or adopting a roll-up admit it
+   * optimistically here and let `reconcileRollUpEligibility` settle it.
+   */
+  public readonly rollUpEligibilityPending: Signal<boolean> = computed(() => this.rollUpFlag() && !this.orgRoleGrantsService.loaded());
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -204,6 +224,24 @@ export class AccountContextService {
   public constructor() {
     // Bootstrap on the placeholder; cookie only contributes accountId for later seed reconciliation — display fields never come from the cookie.
     this.selectedAccount = signal<Account>(PLACEHOLDER_ACCOUNT);
+
+    // Settle an optimistically admitted roll-up once the grant sets land. A cookie restore or a
+    // `/org/all` deep link is admitted while `OrgRoleGrantsService` is still loading — the count is
+    // a lower bound until then, and demoting on it would drop a genuine conglomerate admin into one
+    // company. Nothing else re-runs afterwards: `applyRollUpSelection` pins the selection, so every
+    // later `initializeUserOrganizations` returns through its `isAddressedSelection()` branch, and
+    // the path guard does not re-run on a page it already activated. Without this effect a caller
+    // whose access has since shrunk to one organization would stay in roll-up mode for the session.
+    effect(() => {
+      const pending = this.rollUpEligibilityPending();
+      const eligible = this.canSelectRollUp();
+      untracked(() => {
+        if (pending || eligible || !this.isRollUp()) {
+          return;
+        }
+        this.demoteFromRollUp();
+      });
+    });
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
@@ -239,7 +277,7 @@ export class AccountContextService {
     // and demoting on that transient count would drop the caller into one company and overwrite the
     // cookie that said otherwise. Once the grants have loaded the count is trustworthy, and a caller
     // who no longer holds two organizations falls through to the ordinary default selection below.
-    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || !this.orgRoleGrantsService.loaded())) {
+    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || this.rollUpEligibilityPending())) {
       this.applyRollUpSelection();
       this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       return;
@@ -316,8 +354,9 @@ export class AccountContextService {
    * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS`, so a stale cookie or a hand-typed
    * `/org/all` cannot put a single-org caller into a mode built for several.
    */
-  public selectRollUp(): boolean {
-    if (!this.canSelectRollUp()) {
+  public selectRollUp(options?: { admitWhilePending?: boolean }): boolean {
+    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && this.rollUpEligibilityPending());
+    if (!admissible) {
       return false;
     }
     this.applyRollUpSelection();
@@ -537,6 +576,25 @@ export class AccountContextService {
       cdevOrgId: row.cdevOrgId ?? undefined,
       membershipTier: row.membershipTierDisplayName ?? '',
     };
+  }
+
+  /**
+   * Leave roll-up mode for the one organization the caller still holds (or the placeholder when
+   * they hold none), releasing the pin the roll-up took so the ordinary selection paths own the
+   * choice again. The address is not rewritten from here — `orgPathParamGuard` re-points
+   * `/org/all/…` on the next navigation, and rewriting it from a service effect would fight the
+   * router mid-navigation.
+   */
+  private demoteFromRollUp(): void {
+    this.addressedUid.set(null);
+    this.pinSource.set(null);
+    const fallback = this.userOrganizations()[0];
+    if (fallback) {
+      this.setAccount(fallback);
+      return;
+    }
+    this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
+    this.clearStorage();
   }
 
   /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */

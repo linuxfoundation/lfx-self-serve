@@ -521,6 +521,9 @@ describe('AccountContextService — All Organizations roll-up', () => {
   let cookies: Map<string, string>;
   let service: AccountContextService;
   let httpGet: ReturnType<typeof vi.fn>;
+  let rollUpFlag: WritableSignal<boolean>;
+  /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
+  let liveRows: OrgLensAccountContextResponse[];
   let grants: {
     writerSet: WritableSignal<Set<string>>;
     auditorSet: WritableSignal<Set<string>>;
@@ -533,6 +536,8 @@ describe('AccountContextService — All Organizations roll-up', () => {
 
   beforeEach(() => {
     cookies = new Map();
+    rollUpFlag = signal(true);
+    liveRows = [];
     httpGet = vi.fn().mockReturnValue(of(null));
     grants = {
       writerSet: signal(new Set<string>()),
@@ -554,13 +559,21 @@ describe('AccountContextService — All Organizations roll-up', () => {
           },
         },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
-        { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
+        { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag } },
         { provide: HttpClient, useValue: { get: httpGet } },
       ],
     });
     service = TestBed.inject(AccountContextService);
+  });
+
+  // The whole surface is dark-launched until the BFF accepts the sentinel (#4127).
+  it('offers nothing while the feature flag is off, however many organizations the caller holds', () => {
+    rollUpFlag.set(false);
+    service.initializeUserOrganizations([seedA, seedB]);
+    expect(service.canSelectRollUp()).toBe(false);
+    expect(service.selectRollUp()).toBe(false);
   });
 
   it('counts persona seeds and grant sets together, de-duplicated by uid', () => {
@@ -646,5 +659,59 @@ describe('AccountContextService — All Organizations roll-up', () => {
     service.setAccount(seedB);
     expect(service.isRollUp()).toBe(false);
     expect(service.selectedUrlSegment()).toBe(UID_B);
+  });
+
+  // Regression, PR #4415 review: `availableAccounts()` swaps each seed for its enriched Snowflake
+  // row, and `toAccount` carries no `uid` — counting that list dropped every enriched organization
+  // and hid the roll-up the moment enrichment succeeded.
+  it('keeps counting organizations after Snowflake enrichment replaces the seeds', () => {
+    // Enrichment answers for both seeds. `toAccount` maps these without a `uid`, so
+    // `availableAccounts()` — which prefers the live row — yields two uid-less accounts.
+    liveRows = [
+      { accountId: UID_A, accountName: 'Alpha Inc', logoUrl: null, cdevOrgId: null, membershipTierDisplayName: 'Gold' },
+      { accountId: UID_B, accountName: 'Bravo Inc', logoUrl: null, cdevOrgId: null, membershipTierDisplayName: 'Silver' },
+    ] as OrgLensAccountContextResponse[];
+
+    service.initializeUserOrganizations([seedA, seedB]);
+
+    // Guard the premise: the enriched list really has lost the uids.
+    expect(service.availableAccounts().every((account) => !account.uid)).toBe(true);
+    // The count must come from the persona seeds, so it survives that.
+    expect(service.rollUpOrganizationCount()).toBe(2);
+    expect(service.canSelectRollUp()).toBe(true);
+  });
+
+  // Regression, PR #4415 review: the optimistic restore pinned the selection, so every later
+  // bootstrap returned early and nothing re-judged eligibility once the grants landed.
+  it('demotes an optimistically restored roll-up when the grants settle against it', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+    expect(service.isRollUp()).toBe(true);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+  });
+
+  it('keeps an optimistically restored roll-up when the grants confirm it', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(true);
+  });
+
+  // The Events family keys on `:accountId`; a falsy one is filtered out by those consumers.
+  it('carries the sentinel in accountId as well as uid', () => {
+    service.initializeUserOrganizations([seedA, seedB]);
+    service.selectRollUp();
+    expect(service.getAccountId()).toBe('all');
   });
 });
