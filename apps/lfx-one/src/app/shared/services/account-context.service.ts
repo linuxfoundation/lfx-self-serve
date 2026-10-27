@@ -4,9 +4,9 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
-import { orgUrlSegment } from '@lfx-one/shared/utils';
+import { isOrgRollUpSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
@@ -20,6 +20,27 @@ const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
   accountName: '',
   membershipTier: '',
+};
+
+/** Display name of the All Organizations roll-up, shown wherever a concrete organization's name would be. */
+export const ROLLUP_ACCOUNT_NAME = 'All Organizations';
+
+/** Fewest organizations a roll-up is worth offering over: with one, it is the organization. */
+export const ROLLUP_MIN_ORGANIZATIONS = 2;
+
+/**
+ * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
+ * `b2b_org` row: `accountId` is empty because there is no Salesforce account behind it, and `slug` is
+ * a confirmed `null` so nothing tries to learn one from the index. `uid` carries the reserved
+ * segment, which is what every address, cookie and `:orgUid` request built from this selection ends
+ * up spelling, and what `isRollUp` keys on.
+ */
+const ROLLUP_ACCOUNT: Account = {
+  accountId: '',
+  accountName: ROLLUP_ACCOUNT_NAME,
+  membershipTier: '',
+  uid: ORG_ROLLUP_SEGMENT,
+  slug: null,
 };
 
 @Injectable({
@@ -85,6 +106,44 @@ export class AccountContextService {
 
   /** Spec 050: the `/org/{segment}/…` segment of the current selection — the indexed slug (org-items row or resolver answer) when one is known, else the SFID; null for the placeholder. Never member-service's slug: addresses resolve against the index. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
+
+  /** True while the All Organizations roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
+  public readonly isRollUp: Signal<boolean> = computed(() => isOrgRollUpSegment(this.selectedAccount().uid));
+
+  /**
+   * How many distinct organizations the caller holds — what the roll-up would combine.
+   *
+   * Derived client-side from the same sources `hasOrgSelectorAccess` consults: persona-seeded
+   * accounts plus direct and inherited grant sets, de-duplicated by uid. Deliberately **not** the
+   * selector's `items()`, which is paged and would count a first page rather than a holding.
+   *
+   * Interim. lfx-self-serve#4126 exposes the caller's resolved roll-up set from the BFF, which is
+   * the authority — it walks `b2b_org.is_parent` / `parent_uid` the way the access layer already
+   * does, and can see organizations no persona seed carries. Swap this computed for that response
+   * when it lands; nothing outside this service reads the sources directly.
+   */
+  public readonly rollUpOrganizationCount: Signal<number> = computed(() => {
+    const uids = new Set<string>();
+    for (const account of this.availableAccounts()) {
+      if (account.uid) {
+        uids.add(account.uid);
+      }
+    }
+    for (const set of [
+      this.orgRoleGrantsService.writerSet(),
+      this.orgRoleGrantsService.auditorSet(),
+      this.orgRoleGrantsService.inheritedWriterSet(),
+      this.orgRoleGrantsService.inheritedAuditorSet(),
+    ]) {
+      for (const uid of set) {
+        uids.add(uid);
+      }
+    }
+    return uids.size;
+  });
+
+  /** Whether the roll-up is offered at all: two or more organizations. A single-org caller never sees the entry (#4132). */
+  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -169,6 +228,23 @@ export class AccountContextService {
       return;
     }
 
+    // Read before the empty-seeds bail-out: a caller whose sibling organizations come from
+    // *inherited* grants rather than persona seeds has no seeds at all, and bailing out first would
+    // drop their restored roll-up to the placeholder.
+    const storedUid = this.loadUidFromStorage();
+
+    // A cookie-restored roll-up (#4133). Restored optimistically while the grant sets are still
+    // loading: a conglomerate's sibling organizations commonly arrive as *inherited* grants rather
+    // than persona seeds, so `canSelectRollUp()` under-counts until `OrgRoleGrantsService` settles,
+    // and demoting on that transient count would drop the caller into one company and overwrite the
+    // cookie that said otherwise. Once the grants have loaded the count is trustworthy, and a caller
+    // who no longer holds two organizations falls through to the ordinary default selection below.
+    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || !this.orgRoleGrantsService.loaded())) {
+      this.applyRollUpSelection();
+      this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
+      return;
+    }
+
     if (seeds.length === 0) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       return;
@@ -178,12 +254,15 @@ export class AccountContextService {
     // Match a seed by uid when one carries it; otherwise select a stub keyed only by the stored id and
     // let the canonical fetch hydrate display fields. Falls back to the first seed when there is no
     // stored id (or it is a legacy UUID / otherwise invalid).
-    const storedUid = this.loadUidFromStorage();
-    const matchedSeed = storedUid ? (seeds.find((seed) => seed.uid === storedUid) ?? null) : null;
+    // Past the roll-up branch above, a sentinel cookie belongs to a caller who no longer qualifies.
+    // It must not reach the uid-stub path below, which would select `{ uid: 'all' }` as though it
+    // were an organization and leave `isRollUp()` true after the demotion.
+    const concreteStoredUid = isOrgRollUpSegment(storedUid) ? null : storedUid;
+    const matchedSeed = concreteStoredUid ? (seeds.find((seed) => seed.uid === concreteStoredUid) ?? null) : null;
     if (matchedSeed) {
       this.setAccount(matchedSeed);
-    } else if (storedUid) {
-      const stub: Account = { ...PLACEHOLDER_ACCOUNT, uid: storedUid };
+    } else if (concreteStoredUid) {
+      const stub: Account = { ...PLACEHOLDER_ACCOUNT, uid: concreteStoredUid };
       this.setAccount(stub);
       void this.refreshCanonicalRecord(stub);
     } else {
@@ -226,6 +305,23 @@ export class AccountContextService {
     }
     this.selectedAccount.set(next);
     this.persistToStorage(next);
+  }
+
+  /**
+   * Select the All Organizations roll-up (#4125). Pinned as an `'address'` selection for the same
+   * reason a resolver hit is: from here on the address is `/org/all/…` and only the roll-up may
+   * render under it, so neither an org-items reload nor a persona re-seed may default it back to a
+   * single organization.
+   *
+   * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS`, so a stale cookie or a hand-typed
+   * `/org/all` cannot put a single-org caller into a mode built for several.
+   */
+  public selectRollUp(): boolean {
+    if (!this.canSelectRollUp()) {
+      return false;
+    }
+    this.applyRollUpSelection();
+    return true;
   }
 
   /** Spec 050: select the organization the `/org/{segment}/…` address names (resolver hit, or the uid-only stub of FR-020) and pin it against bootstrap re-seeding — see `addressedUid`. */
@@ -285,6 +381,12 @@ export class AccountContextService {
     // Without an identifier there is nothing to resolve.
     const identifier = account.uid;
     if (!identifier) {
+      return;
+    }
+    // The roll-up names a set, not a `b2b_org` row: there is no canonical record to reconcile, and
+    // asking would put the reserved segment through an `:orgUid` endpoint that has no business
+    // accepting it (#4125).
+    if (isOrgRollUpSegment(identifier)) {
       return;
     }
     const cached = this.canonicalFetchInFlight.get(identifier);
@@ -437,6 +539,14 @@ export class AccountContextService {
     };
   }
 
+  /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
+  private applyRollUpSelection(): void {
+    this.selectedAccount.set(ROLLUP_ACCOUNT);
+    this.persistToStorage(ROLLUP_ACCOUNT);
+    this.addressedUid.set(ORG_ROLLUP_SEGMENT);
+    this.pinSource.set('address');
+  }
+
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
   private persistToStorage(account: Account): void {
     if (!this.isValidUid(account.uid)) {
@@ -470,8 +580,20 @@ export class AccountContextService {
     }
   }
 
-  /** Spec 002: the org uid is the canonical 18-char Salesforce account id; legacy UUIDs (and anything else) are treated as absent/tampered so a stale cookie degrades to the default selection. */
+  /**
+   * Spec 002: the org uid is the canonical 18-char Salesforce account id; legacy UUIDs (and anything
+   * else) are treated as absent/tampered so a stale cookie degrades to the default selection.
+   *
+   * The reserved roll-up segment is accepted as well, so `{ uid: 'all' }` survives a refresh instead
+   * of being discarded as a legacy id (#4133). Widened here, in the cookie round-trip, rather than in
+   * `ORG_ACCOUNT_ID_PATTERN` itself: that constant is the request-boundary validator for roughly
+   * fifteen server call sites (`assertOrgUid`, `requireOrgLensAccess`, the analytics access helper,
+   * crowdfunding, the slug resolver's `prefer`), and widening it would make every one of them accept
+   * the sentinel before lfx-self-serve#4127 has taught any of them to authorize it. Restoring the
+   * cookie still goes through `canSelectRollUp`, so a restored sentinel only takes effect for a
+   * caller who actually holds two or more organizations.
+   */
   private isValidUid(uid: unknown): uid is string {
-    return typeof uid === 'string' && ORG_ACCOUNT_ID_PATTERN.test(uid);
+    return typeof uid === 'string' && (ORG_ACCOUNT_ID_PATTERN.test(uid) || isOrgRollUpSegment(uid));
   }
 }

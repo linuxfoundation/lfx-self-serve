@@ -145,6 +145,9 @@ export class OrgLensNavigationService {
       // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
       // leaves an addressed organization alone.
       const selected = this.accountContext.selectedAccount();
+      // `segment` is already `ORG_ROLLUP_SEGMENT` when the roll-up is selected (`orgUrlSegment`
+      // emits it), so `/org/all/people` → `/org/all/people` is caught by the first comparison and
+      // switching in or out of the roll-up swaps the segment like any other organization (#4133).
       if (intent !== 'switch' || segments[1] === segment || segments[1] === selected.uid) {
         return;
       }

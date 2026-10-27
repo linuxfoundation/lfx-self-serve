@@ -505,3 +505,146 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
     expect(service.availableAccounts()).toHaveLength(0);
   });
 });
+
+/**
+ * lfx-self-serve#4125 / #4133 — the All Organizations roll-up selection. It is a view mode keyed on
+ * a reserved sentinel rather than a `b2b_org` row, so it has to survive the cookie round-trip,
+ * address as `/org/all/…`, and never reach an `:orgUid` endpoint.
+ */
+describe('AccountContextService — All Organizations roll-up', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const UID_B = '0014100000MgbBBBBB';
+  const seedA: Account = { accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A };
+  const seedB: Account = { accountId: UID_B, accountName: 'Bravo', membershipTier: '', uid: UID_B };
+  const COOKIE = 'lfx-selected-account';
+
+  let cookies: Map<string, string>;
+  let service: AccountContextService;
+  let httpGet: ReturnType<typeof vi.fn>;
+  let grants: {
+    writerSet: WritableSignal<Set<string>>;
+    auditorSet: WritableSignal<Set<string>>;
+    inheritedWriterSet: WritableSignal<Set<string>>;
+    inheritedAuditorSet: WritableSignal<Set<string>>;
+    isStaff: WritableSignal<boolean>;
+    claManagerOrgSet: WritableSignal<Set<string>>;
+    loaded: WritableSignal<boolean>;
+  };
+
+  beforeEach(() => {
+    cookies = new Map();
+    httpGet = vi.fn().mockReturnValue(of(null));
+    grants = {
+      writerSet: signal(new Set<string>()),
+      auditorSet: signal(new Set<string>()),
+      inheritedWriterSet: signal(new Set<string>()),
+      inheritedAuditorSet: signal(new Set<string>()),
+      isStaff: signal(false),
+      claManagerOrgSet: signal(new Set<string>()),
+      loaded: signal(true),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: SsrCookieService,
+          useValue: {
+            get: (key: string) => cookies.get(key) ?? '',
+            set: (key: string, value: string) => cookies.set(key, value),
+            delete: (key: string) => cookies.delete(key),
+          },
+        },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
+        { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
+        { provide: OrgRoleGrantsService, useValue: grants },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: HttpClient, useValue: { get: httpGet } },
+      ],
+    });
+    service = TestBed.inject(AccountContextService);
+  });
+
+  it('counts persona seeds and grant sets together, de-duplicated by uid', () => {
+    service.initializeUserOrganizations([seedA]);
+    expect(service.rollUpOrganizationCount()).toBe(1);
+    expect(service.canSelectRollUp()).toBe(false);
+
+    // The same organization held by seed *and* grant is still one organization.
+    grants.writerSet.set(new Set([UID_A]));
+    expect(service.rollUpOrganizationCount()).toBe(1);
+
+    // An inherited grant adds a sibling the persona seeds never carried — the conglomerate case.
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    expect(service.rollUpOrganizationCount()).toBe(2);
+    expect(service.canSelectRollUp()).toBe(true);
+  });
+
+  it('refuses the selection for a caller holding one organization', () => {
+    service.initializeUserOrganizations([seedA]);
+    expect(service.selectRollUp()).toBe(false);
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+  });
+
+  it('selects, addresses as /org/all and persists the sentinel', () => {
+    service.initializeUserOrganizations([seedA, seedB]);
+    expect(service.selectRollUp()).toBe(true);
+    expect(service.isRollUp()).toBe(true);
+    expect(service.selectedUrlSegment()).toBe('all');
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // The whole point of widening the cookie round-trip: a refresh must not drop the caller back
+  // into a single company.
+  it('restores the roll-up from the cookie on the next bootstrap', () => {
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA, seedB]);
+    expect(service.isRollUp()).toBe(true);
+    expect(service.selectedAccount().accountName).toBe('All Organizations');
+  });
+
+  /**
+   * A conglomerate's siblings arrive as inherited grants, which load after the persona seeds. A
+   * restore that trusted the count at that instant would demote the caller to one company and
+   * overwrite the cookie that said otherwise.
+   */
+  it('restores optimistically while the grant sets are still loading', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+    expect(service.isRollUp()).toBe(true);
+  });
+
+  it('demotes a restored roll-up once the grants confirm a single organization', () => {
+    grants.loaded.set(true);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+  });
+
+  // A caller whose organizations are all inherited grants has no persona seeds at all; the restore
+  // must happen before the empty-seeds bail-out or it is lost.
+  it('restores for a caller with no persona seeds', () => {
+    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    expect(service.isRollUp()).toBe(true);
+  });
+
+  // `/api/orgs/uid/all` is not a thing: the sentinel names a set, and that endpoint takes an SFID.
+  it('never asks for a canonical record for the sentinel', async () => {
+    service.initializeUserOrganizations([seedA, seedB]);
+    service.selectRollUp();
+    httpGet.mockClear();
+    await service.refreshCanonicalRecord(service.selectedAccount());
+    expect(httpGet).not.toHaveBeenCalled();
+  });
+
+  it('leaves roll-up mode when a concrete organization is selected', () => {
+    service.initializeUserOrganizations([seedA, seedB]);
+    service.selectRollUp();
+    service.setAccount(seedB);
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedUrlSegment()).toBe(UID_B);
+  });
+});

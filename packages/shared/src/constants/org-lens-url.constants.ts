@@ -42,6 +42,21 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
   'not-found': true,
 };
 
+/**
+ * Reserved `/org/{segment}` value selecting the **All Organizations roll-up** — the combined view
+ * over every organization the caller administers (lfx-self-serve#4125). A view mode, not an
+ * organization: it names no `b2b_org` row, carries no grant of its own, and is expanded to the
+ * caller's resolved organization set server-side on every request.
+ *
+ * Reserved rather than page-listed. It is deliberately **not** added to `ORG_LENS_PAGE_SEGMENTS`:
+ * that map answers "is this segment a page", and callers act on the answer — `orgLensDestinationKey`
+ * would stop stripping the segment and the sidebar would lose row identity across a switch. The
+ * reservation is enforced in `isOrgSlugSegment` instead, so an organization whose indexed slug is
+ * literally `all` is addressed by its SFID, the same fallback a reserved page name already gets
+ * (DR-007 §5).
+ */
+export const ORG_ROLLUP_SEGMENT = 'all';
+
 /** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
 export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;
 

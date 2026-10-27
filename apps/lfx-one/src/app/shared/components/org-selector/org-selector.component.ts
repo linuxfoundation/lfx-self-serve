@@ -106,6 +106,20 @@ export class OrgSelectorComponent {
   protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
 
+  /**
+   * The All Organizations roll-up entry (#4132). Pinned above the organization rows, shown only to a
+   * caller holding two or more organizations, and never filtered out by a search — a query matching
+   * no organization still leaves the roll-up pickable.
+   *
+   * Not a grant: it carries no persona badge and no `(Original)` / `(Inherited)` suffix, and it
+   * leaves the labelling on the real rows untouched.
+   */
+  protected readonly showRollUpRow: Signal<boolean> = this.accountContextService.canSelectRollUp;
+  protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
+  protected readonly rollUpOrganizationCount: Signal<number> = this.accountContextService.rollUpOrganizationCount;
+  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view · ${this.rollUpOrganizationCount()} organizations`);
+  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => `${this.rollUpOrganizationCount()} organizations`);
+
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
   protected readonly hasMore: Signal<boolean> = this.orgNavigationService.hasMore;
@@ -168,6 +182,10 @@ export class OrgSelectorComponent {
    */
   protected readonly isSingleOrg: Signal<boolean> = computed(() => {
     const items = this.items();
+    // The roll-up row is something to switch to. Without this a caller whose siblings arrive as
+    // inherited grants — one org-items row, two or more organizations — would get the static card
+    // and no way to open the panel the roll-up lives in (#4132).
+    if (this.showRollUpRow()) return false;
     if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
     // The one row must be the selection: a deep-linked selection outside the list still needs the
     // panel to switch back, and the not-found dead end recovers through picking the selected row.
@@ -320,6 +338,23 @@ export class OrgSelectorComponent {
 
   /** Closes the selector panel without moving focus — for a host that is going away (e.g. a closing drawer), since the panel is appended to `body`. */
   public closePanel(): void {
+    this.popoverRef()?.hide();
+  }
+
+  /**
+   * Pick the roll-up. Mirrors `selectItem`'s contract: re-picking the current selection changes
+   * nothing, and a real pick re-addresses the current Org Lens page to `/org/all/…` rather than
+   * bouncing to overview. No canonical fetch — the roll-up names a set, not a `b2b_org` row.
+   */
+  protected selectRollUp(): void {
+    if (this.isRollUpSelected()) {
+      this.popoverRef()?.hide();
+      return;
+    }
+    if (!this.accountContextService.selectRollUp()) {
+      return;
+    }
+    this.orgLensNavigation.navigateToSelectedOrg('switch');
     this.popoverRef()?.hide();
   }
 

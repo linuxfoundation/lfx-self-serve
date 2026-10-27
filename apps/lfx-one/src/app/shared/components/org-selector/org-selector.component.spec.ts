@@ -58,7 +58,21 @@ describe('OrgSelectorComponent.selectItem', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount, setAccount, refreshCanonicalRecord, getStoredUid: () => null } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount,
+            setAccount,
+            refreshCanonicalRecord,
+            getStoredUid: () => null,
+            // Roll-up entry off by default: these suites cover the single-organization labelling
+            // and the static-card rules, which #4132 must leave exactly as they were.
+            canSelectRollUp: signal(false),
+            isRollUp: signal(false),
+            rollUpOrganizationCount: signal(0),
+            selectRollUp: vi.fn(() => false),
+          },
+        },
         {
           provide: OrgNavigationService,
           useValue: {
@@ -209,7 +223,18 @@ describe('OrgSelectorComponent navbar card', () => {
         provideNoopAnimations(),
         {
           provide: AccountContextService,
-          useValue: { selectedAccount: signal(acme), setAccount: vi.fn(), refreshCanonicalRecord: vi.fn(), getStoredUid: () => null },
+          useValue: {
+            selectedAccount: signal(acme),
+            setAccount: vi.fn(),
+            refreshCanonicalRecord: vi.fn(),
+            getStoredUid: () => null,
+            // The roll-up entry is off here: these suites pin the single-organization labelling and
+            // the static-card rules, which #4132 must leave exactly as they were.
+            canSelectRollUp: signal(false),
+            isRollUp: signal(false),
+            rollUpOrganizationCount: signal(0),
+            selectRollUp: vi.fn(() => false),
+          },
         },
         {
           provide: OrgNavigationService,
@@ -269,5 +294,133 @@ describe('OrgSelectorComponent navbar card', () => {
   it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
     expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
     expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
+  });
+});
+
+/**
+ * lfx-self-serve#4132 — the pinned All Organizations roll-up entry. The entry is a *view mode*, not
+ * a grant: it must appear only for a caller holding several organizations, carry no persona badge,
+ * and leave the existing rows and their `(Original)` / `(Inherited)` labelling alone.
+ */
+describe('OrgSelectorComponent All Organizations roll-up', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const UID_B = '0014100000MgbBBBBB';
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
+  const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
+
+  interface RollUpView {
+    showRollUpRow(): boolean;
+    isRollUpSelected(): boolean;
+    isSingleOrg(): boolean;
+    rollUpSubtitle(): string;
+    rollUpTriggerSubtitle(): string;
+    selectRollUp(): void;
+  }
+
+  const selectRollUpSpy = vi.fn();
+  const navigateSpy = vi.fn();
+
+  const create = async (opts: { canSelectRollUp: boolean; isRollUp?: boolean; count?: number; items?: OrgItem[]; accepted?: boolean }): Promise<RollUpView> => {
+    selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
+    navigateSpy.mockReset();
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgSelectorComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount: signal(acme),
+            setAccount: vi.fn(),
+            refreshCanonicalRecord: vi.fn(),
+            getStoredUid: () => null,
+            canSelectRollUp: signal(opts.canSelectRollUp),
+            isRollUp: signal(opts.isRollUp ?? false),
+            rollUpOrganizationCount: signal(opts.count ?? 0),
+            selectRollUp: selectRollUpSpy,
+          },
+        },
+        {
+          provide: OrgNavigationService,
+          useValue: {
+            items: signal(opts.items ?? [rowA, rowB]),
+            loading: signal(false),
+            hasMore: signal(false),
+            upstreamFailed: signal(false),
+            searchTerm: () => signal(''),
+            setSearchTerm: vi.fn(),
+            resetAndReload: vi.fn(),
+            loadNextPage: vi.fn(),
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(false),
+            writerSet: signal(new Set<string>()),
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            parentNameByUid: signal(new Map<string, string>()),
+          },
+        },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, isOnNotFound: vi.fn(() => false) } },
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
+        { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
+      ],
+    })
+      .overrideComponent(OrgSelectorComponent, { set: { template: '' } })
+      .compileComponents();
+    const fixture = TestBed.createComponent(OrgSelectorComponent);
+    fixture.componentRef.setInput('enabled', false);
+    await fixture.whenStable();
+    return fixture.componentInstance as unknown as RollUpView;
+  };
+
+  it('offers the entry to a caller with several organizations and hides it from a single-org caller', async () => {
+    expect((await create({ canSelectRollUp: true, count: 4 })).showRollUpRow()).toBe(true);
+    expect((await create({ canSelectRollUp: false, items: [rowA] })).showRollUpRow()).toBe(false);
+  });
+
+  it('describes the set rather than a persona', async () => {
+    const view = await create({ canSelectRollUp: true, count: 4 });
+    expect(view.rollUpSubtitle()).toBe('Combined view · 4 organizations');
+    expect(view.rollUpTriggerSubtitle()).toBe('4 organizations');
+  });
+
+  /**
+   * A conglomerate's siblings commonly arrive as inherited grants rather than org-items rows, so the
+   * list can hold a single row while the caller holds several organizations. The static card would
+   * then leave no way to open the panel the roll-up lives in.
+   */
+  it('keeps the trigger openable when the roll-up is offered but the list holds one row', async () => {
+    const view = await create({ canSelectRollUp: true, count: 3, items: [rowA] });
+    expect(view.isSingleOrg()).toBe(false);
+  });
+
+  it('selects the roll-up and re-addresses the current page', async () => {
+    const view = await create({ canSelectRollUp: true, count: 4 });
+    view.selectRollUp();
+    expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).toHaveBeenCalledWith('switch');
+  });
+
+  // Mirrors `selectItem`'s FR-014 contract: re-picking what is already selected navigates nowhere.
+  it('does not re-navigate when the roll-up is already selected', async () => {
+    const view = await create({ canSelectRollUp: true, isRollUp: true, count: 4 });
+    view.selectRollUp();
+    expect(selectRollUpSpy).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  // The service re-derives eligibility; a refusal must leave the address alone rather than
+  // navigating to a mode the caller does not qualify for.
+  it('navigates nowhere when the service refuses the selection', async () => {
+    const view = await create({ canSelectRollUp: true, count: 2, accepted: false });
+    view.selectRollUp();
+    expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 });

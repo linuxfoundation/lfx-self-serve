@@ -7,7 +7,7 @@ import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
 import { ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
-import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
+import { isOrgAccountIdSegment, isOrgRollUpSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -82,6 +82,28 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // rejects SFID-shaped values): an SFID-shaped "slug" equal to the addressed segment would otherwise
   // pass an SFID address for *another* organization off as the selected one without asking the
   // resolver. The resolver classifies SFID syntax first, so such a segment must go to it.
+  // `/org/all/…` — the All Organizations roll-up (#4125/#4133). Adopted without a resolver round
+  // trip: the segment names a set the BFF expands per caller, not an indexed organization, so there
+  // is nothing to look up and nothing to canonicalize the address to. `selectRollUp` re-derives
+  // eligibility rather than trusting the address, so a hand-typed or bookmarked `/org/all` cannot
+  // put a caller into a mode they do not qualify for; one who no longer holds two organizations is
+  // sent to the organization they do have, not to the not-found dead end (FR-022 is about addresses
+  // that name something unreachable, and this one names something that merely shrank).
+  if (isOrgRollUpSegment(segment)) {
+    if (accountContext.selectRollUp()) {
+      return true;
+    }
+    if (!isBrowser) {
+      accountContext.clearAccount();
+      return true;
+    }
+    // Same page, the one organization they still hold. `canonicalizeAddress` swaps the second
+    // primary segment and keeps child segments, query and fragment — the address the viewer asked
+    // for, re-pointed, rather than a bounce to overview.
+    const fallback = accountContext.selectedAccount();
+    return orgUrlSegment(fallback) ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
+  }
+
   const selected = accountContext.selectedAccount();
   const heldSlug = typeof selected.slug === 'string' ? selected.slug.trim().toLowerCase() : null;
   const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;

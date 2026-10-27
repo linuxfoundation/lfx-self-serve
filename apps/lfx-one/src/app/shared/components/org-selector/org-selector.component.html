@@ -18,8 +18,10 @@
     [attr.aria-describedby]="navbarRoleTooltip() ? roleDescriptionId : null"
     data-testid="org-selector">
     <span class="lfxn__context-body">
-      <span class="lfxn__tile lfxn__tile--logo" data-testid="org-selector-trigger-logo">
-        @if (displayLogo()) {
+      <span class="lfxn__tile lfxn__tile--logo" [class.lfxn__tile--rollup]="isRollUpSelected()" data-testid="org-selector-trigger-logo">
+        @if (isRollUpSelected()) {
+          <i class="fa-light fa-buildings" aria-hidden="true" data-testid="org-selector-trigger-rollup-icon"></i>
+        } @else if (displayLogo()) {
           <img [src]="displayLogo()" alt="" data-testid="org-selector-trigger-logo-image" />
         } @else {
           <i class="fa-light fa-building" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
@@ -29,7 +31,10 @@
         <span class="lfxn__context-name" [lfxNavTooltip]="displayName()" [lfxNavTooltipOnlyIfTruncated]="true" data-testid="org-selector-trigger-name">{{
           displayName()
         }}</span>
-        @if (selectedRoleLabel()) {
+        @if (isRollUpSelected()) {
+          <!-- A view mode has no persona, so the role line carries the size of the set instead (#4132). -->
+          <span class="lfxn__org-role" data-testid="org-selector-trigger-rollup-count">{{ rollUpTriggerSubtitle() }}</span>
+        } @else if (selectedRoleLabel()) {
           <span
             class="lfxn__org-role"
             data-testid="org-selector-trigger-role-badge"
@@ -66,7 +71,9 @@
     data-testid="org-selector">
     <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
       <div class="flex items-center justify-center size-full p-1.5">
-        @if (displayLogo()) {
+        @if (isRollUpSelected()) {
+          <i class="fa-light fa-buildings text-blue-700 text-lg" aria-hidden="true" data-testid="org-selector-trigger-rollup-icon"></i>
+        } @else if (displayLogo()) {
           <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
         } @else {
           <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
@@ -77,7 +84,11 @@
     <div class="flex flex-col gap-1.5 grow items-start relative min-w-0 overflow-hidden">
       <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
       <div class="flex items-center gap-1.5 w-full min-w-0 text-left">
-        @if (selectedRoleLabel()) {
+        @if (isRollUpSelected()) {
+          <span class="text-xs font-normal text-gray-500 leading-none truncate" data-testid="org-selector-trigger-rollup-count">{{
+            rollUpTriggerSubtitle()
+          }}</span>
+        } @else if (selectedRoleLabel()) {
           <i [ngClass]="selectedRoleIcon()" class="fa-fw text-[10px] text-gray-400 shrink-0" aria-hidden="true"></i>
           <span
             class="text-xs font-normal text-gray-400 leading-none truncate"
@@ -154,6 +165,50 @@
       [attr.data-item-count]="displayedItems().length"
       [attr.data-has-more]="hasMore()"
       [attr.data-loading]="loading()">
+      <!-- All Organizations roll-up (#4132). Rendered before the loop and outside it, so it is always
+           the first row whatever the list holds or a search matches, and its presence never shifts
+           the loop's `$index` or the `autoLoadTriggerIndex` arithmetic. A real `[role=option]`, so
+           the document-level keyboard handler picks it up from `listboxOptions()` like any other
+           row and the APG roving-focus contract covers it for free. -->
+      @if (showRollUpRow()) {
+        <div class="mb-1">
+          <button
+            type="button"
+            role="option"
+            [attr.aria-selected]="isRollUpSelected()"
+            tabindex="-1"
+            class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            [class.bg-blue-50]="isRollUpSelected()"
+            [class.hover:bg-gray-100]="!isRollUpSelected()"
+            (click)="selectRollUp()"
+            data-testid="org-item-rollup"
+            [attr.data-selected]="isRollUpSelected()"
+            [attr.data-organization-count]="rollUpOrganizationCount()">
+            <div class="bg-blue-100 overflow-clip rounded-lg shrink-0 size-9 border border-blue-200" data-testid="org-item-rollup-logo">
+              <div class="flex items-center justify-center size-full p-1.5">
+                <i class="fa-light fa-buildings text-blue-700" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-sm text-gray-900 mb-0 truncate" data-testid="org-item-rollup-name">All Organizations</p>
+              <p class="text-xs text-gray-500 leading-none mt-1 truncate" data-testid="org-item-rollup-subtitle">{{ rollUpSubtitle() }}</p>
+            </div>
+
+            <i
+              class="fa-light fa-check text-blue-500 shrink-0 transition-opacity"
+              [class.opacity-100]="isRollUpSelected()"
+              [class.opacity-0]="!isRollUpSelected()"
+              [attr.aria-label]="isRollUpSelected() ? 'Selected' : null"
+              [attr.aria-hidden]="!isRollUpSelected()"
+              data-testid="org-item-rollup-check"></i>
+          </button>
+        </div>
+
+        <!-- Separates the view mode from the organizations it combines. -->
+        <div role="presentation" class="h-px bg-gray-200 mx-2 mb-2 mt-1.5" data-testid="org-selector-rollup-divider"></div>
+      }
+
       @for (row of displayedRows(); track row.display.item.uid; let i = $index) {
         @let displayItem = row.display;
 

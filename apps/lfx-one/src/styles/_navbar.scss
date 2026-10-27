@@ -526,6 +526,13 @@
     }
   }
 
+  // Roll-up tile: the one context tile that carries an icon rather than a logo, so it keeps the
+  // white surface of `--logo` but tints the glyph instead of padding an image (#4132).
+  .lfxn__tile--rollup {
+    background: theme('colors.blue.100');
+    color: theme('colors.blue.700');
+  }
+
   .lfxn__context--org .lfxn__tile--logo > img {
     padding: 6px;
   }
