@@ -93,8 +93,8 @@ export class OrgLensEventsService {
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
-    // The CTE's `?` precedes the WHERE clause's in the statement text, and Snowflake binds positionally.
-    const binds: string[] = [accountId, accountId];
+    // Positional binds, in statement order: coverage CTE, registrations CTE, then the outer WHERE.
+    const binds: string[] = [accountId, accountId, accountId];
     if (searchQuery) binds.push(`%${searchQuery}%`);
 
     let rows: OrgEventRow[];
@@ -172,23 +172,26 @@ export class OrgLensEventsService {
     const searchFilter = searchQuery ? 'AND (UPPER(COALESCE(er.FULL_NAME, er.EMAIL)) LIKE UPPER(?) OR UPPER(er.EMAIL) LIKE UPPER(?))' : '';
 
     const sql = `
+      WITH ${COMPANY_EMAIL_COVERAGE_CTE}
       SELECT
         er.EMAIL                                       AS CONTACT_ID,
         MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
+      ${COMPANY_EMAIL_JOINS}
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
         ON UPPER(p.EMAIL) = UPPER(er.EMAIL) AND p.ACCOUNT_ID = ?
       WHERE er.EVENT_ID = ?
         AND er.ACCOUNT_ID = ?
-        AND ${COMPANY_EMAIL_EXISTS}
+        AND ${COMPANY_EMAIL_QUALIFIES}
         ${searchFilter}
       GROUP BY er.EMAIL
       ORDER BY NAME ASC NULLS LAST
     `;
 
-    const binds: string[] = [accountId, eventId, accountId];
+    // Positional binds, in statement order: coverage CTE, then the ORG_PEOPLE_ALL join, then the WHERE.
+    const binds: string[] = [accountId, accountId, eventId, accountId];
     if (searchQuery) {
       binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
     }
@@ -328,11 +331,38 @@ export class OrgLensEventsService {
 }
 
 /**
+ * Account-wide coverage probe for the address table, as an UNCORRELATED CTE.
+ *
+ * It exists in this shape for a dialect reason, not a stylistic one: Snowflake does not allow a
+ * correlated `EXISTS` as an argument to `OR`, so the obvious spelling of the fallback —
+ * `EXISTS (…matches…) OR NOT EXISTS (…any row for this account…)` — fails to compile. Both query
+ * paths catch and degrade to empty, so the failure would have surfaced as a silently blank page on
+ * every cache miss rather than as an error. Hoisting coverage into a one-row CTE keeps both `OR`
+ * operands plain column predicates. Takes one bind (the account id).
+ */
+const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
+        SELECT COUNT(*) AS COVERAGE_ROWS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
+        WHERE ACCOUNT_ID = ?
+      )`;
+
+/**
+ * Joins that decide whether a registration's address is one this org holds. The `LEFT JOIN` may fan a
+ * registration out when an address is recorded against more than one person key, which is harmless
+ * here: both readers are already distinct on the address (`COUNT(DISTINCT er.EMAIL)` and
+ * `GROUP BY er.EMAIL`). `company_email_coverage` is one row, so the `CROSS JOIN` does not multiply.
+ * Needs no bind of its own.
+ */
+const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
+        ON ce.ACCOUNT_ID = er.ACCOUNT_ID
+        AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))`;
+
+/**
  * A registration counts for this org only when its address is one the warehouse already holds for the
  * org — `ORG_PEOPLE_COMPANY_EMAILS` is the employer ∩ employee intersection the person-detail drawer
  * reads. Upstream `ACCOUNT_ID` attribution does not require a company address (a personal address on a
- * profile that links to the org still lands there), which is exactly what this excludes. Correlates on
- * `er.ACCOUNT_ID` so the fragment needs no bind of its own.
+ * profile that links to the org still lands there), which is exactly what the first arm excludes.
  *
  * The second arm is a no-regression guard, not a loosening of the rule. An account with NO rows in the
  * address table has no coverage to filter by, and filtering on it anyway would turn every count on the
@@ -341,36 +371,26 @@ export class OrgLensEventsService {
  * rather than as "none on record". So zero coverage falls back to the unfiltered set, which is exactly
  * what shipped before this rule existed. Partial coverage is not detectable here and is not guarded.
  *
- * Both the per-event count and the drawer embed this one fragment, so the two can never disagree about
+ * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
  */
-const COMPANY_EMAIL_EXISTS = `(
-          EXISTS (
-            SELECT 1
-            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
-            WHERE ce.ACCOUNT_ID = er.ACCOUNT_ID
-              AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))
-          )
-          OR NOT EXISTS (
-            SELECT 1
-            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce_any
-            WHERE ce_any.ACCOUNT_ID = er.ACCOUNT_ID
-          )
-        )`;
+const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
 
 /**
- * Per-event registrant count under the same rule, so a row and the drawer it opens never disagree.
+ * Per-event registrant count under that rule, so a row and the drawer it opens never disagree.
  * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used: it is precomputed with no company-email scoping.
- * `COUNT(DISTINCT er.EMAIL)` matches the drawer's `GROUP BY er.EMAIL` grain exactly. Takes one bind
- * (the account id). Replacing this with a scoped column on the platinum model is #4409.
+ * `COUNT(DISTINCT er.EMAIL)` matches the drawer's `GROUP BY er.EMAIL` grain exactly. Takes two binds
+ * (the account id, twice). Replacing this with a scoped column on the platinum model is #4409.
  */
-const COMPANY_EMAIL_REGISTRATION_COUNTS_CTE = `WITH company_email_registrations AS (
+const COMPANY_EMAIL_REGISTRATION_COUNTS_CTE = `WITH ${COMPANY_EMAIL_COVERAGE_CTE},
+      company_email_registrations AS (
         SELECT
           er.EVENT_ID,
           COUNT(DISTINCT er.EMAIL) AS COMPANY_EMAIL_REGISTRATION_COUNT
         FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
+        ${COMPANY_EMAIL_JOINS}
         WHERE er.ACCOUNT_ID = ?
-          AND ${COMPANY_EMAIL_EXISTS}
+          AND ${COMPANY_EMAIL_QUALIFIES}
         GROUP BY er.EVENT_ID
       )`;
 

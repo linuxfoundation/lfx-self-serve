@@ -227,6 +227,44 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data).toEqual([]);
   });
 
+  /**
+   * SQLite accepts a correlated `EXISTS` under `OR`; Snowflake does not —
+   * https://docs.snowflake.com/en/sql-reference/operators-subquery: "Correlated EXISTS subqueries
+   * cannot appear as an argument to an OR operator." Every behavioural test above therefore passed
+   * against a build that could not compile on Snowflake at all, where both paths catch and degrade
+   * to empty results: a silently blank page on each cache miss, not an error. This asserts the
+   * dialect rule directly, since no fixture can.
+   */
+  it('builds no query that puts a subquery on either side of an OR', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    const queries = execute.mock.calls.map(([query]) => query as string);
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      // Any OR whose left or right operand opens a subquery, with EXISTS / NOT EXISTS / IN / ANY / ALL
+      // between them — all of which carry the same Snowflake restriction.
+      expect(query).not.toMatch(/\bOR\s+(NOT\s+)?(EXISTS|IN|ANY|ALL)\s*\(/i);
+      expect(query).not.toMatch(/\)\s*(EXISTS|IN|ANY|ALL)?\s*OR\s*\(?\s*SELECT\b/i);
+    }
+  });
+
+  it('passes one bind per placeholder in every query it builds', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+
+    await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, searchQuery: 'kube' });
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada');
+
+    for (const [query, binds] of execute.mock.calls as [string, string[]][]) {
+      expect(binds).toHaveLength((query.match(/\?/g) ?? []).length);
+    }
+  });
+
   it('keeps an event in status=registered when at least one registrant used a company address', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
