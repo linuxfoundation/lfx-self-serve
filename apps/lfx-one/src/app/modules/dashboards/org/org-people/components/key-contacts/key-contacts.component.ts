@@ -14,7 +14,6 @@ import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
-import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
 import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
@@ -71,7 +70,6 @@ export class KeyContactsComponent {
   private readonly dataService = inject(KeyContactsService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
-  private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -281,12 +279,6 @@ export class KeyContactsComponent {
     );
 
     const results = await Promise.allSettled(ops);
-    // The directory merges key contacts as one of its sources, so a landed reassign changes the All
-    // Employees roster and its Key Contact cells; drop the client roster too or the tab replays the
-    // former holder's role. Mirrors the committee/board reassign paths.
-    if (results.some((r) => r.status === 'fulfilled')) {
-      this.directory.invalidate(orgUid);
-    }
     this.retry();
 
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
@@ -367,14 +359,9 @@ export class KeyContactsComponent {
     return firstValueFrom(this.membershipsService.replaceKeyContactBySlug(orgUid, foundationSlug, contactUid, this.toWriteBody(event)))
       .then(() => {
         this.messageService.add({ key: 'org-people-key-contact-toast-success', severity: 'success', summary: 'Key contact updated', life: 3000 });
-        this.directory.invalidate(orgUid);
         this.retry();
       })
       .catch((err) => {
-        // Replace is a create-then-delete upstream, so a failure can still have landed the create (the
-        // 409 "added but not removed" case). Drop the roster on the error path too — unlike add and
-        // remove, which are single operations and change nothing when they fail.
-        this.directory.invalidate(orgUid);
         throw new Error(this.cleanErrorMessage(err));
       });
   }
@@ -383,7 +370,6 @@ export class KeyContactsComponent {
     return firstValueFrom(this.membershipsService.addKeyContactBySlug(orgUid, foundationSlug, this.toWriteBody(event)))
       .then(() => {
         this.messageService.add({ key: 'org-people-key-contact-toast-success', severity: 'success', summary: 'Key contact added', life: 3000 });
-        this.directory.invalidate(orgUid);
         this.retry();
       })
       .catch((err) => {
@@ -396,7 +382,6 @@ export class KeyContactsComponent {
     return firstValueFrom(this.membershipsService.removeKeyContactBySlug(orgUid, foundationSlug, event.personId))
       .then(() => {
         this.showRemoveToast(event, removedPerson);
-        this.directory.invalidate(orgUid);
         this.retry();
       })
       .catch((err) => {

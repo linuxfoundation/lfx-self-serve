@@ -16,13 +16,16 @@ import type {
   OrgMembershipProjectsResponse,
   ReplaceKeyContactRequest,
 } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
+
+import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class OrgLensMembershipsService {
   private readonly http = inject(HttpClient);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
 
   public getActiveMemberships(orgUid: string, filters?: { search?: string; tier?: string; renewal?: string }): Observable<OrgActiveMembershipsResponse> {
     let params = new HttpParams();
@@ -97,10 +100,9 @@ export class OrgLensMembershipsService {
   }
 
   public addKeyContactBySlug(orgUid: string, foundationSlug: string, body: AddKeyContactRequest): Observable<KeyContactMutationResponse> {
-    return this.http.post<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}`,
-      body
-    );
+    return this.http
+      .post<KeyContactMutationResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}`, body)
+      .pipe(this.dropCachedRoster(orgUid));
   }
 
   public replaceKeyContactBySlug(
@@ -109,15 +111,35 @@ export class OrgLensMembershipsService {
     contactUid: string,
     body: ReplaceKeyContactRequest
   ): Observable<KeyContactMutationResponse> {
-    return this.http.put<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`,
-      body
-    );
+    return this.http
+      .put<KeyContactMutationResponse>(
+        `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`,
+        body
+      )
+      .pipe(this.dropCachedRoster(orgUid));
   }
 
   public removeKeyContactBySlug(orgUid: string, foundationSlug: string, contactUid: string): Observable<KeyContactMutationResponse> {
-    return this.http.delete<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`
-    );
+    return this.http
+      .delete<KeyContactMutationResponse>(
+        `/api/orgs/${encodeURIComponent(orgUid)}/lens/key-contacts/membership/${encodeURIComponent(foundationSlug)}/${encodeURIComponent(contactUid)}`
+      )
+      .pipe(this.dropCachedRoster(orgUid));
+  }
+
+  /**
+   * Drop the client's cached All Employees roster once a key-contact write settles.
+   *
+   * It lives here, on the three mutation methods, rather than at each call site: People → Key Contacts
+   * and the membership-detail page both write through this service, and an invalidation remembered per
+   * caller is one a later caller forgets. The server evicts its own entry in OrgLensKeyContactsService
+   * for the same reason.
+   *
+   * On error as well as success, because the client cannot tell a clean failure from a replace whose
+   * create landed before its delete failed. A needless drop costs one refetch; a missed one shows a
+   * role that has moved.
+   */
+  private dropCachedRoster<T>(orgUid: string): (source: Observable<T>) => Observable<T> {
+    return (source) => source.pipe(tap({ next: () => this.directory.invalidate(orgUid), error: () => this.directory.invalidate(orgUid) }));
   }
 }

@@ -61,11 +61,12 @@ export class OrgLensKeyContactsService {
   public async addKeyContact(req: Request, b2bOrgUid: string, foundationSlug: string, body: AddKeyContactRequest): Promise<OrgMembershipKeyContact> {
     const ctx = await this.resolveOr404(req, b2bOrgUid, foundationSlug);
     const created = await this.createContact(req, ctx, body);
+    // Invalidate the moment the write lands, not after the reconcile: upsertRow re-reads the indexer
+    // and can throw, and a roster left cached behind a failed reconcile is stale all the same.
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     // Reconcile from the authoritative write response (real uid, no indexer lag), upserted over the
     // current role row. A bare indexer re-read here would race read-after-write and echo stale data.
-    const row = await this.upsertRow(req, ctx, body.contactType, created, []);
-    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
-    return row;
+    return this.upsertRow(req, ctx, body.contactType, created, []);
   }
 
   // Replaces one contact in a role, using PUT when possible and create+delete otherwise.
@@ -95,12 +96,17 @@ export class OrgLensKeyContactsService {
         etag ? { 'If-Match': etag } : undefined
       );
       authoritative = this.toPerson(updated);
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     } else {
       // Brand-new contact (FR-022b): create-new (carries names) then remove-old. These can't be a single
       // atomic call (the member-service update body has no name fields), so a create-succeeded /
       // delete-failed window exists where the role transiently holds BOTH contacts. On a delete failure
       // surface a reload-and-review message so the user doesn't blind-retry and create a second duplicate.
       authoritative = await this.createContact(req, ctx, body);
+      // The create has landed, so the role row has already changed. Invalidating here rather than at
+      // the end covers every exit below it, including the 409 thrown when the delete fails — which is
+      // the case that most needs it, since that message sends the user off to review the contacts.
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
       const etag = await this.fetchEtag(req, ctx.membershipUid, contactUid);
       try {
         await this.microserviceProxy.proxyRequest(
@@ -119,10 +125,6 @@ export class OrgLensKeyContactsService {
           new_contact_uid: authoritative.personId,
           err: error instanceof Error ? error.message : String(error),
         });
-        // The create landed, so the role row changed even though this call is about to fail. The 409
-        // below tells the user to reload and review, which is precisely the moment a stale roster
-        // would mislead them — the new holder's pill would be missing from a contact that exists.
-        await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
         throw new MicroserviceError(
           'The new contact was added, but the previous one could not be removed — reload to review the current contacts before retrying.',
           409,
@@ -133,9 +135,7 @@ export class OrgLensKeyContactsService {
     }
 
     // Single-slot replace: the role ends with exactly the new contact. Drop the old uid + dedup the new.
-    const row = await this.upsertRow(req, ctx, body.contactType, authoritative, [contactUid]);
-    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
-    return row;
+    return this.upsertRow(req, ctx, body.contactType, authoritative, [contactUid]);
   }
 
   // Removes one contact and returns the affected role row.

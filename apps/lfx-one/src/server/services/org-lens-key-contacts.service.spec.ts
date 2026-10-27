@@ -238,6 +238,24 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
     expect(evictOrder).toBeLessThan(deleteOrder);
   });
 
+  // upsertRow re-reads the indexer after the write has landed, so it can throw on a call that already
+  // changed the role row. The roster must not survive that.
+  it('still invalidates when the post-write reconcile throws', async () => {
+    // The resolver is stubbed, so the reconcile's row read is the only query this call makes.
+    fetchAllQueryResourcesMock.mockRejectedValue(new Error('indexer unavailable'));
+
+    await expect(
+      new OrgLensKeyContactsService().addKeyContact(req, ORG, 'cncf', {
+        contactType: 'billing',
+        email: 'new@lfx-partner.example',
+        firstName: 'New',
+        lastName: 'Person',
+      } as never)
+    ).rejects.toThrow();
+
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+  });
+
   it('leaves the cache alone when the write itself fails', async () => {
     // removeKeyContact rejects before it reaches the invalidation when the contact is not on the row.
     await expect(new OrgLensKeyContactsService().removeKeyContact(req, ORG, 'cncf', 'kc-absent')).rejects.toThrow();
