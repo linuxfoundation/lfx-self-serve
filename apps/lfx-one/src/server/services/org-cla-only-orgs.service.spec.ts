@@ -8,9 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicroserviceError } from '../errors';
 
-const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({
+const { gatewayFetch, isImpersonating, checkSingleAccessStrict } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   isImpersonating: vi.fn(() => false),
+  checkSingleAccessStrict: vi.fn(),
 }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
@@ -18,6 +19,11 @@ vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => '
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'contributor', isImpersonating: () => isImpersonating() }));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('./valkey.service', () => ({ buildUserCacheKey: () => null, valkeyService: { withCache: vi.fn() } }));
+vi.mock('./access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrict;
+  },
+}));
 
 const { OrgClaOnlyOrgsService, claOnlyEntryApplies } = await import('./org-cla-only-orgs.service');
 const { ORG_CLA_ONLY_ORGS_MAX } = await import('@lfx-one/shared/constants');
@@ -43,6 +49,7 @@ function service(scopes: { getCompanySfids: ReturnType<typeof vi.fn> }) {
 beforeEach(() => {
   vi.resetAllMocks();
   isImpersonating.mockReturnValue(false);
+  checkSingleAccessStrict.mockResolvedValue(false);
 });
 
 describe('claOnlyEntryApplies', () => {
@@ -212,5 +219,31 @@ describe('OrgClaOnlyOrgsService.resolveOrg', () => {
     gatewayFetch.mockResolvedValue(company(COMPANY_B));
 
     expect(await service(scopesOf(COMPANY_A)).resolveOrg(req(), COMPANY_A)).toBeNull();
+  });
+});
+
+describe('OrgClaOnlyOrgsService.resolveOrg through cla_admin', () => {
+  it('resolves an organization the caller holds cla_admin on without a cla-manager scope', async () => {
+    checkSingleAccessStrict.mockResolvedValue(true);
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+
+    expect(await service(scopesOf()).resolveOrg(req(), COMPANY_A)).toEqual({ uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: COMPANY_A, access: 'cla_admin' });
+  });
+
+  it('resolves through cla_admin while user-service is failing', async () => {
+    checkSingleAccessStrict.mockResolvedValue(true);
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+    const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
+
+    expect(await service(scopes).resolveOrg(req(), COMPANY_A)).toEqual({ uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true });
+  });
+
+  it('falls back to the scope when the cla_admin check fails', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('relation cla_admin not found'));
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+
+    expect(await service(scopesOf(COMPANY_A)).resolveOrg(req(), COMPANY_A)).toEqual({ uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true });
+    expect(await service(scopesOf(COMPANY_B)).resolveOrg(req(), COMPANY_A)).toBeNull();
   });
 });
