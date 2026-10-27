@@ -403,6 +403,22 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
   });
 
+  it('never serves the event registration goal', async () => {
+    // The fixture carries a non-zero warehouse goal (10000), so this fails the moment the column is
+    // selected or mapped again.
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    // #4432 is about disclosure, not display: the figure must be absent from the payload, not merely
+    // unrendered. Asserting on the serialized response too, since a future field could reintroduce
+    // the number under another name.
+    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
+    expect(JSON.stringify(list)).not.toContain('10000');
+  });
+
   it('still lists events when registrations are unavailable', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
