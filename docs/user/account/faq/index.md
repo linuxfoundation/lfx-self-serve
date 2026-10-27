@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-10-09
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
+last_updated: 2026-10-27
 intercom_collection: Account
 ---
 
@@ -119,6 +119,10 @@ You can only see your own transactions. Other users and project administrators c
 ## I was charged incorrectly. Who do I contact?
 
 Contact LFX support via in-app messaging. Include the transaction date, amount, and item name so the support team can investigate.
+
+## How do I delete my account or personal data?
+
+You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled.
 
 ## Who do I contact if a setting isn't working?
 
