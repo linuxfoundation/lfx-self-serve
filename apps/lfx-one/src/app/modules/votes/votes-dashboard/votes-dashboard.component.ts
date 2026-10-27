@@ -128,6 +128,8 @@ export class VotesDashboardComponent {
   // Me-lens cast drawer (#4330): opened in place for an active vote still awaiting the viewer's ballot.
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVoteId = signal<string | null>(null);
+  // Capture the mode per open session; a missing/refreshed list row must never unlock a submitted ballot.
+  protected readonly castDrawerReadOnly = signal<boolean>(false);
   /** Accepted ballots stay submitted for this dashboard's lifetime, even if a later indexed read still lags. */
   private readonly submittedVoteIds = signal<ReadonlySet<string>>(new Set());
 
@@ -163,11 +165,6 @@ export class VotesDashboardComponent {
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
   // List row for the open cast drawer — seeds the ballot so it renders before the vote fetch returns.
   protected readonly castDrawerVote: Signal<Vote | null> = computed(() => this.myVotes().find((v) => v.uid === this.castDrawerVoteId()) ?? null);
-  // Read-only review (#4331): the drawer displays the recorded ballot of an active vote the viewer already voted on.
-  protected readonly castDrawerReadOnly: Signal<boolean> = computed(() => {
-    const vote = this.castDrawerVote();
-    return !!vote && isVoteBallotReviewable(vote);
-  });
   protected readonly totalCount: Signal<number> = this.initTotalCount();
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
@@ -191,6 +188,13 @@ export class VotesDashboardComponent {
   });
 
   public constructor() {
+    toObservable(this.castDrawerVisible)
+      .pipe(
+        filter((visible) => !visible),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.castDrawerReadOnly.set(false));
+
     toObservable(this.isMeLens)
       .pipe(
         filter((isMe) => !isMe),
@@ -264,6 +268,7 @@ export class VotesDashboardComponent {
       const vote = this.myVotes().find((v) => v.uid === voteId);
       if (vote && (isVoteAwaitingMyBallot(vote) || isVoteBallotReviewable(vote))) {
         this.castDrawerVoteId.set(voteId);
+        this.castDrawerReadOnly.set(isVoteBallotReviewable(vote));
         this.castDrawerVisible.set(true);
         return;
       }

@@ -1141,7 +1141,7 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
  * Turns the caller's current ballot into cast-drawer form values (#4331)
  * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
  * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
- * Choice ids the vote no longer declares are dropped, and unanswered questions are omitted.
+ * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
  */
 export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {
   const ranked = isRankedPollType(vote.poll_type);
@@ -1151,10 +1151,7 @@ export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_quest
   for (const question of vote.poll_questions ?? []) {
     const answer = answersById.get(question.question_id);
     if (!answer) continue;
-    const declared = new Set((question.choices ?? []).map((choice) => choice.choice_id));
-    const picked = answerChoices(vote, answer)
-      .map((choice) => choice.choice_id)
-      .filter((choiceId) => declared.has(choiceId));
+    const picked = answerChoices(vote, answer).map((choice) => choice.choice_id);
 
     if (ranked || question.type === 'multiple_choice') {
       answers[question.question_id] = picked;

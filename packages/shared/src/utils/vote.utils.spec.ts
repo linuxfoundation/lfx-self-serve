@@ -1619,9 +1619,36 @@ describe('voter list helpers (#3914)', () => {
       expect(prefill.answers).toEqual({ 'q-1': ['c-dev', 'c-cara'] });
     });
 
-    it('drops a choice id the vote no longer declares', () => {
-      const prefill = mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }, maybe])] }));
-      expect(prefill.answers).toEqual({ 'q-1': 'c-maybe' });
+    it('preserves a recorded single choice the vote no longer declares', () => {
+      const prefill = mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }])] }));
+      expect(prefill.answers).toEqual({ 'q-1': 'c-gone' });
+    });
+
+    it('preserves recorded-only multiple choices', () => {
+      const prefill = mapMyBallotToCastForm(
+        multipleVote,
+        ballot({ poll_answers: [{ ...answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }, yes]), type: 'multiple_choice' }] })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-gone', 'c-yes'] });
+    });
+
+    it('preserves recorded-only ranks in saved order', () => {
+      const prefill = mapMyBallotToCastForm(
+        rankedVote,
+        ballot({
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...cara, choice_rank: 2 },
+                { choice_id: 'c-gone', choice_text: 'Removed', choice_rank: 1 },
+              ]
+            ),
+          ],
+        })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-gone', 'c-cara'] });
     });
 
     it('omits unanswered questions and carries the abstention', () => {

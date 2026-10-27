@@ -511,6 +511,51 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(component.abstainControl.value).toBe(false);
   });
 
+  it('renders recorded-only single and multiple choices as selected, disabled controls', async () => {
+    const vote: Vote = {
+      ...REVIEW_VOTE,
+      poll_questions: REVIEW_VOTE.poll_questions!.map((question) => ({
+        ...question,
+        choices: question.choices.filter((choice) => !['c2', 'm1', 'm3'].includes(choice.choice_id)),
+      })),
+    };
+    await openReview(vote, vi.fn().mockReturnValue(of(BALLOT)));
+    const component = fixture.componentInstance;
+
+    expect(component.form.get('q1')?.value).toBe('c2');
+    expect(component.form.get('q2')?.value).toEqual(['m1', 'm3']);
+    for (const [id, text] of [
+      ['c2', 'Reject'],
+      ['m1', 'Legal'],
+      ['m3', 'Security'],
+    ]) {
+      const control = document.getElementById(`vote-cast-choice-${id}`) as HTMLInputElement;
+      expect(control.checked).toBe(true);
+      expect(control.disabled).toBe(true);
+      expect(el(`vote-cast-question-${id === 'c2' ? 'q1' : 'q2'}`)?.textContent).toContain(text);
+    }
+    expect(submitButton()).toBeNull();
+  });
+
+  it('renders recorded-only ranked choices with their saved text and order', async () => {
+    const vote: Vote = {
+      ...RANKED_VOTE,
+      poll_questions: RANKED_VOTE.poll_questions!.map((question) => ({
+        ...question,
+        choices: question.choices.filter((choice) => choice.choice_id !== 'r3'),
+      })),
+    };
+    await openReview(vote, vi.fn().mockReturnValue(of(RANKED_BALLOT)));
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3', 'r1']);
+    expect(el('vote-cast-rank-r3')?.textContent).toContain('Casey');
+    const ranked = Array.from(document.querySelectorAll('.cdk-drag') as NodeListOf<HTMLElement>);
+    expect(ranked.map((row) => row.getAttribute('data-testid'))).toEqual(['vote-cast-rank-r3', 'vote-cast-rank-r1']);
+    expect((el('vote-cast-rank-up-r3') as HTMLButtonElement).disabled).toBe(true);
+    expect(el('vote-cast-unranked-r2')?.textContent).toContain('Blake');
+    expect(submitButton()).toBeNull();
+  });
+
   it('shows only recorded ranks, keeps other choices unranked, and blocks reordering', async () => {
     await openReview(RANKED_VOTE, vi.fn().mockReturnValue(of(RANKED_BALLOT)));
     const component = fixture.componentInstance;
@@ -599,7 +644,7 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
   ])('shows a read-only error when the ballot load %s', async (_label, load) => {
     await openReview(REVIEW_VOTE, vi.fn().mockImplementation(load));
 
-    expect(el('vote-cast-ballot-error')?.textContent).toContain("Couldn't load your current ballot.");
+    expect(el('vote-cast-ballot-error')?.textContent).toContain("Couldn't load your submitted ballot.");
     expect(el('vote-cast-review-notice')).toBeNull();
     expect(el('vote-cast-question-q1')).toBeNull();
     expect(submitButton()).toBeNull();

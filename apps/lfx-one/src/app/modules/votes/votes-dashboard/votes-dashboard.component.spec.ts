@@ -1064,6 +1064,35 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.readOnly()).toBe(true);
     });
 
+    it.each(['missing row', 'failed refresh'])('keeps review locked after a %s', async (scenario) => {
+      table.viewVote.emit('responded');
+      await settle();
+      getMyVotes.mockReturnValueOnce(
+        scenario === 'missing row' ? of({ votes: feed.filter((item) => item.uid !== 'responded'), complete: true }) : throwError(() => new Error('503'))
+      );
+      dashboard['refreshVotes']();
+      await settle();
+
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.listVote()).toBeNull();
+      expect(drawer()?.readOnly()).toBe(true);
+    });
+
+    it('clears review mode on close and opens a first ballot editable', async () => {
+      table.viewVote.emit('responded');
+      await settle();
+      drawer()!.visible.set(false);
+      await settle();
+      expect(dashboard['castDrawerReadOnly']()).toBe(false);
+
+      table.viewVote.emit('soon');
+      await settle();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('soon');
+      expect(drawer()?.readOnly()).toBe(false);
+    });
+
     it('keeps a submitted ballot voted when reviewed (#4331)', async () => {
       const loadsBeforeReview = getMyVotes.mock.calls.length;
       table.viewVote.emit('responded');

@@ -22,6 +22,7 @@ import {
 import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import {
   buildCommentResponses,
+  buildVoteBallotQuestions,
   getCommentPromptsData,
   getUserTimezone,
   isRankedPollType,
@@ -114,7 +115,7 @@ export class VoteCastDrawerComponent {
 
   // === Computed Signals ===
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
-  protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
+  protected readonly questions: Signal<PollQuestion[]> = this.initQuestions();
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
   protected readonly impersonating = this.userService.impersonating;
@@ -123,7 +124,7 @@ export class VoteCastDrawerComponent {
     this.readOnly() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
   );
   protected readonly reviewNotice = 'Your vote has been recorded.';
-  protected readonly ballotLoadError = "Couldn't load your current ballot. Close this panel and try again.";
+  protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
@@ -410,6 +411,25 @@ export class VoteCastDrawerComponent {
     );
   }
 
+  /** Review preserves saved choices absent from current metadata, without offering them on a first ballot. */
+  private initQuestions(): Signal<PollQuestion[]> {
+    return computed(() => {
+      const vote = this.vote();
+      const ballot = this.myBallot();
+      if (!vote) return [];
+      if (!this.readOnly() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
+      return buildVoteBallotQuestions(vote, ballot).map((question) => ({
+        question_id: question.questionId,
+        prompt: question.prompt,
+        type: question.multiple ? 'multiple_choice' : 'single_choice',
+        choices: [...question.choices, ...question.rankedChoices, ...question.unrankedChoices].map((choice) => ({
+          choice_id: choice.choiceId,
+          choice_text: choice.text,
+        })),
+      }));
+    });
+  }
+
   private initIsRankedPoll(): Signal<boolean> {
     return computed(() => isRankedPollType(this.vote()?.poll_type));
   }
@@ -513,7 +533,7 @@ export class VoteCastDrawerComponent {
     const vote = this.vote();
     const ballot = this.myBallot();
     this.syncControls();
-    if (!this.readOnly() || !vote?.poll_questions?.length || !ballot || ballot.vote_uid !== vote.uid) return;
+    if (!this.readOnly() || !vote || !this.questions().length || !ballot || ballot.vote_uid !== vote.uid) return;
 
     const key = [
       vote.uid,
@@ -525,9 +545,9 @@ export class VoteCastDrawerComponent {
     if (key === this.appliedPrefillKey) return;
     this.appliedPrefillKey = key;
 
-    const prefill = mapMyBallotToCastForm(vote, ballot);
+    const prefill = mapMyBallotToCastForm({ ...vote, poll_questions: this.questions() }, ballot);
     // An abstention can carry no answers. Never retain choices from an earlier ballot or draft.
-    for (const question of vote.poll_questions) {
+    for (const question of this.questions()) {
       const emptyValue = this.isRankedPoll() || question.type === 'multiple_choice' ? [] : null;
       this.form.get(question.question_id)?.setValue(emptyValue, { emitEvent: false });
     }

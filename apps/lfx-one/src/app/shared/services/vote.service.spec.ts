@@ -703,17 +703,80 @@ describe('VoteService', () => {
       expect(next).toHaveBeenCalledWith(ballot);
     });
 
-    it('getMyVoteBallot maps a 404 to null', () => {
-      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      const next = vi.fn();
+    it('returns the accepted ballot when a bounded 404 retry observes index convergence', async () => {
+      vi.useFakeTimers();
+      try {
+        const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+        const read = vi
+          .fn()
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockReturnValue(ballot);
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
 
-      service.getMyVoteBallot('vote-1').subscribe(next);
-
-      expect(next).toHaveBeenCalledWith(null);
+        await vi.advanceTimersByTimeAsync(999);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2001);
+        expect(read).toHaveBeenCalledTimes(4);
+        expect(next).toHaveBeenCalledExactlyOnceWith(ballot);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
-    it('getMyVoteBallot rethrows other errors', () => {
-      const failure = new HttpErrorResponse({ status: 500 });
+    it('maps a persistent 404 to null after exactly three additional attempts', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(next).toHaveBeenCalledExactlyOnceWith(null);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels pending ballot retries on unsubscribe', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        const subscription = service.getMyVoteBallot('vote-1').subscribe(next);
+        subscription.unsubscribe();
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([0, 401, 403, 500])('getMyVoteBallot immediately rethrows non-404 status %s', (status) => {
+      const failure = new HttpErrorResponse({ status });
       http.get.mockReturnValue(throwError(() => failure));
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const error = vi.fn();

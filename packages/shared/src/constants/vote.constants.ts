@@ -58,6 +58,12 @@ export const VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS = 12000;
  */
 export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
 
+/** Additional own-ballot reads while a successfully submitted ballot may still be missing from the index. */
+export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
+
+/** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
+export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
+
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
  * list merges the known-open status over stale index rows while the search index catches up.

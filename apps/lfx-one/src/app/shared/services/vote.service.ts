@@ -6,6 +6,8 @@ import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   INVITATION_NOT_FOUND,
   RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_BALLOT_READ_RETRY_COUNT,
+  VOTE_BALLOT_READ_RETRY_DELAY_MS,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_DETAIL_CACHE_TTL_MS,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
@@ -606,9 +608,13 @@ export class VoteService {
     );
   }
 
-  /** The caller's own submitted ballot (#4331); null when they have none (404). Other errors are rethrown. */
+  /** The caller's submitted ballot (#4331); retry index-lag 404s briefly, then return null. Other errors are rethrown. */
   public getMyVoteBallot(voteUid: string): Observable<MyVoteBallot | null> {
     return this.http.get<MyVoteBallot>(`/api/votes/${encodeURIComponent(voteUid)}/my-ballot`).pipe(
+      retry({
+        count: VOTE_BALLOT_READ_RETRY_COUNT,
+        delay: (err: HttpErrorResponse) => (err?.status === 404 ? timer(VOTE_BALLOT_READ_RETRY_DELAY_MS) : throwError(() => err)),
+      }),
       catchError((err: HttpErrorResponse) => {
         if (err?.status === 404) return of(null);
         console.error(`Failed to load my-ballot for vote ${voteUid}:`, err);
