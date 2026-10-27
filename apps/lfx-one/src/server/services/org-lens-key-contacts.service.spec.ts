@@ -6,10 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 
-const { fetchAllQueryResourcesMock, proxyRequestMock } = vi.hoisted(() => ({
+const { fetchAllQueryResourcesMock, proxyRequestMock, invalidatePerUserCache, evictPerUserOrgFetch, getEffectiveUsername } = vi.hoisted(() => ({
   fetchAllQueryResourcesMock: vi.fn(),
   proxyRequestMock: vi.fn(),
+  invalidatePerUserCache: vi.fn(async () => true),
+  evictPerUserOrgFetch: vi.fn(),
+  getEffectiveUsername: vi.fn(() => 'tester'),
 }));
+
+vi.mock('./valkey.service', () => ({ invalidatePerUserCache, withPerUserCache: vi.fn() }));
+vi.mock('../utils/single-flight', () => ({ evictPerUserOrgFetch }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources: fetchAllQueryResourcesMock }));
 // The shared utils barrel pulls in @angular/forms, which cannot load in a plain Node runtime — deep-import
@@ -22,7 +29,8 @@ vi.mock('@lfx-one/shared/utils', async () => {
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: vi.fn().mockImplementation(() => ({ proxyRequest: proxyRequestMock })),
 }));
-vi.mock('./org-membership-resolver.service', () => ({ OrgMembershipResolverService: vi.fn().mockImplementation(() => ({ resolveContext: vi.fn() })) }));
+const resolveContext = vi.fn(async () => ({ b2bOrgUid: SYNTHETIC_ORG_ACCOUNT_ID, membershipUid: 'm-active', projectUid: 'p-1' }));
+vi.mock('./org-membership-resolver.service', () => ({ OrgMembershipResolverService: vi.fn().mockImplementation(() => ({ resolveContext })) }));
 vi.mock('./logger.service', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn().mockReturnValue(0) },
 }));
@@ -198,5 +206,43 @@ describe('OrgLensKeyContactsService.getEmployees — a membership outage costs r
     upstreamWithFailure('contacts', [contact()], [membership()]);
 
     await expect(new OrgLensKeyContactsService().getEmployees(req, ORG)).rejects.toThrow('contacts upstream is down');
+  });
+});
+
+describe('OrgLensKeyContactsService — a key-contact write drops the caller’s cached roster', () => {
+  // The directory merges key contacts as one of its four sources, so a write changes the All Employees
+  // roster and its Key Contact cells. Mirrors OrgLensBoardCommitteeService.invalidateCallerSeatCaches.
+  beforeEach(() => {
+    upstream([contact()], [membership()]);
+    proxyRequestMock.mockResolvedValue({ uid: 'kc-new', role: 'Billing Contact', status: 'Active', email: 'new@lfx-partner.example' });
+  });
+
+  it('invalidates the directory cache after adding a contact', async () => {
+    await new OrgLensKeyContactsService()
+      .addKeyContact(req, ORG, 'cncf', { contactType: 'billing', email: 'new@lfx-partner.example', firstName: 'New', lastName: 'Person' } as never)
+      .catch(() => undefined);
+
+    expect(evictPerUserOrgFetch).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+  });
+
+  it('evicts the in-flight fill as well as the stored entry', async () => {
+    await new OrgLensKeyContactsService()
+      .addKeyContact(req, ORG, 'cncf', { contactType: 'billing', email: 'new@lfx-partner.example', firstName: 'New', lastName: 'Person' } as never)
+      .catch(() => undefined);
+
+    // A merge that started before the write would otherwise be joined by the next read and write the
+    // pre-write roster back after the delete.
+    const evictOrder = evictPerUserOrgFetch.mock.invocationCallOrder[0];
+    const deleteOrder = invalidatePerUserCache.mock.invocationCallOrder[0];
+    expect(evictOrder).toBeLessThan(deleteOrder);
+  });
+
+  it('leaves the cache alone when the write itself fails', async () => {
+    // removeKeyContact rejects before it reaches the invalidation when the contact is not on the row.
+    await expect(new OrgLensKeyContactsService().removeKeyContact(req, ORG, 'cncf', 'kc-absent')).rejects.toThrow();
+
+    expect(invalidatePerUserCache).not.toHaveBeenCalled();
+    expect(evictPerUserOrgFetch).not.toHaveBeenCalled();
   });
 });

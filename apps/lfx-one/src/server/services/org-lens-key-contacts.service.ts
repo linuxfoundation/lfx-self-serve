@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType } from '@lfx-one/shared/constants';
+import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
   AddKeyContactRequest,
   KeyContactDoc,
@@ -19,9 +19,12 @@ import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { evictPerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgMembershipResolverService } from './org-membership-resolver.service';
+import { invalidatePerUserCache } from './valkey.service';
 
 // Key-contact reads + writes backed by query-service (read) and member-service (write).
 export class OrgLensKeyContactsService {
@@ -60,7 +63,9 @@ export class OrgLensKeyContactsService {
     const created = await this.createContact(req, ctx, body);
     // Reconcile from the authoritative write response (real uid, no indexer lag), upserted over the
     // current role row. A bare indexer re-read here would race read-after-write and echo stale data.
-    return this.upsertRow(req, ctx, body.contactType, created, []);
+    const row = await this.upsertRow(req, ctx, body.contactType, created, []);
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
+    return row;
   }
 
   // Replaces one contact in a role, using PUT when possible and create+delete otherwise.
@@ -124,7 +129,9 @@ export class OrgLensKeyContactsService {
     }
 
     // Single-slot replace: the role ends with exactly the new contact. Drop the old uid + dedup the new.
-    return this.upsertRow(req, ctx, body.contactType, authoritative, [contactUid]);
+    const row = await this.upsertRow(req, ctx, body.contactType, authoritative, [contactUid]);
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
+    return row;
   }
 
   // Removes one contact and returns the affected role row.
@@ -155,6 +162,7 @@ export class OrgLensKeyContactsService {
     );
 
     // Reconcile by dropping the removed uid from the pre-write row (indexer may still echo it).
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     return { ...beforeRow, people: beforeRow.people.filter((p) => p.personId !== contactUid) };
   }
 
@@ -164,6 +172,28 @@ export class OrgLensKeyContactsService {
       return [];
     }
     return this.getEmployeesByOrgUid(req, b2bOrgUid);
+  }
+
+  /**
+   * Drop the caller's cached All Employees roster after a key-contact write.
+   *
+   * Mirrors `OrgLensBoardCommitteeService.invalidateCallerSeatCaches`, and for the same reason: the
+   * directory merges key contacts as one of its four sources, so a reassign changes both who appears
+   * on All Employees and — since #4401 — which roles their Key Contact cell shows. Without this, a
+   * user who reassigns a role and returns to All Employees sees the former holder's pill until the
+   * 30-second entry expires.
+   *
+   * Evicting the in-process flight matters as much as the delete: a merge that started before the
+   * write would otherwise be joined by the next read and write the pre-write roster back afterwards.
+   * Once evicted it skips its write (`isCurrent` is false) and the next read starts fresh.
+   *
+   * Residual, as with seats: the fence is per process and per caller. A fill in flight on another
+   * replica, or another caller's entry, can still serve the pre-write roster until the TTL expires.
+   */
+  private async invalidateCallerDirectoryCache(req: Request, b2bOrgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    evictPerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, b2bOrgUid);
+    await invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, b2bOrgUid);
   }
 
   // ── internals ────────────────────────────────────────────────────────────────
