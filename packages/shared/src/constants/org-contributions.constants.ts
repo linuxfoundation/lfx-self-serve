@@ -20,10 +20,10 @@ export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
 /** Page-size selector options on the Repositories pagination footer. */
 export const CONTRIBUTIONS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] as const;
 
-/** Repositories-table headers and option-count unit per metric. */
+/** Repositories-table headers per metric. */
 export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, ContributionsMetricLabels>> = {
-  commits: { count: ORG_CODE_METRIC_LABEL.commits, firstDate: 'First Commit', lastDate: 'Last Commit', unit: 'commits' },
-  code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution', unit: 'code contributions' },
+  commits: { count: ORG_CODE_METRIC_LABEL.commits, firstDate: 'First Commit', lastDate: 'Last Commit' },
+  code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution' },
 };
 
 /** Project-scope phrase in the KPI caption (empty for every project). */

@@ -68,7 +68,7 @@ export interface OrgContributorFoundationOption {
   foundationName: string;
 }
 
-/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations over 365 days). */
+/** Project dropdown option — the projects represented in the org's Contributors rows for the selected range and project scope. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations over 365 days). */
 export interface OrgContributorProjectOption {
   projectId: string;
   projectName: string;

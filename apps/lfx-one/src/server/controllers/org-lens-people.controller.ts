@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGES, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
 import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -42,7 +42,7 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|all][&projectScope][&commitScope][&metric] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|all][&projectScope][&commitScope][&metric] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources, matching people on their verified LF username and on email only for records without one (key contacts always match on email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_all';
@@ -97,7 +97,7 @@ export class OrgLensPeopleController {
         metric: filters.metric,
       });
 
-      const response = await this.service.getFormerEmployees(orgUid, range, filters);
+      const response = await this.service.getFormerEmployees(req, orgUid, range, filters);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -194,7 +194,7 @@ export class OrgLensPeopleController {
       this.assertUsername(username, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const result = await this.service.getCompanyEmailsByUsername(orgUid, username);
+      const result = await this.service.getCompanyEmailsByUsername(req, orgUid, username);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -530,16 +530,17 @@ function parseLiveFlag(req: Request): boolean {
   return raw === '' || raw === 'true' || raw === '1';
 }
 
-/** Validate a People time-range query param (`range` / `timeRange`): missing → `null` (each caller picks its default); invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
+/**
+ * Validate a People time-range query param (`range` / `timeRange`): missing → `null` (each caller picks its default);
+ * the legacy `12mo` → `365d`; any other unknown value → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`).
+ */
 function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgLensTimeRange | null {
   if (!raw) {
     return null;
   }
-  const option = ORG_LENS_TIME_RANGE_OPTIONS.find((candidate) => candidate.value === raw);
-  if (!option) {
-    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_LENS_TIME_RANGE_OPTIONS.map((o) => o.value).join(', ')}`, {
-      operation,
-    });
+  const range = normalizeLegacyOrgLensTimeRange(raw);
+  if (!isOrgLensTimeRange(range)) {
+    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
-  return option.value;
+  return range;
 }

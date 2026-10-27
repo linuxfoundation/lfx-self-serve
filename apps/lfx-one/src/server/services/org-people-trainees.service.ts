@@ -3,7 +3,6 @@
 
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
-  ORG_LENS_TIME_RANGE_DAYS,
   ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
   ORG_TRAINEE_COURSE_OPTION_COLUMNS,
   ORG_TRAINEE_DETAIL_COLUMNS,
@@ -24,7 +23,16 @@ import type {
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  orgLensTimeRangeDays,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -213,7 +221,7 @@ export class OrgPeopleTraineesService {
  * the day count comes from the allow-listed range — so the planner can fold it.
  */
 function trainingRangePredicate(range: OrgLensTimeRange): string {
-  return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[range]}, CURRENT_DATE())`;
+  return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
 }
 
 /**

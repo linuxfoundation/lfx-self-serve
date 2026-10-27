@@ -473,7 +473,7 @@ describe('seat reassign — caller cache invalidation', () => {
 
     expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
-    // The People directory is cached per time range and project scope, and for the unranged picker roster; every one shows the reassigned seat.
+    // The People directory is cached per time range and project scope, and for the unranged picker roster; every one of those namespaces is evicted.
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v6:roster', 'tester', ORG);
     for (const range of ['30d', '90d', '365d', 'all']) {
       for (const projectScope of ['all', 'lf', 'non_lf']) {

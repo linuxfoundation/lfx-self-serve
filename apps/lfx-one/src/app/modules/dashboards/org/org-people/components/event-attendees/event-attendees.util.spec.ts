@@ -8,7 +8,7 @@ import { filterEndedEventsInRange } from './event-attendees.util';
 
 const NOW = new Date('2026-10-27T15:00:00.000Z');
 
-function row(eventId: string, eventEndDate: string | null, isPastEvent = true): OrgEventAttendeeDetailRow {
+function row(eventId: string, eventEndDate: string | null, isPastEvent = true, eventStartDate: string | null = eventEndDate): OrgEventAttendeeDetailRow {
   return {
     personKey: 'person-one',
     eventId,
@@ -19,7 +19,7 @@ function row(eventId: string, eventEndDate: string | null, isPastEvent = true): 
     eventUrl: null,
     foundationId: null,
     foundationName: null,
-    eventStartDate: eventEndDate,
+    eventStartDate,
     eventEndDate,
     isSpeaker: false,
     isPastEvent,
@@ -35,7 +35,7 @@ const DETAILS = [
   row('day-365', '2025-10-27'),
   row('day-366', '2025-10-26'),
   row('long-ago', '2019-05-01'),
-  row('no-end-date', null),
+  row('no-dates', null),
 ];
 
 const ids = (range: Parameters<typeof filterEndedEventsInRange>[1]) => filterEndedEventsInRange(DETAILS, range, NOW).map((detail) => detail.eventId);
@@ -44,7 +44,7 @@ describe('filterEndedEventsInRange', () => {
   it.each(['30d', '90d', '365d', 'all'] as const)('never counts an event that has not ended for %s', (range) => {
     expect(ids(range)).not.toContain('upcoming');
     expect(ids(range)).not.toContain('ends-today');
-    expect(ids(range)).not.toContain('no-end-date');
+    expect(ids(range)).not.toContain('no-dates');
   });
 
   it('counts events that ended on or after the first day of a bounded range', () => {
@@ -59,5 +59,19 @@ describe('filterEndedEventsInRange', () => {
   // The warehouse flag is as old as the last build; a stale flag must not count an event that ends today.
   it('decides ended-ness against today, not the warehouse flag', () => {
     expect(filterEndedEventsInRange([row('stale-flag', '2026-10-27', true)], 'all', NOW)).toEqual([]);
+  });
+
+  // The warehouse dates an event by COALESCE(event_end_date, event_start_date), so a registration with no end date counts by its start.
+  it('dates an event with no end date by its start date', () => {
+    const startOnly = [
+      row('started-yesterday', null, false, '2026-10-26'),
+      row('started-day-31', null, false, '2026-09-26'),
+      row('starts-today', null, false, '2026-10-27'),
+    ];
+    const startOnlyIds = (range: Parameters<typeof filterEndedEventsInRange>[1]) =>
+      filterEndedEventsInRange(startOnly, range, NOW).map((detail) => detail.eventId);
+
+    expect(startOnlyIds('30d')).toEqual(['started-yesterday']);
+    expect(startOnlyIds('all')).toEqual(['started-yesterday', 'started-day-31']);
   });
 });

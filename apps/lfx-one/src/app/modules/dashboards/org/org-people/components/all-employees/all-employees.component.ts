@@ -4,7 +4,7 @@
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   catchError,
@@ -25,11 +25,10 @@ import {
   tap,
   throwError,
 } from 'rxjs';
-import { InputTextModule } from 'primeng/inputtext';
-import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
@@ -98,13 +97,11 @@ import { AllEmployeesDetailComponent } from './all-employees-detail.component';
   selector: 'lfx-org-people-all-employees',
   imports: [
     DecimalPipe,
-    FormsModule,
     ReactiveFormsModule,
-    InputTextModule,
-    SelectModule,
     SkeletonModule,
     TooltipModule,
     EmptyStateComponent,
+    InputTextComponent,
     SelectComponent,
     AllEmployeesDetailComponent,
   ],
@@ -133,52 +130,35 @@ export class AllEmployeesComponent {
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
+  // The URL-backed filters as the page opened: `?employment=`, `?range=` (shared with the other People tabs and Code
+  // Contributions) and `?projectScope=` / `?metric=` (shared with the Contributors tab). They seed the form and the signals below.
+  private readonly initialEmployment = AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'));
+  private readonly initialRange = parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range'));
+  private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
+  private readonly initialCodeFilters = orgCodeFilterValues(this.initialFilters);
+
+  // The filter bar. The signals below stay the source of truth (the URL, Clear filters, an account switch and the
+  // foundation clean-up write them); a control change is handed to them and they are mirrored back into the form.
+  protected readonly filterForm = new FormGroup({
+    search: new FormControl<string>('', { nonNullable: true }),
+    foundation: new FormControl<string>('', { nonNullable: true }),
+    activity: new FormControl<OrgAllEmployeeActivityFilter>('all', { nonNullable: true }),
+    employment: new FormControl<OrgAllEmployeeEmploymentFilter>(this.initialEmployment, { nonNullable: true }),
+    range: new FormControl<OrgLensTimeRange>(this.initialRange, { nonNullable: true }),
+    projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
+  });
+
   protected readonly searchTerm = signal<string>('');
   protected readonly selectedFoundationId = signal<string>('');
   protected readonly selectedActivity = signal<OrgAllEmployeeActivityFilter>('all');
   // Follows `?employment=` so a shared link or a back/forward step opens the same view; written back on change (default dropped from the URL).
-  protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(
-    AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'))
-  );
-  private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
-  private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
-  // Follows `?range=` the same way (shared with the other People tabs and Code Contributions); the roster, its tiles and the
-  // former employees are all read for this range.
-  protected readonly selectedRange = signal<OrgLensTimeRange>(parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range')));
-  private readonly selectedRange$ = toObservable(this.selectedRange);
-  // Follows `?projectScope=` / `?metric=` (shared with the Contributors tab): the project scope picks who is listed, the
-  // code-count option (commits, merged commits or all code contributions) picks the code count. Read by the BFF with the range.
-  protected readonly selectedFilters = signal<OrgCommitFilters>(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
-  private readonly selectedFilters$ = toObservable(this.selectedFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
-  protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
-  // The URL-backed selects; the signals above stay the source of truth and are mirrored into this form.
-  protected readonly filterForm = new FormGroup({
-    employment: new FormControl<OrgAllEmployeeEmploymentFilter>(this.selectedEmployment(), { nonNullable: true }),
-    range: new FormControl<OrgLensTimeRange>(this.selectedRange(), { nonNullable: true }),
-    projectScope: new FormControl<OrgProjectScope>(this.selectedCodeFilters().projectScope, { nonNullable: true }),
-    metric: new FormControl<OrgCodeMeasure>(this.selectedCodeFilters().metric, { nonNullable: true }),
-  });
-  private readonly filterFormValue = computed(() => ({
-    employment: this.selectedEmployment(),
-    range: this.selectedRange(),
-    projectScope: this.selectedCodeFilters().projectScope,
-    metric: this.selectedCodeFilters().metric,
-  }));
-  protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
-  protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
-  protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
-  protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
-  // The code activity option is named after the metric it filters on.
-  protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
-    ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
-  );
-  protected readonly statSkeletonLabels: Signal<string[]> = computed(() => [
-    'Employees Active in Open Source',
-    'In Governance',
-    this.codeStatLabel(),
-    'Event Attendees',
-    'Trainees',
-  ]);
+  protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(this.initialEmployment);
+  // Follows `?range=` the same way; the roster, its tiles and the former employees are all read for this range.
+  protected readonly selectedRange = signal<OrgLensTimeRange>(this.initialRange);
+  // Follows `?projectScope=` / `?metric=`: the project scope picks who is listed, the code-count option (commits, merged
+  // commits or all code contributions) picks the code count. Read by the BFF with the range.
+  protected readonly selectedFilters = signal<OrgCommitFilters>(this.initialFilters);
 
   // Default sort: the code count (commits or code contributions, per the metric) descending.
   protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
@@ -208,63 +188,61 @@ export class AllEmployeesComponent {
   // Seeded true: toSignal seeds EMPTY_ORG_ALL_EMPLOYEES_RESPONSE and a real fetch fires synchronously on mount.
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
-  // Former employees load only once a view that shows them is selected (lfx-self-serve#4311). Seeded like `loadingState`
-  // so a `?employment=former` render shows the skeleton until the browser fetch lands.
-  private readonly formerLoadingState = signal<boolean>(this.selectedEmployment() !== 'current');
+  // The former roster is read in every view (lfx-self-serve#4311): it is listed under "Former" and "All", and under
+  // "Current" it supplies the stored activity of someone who is current again. Seeded true like `loadingState`.
+  private readonly formerLoadingState = signal<boolean>(true);
   private readonly formerErrorState = signal<boolean>(false);
 
-  protected readonly isLoading = computed(() => (this.showCurrent() && this.loadingState()) || (this.showFormer() && this.formerLoadingState()));
-  protected readonly fetchError = computed(() => (this.showCurrent() && this.fetchErrorState()) || (this.showFormer() && this.formerErrorState()));
+  private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
+  private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
+  protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
+  // Range and commit filters as one value, so a change to both (Clear filters, a URL step) starts a single read.
+  private readonly rosterQuery = computed(() => ({ range: this.selectedRange(), filters: this.selectedFilters() }));
+  private readonly rosterQuery$ = toObservable(this.rosterQuery).pipe(
+    distinctUntilChanged((a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters))
+  );
+  private readonly filterFormValue = computed(() => ({
+    search: this.searchTerm(),
+    foundation: this.selectedFoundationId(),
+    activity: this.selectedActivity(),
+    employment: this.selectedEmployment(),
+    range: this.selectedRange(),
+    projectScope: this.selectedCodeFilters().projectScope,
+    metric: this.selectedCodeFilters().metric,
+  }));
+  protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
+  protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
+  protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
+  protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
+  // The code activity option is named after the metric it filters on.
+  protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
+    ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
+  );
+  protected readonly statSkeletonLabels: Signal<string[]> = computed(() => [
+    'Employees Active in Open Source',
+    'In Governance',
+    this.codeStatLabel(),
+    'Event Attendees',
+    'Trainees',
+  ]);
+
+  // Every view's rows are reconciled across both rosters, so the table waits for both.
+  protected readonly isLoading = computed(() => this.loadingState() || this.formerLoadingState());
+  // A failed former read is a full error only in the Former view; under "All" the current employees stay, with a warning.
+  protected readonly fetchError = computed(
+    () => (this.showCurrent() && this.fetchErrorState()) || (this.selectedEmployment() === 'former' && this.formerErrorState())
+  );
+  protected readonly formerUnavailable = computed(() => this.selectedEmployment() === 'all' && this.formerErrorState());
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
     distinctUntilChanged()
   );
 
-  protected readonly response: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, this.selectedRange$, this.selectedFilters$, toObservable(this.retryTrigger)]).pipe(
-      tap(() => {
-        this.loadingState.set(true);
-        this.fetchErrorState.set(false);
-      }),
-      switchMap(([orgUid, range, filters]) => {
-        if (!orgUid) {
-          this.loadingState.set(false);
-          return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
-        }
-        return this.loadRoster(orgUid, range, filters);
-      })
-    ),
-    { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
-  );
+  protected readonly response: Signal<OrgAllEmployeesResponse> = this.initResponse();
 
   // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
-  protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, toObservable(this.showFormer), this.selectedRange$, this.selectedFilters$, toObservable(this.retryTrigger)]).pipe(
-      switchMap(([orgUid, showFormer, range, filters]) => {
-        if (!orgUid || !showFormer) {
-          this.formerLoadingState.set(false);
-          return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
-        }
-        // Same SSR guard as `loadRoster`: the server render fetches nothing and keeps the skeleton.
-        if (!isPlatformBrowser(this.platformId)) {
-          return EMPTY;
-        }
-        this.formerLoadingState.set(true);
-        this.formerErrorState.set(false);
-        return this.dataService.getFormerEmployees(orgUid, range, filters).pipe(
-          take(1),
-          catchError((error: unknown) => {
-            console.error('Failed to load former employees:', error);
-            this.formerErrorState.set(true);
-            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
-          }),
-          finalize(() => this.formerLoadingState.set(false))
-        );
-      })
-    ),
-    { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
-  );
+  protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = this.initFormerResponse();
 
   private readonly rosterRows: Signal<OrgAllEmployeeRow[]> = computed(() => this.initRosterRows());
 
@@ -313,8 +291,7 @@ export class AllEmployeesComponent {
       toObservable(this.selectedFoundationId),
       toObservable(this.selectedActivity),
       toObservable(this.selectedEmployment),
-      this.selectedRange$,
-      this.selectedFilters$,
+      this.rosterQuery$,
       toObservable(this.sortColumn),
       toObservable(this.sortDirection),
     ])
@@ -346,21 +323,19 @@ export class AllEmployeesComponent {
       .subscribe((filters) => this.selectedFilters.set(filters));
 
     const controls = this.filterForm.controls;
+    controls.search.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.searchTerm.set(value));
+    controls.foundation.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedFoundationId.set(value));
+    controls.activity.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedActivity.set(value));
     controls.employment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onEmploymentChange(value));
     controls.range.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onRangeChange(value));
     controls.projectScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((projectScope) => this.onFiltersChange({ projectScope }));
     controls.metric.valueChanges.pipe(takeUntilDestroyed()).subscribe((metric) => this.onFiltersChange({ metric }));
-    // URL changes, Clear filters and the handlers write the signals; mirror them back without re-firing the handlers.
+    // URL changes, Clear filters, an account switch and the handlers write the signals; mirror them back without re-firing the handlers.
     toObservable(this.filterFormValue)
       .pipe(takeUntilDestroyed())
       .subscribe((value) => {
         const current = this.filterForm.getRawValue();
-        if (
-          current.employment !== value.employment ||
-          current.range !== value.range ||
-          current.projectScope !== value.projectScope ||
-          current.metric !== value.metric
-        ) {
+        if ((Object.keys(value) as (keyof typeof value)[]).some((key) => current[key] !== value[key])) {
           this.filterForm.setValue(value, { emitEvent: false });
         }
       });
@@ -533,13 +508,13 @@ export class AllEmployeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...options];
   }
 
-  /** Tiles follow the employment filter. The current view keeps the server's tiles; views with former employees count the reconciled rows. */
+  /** Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them. */
   private initStats(): OrgAllEmployeeStats {
-    return this.selectedEmployment() === 'current' ? this.response().stats : computeOrgAllEmployeeStats(this.rosterRows());
+    return computeOrgAllEmployeeStats(this.rosterRows());
   }
 
   /**
-   * Current and former rows for the selected view, reconciled by LF username. Someone in the former roster can
+   * Current and former rows for the selected view, reconciled by LF username in every view. Someone in the former roster can
    * also arrive from the live roster before the next warehouse build. A live row's username is only verified when
    * the row was created by a seat or an Org Lens access principal. The server merges seats, then key contacts,
    * then access, so the first source is the creating one. A row created by a key contact carries member-service's
@@ -560,7 +535,7 @@ export class AllEmployeesComponent {
   private initRosterRows(): OrgAllEmployeeRow[] {
     const accountId = this.currentAccountId();
     const current = this.response();
-    const formerRows = this.showFormer() && this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
+    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
     const liveRows = current.accountId === accountId ? current.rows : [];
     const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
     const storedKeys = new Set<string>();
@@ -606,7 +581,7 @@ export class AllEmployeesComponent {
     }
     // `liveRows` is the account-checked current list: after an org switch the previous org's rows must not show (or feed the foundation dropdown) until the new fetch lands.
     const currentRows = this.showCurrent() ? [...liveRows.filter((row) => !row.isFormer && !folded.has(row)), ...rejoinedRows] : [];
-    return [...currentRows, ...shownFormerRows];
+    return this.showFormer() ? [...currentRows, ...shownFormerRows] : currentRows;
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
@@ -711,6 +686,54 @@ export class AllEmployeesComponent {
       courses: iconFor('courses'),
       access: iconFor('access'),
     };
+  }
+
+  private initResponse(): Signal<OrgAllEmployeesResponse> {
+    return toSignal(
+      combineLatest([this.orgUid$, this.rosterQuery$, toObservable(this.retryTrigger)]).pipe(
+        tap(() => {
+          this.loadingState.set(true);
+          this.fetchErrorState.set(false);
+        }),
+        switchMap(([orgUid, { range, filters }]) => {
+          if (!orgUid) {
+            this.loadingState.set(false);
+            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+          }
+          return this.loadRoster(orgUid, range, filters);
+        })
+      ),
+      { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
+    );
+  }
+
+  /** The former roster for the selected range and filters, read in every view; on the server it fetches nothing and keeps the skeleton, like `loadRoster`. */
+  private initFormerResponse(): Signal<OrgAllEmployeesResponse> {
+    return toSignal(
+      combineLatest([this.orgUid$, this.rosterQuery$, toObservable(this.retryTrigger)]).pipe(
+        switchMap(([orgUid, { range, filters }]) => {
+          if (!orgUid) {
+            this.formerLoadingState.set(false);
+            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+          }
+          if (!isPlatformBrowser(this.platformId)) {
+            return EMPTY;
+          }
+          this.formerLoadingState.set(true);
+          this.formerErrorState.set(false);
+          return this.dataService.getFormerEmployees(orgUid, range, filters).pipe(
+            take(1),
+            catchError((error: unknown) => {
+              console.error('Failed to load former employees:', error);
+              this.formerErrorState.set(true);
+              return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+            }),
+            finalize(() => this.formerLoadingState.set(false))
+          );
+        })
+      ),
+      { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
+    );
   }
 
   /**

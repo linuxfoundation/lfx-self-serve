@@ -3,6 +3,7 @@
 
 import { PLATFORM_ID, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import {
@@ -72,7 +73,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let getDirectory: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
   let getAllEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
   let former$: Subject<OrgAllEmployeesResponse>;
-  let getFormerEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
+  let getFormerEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
   let selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
 
   const el = (): HTMLElement => fixture.nativeElement;
@@ -128,10 +129,11 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     // Not observed holding SSR in prod, but the cause is not established, so the server render starts
-    // neither read; the browser starts both after hydration.
-    it('requests neither the Snowflake roster nor the live merge, and keeps the skeleton', () => {
+    // no read; the browser starts them after hydration.
+    it('requests neither the Snowflake roster, the live merge nor the former roster, and keeps the skeleton', () => {
       expect(getAllEmployees).not.toHaveBeenCalled();
       expect(getDirectory).not.toHaveBeenCalled();
+      expect(getFormerEmployees).not.toHaveBeenCalled();
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
     });
@@ -139,6 +141,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
   describe('in the browser', () => {
     beforeEach(async () => {
+      // These cases are about the current roster; the former roster answers empty at once.
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
     });
 
@@ -148,7 +152,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('renders the Snowflake roster and stats while the live merge is still pending', async () => {
-      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
       snowflake$.complete();
       await settle();
 
@@ -158,11 +162,16 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('replaces the Snowflake rows with a live merge that carries the stored roster, without duplicating anyone', async () => {
-      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
       snowflake$.complete();
       await settle();
 
-      live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
+      live$.next(
+        response(
+          [row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('live-x', 'Grace Hopper', { sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 })],
+          2
+        )
+      );
       live$.complete();
       await settle();
 
@@ -185,7 +194,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     // The server's live merge answers with live sources only when its own stored-roster read failed;
     // that partial list must not replace a full stored roster already on screen.
     it('keeps the Snowflake rows when the live merge arrives without any stored-roster rows', async () => {
-      snowflake$.next(response([row('p-1', 'Ada Lovelace'), row('p-2', 'Alan Turing')], 2));
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('p-2', 'Alan Turing', { commitsCount: 1 })], 2));
       snowflake$.complete();
       await settle();
 
@@ -236,7 +245,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
-      live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
+      live$.next(
+        response(
+          [row('p-1', 'Ada Lovelace', { commitsCount: 1 }), row('live-x', 'Grace Hopper', { sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 })],
+          2
+        )
+      );
       live$.complete();
       await settle();
 
@@ -294,6 +308,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   describe('in the browser, with a live-only merge already cached', () => {
     beforeEach(async () => {
       getDirectory.mockImplementation(() => of(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1)));
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
     });
 
@@ -309,7 +324,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
-  // lfx-self-serve#4311 — former employees are a separate read, shown only when a view that includes them is picked.
+  // lfx-self-serve#4311 — former employees are a separate read, listed only when a view that includes them is picked.
   describe('in the browser, with the employment filter', () => {
     const answerCurrent = async (): Promise<void> => {
       snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 1 })], 1));
@@ -322,25 +337,31 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
     };
 
-    it('does not read former employees for the default "Current employees" view', async () => {
+    it('reads former employees under "Current employees" too, for reconciliation, but lists none, and waits for that read', async () => {
       await mount('browser');
       await answerCurrent();
 
-      expect(getFormerEmployees).not.toHaveBeenCalled();
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+
+      await answerFormer();
+
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       expect(formerTags()).toEqual([]);
+      expect(activeStat()).toContain('1');
     });
 
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
       await mount('browser');
       await answerCurrent();
 
-      // The template's (ngModelChange) handler; PrimeNG's overlay select is not driven from jsdom.
-      const component = fixture.componentInstance as unknown as { onEmploymentChange(value: OrgAllEmployeeEmploymentFilter): void };
-      component.onEmploymentChange('former');
+      // The employment select's form control; PrimeNG's overlay select is not driven from jsdom.
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('former');
       await settle();
       await answerFormer();
 
+      expect(getFormerEmployees).toHaveBeenCalledTimes(1);
       expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
@@ -396,11 +417,105 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         )
       );
       live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
       await settle();
 
-      expect(getFormerEmployees).not.toHaveBeenCalled();
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       expect(formerTags()).toEqual([]);
+    });
+
+    it('folds the stored activity of someone with a live seat into their current row, tiles included, under "Current employees"', async () => {
+      await mount('browser');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 }),
+          ],
+          2
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual([]);
+      expect(el().querySelector('[data-testid="org-people-all-employees-row-p-9"]')?.textContent).toContain('4 commits');
+      expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('2');
+      expect(el().querySelector('[data-testid="org-people-all-employees-stat-governance"]')?.textContent).toContain('1');
+    });
+
+    it('keeps the skeleton under "Former employees" until the current roster has answered, then leaves out who is current', async () => {
+      await mount('browser', '/?employment=former');
+      former$.next(
+        response(
+          [
+            row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 }),
+            row('p-8', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 2 }),
+          ],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+      expect(rowKeys()).toEqual([]);
+
+      await answerCurrent();
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      former$ = new Subject();
+      await TestBed.inject(Router).navigateByUrl('/?employment=former&range=30d');
+      await settle();
+      // The new range's former roster lands while its current roster is still pending.
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 1 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+
+      snowflake$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', commitsCount: 1 })], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys()).toEqual([]);
+      expect(el().querySelector('[data-testid="org-people-all-employees-empty"]')).not.toBeNull();
+    });
+
+    it('keeps the current employees under "All" when the former read fails, with an inline warning instead of the error state', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      former$.error(new Error('500'));
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-former-error"]')).not.toBeNull();
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+      expect(activeStat()).toContain('1');
+    });
+
+    it('shows the error state under "Former employees" and neither the error nor the warning under "Current employees" when the former read fails', async () => {
+      const warning = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-former-error"]');
+      const error = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-error"]');
+      await mount('browser', '/?employment=former');
+      await answerCurrent();
+      former$.error(new Error('500'));
+      await settle();
+
+      expect(error()).not.toBeNull();
+      expect(warning()).toBeNull();
+
+      await TestBed.inject(Router).navigateByUrl('/');
+      await settle();
+
+      expect(error()).toBeNull();
+      expect(warning()).toBeNull();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
     });
 
     it('shows a server-tagged former access principal once, as the former row with the access badge, under "All"', async () => {
@@ -665,6 +780,18 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '365d', FILTERS);
+      // The table waits for the next account's current roster; the reconciled rows never take the previous account's.
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+      const roster = (fixture.componentInstance as unknown as { rosterRows: () => OrgAllEmployeeRow[] }).rosterRows();
+      expect(roster.map((r) => [r.personKey, r.isFormer, r.accessBadge ?? null]).sort()).toEqual([
+        ['p-8', true, null],
+        ['p-9', true, null],
+      ]);
+
+      snowflake$.next(response([], 0, OTHER_ORG));
+      snowflake$.complete();
+      await settle();
+
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-8', 'org-people-all-employees-row-p-9']);
       expect(formerTags().sort()).toEqual(['org-people-all-employees-row-p-8-former', 'org-people-all-employees-row-p-9-former']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-8"]')?.textContent).not.toContain('Admin');
@@ -708,8 +835,16 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
   // lfx-self-serve#4163 — every roster read follows the selected time range, which lives in `?range=`.
   describe('in the browser, with the time range filter', () => {
-    const component = (): { onRangeChange(value: OrgLensTimeRange): void; selectedFoundationId: WritableSignal<string> } =>
-      fixture.componentInstance as unknown as { onRangeChange(value: OrgLensTimeRange): void; selectedFoundationId: WritableSignal<string> };
+    const component = (): {
+      onRangeChange(value: OrgLensTimeRange): void;
+      selectedFoundationId: WritableSignal<string>;
+      filterForm: FormGroup<{ foundation: FormControl<string> }>;
+    } =>
+      fixture.componentInstance as unknown as {
+        onRangeChange(value: OrgLensTimeRange): void;
+        selectedFoundationId: WritableSignal<string>;
+        filterForm: FormGroup<{ foundation: FormControl<string> }>;
+      };
     const answer = async (subject: Subject<OrgAllEmployeesResponse>, value: OrgAllEmployeesResponse): Promise<void> => {
       subject.next(value);
       subject.complete();
@@ -769,11 +904,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(getDirectory).toHaveBeenLastCalledWith(ORG, '90d', FILTERS);
     });
 
-    it('drops a picked foundation the new range no longer lists, once that range has loaded', async () => {
+    it('drops a picked foundation the new range no longer lists, once that range has loaded, from the select too', async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
       const foundation = { foundationId: 'f-1', foundationName: 'Foundation One' };
       await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations: [foundation] });
-      component().selectedFoundationId.set('f-1');
+      component().filterForm.controls.foundation.setValue('f-1');
       await settle();
 
       snowflake$ = new Subject();
@@ -785,10 +921,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await answer(snowflake$, response([row('p-2', 'Alan Turing', { commitsCount: 1 })], 1));
 
       expect(component().selectedFoundationId()).toBe('');
+      expect(component().filterForm.controls.foundation.value).toBe('');
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-2']);
     });
 
     it('keeps a picked foundation the new range still lists', async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
       const foundation = { foundationId: 'f-1', foundationName: 'Foundation One' };
       await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations: [foundation] });
@@ -812,6 +950,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       ];
       const optionValues = (): string[] =>
         (fixture.componentInstance as unknown as { foundationOptions(): { value: string }[] }).foundationOptions().map((option) => option.value);
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
       await answer(snowflake$, { ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['f-1'] })], 1), foundations });
 
@@ -955,19 +1094,22 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(clear()?.textContent?.trim()).toBe('Clear filters');
     });
 
-    it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
+    it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
       await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=lf&metric=code');
       const state = fixture.componentInstance as unknown as {
-        searchTerm: WritableSignal<string>;
-        selectedActivity: WritableSignal<string>;
-        selectedFoundationId: WritableSignal<string>;
+        filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
+        searchTerm(): string;
+        selectedActivity(): string;
+        selectedFoundationId(): string;
         selectedEmployment(): string;
         selectedRange(): string;
       };
-      state.searchTerm.set('ada');
-      state.selectedActivity.set('code');
+      state.filterForm.controls.search.setValue('ada');
+      state.filterForm.controls.activity.setValue('code');
       await settle();
+      expect([state.searchTerm(), state.selectedActivity()]).toEqual(['ada', 'code']);
+      const reads = getDirectory.mock.calls.length;
 
       clear()?.click();
       await settle();
@@ -979,12 +1121,24 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         'current',
         '365d',
       ]);
+      expect(state.filterForm.getRawValue()).toEqual({
+        search: '',
+        foundation: '',
+        activity: 'all',
+        employment: 'current',
+        range: '365d',
+        projectScope: FILTERS.projectScope,
+        metric: FILTERS.metric,
+      });
+      // The range and the commit filters change together, so no read starts for a half-cleared combination.
+      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '365d', FILTERS]]);
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
       expect(TestBed.inject(Router).url).toBe('/?tab=employees');
       expect(clear()).toBeNull();
     });
 
     it('labels the count column, its badges, the code tile and the activity option after the metric', async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
       snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 3 })], 1));
       snowflake$.complete();

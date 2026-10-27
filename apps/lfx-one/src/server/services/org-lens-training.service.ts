@@ -25,9 +25,6 @@ import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
-/** Certifications tab: enrolled rows limited to the last 12 months (today excluded); certified rows are never windowed. */
-const CERT_TAB_ENROLLED_WINDOW = orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS');
-
 interface OrgTrainingStatsRow {
   CERTIFIED_EMPLOYEES: number;
   CERTIFICATIONS_EARNED: number;
@@ -138,14 +135,15 @@ export class OrgLensTrainingService {
           COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)        AS COURSE_ID,
           MAX(t.COURSE_NAME)                                AS COURSE_NAME,
           MAX(t.FOUNDATION_NAME)                            AS FOUNDATION_NAME,
-          COUNT(DISTINCT CASE WHEN t.STATUS = 'Certified' THEN t.PERSON_KEY END)                  AS CERTIFIED_COUNT,
-          COUNT(DISTINCT CASE WHEN t.STATUS IS DISTINCT FROM 'Certified' THEN t.PERSON_KEY END)   AS IN_PROGRESS_COUNT
+          -- One status per (person, course), Certified winning: a certified person who re-enrolled counts once, as certified.
+          COUNT(DISTINCT CASE WHEN t.STATUS = 'Certified' THEN t.PERSON_KEY END)                                  AS CERTIFIED_COUNT,
+          COUNT(DISTINCT t.PERSON_KEY) - COUNT(DISTINCT CASE WHEN t.STATUS = 'Certified' THEN t.PERSON_KEY END)   AS IN_PROGRESS_COUNT
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
         INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
           ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
         WHERE t.ACCOUNT_ID = ?
           AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
-          AND (t.STATUS = 'Certified' OR (${CERT_TAB_ENROLLED_WINDOW}))
+          AND (t.STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS')}))
         GROUP BY COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
       ),
       ${scopedCourseCatalogDimCte('SELECT DISTINCT b.COURSE_ID FROM base b')},
@@ -168,7 +166,7 @@ export class OrgLensTrainingService {
 
     const raw = await withOrgCache(
       accountId,
-      `certifications:v2:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      `certifications:v3:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () =>
         this.fetchPagedCourseRows<OrgCertificationRow>(req, 'get_org_certifications', filteredCte, {
@@ -266,7 +264,11 @@ export class OrgLensTrainingService {
       status,
     });
 
-    const statusCondition = status === 'certified' ? "t.STATUS = 'Certified'" : `t.STATUS IS DISTINCT FROM 'Certified' AND ${CERT_TAB_ENROLLED_WINDOW}`;
+    // Certificates are never windowed; in progress means a 12-month enrollment and no certificate for the course,
+    // so a certified person who re-enrolled is listed as certified only.
+    const enrolledWindow = orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS');
+    const statusCondition = status === 'certified' ? "t.STATUS = 'Certified'" : `(t.STATUS = 'Certified' OR (${enrolledWindow}))`;
+    const statusHaving = status === 'certified' ? '' : "HAVING COUNT_IF(t.STATUS = 'Certified') = 0";
     const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
 
     const sql = `
@@ -288,13 +290,14 @@ export class OrgLensTrainingService {
         AND ${statusCondition}
         ${searchFilter}
       GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
+      ${statusHaving}
       ORDER BY p.NAME ASC NULLS LAST
       LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
     const rows = await withOrgCache(
       accountId,
-      `certification-employees:v2:${paramSignature([courseId, status, searchQuery ?? null])}`,
+      `certification-employees:v3:${paramSignature([courseId, status, searchQuery ?? null])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchRosterRows(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, { courseId }),
       isRosterRowArray

@@ -1,10 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_LENS_TIME_RANGE_DAYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
-  ContributionSource,
+  ContributionsCommitRow,
   ContributionsCommitSortColumn,
+  ContributionsEmployeeOptionRow,
+  ContributionsKpiRow,
+  ContributionsProjectOptionRow,
+  ContributionsRaw,
+  ContributionsRepoRow,
   ContributionsSortColumn,
   ContributionsView,
   OrgContributionCommitRow,
@@ -16,6 +21,8 @@ import type {
   OrgContributionsResponse,
   OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
+import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
+import { createHash } from 'crypto';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
@@ -23,64 +30,6 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 const PLATINUM_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_CONTRIBUTIONS';
-const CODE_ACTIVITY_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY';
-
-interface ContributionsKpiRow {
-  PROJECTS_WITH_ACTIVITY: number;
-  REPOSITORIES: number;
-  COMMITS: number;
-}
-
-interface ContributionsRepoRow {
-  REPOSITORY_URL: string;
-  REPOSITORY_PATH: string;
-  PROJECT_ID: string | null;
-  PROJECT_NAME: string | null;
-  PROJECT_SLUG: string | null;
-  PROJECT_LOGO: string | null;
-  SOURCE: ContributionSource;
-  COMMITS: number;
-  FIRST_COMMIT_TS: Date | string | null;
-  LAST_COMMIT_TS: Date | string | null;
-  TOTAL_RECORDS: number;
-}
-
-interface ContributionsCommitRow {
-  COMMIT_ID: string;
-  MEMBER_ID: string | null;
-  PERSON_KEY: string | null;
-  PROJECT_NAME: string | null;
-  MEMBER_DISPLAY_NAME: string | null;
-  MEMBER_LOGO: string | null;
-  GITHUB_USERNAME: string | null;
-  SOURCE: ContributionSource;
-  ACTIVITY_TS: Date | string | null;
-  COMMIT_MESSAGE: string | null;
-  COMMIT_URL: string | null;
-  TOTAL_RECORDS: number;
-}
-
-interface ContributionsProjectOptionRow {
-  PROJECT_ID: string;
-  PROJECT_SLUG: string | null;
-  PROJECT_NAME: string | null;
-  PARENT_SLUG: string | null;
-  COMMITS: number;
-}
-
-interface ContributionsEmployeeOptionRow {
-  MEMBER_ID: string;
-  MEMBER_DISPLAY_NAME: string | null;
-  COMMITS: number;
-}
-
-interface ContributionsRaw {
-  kpiRows: ContributionsKpiRow[];
-  repoRows: ContributionsRepoRow[];
-  commitRows: ContributionsCommitRow[];
-  projectOptionRows: ContributionsProjectOptionRow[];
-  employeeOptionRows: ContributionsEmployeeOptionRow[];
-}
 
 /**
  * Code Contributions page data access (LFXV2-1894). Commits (metric `commits`, and the Commits feed under either
@@ -100,10 +49,10 @@ export class OrgContributionsService {
       return emptyResponse(accountId, query.dateRange);
     }
 
-    // `v2`: commits count on any branch with the project/commit-scope/metric filters (lfx-self-serve#4164).
+    // `v3`: the commit reads window on calendar days, like the code reads and the People models (lfx-self-serve#4164).
     const raw = await withOrgCache(
       accountId,
-      `contributions:v2:${contributionsSignature(query)}`,
+      `contributions:v3:${contributionsSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributionsRaw(accountId, query),
       isContributionsRaw
@@ -182,7 +131,7 @@ export class OrgContributionsService {
         COUNT(DISTINCT COALESCE(project_id, project_slug, project_name)) AS PROJECTS_WITH_ACTIVITY,
         COUNT(DISTINCT repository_url) AS REPOSITORIES,
         COALESCE(SUM(code_activities), 0) AS COMMITS
-      FROM ${CODE_ACTIVITY_TABLE}
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
@@ -263,7 +212,7 @@ export class OrgContributionsService {
     const sql = `
       WITH repo_first AS (
         SELECT repository_url, MIN(activity_date) AS first_commit_ts
-        FROM ${CODE_ACTIVITY_TABLE}
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
         WHERE account_id = ?
         GROUP BY repository_url
       ),
@@ -278,7 +227,7 @@ export class OrgContributionsService {
           ANY_VALUE(source) AS source,
           SUM(code_activities) AS commits,
           MAX(activity_date) AS last_commit_ts
-        FROM ${CODE_ACTIVITY_TABLE}
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
         WHERE account_id = ?
           ${scope.datePredicate}
           ${scope.scopePredicate}
@@ -389,7 +338,7 @@ export class OrgContributionsService {
         ANY_VALUE(project_name) AS project_name,
         ANY_VALUE(parent_slug) AS parent_slug,
         SUM(code_activities) AS commits
-      FROM ${CODE_ACTIVITY_TABLE}
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
@@ -424,7 +373,7 @@ export class OrgContributionsService {
         member_id,
         ANY_VALUE(member_display_name) AS member_display_name,
         SUM(code_activities) AS commits
-      FROM ${CODE_ACTIVITY_TABLE}
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
@@ -521,14 +470,17 @@ function buildCommitSearchFilter(search: string): SearchFilter {
   };
 }
 
-/** Timestamp window on `activity_ts`: on or after N days before now; none for all time. N comes from the allow-listed range, never from input. */
+/**
+ * Calendar-day window on `activity_ts`: on or after N days before today, the boundary the code reads and the People
+ * models use; none for all time. N comes from the allow-listed range, never from input.
+ */
 function dateRangePredicate(dateRange: OrgLensTimeRange): string {
-  return dateRange === 'all' ? '' : `AND activity_ts >= DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[dateRange]}, CURRENT_TIMESTAMP())`;
+  return dateRange === 'all' ? '' : `AND activity_ts::date >= DATEADD(day, -${orgLensTimeRangeDays(dateRange)}, CURRENT_DATE())`;
 }
 
 /** Date window on `activity_date`: on or after N days before today; none for all time. */
 function activityDatePredicate(dateRange: OrgLensTimeRange): string {
-  return dateRange === 'all' ? '' : `AND activity_date >= DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[dateRange]}, CURRENT_DATE())`;
+  return dateRange === 'all' ? '' : `AND activity_date >= DATEADD(day, -${orgLensTimeRangeDays(dateRange)}, CURRENT_DATE())`;
 }
 
 function projectFilterPredicate(projects: string[], binds: string[]): string {
@@ -604,7 +556,10 @@ function mapEmployeeOption(row: ContributionsEmployeeOptionRow): OrgContribution
   };
 }
 
-/** Deterministic, key-safe cache-key suffix covering every query field that changes the SQL (filter arrays sorted so member order never fragments the key); base64url keeps it to `[A-Za-z0-9_-]`. */
+/**
+ * Deterministic, key-safe cache-key suffix covering every query field that changes the SQL (filter arrays sorted so
+ * member order never fragments the key). A SHA-256 hex digest, so the free-text search cannot grow the key.
+ */
 function contributionsSignature(query: OrgContributionsQuery): string {
   const parts = [
     query.dateRange,
@@ -622,7 +577,7 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     [...query.projects].sort().join(','),
     [...query.employees].sort().join(','),
   ];
-  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
+  return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 }
 
 function isContributionsRaw(value: unknown): boolean {

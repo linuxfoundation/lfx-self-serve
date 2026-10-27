@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  EMPTY_ORG_CONTRIBUTORS_RESPONSE,
-  ORG_CONTRIBUTOR_PROJECT_COLUMNS,
-  ORG_CONTRIBUTOR_ROW_COLUMNS,
-  ORG_LENS_TIME_RANGE_DAYS,
-  VALKEY_CACHE,
-} from '@lfx-one/shared/constants';
+import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
@@ -22,7 +16,16 @@ import type {
   OrgLensTimeRange,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  orgLensTimeRangeDays,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
@@ -107,7 +110,7 @@ export class OrgPeopleContributorsService {
 
 /** Snowflake date-cutoff SQL fragment (inline, not bound — the day count comes from the allow-listed range) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
 function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
-  return timeRange === 'all' ? null : `DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[timeRange]}, CURRENT_DATE())`;
+  return timeRange === 'all' ? null : `DATEADD(day, -${orgLensTimeRangeDays(timeRange)}, CURRENT_DATE())`;
 }
 
 /**

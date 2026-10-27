@@ -183,6 +183,34 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')).not.toBeNull();
   });
 
+  it('tags a former employee with the Former employee badge', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')?.textContent?.trim()).toBe('Former employee');
+  });
+
+  it.each([
+    { label: 'isFormer false', context: { name: 'First person', personKey: 'first-person', isFormer: false } },
+    { label: 'isFormer absent', context: { name: 'First person', personKey: 'first-person' } },
+  ])('shows no Former employee badge with $label', async ({ context }) => {
+    drawer.open(context);
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
+  it('drops the Former employee badge when the drawer switches from a former employee to a current one', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    drawer.open({ name: 'Second person', personKey: 'second-person' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
   it('ignores an old address response before the switch effect runs, then cancels its subscription', async () => {
     const cancelled = vi.fn();
     const firstEmails = new Subject<unknown>();

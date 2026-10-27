@@ -45,10 +45,11 @@ describe('OrgLensTrainingService — Certifications tab window', () => {
     }
   });
 
-  it('lists in-progress employees from the same 12-month window', async () => {
+  it('lists in-progress employees from the same 12-month window, without anyone certified in the course', async () => {
     await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
 
-    expect(sqls()[0]).toContain(`AND t.STATUS IS DISTINCT FROM 'Certified' AND ${ENROLLED_WINDOW}`);
+    expect(sqls()[0]).toContain(`AND (t.STATUS = 'Certified' OR (${ENROLLED_WINDOW}))`);
+    expect(sqls()[0]).toMatch(/GROUP BY p\.PERSON_KEY, p\.NAME, p\.TITLE\s+HAVING COUNT_IF\(t\.STATUS = 'Certified'\) = 0/);
   });
 
   it('lists certified employees without a window', async () => {
@@ -56,5 +57,31 @@ describe('OrgLensTrainingService — Certifications tab window', () => {
 
     expect(sqls()[0]).toContain("AND t.STATUS = 'Certified'");
     expect(sqls()[0]).not.toContain('ACTIVITY_TS');
+    expect(sqls()[0]).not.toContain('HAVING');
+  });
+});
+
+// Since lf-dbt#3118 a person can carry a certificate row and a later re-enrollment row for one course: they count,
+// and are listed, as certified only.
+describe('OrgLensTrainingService — one status per person and course', () => {
+  it('counts in progress as the people in the course minus the certified ones', async () => {
+    await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
+
+    for (const sql of sqls()) {
+      expect(sql).toMatch(/COUNT\(DISTINCT CASE WHEN t\.STATUS = 'Certified' THEN t\.PERSON_KEY END\)\s+AS CERTIFIED_COUNT/);
+      expect(sql).toMatch(
+        /COUNT\(DISTINCT t\.PERSON_KEY\) - COUNT\(DISTINCT CASE WHEN t\.STATUS = 'Certified' THEN t\.PERSON_KEY END\)\s+AS IN_PROGRESS_COUNT/
+      );
+      expect(sql).not.toContain("IS DISTINCT FROM 'Certified'");
+    }
+  });
+
+  it('caches under the v3 keys, so counts stored before the change miss', async () => {
+    await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
+    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
+
+    const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
+    expect(keys[0].startsWith('certifications:v3:')).toBe(true);
+    expect(keys[1].startsWith('certification-employees:v3:')).toBe(true);
   });
 });

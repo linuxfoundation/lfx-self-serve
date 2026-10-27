@@ -29,6 +29,7 @@ import {
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_OPTIONS,
+  ORG_CODE_METRIC_UNIT,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
@@ -46,6 +47,7 @@ import type {
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgCountUnit,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
   OrgProjectScope,
@@ -167,6 +169,7 @@ export class OrgContributionsComponent {
     describeContributionsCaption(this.query(), this.companyName(), describeContributionsWindow(this.query().dateRange))
   );
   protected readonly metricLabels: Signal<ContributionsMetricLabels> = computed(() => CONTRIBUTIONS_METRIC_LABELS[this.query().metric]);
+  private readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.query().metric]);
   protected readonly metricDefinition: Signal<string> = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.query()).metric]);
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
   protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
@@ -203,9 +206,14 @@ export class OrgContributionsComponent {
     this.capFilterSelection(this.filterForm.controls.projects);
     this.capFilterSelection(this.filterForm.controls.employees);
 
-    // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link once the initial
-    // navigation has settled (browser-only; normal loads are untouched).
-    if (this.isCsvParamNormalized('projects') || this.isCsvParamNormalized('employees') || this.isCommitFilterParamNormalized()) {
+    // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link, or a default, unknown or legacy
+    // (`12mo`) range, once the initial navigation has settled (browser-only; normal loads are untouched).
+    if (
+      this.isCsvParamNormalized('projects') ||
+      this.isCsvParamNormalized('employees') ||
+      this.isRangeParamNormalized() ||
+      this.isCommitFilterParamNormalized()
+    ) {
       afterNextRender(() => this.syncUrl(this.query()));
     }
 
@@ -416,18 +424,20 @@ export class OrgContributionsComponent {
   }
 
   private initProjectOptions(): ContributionsFilterOption[] {
+    const unit = this.codeUnit();
     return this.response().projectOptions.map((p) => ({
       label: p.name,
       value: p.slug,
-      sublabel: `${p.commits.toLocaleString()} ${this.metricLabels().unit}`,
+      sublabel: `${p.commits.toLocaleString()} ${p.commits === 1 ? unit.one : unit.other}`,
     }));
   }
 
   private initEmployeeOptions(): ContributionsFilterOption[] {
+    const unit = this.codeUnit();
     return this.response().employeeOptions.map((e) => ({
       label: e.displayName,
       value: e.id,
-      sublabel: `${e.commits.toLocaleString()} ${this.metricLabels().unit}`,
+      sublabel: `${e.commits.toLocaleString()} ${e.commits === 1 ? unit.one : unit.other}`,
     }));
   }
 
@@ -514,6 +524,12 @@ export class OrgContributionsComponent {
   private isCsvParamNormalized(param: 'projects' | 'employees'): boolean {
     const raw = this.initialParams.get(param);
     return raw !== null && raw !== this.filterForm.controls[param].value.join(',');
+  }
+
+  // `?range=` as the page writes it: absent for the default, so a default, unknown or legacy (`12mo`) value is rewritten.
+  private isRangeParamNormalized(): boolean {
+    const raw = this.initialParams.get('range');
+    return raw !== null && raw !== orgLensTimeRangeUrlParam(this.filterForm.controls.dateRange.value);
   }
 
   // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten to its canonical form.

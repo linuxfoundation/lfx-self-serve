@@ -10,9 +10,12 @@ const { execute, withOrgCache } = vi.hoisted(() => ({
   withOrgCache: vi.fn(),
 }));
 
-// The `@lfx-one/shared/utils` barrel pulls Angular; the commit-filter helper only needs this module
-// (vi.mock factories are hoisted, so it loads dynamically).
-vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')) }));
+// The `@lfx-one/shared/utils` barrel pulls Angular; the service only needs these modules
+// (vi.mock factories are hoisted, so they load dynamically).
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+}));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 
@@ -96,12 +99,13 @@ describe('OrgContributionsService — commit filters', () => {
 });
 
 describe('OrgContributionsService — range window', () => {
-  it('windows the default Past 365 days as 365 days, on every commit read', async () => {
+  it('windows the default Past 365 days as 365 calendar days, on every commit read', async () => {
     await service.getContributions(ACCOUNT, query());
 
     expect(execute).toHaveBeenCalledTimes(5);
     for (const { sql } of calls()) {
-      expect(sql).toContain('activity_ts >= DATEADD(day, -365, CURRENT_TIMESTAMP())');
+      expect(sql).toContain('activity_ts::date >= DATEADD(day, -365, CURRENT_DATE())');
+      expect(sql).not.toContain('CURRENT_TIMESTAMP');
       expect(sql).not.toContain('month');
     }
   });
@@ -141,11 +145,11 @@ describe('OrgContributionsService — metric=code', () => {
     expect(feed.sql).toContain('is_merged = TRUE');
   });
 
-  it('windows code activity on activity_date', async () => {
+  it('windows code activity and the Commits feed on the same calendar-day boundary', async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'code', dateRange: '90d' }));
 
     expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -90, CURRENT_DATE())');
-    expect(feedCall().sql).toContain('activity_ts >= DATEADD(day, -90, CURRENT_TIMESTAMP())');
+    expect(feedCall().sql).toContain('activity_ts::date >= DATEADD(day, -90, CURRENT_DATE())');
   });
 
   it('drops the search from the code KPI on the Commits tab but keeps it on the feed', async () => {
@@ -203,8 +207,17 @@ describe('OrgContributionsService — cache key', () => {
     const keys = withOrgCache.mock.calls.map((call) => call[1] as string);
 
     for (const key of keys) {
-      expect(key.startsWith('contributions:v2:')).toBe(true);
+      expect(key).toMatch(/^contributions:v3:[0-9a-f]{64}$/);
     }
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('stays the same length however long the search is', async () => {
+    await service.getContributions(ACCOUNT, query({ search: 'x' }));
+    await service.getContributions(ACCOUNT, query({ search: 'x'.repeat(5000) }));
+    const [shortKey, longKey] = withOrgCache.mock.calls.map((call) => call[1] as string);
+
+    expect(longKey).not.toBe(shortKey);
+    expect(longKey.length).toBe(shortKey.length);
   });
 });

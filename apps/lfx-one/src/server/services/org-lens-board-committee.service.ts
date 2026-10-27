@@ -197,7 +197,8 @@ export class OrgLensBoardCommitteeService {
    */
   public async invalidateCallerSeatCaches(req: Request, orgUid: string): Promise<void> {
     const username = getEffectiveUsername(req) ?? '';
-    // The directory is cached per scope (time range plus commit filters) and for the unranged roster; a reassign changes the seats every one shows.
+    // The directory is cached per (time range, project scope) and for the unranged roster. Every one of them is
+    // evicted rather than working out which ones list seats (`non_lf` reads none), so none can outlive a reassign.
     const directoryNamespaces = allOrgPeopleDirectoryNamespaces();
     evictPerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid);
     for (const namespace of directoryNamespaces) {

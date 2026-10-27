@@ -15,6 +15,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
 }));
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute }) },

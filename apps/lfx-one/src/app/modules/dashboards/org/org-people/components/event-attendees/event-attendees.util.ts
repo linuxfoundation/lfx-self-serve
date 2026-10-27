@@ -5,12 +5,16 @@ import type { OrgEventAttendeeDetailRow, OrgLensTimeRange } from '@lfx-one/share
 import { orgLensTimeRangeStartDate, orgLensUtcToday } from '@lfx-one/shared/utils';
 
 /**
- * The registrations a range counts: events that have ended (end date before today, UTC) and, for a bounded range, ended
- * on or after its first day. A registration for an upcoming or running event counts in no range; one without an end
- * date cannot be placed and counts nowhere either (the warehouse's `IS_PAST_EVENT` is false for it too).
+ * The registrations a range counts: events that have ended (before today, UTC) and, for a bounded range, ended on or
+ * after its first day. An event is dated by its end date, or its start date when it has none, as the warehouse's
+ * `COALESCE(event_end_date, event_start_date)` does. A registration for an upcoming or running event counts in no range;
+ * one with neither date cannot be placed and counts nowhere.
  */
 export function filterEndedEventsInRange(details: OrgEventAttendeeDetailRow[], range: OrgLensTimeRange, now: Date = new Date()): OrgEventAttendeeDetailRow[] {
   const today = orgLensUtcToday(now);
   const start = orgLensTimeRangeStartDate(range, now);
-  return details.filter((row) => !!row.eventEndDate && row.eventEndDate < today && (start === null || row.eventEndDate >= start));
+  return details.filter((row) => {
+    const eventDate = row.eventEndDate ?? row.eventStartDate;
+    return !!eventDate && eventDate < today && (start === null || eventDate >= start);
+  });
 }

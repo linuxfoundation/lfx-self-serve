@@ -17,7 +17,7 @@ import type {
   OrgContributionsQuery,
   OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { isOrgLensTimeRange } from '@lfx-one/shared/utils';
+import { isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -127,14 +127,16 @@ function parseCommitSortColumn(raw: string | undefined, operation: string): Cont
   return raw as ContributionsCommitSortColumn;
 }
 
+/** Missing → the default; the legacy `12mo` → `365d`; any other unknown value → 400. */
 function parseDateRange(raw: string | undefined, operation: string): OrgLensTimeRange {
   if (!raw) {
     return ORG_LENS_DEFAULT_TIME_RANGE;
   }
-  if (!isOrgLensTimeRange(raw)) {
+  const range = normalizeLegacyOrgLensTimeRange(raw);
+  if (!isOrgLensTimeRange(range)) {
     throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
-  return raw;
+  return range;
 }
 
 function parseSortColumn(raw: string | undefined, operation: string): ContributionsSortColumn {

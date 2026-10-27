@@ -71,6 +71,18 @@ export interface OrgPeopleFoundationOptionRow {
   FOUNDATION_NAME: string;
 }
 
+/** Raw All Employees reads for one range: roster rows and the foundation dropdown pairs. */
+export interface OrgAllEmployeesRaw {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
+}
+
+/** Answer of the keyed former-employee check; `failed` answers are never cached. */
+export interface OrgFormerEmployeeCheck {
+  isFormer: boolean;
+  failed: boolean;
+}
+
 /** One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`. */
 export interface OrgPersonCompanyEmailRow {
   EMAIL: string | null;

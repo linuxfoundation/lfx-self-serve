@@ -217,7 +217,7 @@ export const VALKEY_CACHE = {
 
   /**
    * Per-sub-resource overrides of `MAX_VALUE_BYTES` (GH-1906), keyed by
-   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v3`.
+   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v4`.
    * The trailing per-request discriminators a sub-resource may carry (a time range, a param
    * signature, a person key) are deliberately *not* part of the lookup key: one cap covers every
    * variant of a cache, and no identifier can reach this table. See `ValkeyService.maxBytesFor`,
@@ -244,17 +244,20 @@ export const VALKEY_CACHE = {
     // per row. Measured 2026-10-27 on the dev build (lf-dbt#3118) with a SQL size estimate of each
     // columnar value (string lengths + quotes, numbers, foundation arrays, no column names), calibrated
     // against the 2026-09-24 measurement above (the estimate gives 1.94 MB for that 2,050,250-byte
-    // value, so compact ≈ estimate × 1.06): largest `all`-range value 4.04 MiB estimated (Microsoft,
-    // all projects; 3.29 MiB LF only), ≈ 4.3 MiB compact; the default 12-month all-projects view peaks
-    // at 1.85 MiB estimated. 4.3 MiB × 1.25 rounds up to 6 MiB.
-    // `people-former:v3` stays at the 1 MiB default: its largest value on the same measurement is
-    // 0.62 MiB estimated (`all` range).
+    // value, so compact ≈ estimate × 1.06): largest `all`-range value 4.04 MiB estimated (largest org
+    // measured, all projects; 3.29 MiB LF only), ≈ 4.3 MiB compact; the default 12-month all-projects view
+    // peaks at 1.85 MiB estimated. 4.3 MiB × 1.25 rounds up to 6 MiB.
     'org-lens-sf:v1:people-all:v4': 6 * 1_048_576,
+    // `people-former:v3` is stored as named-key JSON rows (`withOrgCache`, not columnar). Measured 2026-10-27
+    // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
+    // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.
+    // 1,444,402 × 1.25 = 1,805,503, rounded up to 2 MiB.
+    'org-lens-sf:v1:people-former:v3': 2 * 1_048_576,
     // Measured 2026-10-27 on the dev build (lf-dbt#3118), same SQL size estimate and × 1.06
     // calibration as `people-all:v4`: person × project rows with the person's identity repeated on
-    // each. Largest `all`-range value 6.85 MiB estimated (Google), ≈ 7.3 MiB compact; 12 accounts
-    // exceed 1 MiB there and 5 exceed 3 MiB, and 3 accounts exceed 1 MiB on the default 12-month
-    // all-projects view (largest 1.21 MiB estimated, Red Hat). 7.3 MiB × 1.25 rounds up to 10 MiB.
+    // each. Largest `all`-range value 6.85 MiB estimated (largest org measured), ≈ 7.3 MiB compact; 12
+    // accounts exceed 1 MiB there and 5 exceed 3 MiB, and 3 accounts exceed 1 MiB on the default 12-month
+    // all-projects view (largest 1.21 MiB estimated). 7.3 MiB × 1.25 rounds up to 10 MiB.
     'org-lens-sf:v1:people-contributors:v4': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
@@ -263,7 +266,7 @@ export const VALKEY_CACHE = {
     'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
-    // largest value 6,782,106 bytes (Ericsson, All time; Microsoft 5.39 MB, HPE 3.20 MB). Only All time on those three
+    // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three
     // orgs needs more than 3 MiB: the default Past 365 days peaks at 0.91 MB. 6,782,106 × 1.25 = 8,477,633, rounded up
     // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906).
     'org-lens-sf:v1:people-trainees:v4': 9 * 1_048_576,

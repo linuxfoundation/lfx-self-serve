@@ -161,10 +161,16 @@ describe('OrgLensContributionsController range', () => {
     expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: range });
   });
 
-  it('rejects the retired 12mo value with a 400', async () => {
+  it('reads the legacy 12mo, still sent by tabs opened before the new ranges, as 365d', async () => {
+    await controller.getContributions(buildReq({ range: '12mo' }), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '365d' });
+  });
+
+  it.each(['12m', '2y', 'ALL'])('rejects the unknown range=%s with a 400', async (range) => {
     const next = vi.fn();
 
-    await controller.getContributions(buildReq({ range: '12mo' }), buildRes(), next);
+    await controller.getContributions(buildReq({ range }), buildRes(), next);
 
     expect(getContributions).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });

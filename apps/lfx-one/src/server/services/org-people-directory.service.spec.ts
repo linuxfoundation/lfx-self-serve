@@ -19,10 +19,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level.
-const { getAllEmployeesInternal, getFormerEmployees, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, getEffectiveUsername, cache } = vi.hoisted(
+const { getAllEmployeesInternal, getFormerUsernames, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, getEffectiveUsername, cache } = vi.hoisted(
   () => ({
     getAllEmployeesInternal: vi.fn(),
-    getFormerEmployees: vi.fn(),
+    getFormerUsernames: vi.fn(),
     fetchAllOrgSeats: vi.fn(),
     getKeyContactEmployees: vi.fn(),
     getAccessPrincipals: vi.fn(),
@@ -43,7 +43,7 @@ const { getAllEmployeesInternal, getFormerEmployees, fetchAllOrgSeats, getKeyCon
 vi.mock('./org-lens-people.service', () => ({
   OrgLensPeopleService: class {
     public getAllEmployeesInternal = getAllEmployeesInternal;
-    public getFormerEmployees = getFormerEmployees;
+    public getFormerUsernames = getFormerUsernames;
   },
 }));
 vi.mock('./org-lens-board-committee.service', () => ({
@@ -140,6 +140,7 @@ import { toColumnar } from '@lfx-one/shared/utils';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { evictPerUserOrgFetch, resetSingleFlightForTests } from '../utils/single-flight';
+import { logger } from './logger.service';
 import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directory.service';
 import { toWireRow } from './org-people-wire.mapper';
 
@@ -227,10 +228,7 @@ beforeEach(() => {
   cache.encodedRows = null;
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
-  getFormerEmployees.mockResolvedValue({
-    ...baseResponse([]),
-    stats: { activeInOss: 0, inGovernance: 0, codeContributors: 0, eventAttendees: 0, trainees: 0 },
-  });
+  getFormerUsernames.mockResolvedValue([]);
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
   getAccessPrincipals.mockResolvedValue([]);
@@ -1131,28 +1129,24 @@ describe('OrgPeopleDirectoryService.getLive — the active tile does not follow 
 
 // lfx-self-serve#4378: Org Lens access alone leaves a former employee former, whichever employment view is open.
 describe('OrgPeopleDirectoryService.getLive — former employees who still hold Org Lens access', () => {
-  const formerResponse = (lfUsername: string | null): OrgAllEmployeesResponse => ({
-    accountId: ACCOUNT,
-    rows: [toWireRow({ ...storedRow({ personKey: 'p-former', lfid: 'p-former', lfUsername, name: 'Grace Hopper', email: null }), isFormer: true }, FILTERS)],
-    stats: { activeInOss: 1, inGovernance: 1, codeContributors: 0, eventAttendees: 1, trainees: 0 },
-    foundations: [],
-  });
-  const grace = accessUser({ email: 'grace@lfx-partner.example', username: 'grace', name: 'Grace Hopper', role: 'viewer' });
+  const grace = accessUser({ email: 'grace@lfx-partner.example', username: 'grace', name: 'Grace Hopper', role: 'viewer', jobTitle: 'Staff Engineer' });
 
   beforeEach(() => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     getAccessPrincipals.mockResolvedValue([grace]);
-    getFormerEmployees.mockResolvedValue(formerResponse('GRACE'));
+    // The account's whole former population: Grace's code is older than 30 days and outside LF projects,
+    // so the 30d / LF former roster would not list her.
+    getFormerUsernames.mockResolvedValue(['grace']);
   });
 
-  it('tags an access-only principal who is a former employee in the range, keeping the access badge, and the tag survives the cache', async () => {
+  it('tags an access-only former employee in a narrow range and scope, keeping the access badge, and the tag survives the cache', async () => {
     cache.serveHits = true;
 
-    const miss = await run('365d', { ...FILTERS, projectScope: 'lf' });
-    const hit = await run('365d', { ...FILTERS, projectScope: 'lf' });
+    const miss = await run('30d', { ...FILTERS, projectScope: 'lf' });
+    const hit = await run('30d', { ...FILTERS, projectScope: 'lf' });
 
-    expect(getFormerEmployees).toHaveBeenCalledTimes(1);
-    expect(getFormerEmployees).toHaveBeenCalledWith(ACCOUNT, '365d', { ...FILTERS, projectScope: 'lf' });
+    expect(getFormerUsernames).toHaveBeenCalledTimes(1);
+    expect(getFormerUsernames).toHaveBeenCalledWith(ACCOUNT);
     for (const response of [miss, hit]) {
       expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'], accessBadge: 'viewer', isFormer: true });
       expect(response.rows.find((row) => row.lfUsername === 'dclarke')?.isFormer).toBeUndefined();
@@ -1160,40 +1154,82 @@ describe('OrgPeopleDirectoryService.getLive — former employees who still hold 
     expect(JSON.stringify(hit)).toBe(JSON.stringify(miss));
   });
 
-  it('leaves a former employee with a live seat or key-contact role current', async () => {
+  it('sends no address or title for a tagged row on a miss and on a hit', async () => {
+    cache.serveHits = true;
+
+    const miss = await run('30d', { ...FILTERS, projectScope: 'lf' });
+    const hit = await run('30d', { ...FILTERS, projectScope: 'lf' });
+
+    expect(cache.entry).not.toContain('grace@lfx-partner.example');
+    for (const response of [miss, hit]) {
+      expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ name: 'Grace Hopper', email: null, title: null, isFormer: true });
+      expect(JSON.stringify(response)).not.toContain('grace@lfx-partner.example');
+    }
+  });
+
+  it('names a tagged row by its LF username when its name was its address', async () => {
+    getAccessPrincipals.mockResolvedValue([
+      accessUser({ email: 'grace@lfx-partner.example', username: 'grace', name: 'grace@lfx-partner.example', role: 'viewer' }),
+    ]);
+    cache.serveHits = true;
+
+    const miss = await run('30d');
+    const hit = await run('30d');
+
+    for (const response of [miss, hit]) {
+      expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ name: 'grace', email: null, isFormer: true });
+      expect(JSON.stringify(response)).not.toContain('grace@lfx-partner.example');
+    }
+  });
+
+  it('leaves a former employee with a live seat or key-contact role current, with their address', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat({ username: 'grace', email: 'grace@lfx-partner.example', first_name: 'Grace', last_name: 'Hopper' })]);
     getKeyContactEmployees.mockResolvedValue([
       { email: 'kay@lfx-partner.example', lfUsername: 'kay', firstName: 'Kay', lastName: 'Cee', fullName: 'Kay Cee', jobTitle: null, initials: 'KC' },
     ]);
     getAccessPrincipals.mockResolvedValue([grace, accessUser({ email: 'kay@lfx-partner.example', username: null, name: 'Kay Cee' })]);
-    getFormerEmployees.mockResolvedValue({ ...formerResponse('grace'), rows: [...formerResponse('grace').rows, ...formerResponse('kay').rows] });
+    getFormerUsernames.mockResolvedValue(['grace', 'kay']);
 
     const response = await run('365d');
 
     expect(response.rows.some((row) => row.isFormer)).toBe(false);
-    expect(response.rows.find((row) => row.lfUsername === 'grace')?.sources).toEqual(['committee', 'access']);
+    expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['committee', 'access'], email: 'grace@lfx-partner.example' });
   });
 
   it('leaves the unranged roster (pickers, Access, Key Contacts) untagged and never reads former employees for it', async () => {
     const response = await run(null);
 
-    expect(getFormerEmployees).not.toHaveBeenCalled();
-    expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'], accessBadge: 'viewer' });
+    expect(getFormerUsernames).not.toHaveBeenCalled();
+    expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({
+      sources: ['access'],
+      accessBadge: 'viewer',
+      email: 'grace@lfx-partner.example',
+    });
     expect(response.rows.some((row) => row.isFormer)).toBe(false);
+    expect(cache.entry).not.toBeNull();
   });
 
   it('does not read former employees under non_lf, where access adds no live-only row', async () => {
     await run('365d', { ...FILTERS, projectScope: 'non_lf' });
 
-    expect(getFormerEmployees).not.toHaveBeenCalled();
+    expect(getFormerUsernames).not.toHaveBeenCalled();
   });
 
-  it('serves the roster untagged when the former read fails', async () => {
-    getFormerEmployees.mockRejectedValue(new Error('warehouse down'));
+  it('serves the roster untagged when the former read fails, with a warning, and does not cache it', async () => {
+    getFormerUsernames.mockRejectedValueOnce(new Error('warehouse down'));
+    cache.serveHits = true;
 
-    const response = await run('365d');
+    const failed = await run('365d');
 
-    expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'], accessBadge: 'viewer' });
-    expect(response.rows.some((row) => row.isFormer)).toBe(false);
+    expect(failed.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'], accessBadge: 'viewer' });
+    expect(failed.rows.some((row) => row.isFormer)).toBe(false);
+    expect(cache.entry).toBeNull();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_org_people_directory', expect.stringContaining('Former employees read failed'), expect.anything());
+
+    const recovered = await run('365d');
+
+    expect(getFormerUsernames).toHaveBeenCalledTimes(2);
+    expect(recovered.rows.find((row) => row.lfUsername === 'grace')?.isFormer).toBe(true);
+    expect(cache.entry).not.toBeNull();
   });
 });

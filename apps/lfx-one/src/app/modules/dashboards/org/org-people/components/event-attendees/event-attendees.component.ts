@@ -281,8 +281,9 @@ export class EventAttendeesComponent {
       for (const d of personDetails) {
         eventIds.add(d.eventId);
         if (d.isSpeaker) anySpeaker = true;
-        if (d.eventEndDate && (!lastAttendedTs || d.eventEndDate > lastAttendedTs)) {
-          lastAttendedTs = d.eventEndDate;
+        const eventDate = d.eventEndDate ?? d.eventStartDate;
+        if (eventDate && (!lastAttendedTs || eventDate > lastAttendedTs)) {
+          lastAttendedTs = eventDate;
         }
       }
 

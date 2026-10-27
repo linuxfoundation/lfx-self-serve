@@ -14,6 +14,22 @@ export function parseOrgLensTimeRange(value: string | null | undefined): OrgLens
   return isOrgLensTimeRange(value) ? value : ORG_LENS_DEFAULT_TIME_RANGE;
 }
 
+/**
+ * A BFF `range` / `timeRange` value with the legacy `12mo` (the old default, still sent by tabs opened before the
+ * Past 365 days ranges) read as `365d`; any other value is returned unchanged for the caller to validate.
+ */
+export function normalizeLegacyOrgLensTimeRange(value: string): string {
+  return value === '12mo' ? '365d' : value;
+}
+
+/** Window length in days of a bounded range; throws for any other value, so a SQL builder never inlines `undefined`. */
+export function orgLensTimeRangeDays(range: Exclude<OrgLensTimeRange, 'all'>): number {
+  if (!Object.hasOwn(ORG_LENS_TIME_RANGE_DAYS, range)) {
+    throw new Error(`Unknown bounded Org Lens time range: ${String(range)}`);
+  }
+  return ORG_LENS_TIME_RANGE_DAYS[range];
+}
+
 /** The `?range=` value to write for a range: `null` (dropped from the URL) at the default. */
 export function orgLensTimeRangeUrlParam(range: OrgLensTimeRange): OrgLensTimeRange | null {
   return range === ORG_LENS_DEFAULT_TIME_RANGE ? null : range;
@@ -25,7 +41,7 @@ export function orgLensTimeRangeUrlParam(range: OrgLensTimeRange): OrgLensTimeRa
  */
 export function orgLensTimeRangeStartDate(range: OrgLensTimeRange, now: Date = new Date()): string | null {
   if (range === 'all') return null;
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - ORG_LENS_TIME_RANGE_DAYS[range]));
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - orgLensTimeRangeDays(range)));
   return start.toISOString().slice(0, 10);
 }
 

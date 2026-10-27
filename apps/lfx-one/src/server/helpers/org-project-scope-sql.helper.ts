@@ -3,7 +3,10 @@
 
 import type { OrgProjectScope } from '@lfx-one/shared/interfaces';
 
-/** `AND`-prefixed SQL predicate for a project scope over a boolean LF flag column (`''` for `all`). Inlined, not bound: the scope is allow-listed. */
+/**
+ * `AND`-prefixed SQL predicate for a project scope over a boolean LF flag column (`''` for `all`). Inlined, not bound:
+ * the scope is allow-listed, and any other value throws rather than reaching the SQL.
+ */
 export function orgProjectScopePredicate(scope: OrgProjectScope, column = 'is_lf_project'): string {
   switch (scope) {
     case 'lf':
@@ -12,5 +15,7 @@ export function orgProjectScopePredicate(scope: OrgProjectScope, column = 'is_lf
       return `AND ${column} = FALSE`;
     case 'all':
       return '';
+    default:
+      throw new Error(`Unknown project scope: ${String(scope)}`);
   }
 }

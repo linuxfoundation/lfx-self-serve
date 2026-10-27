@@ -4,7 +4,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
-import { isOrgLensTimeRange, orgLensTimeRangeStartDate, orgLensTimeRangeUrlParam, orgLensUtcToday, parseOrgLensTimeRange } from './org-lens-time-range.utils';
+import {
+  isOrgLensTimeRange,
+  normalizeLegacyOrgLensTimeRange,
+  orgLensTimeRangeDays,
+  orgLensTimeRangeStartDate,
+  orgLensTimeRangeUrlParam,
+  orgLensUtcToday,
+  parseOrgLensTimeRange,
+} from './org-lens-time-range.utils';
 
 describe('Org Lens time range', () => {
   it('offers Insights-style labels narrowest first, defaulting to Past 365 days', () => {
@@ -22,10 +30,26 @@ describe('Org Lens time range', () => {
     expect(isOrgLensTimeRange(value)).toBe(true);
   });
 
-  // Old links (`12mo` from the previous Code page and All Employees, `12m`/`2y` from the old Trainees/Events pickers) land
-  // on the default, which is the same window as the old 12-month default.
+  // Old links (`12mo` from the previous Code page and All Employees, `12m`/`2y` from the old Trainees/Events pickers) fall
+  // back to the new Past 365 days default.
   it.each([null, undefined, '', '12mo', '12m', '2y', '3m', 'ALL'])('reads %s as the default', (value) => {
     expect(parseOrgLensTimeRange(value)).toBe('365d');
+  });
+
+  it('reads the legacy 12mo BFF value as 365d and leaves every other value for validation', () => {
+    expect(normalizeLegacyOrgLensTimeRange('12mo')).toBe('365d');
+    for (const value of ['30d', '90d', '365d', 'all', '12m', '2y', '12MO', '']) {
+      expect(normalizeLegacyOrgLensTimeRange(value)).toBe(value);
+    }
+  });
+
+  it('gives the window length of each bounded range and throws for anything else', () => {
+    expect(orgLensTimeRangeDays('30d')).toBe(30);
+    expect(orgLensTimeRangeDays('90d')).toBe(90);
+    expect(orgLensTimeRangeDays('365d')).toBe(365);
+    for (const value of ['all', '12mo', 'toString', '__proto__']) {
+      expect(() => orgLensTimeRangeDays(value as '30d')).toThrow(`Unknown bounded Org Lens time range: ${value}`);
+    }
   });
 
   it('drops the default from the URL and keeps every other range', () => {

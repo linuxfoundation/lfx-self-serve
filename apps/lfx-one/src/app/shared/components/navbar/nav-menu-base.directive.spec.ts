@@ -416,6 +416,12 @@ describe('NavMenuBase — carried query params', () => {
     expect(linkParams()['Code Contributions']).toEqual({ range: '30d' });
   });
 
+  it.each(['12mo', '2y', '365d'])('carries no ?range=%s, which is legacy, unknown or the default', async (range) => {
+    await router.navigateByUrl(`/org/acme-inc/contributions?range=${range}`);
+
+    expect(linkParams()).toEqual({ People: undefined, 'Code Contributions': undefined });
+  });
+
   it('carries nothing from a page that does not carry the range', async () => {
     await router.navigateByUrl('/org/acme-inc/projects?range=2y');
 

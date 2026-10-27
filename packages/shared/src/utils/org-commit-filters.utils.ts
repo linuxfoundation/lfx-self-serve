@@ -41,8 +41,13 @@ export function orgCommitFiltersFor(values: OrgCodeFilterValues): OrgCommitFilte
 
 /** The UI's picks for a filter set: code contributions, merged commits, or commits. */
 export function orgCodeFilterValues(filters: OrgCommitFilters): OrgCodeFilterValues {
-  const metric: OrgCodeMeasure = filters.metric === 'code' ? 'code' : filters.commitScope === 'merged' ? 'merged' : 'commits';
-  return { projectScope: filters.projectScope, metric };
+  if (filters.metric === 'code') {
+    return { projectScope: filters.projectScope, metric: 'code' };
+  }
+  if (filters.commitScope === 'merged') {
+    return { projectScope: filters.projectScope, metric: 'merged' };
+  }
+  return { projectScope: filters.projectScope, metric: 'commits' };
 }
 
 /**

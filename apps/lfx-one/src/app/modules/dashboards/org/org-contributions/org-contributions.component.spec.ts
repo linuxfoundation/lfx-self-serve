@@ -293,17 +293,41 @@ describe('OrgContributionsComponent', () => {
 
   // `?range=` is shared with the People tabs and carried by the nav links, so the page opens on and follows it.
   it('opens on the range carried from People, with the Insights-style options narrowest first', async () => {
-    const { fixture, getContributions } = await render(null, { queryParams: { range: '90d' } });
+    const { fixture, getContributions, navigate } = await render(null, { queryParams: { range: '90d' } });
 
     expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('90d');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '90d' }));
     expect(fixture.componentInstance['dateRangeOptions'].map((option) => option.label)).toEqual(['Past 30 days', 'Past 90 days', 'Past 365 days', 'All time']);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('reads a retired 12mo link as the default Past 365 days', async () => {
-    const { getContributions } = await render(null, { queryParams: { range: '12mo' } });
+  it.each(['12mo', '365d', '2y'])('reads a retired, default or unknown ?range=%s as Past 365 days and drops it from the URL on load', async (range) => {
+    const { getContributions, navigate } = await render(null, { queryParams: { range } });
 
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }), replaceUrl: true }));
+  });
+
+  it.each([
+    ['commits', { one: '1 commit', other: '25 commits' }],
+    ['code', { one: '1 contribution', other: '25 contributions' }],
+  ] as const)('labels the project and employee filter options with a singular or plural %s unit', async (metric, expected) => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      projectOptions: [
+        { slug: 'one', projectId: 'p-1', name: 'One', commits: 1, parentSlug: null },
+        { slug: 'many', projectId: 'p-2', name: 'Many', commits: 25, parentSlug: null },
+      ],
+      employeeOptions: [
+        { id: 'e-1', displayName: 'Ada', commits: 1 },
+        { id: 'e-2', displayName: 'Grace', commits: 25 },
+      ],
+    };
+    const { fixture } = await render(null, { queryParams: { metric }, response });
+
+    expect(fixture.componentInstance['projectOptions']().map((option) => option.sublabel)).toEqual([expected.one, expected.other]);
+    expect(fixture.componentInstance['employeeOptions']().map((option) => option.sublabel)).toEqual([expected.one, expected.other]);
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {

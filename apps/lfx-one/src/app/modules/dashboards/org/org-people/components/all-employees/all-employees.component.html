@@ -5,47 +5,64 @@
   <!-- Filter bar -->
   <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
     <div class="flex-1 md:min-w-56">
-      <div class="relative">
-        <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
-        <input
-          pInputText
-          type="text"
-          class="w-full pl-9"
-          placeholder="Search all employees..."
-          aria-label="Search all employees"
-          data-testid="org-people-all-employees-search-input"
-          [ngModel]="searchTerm()"
-          (ngModelChange)="searchTerm.set($event)" />
-      </div>
+      <lfx-input-text
+        [form]="filterForm"
+        control="search"
+        placeholder="Search all employees..."
+        icon="fa-light fa-magnifying-glass"
+        styleClass="w-full"
+        size="small"
+        dataTest="org-people-all-employees-search-input" />
     </div>
     <div class="w-full md:w-56" data-testid="org-people-all-employees-foundation-filter">
-      <p-select
+      <lfx-select
+        [form]="filterForm"
+        control="foundation"
+        size="small"
         [options]="foundationOptions()"
-        [ngModel]="selectedFoundationId()"
-        (ngModelChange)="selectedFoundationId.set($event)"
-        optionLabel="label"
-        optionValue="value"
         styleClass="w-full"
-        ariaLabel="Filter by foundation" />
+        ariaLabel="Filter by foundation"
+        dataTest="org-people-all-employees-foundation-select" />
     </div>
     <div class="w-full md:w-48" data-testid="org-people-all-employees-activity-filter">
-      <p-select
+      <lfx-select
+        [form]="filterForm"
+        control="activity"
+        size="small"
         [options]="activityOptions()"
-        [ngModel]="selectedActivity()"
-        (ngModelChange)="selectedActivity.set($event)"
-        optionLabel="label"
-        optionValue="value"
         styleClass="w-full"
-        ariaLabel="Filter by activity" />
+        ariaLabel="Filter by activity"
+        dataTest="org-people-all-employees-activity-select" />
     </div>
     <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
-      <lfx-select [form]="filterForm" control="employment" size="small" [options]="employmentOptions" styleClass="w-full" ariaLabel="Filter by employment" />
+      <lfx-select
+        [form]="filterForm"
+        control="employment"
+        size="small"
+        [options]="employmentOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by employment"
+        dataTest="org-people-all-employees-employment-select" />
     </div>
     <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
-      <lfx-select [form]="filterForm" control="range" size="small" [options]="rangeOptions" styleClass="w-full" ariaLabel="Filter by time range" />
+      <lfx-select
+        [form]="filterForm"
+        control="range"
+        size="small"
+        [options]="rangeOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by time range"
+        dataTest="org-people-all-employees-range-select" />
     </div>
     <div class="w-full md:w-44" data-testid="org-people-all-employees-project-scope-filter">
-      <lfx-select [form]="filterForm" control="projectScope" size="small" [options]="projectScopeOptions" styleClass="w-full" ariaLabel="Filter by projects" />
+      <lfx-select
+        [form]="filterForm"
+        control="projectScope"
+        size="small"
+        [options]="projectScopeOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by projects"
+        dataTest="org-people-all-employees-project-scope-select" />
     </div>
     <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
       <lfx-select
@@ -54,7 +71,8 @@
         size="small"
         [options]="metricOptions"
         styleClass="w-full"
-        ariaLabel="Count all commits, only main branch commits or all code contributions" />
+        ariaLabel="Count all commits, only main branch commits or all code contributions"
+        dataTest="org-people-all-employees-metric-select" />
     </div>
     @if (canClearFilters()) {
       <button
@@ -78,6 +96,15 @@
       data-testid="org-people-all-employees-error"
       (ctaClick)="retry()" />
   } @else {
+    @if (formerUnavailable()) {
+      <div
+        class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+        role="status"
+        data-testid="org-people-all-employees-former-error">
+        <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        <span>Former employees couldn't be loaded, so only current employees are shown.</span>
+      </div>
+    }
     <!-- 5 stat cards -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5" data-testid="org-people-all-employees-stats">
       @if (isLoading()) {

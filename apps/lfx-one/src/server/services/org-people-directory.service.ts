@@ -190,12 +190,15 @@ function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmpl
  *
  * Merges the stored Snowflake roster — one time range of `ORG_PEOPLE_ALL_RANGES`, or the unranged
  * `ORG_PEOPLE_ALL` roster the reassign pickers read; the source of activity counts — with three LIVE
- * sources — committee/board seats, key contacts, and the org's writers/auditors — deduped by
- * lowercased email so a person who was added since the last dbt build still appears. The live
- * sources are current state and are not windowed. The response keeps the
- * exact `OrgAllEmployeesResponse` shape; live-only people surface with zero activity counts and a
- * `sources` provenance array. Each source is fetched with `Promise.allSettled` so a single upstream
- * outage degrades the roster gracefully rather than failing the whole tab.
+ * sources — committee/board seats, key contacts, and the org's writers/auditors — so a person who was
+ * added since the last dbt build still appears. Records match on their verified LF username
+ * (`resolveMergeKey`); the lowercased email is the key only for a record without one, such as a pending
+ * invite or an unresolved seat, and key contacts always match on email. The two kinds of key never
+ * match each other, except that a live identity-less row is folded into the one identity row that owns
+ * its address (`absorbIdentitylessRows`). The live sources are current state and are not windowed. The
+ * response keeps the exact `OrgAllEmployeesResponse` shape; live-only people surface with zero activity
+ * counts and a `sources` provenance array. Each source is fetched with `Promise.allSettled` so a single
+ * upstream outage degrades the roster gracefully rather than failing the whole tab.
  */
 export class OrgPeopleDirectoryService {
   private readonly peopleService: OrgLensPeopleService;
@@ -234,6 +237,9 @@ export class OrgPeopleDirectoryService {
    * them, since they come from one parsed entry. That is safe only because the response is read-only
    * downstream — it is serialized to the client or searched by `OrgLensPeopleService`, never mutated.
    * A consumer that needs to mutate it must copy first.
+   *
+   * A roster computed while the former-employee read failed is served but not cached: its access-only
+   * former employees went untagged, so storing it would list them as current for the whole TTL.
    */
   public async getLive(req: Request, accountId: string, range: OrgLensTimeRange | null, requestedFilters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const filters = range ? requestedFilters : DEFAULT_ORG_COMMIT_FILTERS;
@@ -243,17 +249,22 @@ export class OrgPeopleDirectoryService {
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
     // other caller that arrived without a resolvable identity.
-    const entry = await coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) =>
-      withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+    const entry = await coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
+      let formerResolved = true;
+      return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
         namespace,
         username,
         accountId,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactDirectory(await this.computeLive(req, accountId, range, filters.projectScope)),
+        async () => {
+          const live = await this.computeLive(req, accountId, range, filters.projectScope);
+          formerResolved = live.formerResolved;
+          return toCompactDirectory(live.directory);
+        },
         isCompactDirectoryEntry,
-        isCurrent
-      )
-    );
+        () => formerResolved && isCurrent()
+      );
+    });
     return toWireResponse(fromCompactDirectory(entry), filters);
   }
 
@@ -262,7 +273,7 @@ export class OrgPeopleDirectoryService {
     accountId: string,
     range: OrgLensTimeRange | null,
     projectScope: OrgProjectScope
-  ): Promise<OrgAllEmployeesCountedResponse> {
+  ): Promise<{ directory: OrgAllEmployeesCountedResponse; formerResolved: boolean }> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
@@ -270,13 +281,16 @@ export class OrgPeopleDirectoryService {
     // stored rows: no row exists only because of a live seat, key contact or access.
     const lfEngagement = projectScope !== 'non_lf';
     // Only a ranged view with live-only rows can list a former employee through their Org Lens access; the
-    // unranged picker roster never reads former employees.
+    // unranged picker roster never reads former employees. Whether someone left is not a property of the
+    // view: the range's former rows need code in that range and scope, so a former employee whose code is
+    // older or outside the scope would read as current. The account's whole former population decides instead,
+    // read as usernames only: the full all-time former roster outgrows its cache on the largest accounts.
     const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
       this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
-      range && lfEngagement ? this.peopleService.getFormerEmployees(accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }) : Promise.resolve(null),
+      range && lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
     ]);
 
     const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
@@ -287,22 +301,24 @@ export class OrgPeopleDirectoryService {
       });
     }
 
-    const formerUsernames = new Set<string>();
-    if (former.status === 'fulfilled') {
-      for (const row of former.value?.rows ?? []) {
-        const formerUsername = (row.lfUsername ?? '').trim().toLowerCase();
-        if (formerUsername) formerUsernames.add(formerUsername);
-      }
-    } else {
-      this.logSourceFailure(req, accountId, 'former employees', former.reason);
+    const formerUsernames = new Set<string>(former.status === 'fulfilled' ? former.value : []);
+    if (former.status === 'rejected') {
+      // Served untagged rather than without access-only rows: hiding every access-only principal would drop
+      // current people who are not in the stored roster yet, while an untagged former one is a brief
+      // misclassification that `getLive` keeps out of the cache.
+      logger.warning(req, 'get_org_people_directory', 'Former employees read failed; serving access-only rows untagged and uncached', {
+        org_uid: accountId,
+        err: former.reason,
+      });
     }
 
-    return this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
+    const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
+    return { directory, formerResolved: former.status === 'fulfilled' };
   }
 
   /**
    * Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows.
-   * `formerUsernames` are the range's former employees, whose access-only live rows are tagged former.
+   * `formerUsernames` are the account's former employees, whose access-only live rows are tagged former.
    */
   private merge(
     req: Request,
@@ -479,16 +495,24 @@ export class OrgPeopleDirectoryService {
 
   /**
    * Org Lens access alone does not make a former employee current again — only a live seat or key-contact
-   * role does — so a live row held up by access alone, whose username is one of the range's former
+   * role does — so a live row held up by access alone, whose username is one of the account's former
    * employees, is tagged `isFormer` and the current view does not list it. It stays in the directory so the
    * former row shown under "All" and "Former employees" can take its access badge. A stored current row is
    * never tagged, and a pending invite has no username to match.
+   *
+   * A tagged row is shaped like the former roster's own rows: no address is sent for someone who left, and
+   * none stands in for a blank name, so a name taken from the address falls back to the LF username. The
+   * title goes too: it is the access record's, which describes the role they held here.
    */
   private tagFormerAccessPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>, formerUsernames: ReadonlySet<string>): void {
     if (formerUsernames.size === 0) return;
     for (const row of byKey.values()) {
       if (row.lfUsername && row.sources.every((source) => source === 'access') && formerUsernames.has(row.lfUsername)) {
         row.isFormer = true;
+        if (row.name === row.email || row.emails.includes(row.name.toLowerCase())) row.name = row.lfUsername;
+        row.email = null;
+        row.emails = [];
+        row.title = null;
       }
     }
   }

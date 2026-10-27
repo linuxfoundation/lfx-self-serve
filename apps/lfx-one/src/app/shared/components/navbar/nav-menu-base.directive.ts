@@ -6,9 +6,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import type { IsActiveMatchOptions, Params } from '@angular/router';
 import { environment } from '@environments/environment';
-import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
+import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES, ORG_LENS_TIME_RANGE_QUERY_PARAM } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext, orgLensDestinationKey } from '@lfx-one/shared/utils';
+import { lensItemToProjectContext, orgLensDestinationKey, orgLensTimeRangeUrlParam, parseOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
 import { LensService } from '@services/lens.service';
@@ -313,7 +313,10 @@ export abstract class NavMenuBase {
       for (const target of carriers) {
         const carried: Params = {};
         for (const name of target.names) {
-          if (source.names.includes(name) && current[name] !== undefined) carried[name] = current[name];
+          if (!source.names.includes(name) || current[name] === undefined) continue;
+          // A range is carried only as a valid, non-default value, so a legacy `12mo` or a typo never spreads to the next page.
+          const value = name === ORG_LENS_TIME_RANGE_QUERY_PARAM ? orgLensTimeRangeUrlParam(parseOrgLensTimeRange(current[name])) : current[name];
+          if (value !== null) carried[name] = value;
         }
         if (Object.keys(carried).length) params[target.trackKey] = { ...project, ...carried };
       }

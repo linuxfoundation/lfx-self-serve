@@ -161,14 +161,12 @@ export interface ContributionsFilterOption {
   sublabel: string;
 }
 
-/** Repositories-table headers and count unit for one {@link OrgCommitFilters.metric}. */
+/** Repositories-table headers for one {@link OrgCommitFilters.metric}. */
 export interface ContributionsMetricLabels {
   /** Count column header, e.g. `Commits`. */
   count: string;
   firstDate: string;
   lastDate: string;
-  /** Plural unit in filter-option sublabels, e.g. `12 commits`. */
-  unit: string;
 }
 
 /** Active content tab — drives tab-aware KPI search semantics and which table `page`/`size` paginate. */
