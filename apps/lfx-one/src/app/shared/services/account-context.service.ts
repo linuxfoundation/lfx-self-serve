@@ -4,9 +4,10 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { computed, effect, inject, Injectable, PLATFORM_ID, Signal, signal, untracked, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ROLLUP_ENABLED_FLAG, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ROLLUP_ENABLED_FLAG, ORG_NOT_FOUND_PATH, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgUrlSegment } from '@lfx-one/shared/utils';
+import { Router } from '@angular/router';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
@@ -57,6 +58,7 @@ export class AccountContextService {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly router = inject(Router);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -155,7 +157,9 @@ export class AccountContextService {
   private readonly rollUpFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ROLLUP_ENABLED_FLAG);
 
   /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
-  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
+  public readonly canSelectRollUp: Signal<boolean> = computed(
+    () => this.featureFlagService.providerReady() && this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS
+  );
 
   /**
    * True while eligibility cannot be judged: `rollUpOrganizationCount()` is a lower bound, so a
@@ -174,9 +178,21 @@ export class AccountContextService {
    * reason. Staying in the roll-up through a degraded lookup is recoverable; silently overwriting
    * the cookie is not.
    */
-  public readonly rollUpEligibilityPending: Signal<boolean> = computed(
-    () => this.rollUpFlag() && (!this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok')
-  );
+  public readonly rollUpEligibilityPending: Signal<boolean> = computed(() => {
+    // The flag value itself is not trustworthy yet. `AppComponent` calls
+    // `initializeUserOrganizations()` (line ~146) before `featureFlagService.initialize()` (~164),
+    // and `getBooleanFlag` answers false until the provider streams real values — so a restored
+    // `{ uid: 'all' }` cookie read as "feature off" and was overwritten with the first seed before
+    // anyone had asked LaunchDarkly. `providerReady` is the distinction between "off" and "not yet".
+    if (!this.featureFlagService.providerReady()) {
+      return true;
+    }
+    // A settled "off" is a real answer: nothing to wait for, and a stale roll-up should be demoted.
+    if (!this.rollUpFlag()) {
+      return false;
+    }
+    return !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok';
+  });
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -246,10 +262,16 @@ export class AccountContextService {
     // the path guard does not re-run on a page it already activated. Without this effect a caller
     // whose access has since shrunk to one organization would stay in roll-up mode for the session.
     effect(() => {
+      // `isRollUp()` first, and it reads nothing but the selection. There is no eligibility question
+      // to answer while a concrete organization is selected, and asking anyway would pull the flag
+      // provider and the grant sets into every consumer that merely holds this service.
+      if (!this.isRollUp()) {
+        return;
+      }
       const pending = this.rollUpEligibilityPending();
       const eligible = this.canSelectRollUp();
       untracked(() => {
-        if (pending || eligible || !this.isRollUp()) {
+        if (pending || eligible) {
           return;
         }
         this.demoteFromRollUp();
@@ -601,13 +623,77 @@ export class AccountContextService {
   private demoteFromRollUp(): void {
     this.addressedUid.set(null);
     this.pinSource.set(null);
-    const fallback = this.userOrganizations()[0];
-    if (fallback) {
-      this.setAccount(fallback);
+
+    const fallback = this.demotionFallback();
+    if (!fallback) {
+      this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
+      this.clearStorage();
+      this.repointAddressAfterDemotion(null);
       return;
     }
-    this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
-    this.clearStorage();
+
+    this.setAccount(fallback);
+    // A uid-only stub (a grant with no seed behind it) has no display fields yet.
+    if (!fallback.accountName) {
+      void this.refreshCanonicalRecord(fallback);
+    }
+    this.repointAddressAfterDemotion(fallback);
+  }
+
+  /**
+   * The organization a demoted caller lands on. Persona seeds first, since they carry display
+   * fields — but eligibility counts direct and inherited grants too, and the caller this feature
+   * targets can hold organizations with no seed at all. Falling back to seeds alone dropped such a
+   * caller to the placeholder and cleared their cookie even though they still held an organization.
+   */
+  private demotionFallback(): Account | null {
+    const seed = this.userOrganizations()[0];
+    if (seed) {
+      return seed;
+    }
+    for (const set of [
+      this.orgRoleGrantsService.writerSet(),
+      this.orgRoleGrantsService.auditorSet(),
+      this.orgRoleGrantsService.inheritedWriterSet(),
+      this.orgRoleGrantsService.inheritedAuditorSet(),
+    ]) {
+      for (const uid of set) {
+        // Same shape the cookie-restore path uses for an id with no seed behind it.
+        return { ...PLACEHOLDER_ACCOUNT, uid };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Leave the `/org/all/…` address when the selection is no longer the roll-up. Without this the
+   * page keeps a combined-view address while its consumers read one organization's data — the
+   * mismatch spec 050 exists to prevent, just in the other direction. The page, query and fragment
+   * are kept; only the organization segment changes.
+   *
+   * `replaceUrl`, not a push: the roll-up address was never valid for this caller, so it is a
+   * correction rather than a step they could sensibly go Back to. Browser-only — SSR issues no
+   * redirects (FR-021) — and a no-op off `/org/all/…`, which is every page the guard already
+   * re-points on its own next run.
+   */
+  private repointAddressAfterDemotion(next: Account | null): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const tree = this.router.parseUrl(this.router.url);
+    const primary = tree.root.children['primary'];
+    const segments = primary?.segments ?? [];
+    if (segments.length < 2 || segments[0].path !== 'org' || !isOrgRollUpSegment(segments[1].path)) {
+      return;
+    }
+    const segment = next ? orgUrlSegment(next) : null;
+    if (!segment) {
+      void this.router.navigate([ORG_NOT_FOUND_PATH], { replaceUrl: true });
+      return;
+    }
+    primary.segments[1].path = segment;
+    primary.segments[1].parameters = {};
+    void this.router.navigateByUrl(tree, { replaceUrl: true });
   }
 
   /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */

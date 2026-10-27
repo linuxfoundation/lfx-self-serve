@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { DefaultUrlSerializer, Router, UrlSerializer } from '@angular/router';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -522,6 +523,9 @@ describe('AccountContextService — All Organizations roll-up', () => {
   let service: AccountContextService;
   let httpGet: ReturnType<typeof vi.fn>;
   let rollUpFlag: WritableSignal<boolean>;
+  let providerReady: WritableSignal<boolean>;
+  let routerUrl: string;
+  let navigateByUrl: ReturnType<typeof vi.fn>;
   /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
   let liveRows: OrgLensAccountContextResponse[];
   let grants: {
@@ -538,6 +542,9 @@ describe('AccountContextService — All Organizations roll-up', () => {
   beforeEach(() => {
     cookies = new Map();
     rollUpFlag = signal(true);
+    providerReady = signal(true);
+    routerUrl = '/org/all/people';
+    navigateByUrl = vi.fn();
     liveRows = [];
     httpGet = vi.fn().mockReturnValue(of(null));
     grants = {
@@ -563,7 +570,19 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag, providerReady } },
+        { provide: UrlSerializer, useClass: DefaultUrlSerializer },
+        {
+          provide: Router,
+          useValue: {
+            get url() {
+              return routerUrl;
+            },
+            parseUrl: (url: string) => TestBed.inject(UrlSerializer).parse(url),
+            navigateByUrl,
+            navigate: vi.fn(),
+          },
+        },
         { provide: HttpClient, useValue: { get: httpGet } },
       ],
     });
@@ -750,5 +769,85 @@ describe('AccountContextService — All Organizations roll-up', () => {
     TestBed.tick();
 
     expect(service.isRollUp()).toBe(true);
+  });
+
+  /**
+   * Regression, PR #4415 review 3 (high). `AppComponent` calls `initializeUserOrganizations()`
+   * before `featureFlagService.initialize()`, and `getBooleanFlag` answers false until the provider
+   * streams real values — so the flag I added read as "feature off" at restore time and the saved
+   * `{ uid: 'all' }` was overwritten with the first seed before LaunchDarkly had been asked.
+   */
+  it('does not treat an unresolved feature flag as a disabled one', () => {
+    providerReady.set(false);
+    rollUpFlag.set(false); // what getBooleanFlag answers before the provider is ready
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+
+    service.initializeUserOrganizations([seedA, seedB]);
+
+    expect(service.isRollUp()).toBe(true);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  it('demotes once the provider confirms the flag is genuinely off', () => {
+    providerReady.set(false);
+    rollUpFlag.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA, seedB]);
+
+    providerReady.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+  });
+
+  /**
+   * Regression, PR #4415 review 3. Eligibility counts inherited grants, but the demotion fallback
+   * only looked at persona seeds — so a caller holding one inherited organization and no seed was
+   * dropped to the placeholder with their cookie cleared, rather than onto the organization they
+   * still held.
+   */
+  it('demotes onto a granted organization when the caller has no persona seeds', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    expect(service.isRollUp()).toBe(true);
+
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_B);
+  });
+
+  /**
+   * Regression, PR #4415 review 3. Demotion changed the selection but left the address at
+   * `/org/all/…`, so page consumers rendered one organization's data under a combined-view URL.
+   */
+  it('re-points the address off /org/all when it demotes, keeping the page', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(navigateByUrl).toHaveBeenCalledTimes(1);
+    const [tree, extras] = navigateByUrl.mock.calls[0];
+    expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/org/${UID_A}/people`);
+    expect(extras).toEqual({ replaceUrl: true });
+  });
+
+  it('leaves the address alone when demoting away from an Org Lens page', () => {
+    routerUrl = '/profile';
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(navigateByUrl).not.toHaveBeenCalled();
   });
 });
