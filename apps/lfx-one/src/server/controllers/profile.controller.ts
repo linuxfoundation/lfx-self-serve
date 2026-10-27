@@ -2337,7 +2337,7 @@ export class ProfileController {
       this.cdpService
         .getIdentitiesForUser(req, lfid)
         .then((identities) => {
-          const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === email);
+          const emailIdentity = identities.find((id) => id.platform === 'email' && emailsEqual(id.value, email));
           if (emailIdentity) {
             this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
               logger.warning(req, 'verify_and_link_email', 'CDP verify failed (non-blocking)', {
@@ -2599,7 +2599,7 @@ export class ProfileController {
       this.cdpService
         .getIdentitiesForUser(req, lfid)
         .then((identities) => {
-          const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
+          const emailIdentity = identities.find((id) => id.platform === 'email' && emailsEqual(id.value, pending.email));
           if (emailIdentity) {
             this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
               logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
