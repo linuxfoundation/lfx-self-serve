@@ -3,14 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { FormGroup } from '@angular/forms';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
-import {
-  MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL,
-  MENTORSHIP_MENTEE_ELIGIBILITY_INTRO,
-  MENTORSHIP_MENTEE_ELIGIBILITY_TITLE,
-  MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL,
-  MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL,
-} from '@lfx-one/shared/constants';
+import { MenteeEligibilityChecksComponent } from '@app/modules/mentorship/mentee/mentee-eligibility-checks/mentee-eligibility-checks.component';
+import { MENTORSHIP_MENTEE_ELIGIBILITY_INTRO, MENTORSHIP_MENTEE_ELIGIBILITY_TITLE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterFieldErrors } from '@lfx-one/shared/interfaces';
 
 /**
@@ -21,7 +15,7 @@ import { MentorshipMenteeRegisterFieldErrors } from '@lfx-one/shared/interfaces'
  */
 @Component({
   selector: 'lfx-mentorship-mentee-eligibility-section',
-  imports: [CheckboxComponent],
+  imports: [MenteeEligibilityChecksComponent],
   templateUrl: './mentee-eligibility-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -31,7 +25,4 @@ export class MenteeEligibilitySectionComponent {
 
   protected readonly title = MENTORSHIP_MENTEE_ELIGIBILITY_TITLE;
   protected readonly intro = MENTORSHIP_MENTEE_ELIGIBILITY_INTRO;
-  protected readonly ageLabel = MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL;
-  protected readonly workAuthorizedLabel = MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL;
-  protected readonly noDuplicateProfileLabel = MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL;
 }

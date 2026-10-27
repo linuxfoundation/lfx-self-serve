@@ -20,7 +20,7 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, describeMktgRevisionAuthor, mktgKitRootCrumb } from '@lfx-one/shared/utils';
+import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -108,7 +108,6 @@ export class MktgDocumentsComponent {
   // === Computed ===
   protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
-  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.projectName(), ['..']), { label: 'Documents' }]);
   protected readonly selectedType: Signal<MktgDocumentType> = this.initSelectedType();
   protected readonly showAll = computed(() => !MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === this.selectedParam()));
   protected readonly allDocuments = computed(() =>
@@ -499,7 +498,7 @@ export class MktgDocumentsComponent {
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
     if (active) {
-      if (active.state === 'questions') return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
+      if (active.state === 'questions') return { badge: type.agentKey === 'member-360' ? 'Paused' : 'Needs answers', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };
     }
     if (documentCount === 0 && this.documents()?.progressUnavailable) return { badge: '', badgeClass: '' };

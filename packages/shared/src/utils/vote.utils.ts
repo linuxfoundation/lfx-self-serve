@@ -390,7 +390,7 @@ export function mergeCommentResults(commentResults: PollCommentResult[], detailP
 }
 
 /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
-function computeResultPercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
+export function computeResultPercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
   if (apiPercentage > 0) return apiPercentage;
   if (totalResponses <= 0) return 0;
   return Math.round((voteCount / totalResponses) * 100);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -17,6 +18,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -167,6 +169,7 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
+  protected readonly isSendingSummary = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
@@ -304,6 +307,16 @@ export class VotesTableComponent {
         command: () => this.sendMailingListReminder(vote),
       });
     }
+    // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
+    if (vote.writer === true && vote.status === PollStatus.ENDED) {
+      items.push({
+        label: 'Send summary',
+        icon: 'fa-light fa-chart-simple',
+        disabled: this.isSendingSummary(),
+        tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
+        command: () => this.onSendSummary(vote),
+      });
+    }
     if (this.hasPMOAccess()) {
       items.push({ label: 'Clone', icon: 'fa-light fa-copy', command: () => this.cloneVote(vote) });
     }
@@ -404,6 +417,44 @@ export class VotesTableComponent {
                 detail: `Failed to delete ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
               });
               this.isDeleting.set(false);
+            },
+          });
+      },
+    });
+  }
+
+  /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
+  protected onSendSummary(vote: VoteTableRow): void {
+    this.confirmationService.confirm({
+      message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
+      header: 'Send summary',
+      acceptLabel: 'Send',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-info p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        this.isSendingSummary.set(true);
+        this.voteService
+          .sendVoteSummary(vote.uid)
+          .pipe(
+            take(1),
+            finalize(() => this.isSendingSummary.set(false))
+          )
+          .subscribe({
+            next: (result) => {
+              const detail =
+                result.failed_count > 0
+                  ? `Summary sent to ${result.recipient_count} voter(s); ${result.failed_count} failed.`
+                  : `Summary sent to ${result.recipient_count} voter(s).`;
+              this.messageService.add({ severity: result.failed_count > 0 ? 'warn' : 'success', summary: 'Summary sent', detail });
+            },
+            error: (error: unknown) => {
+              const isNotEnded = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === VOTE_SUMMARY_NOT_ENDED;
+              this.messageService.add({
+                severity: 'error',
+                summary: "Couldn't send summary",
+                detail: isNotEnded ? 'This vote has not closed yet.' : "We couldn't send the summary. Please try again.",
+              });
             },
           });
       },

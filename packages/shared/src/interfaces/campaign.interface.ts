@@ -133,7 +133,177 @@ export interface CampaignServiceCreativeAsset {
   mime_type: string;
   byte_size: number;
   checksum: string;
+  /**
+   * Pixel dimensions as read from the image header at upload. OPTIONAL upstream, and absent means
+   * UNKNOWN rather than 0: the service began recording them in migration 000047, so an asset stored
+   * before it has none and never will until a backfill runs. Carrying a fabricated 0 would read to a
+   * slot matcher as "fails every minimum", which is a different and wrong answer.
+   */
+  width?: number;
+  height?: number;
   created?: 'true' | 'false';
+}
+
+/** campaign-service's `creative-asset-list` — the brief's library plus the quota an upload is judged against. */
+export interface CampaignServiceCreativeAssetList {
+  assets: CampaignServiceCreativeAsset[];
+  count: number;
+  count_limit: number;
+  bytes_used: number;
+  bytes_limit: number;
+}
+
+/** campaign-service's `creative-slot-assignment` — one platform image slot and the assets that fill it. */
+export interface CampaignServiceCreativeSlotAssignment {
+  slot_key: string;
+  platform: string;
+  /** Absent where the platform has a single ad shape. */
+  channel?: string;
+  slot: string;
+  label: string;
+  requirement: string;
+  asset_ids: string[];
+  min_count: number;
+  max_count: number;
+}
+
+/** campaign-service's `creative-slot-gap` — one required rule the library cannot meet. */
+export interface CampaignServiceCreativeSlotGap {
+  platform: string;
+  channel?: string;
+  /** Absent when the requirement spans several slots and no single one is required on its own. */
+  slot_key?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** campaign-service's `creative-asset-plan` — which stored assets fit which slots, and what is missing. */
+export interface CampaignServiceCreativeAssetPlan {
+  platforms: string[];
+  assignments: CampaignServiceCreativeSlotAssignment[];
+  gaps: CampaignServiceCreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One stored creative asset as the browser sees it.
+ *
+ * `width`/`height` stay optional here for the same reason they are optional upstream — absent means
+ * the dimensions were never recorded, which a slot grid must render as "unknown", not as "0".
+ */
+export interface StoredCreativeAsset {
+  id: string;
+  projectId: string;
+  briefId: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * A brief's creative-asset library plus its quota.
+ *
+ * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
+ * knows before it starts how many assets and bytes it may still add — instead of discovering the
+ * brief is full by sending file 51 and being refused.
+ */
+export interface CreativeAssetLibrary {
+  assets: StoredCreativeAsset[];
+  count: number;
+  countLimit: number;
+  bytesUsed: number;
+  bytesLimit: number;
+}
+
+/** One platform image slot and the stored assets that fill it, best fit first. */
+export interface CreativeSlotAssignment {
+  slotKey: string;
+  platform: string;
+  channel?: string;
+  slot: string;
+  label: string;
+  /** The slot's rule as an operator-readable sentence, carried even on a full slot. */
+  requirement: string;
+  assetIds: string[];
+  minCount: number;
+  maxCount: number;
+}
+
+/** One required slot or cross-slot rule the library leaves short. */
+export interface CreativeSlotGap {
+  platform: string;
+  channel?: string;
+  slotKey?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** The computed slot grid for a brief's library. A pure read — nothing is attached to anything. */
+export interface CreativeAssetPlan {
+  platforms: string[];
+  assignments: CreativeSlotAssignment[];
+  gaps: CreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One row of the slot-coverage grid: a slot the plan filled, a slot it left short, or a
+ * cross-slot requirement that names no single slot.
+ *
+ * Assembled from a plan's `assignments` and `gaps` TOGETHER, because the two describe the same
+ * slot from opposite sides — a slot holding one of the two images it needs appears in both, and
+ * rendering them as separate rows would show an operator the same slot twice with contradictory
+ * answers.
+ */
+export interface CreativeSlotCoverageRow {
+  key: string;
+  label: string;
+  /** The slot's rule as a sentence, when the plan carried an assignment for it. */
+  requirement: string;
+  /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
+  filled: number;
+  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  need: number;
+  /** The plan's own words for why it is short. Empty when nothing is missing. */
+  reason: string;
+  status: 'filled' | 'short' | 'missing';
+  statusLabel: string;
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in.
+   */
+  countText: string;
+}
+
+/** The coverage rows for one platform, or for one channel within a platform. */
+export interface CreativeSlotCoverageGroup {
+  key: string;
+  /** The platform's display label, with its channel appended when the plan named one. */
+  label: string;
+  rows: CreativeSlotCoverageRow[];
+  /** Rows still short or missing — what an operator has to act on in this group. */
+  openCount: number;
+}
+
+/**
+ * The slot grid's own read of `get-asset-plan`.
+ *
+ * `idle` is NOT `ready` with an empty plan: before a brief is saved there is nothing to plan
+ * against, and an empty plan rendered as a result would read as "no gaps — this library can
+ * launch", which is the one thing it does not mean.
+ */
+export interface CreativeSlotCoverageState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  plan: CreativeAssetPlan | null;
+  message: string;
 }
 
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
@@ -4416,6 +4586,27 @@ export interface CampaignListResult {
    * the pasted image URL stays offered either way.
    */
   redditAssetUploadEnabled: boolean;
+  /**
+   * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
+   * brief and naming them by asset id in the Google creative fields.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` flag. The claim the flag makes is deliberately NOT
+   * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
+   * `assets:mutate`, so no URL signing is involved and none is asserted
+   * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
+   * that the deployed campaign-service resolves Google creative asset ids at all — an older one
+   * ignores them and dispatches a campaign with no images, reporting success. The legacy creator
+   * never reads them either, hence the cutover half.
+   *
+   * NOTHING IN THE CLIENT READS THIS YET. It is served ahead of the Google creative asset-id field:
+   * at this commit `GoogleDemandGenCreative`, `GooglePerformanceMaxCreative` and
+   * `GoogleDisplayCreative` carry image URLs only, with no asset-id key for a stored image to go
+   * in, so the library control it gates does not exist. The Reddit sibling's client model — `boolean | null` on the component, `null` for
+   * unanswered, withholding the control — is the shape to mirror when that field lands; until then
+   * the Google section offers the pasted image URL and nothing else, flag on or off.
+   */
+  googleAssetUploadEnabled: boolean;
   /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *

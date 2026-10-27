@@ -703,6 +703,41 @@ export class VoteController {
     }
   }
 
+  /**
+   * POST /votes/:uid/summary — sends the on-demand close summary to every invited voter (#3662).
+   * On demand only, never scheduled. The service writer-checks, then refuses a vote that hasn't
+   * ended yet; the summary carries aggregate results only, never a per-voter ballot.
+   */
+  public async sendVoteSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'send_vote_summary', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'send_vote_summary',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const result = await this.voteService.sendVoteSummary(req, uid);
+
+      logger.success(req, 'send_vote_summary', startTime, {
+        vote_uid: uid,
+        recipient_count: result.recipient_count,
+        failed_count: result.failed_count,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** Validates poll_comment_prompts shape and caps, then rebuilds each entry from validated fields only.
    *  Throws ServiceValidationError (unlike the validate* helpers, which call next() and return false) —
    *  callers must invoke this inside the handler's try block so the catch routes it to next(). Same

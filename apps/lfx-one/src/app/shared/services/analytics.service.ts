@@ -1148,6 +1148,19 @@ export class AnalyticsService {
     );
   }
 
+  /** One past event's registrations per format, with last year's; there is no forecast. */
+  public getEventsRegistrationHistory(query: HealthMetricsEventsForecastCurveQuery): Observable<HealthMetricsEventsForecastCurve> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the dialog says it failed instead of drawing an empty curve.
+    return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-history', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-history failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
   /** Every closed event in the four periods, with each period's header totals, for the Events tab. */
   public getEventsPast(query: HealthMetricsEventsPastQuery): Observable<HealthMetricsEventsPast> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };

@@ -200,6 +200,34 @@ describe('MktgDocumentStoreService', () => {
     retry.flush({});
   });
 
+  it.each([true, false])('rethrows a document 404 but logs it only when expectedPending is false (%s)', (expectedPending) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi.fn();
+    try {
+      service.getDocument('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, expectedPending).subscribe({ error });
+      http.expectOne((request) => request.url.endsWith('/run-012345678901234567890123')).flush('missing', { status: 404, statusText: 'Not Found' });
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
+      if (expectedPending) {
+        expect(consoleError).not.toHaveBeenCalled();
+      } else {
+        expect(consoleError).toHaveBeenCalledWith('Failed to load a Marketing OS document', expect.objectContaining({ status: 404 }));
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+  it('keeps logging non-404 failures even for a matching pending document', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi.fn();
+    try {
+      service.getDocument('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true).subscribe({ error });
+      http.expectOne((request) => request.url.endsWith('/run-012345678901234567890123')).flush('unavailable', { status: 503, statusText: 'Unavailable' });
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 503 }));
+      expect(consoleError).toHaveBeenCalledWith('Failed to load a Marketing OS document', expect.objectContaining({ status: 503 }));
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const next = vi.fn();

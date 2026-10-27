@@ -2,40 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgKitCrumbsFor, mktgKitRootCrumb, mktgKitRootPath, mktgRunRouteFor } from './mktg-navigation.utils';
+import { mktgKitRootPath, mktgRunRouteFor } from './mktg-navigation.utils';
 
-describe('fixed Marketing kit parents', () => {
-  const base = '/foundation/mktg-os-agents';
-  it('builds the root label once with an optional parent target and neutral fallback', () => {
-    expect(mktgKitRootCrumb('Synthetic Project', [base])).toEqual({ label: 'Synthetic Project kit', route: [base] });
-    expect(mktgKitRootCrumb('')).toEqual({ label: 'Project kit' });
-  });
-  it('preserves the lens and strips asset-only state', () => {
+describe('Marketing kit route roots', () => {
+  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('preserves %s and strips document-only state', (base) => {
     expect(mktgKitRootPath(`${base}/documents/faq/living?project=synthetic&type=faq#sources`)).toBe(base);
-    expect(mktgKitRootPath('/project/mktg-os-agents?state=draft')).toBe('/project/mktg-os-agents');
-  });
-  it.each(['foundation-message', 'foundation-setup', 'brand-kit', 'boilerplates', 'faq', 'icp'])('links %s to Positioning & brand', (key) => {
-    expect(mktgKitCrumbsFor(key, 'Synthetic Project', base, 'Asset')).toEqual([
-      { label: 'Synthetic Project kit', route: [base] },
-      { label: 'Positioning & brand', route: [base, 'families', 'positioning-brand'] },
-      { label: 'Asset' },
-    ]);
+    expect(mktgKitRootPath(`${base}?state=draft`)).toBe(base);
   });
   it.each([
-    ['aeo-geo', 'website-web'],
-    ['linkedin-post', 'social-community'],
-    ['member-360', 'member-sponsor'],
-  ])('uses the catalog family for %s', (key, family) => {
-    expect(mktgKitCrumbsFor(key, 'Synthetic Project', base, 'Run')[1].route).toEqual([base, 'families', family]);
-  });
-  it('uses Documents for assets outside a family and never links the current page', () => {
-    const crumbs = mktgKitCrumbsFor('legacy-output', '', base, 'Legacy document');
-    expect(crumbs[0].label).toBe('Project kit');
-    expect(crumbs[1]).toEqual({ label: 'Documents', route: [base, 'documents'] });
-    expect(crumbs[2].route).toBeUndefined();
+    '/project/mktg-os-agents-x/documents',
+    '/project/not-mktg-os-agents/documents',
+    '/project/mktg-os-agentsSuffix',
+    '/other?next=/mktg-os-agents',
+    '/other#mktg-os-agents',
+  ])('does not mistake a partial segment or query/fragment in %s for the Kit', (url) => expect(mktgKitRootPath(url)).toBe('/mktg-os-agents'));
+  it('skips a containing segment before finding the real module segment', () => {
+    expect(mktgKitRootPath('/mktg-os-agents-x/foundation/mktg-os-agents/faq')).toBe('/mktg-os-agents-x/foundation/mktg-os-agents');
   });
   it('builds Run again from the document type registry', () => {
-    expect(mktgRunRouteFor('foundation-message', base)).toEqual([base, 'foundation-setup']);
-    expect(mktgRunRouteFor('unknown', base)).toBeUndefined();
+    expect(mktgRunRouteFor('foundation-message', '/foundation/mktg-os-agents')).toEqual(['/foundation/mktg-os-agents', 'foundation-setup']);
+    expect(mktgRunRouteFor('unknown', '/foundation/mktg-os-agents')).toBeUndefined();
   });
 });

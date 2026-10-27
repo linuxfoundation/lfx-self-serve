@@ -667,7 +667,6 @@ describe('buildRankedQuestionViews', () => {
 
   it('treats missing ranked votes as no distributions', () => {
     const question = rankedQuestion();
-    // @ts-expect-error -- models a payload that omits the required ranked_choice_votes
     delete question.ranked_choice_votes;
     const [view] = buildRankedQuestionViews(resultsWith([question]));
     expect(view.choiceDistributions).toEqual([]);

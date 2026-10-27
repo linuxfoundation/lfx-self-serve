@@ -246,6 +246,9 @@ router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, 
   analyticsController.getEventsRegistrationForecastCurve(req, res, next)
 );
 
+// Health Metrics Overview past event registration trend (#4321)
+router.get('/events-registration-history', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationHistory(req, res, next));
+
 // Health Metrics Events "Past events" section (#2965)
 router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
 

@@ -26,6 +26,7 @@ import {
   QueryServiceCountResponse,
   SendVoteReminderRequest,
   SendVoteReminderResponse,
+  SendVoteSummaryResponse,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
@@ -348,6 +349,11 @@ export class VoteService {
   public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
     const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
     return this.http.post<SendVoteReminderResponse>(`/api/votes/${encodeURIComponent(voteUid)}/reminders`, body).pipe(take(1));
+  }
+
+  /** Sends the on-demand close summary to every invited voter — vote managers only, after the vote has ended (#3662). */
+  public sendVoteSummary(voteUid: string): Observable<SendVoteSummaryResponse> {
+    return this.http.post<SendVoteSummaryResponse>(`/api/votes/${encodeURIComponent(voteUid)}/summary`, {}).pipe(take(1));
   }
 
   /**

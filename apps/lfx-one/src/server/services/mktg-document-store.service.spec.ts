@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
+import { aeoGeoEnvelopeFixture } from '../../../../../packages/shared/src/utils/aeo-geo.fixture';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -1832,6 +1834,38 @@ describe('MktgDocumentStoreService', () => {
   });
 
   describe('one-off runs', () => {
+    it.each(['project', 'domain'] as const)('records concurrent %s audit polls once and reopens the validated typed sidecar', async (kind) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Audit document type missing.');
+      const report = aeoGeoEnvelopeFixture(kind);
+      await Promise.all([1, 2, 3].map(() => service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], report, PROJECT, 'audit-a')));
+      const legacy = aeoGeoEnvelopeFixture(kind);
+      delete legacy.report;
+      legacy.agent.agent_version = '1.0.0';
+      await service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], legacy, PROJECT, 'audit-b');
+      const group = (await service.listDocuments(req, PROJECT)).groups.find((entry) => entry.type.agentKey === 'aeo-geo');
+      if (!group) throw new Error('Audit group missing.');
+      expect(group.documents).toHaveLength(2);
+      expect(group.documents.map((document) => document.revisionCount)).toEqual([1, 1]);
+      for (const [sessionId, expected] of [
+        ['audit-a', report],
+        ['audit-b', legacy],
+      ] as const) {
+        const document = group.documents.find((entry) => entry.documentId === service.runDocumentId(sessionId));
+        if (!document) throw new Error('Audit document missing.');
+        const reopened = await service.getRevision(req, PROJECT, type, document.documentId, document.latestRevisionId);
+        expect(reopened).toMatchObject({
+          markdown: expected.document_markdown,
+          aeoGeoReport: {
+            verdict: expected.verdict,
+            scores: expected.scores,
+            report_filename: expected.report_filename,
+            auditCounts: { keyPagesNamed: expected.inputs.key_pages_count ?? 0, pagesAudited: expected.inputs.pages_audited.length },
+          },
+        });
+        expect(reopened?.aeoGeoReport?.report).toEqual(expected.report);
+      }
+    });
     it('publishes exactly one revision when result polls overlap', async () => {
       const generated = envelope('# One run');
       const [first, second] = await Promise.all([
