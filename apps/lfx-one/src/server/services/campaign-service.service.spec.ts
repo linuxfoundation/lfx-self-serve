@@ -5942,6 +5942,20 @@ describe('CampaignServiceClient creative-asset library reads', () => {
 
       await expect(new CampaignServiceClient().getCreativeAsset(req, 'tlf', BRIEF, ASSET_ID)).rejects.toMatchObject({ statusCode: 404 });
     });
+
+    // Same table as the delete sibling, for the same reason: the field named in the refusal is the
+    // field the caller has to fix, so an empty brief reports `brief_id`, not `asset_id`.
+    it.each([
+      ['project', '', BRIEF, ASSET_ID, 'project'],
+      ['brief', 'tlf', '', ASSET_ID, 'brief_id'],
+      ['asset id', 'tlf', BRIEF, '', 'asset_id'],
+    ])('refuses an empty %s without calling the proxy', async (_label, project, brief, asset, field) => {
+      const caught = await new CampaignServiceClient().getCreativeAsset(req, project, brief, asset).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('getCreativeAssetPlan', () => {
@@ -6050,6 +6064,17 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect((caught as MicroserviceError).statusCode).toBe(502);
       expect((caught as MicroserviceError).toResponse()['error']).toBe('The image slot coverage could not be read. Please try again.');
     });
+
+    it.each([
+      ['project', '', BRIEF, 'project'],
+      ['brief', 'tlf', '', 'brief_id'],
+    ])('refuses an empty %s without calling the proxy', async (_label, project, brief, field) => {
+      const caught = await new CampaignServiceClient().getCreativeAssetPlan(req, project, brief).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteCreativeAsset', () => {
@@ -6075,9 +6100,11 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect((caught as MicroserviceError).toResponse()['error']).toBe(message);
     });
 
+    // Each field reports ITSELF: a caller who omitted the brief must not be sent to check the
+    // asset id, which is the one thing they got right.
     it.each([
       ['project', '', BRIEF, ASSET_ID, 'project'],
-      ['brief', 'tlf', '', ASSET_ID, 'asset_id'],
+      ['brief', 'tlf', '', ASSET_ID, 'brief_id'],
       ['asset id', 'tlf', BRIEF, '', 'asset_id'],
     ])('refuses an empty %s without calling the proxy', async (_label, project, brief, asset, field) => {
       const caught = await new CampaignServiceClient().deleteCreativeAsset(req, project, brief, asset).catch((e: unknown) => e);

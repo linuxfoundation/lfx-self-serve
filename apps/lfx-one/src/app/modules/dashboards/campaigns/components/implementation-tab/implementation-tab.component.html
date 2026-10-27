@@ -2050,6 +2050,21 @@
       }
 
       <!--
+        Which stored images cover each platform's image slots. Only rendered once the brief is
+        saved: campaign-service plans against a stored brief, and an unsaved one has no library to
+        plan against. The revision token re-reads the plan after an upload in the section above.
+      -->
+      @if (briefPersistence().briefId) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-slot-grid
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [platforms]="selectedPlatforms()"
+            [reloadToken]="creativeLibraryRevision()" />
+        </div>
+      }
+
+      <!--
         A retained Manual bidding choice the deployment has not confirmed it can send (#3299). The
         live region is always mounted and only its text changes, like the brief-status region at
         the top of this template; the visible block below carries the actions.
