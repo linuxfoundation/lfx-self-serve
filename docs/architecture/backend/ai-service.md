@@ -221,9 +221,9 @@ appears in that file only on the other side of the mapping, as the `litellm_para
 short name resolves to:
 
 ```yaml
-- model_name: 'claude-sonnet-4' # what a caller sends
+- model_name: 'claude-sonnet-4-5' # what a caller sends
   litellm_params:
-    model: 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0' # where it routes
+    model: 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0' # where it routes
 ```
 
 Sending the routing destination asks the router for a model it publishes no deployment for, and
@@ -238,12 +238,22 @@ the host moved alone. `litellm.tools.lfx.dev` is the retired OCI instance from b
 routed on the bare inference-profile id and answered `401` to a prefixed name. Anything still
 pointing at that host is stale whichever model name it sends.
 
-`lfx-v2-campaign-service` sends the same value from its own `AI_MODEL` env var, set in argocd; keep
-the two in step.
+A published name is necessary but not sufficient: the list spans two sampling contracts. Every send
+site here spreads `AI_REQUEST_CONFIG.TEMPERATURE` into the request body, and on Claude Sonnet 5 and
+later Anthropic's model reference states that "Setting `temperature`, `top_p`, or `top_k` returns a
+400 error". The proxy does not absorb that — `lfit-litellm.yaml`'s `litellm_settings` sets no
+`drop_params`, so the value reaches Bedrock as sent. Naming `claude-sonnet-5-5` or any other
+5-series model while still sending `temperature` therefore trades #4333's `429` for a `400` on every
+AI feature. Moving to one is a two-part change: drop `temperature` from all six send sites first.
+`ai.constants.spec.ts` pins the pair so the halves cannot drift apart silently.
+
+`lfx-v2-campaign-service` sends the same value from its own `AI_MODEL` env var, set in argocd, and
+builds its own request body with an unconditional `temperature` field
+(`internal/platform/llm/client.go`); keep the two in step on both the name and the sampling params.
 
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'claude-sonnet-5-5';
+export const AI_MODEL = 'claude-sonnet-4-5';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,

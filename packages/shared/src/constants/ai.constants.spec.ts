@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AI_MODEL } from './ai.constants';
+import { AI_MODEL, AI_REQUEST_CONFIG } from './ai.constants';
 
 /**
  * Pins the shape only, never which model is named — that is expected to roll forward as models
@@ -19,7 +19,7 @@ import { AI_MODEL } from './ai.constants';
  * deployment for the model asked for.
  *
  * A `/` is the test because every provider prefix carries one (`bedrock/…`, `openai/…`), while the
- * names the proxy publishes are bare (`claude-sonnet-5-5`, `amazon-nova-pro`). Asserting the
+ * names the proxy publishes are bare (`claude-sonnet-4`, `amazon-nova-pro`). Asserting the
  * absence of `bedrock/` alone would let a differently-prefixed id through with the same outcome.
  */
 describe('AI_MODEL', () => {
@@ -30,5 +30,20 @@ describe('AI_MODEL', () => {
   it('is a non-empty value, so no request falls back to an unrouted empty model', () => {
     expect(AI_MODEL.trim()).toBe(AI_MODEL);
     expect(AI_MODEL.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The sibling half of the same defect. Every send site spreads `TEMPERATURE` into the request
+   * body, and Anthropic's model reference says of Claude Sonnet 5 and later: "Setting
+   * `temperature`, `top_p`, or `top_k` returns a 400 error." The proxy sets no `drop_params`, so
+   * the value is not stripped on the way through. Naming a 5-series model while still sending
+   * `temperature` therefore swaps #4333's `429` for a `400` on every AI feature — which is why the
+   * two constants are pinned together rather than separately. Upgrading is still allowed; it just
+   * has to drop `temperature` from the six send sites in the same change, which turns this
+   * assertion red first.
+   */
+  it('names a model whose sampling contract accepts the temperature we send', () => {
+    if (!('TEMPERATURE' in AI_REQUEST_CONFIG)) return;
+    expect(AI_MODEL).not.toMatch(/^claude-(sonnet|opus|haiku)-[5-9]/);
   });
 });
