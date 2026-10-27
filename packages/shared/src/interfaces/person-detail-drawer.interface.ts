@@ -23,3 +23,22 @@ export interface PersonDrawerContext {
   sourceIconClass?: string | null;
   defaultTab?: PersonDrawerTab;
 }
+
+/** One rendered address line in the drawer header. */
+export interface PersonDrawerEmail {
+  email: string;
+  isPrimary: boolean;
+  /**
+   * Precomputed `mailto:` target, or `null` when the address carries URI delimiters that would turn one
+   * recipient into several (or into a header field). Such an address still renders — as plain text, and
+   * still copyable — rather than as a link that mails the wrong person.
+   */
+  href: string | null;
+}
+
+/** Which person, at which org, a copy confirmation in the drawer header belongs to. */
+export interface PersonDrawerCopiedAddress {
+  context: PersonDrawerContext;
+  orgUid: string | null | undefined;
+  email: string;
+}

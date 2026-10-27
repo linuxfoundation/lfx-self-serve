@@ -3,11 +3,9 @@
 
 /** People → Board tab E2E (read + filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
 
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const PEOPLE_BOARD_URL = '/org/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -368,44 +366,10 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey: the username-keyed detail and company-emails are requested together, and only the
-  // company-emails request is flag-gated (activity is not). Jordan carries a username, so only the OFF flag can stop it.
-  test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
-    await stubAccountContext(page);
-    await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
-    let detailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) => {
-      detailCalls += 1;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-    });
-    let companyEmailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route) => {
-      companyEmailCalls += 1;
-      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
-    });
-
-    await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
-    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    // Wait for the null answer to land (Events turns not-available) before asserting the address lookup never fired.
-    await expect.poll(() => detailCalls).toBeGreaterThan(0);
-    await page.getByTestId('person-detail-drawer-tab-events').click();
-    await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
-
-    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
-    expect(companyEmailCalls).toBe(0);
-  });
-
   // "failed" / "not available" must never collapse into "none on record": that would assert, from a
   // lookup that never succeeded, that a person holds no company address. Identity comes from the
   // seat's username, never from the row's email.
   test('renders each company-email state from its own response', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await stubAccountContext(page);
     // The username-keyed detail answers null (no single roster person); addresses come from company-emails either way.
     await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) =>
