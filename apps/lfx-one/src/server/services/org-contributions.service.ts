@@ -130,7 +130,7 @@ export class OrgContributionsService {
 
   private async fetchContributionsRaw(accountId: string, query: OrgContributionsQuery): Promise<ContributionsRaw> {
     const commitScope = buildCommitScopeFilters(query);
-    const codeScope = query.metric === 'code' ? buildCodeScopeFilters(accountId, query) : null;
+    const codeScope = query.metric === 'code' ? buildCodeScopeFilters(query) : null;
     const repoSearch = buildRepoSearchFilter(query.search);
     const commitSearch = buildCommitSearchFilter(query.search);
     const repoPagination = viewAwarePagination(query, 'repositories');
@@ -247,8 +247,7 @@ export class OrgContributionsService {
 
   /**
    * Metric `code`: code-contribution activities per repository in the window. The first contribution is the
-   * repo's lifetime first activity day for the account (window-independent, like `org_repo_first_commit_ts`);
-   * the logo comes from the commits table and the source badge from the URL host, as the dbt model derives it.
+   * repo's lifetime first activity day for the account (window-independent, like `org_repo_first_commit_ts`).
    */
   private async fetchCodeRepositories(
     accountId: string,
@@ -262,14 +261,7 @@ export class OrgContributionsService {
     const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
 
     const sql = `
-      WITH project_logos AS (
-        SELECT project_id, ANY_VALUE(project_logo) AS project_logo
-        FROM ${PLATINUM_TABLE}
-        WHERE account_id = ?
-          AND project_id IS NOT NULL
-        GROUP BY project_id
-      ),
-      repo_first AS (
+      WITH repo_first AS (
         SELECT repository_url, MIN(activity_date) AS first_commit_ts
         FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
@@ -282,6 +274,8 @@ export class OrgContributionsService {
           ANY_VALUE(project_id) AS project_id,
           ANY_VALUE(project_name) AS project_name,
           ANY_VALUE(project_slug) AS project_slug,
+          ANY_VALUE(project_logo) AS project_logo,
+          ANY_VALUE(source) AS source,
           SUM(code_activities) AS commits,
           MAX(activity_date) AS last_commit_ts
         FROM ${CODE_ACTIVITY_TABLE}
@@ -299,26 +293,18 @@ export class OrgContributionsService {
         r.project_id,
         r.project_name,
         r.project_slug,
-        l.project_logo,
-        CASE
-          WHEN SPLIT_PART(r.repository_url, '/', 3) = 'github.com' THEN 'github'
-          WHEN SPLIT_PART(r.repository_url, '/', 3) = 'gitlab.com' THEN 'gitlab'
-          WHEN
-            CONTAINS(SPLIT_PART(r.repository_url, '/', 3), 'gerrit')
-            OR SPLIT_PART(r.repository_url, '/', 3) = 'review.opendev.org' THEN 'gerrit'
-          ELSE 'git'
-        END AS source,
+        r.project_logo,
+        r.source,
         r.commits,
         f.first_commit_ts,
         r.last_commit_ts,
         COUNT(*) OVER() AS total_records
       FROM repo_agg r
-      LEFT JOIN project_logos l ON l.project_id = r.project_id
       LEFT JOIN repo_first f ON f.repository_url = r.repository_url
       ORDER BY ${orderBy} ${sortDir}, r.repository_url ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, accountId, accountId, ...scope.binds, ...repoSearch.binds]);
+    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, accountId, ...scope.binds, ...repoSearch.binds]);
   }
 
   private async fetchCommits(
@@ -401,7 +387,7 @@ export class OrgContributionsService {
         project_id,
         ANY_VALUE(project_slug) AS project_slug,
         ANY_VALUE(project_name) AS project_name,
-        NULL AS parent_slug,
+        ANY_VALUE(parent_slug) AS parent_slug,
         SUM(code_activities) AS commits
       FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
@@ -431,40 +417,22 @@ export class OrgContributionsService {
     return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
   }
 
-  /**
-   * Metric `code`: the filter keys on the CDP member_id, so identities come from the commits table and the
-   * count is the person's code activity in the window. People with code activity but no authored commit have
-   * no member_id there and are not listed.
-   */
+  /** Metric `code`: each member's code-contribution activities in the window and project scope. */
   private async fetchCodeEmployeeOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
     const sql = `
-      WITH members AS (
-        SELECT
-          member_id,
-          ANY_VALUE(member_display_name) AS member_display_name,
-          ANY_VALUE(person_key) AS person_key
-        FROM ${PLATINUM_TABLE}
-        WHERE account_id = ?
-          AND member_id IS NOT NULL
-        GROUP BY member_id
-      ),
-      person_activity AS (
-        SELECT person_key, SUM(code_activities) AS commits
-        FROM ${CODE_ACTIVITY_TABLE}
-        WHERE account_id = ?
-          ${scope.datePredicate}
-          ${scope.scopePredicate}
-        GROUP BY person_key
-      )
       SELECT
-        m.member_id,
-        m.member_display_name,
-        a.commits
-      FROM members m
-      JOIN person_activity a ON a.person_key = m.person_key
-      ORDER BY a.commits DESC, m.member_display_name ASC
+        member_id,
+        ANY_VALUE(member_display_name) AS member_display_name,
+        SUM(code_activities) AS commits
+      FROM ${CODE_ACTIVITY_TABLE}
+      WHERE account_id = ?
+        ${scope.datePredicate}
+        ${scope.scopePredicate}
+        AND member_id IS NOT NULL
+      GROUP BY member_id
+      ORDER BY commits DESC, member_display_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, accountId]);
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
   }
 }
 
@@ -508,13 +476,13 @@ function buildCommitScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   return { datePredicate, scopePredicate, projectPredicate, employeePredicate, binds };
 }
 
-/** Filters over `ORG_CODE_ACTIVITY_DAILY`; commit scope has no meaning for code activity. */
-function buildCodeScopeFilters(accountId: string, query: OrgContributionsQuery): ScopeFilters {
+/** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project and member columns; commit scope has no meaning for code activity. */
+function buildCodeScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   const binds: string[] = [];
   const datePredicate = activityDatePredicate(query.dateRange);
   const scopePredicate = orgProjectScopePredicate(query.projectScope);
-  const projectPredicate = codeProjectFilterPredicate(accountId, query.projects, binds);
-  const employeePredicate = codeEmployeeFilterPredicate(accountId, query.employees, binds);
+  const projectPredicate = projectFilterPredicate(query.projects, binds);
+  const employeePredicate = employeeFilterPredicate(query.employees, binds);
   return { datePredicate, scopePredicate, projectPredicate, employeePredicate, binds };
 }
 
@@ -591,20 +559,6 @@ function projectFilterPredicate(projects: string[], binds: string[]): string {
   return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
 }
 
-/** Same slug / parent-slug / id match as the commits table; the daily table has no parent slug, so children resolve through the commits table. */
-function codeProjectFilterPredicate(accountId: string, projects: string[], binds: string[]): string {
-  if (!projects.length) {
-    return '';
-  }
-  const placeholders = projects.map(() => '?').join(', ');
-  binds.push(...projects, ...projects, accountId, ...projects);
-  return `AND (
-    project_slug IN (${placeholders})
-    OR project_id IN (${placeholders})
-    OR project_id IN (SELECT project_id FROM ${PLATINUM_TABLE} WHERE account_id = ? AND parent_slug IN (${placeholders}))
-  )`;
-}
-
 function employeeFilterPredicate(employees: string[], binds: string[]): string {
   if (!employees.length) {
     return '';
@@ -614,16 +568,6 @@ function employeeFilterPredicate(employees: string[], binds: string[]): string {
     binds.push(id);
   }
   return `AND member_id IN (${placeholders})`;
-}
-
-/** Employee values are CDP member_ids; the daily table is keyed by person_key, resolved through the commits table. */
-function codeEmployeeFilterPredicate(accountId: string, employees: string[], binds: string[]): string {
-  if (!employees.length) {
-    return '';
-  }
-  const placeholders = employees.map(() => '?').join(', ');
-  binds.push(accountId, ...employees);
-  return `AND person_key IN (SELECT person_key FROM ${PLATINUM_TABLE} WHERE account_id = ? AND member_id IN (${placeholders}))`;
 }
 
 function repoOrderByColumn(sort: ContributionsSortColumn): string {

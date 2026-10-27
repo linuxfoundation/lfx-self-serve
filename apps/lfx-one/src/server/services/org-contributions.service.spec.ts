@@ -154,11 +154,17 @@ describe('OrgContributionsService — binds', () => {
     }
   });
 
-  it('orders the code project/employee binds with their subqueries', async () => {
+  it("filters code activity on the daily table's own project and member columns, with no commits-table subquery", async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'code', projects: ['cncf'], employees: ['m-1'], search: 'api' }));
 
-    expect(kpiCall().binds).toEqual([ACCOUNT, 'cncf', 'cncf', ACCOUNT, 'cncf', ACCOUNT, 'm-1', '%api%']);
-    expect(repoCall().binds).toEqual([ACCOUNT, ACCOUNT, ACCOUNT, 'cncf', 'cncf', ACCOUNT, 'cncf', ACCOUNT, 'm-1', '%api%']);
+    expect(kpiCall().sql).toContain('parent_slug IN (?)');
+    expect(kpiCall().sql).toContain('member_id IN (?)');
+    for (const call of [kpiCall(), repoCall(), projectOptionCall(), employeeOptionCall()]) {
+      expect(call.sql).not.toContain(COMMITS_TABLE);
+    }
+    expect(kpiCall().binds).toEqual([ACCOUNT, 'cncf', 'cncf', 'cncf', 'm-1', '%api%']);
+    // The lifetime first-activity CTE takes its own account bind.
+    expect(repoCall().binds).toEqual([ACCOUNT, ACCOUNT, 'cncf', 'cncf', 'cncf', 'm-1', '%api%']);
   });
 });
 
