@@ -31,13 +31,17 @@
         [attr.aria-labelledby]="'mentorship-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
           @case ('current-mentees') {
-            <lfx-mentorship-current-mentees-tab [programId]="programPage.program.id" [terms]="terms()" [countsRefresh]="countsRefresh" />
+            <lfx-mentorship-current-mentees-tab
+              [programId]="programPage.program.id"
+              [terms]="terms()"
+              [programPublished]="programPublished()"
+              [countsRefresh]="countsRefresh" />
           }
           @case ('past-mentees') {
-            <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />
+            <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" [programPublished]="programPublished()" />
           }
           @case ('mentors') {
-            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" [countsRefresh]="countsRefresh" />
+            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" [programPublished]="programPublished()" [countsRefresh]="countsRefresh" />
           }
           @case ('terms') {
             <lfx-mentorship-terms-tab [programId]="programPage.program.id" [countsRefresh]="countsRefresh" />

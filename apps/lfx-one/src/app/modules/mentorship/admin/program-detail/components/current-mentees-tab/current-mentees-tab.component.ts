@@ -73,6 +73,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -123,6 +124,7 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
     SelectComponent,
     TableComponent,
     TooltipModule,
+    MentorshipPublicUrlPipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './current-mentees-tab.component.html',
@@ -140,6 +142,11 @@ export class CurrentMenteesTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
+  /**
+   * True when the program is upstream `published`. Upstream only serves public mentee and mentor pages through a
+   * published program, so names link only then.
+   */
+  public readonly programPublished = input(false);
   /** The program's terms; only the open ones feed the term filter. */
   public readonly terms = input<MentorshipAdminTermOption[]>([]);
   /**
