@@ -12,7 +12,7 @@
           size="small"
           [form]="form()"
           control="name"
-          id="general-name"
+          inputId="general-name"
           [placeholder]="'Enter ' + committeeLabel.toLowerCase() + ' name'"
           styleClass="w-full"
           data-testid="general-name-input">
@@ -32,7 +32,7 @@
           [options]="categoryOptions()"
           placeholder="Select type"
           styleClass="w-full"
-          id="general-category"
+          inputId="general-category"
           data-testid="general-category-select">
         </lfx-select>
         <p class="text-xs text-gray-600">
@@ -50,7 +50,7 @@
           [options]="parentCommitteeOptions()"
           [placeholder]="'No Parent ' + committeeLabel"
           styleClass="w-full"
-          id="general-parent"
+          inputId="general-parent"
           [showClear]="true"
           data-testid="general-parent-select">
         </lfx-select>

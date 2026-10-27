@@ -55,6 +55,7 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
   getGroupEditLink,
   hasMeetingEnded,
   invitationRequiresOrganization,
@@ -69,6 +70,8 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { DocumentService } from '@services/document.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
@@ -198,6 +201,7 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly surveyService = inject(SurveyService);
   private readonly voteService = inject(VoteService);
   private readonly documentService = inject(DocumentService);
@@ -383,10 +387,31 @@ export class CommitteeViewComponent {
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
 
-  /** Link to the full edit wizard (type, name, parent, settings, members). */
+  /**
+   * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
+   * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
+   * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   */
+  private readonly projectWriter: Signal<boolean> = toSignal(
+    toObservable(this.committee).pipe(
+      map((committee) => (committee?.writer ? resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) : null)),
+      distinctUntilChanged(),
+      switchMap((projectKey) =>
+        projectKey
+          ? this.projectService.getProject(projectKey, false).pipe(
+              map((project) => project?.writer === true),
+              catchError(() => of(false))
+            )
+          : of(false)
+      )
+    ),
+    { initialValue: false }
+  );
+
+  /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
   public editLink: Signal<GroupEditLink | null> = computed(() => {
     const committee = this.committee();
-    return committee?.uid ? getGroupEditLink(committee) : null;
+    return committee?.uid && this.projectWriter() ? getGroupEditLink(committee) : null;
   });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
@@ -709,6 +734,20 @@ export class CommitteeViewComponent {
       this.lensService.setLens('me');
     }
     this.router.navigate(['/', 'groups']);
+  }
+
+  /**
+   * Settings saved. Normally a plain refetch by the route id — but a rename regenerates `sso_group_name`
+   * for public / SSO groups, so a page opened through the old vanity slug would refetch a slug that no
+   * longer resolves. Move to the stable UID route first; the param change drives the refetch.
+   */
+  public onSettingsSaved(): void {
+    const committee = this.committee();
+    if (committee?.uid && this.committeeId() !== committee.uid) {
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], { queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.refreshCommittee();
   }
 
   public refreshCommittee(): void {

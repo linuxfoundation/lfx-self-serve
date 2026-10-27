@@ -348,7 +348,7 @@ describe('CommitteeSettingsTabComponent — general settings (name, type, parent
     expect(component.form.getRawValue()).toMatchObject({ name: 'Test Committee', category: 'Board', parent_uid: 'parent-1' });
   });
 
-  it('saves name and parent_uid without a confirmation when the type is unchanged', () => {
+  it('saves a rename without a confirmation, sending only the changed general field', () => {
     const confirm = vi.spyOn(confirmationService, 'confirm');
     component.form.patchValue({ name: '  Renamed  ' });
 
@@ -356,7 +356,47 @@ describe('CommitteeSettingsTabComponent — general settings (name, type, parent
 
     expect(confirm).not.toHaveBeenCalled();
     expect(updateCommittee).toHaveBeenCalledOnce();
-    expect(updateCommittee.mock.calls[0][1]).toMatchObject({ name: 'Renamed', category: 'Board', parent_uid: 'parent-1' });
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload.name).toBe('Renamed');
+    expect(payload).not.toHaveProperty('category');
+    expect(payload).not.toHaveProperty('parent_uid');
+  });
+
+  it('omits name, category and parent_uid when none were touched — echoing a stale page would revert another writer', () => {
+    component.form.patchValue({ join_mode: 'open' });
+
+    component.saveSettings();
+
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('name');
+    expect(payload).not.toHaveProperty('category');
+    expect(payload).not.toHaveProperty('parent_uid');
+    expect(payload.join_mode).toBe('open');
+  });
+
+  it('still saves unrelated settings for a group that has no category', async () => {
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, category: undefined } as unknown as Committee);
+    await fixture.whenStable();
+    component.form.patchValue({ join_mode: 'open' });
+
+    expect(component.form.invalid).toBe(false);
+    component.saveSettings();
+
+    expect(updateCommittee).toHaveBeenCalledOnce();
+    expect(updateCommittee.mock.calls[0][1]).not.toHaveProperty('category');
+  });
+
+  it('words the type-change confirmation without "undefined" when the group had no type', async () => {
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, category: undefined } as unknown as Committee);
+    await fixture.whenStable();
+    component.form.patchValue({ category: 'Maintainers' });
+
+    component.saveSettings();
+
+    const { message } = confirm.mock.calls[0][0];
+    expect(message).toContain('to Maintainers');
+    expect(message).not.toMatch(/undefined|null/);
   });
 
   it('asks for confirmation before saving a changed type and does not save until accepted', () => {

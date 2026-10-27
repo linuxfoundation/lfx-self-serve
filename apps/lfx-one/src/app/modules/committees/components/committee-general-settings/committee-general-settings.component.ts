@@ -11,7 +11,7 @@ import { Committee, ParentCommitteeOption } from '@lfx-one/shared/interfaces';
 import { buildParentCommitteeOptions, getEditableCommitteeCategories } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
-import { filter, switchMap } from 'rxjs';
+import { distinctUntilChanged, filter, map, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-general-settings',
@@ -39,8 +39,11 @@ export class CommitteeGeneralSettingsComponent {
     // getCommitteesByProject already degrades to [] on error, so no component-level catchError.
     const committees = toSignal(
       toObservable(this.committee).pipe(
-        filter((committee) => !!committee.project_uid),
-        switchMap((committee) => this.committeeService.getCommitteesByProject(committee.project_uid))
+        map((committee) => committee.project_uid),
+        filter((projectUid): projectUid is string => !!projectUid),
+        // The committee input re-emits after every save; the project's group list only needs refetching when the project changes.
+        distinctUntilChanged(),
+        switchMap((projectUid) => this.committeeService.getCommitteesByProject(projectUid))
       ),
       { initialValue: [] as Committee[] }
     );

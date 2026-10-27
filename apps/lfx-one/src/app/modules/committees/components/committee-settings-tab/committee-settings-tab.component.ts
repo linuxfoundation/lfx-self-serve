@@ -7,7 +7,15 @@ import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult, ValidationError } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeUpdateData,
+  CreateMailingListRequest,
+  GroupsIOMailingList,
+  JoinMode,
+  MailingListPickerDialogResult,
+  ValidationError,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
@@ -88,7 +96,8 @@ export class CommitteeSettingsTabComponent {
   public form = new FormGroup({
     // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
     name: new FormControl('', [Validators.required, Validators.pattern(/\S/)]),
-    category: new FormControl('', [Validators.required]),
+    // Not required: a legacy group can have no category, and an empty value is left out of the save payload, so it must not block unrelated settings.
+    category: new FormControl(''),
     parent_uid: new FormControl<string | null>(null),
     member_visibility: new FormControl(''),
     join_mode: new FormControl(''),
@@ -301,7 +310,7 @@ export class CommitteeSettingsTabComponent {
     }
 
     this.confirmationService.confirm({
-      message: `Change the type of "${this.committee().name}" from ${currentCategory} to ${nextCategory}? This updates how the group is labeled and governed, including on its members' records.`,
+      message: `Change the type of "${this.committee().name}"${currentCategory ? ` from ${currentCategory}` : ''} to ${nextCategory}? This updates how the group is labeled and governed, including on its members' records.`,
       header: 'Change Group Type',
       icon: 'fa-light fa-triangle-exclamation',
       acceptButtonStyleClass: 'p-button-sm',
@@ -345,11 +354,21 @@ export class CommitteeSettingsTabComponent {
       this.form.controls.chat_webhook_url.dirty &&
       (values.chat_webhook_url || this.slackWebhookRemovalStaged())
     );
+    // name / type / parent are sent only when they differ from the loaded committee. The server merges
+    // the payload over the latest record, so echoing untouched values from a stale page would silently
+    // revert another writer's change (and a reverted type would skip the confirmation above, which
+    // compares against that same stale page data).
+    const committee = this.committee();
+    const name = values.name?.trim();
+    const parentUid = values.parent_uid || null;
+    const changedGeneralFields: Pick<CommitteeUpdateData, 'name' | 'category' | 'parent_uid'> = {
+      ...(name && name !== committee.name ? { name } : {}),
+      ...(values.category && values.category !== committee.category ? { category: values.category } : {}),
+      ...(parentUid !== (committee.parent_uid || null) ? { parent_uid: parentUid } : {}),
+    };
     this.committeeService
-      .updateCommittee(this.committee().uid, {
-        name: values.name?.trim() || undefined,
-        category: values.category || undefined,
-        parent_uid: values.parent_uid || null,
+      .updateCommittee(committee.uid, {
+        ...changedGeneralFields,
         member_visibility: (values.member_visibility as CommitteeMemberVisibility) || undefined,
         join_mode: (values.join_mode as JoinMode) || undefined,
         business_email_required: values.business_email_required ?? false,

@@ -82,4 +82,30 @@ describe('CommitteeGeneralSettingsComponent', () => {
     expect(getCommitteesByProject).not.toHaveBeenCalled();
     expect(component.parentCommitteeOptions().map((option) => option.value)).toEqual([null]);
   });
+
+  it('does not refetch the sibling list when the committee input re-emits for the same project', async () => {
+    await create(committee({ uid: 'c-1' }));
+
+    fixture.componentRef.setInput('committee', committee({ uid: 'c-1', name: 'Renamed' }));
+    await fixture.whenStable();
+
+    expect(getCommitteesByProject).toHaveBeenCalledOnce();
+  });
+
+  it('refetches the sibling list when the project changes', async () => {
+    await create(committee({ uid: 'c-1', project_uid: 'p-1' }));
+
+    fixture.componentRef.setInput('committee', committee({ uid: 'c-1', project_uid: 'p-2' }));
+    await fixture.whenStable();
+
+    expect(getCommitteesByProject).toHaveBeenCalledTimes(2);
+    expect(getCommitteesByProject).toHaveBeenLastCalledWith('p-2');
+  });
+
+  it.each(['general-name', 'general-category', 'general-parent'])('gives %s to exactly one element so its label resolves to the control', async (id) => {
+    await create(committee({ uid: 'c-1' }));
+
+    expect(fixture.nativeElement.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
+    expect(fixture.nativeElement.querySelector(`lfx-input-text[id="${id}"], lfx-select[id="${id}"]`)).toBeNull();
+  });
 });
