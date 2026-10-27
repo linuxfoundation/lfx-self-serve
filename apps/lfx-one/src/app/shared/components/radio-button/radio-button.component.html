@@ -3,23 +3,29 @@
 
 @if (form() && control()) {
   <ng-container [formGroup]="form()!">
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" [class]="touchTarget() ? 'min-h-[44px]' : ''">
       <!-- [name] is required: PrimeNG's RadioControlRegistry groups radios by (root FormGroup, name) —
            without it every radio in the form shares name===undefined and selecting one deselects all others. -->
       <p-radioButton [formControlName]="control()!" [name]="name()" [value]="value()" [inputId]="inputId() || control()!" (onChange)="onRadioChange($event)">
       </p-radioButton>
       @if (label()) {
-        <label [for]="inputId() || control()!" class="text-sm font-medium text-gray-700 cursor-pointer">
+        <label
+          [for]="inputId() || control()!"
+          class="text-sm font-medium text-gray-700 cursor-pointer break-words min-w-0"
+          [class]="touchTarget() ? 'flex flex-1 items-center min-h-[44px]' : ''">
           {{ label() }}
         </label>
       }
     </div>
   </ng-container>
 } @else {
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-2" [class]="touchTarget() ? 'min-h-[44px]' : ''">
     <p-radioButton [name]="name()" [value]="value()" [inputId]="inputId()" (onChange)="onRadioChange($event)"> </p-radioButton>
     @if (label()) {
-      <label [for]="inputId()" class="text-sm font-medium text-gray-700 cursor-pointer">
+      <label
+        [for]="inputId()"
+        class="text-sm font-medium text-gray-700 cursor-pointer break-words min-w-0"
+        [class]="touchTarget() ? 'flex flex-1 items-center min-h-[44px]' : ''">
         {{ label() }}
       </label>
     }

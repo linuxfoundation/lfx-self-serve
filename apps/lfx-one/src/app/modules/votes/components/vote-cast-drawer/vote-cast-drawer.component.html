@@ -6,24 +6,25 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-cast-drawer"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full max-sm:h-dvh vote-cast-drawer"
+  [pt]="drawerPt()"
   data-testid="vote-cast-drawer">
   <ng-template #header>
     <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-cast-drawer-header">
-      <div class="flex items-center justify-between gap-2">
+      <div class="flex items-start justify-between gap-2">
         @if (vote(); as voteData) {
-          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-cast-drawer-title">
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 break-words" data-testid="vote-cast-drawer-title">
             {{ voteData.name }}
           </h1>
         } @else if (loadingVote()) {
           <p-skeleton width="60%" height="24px"></p-skeleton>
         } @else {
-          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-cast-drawer-title">Vote Details</h1>
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 break-words" data-testid="vote-cast-drawer-title">Vote Details</h1>
         }
         <button
           type="button"
           (click)="onClose()"
-          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+          class="flex items-center justify-center min-w-[44px] min-h-[44px] text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
           data-testid="vote-cast-drawer-close"
           aria-label="Close panel">
           <i class="fa-light fa-xmark text-xl"></i>
@@ -91,7 +92,7 @@
           @for (question of questions(); track question.question_id) {
             <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
               <div class="flex flex-col gap-1">
-                <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
+                <h3 class="text-sm font-semibold text-slate-900 break-words">{{ question.prompt }}</h3>
                 @if (isRankedPoll()) {
                   <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
                 } @else if (question.type === 'multiple_choice') {
@@ -111,7 +112,7 @@
                       <div
                         cdkDrag
                         [cdkDragDisabled]="abstain()"
-                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                        class="flex items-center gap-2 p-2 sm:p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
                         [class.cursor-move]="!abstain()"
                         [class.cursor-not-allowed]="abstain()"
                         [attr.data-testid]="'vote-cast-rank-' + choice.choice_id">
@@ -119,12 +120,12 @@
                         <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
                           {{ i + 1 }}
                         </span>
-                        <span class="flex-1 text-sm text-slate-800">{{ choice.choice_text }}</span>
+                        <span class="flex-1 min-w-0 text-sm text-slate-800 break-words">{{ choice.choice_text }}</span>
                         <button
                           type="button"
                           (click)="moveRank(question.question_id, i, i - 1)"
                           [disabled]="i === 0 || abstain()"
-                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                          class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                           [attr.data-testid]="'vote-cast-rank-up-' + choice.choice_id"
                           [attr.aria-label]="'Move ' + choice.choice_text + ' up'">
                           <i class="fa-light fa-arrow-up" aria-hidden="true"></i>
@@ -133,7 +134,7 @@
                           type="button"
                           (click)="moveRank(question.question_id, i, i + 1)"
                           [disabled]="i === question.choices.length - 1 || abstain()"
-                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                          class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                           [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
                           [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
                           <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
@@ -150,17 +151,20 @@
                       [value]="choice.choice_id"
                       [inputId]="'vote-cast-choice-' + choice.choice_id"
                       [label]="choice.choice_text"
+                      [touchTarget]="true"
                       [attr.data-testid]="'vote-cast-choice-' + choice.choice_id"></lfx-radio-button>
                   }
                 } @else if (question.type === 'multiple_choice') {
                   @for (choice of question.choices; track choice.choice_id) {
-                    <div class="flex items-center gap-2" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
+                    <div class="flex items-center gap-2 min-h-[44px]" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
                       <p-checkbox
                         [formControlName]="question.question_id"
                         [value]="choice.choice_id"
                         [binary]="false"
                         [inputId]="'vote-cast-choice-' + choice.choice_id" />
-                      <label [for]="'vote-cast-choice-' + choice.choice_id" class="text-sm font-medium text-gray-700 cursor-pointer">
+                      <label
+                        [for]="'vote-cast-choice-' + choice.choice_id"
+                        class="flex flex-1 items-center min-w-0 min-h-[44px] text-sm font-medium text-gray-700 cursor-pointer break-words">
                         {{ choice.choice_text }}
                       </label>
                     </div>
@@ -207,25 +211,15 @@
 
         @if (allowAbstain()) {
           <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
-            <div class="flex items-center gap-2" data-testid="vote-cast-abstain-toggle">
+            <div class="flex items-center gap-2 min-h-[44px]" data-testid="vote-cast-abstain-toggle">
               <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
-              <label for="vote-cast-abstain" class="text-sm font-medium text-gray-700 cursor-pointer">Abstain from this vote</label>
+              <label for="vote-cast-abstain" class="flex flex-1 items-center min-w-0 min-h-[44px] text-sm font-medium text-gray-700 cursor-pointer"
+                >Abstain from this vote</label
+              >
             </div>
             <p class="text-xs text-slate-500">An abstention is recorded as a non-vote and overrides your choices above; any comments are still submitted.</p>
           </div>
         }
-
-        <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
-          <lfx-button label="Cancel" severity="secondary" (onClick)="onClose()" [disabled]="submitting()" data-testid="vote-cast-cancel-button"></lfx-button>
-          <lfx-button
-            label="Submit Vote"
-            icon="fa-light fa-check"
-            severity="primary"
-            [disabled]="submitDisabled()"
-            [loading]="submitting()"
-            (onClick)="onSubmit()"
-            data-testid="vote-cast-submit-button"></lfx-button>
-        </div>
       }
     </div>
   } @else if (!loadingVote()) {
@@ -238,4 +232,30 @@
       <lfx-button label="Close" severity="secondary" (onClick)="onClose()" data-testid="vote-cast-drawer-error-close"></lfx-button>
     </div>
   }
+
+  <!-- Touch targets use an exact [44px]: the 14px html root makes Tailwind's rem scale (min-h-11) render ~38px. -->
+  <!-- Pinned footer: stays above the safe area while the ballot scrolls. Declared statically (PrimeNG resolves it via ContentChild);
+       drawerPt() hides it until there is a ballot to submit. Submit is the primary action and sits first on phones. -->
+  <ng-template #footer>
+    <div
+      class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pb-[env(safe-area-inset-bottom)]"
+      data-testid="vote-cast-footer">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        styleClass="w-full sm:w-auto min-h-[44px]"
+        (onClick)="onClose()"
+        [disabled]="submitting()"
+        data-testid="vote-cast-cancel-button"></lfx-button>
+      <lfx-button
+        label="Submit Vote"
+        icon="fa-light fa-check"
+        severity="primary"
+        styleClass="w-full sm:w-auto min-h-[44px]"
+        [disabled]="submitDisabled()"
+        [loading]="submitting()"
+        (onClick)="onSubmit()"
+        data-testid="vote-cast-submit-button"></lfx-button>
+    </div>
+  </ng-template>
 </p-drawer>
