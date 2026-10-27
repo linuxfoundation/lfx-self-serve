@@ -409,6 +409,16 @@ export class OrgLensEventsService {
     return { eventId, eventName, acceptedCount, submittedCount, data };
   }
 
+  /** Shared by the normal path and the early platinum return, so both shape the response identically. */
+  private toEventsResponse(req: Request, rows: OrgEventRow[], pageSize: number, offset: number): OrgEventsResponse {
+    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
+    const data = rows.map((row) => this.mapRowToOrgEvent(row));
+
+    logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
+
+    return { data, total, pageSize, offset };
+  }
+
   /**
    * `expectMissingObject` marks one thing: this statement references an object that may legitimately
    * not exist yet. Only the SCOPED spellings do — `ORG_PEOPLE_COMPANY_EMAILS`. The unscoped and
@@ -423,17 +433,16 @@ export class OrgLensEventsService {
    * handful of concurrent org loads would open the breaker and fail every Snowflake surface for the
    * reset window. The retry would then be blocked too, turning a degraded Events count into the
    * outage this path exists to prevent. The flag still rejects, so the fallback runs as before.
+   *
+   * LIMITATION, raised repeatedly in review on #4414 and not fixable here. The option is a bare
+   * boolean, so it exempts every object in the statement, not the one named above — and the expected
+   * branch calls `recordSuccess()`, which RESETS the shared failure count rather than merely skipping
+   * it. While some core table in this query is genuinely absent, each scoped attempt holds the
+   * pod-wide breaker closed. Narrowing it means giving `SnowflakeQueryOptions` an object name, as
+   * `expectInvalidIdentifier` already has, and changing `isMissingObjectError` and every caller
+   * (`committee-engagement`, `health-metrics-engagement`) with it — a shared-infrastructure change
+   * that wants its own PR.
    */
-  /** Shared by the normal path and the early platinum return, so both shape the response identically. */
-  private toEventsResponse(req: Request, rows: OrgEventRow[], pageSize: number, offset: number): OrgEventsResponse {
-    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
-    const data = rows.map((row) => this.mapRowToOrgEvent(row));
-
-    logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
-
-    return { data, total, pageSize, offset };
-  }
-
   private async fetchEventListRows(sql: string, binds: string[], scoped = false): Promise<OrgEventRow[]> {
     const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
     return result.rows;
