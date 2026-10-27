@@ -174,7 +174,7 @@ export class OrgLensEventsService {
     const sql = `
       WITH ${COMPANY_EMAIL_COVERAGE_CTE}
       SELECT
-        er.EMAIL                                       AS CONTACT_ID,
+        ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
         MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
@@ -186,7 +186,7 @@ export class OrgLensEventsService {
         AND er.ACCOUNT_ID = ?
         AND ${COMPANY_EMAIL_QUALIFIES}
         ${searchFilter}
-      GROUP BY er.EMAIL
+      GROUP BY ${REGISTRANT_EMAIL_KEY}
       ORDER BY NAME ASC NULLS LAST
     `;
 
@@ -333,6 +333,10 @@ export class OrgLensEventsService {
 /**
  * Account-wide coverage probe for the address table, as an UNCORRELATED CTE.
  *
+ * Rows whose address is null or blank are not counted: they cannot match any registration, so letting
+ * one stand for coverage would switch the fallback off while supplying nothing to filter by — every
+ * count on the page would go to 0, which is the exact outcome the fallback exists to prevent.
+ *
  * It exists in this shape for a dialect reason, not a stylistic one: Snowflake does not allow a
  * correlated `EXISTS` as an argument to `OR`, so the obvious spelling of the fallback —
  * `EXISTS (…matches…) OR NOT EXISTS (…any row for this account…)` — fails to compile. Both query
@@ -344,6 +348,7 @@ const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
         SELECT COUNT(*) AS COVERAGE_ROWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
         WHERE ACCOUNT_ID = ?
+          AND NULLIF(TRIM(EMAIL), '') IS NOT NULL
       )`;
 
 /**
@@ -374,19 +379,32 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
  */
-const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
+const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL), '') IS NOT NULL
+          AND (ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
+
+/**
+ * The identity of a registrant, for counting and for grouping. Addresses reach the fact table in
+ * whatever case and padding the registration form captured, and the join above already matches them
+ * case- and whitespace-insensitively — so counting or grouping on the raw column would split one
+ * person who registered as `ada@company.example` and ` Ada@Company.Example ` into two attendees.
+ * Both readers use this one expression so the row count and the drawer cannot drift apart.
+ *
+ * It is also the drawer's `CONTACT_ID`, which is sound because nothing resolves a person from it —
+ * downstream it is a list-tracking key and an avatar colour seed.
+ */
+const REGISTRANT_EMAIL_KEY = `LOWER(TRIM(er.EMAIL))`;
 
 /**
  * Per-event registrant count under that rule, so a row and the drawer it opens never disagree.
  * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used: it is precomputed with no company-email scoping.
- * `COUNT(DISTINCT er.EMAIL)` matches the drawer's `GROUP BY er.EMAIL` grain exactly. Takes two binds
+ * It counts on `REGISTRANT_EMAIL_KEY`, the same grain the drawer groups by. Takes two binds
  * (the account id, twice). Replacing this with a scoped column on the platinum model is #4409.
  */
 const COMPANY_EMAIL_REGISTRATION_COUNTS_CTE = `WITH ${COMPANY_EMAIL_COVERAGE_CTE},
       company_email_registrations AS (
         SELECT
           er.EVENT_ID,
-          COUNT(DISTINCT er.EMAIL) AS COMPANY_EMAIL_REGISTRATION_COUNT
+          COUNT(DISTINCT ${REGISTRANT_EMAIL_KEY}) AS COMPANY_EMAIL_REGISTRATION_COUNT
         FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
         ${COMPANY_EMAIL_JOINS}
         WHERE er.ACCOUNT_ID = ?

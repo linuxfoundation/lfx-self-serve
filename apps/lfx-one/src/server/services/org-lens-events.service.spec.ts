@@ -61,14 +61,14 @@ let database: SqlDatabase;
 let service: OrgLensEventsService;
 
 /** One registration for `email`, attributed upstream to `account` regardless of the address used. */
-function addRegistration(email: string, fullName: string, account = ACCOUNT, eventId = EVENT): void {
+function addRegistration(email: string | null, fullName: string, account = ACCOUNT, eventId = EVENT): void {
   database
     .prepare('INSERT INTO EVENT_REGISTRATIONS VALUES (?, ?, ?, ?, ?, ?)')
     .run(account, eventId, email, fullName, 'Engineer', 'KubeCon + CloudNativeCon North America 2026');
 }
 
 /** An address the warehouse holds for the org — the employer ∩ employee intersection. */
-function addCompanyEmail(email: string, account = ACCOUNT): void {
+function addCompanyEmail(email: string | null, account = ACCOUNT): void {
   database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(account, `person-${email}`, null, email, 1);
 }
 
@@ -225,6 +225,53 @@ describe('OrgLensEventsService company-email scoping', () => {
     const list = await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, status: 'registered' });
 
     expect(list.data).toEqual([]);
+  });
+
+  it('does not let a null or blank stored address count as coverage', async () => {
+    addEvent(EVENT, 99);
+    // Rows exist for the account, but none carries an address anything could match on.
+    addCompanyEmail(null);
+    addCompanyEmail('   ');
+    addRegistration('someone@gmail.example', 'Someone Else');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // Treating these as coverage would switch the fallback off and zero the page while supplying
+    // nothing to filter by — the exact outcome the fallback exists to prevent.
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(drawer.total).toBe(1);
+  });
+
+  it('excludes registrations with no address, including on the fallback path', async () => {
+    addEvent(EVENT, 99);
+    // No coverage, so the fallback is engaged — the path where a null address would slip through.
+    addRegistration('someone@gmail.example', 'Someone Else');
+    addRegistration(null, 'No Address');
+    addRegistration('   ', 'Blank Address');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    // A null group would both disagree with the count and hand the drawer a null contactId.
+    expect(drawer.total).toBe(1);
+    expect(drawer.data.every((attendee) => !!attendee.contactId)).toBe(true);
+  });
+
+  it('counts one person once across case and whitespace variants of their address', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    // The join matches both of these to the one company address, so they are one attendee.
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    addRegistration('  Ada@Company.Example  ', 'Ada Lovelace');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(drawer.total).toBe(1);
+    expect(drawer.data[0].contactId).toBe('ada@company.example');
   });
 
   /**
