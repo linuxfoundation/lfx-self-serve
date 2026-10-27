@@ -87,7 +87,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
     await expect(page.getByTestId('mktg-linkedin-accepted')).toHaveText(/Your draft was started — open it to follow progress./);
     await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-linkedin-draft').getByRole('button')).toHaveClass(/p-button-outlined/);
     await page.getByTestId('mktg-linkedin-open-accepted').getByRole('button', { name: 'Open draft' }).click();
     await expect(page).toHaveURL(new RegExp(`/documents/linkedin-post/${documentId}`));
     await expect(page).not.toHaveURL(/generation=/);

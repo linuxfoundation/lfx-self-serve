@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   LINKEDIN_ABOUT_FIELDS,
-  LINKEDIN_PAGE_LABEL,
+  LINKEDIN_INTAKE_LABEL,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_CONTENT_SOURCES,
@@ -25,7 +25,6 @@ import {
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_VOICE_FIELDS,
-  MKTG_AGENTS,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
@@ -104,9 +103,8 @@ export class LinkedinPostRunComponent {
   protected readonly fileTypesLabel = LINKEDIN_FILE_TYPES_LABEL;
   protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
   protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
-  protected readonly pageLabel = LINKEDIN_PAGE_LABEL;
   protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), this.agent()?.name ?? this.pageLabel)
+    mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), LINKEDIN_INTAKE_LABEL)
   );
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
   protected readonly freshMode = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('mode') === MKTG_RUN_NEW_MODE)), { initialValue: false });
@@ -132,7 +130,6 @@ export class LinkedinPostRunComponent {
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
   protected readonly pendingNotice = signal<ReturnType<MktgRunAttemptService['latestPending']>>(null);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
-  protected readonly agent = computed(() => MKTG_AGENTS.find((entry) => entry.id === this.intake().agentId));
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
   private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub, reload: this.reload() })));
 
@@ -341,18 +338,23 @@ export class LinkedinPostRunComponent {
   }
   protected async onDraft(): Promise<void> {
     const project = this.context.activeContextUid();
-    if (
-      !project ||
-      !this.writer() ||
-      this.busy() ||
-      this.editing() ||
-      this.questions().length ||
-      this.answering() ||
-      this.lastIntakeLoading() ||
-      this.lastIntakeDenied()
-    )
+    if (!project || this.busy() || this.editing() || this.questions().length || this.answering()) return;
+    if (!this.writer()) {
+      this.error.set('Only project writers can draft a post.');
       return;
-    if (this.acceptedRequest()) return;
+    }
+    if (this.lastIntakeLoading()) {
+      this.error.set('Loading your last run inputs — try again in a moment.');
+      return;
+    }
+    if (this.lastIntakeDenied()) {
+      this.error.set(this.lastIntakeNote() || 'Your last run inputs could not be read; paste text, a link or a file to draft.');
+      return;
+    }
+    if (this.acceptedRequest()) {
+      this.error.set('Your draft is already started — use Open draft above.');
+      return;
+    }
     this.busy.set(true);
     this.error.set('');
     const version = this.scopeVersion;

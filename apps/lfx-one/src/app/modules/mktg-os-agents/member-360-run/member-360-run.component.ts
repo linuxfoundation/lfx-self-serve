@@ -14,7 +14,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import {
-  MKTG_AGENTS,
   MEMBER_360_INTRO,
   MEMBER_360_MAX_BYTES,
   MEMBER_360_MAX_TRACKERS,
@@ -73,12 +72,7 @@ export class Member360RunComponent {
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(
-      'member-360',
-      this.context.activeContext()?.name ?? '',
-      mktgKitRootPath(this.router.url),
-      MKTG_AGENTS.find((agent) => agent.id === 'member-360')?.name ?? 'Member 360'
-    )
+    mktgKitCrumbsFor('member-360', this.context.activeContext()?.name ?? '', mktgKitRootPath(this.router.url), 'Member 360')
   );
   private lastScope = '';
   private uploadSequence = 0;
@@ -149,15 +143,23 @@ export class Member360RunComponent {
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
-    if (
-      !project ||
-      !this.context.canWrite() ||
-      this.uploading() ||
-      this.submitting() ||
-      this.historyLoading() ||
-      (this.form.controls.compare.value && this.historyError())
-    )
+    if (!project || !this.context.canWrite() || this.submitting()) return;
+    if (this.uploading()) {
+      this.error.set('Wait for your trackers to finish parsing, then create Member 360.');
       return;
+    }
+    if (this.historyLoading()) {
+      this.error.set('Wait for run history to finish loading, then create Member 360.');
+      return;
+    }
+    if (this.form.controls.compare.value && (this.historyError() || !this.latest())) {
+      this.error.set(
+        this.historyError()
+          ? 'The previous run could not be read. Choose No comparison or retry history.'
+          : 'There is no previous run to compare with. Choose No comparison to create Member 360.'
+      );
+      return;
+    }
     this.submitting.set(true);
     this.error.set('');
     this.api

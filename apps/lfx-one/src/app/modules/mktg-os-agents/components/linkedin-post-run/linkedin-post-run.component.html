@@ -31,7 +31,7 @@
           {{ lastIntakeLoading() ? 'Loading last run inputs…' : lastIntakeNote() }}
         </p>
       }
-      @if (error()) {
+      @if (error() && !(writer() && !editing() && !questions().length && (saved() || setup()))) {
         <div
           role="alert"
           class="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
@@ -85,17 +85,15 @@
           (ngSubmit)="onProfileSubmit()"
           data-testid="mktg-linkedin-profile-form">
           <div class="flex flex-col gap-2">
-            <h1 class="text-[26px] font-bold">{{ saved() ? 'Edit your LinkedIn profile' : 'Set up your LinkedIn profile' }}</h1>
-            <p class="max-w-prose text-gray-600">
-              First-run setup, asked once. The agent writes every post in this voice. You can change it later from Edit profile.
-            </p>
+            <h1 class="font-display font-light text-xl text-gray-900">{{ saved() ? 'Edit your LinkedIn profile' : 'Set up your LinkedIn profile' }}</h1>
+            <p class="max-w-prose text-gray-600">Asked once. Every post is written in your voice; change it any time from Edit profile.</p>
           </div>
           <section class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5" aria-labelledby="linkedin-personalization">
             <h2 id="linkedin-personalization" class="text-lg font-bold">Step 1 · Personalization</h2>
             @for (field of aboutFields; track field.key) {
               <div class="flex flex-col gap-1">
                 <label [for]="'linkedin-profile-' + field.key" class="font-semibold"
-                  >{{ field.ask }}
+                  >{{ field.prompt }}
                   @if (field.key === 'associated_projects') {
                     <span class="text-sm font-normal text-gray-500">optional</span>
                   }
@@ -150,17 +148,17 @@
               </div>
             }
           </section>
-          <div class="flex flex-wrap items-center gap-3">
-            <lfx-button
-              [label]="saved() || explicitProfileSave() ? 'Save profile' : 'Continue to draft a post'"
-              type="submit"
-              [loading]="busy()"
-              [disabled]="busy()"
-              data-testid="mktg-linkedin-save-profile" />
-            @if (saved() || setup()) {
-              <lfx-button label="Cancel" [text]="true" [disabled]="busy()" (onClick)="onCancelEdit()" data-testid="mktg-linkedin-cancel-edit" />
-            }
-            <p class="text-sm text-gray-500">Saved per user in the profile format. First-run setup is saved when your first draft completes.</p>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-gray-500">Saved to your profile when your first draft finishes.</p>
+            <div class="ml-auto flex items-center gap-3">
+              @if (saved() || setup()) {
+                <lfx-button label="Cancel" [text]="true" [disabled]="busy()" (onClick)="onCancelEdit()" data-testid="mktg-linkedin-cancel-edit" />
+              }
+              <lfx-button
+                [label]="saved() || explicitProfileSave() ? 'Save profile' : 'Continue to draft a post'"
+                type="submit"
+                data-testid="mktg-linkedin-save-profile" />
+            </div>
           </div>
         </form>
       } @else if (writer() && (saved() || setup())) {
@@ -169,14 +167,14 @@
           [formGroup]="contentForm"
           (submit)="$event.preventDefault()"
           data-testid="mktg-linkedin-post-form">
-          <h1 class="text-[22px] font-bold">Draft a post</h1>
+          <h1 class="font-display font-light text-xl text-gray-900">Draft a post</h1>
           <div role="group" aria-label="Content source" class="flex w-fit flex-wrap overflow-hidden rounded-lg border border-gray-300">
             @for (item of sources; track item.value) {
               <button
                 type="button"
                 class="min-h-10 px-4 font-semibold disabled:opacity-50"
-                [class.bg-gray-900]="source() === item.value"
-                [class.text-white]="source() === item.value"
+                [class.bg-blue-50]="source() === item.value"
+                [class.text-blue-700]="source() === item.value"
                 [attr.aria-pressed]="source() === item.value"
                 [disabled]="busy()"
                 (click)="onSource(item.value)"
@@ -234,6 +232,9 @@
               }
               <p class="text-sm text-gray-500">UTF-8 {{ fileTypesLabel }} · up to 1 MB. LFX turns the file into text.</p>
             }
+            @if (error()) {
+              <p role="alert" aria-live="polite" class="text-sm text-red-700" data-testid="mktg-linkedin-error">{{ error() }}</p>
+            }
           </div>
           <div class="flex flex-col gap-1">
             <label for="linkedin-share-link" class="font-semibold">Link to share <span class="text-sm font-normal text-gray-500">optional</span></label>
@@ -257,15 +258,15 @@
               <p role="alert" class="text-sm text-red-700" data-testid="mktg-linkedin-share-error">{{ linkError() }}</p>
             }
           </div>
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-gray-500">About a minute. Each draft is saved under LinkedIn posts.</p>
             <lfx-button
-              label="Draft three options"
+              [label]="busy() ? 'Drafting…' : 'Draft three options'"
               type="button"
+              class="ml-auto"
               (onClick)="onDraft()"
-              [loading]="busy()"
-              [disabled]="busy() || acceptedRequest() !== null || lastIntakeLoading() || lastIntakeDenied()"
+              [outlined]="(!!acceptedRequest() && !busy()) || (!acceptedRequest() && !!pendingNotice())"
               data-testid="mktg-linkedin-draft" />
-            <p class="text-sm text-gray-500">About a minute. Each draft is stored under LinkedIn posts as its own run.</p>
           </div>
         </form>
       }
