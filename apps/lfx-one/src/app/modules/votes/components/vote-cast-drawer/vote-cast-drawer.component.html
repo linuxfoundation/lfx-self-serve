@@ -104,6 +104,9 @@
                 <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
                 @if (isRankedPoll()) {
                   <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
+                  @if (changingBallot()) {
+                    <p class="text-xs text-slate-500">Unranked choices stay unranked unless you add them. Remove a preference to leave it unranked.</p>
+                  }
                 } @else if (question.type === 'multiple_choice') {
                   <p class="text-xs text-slate-500">Select all that apply.</p>
                 }
@@ -142,15 +145,55 @@
                         <button
                           type="button"
                           (click)="moveRank(question.question_id, i, i + 1)"
-                          [disabled]="i === question.choices.length - 1 || abstain()"
+                          [disabled]="i === (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) - 1 || abstain()"
                           class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
                           [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
                           [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
                           <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
                         </button>
+                        @if (changingBallot()) {
+                          <lfx-button
+                            icon="fa-light fa-xmark"
+                            size="small"
+                            severity="secondary"
+                            [text]="true"
+                            [ariaLabel]="'Leave ' + choice.choice_text + ' unranked'"
+                            [disabled]="abstain() || submitting() || !myBallot()"
+                            (onClick)="removeRank(question.question_id, choice.choice_id)"
+                            [attr.data-testid]="'vote-cast-unrank-' + choice.choice_id" />
+                        }
                       </div>
                     }
                   </div>
+                  @if (changingBallot()) {
+                    @let unranked = unrankedChoicesByQuestion().get(question.question_id) ?? [];
+                    @if (unranked.length > 0) {
+                      <div class="flex flex-col gap-2" [attr.data-testid]="'vote-cast-unranked-' + question.question_id">
+                        <h4 class="text-sm font-medium text-slate-700">Not ranked</h4>
+                        @for (choice of unranked; track choice.choice_id) {
+                          <div
+                            class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
+                            [attr.data-testid]="'vote-cast-unranked-' + choice.choice_id">
+                            <span class="text-sm text-slate-700">{{ choice.choice_text }}</span>
+                            <lfx-button
+                              label="Rank"
+                              size="small"
+                              severity="secondary"
+                              [outlined]="true"
+                              [ariaLabel]="'Rank ' + choice.choice_text"
+                              [disabled]="
+                                abstain() ||
+                                submitting() ||
+                                !myBallot() ||
+                                (question.type === 'single_choice' && (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) > 0)
+                              "
+                              (onClick)="addRank(question.question_id, choice.choice_id)"
+                              [attr.data-testid]="'vote-cast-add-rank-' + choice.choice_id" />
+                          </div>
+                        }
+                      </div>
+                    }
+                  }
                 } @else if (question.type === 'single_choice') {
                   @for (choice of question.choices; track choice.choice_id) {
                     <lfx-radio-button

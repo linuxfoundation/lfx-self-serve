@@ -1140,8 +1140,8 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
 /**
  * Turns the caller's current ballot into cast-drawer form values (#4331)
  * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
- * keep the voter's order, then append the declared choices they left unranked so the drawer's full-order control stays
- * valid. Choice ids the vote no longer declares are dropped, and unanswered questions are omitted.
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked until explicitly added.
+ * Choice ids the vote no longer declares are dropped, and unanswered questions are omitted.
  */
 export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {
   const ranked = isRankedPollType(vote.poll_type);
@@ -1151,16 +1151,12 @@ export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_quest
   for (const question of vote.poll_questions ?? []) {
     const answer = answersById.get(question.question_id);
     if (!answer) continue;
-    const declaredIds = (question.choices ?? []).map((choice) => choice.choice_id);
-    const declared = new Set(declaredIds);
+    const declared = new Set((question.choices ?? []).map((choice) => choice.choice_id));
     const picked = answerChoices(vote, answer)
       .map((choice) => choice.choice_id)
       .filter((choiceId) => declared.has(choiceId));
 
-    if (ranked) {
-      const rankedIds = new Set(picked);
-      answers[question.question_id] = [...picked, ...declaredIds.filter((choiceId) => !rankedIds.has(choiceId))];
-    } else if (question.type === 'multiple_choice') {
+    if (ranked || question.type === 'multiple_choice') {
       answers[question.question_id] = picked;
     } else if (picked.length) {
       answers[question.question_id] = picked[0];

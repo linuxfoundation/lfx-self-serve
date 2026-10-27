@@ -115,6 +115,7 @@ export class VoteCastDrawerComponent {
   protected readonly ballotLoadError = "Couldn't load your current ballot. Close this panel and try again.";
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
+  protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
@@ -201,6 +202,26 @@ export class VoteCastDrawerComponent {
     if (toIndex < 0 || toIndex >= current.length) return;
     moveItemInArray(current, fromIndex, toIndex);
     control.setValue(current);
+    this.bumpFormVersion();
+  }
+
+  /** Change mode leaves these choices unranked until the voter explicitly adds a preference. */
+  protected addRank(questionId: string, choiceId: string): void {
+    if (!this.changingBallot() || !this.myBallot() || this.abstain() || this.submitting()) return;
+    const question = this.questions().find((candidate) => candidate.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (!control || !question?.choices.some((choice) => choice.choice_id === choiceId)) return;
+    const current = [...((control.value as string[] | null) ?? [])];
+    if (current.includes(choiceId) || (question.type === 'single_choice' && current.length > 0)) return;
+    control.setValue([...current, choiceId]);
+    this.bumpFormVersion();
+  }
+
+  protected removeRank(questionId: string, choiceId: string): void {
+    if (!this.changingBallot() || !this.myBallot() || this.abstain() || this.submitting()) return;
+    const control = this.form.get(questionId);
+    if (!control) return;
+    control.setValue(((control.value as string[] | null) ?? []).filter((id) => id !== choiceId));
     this.bumpFormVersion();
   }
 
@@ -413,7 +434,7 @@ export class VoteCastDrawerComponent {
         // Defensive Array.isArray — if a stale non-array control value lingers (e.g. mid-session vote reshape), fall back to declared order.
         const raw = this.form.get(question.question_id)?.value;
         const order = Array.isArray(raw) ? (raw as string[]) : null;
-        if (!order?.length) {
+        if (!order) {
           result.set(question.question_id, question.choices);
           continue;
         }
@@ -427,8 +448,24 @@ export class VoteCastDrawerComponent {
     });
   }
 
+  private initUnrankedChoicesByQuestion(): Signal<Map<string, UserChoice[]>> {
+    return computed(() => {
+      const result = new Map<string, UserChoice[]>();
+      if (!this.changingBallot() || !this.isRankedPoll()) return result;
+      const ranked = this.rankedOrderByQuestion();
+      for (const question of this.questions()) {
+        const selected = new Set((ranked.get(question.question_id) ?? []).map((choice) => choice.choice_id));
+        result.set(
+          question.question_id,
+          question.choices.filter((choice) => !selected.has(choice.choice_id))
+        );
+      }
+      return result;
+    });
+  }
+
   // === Private Helpers ===
-  /** Reconciles the form against the current vote's questions; ranked polls seed declared order so the form is valid on load. */
+  /** Reconciles question controls: first ballots seed every rank; change mode waits for recorded preferences. */
   private rebuildForm(questions: PollQuestion[]): void {
     const currentPollType = this.vote()?.poll_type ?? PollType.GENERIC;
     const pollIsRanked = this.isRankedPoll();
@@ -446,7 +483,7 @@ export class VoteCastDrawerComponent {
     for (const question of questions) {
       if (this.form.contains(question.question_id)) continue;
       if (pollIsRanked) {
-        const seeded = question.choices.map((c) => c.choice_id);
+        const seeded = this.changingBallot() ? [] : question.choices.map((c) => c.choice_id);
         this.form.addControl(question.question_id, new FormControl<string[]>(seeded, { nonNullable: true, validators: [Validators.required] }), {
           emitEvent: false,
         });
@@ -481,6 +518,12 @@ export class VoteCastDrawerComponent {
     this.appliedPrefillKey = key;
 
     const prefill = mapMyBallotToCastForm(vote, ballot);
+    // An abstention can carry no answers. Never retain or seed preferences it did not record.
+    if (this.isRankedPoll()) {
+      for (const question of vote.poll_questions) {
+        this.form.get(question.question_id)?.setValue([], { emitEvent: false });
+      }
+    }
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });
     }

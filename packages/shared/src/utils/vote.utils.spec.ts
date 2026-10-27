@@ -1600,7 +1600,7 @@ describe('voter list helpers (#3914)', () => {
       expect(prefill.answers).toEqual({ 'q-1': ['c-yes', 'c-alice'] });
     });
 
-    it('keeps a partial ranked order and appends the unranked choices in declared order', () => {
+    it('keeps only the recorded partial ranked order without assigning unranked choices', () => {
       const prefill = mapMyBallotToCastForm(
         rankedVote,
         ballot({
@@ -1616,7 +1616,7 @@ describe('voter list helpers (#3914)', () => {
           ],
         })
       );
-      expect(prefill.answers).toEqual({ 'q-1': ['c-dev', 'c-cara', 'c-alice', 'c-bob'] });
+      expect(prefill.answers).toEqual({ 'q-1': ['c-dev', 'c-cara'] });
     });
 
     it('drops a choice id the vote no longer declares', () => {

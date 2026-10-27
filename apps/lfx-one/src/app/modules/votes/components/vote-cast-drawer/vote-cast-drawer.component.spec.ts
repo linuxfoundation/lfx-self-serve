@@ -383,6 +383,40 @@ describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
     vote_creation_time: '2026-10-20T10:00:00Z',
   };
 
+  const RANKED_VOTE: Vote = {
+    ...VOTE,
+    allow_abstain: true,
+    poll_type: PollType.INSTANT_RUNOFF_VOTE,
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Rank the candidates',
+        type: 'multiple_choice',
+        choices: [
+          { choice_id: 'r1', choice_text: 'Avery' },
+          { choice_id: 'r2', choice_text: 'Blake' },
+          { choice_id: 'r3', choice_text: 'Casey' },
+        ],
+      },
+    ],
+    poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Anything else?' }],
+  };
+  const RANKED_BALLOT: MyVoteBallot = {
+    ...BALLOT,
+    poll_answers: [
+      {
+        question_id: 'q1',
+        prompt: 'Rank the candidates',
+        type: 'multiple_choice',
+        user_choice: [],
+        ranked_user_choice: [
+          { choice_id: 'r3', choice_text: 'Casey', choice_rank: 1 },
+          { choice_id: 'r1', choice_text: 'Avery', choice_rank: 2 },
+        ],
+      },
+    ],
+  };
+
   async function openChanging(vote: Vote, getMyVoteBallot: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}): Promise<void> {
     await setup(vi.fn().mockReturnValue(of(vote)), { getMyVoteBallot, ...overrides });
     fixture.componentRef.setInput('changingBallot', true);
@@ -410,42 +444,161 @@ describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
     expect(component['submitDisabled']()).toBe(false);
   });
 
-  it('pre-fills a ranked order, appending unranked choices', async () => {
-    const rankedVote = {
-      ...VOTE,
-      poll_type: PollType.INSTANT_RUNOFF_VOTE,
-      poll_questions: [
-        {
-          question_id: 'q1',
-          prompt: 'Rank the candidates',
-          type: 'single_choice',
-          choices: [
-            { choice_id: 'r1', choice_text: 'Avery' },
-            { choice_id: 'r2', choice_text: 'Blake' },
-            { choice_id: 'r3', choice_text: 'Casey' },
-          ],
-        },
-      ],
-    } as Vote;
-    const ballot: MyVoteBallot = {
-      ...BALLOT,
-      poll_answers: [
-        {
-          question_id: 'q1',
-          prompt: '',
-          type: 'single_choice',
-          user_choice: [],
-          ranked_user_choice: [
-            { choice_id: 'r3', choice_text: 'Casey', choice_rank: 1 },
-            { choice_id: 'r1', choice_text: 'Avery', choice_rank: 2 },
-          ],
-        },
-      ],
-      comment_responses: [],
-    };
-    await openChanging(rankedVote, vi.fn().mockReturnValue(of(ballot)));
+  it('pre-fills only recorded ranks and shows the remaining choices as unranked', async () => {
+    await openChanging(RANKED_VOTE, vi.fn().mockReturnValue(of(RANKED_BALLOT)));
 
-    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3', 'r1', 'r2']);
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3', 'r1']);
+    expect(el('vote-cast-rank-r2')).toBeNull();
+    expect(el('vote-cast-unranked-r2')?.textContent).toContain('Blake');
+    expect((el('vote-cast-rank-down-r1') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([false, true])('preserves the partial ranking when submitting with comment changes: %s', async (changeComment) => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openChanging(RANKED_VOTE, vi.fn().mockReturnValue(of(RANKED_BALLOT)), { submitMyResponse });
+    if (changeComment) fixture.componentInstance.commentForm.patchValue({ p1: 'Updated comment only' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    submitButton()?.click();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledWith(VOTE.uid, {
+      abstain: false,
+      userVoteContent: [
+        {
+          question_id: 'q1',
+          ranked_choices: [
+            { choice_id: 'r3', choice_rank: 1 },
+            { choice_id: 'r1', choice_rank: 2 },
+          ],
+        },
+      ],
+      commentResponses: [{ prompt_id: 'p1', comment_text: changeComment ? 'Updated comment only' : 'Needs a second reading' }],
+    });
+  });
+
+  it('adds and removes ranked preferences only through explicit actions, and can reorder the partial list', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openChanging(RANKED_VOTE, vi.fn().mockReturnValue(of(RANKED_BALLOT)), { submitMyResponse });
+
+    el('vote-cast-unrank-r1')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3']);
+    expect(el('vote-cast-unranked-r1')).not.toBeNull();
+
+    el('vote-cast-add-rank-r2')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el('vote-cast-rank-up-r2')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r2', 'r3']);
+    expect(el('vote-cast-rank-r1')).toBeNull();
+    submitButton()?.click();
+    await fixture.whenStable();
+    expect(submitMyResponse).toHaveBeenCalledWith(
+      VOTE.uid,
+      expect.objectContaining({
+        userVoteContent: [
+          {
+            question_id: 'q1',
+            ranked_choices: [
+              { choice_id: 'r2', choice_rank: 1 },
+              { choice_id: 'r3', choice_rank: 2 },
+            ],
+          },
+        ],
+      })
+    );
+  });
+
+  it('does not silently seed ranks after every preference is removed, and disables ranking while abstaining', async () => {
+    await openChanging(RANKED_VOTE, vi.fn().mockReturnValue(of(RANKED_BALLOT)));
+    for (const id of ['r3', 'r1']) {
+      el('vote-cast-unrank-' + id)
+        ?.querySelector('button')
+        ?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual([]);
+    expect(fixture.componentInstance['submitDisabled']()).toBe(true);
+    expect(el('vote-cast-rank-r3')).toBeNull();
+    expect(el('vote-cast-unranked-r3')).not.toBeNull();
+
+    fixture.componentInstance.abstainControl.setValue(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['submitDisabled']()).toBe(false);
+    expect(el('vote-cast-add-rank-r2')?.querySelector('button')?.disabled).toBe(true);
+    fixture.componentInstance.abstainControl.setValue(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el('vote-cast-add-rank-r2')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r2']);
+    expect(fixture.componentInstance['submitDisabled']()).toBe(false);
+  });
+
+  it('keeps a ranked abstention empty when the voter switches back to choosing preferences', async () => {
+    await openChanging(RANKED_VOTE, vi.fn().mockReturnValue(of({ ...RANKED_BALLOT, abstained: true, poll_answers: [] })));
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual([]);
+    expect(fixture.componentInstance.form.disabled).toBe(true);
+    fixture.componentInstance.abstainControl.setValue(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual([]);
+    expect(fixture.componentInstance['submitDisabled']()).toBe(true);
+    expect(el('vote-cast-rank-r1')).toBeNull();
+    expect(el('vote-cast-unranked-r1')).not.toBeNull();
+  });
+
+  it('requires removing the recorded preference before adding another on a ranked single-choice question', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const vote: Vote = { ...RANKED_VOTE, poll_questions: RANKED_VOTE.poll_questions?.map((question) => ({ ...question, type: 'single_choice' })) };
+    const ballot: MyVoteBallot = {
+      ...RANKED_BALLOT,
+      poll_answers: RANKED_BALLOT.poll_answers.map((answer) => ({
+        ...answer,
+        type: 'single_choice',
+        ranked_user_choice: answer.ranked_user_choice.slice(0, 1),
+      })),
+    };
+    await openChanging(vote, vi.fn().mockReturnValue(of(ballot)), { submitMyResponse });
+
+    expect(el('vote-cast-add-rank-r2')?.querySelector('button')?.disabled).toBe(true);
+    fixture.componentInstance['addRank']('q1', 'r2');
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3']);
+    el('vote-cast-unrank-r3')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el('vote-cast-add-rank-r2')?.querySelector('button')?.disabled).toBe(false);
+    el('vote-cast-add-rank-r2')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    submitButton()?.click();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledWith(
+      VOTE.uid,
+      expect.objectContaining({ userVoteContent: [{ question_id: 'q1', ranked_choices: [{ choice_id: 'r2', choice_rank: 1 }] }] })
+    );
+  });
+
+  it('keeps the first-ballot ranked form seeded in full declared order', async () => {
+    await setup(vi.fn().mockReturnValue(of(RANKED_VOTE)));
+    await openWithoutListVote();
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r1', 'r2', 'r3']);
+    expect(el('vote-cast-rank-r2')).not.toBeNull();
+    expect(el('vote-cast-unrank-r2')).toBeNull();
+    expect(el('vote-cast-unranked-r2')).toBeNull();
   });
 
   it('pre-fills an abstention', async () => {
