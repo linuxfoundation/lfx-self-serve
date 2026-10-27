@@ -31,10 +31,11 @@ Accepting puts the program on your **My Programs** tab, with its mentees, applic
 
 ## Troubleshooting
 
-| What you see                        | What it means                                                                                              |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| The invitation is not found         | The token has already been used, or the invitation was withdrawn. Ask the Program Admin to send a new one. |
-| The page asks you to register first | You have no mentor profile. See [Become a Mentor](../become-a-mentor/).                                    |
+| What you see                                 | What it means                                                                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| "This invitation is for a different account" | You are signed in with a different LF ID from the one the email was sent to. Sign in with that account and open the link again. |
+| "This invitation link can't be used"         | The invitation was already answered or withdrawn. Ask the Program Admin to invite you again.                                    |
+| The page asks you to register first          | You have no mentor profile. See [Become a Mentor](../become-a-mentor/).                                                         |
 
 ## Related
 
