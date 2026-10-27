@@ -280,6 +280,9 @@ export * from './org-key-contacts.internal.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
 
+// Org Lens commit filters (lfx-self-serve#4164, #4322)
+export * from './org-commit-filters.interface';
+
 // Org Lens per-caller cache stored shapes (GH-1906)
 export * from './org-lens-cache.interface';
 
