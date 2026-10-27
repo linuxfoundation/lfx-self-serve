@@ -41,6 +41,16 @@ describe('AudienceSummaryBarComponent', () => {
     expect(render({ reachLabel: 'Reach before exclusions' }).textContent).toContain('Reach before exclusions');
   });
 
+  it('shows a dash, not 0, for an excluded count that is still loading', () => {
+    fixture = TestBed.createComponent(AudienceSummaryBarComponent);
+    fixture.componentRef.setInput('included', 1);
+    fixture.componentRef.setInput('excluded', null);
+    fixture.componentRef.setInput('reachText', '—');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('—');
+  });
+
   it('says the audience is attached instead of offering review', () => {
     const host = render({ attached: true });
 

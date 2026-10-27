@@ -6166,6 +6166,18 @@ export interface AudienceListNameConflict {
   fromCompose: boolean;
 }
 
+/**
+ * A step-4 reuse attach (an existing master list, or a past send's lists) waiting for the operator
+ * to confirm the lists it would create in HubSpot.
+ */
+export interface AudiencePendingReuseAttach {
+  kind: 'master' | 'send';
+  /** The master list id, or the past send's email id. */
+  id: string;
+  /** What the operator is attaching, for the confirmation. */
+  label: string;
+}
+
 /** An action that starts the Audience tab over and so waits for the operator to confirm it. */
 export type AudienceStartOverAction = 'discover' | 'draft';
 

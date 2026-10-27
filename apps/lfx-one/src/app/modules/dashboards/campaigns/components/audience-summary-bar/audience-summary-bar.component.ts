@@ -17,7 +17,8 @@ import { Component, input, output } from '@angular/core';
 })
 export class AudienceSummaryBarComponent {
   public readonly included = input.required<number>();
-  public readonly excluded = input.required<number>();
+  /** null while the suppression rows are loading: shown as a dash, never as a count of 0. */
+  public readonly excluded = input.required<number | null>();
   public readonly reachText = input.required<string>();
   /**
    * What the reach figure is -- a previewed union, an upper bound summed over every list, or a sum

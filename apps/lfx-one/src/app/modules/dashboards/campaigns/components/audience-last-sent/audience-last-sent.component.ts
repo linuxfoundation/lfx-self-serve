@@ -82,6 +82,11 @@ export class AudienceLastSentComponent {
    */
   public readonly attachUnavailableMessage = input('');
   /**
+   * What "Use for this email" does in HubSpot, from the container: it creates the standing list or
+   * the registrants list when they are missing, so "nothing new is created" is not always true.
+   */
+  public readonly attachNote = input('No master list is built and nothing new is created in HubSpot.');
+  /**
    * Whether an EXISTING master list may be reused, which needs more than `canAttach`.
    *
    * That path submits the operator's ticked suppressions, and while the suppression lookup is

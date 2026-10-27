@@ -49,6 +49,7 @@ import type {
   AudienceReadinessAction,
   AudienceReadinessNotice,
   AudienceMasterListBrief,
+  AudiencePendingReuseAttach,
   AudiencePreviewCount,
   AudienceSignal,
   AudienceStartOverAction,
@@ -500,8 +501,13 @@ export class AudienceBuilderTabComponent {
    * -- a tick, a reload filling an id, a new edition -- withdraws the confirmation by itself.
    */
   private readonly composeConfirmedFor = signal<string | null>(null);
-  /** The same, for a direct attach that will create a list in HubSpot. */
+  /**
+   * The same, for an attach that will create a list in HubSpot: `writeRequestKey|target`, where the
+   * target is `selection`, `master:<id>` or `send:<id>`, so a confirmation names one attach only.
+   */
   private readonly attachConfirmedFor = signal<string | null>(null);
+  /** The step-4 reuse attach that confirmation is for; null for the step-6 selection. */
+  private readonly pendingReuseAttach = signal<AudiencePendingReuseAttach | null>(null);
   /** The "combine into a master list" disclosure is open. Direct use is the default action. */
   protected readonly composeOpen = signal(false);
   /**
@@ -785,7 +791,31 @@ export class AudienceBuilderTabComponent {
   protected readonly composeConfirming = computed(() => this.composeConfirmedFor() !== null && this.composeConfirmedFor() === this.writeRequestKey());
 
   /** The direct-attach confirmation is open, and still describes what the attach would send. */
-  protected readonly attachConfirming = computed(() => this.attachConfirmedFor() !== null && this.attachConfirmedFor() === this.writeRequestKey());
+  protected readonly attachConfirming = computed(() => this.attachConfirmedFor() === this.attachKey('selection'));
+
+  /** The step-4 reuse attach awaiting confirmation, while it still describes what would be sent. */
+  protected readonly reuseAttachConfirming = computed<AudiencePendingReuseAttach | null>(() => {
+    const pending = this.pendingReuseAttach();
+    return pending !== null && this.attachConfirmedFor() === this.attachKey(`${pending.kind}:${pending.id}`) ? pending : null;
+  });
+
+  /** Step 4's "Use for this email" note: whether its attach creates anything in HubSpot. */
+  protected readonly reuseAttachNote = computed(() =>
+    this.writeCreates().length > 0
+      ? `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`
+      : 'No master list is built and nothing new is created in HubSpot.'
+  );
+
+  /**
+   * The compose confirmation's exclusion count, counted as upstream reports it afterwards: the
+   * standard rows as the one standing list when they all apply, plus the registrants list.
+   */
+  protected readonly composeExcludeCount = computed(() => {
+    const standard = new Set(this.standardRowIds());
+    const sent = this.sentExcludeIds();
+    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id)).length + 1 : sent.length;
+    return count + (this.registrantsEvent() === '' ? 0 : 1);
+  });
 
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
   protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
@@ -1923,9 +1953,12 @@ export class AudienceBuilderTabComponent {
    * -- excluding that send's suppression lists AND whatever is ticked or marked Exclude here, so the
    * mandatory step-3 suppression always applies.
    */
-  protected onUseSendLists(email: AudienceLastSentEmail): void {
+  protected onUseSendLists(email: AudienceLastSentEmail, confirmed = false): void {
     const includes = email.includedLists.filter((list) => !list.missing).map((list) => list.listId);
     if (includes.length === 0 || !this.canUseExistingMaster()) {
+      return;
+    }
+    if (!confirmed && this.askToConfirmReuse({ kind: 'send', id: email.emailId, label: `the lists of "${email.emailName}"` })) {
       return;
     }
     this.attachExisting(
@@ -1947,8 +1980,11 @@ export class AudienceBuilderTabComponent {
    * Prior-send reuse is gated the same way now: it adds the ticked suppressions to the earlier
    * send's own, so at least one must be ticked and the lookup must have settled.
    */
-  protected onUseMasterList(list: AudienceMasterListBrief): void {
+  protected onUseMasterList(list: AudienceMasterListBrief, confirmed = false): void {
     if (!this.canUseExistingMaster()) {
+      return;
+    }
+    if (!confirmed && this.askToConfirmReuse({ kind: 'master', id: list.listId, label: `"${list.name}"` })) {
       return;
     }
     this.attachExisting(list.listId, [list.listId], [], '');
@@ -1961,7 +1997,8 @@ export class AudienceBuilderTabComponent {
     }
     // "Nothing new is created" holds only when neither list attach may create is missing.
     if (!confirmed && this.writeCreates().length > 0) {
-      this.attachConfirmedFor.set(this.writeRequestKey());
+      this.pendingReuseAttach.set(null);
+      this.attachConfirmedFor.set(this.attachKey('selection'));
       return;
     }
     const entries = this.inclusionEntries();
@@ -2147,6 +2184,24 @@ export class AudienceBuilderTabComponent {
 
   protected onCancelUseSelection(): void {
     this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
+  }
+
+  /** Runs the step-4 reuse attach the operator confirmed. */
+  protected onConfirmReuseAttach(): void {
+    const pending = this.reuseAttachConfirming();
+    this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
+    if (pending === null) {
+      return;
+    }
+    if (pending.kind === 'master') {
+      const list = this.reuseMasterLists().find((candidate) => candidate.listId === pending.id);
+      if (list) this.onUseMasterList(list, true);
+    } else {
+      const email = this.lastSentEmails().find((candidate) => candidate.emailId === pending.id);
+      if (email) this.onUseSendLists(email, true);
+    }
   }
 
   /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
@@ -2822,6 +2877,21 @@ export class AudienceBuilderTabComponent {
     };
   }
 
+  /** A confirmation's identity: what the write would send, and which attach it is. */
+  private attachKey(target: string): string {
+    return `${this.writeRequestKey()}|${target}`;
+  }
+
+  /** Opens the confirmation for a reuse attach that creates lists; false when none is needed. */
+  private askToConfirmReuse(pending: AudiencePendingReuseAttach): boolean {
+    if (this.writeCreates().length === 0) {
+      return false;
+    }
+    this.pendingReuseAttach.set(pending);
+    this.attachConfirmedFor.set(this.attachKey(`${pending.kind}:${pending.id}`));
+    return true;
+  }
+
   /** Runs a reload that was asked for while the previous load was on the wire. */
   private runPendingSuppressionReload(): void {
     if (this.suppressionReloadPending) {
@@ -3051,8 +3121,8 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * Resets the event URL field without emitting (the mirror in the constructor must not re-dirty
-   * it), keeping `eventUrlValue` in step so the buttons judge the URL actually in the field.
+   * Resets the event URL field without emitting, keeping `eventUrlValue` in step so the buttons
+   * judge the URL actually in the field.
    */
   private resetEventUrl(url: string): void {
     this.eventUrlControl.reset(url, { emitEvent: false });
@@ -3159,6 +3229,7 @@ export class AudienceBuilderTabComponent {
     this.composeDispatch.set(null);
     this.composeConfirmedFor.set(null);
     this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
