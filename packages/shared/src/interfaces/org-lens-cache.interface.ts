@@ -46,7 +46,7 @@ export interface CompactOrgSeatsEntry {
 
 /**
  * Stored form of the per-caller merged people directory cache (GH-1906, namespace
- * `org-people-dir:v3`). `stats` and `foundations` are small fixed-size structures and are kept
+ * `org-people-dir:v4`). `stats` and `foundations` are small fixed-size structures and are kept
  * verbatim; only `rows` — where the same ~19 field names repeat on every person — is compacted.
  */
 export interface CompactOrgPeopleDirectoryEntry {

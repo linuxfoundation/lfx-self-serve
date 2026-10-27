@@ -50,9 +50,12 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. `v2`: merge-only
    * fields are stripped before the write and the validator asserts their absence. `v3` (GH-1906):
    * `rows` are stored columnar (`CompactOrgPeopleDirectoryEntry`) rather than as wire objects —
-   * stale `v1`/`v2` entries must never be served as the new shape.
+   * stale `v1`/`v2` entries must never be served as the new shape. `v4` (#4401): rows carry
+   * `keyContactRoles`. The shape guard already rejects a `v3` entry, but sharing one key space
+   * across a rolling deploy would have old and new pods each reject and overwrite the other's
+   * entry, so the directory mostly misses until the rollout ends.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v4',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -269,6 +272,10 @@ export const VALKEY_CACHE = {
     // merge. 1.63 MiB × 1.25 rounds up to 3 MiB; 2 MiB would leave under 25% headroom. A reassign
     // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
     // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
-    'org-people-dir:v3': 3 * 1_048_576,
+    // Moved from 'org-people-dir:v3' with the v4 bump (#4401); the cap is keyed by namespace, so
+    // leaving it behind would drop large orgs back to the 1 MiB default and stop them caching at all.
+    // The measurement above still holds: keyContactRoles adds a short string array per row, and only
+    // for the minority of people who hold a key-contact role.
+    'org-people-dir:v4': 3 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

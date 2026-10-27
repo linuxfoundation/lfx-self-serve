@@ -94,7 +94,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // against the writer's actual contract rather than a copy that could silently drift from it.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
-  VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
+  VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v4', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
     accountId: '',
     rows: [],
@@ -913,7 +913,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v3', 'tester', ACCOUNT);
+    evictPerUserOrgFetch('org-people-dir:v4', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
