@@ -1215,6 +1215,34 @@ describe('AccountContextService — All Organizations roll-up', () => {
     expect(service.demoteAddressedRollUp()).toBeNull();
   });
 
+  /**
+   * Regression, PR #4415 review 12. The admission above and the reconciliation effect asked the same
+   * question differently: the effect checked only "pending or eligible", so it demoted the visit it
+   * had just been admitted, queued `/org/not-found`, and — because reconciliation returns early once
+   * the roll-up is deselected — the later grants could never undo it. The earlier specs missed it by
+   * never flushing the effect while the answer was still unknown.
+   */
+  it('survives an effect flush while the fallback is still undecidable', () => {
+    rollUpFlag.set(false);
+    grants.loaded.set(false);
+    service.initializeUserOrganizations([]);
+    service.selectRollUp({ admitWhilePending: true });
+
+    // The flush that used to strand the caller.
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(true);
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    // Grants finally answer, and only then does the demotion run.
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_B);
+  });
+
   it('demotes that caller as soon as the grants name an organization', () => {
     rollUpFlag.set(false);
     grants.loaded.set(false);

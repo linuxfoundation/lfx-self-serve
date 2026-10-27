@@ -270,6 +270,18 @@ export class AccountContextService {
    */
   public readonly grantsUnsettled: Signal<boolean> = computed(() => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok');
 
+  /**
+   * True while leaving the roll-up has no answer yet: nothing names an organization to leave it
+   * FOR, and the grants that might are still unsettled.
+   *
+   * Admission and reconciliation both have to ask this, and the same way. They did not:
+   * `selectRollUp` admitted an undecidable `/org/all` visit, and the reconciliation effect — which
+   * only checked "pending or eligible" — immediately demoted it to the placeholder and queued
+   * `/org/not-found`, the dead end the admission existed to avoid. Later grants could not repair it,
+   * because reconciliation returns early once the roll-up is no longer selected (#4415 review 12).
+   */
+  private readonly demotionUndecidable: Signal<boolean> = computed(() => this.grantsUnsettled() && this.rollUpFallbackOrganization() === null);
+
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
     const uid = this.addressedUid();
@@ -353,8 +365,10 @@ export class AccountContextService {
       }
       const pending = this.rollUpEligibilityPending();
       const eligible = this.canSelectRollUp();
+      // Read in tracked scope so the effect re-runs when the grants finally answer.
+      const undecidable = this.demotionUndecidable();
       untracked(() => {
-        if (pending || eligible) {
+        if (pending || eligible || undecidable) {
           return;
         }
         this.demoteFromRollUp();
@@ -503,8 +517,7 @@ export class AccountContextService {
     // not-found. Admitting here is transiently wrong (the pages fail closed while the flag is off)
     // and self-correcting: the reconciliation effect demotes and re-points as soon as the grants
     // land. A dead end is neither (#4415 review 10).
-    const undecidable = this.grantsUnsettled() && this.rollUpFallbackOrganization() === null;
-    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && (this.rollUpEligibilityPending() || undecidable));
+    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && (this.rollUpEligibilityPending() || this.demotionUndecidable()));
     if (!admissible) {
       return false;
     }
