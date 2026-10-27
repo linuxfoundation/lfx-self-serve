@@ -70,6 +70,22 @@ export class AccountContextService {
 
   /** At most one deferred address re-point; a later demotion supersedes an earlier pending one. */
   private pendingRepoint: Subscription | null = null;
+
+  /**
+   * True while a stored `{ uid: 'all' }` is being held for a caller who has been demoted only
+   * because the roll-up is *unavailable* (flag off, or its provider never answered) — never because
+   * they stopped qualifying.
+   *
+   * It has to outlive the demotion itself. `persist: false` on that one `setAccount` is not enough:
+   * the grant-only fallback hydrates through `refreshCanonicalRecord`, and `applyCanonicalRecord`
+   * persists unconditionally — as does `setIndexedSlug`, and any address adoption that follows — so
+   * the concrete uid reached the cookie a moment later anyway, for exactly the inherited-grants
+   * caller this path exists for (#4415 review 8).
+   *
+   * Cleared by a deliberate choice: an ordinary `setAccount` (the selector, a default, a restored
+   * match), re-selecting the roll-up, or `clearAccount`.
+   */
+  private rollUpChoicePreserved = false;
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -426,8 +442,10 @@ export class AccountContextService {
     }
     this.selectedAccount.set(next);
     // `persist: false` keeps the stored selection as it is while still changing the live one — used
-    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`).
+    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`). Any
+    // ordinary write is a deliberate choice and ends that hold.
     if (options?.persist !== false) {
+      this.rollUpChoicePreserved = false;
       this.persistToStorage(next);
     }
   }
@@ -527,6 +545,7 @@ export class AccountContextService {
   }
 
   public clearAccount(): void {
+    this.rollUpChoicePreserved = false;
     this.addressedUid.set(null);
     this.pinSource.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
@@ -725,6 +744,9 @@ export class AccountContextService {
     // Grants settling on fewer than two organizations is the other reason, and that IS about the
     // caller: the roll-up is now *wrong* for them, so the cookie is updated like any other switch.
     const preserveStoredChoice = !this.rollUpFlag();
+    if (preserveStoredChoice) {
+      this.rollUpChoicePreserved = true;
+    }
 
     const fallback = this.rollUpFallbackOrganization();
     if (!fallback) {
@@ -816,6 +838,7 @@ export class AccountContextService {
 
   /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
   private applyRollUpSelection(): void {
+    this.rollUpChoicePreserved = false;
     this.selectedAccount.set(ROLLUP_ACCOUNT);
     this.persistToStorage(ROLLUP_ACCOUNT);
     this.addressedUid.set(ORG_ROLLUP_SEGMENT);
@@ -824,6 +847,12 @@ export class AccountContextService {
 
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
   private persistToStorage(account: Account): void {
+    // Hold the saved roll-up through every incidental write that follows an unavailability
+    // demotion — canonical hydration, an indexed slug, an address adoption. Writing the roll-up
+    // itself is always allowed; it is the same value already stored.
+    if (this.rollUpChoicePreserved && !isOrgRollUpSegment(account.uid)) {
+      return;
+    }
     if (!this.isValidUid(account.uid)) {
       this.clearStorage();
       return;

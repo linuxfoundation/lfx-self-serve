@@ -5,10 +5,11 @@ import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { AnalyticsService } from './analytics.service';
@@ -543,28 +544,8 @@ describe('AccountContextService — All Organizations roll-up', () => {
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
 
-  beforeEach(() => {
-    cookies = new Map();
-    rollUpFlag = signal(true);
-    providerReady = signal(true);
-    routerUrl = '/org/all/people';
-    navigateByUrl = vi.fn();
-    navigateSpy = vi.fn();
-    currentNavigation = null;
-    routerEvents = new Subject<unknown>();
-    flagInitialized = signal(true);
-    liveRows = [];
-    httpGet = vi.fn().mockReturnValue(of(null));
-    grants = {
-      writerSet: signal(new Set<string>()),
-      auditorSet: signal(new Set<string>()),
-      inheritedWriterSet: signal(new Set<string>()),
-      inheritedAuditorSet: signal(new Set<string>()),
-      isStaff: signal(false),
-      claManagerOrgSet: signal(new Set<string>()),
-      loaded: signal(true),
-      lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
-    };
+  /** The roll-up suite's TestBed wiring, reusable so a test can rebuild the service (e.g. under fake timers). */
+  const configureRollUpTestBed = (): void => {
     TestBed.configureTestingModule({
       providers: [
         {
@@ -596,6 +577,31 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: HttpClient, useValue: { get: httpGet } },
       ],
     });
+  };
+
+  beforeEach(() => {
+    cookies = new Map();
+    rollUpFlag = signal(true);
+    providerReady = signal(true);
+    routerUrl = '/org/all/people';
+    navigateByUrl = vi.fn();
+    navigateSpy = vi.fn();
+    currentNavigation = null;
+    routerEvents = new Subject<unknown>();
+    flagInitialized = signal(true);
+    liveRows = [];
+    httpGet = vi.fn().mockReturnValue(of(null));
+    grants = {
+      writerSet: signal(new Set<string>()),
+      auditorSet: signal(new Set<string>()),
+      inheritedWriterSet: signal(new Set<string>()),
+      inheritedAuditorSet: signal(new Set<string>()),
+      isStaff: signal(false),
+      claManagerOrgSet: signal(new Set<string>()),
+      loaded: signal(true),
+      lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
+    };
+    configureRollUpTestBed();
     service = TestBed.inject(AccountContextService);
   });
 
@@ -864,11 +870,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
   });
 
   /**
-   * Regression, PR #4415 review 4. `providerReady` stays false for the whole session when
-   * LaunchDarkly is unreachable, so an unbounded pending window admitted `/org/all` indefinitely —
-   * for a single-organization caller, and even with the flag genuinely off.
-   */
-  /**
    * Regression, PR #4415 review 6. `initialized` is set once `OpenFeature.setContext()` resolves —
    * which happens even when the raw provider status is ERROR, with `providerReady` left false and
    * error recovery armed. Ending the wait on it meant a slow LaunchDarkly read exactly like a
@@ -985,5 +986,101 @@ describe('AccountContextService — All Organizations roll-up', () => {
     await Promise.resolve();
 
     expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression, PR #4415 review 8. `rollUpFlagResolved` is `providerReady() || wait elapsed`, so
+   * once the provider never becomes READY the constructor's timer is the ONLY thing that closes the
+   * pending window — and it is the fix for review 4's fail-open, where `/org/all` stayed admitted
+   * for the whole session while LaunchDarkly was unreachable. No spec drove that timer, so dropping
+   * or mis-arming it would have reinstated the fail-open silently.
+   */
+  describe('the fail-closed timeout on the flag wait', () => {
+    // The timer is armed in the service constructor, which the outer `beforeEach` has already run —
+    // so the clock has to be faked before that, and the service rebuilt against it.
+    beforeEach(() => {
+      vi.useFakeTimers();
+      TestBed.resetTestingModule();
+      configureRollUpTestBed();
+      service = TestBed.inject(AccountContextService);
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('closes the pending window when the provider never becomes ready', () => {
+      providerReady.set(false);
+      flagInitialized.set(false);
+      rollUpFlag.set(false);
+      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+
+      service.initializeUserOrganizations([seedA, seedB]);
+      expect(service.isRollUp()).toBe(true);
+
+      vi.advanceTimersByTime(FEATURE_FLAG_READY_TIMEOUT_MS);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(false);
+    });
+
+    // Closing the window is about availability, not about this caller, so the choice survives it.
+    it('keeps the saved choice when the window closes without a ready provider', () => {
+      providerReady.set(false);
+      flagInitialized.set(false);
+      rollUpFlag.set(false);
+      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+      service.initializeUserOrganizations([seedA, seedB]);
+
+      vi.advanceTimersByTime(FEATURE_FLAG_READY_TIMEOUT_MS);
+      TestBed.tick();
+
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+    });
+  });
+
+  /**
+   * Regression, PR #4415 review 8 (cursor/Copilot). `persist: false` guarded only the demotion's own
+   * write. The grant-only fallback hydrates through `refreshCanonicalRecord`, and
+   * `applyCanonicalRecord` persists unconditionally — so the concrete uid reached the cookie a
+   * moment later anyway, for exactly the inherited-grants caller this path exists for.
+   */
+  it('keeps the saved choice through canonical hydration after an unavailability demotion', async () => {
+    // No persona seeds; two organizations, both inherited grants — the caller this path exists for.
+    httpGet.mockReturnValue(of({ uid: UID_A, accountId: UID_A, name: 'Alpha Inc', logoUrl: null, parentUid: null }));
+    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    expect(service.isRollUp()).toBe(true);
+
+    rollUpFlag.set(false);
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // An indexed slug landing after the demotion must not write the concrete uid either.
+  it('keeps the saved choice when an indexed slug arrives afterwards', () => {
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA, seedB]);
+    rollUpFlag.set(false);
+    TestBed.tick();
+
+    service.setIndexedSlug('alpha-inc');
+
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // The hold ends the moment the caller chooses for themselves.
+  it('releases the hold on a deliberate organization switch', () => {
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA, seedB]);
+    rollUpFlag.set(false);
+    TestBed.tick();
+
+    service.setAccount(seedB);
+
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
   });
 });
