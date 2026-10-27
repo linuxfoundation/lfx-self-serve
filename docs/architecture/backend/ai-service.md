@@ -234,7 +234,9 @@ Read the status code when generation fails: a `429` is the model name not matchi
 proxy serves (or a genuine rate limit), a `400` is the request body being rejected with auth fine,
 and a `401` is the key itself being refused. Neither the host nor the published name can be checked
 from this repo — both live in argocd — so the two have to move together; #4087 is the case where
-the host moved alone.
+the host moved alone. `litellm.tools.lfx.dev` is the retired OCI instance from before that move: it
+routed on the bare inference-profile id and answered `401` to a prefixed name. Anything still
+pointing at that host is stale whichever model name it sends.
 
 `lfx-v2-campaign-service` sends the same value from its own `AI_MODEL` env var, set in argocd; keep
 the two in step.

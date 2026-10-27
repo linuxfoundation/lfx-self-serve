@@ -26,10 +26,11 @@ export const NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH = 20_000;
 
 // Output-token ceiling for newsletter generation only. Kept separate from
 // AI_REQUEST_CONFIG.MAX_TOKENS so the meeting-agenda flow keeps its
-// conservative 4k cap. 12k sits far below the output ceiling of any model
-// AI_MODEL names and comfortably covers a ~40k-char HTML newsletter (the
-// JSON schema caps bodyHtml at 100k chars, so we still have room before the
-// schema pushes back).
+// conservative 4k cap. 12k comfortably covers a ~40k-char HTML newsletter
+// (the JSON schema caps bodyHtml at 100k chars, so we still have room before
+// the schema pushes back). It assumes a Claude-class model: the proxy's
+// model_list also publishes smaller models whose own output ceiling sits
+// below this cap, so revisit it alongside AI_MODEL.
 export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
 
 // The list endpoint intentionally omits open_rate/unique_opens (per-newsletter

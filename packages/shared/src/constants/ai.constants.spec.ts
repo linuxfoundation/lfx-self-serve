@@ -23,7 +23,7 @@ import { AI_MODEL } from './ai.constants';
  * absence of `bedrock/` alone would let a differently-prefixed id through with the same outcome.
  */
 describe('AI_MODEL', () => {
-  it('names a model the proxy publishes, with no provider prefix (#4333)', () => {
+  it('carries no provider prefix, which the proxy never publishes (#4333)', () => {
     expect(AI_MODEL).not.toContain('/');
   });
 
