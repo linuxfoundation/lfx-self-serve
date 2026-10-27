@@ -313,7 +313,17 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('collapses several roles onto a single count chip', () => {
-      expect(keyContactCell('p-many')?.textContent?.trim()).toBe('2 roles');
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-count-p-many"]')?.textContent?.trim()).toBe('2 roles');
+    });
+
+    // The count is the only visible text, so a screen reader has to get the names some other way.
+    it('spells the roles out for assistive tech, and lets a keyboard reach the tooltip', () => {
+      const names = el().querySelector('[data-testid="org-people-all-employees-key-contact-roles-p-many"]');
+      expect(names?.className).toContain('sr-only');
+      expect(names?.textContent?.trim()).toBe('2 key contact roles: Authorized Signatory, Representative/Voting Contact');
+
+      const chip = keyContactCell('p-many');
+      expect(chip?.getAttribute('tabindex')).toBe('0');
     });
 
     it('sorts by role count, most roles first, on the first click of the column header', async () => {

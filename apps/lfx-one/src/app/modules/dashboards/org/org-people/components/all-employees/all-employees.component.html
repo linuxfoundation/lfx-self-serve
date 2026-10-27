@@ -247,12 +247,22 @@
                 </td>
                 <td class="px-4 py-3 align-middle">
                   @if (row.keyContactRoles.length > 1) {
+                    <!-- The count is the only visible text, so the roles themselves must reach assistive tech another
+                         way: the tooltip opens on focus as well as hover for sighted keyboard users, and the sr-only
+                         list spells the roles out for a screen reader without requiring focus at all. -->
                     <span
                       class="inline-flex items-center rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 whitespace-nowrap"
+                      tabindex="0"
                       [pTooltip]="row.keyContactRolesTooltip"
+                      tooltipEvent="both"
                       tooltipPosition="top"
                       [attr.data-testid]="'org-people-all-employees-key-contact-' + row.personKey">
-                      {{ row.keyContactRoles.length }} roles
+                      <span aria-hidden="true" [attr.data-testid]="'org-people-all-employees-key-contact-count-' + row.personKey">
+                        {{ row.keyContactRoles.length }} roles
+                      </span>
+                      <span class="sr-only" [attr.data-testid]="'org-people-all-employees-key-contact-roles-' + row.personKey">
+                        {{ row.keyContactRoles.length }} key contact roles: {{ row.keyContactRolesTooltip }}
+                      </span>
                     </span>
                   } @else if (row.keyContactRolePills.length > 0) {
                     <div class="flex flex-wrap gap-1" [attr.data-testid]="'org-people-all-employees-key-contact-' + row.personKey">

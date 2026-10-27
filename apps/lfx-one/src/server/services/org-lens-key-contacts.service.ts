@@ -9,6 +9,7 @@ import {
   OrgMembershipKeyContact,
   OrgMembershipKeyContactPerson,
   OrgMembershipKeyContactType,
+  ProjectMembershipIndexedDoc,
   QueryServiceResponse,
   ResolvedMembershipContext,
   ReplaceKeyContactRequest,
@@ -24,6 +25,9 @@ import { OrgMembershipResolverService } from './org-membership-resolver.service'
 
 // Key-contact reads + writes backed by query-service (read) and member-service (write).
 export class OrgLensKeyContactsService {
+  // Active membership statuses, case-insensitive — mirrors OrgMembershipResolverService and OrgPeopleKeyContactsService so we don't silently drop 'purchased' or mixed-case 'active' memberships.
+  private static readonly activeMembershipStatuses = new Set(['active', 'purchased']);
+
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly resolver: OrgMembershipResolverService;
 
@@ -190,16 +194,38 @@ export class OrgLensKeyContactsService {
   private async getEmployeesByOrgUid(req: Request, b2bOrgUid: string): Promise<KeyContactEmployee[]> {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
     // Username agreement is only sound over the complete document set, so a dropped page fails the fetch.
-    const docs = await fetchAllQueryResources<KeyContactDoc>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'key_contact',
-          tags: `b2b_org_uid:${b2bOrgUid}`,
-          page_size: 200,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
+    // The memberships ride alongside (not after) the contacts, so scoping the roles costs no serial latency.
+    const [docs, memberships] = await Promise.all([
+      fetchAllQueryResources<KeyContactDoc>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'key_contact',
+            tags: `b2b_org_uid:${b2bOrgUid}`,
+            page_size: 200,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ),
+      fetchAllQueryResources<ProjectMembershipIndexedDoc>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_membership',
+            tags: `b2b_org_uid:${b2bOrgUid}`,
+            page_size: 200,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ),
+    ]);
+
+    // A contact document stays Active after its membership lapses, so a role is only real while the
+    // membership behind it is. The Key Contacts tab joins the same way (OrgPeopleKeyContactsService), and
+    // the two views have to agree about who holds what. This scopes the ROLES only — the employee list
+    // itself stays as it was, because the people pickers that share this read search the whole org.
+    const activeMembershipUids = new Set(
+      memberships.filter((m) => m.uid && OrgLensKeyContactsService.activeMembershipStatuses.has((m.status ?? '').toLowerCase())).map((m) => m.uid as string)
     );
 
     // Group by address, then require the group to agree on one non-empty username; fail closed otherwise.
@@ -226,10 +252,29 @@ export class OrgLensKeyContactsService {
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
         lfUsername: agreedUsername(group.map((doc) => doc.username)),
         // One doc per (membership, role), so the same role on two foundation memberships appears twice — dedupe to the person-level set the Key Contact column renders.
-        roles: [...new Set(group.map((doc) => doc.role?.trim()).filter((role): role is string => !!role))].sort((a, b) => a.localeCompare(b)),
+        roles: [
+          ...new Set(
+            group
+              .filter((doc) => OrgLensKeyContactsService.isOnActiveMembership(doc, activeMembershipUids))
+              .map((doc) => doc.role?.trim())
+              .filter((role): role is string => !!role)
+          ),
+        ].sort((a, b) => a.localeCompare(b)),
       });
     }
     return employees.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+
+  /**
+   * Whether the contact document hangs off a membership that is still active.
+   *
+   * A document carries its membership under either key depending on the index, and one with neither is
+   * dropped rather than trusted: an unattributable role cannot be shown to be live, and showing a stale
+   * one is the worse failure — it would have the column claim a signatory the Key Contacts tab does not.
+   */
+  private static isOnActiveMembership(doc: KeyContactDoc, activeMembershipUids: ReadonlySet<string>): boolean {
+    const membershipUid = doc.project_membership_uid ?? doc.membership_uid;
+    return !!membershipUid && activeMembershipUids.has(membershipUid);
   }
 
   // Resolves an active membership context or throws a not-found MicroserviceError.
