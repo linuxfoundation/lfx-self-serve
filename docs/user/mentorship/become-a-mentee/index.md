@@ -35,7 +35,7 @@ Registering creates your mentee profile. Program mentors read it when they revie
 
 ## After completing
 
-You land on **My Mentorship**, your mentee area, which has three tabs: **Overview**, **My Tasks** and **Mentee Profile**.
+You land on **My Mentorship**, your mentee area, which has three tabs: **Overview**, **My Tasks** and **Mentee Profile**. If you started from a program's **Apply** link, you go straight to that program's application instead.
 
 If you already have a mentee profile, returning to the Mentee area does not show the form again — it takes you straight to your overview, or to the apply page when you arrived from a program link.
 

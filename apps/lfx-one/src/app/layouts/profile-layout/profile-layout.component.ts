@@ -20,7 +20,7 @@ import {
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -309,9 +309,11 @@ export class ProfileLayoutComponent {
 
     const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
     const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
-    const name = `${givenName} ${familyName}`.trim();
-    if (name && name !== currentUser.name) {
-      this.userService.user.set({ ...currentUser, name });
+    const name = buildDisplayName(givenName, familyName);
+    if (name) {
+      // `saved` latches the name so the post-hydration profile fetch can't overwrite it with a stale
+      // body — even when the name is already the one shown, so this must not be skipped on equality.
+      this.userService.applyDisplayName(givenName, familyName, true);
     }
   }
 

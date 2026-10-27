@@ -36,7 +36,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -111,6 +111,7 @@ export class UserService {
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
+  private profileNameSaved = false;
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
   private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
@@ -189,8 +190,32 @@ export class UserService {
           if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
             this.uploadedAvatarUrl.set(profile.profile.picture);
           }
+          // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
+          // a saved name change reverts on reload. The profile body carries the stored name — but only
+          // trust it when the stored metadata loaded: on a failed read `/api/profile` still returns 200
+          // with `profile: null` and OIDC-derived names, which would replace the correct SSR name.
+          if (profile.profile && !this.impersonating() && !this.profileNameSaved) {
+            this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
+          }
         });
     });
+  }
+
+  /**
+   * Override the display name (navbar, account menu, initials) that SSR seeded from the OIDC `name`
+   * claim, which is stale after a profile save until the next login. No-op when both parts are empty.
+   */
+  public applyDisplayName(firstName: string | null | undefined, lastName: string | null | undefined, saved = false): void {
+    const name = buildDisplayName(firstName, lastName);
+    const current = this.user();
+    if (!name || !current) {
+      return;
+    }
+    // A name just saved in-session must win over the (eventually consistent) post-hydration fetch.
+    this.profileNameSaved = this.profileNameSaved || saved;
+    if (name !== current.name) {
+      this.user.set({ ...current, name });
+    }
   }
 
   // Create a new user with permissions

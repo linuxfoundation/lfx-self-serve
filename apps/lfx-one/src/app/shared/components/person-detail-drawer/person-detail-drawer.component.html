@@ -44,22 +44,57 @@
           }
           @if (companyEmails().length) {
             <span class="mt-1 flex flex-col gap-0.5" data-testid="person-detail-drawer-email">
-              @for (companyEmail of companyEmails(); track companyEmail; let i = $index) {
-                <span class="truncate text-xs text-gray-500" [title]="companyEmail" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
-                  companyEmail
-                }}</span>
+              @for (companyEmail of companyEmails(); track companyEmail.email; let i = $index) {
+                <span class="flex min-w-0 items-center gap-1.5">
+                  @if (companyEmail.href) {
+                    <a
+                      class="truncate text-xs text-gray-500 hover:text-blue-700 hover:underline"
+                      [href]="companyEmail.href"
+                      [title]="companyEmail.email"
+                      [attr.data-testid]="'person-detail-drawer-email-' + i"
+                      >{{ companyEmail.email }}</a
+                    >
+                  } @else {
+                    <!-- Carries URI delimiters: shown and copyable, but never linked. -->
+                    <span class="truncate text-xs text-gray-500" [title]="companyEmail.email" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
+                      companyEmail.email
+                    }}</span>
+                  }
+                  @if (companyEmail.isPrimary) {
+                    <span class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-600" data-testid="person-detail-drawer-email-primary">
+                      Primary
+                    </span>
+                  }
+                  <button
+                    type="button"
+                    class="shrink-0 text-gray-500 hover:text-gray-700"
+                    [attr.aria-label]="'Copy ' + companyEmail.email"
+                    [attr.data-testid]="'person-detail-drawer-email-copy-' + i"
+                    (click)="onCopyEmail(companyEmail.email)">
+                    <i
+                      class="fa-light text-xs"
+                      [class.fa-copy]="copiedEmail() !== companyEmail.email"
+                      [class.fa-check]="copiedEmail() === companyEmail.email"
+                      aria-hidden="true"></i>
+                  </button>
+                </span>
               }
             </span>
-          } @else if (companyEmailFeatureEnabled() && drawer.emailsLoading()) {
+            <span class="sr-only" role="status" aria-live="polite">
+              @if (copiedEmail(); as copied) {
+                {{ copied }} copied
+              }
+            </span>
+          } @else if (drawer.emailsLoading()) {
             <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-not-available">
+          } @else if (companyEmailsFailed()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
+          } @else if (companyEmailsNotAvailable()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-not-available">
               Company emails aren't available from this view
             </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNoneOnRecord()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-none"> No company email on record </span>
+          } @else if (companyEmailsNoneOnRecord()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-none"> No company email on record </span>
           }
         </span>
       </div>
@@ -141,6 +176,35 @@
                   >
                 </span>
                 <span class="text-xs text-gray-500">{{ seat.foundationName ? seat.foundationName + ' · ' + seat.committeeName : seat.committeeName }}</span>
+              </li>
+            }
+          </ul>
+        }
+      } @else if (drawer.activeTab() === 'key-contacts') {
+        <!-- Roles supplied by the opener (the People Key Contacts tab groups them per person) render without
+             waiting on the roles fetch; only its own loading/error show, never the activity fetch's. -->
+        @if (drawer.keyContactsLoading()) {
+          <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-key-contacts-loading">
+            <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+          </div>
+        } @else if (drawer.keyContactsError()) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-error">
+            Couldn't load this person's key contact roles. Please try again.
+          </p>
+        } @else if (!drawer.keyContactsIdentified()) {
+          <!-- Never say "no roles" about someone the lookup could not identify in the first place. -->
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-unavailable">
+            Key contact roles aren't available for this person.
+          </p>
+        } @else if (keyContactRoles().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-empty">No key contact roles recorded.</p>
+        } @else {
+          <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200" data-testid="person-detail-drawer-key-contacts-list">
+            @for (row of keyContactRoles(); track row.contactUid) {
+              <li class="flex items-center justify-between gap-3 px-4 py-3">
+                <span class="whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium" [class]="row.pillClass">{{ row.role }}</span>
+                <span class="min-w-0 truncate text-xs text-gray-500" [title]="row.foundationLabel">{{ row.foundationLabel }}</span>
               </li>
             }
           </ul>

@@ -53,11 +53,15 @@ You cannot request a program from **My Programs** — that tab only lists the pr
 
 ### Why doesn't my invitation link work?
 
-Invitation links can only be used once. Ask the Program Admin to send a new one.
+Invitation links can only be used once, and only by the account the email was sent to. If the page says the invitation is for a different account, sign in with that one. Otherwise, ask the Program Admin to invite you again.
 
 ### Can I decide on an application?
 
 No, mentors cannot accept or decline applications. Mentors review applicants, set and review tasks, and leave reviewer notes. Accepting, declining, withdrawing and graduating are Program Admin actions.
+
+### How do I contact my mentees?
+
+Mentorship does not show mentees' contact details to mentors. Use the channels your program has set up with its mentees. Program Admins can find mentees' email addresses with **Download By Status** (see [Export Mentees](../export-mentees/)).
 
 ### Who can see my reviewer note?
 

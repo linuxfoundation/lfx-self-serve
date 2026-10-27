@@ -2707,6 +2707,28 @@ describe('ProfileController — already-connected email (#4253)', () => {
     expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
   }
 
+  // CDP rows for the fire-and-forget verification follow-up after a link (#4329).
+  function cdpRow(id: string, platform: string, value: string): Record<string, unknown> {
+    return { id, platform, type: 'email', value, verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '' };
+  }
+
+  // Decoys precede the target, so a looser predicate would select one of them first.
+  const cdpDecoys = [cdpRow('cdp-social-same-value', 'google', ownedEmail), cdpRow('cdp-email-other', 'email', 'other@example.test')];
+  const cdpTargetCases: [string, string][] = [
+    ['exact-case', ownedEmail],
+    ['mixed-case', 'Owned@EXAMPLE.TEST'],
+    ['whitespace-padded', '  owned@example.test  '],
+  ];
+  const cdpNoTargetCases: [string, Record<string, unknown>[]][] = [
+    ['no identities', []],
+    ['only a same-value social row and a different email row', cdpDecoys],
+  ];
+
+  // The CDP follow-up is not awaited by the handler; one macrotask drains its already-settled mocks.
+  async function drainCdpFollowUp(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', '');
@@ -2717,6 +2739,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
     profileAuthSvc.getManagementToken.mockReturnValue('synthetic-user-mgmt-token');
     emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
     cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
     userSvc.syncVerifiedEmailToUserService.mockResolvedValue(true);
     socialVerificationSvc.getPendingSocialConnect.mockReturnValue(undefined);
     controller = new ProfileController();
@@ -2754,6 +2777,75 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(req, 'synthetic-user-mgmt-token', 'synthetic-identity-token');
       expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
       expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: 'Email identity verified and linked successfully' });
+    });
+
+    describe('CDP identity verification follow-up (#4329)', () => {
+      const linkedJson = { success: true, message: 'Email identity verified and linked successfully' };
+
+      beforeEach(() => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      });
+
+      it.each(cdpTargetCases)('verifies the %s CDP email row for the linked address', async (_label, cdpValue) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([...cdpDecoys, cdpRow('cdp-email-target', 'email', cdpValue)]);
+        const req = verifyReq();
+        const res = buildRes();
+
+        await controller.verifyAndLinkEmail(req, res, vi.fn());
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+      });
+
+      it.each(cdpNoTargetCases)('verifies nothing when the lookup returns %s', async (_label, identities) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce(identities);
+        const req = verifyReq();
+        const res = buildRes();
+
+        await controller.verifyAndLinkEmail(req, res, vi.fn());
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+      });
+
+      it('keeps the linked success when the CDP lookup fails', async () => {
+        const err = new Error('synthetic CDP lookup failure');
+        cdpSvc.getIdentitiesForUser.mockRejectedValueOnce(err);
+        const req = verifyReq();
+        const res = buildRes();
+        const next = vi.fn();
+
+        await controller.verifyAndLinkEmail(req, res, next);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'CDP identity lookup failed (non-blocking)', { err });
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it('keeps the linked success when the CDP verification write fails', async () => {
+        const err = new Error('synthetic CDP verify failure');
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([cdpRow('cdp-email-target', 'email', 'Owned@EXAMPLE.TEST')]);
+        cdpSvc.verifyIdentityForUser.mockRejectedValueOnce(err);
+        const req = verifyReq();
+        const res = buildRes();
+        const next = vi.fn();
+
+        await controller.verifyAndLinkEmail(req, res, next);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'CDP verify failed (non-blocking)', { err });
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+        expect(next).not.toHaveBeenCalled();
+      });
     });
 
     it('keeps the legacy fallback tokenless: never forwards the M2M link credential to OTP verification', async () => {
@@ -2895,6 +2987,71 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
       expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
+    });
+
+    describe('CDP identity verification follow-up (#4329)', () => {
+      beforeEach(() => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      });
+
+      it.each(cdpTargetCases)('verifies the %s CDP email row for the replayed address', async (_label, cdpValue) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([...cdpDecoys, cdpRow('cdp-email-target', 'email', cdpValue)]);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it.each(cdpNoTargetCases)('verifies nothing when the lookup returns %s', async (_label, identities) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce(identities);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it('keeps the success redirect when the CDP lookup fails', async () => {
+        const err = new Error('synthetic CDP lookup failure');
+        cdpSvc.getIdentitiesForUser.mockRejectedValueOnce(err);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', { err });
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it('keeps the success redirect when the CDP verification write fails', async () => {
+        const err = new Error('synthetic CDP verify failure');
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([cdpRow('cdp-email-target', 'email', 'Owned@EXAMPLE.TEST')]);
+        cdpSvc.verifyIdentityForUser.mockRejectedValueOnce(err);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', { err });
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
     });
 
     it.each([

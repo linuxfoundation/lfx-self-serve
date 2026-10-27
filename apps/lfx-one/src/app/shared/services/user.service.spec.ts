@@ -196,6 +196,75 @@ describe('UserService', () => {
     returning.unsubscribe();
   });
 
+  describe('display name', () => {
+    it('overrides the SSR name with the given parts', () => {
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      service.applyDisplayName('Ada', 'Byron');
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('is a no-op when both parts are empty or there is no user', () => {
+      service.applyDisplayName('Ada', 'Byron');
+      expect(service.user()).toBeNull();
+
+      service.user.set({ name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('  ', null);
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('applies the stored name from the post-hydration profile fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a name saved in-session over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Lovelace' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('Ada', 'Byron', true);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a saved name that matches the displayed name over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      const before = service.user();
+      service.applyDisplayName('Ada', 'Lovelace', true);
+      expect(service.user()).toBe(before);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('ignores the post-hydration name when the stored profile metadata did not load', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Old', last_name: 'Login' }, profile: null }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Byron' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('does not apply the stored name while impersonating', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.impersonating.set(true);
+      service.user.set({ sub: 'auth0|target', name: 'Target User' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Target User');
+    });
+  });
+
   describe('RSVP registration retention', () => {
     const response = (overrides: Partial<MeetingRsvp> = {}): MeetingRsvp => ({
       id: 'synthetic-response',

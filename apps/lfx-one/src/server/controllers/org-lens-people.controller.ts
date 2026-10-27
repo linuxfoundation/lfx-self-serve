@@ -198,6 +198,83 @@ export class OrgLensPeopleController {
     }
   }
 
+  /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/key-contacts — the key contact roles one person holds,
+   * for the drawer's Key Contacts tab. A person key is not a key-contact key, so identity is assembled
+   * here: the roster's username for that key, which is the stronger match, plus the same company-address
+   * lookup the header uses. Both are resolved server-side — a username passed in by the client would
+   * travel in the URL, which the request logger records.
+   */
+  public async getPersonKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const personKey = req.params['personKey'];
+    const operation = 'get_org_lens_people_person_key_contacts';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertPersonKey(personKey, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
+
+      const [identity, username] = await Promise.all([
+        this.service.getCompanyEmails(req, orgUid, personKey),
+        this.service.resolveUsernameByPersonKey(req, orgUid, personKey),
+      ]);
+      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
+        username,
+        emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
+        emailsStatus: identity.companyEmailsStatus,
+      });
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        person_key: personKey,
+        status: response.status,
+        assignment_count: response.assignments.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/key-contacts — the same read for openers that
+   * carry only an LF username. The username alone cannot rule out the assignments upstream records without
+   * one, so when it matches nothing the address status decides whether that is an unidentified person or a
+   * retryable failure; it never becomes a verified "holds no roles".
+   */
+  public async getPersonKeyContactsByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_person_key_contacts_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const identity = await this.service.getCompanyEmailsByUsername(orgUid, username);
+      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
+        username,
+        emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
+        emailsStatus: identity.companyEmailsStatus,
+      });
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        status: response.status,
+        assignment_count: response.assignments.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/orgs/:orgUid/lens/people/key-contacts — org-wide read for the People tab. Membership-scoped reads + writes live on OrgLensKeyContactsController (spec 024). */
   public async getKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
