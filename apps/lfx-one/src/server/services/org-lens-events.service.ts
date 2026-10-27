@@ -343,8 +343,15 @@ export class OrgLensEventsService {
  * spec harness runs this SQL against SQLite, so that spelling would corrupt addresses in tests while
  * behaving differently in production. `CHR` is unambiguous in Snowflake; the harness maps it to
  * SQLite's `char`.
+ *
+ * The set is tab, LF, CR, NBSP and space — deliberately a chosen list, not the Unicode whitespace
+ * class. NBSP earns its place because addresses are pasted out of documents and web forms, where it
+ * is the one non-obvious character that survives. The rarer separators (U+2007, U+202F, U+200B and
+ * friends) are not covered: matching them properly wants a regex, `REGEXP_REPLACE` is not available
+ * in the SQLite harness, and normalization at this grain belongs in the platinum model anyway. If the
+ * list needs to grow again, that is the signal to do it in dbt under #4409 rather than extend here.
  */
-const EMAIL_WHITESPACE = `CHR(9) || CHR(10) || CHR(13) || ' '`;
+const EMAIL_WHITESPACE = `CHR(9) || CHR(10) || CHR(13) || CHR(160) || ' '`;
 
 /** One normalization, used everywhere an address is compared, grouped, counted or tested for blankness. */
 function normalizedEmail(column: string): string {

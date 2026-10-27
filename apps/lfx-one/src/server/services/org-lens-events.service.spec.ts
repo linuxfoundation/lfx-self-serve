@@ -281,17 +281,22 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data[0].contactId).toBe('ada@company.example');
   });
 
-  it('matches an address padded with tabs or newlines, not just spaces', async () => {
+  it('matches an address padded with tabs, newlines or non-breaking spaces', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
-    // Coverage exists, so a registrant this normalization fails to match is dropped outright.
+    addCompanyEmail('grace@company.example');
+    // Coverage exists, so a registrant this normalization fails to match is dropped outright. Each
+    // padding style belongs to a DIFFERENT person, so a style the set misses lowers the count —
+    // padding one person two ways would leave the assertion passing on the other one's row.
     addRegistration('\tada@company.example\n', 'Ada Lovelace');
+    // Non-breaking space: what survives a paste out of a document or web form.
+    addRegistration('\u00a0grace@company.example\u00a0', 'Grace Hopper');
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example']);
+    expect(list.data[0].orgAttendeeCount).toBe(2);
+    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example', 'grace@company.example']);
   });
 
   it('does not strip characters that merely appear in an escape sequence', async () => {
