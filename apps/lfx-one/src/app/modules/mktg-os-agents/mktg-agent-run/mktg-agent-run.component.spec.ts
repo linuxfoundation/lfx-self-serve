@@ -39,9 +39,11 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
+import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -127,6 +129,7 @@ describe('MktgAgentRunComponent', () => {
   let rememberedAnswers: Record<string, MktgAnswerMemory>;
   let loadRun: ReturnType<typeof vi.fn>;
   let lastIntake: ReturnType<typeof vi.fn>;
+  let listDocuments: ReturnType<typeof vi.fn>;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let getProject: ReturnType<typeof vi.fn>;
   let generate: ReturnType<typeof vi.fn>;
@@ -162,6 +165,7 @@ describe('MktgAgentRunComponent', () => {
     projects = {};
     queryParams = new BehaviorSubject(convertToParamMap(params));
     lastIntake = vi.fn(() => of(null));
+    listDocuments = vi.fn(() => of({ groups: [] }));
     dependencyDocs = {};
     rememberedAnswers = {};
     rememberAnswers = vi.fn();
@@ -209,6 +213,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, lastIntake, generate, answerQuestions, resume: vi.fn(() => NEVER) } },
+        { provide: MktgDocumentStoreService, useValue: { listDocuments } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged, documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
@@ -233,6 +238,65 @@ describe('MktgAgentRunComponent', () => {
     expect(breadcrumb?.textContent).toContain('Positioning & brand');
     expect(breadcrumb?.querySelectorAll('a')).toHaveLength(2);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
+  });
+
+  it('uses the catalog asset title and keeps the first-create action enabled with its explanation', async () => {
+    await configure('browser', 'foundation-setup');
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === 'foundation-setup');
+    expect(query('mktg-agent-run-name')?.textContent).toBe(type?.itemLabel);
+    expect(query('mktg-agent-run-submit-button')?.textContent).toContain(`Create ${mktgSentenceCaseLabel(type?.itemLabel ?? '')}`);
+    expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
+    component['onSubmit']();
+    await fixture.whenStable();
+    expect(query('mktg-agent-run-error')?.textContent).toContain('Complete the required fields');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'uses actual stored revisions for the creation label in Sources=%s, without inferring a version from intake history',
+    async (fresh) => {
+      await configure('browser', 'foundation-setup', fresh ? { mode: 'new' } : {});
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === 'foundation-setup');
+      if (!type) throw new Error('Missing fixture document type');
+      lastIntake.mockReturnValue(of({ answers: {}, documentCount: 0, logoCount: 0 }));
+      listDocuments.mockReturnValue(of({ groups: [{ type, documents: [{ revisionCount: 1 }] }] }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const action = () => query(fresh ? 'mktg-run-start' : 'mktg-agent-run-submit-button')?.querySelector('button');
+      expect(action()?.textContent?.trim()).toBe('Create a new version');
+      expect(action()?.disabled).toBe(false);
+      expect(listDocuments).toHaveBeenLastCalledWith(PROJECT_1.uid);
+      listDocuments.mockReturnValue(of({ groups: [{ type, documents: [] }] }));
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      expect(action()?.textContent?.trim()).toBe(`Create ${mktgSentenceCaseLabel(type.itemLabel)}`);
+      expect(generate).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([false, true])('falls back to last intake only when the document summary fails, in Sources=%s', async (fresh) => {
+    await configure('browser', 'foundation-setup', fresh ? { mode: 'new' } : {});
+    listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    lastIntake.mockReturnValue(of({ answers: {}, documentCount: 0, logoCount: 0 }));
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    expect(component['submitLabel']()).toBe('Create a new version');
+    lastIntake.mockReturnValue(of(null));
+    activeContext.set(PROJECT_2);
+    await fixture.whenStable();
+    expect(component['submitLabel']()).toBe(`Create ${mktgSentenceCaseLabel(component['assetName'])}`);
+    expect(query(fresh ? 'mktg-run-start' : 'mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('preserves the FAQ acronym in the first-create action and catalog field labels in the hint', async () => {
+    await configure('server', 'faq');
+    expect(component['submitLabel']()).toBe('Create FAQ');
+    for (const field of MKTG_AGENT_INTAKES['faq'].fields.filter((field) => !field.optional)) {
+      expect(component['sourcesHint']).toContain(field.question);
+    }
   });
 
   describe('explicit new-run Sources', () => {
@@ -266,7 +330,14 @@ describe('MktgAgentRunComponent', () => {
       expect(progress.observed).toBe(true);
       expect(component['phase']()).toBe('running');
       expect(component['freshMode']()).toBe(true);
-      expect(query('mktg-run-sources')).not.toBeNull();
+      expect(query('mktg-run-sources')).toBeNull();
+      expect(query('mktg-agent-run-leave-note')?.textContent).toContain('You can leave this page — the agent keeps working.');
+      expect(query('mktg-agent-run-live')?.querySelector('lfx-button')).toBeNull();
+      const feed = query('mktg-run-activity');
+      const leaveNote = query('mktg-agent-run-leave-note');
+      expect(feed?.contains(leaveNote)).toBe(true);
+      expect(leaveNote?.querySelector('.fa-clock')).not.toBeNull();
+      expect(leaveNote && (query('mktg-run-activity-elapsed')?.compareDocumentPosition(leaveNote) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
       const pending: MktgRunQuestionsPending = {
         attempt: { session: { agentId, sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
@@ -358,7 +429,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
       expect(component['intakeForm'].get('github_url')?.value).toBe('');
-      expect(query('mktg-run-source-website_url')?.textContent).toContain('From the last run');
+      expect(query('mktg-run-source-website_url')?.textContent).toContain('From last time');
       expect(generate).not.toHaveBeenCalled();
       expect(consume).not.toHaveBeenCalled();
       expect(prepare).not.toHaveBeenCalled();
@@ -393,7 +464,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
         value: 'https://github.com/synthetic/default',
-        origin: 'Suggested default',
+        origin: 'Suggested',
       });
       expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({
         value: 'https://remembered.example',
@@ -417,8 +488,8 @@ describe('MktgAgentRunComponent', () => {
       projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(component['sourceFields']().find((field) => field.key === 'project_name')).toMatchObject({ value: 'Durable name', origin: 'From the last run' });
-      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({ value: '', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'project_name')).toMatchObject({ value: 'Durable name', origin: 'From last time' });
+      expect(component['sourceFields']().find((field) => field.key === 'website_url')).toMatchObject({ value: '', origin: 'From last time' });
       expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({
         value: visit ? 'https://github.com/synthetic/visit' : device.github_url,
         origin: visit ? 'Saved in this visit' : 'Saved on this device',
@@ -449,7 +520,7 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
-    it('edits on this page then starts exactly one fresh run, retaining Sources above the feed', async () => {
+    it('edits on this page then starts exactly one fresh run, showing only the working view', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of(history));
       activeContext.set(PROJECT_1);
@@ -466,7 +537,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       query('mktg-run-sources-done')?.querySelector('button')?.click();
       await fixture.whenStable();
-      expect(query('mktg-run-source-website_url')?.textContent).toContain('Changed for this run');
+      expect(query('mktg-run-source-website_url')?.textContent).toContain('Changed just now');
       expect(edit?.getAttribute('aria-expanded')).toBe('false');
       expect(document.activeElement).toBe(edit);
       component['onSubmit']();
@@ -475,8 +546,9 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).toHaveBeenCalledTimes(1);
       expect(generate.mock.calls[0][0]).toMatchObject({ agentId, newRun: true, answers: { website_url: 'https://edited.example' } });
       expect(component['phase']()).toBe('running');
-      expect(query('mktg-run-sources')).toBeTruthy();
-      expect(query('mktg-run-source-website_url')?.textContent).toContain('https://edited.example');
+      expect(query('mktg-run-sources')).toBeNull();
+      expect(query('mktg-agent-run-leave-note')?.textContent).toContain('You can leave this page');
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://edited.example');
       expect(query('mktg-agent-run-result')).toBeNull();
     });
 
@@ -547,16 +619,24 @@ describe('MktgAgentRunComponent', () => {
       edit?.click();
       await fixture.whenStable();
       expect(edit?.getAttribute('aria-expanded')).toBe('false');
-      expect(query('mktg-run-source-website_url')?.textContent).toContain('From the last run');
+      expect(query('mktg-run-source-website_url')?.textContent).toContain('From last time');
       expect(document.activeElement).toBe(edit);
     });
 
-    it('blocks missing uploads until reattachment or an explicit choice to omit them', async () => {
+    it.each([1, 2])('explains %s missing files, keeping creation enabled but guarded until reattachment or explicit omission', async (count) => {
       await configure('browser', agentId, { mode: 'new' });
-      lastIntake.mockReturnValue(of({ ...history, documentCount: 2 }));
+      lastIntake.mockReturnValue(of({ ...history, documentCount: count }));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(query('mktg-run-reattach-documents')?.textContent).toContain('(2)');
+      expect(query('mktg-run-reattach-documents')?.textContent).toContain(`(${count})`);
+      expect(query('mktg-run-missing-files-note')?.textContent).toBe(
+        count === 1
+          ? '1 file from last time is not kept here. Re-attach it, or carry on without it.'
+          : '2 files from last time are not kept here. Re-attach them, or carry on without them.'
+      );
+      expect(query('mktg-run-drop-missing')?.textContent?.trim()).toBe(count === 1 ? 'Continue without it' : 'Continue without them');
+      expect(query('mktg-run-drop-missing')?.parentElement).toBe(query('mktg-run-reattach-documents')?.parentElement);
+      expect(query('mktg-run-start')?.querySelector('button')?.disabled).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
@@ -627,7 +707,7 @@ describe('MktgAgentRunComponent', () => {
         expect(component['intakeForm'].get('website_url')?.value).toBe('');
         expect(component['submitDisabled']()).toBe(true);
       } else {
-        const expected = status === 503 ? 'Saved on this device' : 'Suggested default';
+        const expected = status === 503 ? 'Saved on this device' : 'Suggested';
         expect(query('mktg-run-source-website_url')?.textContent).toContain(expected);
         expect(query('mktg-run-sources-note')?.textContent).toContain(status === 503 ? 'could not be loaded' : 'no previous run');
       }
@@ -707,9 +787,9 @@ describe('MktgAgentRunComponent', () => {
       expect(key).not.toBe('');
       expect(component['sourceFields']().find((field) => field.key === key)).toMatchObject({
         value: 'Synthetic suggested description.',
-        origin: 'Suggested default',
+        origin: 'Suggested',
       });
-      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({ value: '', origin: 'From the last run' });
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')).toMatchObject({ value: '', origin: 'From last time' });
     });
 
     it('clears private non-fresh inputs on null context and restores the same project afresh', async () => {
@@ -1894,7 +1974,8 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
 
         expect(component['submitDisabled']()).toBe(true);
-        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
+        expect(component['submitReason']()).toContain('Approve');
         expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain(
           'Approve a messaging framework first — the Brand Kit builds on the approved one'
         );
@@ -1919,7 +2000,7 @@ describe('MktgAgentRunComponent', () => {
        */
       const expectIncompleteFrameworkStop = (): void => {
         expect(component['submitDisabled']()).toBe(true);
-        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(false);
         expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain(
           'The messaging framework has no positioning or tagline yet — finish it first.'
         );
@@ -2748,7 +2829,15 @@ describe('MktgAgentRunComponent', () => {
         // One box, nothing to pick between, and no review step.
         expect(host().querySelectorAll('[role="radio"]').length).toBe(0);
         expect(host().querySelectorAll('textarea').length).toBe(1);
-        expect(query('mktg-run-questions-chip-ranked-goals')?.textContent).toContain('Ranked goals');
+        expect(query('mktg-agent-run-name')?.textContent).toBe(component['assetName']);
+        const currentChip = query('mktg-run-questions-chip-ranked-goals');
+        expect(currentChip?.classList.contains('bg-white')).toBe(true);
+        expect(currentChip?.classList.contains('font-semibold')).toBe(true);
+        expect(currentChip?.classList.contains('text-gray-900')).toBe(true);
+        expect(currentChip?.classList.contains('bg-blue-50')).toBe(false);
+        expect(query('mktg-run-questions-back')).toBeNull();
+        expect(query('mktg-run-questions-next')?.textContent?.trim()).toBe('Continue');
+        expect(currentChip?.textContent).toContain('Ranked goals');
         expect(query('mktg-run-questions-chip-words-to-avoid')?.textContent).toContain('Words to');
         expect(query('mktg-agent-run-regenerate-button')).toBeNull();
         expect(query('mktg-agent-run-form')).toBeNull();
@@ -2827,6 +2916,8 @@ describe('MktgAgentRunComponent', () => {
 
         await type('ranked-goals', 'Adoption, then community.');
         await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-back')?.querySelector('button')?.className).toContain('p-button-text');
+        expect(query('mktg-run-questions-send')?.textContent?.trim()).toBe('Send answers and write the draft');
         await click('mktg-run-questions-back');
         expect(answerBox('ranked-goals')?.value).toBe('Adoption, then community.');
         await sendWith('Avoid "synergy".');

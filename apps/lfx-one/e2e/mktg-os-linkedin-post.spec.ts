@@ -146,8 +146,10 @@ test.describe('Marketing OS LinkedIn posts', () => {
           .locator('input, textarea')
           .fill(source === 'url' ? 'https://source.example/private' : 'Private synthetic source');
       await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-      await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveAttribute('role', 'alert');
-      await expect(page.getByTestId('mktg-document-view-progress-retry').getByRole('button')).toHaveAccessibleName('Retry');
+      await expect(page.getByTestId('mktg-document-view-failure-details')).not.toHaveAttribute('open', '');
+      await page.getByTestId('mktg-document-view-failure-details').locator('summary').click();
+      await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-progress-retry').getByRole('button')).toHaveAccessibleName('Check on it again');
       const stopped = polls;
       await page.getByTestId('mktg-document-view-intake-link').getByRole('button').click();
       const prompt = { file: 'choose the file again', url: 'enter the link again', text: 'paste it again' }[source];

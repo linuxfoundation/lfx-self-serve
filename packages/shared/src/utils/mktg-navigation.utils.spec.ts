@@ -2,10 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgKitCrumbsFor, mktgKitRootCrumb, mktgKitRootPath, mktgRunRouteFor } from './mktg-navigation.utils';
+import { mktgKitCrumbsFor, mktgKitRootCrumb, mktgKitRootPath, mktgRunRouteFor, mktgSentenceCaseLabel } from './mktg-navigation.utils';
 
 describe('fixed Marketing kit parents', () => {
   const base = '/foundation/mktg-os-agents';
+  it.each([
+    ['Messaging framework', 'messaging framework'],
+    ['Brand Kit', 'brand Kit'],
+    ['FAQ', 'FAQ'],
+    ['ICP & target markets', 'ICP & target markets'],
+    ['LinkedIn post', 'LinkedIn post'],
+  ])('uses %s in a sentence without corrupting acronyms or mixed case', (label, expected) => {
+    expect(mktgSentenceCaseLabel(label)).toBe(expected);
+  });
   it('builds the root label once with an optional parent target and neutral fallback', () => {
     expect(mktgKitRootCrumb('Synthetic Project', [base])).toEqual({ label: 'Synthetic Project kit', route: [base] });
     expect(mktgKitRootCrumb('')).toEqual({ label: 'Project kit' });

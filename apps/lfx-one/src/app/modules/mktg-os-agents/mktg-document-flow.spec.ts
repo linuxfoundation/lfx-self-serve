@@ -34,6 +34,7 @@ import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -143,6 +144,8 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
+    // Run-page button wording reads the summary; this suite keeps document/revision HTTP real.
+    vi.spyOn(TestBed.inject(MktgDocumentStoreService), 'listDocuments').mockReturnValue(of({ project: project.uid, groups: [] }));
     router = TestBed.inject(Router);
     harness = await RouterTestingHarness.create();
   });
@@ -501,7 +504,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       });
     await settle();
     expect(query('mktg-run-sources')).not.toBeNull();
-    expect(query('mktg-run-sources')?.textContent).toContain('From the last run');
+    expect(query('mktg-run-sources')?.textContent).toContain('From last time');
     expect(attempts.load(project.uid, intake.agentId)?.request.answers).toEqual(request.answers);
     http.expectNone(intake.endpoints.generate);
     http.expectNone(intake.endpoints.result);

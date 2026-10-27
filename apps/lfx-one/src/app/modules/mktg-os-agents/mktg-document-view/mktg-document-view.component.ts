@@ -59,6 +59,7 @@ import {
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
   mktgKitCrumbsFor,
+  mktgSentenceCaseLabel,
   mktgKitRootPath,
   mktgRunRouteFor,
   mktgRunModeFor,
@@ -238,6 +239,10 @@ export class MktgDocumentViewComponent {
     return run?.state === 'questions' && !findMktgRunIntake(run.agentKey, true)?.endpoints.answers;
   });
   protected readonly runDocumentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === this.params().agentKey));
+  protected readonly unconfirmedFailure = computed(() => this.unconfirmed() && !this.selectedRun());
+  protected readonly failureAssetLabel = computed(() =>
+    mktgSentenceCaseLabel(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'document')
+  );
   protected readonly generatingLabel = computed(
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
@@ -733,6 +738,7 @@ export class MktgDocumentViewComponent {
       return;
     }
     this.retrying.set(true);
+    this.errorText.set('');
     const scope = this.loadedScope;
     const subject = this.userService.user()?.sub;
     this.documentStore
@@ -1017,7 +1023,8 @@ export class MktgDocumentViewComponent {
 
   private initLiveState(): Signal<string> {
     return computed(() => {
-      if (this.runState() === 'failed') return this.selectedRun() || !this.unconfirmed() ? 'The run did not finish.' : 'The run could not be confirmed.';
+      if (this.runState() === 'failed')
+        return this.unconfirmedFailure() ? 'The run could not be confirmed.' : `The ${this.failureAssetLabel()} wasn't finished`;
       if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState()) {

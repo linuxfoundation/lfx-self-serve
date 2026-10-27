@@ -44,6 +44,7 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
+import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -329,6 +330,16 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
       ],
     }).compileComponents();
+  });
+
+  it.each(['faq', 'linkedin-post'])('preserves %s capitalization in recorded-failure labels', async (agentKey) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!type) throw new Error('Missing fixture type');
+    const documentId = type.kind === 'run' ? 'run-0123456789abcdef01234567' : 'living';
+    store.getDocument.mockReturnValue(of({ ...detail, type, documentId, revisions: [], runs: [{ ...started('failed'), agentKey, documentId }] }));
+    await render(`/documents/${agentKey}/${documentId}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`The ${type.itemLabel} wasn't finished`);
+    expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${type.itemLabel} over`);
   });
 
   function expectNoKitAssetChrome(): void {
@@ -990,8 +1001,8 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/linkedin-post/${documentId}?run=${'b'.repeat(64)}`);
     if (state === 'questions') expect(query('mktg-document-view-live-state')?.textContent).toBe('Waiting for your answers.');
     if (state === 'failed') {
-      expect(query('mktg-document-view-failure-reply')?.getAttribute('role')).toBe('alert');
-      expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.textContent?.trim()).toBe('Retry');
+      expect((query('mktg-document-view-failure-details') as HTMLDetailsElement | null)?.open).toBe(false);
+      expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.textContent?.trim()).toBe('Check on it again');
     }
     query('mktg-document-view-intake-link')?.querySelector('button')?.click();
     await settle();
@@ -1166,7 +1177,7 @@ describe('MktgDocumentViewComponent', () => {
     events.next({ type: 'failed', failureText: '' });
     await settle();
     expect(query('mktg-document-view-failure-reply')?.textContent).toContain('The agent could not complete this run');
-    expect(query('mktg-document-view-live-state')?.textContent).toBe('The run did not finish.');
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`The ${mktgSentenceCaseLabel(BRAND_KIT.itemLabel)} wasn't finished`);
   });
 
   it('logs a sanitized resume failure instead of silently losing the run, without leaking the owner proof', async () => {
@@ -1182,6 +1193,9 @@ describe('MktgDocumentViewComponent', () => {
       expect(log).toHaveBeenCalledWith('Failed to confirm Marketing OS run', { status: 503 });
       expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_PROOF');
       expect(query('mktg-document-view-failure-reply')?.textContent).toContain('could not be confirmed');
+      expect(query('mktg-document-view-live-state')?.textContent).toBe('The run could not be confirmed.');
+      expect(query('mktg-document-view-retry-note')?.textContent).toContain('Your intake is kept; open the intake form to continue.');
+      expect(query('mktg-document-view-retry-note')?.textContent).not.toContain('start the');
       expect(query('mktg-document-view-intake-link')).not.toBeNull();
     } finally {
       log.mockRestore();
@@ -1228,6 +1242,15 @@ describe('MktgDocumentViewComponent', () => {
       }
       if (state === 'failed') {
         expect(query('mktg-document-view-failure-reply')?.textContent).toBe(started(state).failureText);
+        const details = query('mktg-document-view-failure-details') as HTMLDetailsElement | null;
+        expect(details?.open).toBe(false);
+        expect(details?.querySelector('summary')?.textContent).toContain('Details');
+        expect(details?.querySelector('summary')?.textContent).toContain(started(state).failureText);
+        expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${mktgSentenceCaseLabel(BRAND_KIT.itemLabel)} over`);
+        expect(query('mktg-document-view-intake-link')?.textContent?.trim()).toBe('Try again');
+        expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
+        expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
+        expect(query('mktg-document-view-failure-actions')?.textContent).toContain('only if you think it is still running; starts nothing new');
         expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64));
         store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
         query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
@@ -1240,7 +1263,7 @@ describe('MktgDocumentViewComponent', () => {
     }
   );
 
-  it('keeps progress Retry distinct from load Retry when a recorded-run check fails', async () => {
+  it('keeps a failed check inside the run card above the two actions, without a duplicate Retry', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started('failed')] }));
     store.retryRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
@@ -1248,7 +1271,12 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(store.retryRun).toHaveBeenCalledTimes(1);
     expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-progress-retry"]')).toHaveLength(1);
-    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-retry"]')).toHaveLength(1);
+    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-retry"]')).toHaveLength(0);
+    const runCard = query('mktg-document-view-run');
+    const error = query('mktg-document-view-error');
+    const actions = query('mktg-document-view-failure-actions');
+    expect(runCard?.contains(error)).toBe(true);
+    expect(error && actions && error.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(query('mktg-document-view-failure-reply')).not.toBeNull();
     expect(query('mktg-document-view-error')).not.toBeNull();
   });
