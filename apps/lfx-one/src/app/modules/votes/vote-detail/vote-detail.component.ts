@@ -197,8 +197,8 @@ export class VoteDetailComponent {
   protected readonly isOutsider: Signal<boolean> = computed(
     () => !this.accessLoading() && this.audience() === 'voter' && (this.voterState() === 'not_participant' || this.voterState() === 'access_denied')
   );
-  /** Invited count, View results, tabs and the facts card — hidden while access loads so an outsider never sees them flash (#4330). */
-  protected readonly showVoteDetails: Signal<boolean> = computed(() => !this.accessLoading() && !this.isOutsider());
+  /** Non-basic details require verified manager access or a successful, non-removed invitation lookup (#4330). */
+  protected readonly showVoteDetails: Signal<boolean> = this.initShowVoteDetails();
   /** Why comments render without names: the vote is pseudo-anonymous, or the viewer is not a manager (#4330). */
   protected readonly commentAnonymityReason: Signal<VoteCommentAnonymityReason> = computed(() =>
     this.isPseudoAnonymous() ? 'pseudo_anonymous' : 'voter_view'
@@ -499,6 +499,15 @@ export class VoteDetailComponent {
     });
   }
 
+  private initShowVoteDetails(): Signal<boolean> {
+    return computed(() => {
+      if (this.accessLoading() || this.isOutsider()) return false;
+      if (this.canManage() === true) return true;
+      const response = this.myResponse();
+      return !this.myResponseError() && !!response && response.vote_uid === this.vote()?.uid && !response.voter_removed;
+    });
+  }
+
   private initShowVotersTab(): Signal<boolean> {
     return computed(() => {
       const vote = this.vote();
@@ -510,11 +519,11 @@ export class VoteDetailComponent {
 
   /**
    * Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it.
-   * An outsider gets Overview alone (#4330), so a `?tab=` deep link falls back to it.
+   * An outsider or unverified voter gets Overview alone (#4330), so a `?tab=` deep link falls back to it.
    */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
-      if (this.isOutsider()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
+      if (!this.showVoteDetails()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
       const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));

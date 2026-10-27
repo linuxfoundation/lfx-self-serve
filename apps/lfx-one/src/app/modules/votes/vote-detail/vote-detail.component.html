@@ -47,13 +47,13 @@
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div
             class="lg:col-span-2 flex flex-col gap-6 min-w-0"
-            [attr.role]="isOutsider() ? null : 'tabpanel'"
+            [attr.role]="showVoteDetails() ? 'tabpanel' : null"
             id="vote-detail-tab-panel"
-            [attr.aria-labelledby]="isOutsider() ? null : 'vote-detail-tab-' + activeTab()"
+            [attr.aria-labelledby]="showVoteDetails() ? 'vote-detail-tab-' + activeTab() : null"
             [attr.data-testid]="'vote-detail-panel-' + activeTab()">
             @switch (activeTab()) {
               @case ('overview') {
-                @if (voteData.description && !isOutsider()) {
+                @if (voteData.description && showVoteDetails()) {
                   <lfx-card data-testid="vote-detail-description">
                     <div class="flex flex-col gap-2">
                       <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
@@ -209,7 +209,7 @@
             }
           </div>
 
-          @if (!isOutsider()) {
+          @if (showVoteDetails()) {
             <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" [resultsHeld]="resultsHeld()" />
           }
         </div>

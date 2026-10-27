@@ -113,7 +113,13 @@ test.describe('Vote permalink structure (#3659)', () => {
       await error.getByTestId('vote-detail-retry').getByRole('button').click();
 
       await expect(page.getByTestId('vote-detail-voter-not-participant')).toBeVisible({ timeout: RENDER_TIMEOUT });
-      await expect(page.getByTestId('vote-detail-description')).toBeVisible();
+      await expect(page.getByTestId('vote-detail-header-title')).toHaveText(VOTE.name);
+      await expect(page.getByTestId('vote-detail-header-status')).toBeVisible();
+      await expect(page.getByTestId('vote-detail-description')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-facts')).toHaveCount(0);
+      for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+        await expect(page.getByTestId(`vote-detail-header-${suffix}`)).toHaveCount(0);
+      }
       await expect(root.getByTestId('vote-detail-error')).toHaveCount(0);
       await expect(page.getByTestId('vote-detail-overview-results')).toHaveCount(0);
     } finally {

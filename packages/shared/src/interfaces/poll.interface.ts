@@ -959,38 +959,39 @@ export interface PollQuestionResult {
 
 /**
  * Single voter's response to a comment prompt in results
- * @description On pseudo-anonymous votes the BFF returns `comment_text` only: identity fields
+ * @description On pseudo-anonymous votes and non-manager reads of named votes, the BFF returns
+ * `comment_text` only: identity fields
  * (`user_id`, `user_name`, `profile_picture`) and the ballot-linking fields (`vote_id`,
- * `vote_creation_time`, `abstained`) are absent, not empty (#3916)
+ * `vote_creation_time`, `abstained`) are absent, not empty (#3916, #4330)
  */
 export interface PollCommentResponse {
-  /** Vote response (ballot) identifier — absent when the vote is pseudo-anonymous, since it would re-link the comment to its author */
+  /** Vote response (ballot) identifier — absent in text-only responses, since it would re-link the comment to its author */
   vote_id?: string;
-  /** Voter's user identifier — absent when the vote is pseudo-anonymous */
+  /** Voter's user identifier — absent in text-only responses */
   user_id?: string;
   /** Submitted comment text */
   comment_text: string;
-  /** Voter's display name — absent when the vote is pseudo-anonymous */
+  /** Voter's display name — absent in text-only responses */
   user_name?: string;
-  /** Voter's profile picture URL — absent when the vote is pseudo-anonymous. Reserved for future avatar rendering; the vote detail page does not render it yet. */
+  /** Voter's profile picture URL — absent in text-only responses. Reserved for future avatar rendering; the vote detail page does not render it yet. */
   profile_picture?: string;
-  /** Timestamp when the voter submitted their vote — absent when the vote is pseudo-anonymous */
+  /** Timestamp when the voter submitted their vote — absent in text-only responses */
   vote_creation_time?: string;
-  /** Whether the voter abstained from voting — absent when the vote is pseudo-anonymous */
+  /** Whether the voter abstained from voting — absent in text-only responses */
   abstained?: boolean;
 }
 
 /**
  * Comment results for a poll comment prompt
- * @description Contains the prompt definition and all submitted voter responses
+ * @description Contains the prompt definition and submitted voter responses, subject to the BFF per-prompt cap
  */
 export interface PollCommentResult {
   /** Comment prompt definition */
   prompt: PollCommentPrompt;
   /**
    * Submitted voter responses. The BFF caps this at `VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT`:
-   * named votes keep the most recent responses; pseudo-anonymous votes keep the first responses in
-   * comment-text order without timestamps. Compare against `total_responses` to detect truncation.
+   * named manager reads keep the most recent responses; pseudo-anonymous votes and every non-manager read
+   * keep the first responses in comment-text order, without timestamps. Compare against `total_responses` to detect truncation.
    */
   responses: PollCommentResponse[];
   /**

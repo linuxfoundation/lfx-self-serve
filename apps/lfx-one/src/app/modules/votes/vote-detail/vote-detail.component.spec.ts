@@ -1296,6 +1296,48 @@ describe('VoteDetailComponent', () => {
       }
     );
 
+    describe.each([PollStatus.ACTIVE, PollStatus.ENDED])('participation lookup failure on a %s vote', (status) => {
+      it.each([0, 503])('keeps non-basic details hidden after a %i failure', async (failureStatus) => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status, total_voting_request_invitations: 12 })));
+        voteService.getMyVoteResponse.mockReturnValue(httpError(failureStatus));
+        queryParamMap.next(convertToParamMap({ tab: 'comments' }));
+        const fixture = await setup('browser', true);
+
+        expect(read(fixture, 'accessLoading')).toBe(false);
+        expect(read(fixture, 'myResponseError')).toBe(true);
+        expect(read(fixture, 'isOutsider')).toBe(false);
+        expect(read(fixture, 'showVoteDetails')).toBe(false);
+        expect(testId(fixture, 'vote-detail-voter-my-response-error')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
+        expect(testId(fixture, 'vote-detail-header-status')).not.toBeNull();
+        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+          expect(testId(fixture, `vote-detail-header-${suffix}`)).toBeNull();
+        }
+        expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toEqual(['overview']);
+        expect(read(fixture, 'activeTab')).toBe('overview');
+        const content = testId(fixture, 'vote-detail-panel-overview');
+        expect(content?.hasAttribute('role')).toBe(false);
+        expect(content?.hasAttribute('aria-labelledby')).toBe(false);
+        expect(testId(fixture, 'vote-detail-description')).toBeNull();
+        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
+        expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
+        expect(voteService.getVoteResults).not.toHaveBeenCalled();
+      });
+
+      it('keeps a verified manager view when the personal response lookup fails', async () => {
+        projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+        voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status })));
+        voteService.getMyVoteResponse.mockReturnValue(httpError(503));
+        const fixture = await setup('browser', true);
+
+        expect(read(fixture, 'showVoteDetails')).toBe(true);
+        expect(testId(fixture, 'vote-detail-header-tabs')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-description')).not.toBeNull();
+        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).not.toBeNull();
+        expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
+      });
+    });
+
     it('keeps the limited header pieces hidden while access is still loading', async () => {
       const myResponse = new Subject<MyVoteResponse | null>();
       voteService.getMyVoteResponse.mockReturnValue(myResponse);

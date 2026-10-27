@@ -135,7 +135,7 @@ test.describe('Vote permalink (#3659)', () => {
   });
 
   for (const status of ['active', 'ended']) {
-    test(`shows vote details without ballot or tallies to a non-participant (${status})`, async ({ page }) => {
+    test(`shows only basic vote information to a non-participant (${status})`, async ({ page }) => {
       const linkedVote = { ...buildMyVoteRow(), status, response_status: undefined, description: '<p>Review the proposed charter.</p>' };
       await page.route(`**/api/votes/${VOTE_UID}`, (route) => fulfillJson(route, linkedVote));
       await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) => route.fulfill({ status: 404, body: '{}' }));
@@ -160,7 +160,13 @@ test.describe('Vote permalink (#3659)', () => {
       await expect(page).toHaveURL(new RegExp(`/votes/${VOTE_UID}$`));
       await expect(page.getByRole('heading', { name: "You're not a voter on this vote", exact: true })).toBeVisible({ timeout: RENDER_TIMEOUT });
       await expect(page.getByTestId('vote-detail-voter-not-participant')).toBeVisible();
-      await expect(page.getByTestId('vote-detail-description')).toContainText('Review the proposed charter.');
+      await expect(page.getByTestId('vote-detail-header-title')).toHaveText(VOTE_NAME);
+      await expect(page.getByTestId('vote-detail-header-status')).toBeVisible();
+      await expect(page.getByTestId('vote-detail-description')).toHaveCount(0);
+      await expect(page.getByTestId('vote-detail-facts')).toHaveCount(0);
+      for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+        await expect(page.getByTestId(`vote-detail-header-${suffix}`)).toHaveCount(0);
+      }
       await expect(page.getByTestId('vote-detail-voter-access-denied')).toHaveCount(0);
       await expect(page.getByTestId('vote-detail-header-cast-vote')).toHaveCount(0);
       await expect(page.getByTestId('vote-detail-voter-cast-vote')).toHaveCount(0);
