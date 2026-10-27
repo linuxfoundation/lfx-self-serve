@@ -219,4 +219,38 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
     await render(true, { ...VOTE, poll_questions: [{ ...VOTE.poll_questions![0], type: 'multiple_choice' }] } as Vote);
     expect(q('dashboard-pending-actions-vote-choice-c1')?.className).toContain('min-h-[44px]');
   });
+
+  it('selects a choice when its label is clicked, not only the radio circle (phone rows)', async () => {
+    await render(true);
+    const labels = (): HTMLLabelElement[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="dashboard-pending-actions-vote-choice-"] label'));
+
+    expect(labels()).toHaveLength(2);
+    // The label is stretched over the 44px row (::after inset-0 on a relative row), so it is the tap target.
+    expect(labels()[1].className).toContain('after:inset-0');
+    expect(labels()[1].parentElement?.className).toContain('relative');
+
+    labels()[1].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c2');
+    const radios = Array.from(fixture.nativeElement.querySelectorAll('input[type="radio"]')) as HTMLInputElement[];
+    expect(radios.map((radio) => radio.checked)).toEqual([false, true]);
+
+    labels()[0].click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
+  });
+
+  it('toggles a multiple-choice option when its label is clicked on phones', async () => {
+    await render(true, { ...VOTE, poll_questions: [{ ...VOTE.poll_questions![0], type: 'multiple_choice' }] } as Vote);
+    const label = fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-vote-choice-c2"]') as HTMLLabelElement;
+
+    label.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c2']);
+  });
 });

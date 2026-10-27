@@ -619,4 +619,44 @@ describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)'
 
     expect(fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-item-Vote"]').classList).not.toContain('is-vote-expanded');
   });
+
+  // #4148: Cancel on the inline ballot only collapses it. The row goes back to its Cast Vote state, still
+  // actionable and still unresolved: no dismiss/hide cookie, no completion fade, and reopening reuses the cached vote.
+  it('collapses back to the Cast Vote state on Cancel without dismissing the action', async () => {
+    hiddenActions.hideAction.mockClear();
+    hiddenActions.dismissAction.mockClear();
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+    const row = (): HTMLElement => byTestId(fixture, 'dashboard-pending-actions-item-Vote')!;
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeTruthy();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-button')).toBeNull();
+
+    byTestId(fixture, 'dashboard-pending-actions-vote-cancel')!.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeNull();
+    const castButton = byTestId(fixture, 'dashboard-pending-actions-vote-button');
+    expect(castButton).toBeTruthy();
+    expect(castButton!.textContent).toContain('Vote now');
+    expect(castButton!.querySelector<HTMLButtonElement>('button')!.disabled).toBe(false);
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-loading')).toBeNull();
+    expect(row()).toBeTruthy();
+    expect(row().classList).not.toContain('is-completing');
+    expect(row().classList).not.toContain('is-vote-expanded');
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+
+    // Reopening shows the ballot again from the cached vote, with no second fetch.
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+    expect(getVote).toHaveBeenCalledTimes(1);
+  });
 });
