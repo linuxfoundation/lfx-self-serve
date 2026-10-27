@@ -31,7 +31,9 @@ export class SurveySentEmailDialogComponent {
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   // === Derived Signals ===
-  /** ED and PM names come from project settings; a failed read leaves those placeholders blank. */
+  /** The recipient's own project: the row's, then its committee's, then the active context. */
+  private readonly projectUid: string | undefined = this.initProjectUid();
+  /** ED and PM names come from that project's settings; a failed read leaves those placeholders blank. */
   private readonly settings: Signal<ProjectSettings | null> = this.initSettings();
 
   // === Computed Signals ===
@@ -44,8 +46,14 @@ export class SurveySentEmailDialogComponent {
   }
 
   // === Private Initializers ===
+  private initProjectUid(): string | undefined {
+    const data = this.config.data;
+    const committee = data?.survey?.committees?.find((c) => c.committee_uid === data.response?.committee_uid);
+    return data?.response?.project?.uid || committee?.project_uid || this.projectContextService.activeContext()?.uid || undefined;
+  }
+
   private initSettings(): Signal<ProjectSettings | null> {
-    const projectUid = this.projectContextService.activeContext()?.uid;
+    const projectUid = this.projectUid;
     const settings$ = projectUid ? this.permissionsService.getProjectSettings(projectUid).pipe(catchError(() => of(null))) : of(null);
     return toSignal(settings$, { initialValue: null });
   }
@@ -62,7 +70,9 @@ export class SurveySentEmailDialogComponent {
         return null;
       }
       const settings = this.settings();
-      const project = this.projectContextService.activeProject();
+      // The active project only fills in name and logo when it is the recipient's project.
+      const activeProject = this.projectContextService.activeProject();
+      const project = activeProject?.uid === this.projectUid ? activeProject : null;
       const rendered = renderSurveyEmailForRecipient(data.survey, data.response, {
         projectName: project?.name,
         projectLogo: project?.logo_url,
