@@ -304,7 +304,13 @@ test.describe('Org Events Dashboard', () => {
       })
     );
 
-    for (const tab of ['upcoming', 'past'] as const) {
+    // PAST FIRST, deliberately. The override has to be registered after the base stub to take
+    // precedence, by which point the upcoming tab has already loaded through that base stub — and
+    // `switchTab` returns early when the requested tab is already active, so clicking `upcoming`
+    // here would not refetch and the assertions would run against the external-admin data.
+    // Visiting past first makes the return to upcoming a real tab change, so both fetch through
+    // the override.
+    for (const tab of ['past', 'upcoming'] as const) {
       await page.getByTestId(`org-events-stat-${tab}`).click();
       const panel = page.getByTestId(`org-events-panel-${tab}`);
       await expect(panel).toBeVisible();
