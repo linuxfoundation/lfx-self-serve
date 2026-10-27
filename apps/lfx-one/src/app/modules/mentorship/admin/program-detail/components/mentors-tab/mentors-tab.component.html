@@ -129,8 +129,7 @@
                   [styleClass]="row.avatarStyleClass"
                   [ariaLabel]="row.name" />
                 <div class="flex flex-col min-w-0">
-                  <!-- Only a mentor with a profile has a public page. -->
-                  @if (row.profileCreated && row.userId) {
+                  @if (row.hasPublicPage && row.userId) {
                     <a
                       class="text-sm font-medium text-blue-600 truncate transition-colors hover:text-blue-700 hover:underline"
                       [href]="row.userId | mentorshipPublicUrl: 'mentors'"

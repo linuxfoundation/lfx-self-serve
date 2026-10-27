@@ -142,6 +142,11 @@ export class CurrentMenteesTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
+  /**
+   * True when the program is upstream `published`. Upstream only serves public mentee and mentor pages through a
+   * published program, so names link only then.
+   */
+  public readonly programPublished = input(false);
   /** The program's terms; only the open ones feed the term filter. */
   public readonly terms = input<MentorshipAdminTermOption[]>([]);
   /**

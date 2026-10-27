@@ -92,6 +92,7 @@ describe('MentorsTabComponent', () => {
 
     fixture = TestBed.createComponent(MentorsTabComponent);
     fixture.componentRef.setInput('programId', 'prog_1');
+    fixture.componentRef.setInput('programPublished', true);
     settle();
   });
 
@@ -130,6 +131,21 @@ describe('MentorsTabComponent', () => {
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_2"]')).toBeNull();
     expect(rowText('mem_2')).toContain('Diego Souza');
+  });
+
+  it.each(['pending', 'invited', 'requested', 'declined', 'withdrawn'] as const)('links a %s mentor with a profile too', (status) => {
+    getProgramMentors.mockReturnValue(of({ data: [mentor({ id: 'mem_9', status })], total: 1 }));
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_9"]')).not.toBeNull();
+  });
+
+  it('does not link any mentor when the program is not published', () => {
+    fixture.componentRef.setInput('programPublished', false);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_1"]')).toBeNull();
   });
 
   it('offers every upstream status in the status filter', () => {

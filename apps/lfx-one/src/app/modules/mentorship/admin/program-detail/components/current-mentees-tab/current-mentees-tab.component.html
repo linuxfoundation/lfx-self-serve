@@ -103,7 +103,7 @@
                 [initials]="row.initials"
                 [avatarStyleClass]="row.avatarStyleClass"
                 [avatarUrl]="row.avatarUrl"
-                [href]="row.userId | mentorshipPublicUrl: 'mentees'"
+                [href]="programPublished() ? (row.userId | mentorshipPublicUrl: 'mentees') : null"
                 [linkTestId]="'mentorship-current-mentee-link-' + row.id"
                 [noteLabel]="row.noteLabel"
                 [hasNote]="row.hasNote"

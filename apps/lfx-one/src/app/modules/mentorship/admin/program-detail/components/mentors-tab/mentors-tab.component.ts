@@ -88,6 +88,11 @@ export class MentorsTabComponent {
 
   public readonly programId = input.required<string>();
   /**
+   * True when the program is upstream `published`. Upstream only serves public mentee and mentor pages through a
+   * published program, so names link only then.
+   */
+  public readonly programPublished = input(false);
+  /**
    * Has the parent program page read its tab counts again. A callback rather than an output, as on Current Mentees:
    * a write that lands after a tab switch destroyed this tab must still refresh the parent's counts.
    */
@@ -276,6 +281,8 @@ export class MentorsTabComponent {
       statusBadgeClass: MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES[person.status],
       invitationLabel: person.invitedOn ? formatIsoDateLabel(person.invitedOn) : '—',
       profileCreatedLabel: person.profileCreated ? 'Yes' : 'No',
+      // Any mentor with a profile on a published program links, whatever the status.
+      hasPublicPage: this.programPublished() && !!person.profileCreated,
       profileCreatedClass: person.profileCreated ? 'text-emerald-600' : 'text-red-600',
       actions: MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS[person.status].map((action) => ({
         ...action,
