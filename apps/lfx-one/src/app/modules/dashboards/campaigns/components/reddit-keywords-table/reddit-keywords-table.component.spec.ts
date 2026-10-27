@@ -808,6 +808,23 @@ describe('RedditKeywordsTableComponent', () => {
       expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
     });
 
+    // Switching back to the window a note was recorded under is a NEW read, not the old one: the stale
+    // failure must stay gone rather than reappear as if it were current.
+    it('does not bring a "Not sent" note back when the window is switched away and back', () => {
+      getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
+
+      q('reddit-keywords-window-last_7_days')!.click();
+      fixture.detectChanges();
+      q('reddit-keywords-window-last_30_days')!.click();
+      fixture.detectChanges();
+
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+    });
+
     // The newer attempt that went nowhere is shown, beside the older write outcome it does not erase.
     it('shows a retry that was not sent beside the earlier unconfirmed outcome, and keeps the verify-first advice', () => {
       addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));

@@ -117,6 +117,11 @@ export class RedditKeywordsTableComponent {
   /** Bumped by the in-panel Retry. */
   private readonly retryToken = signal(0);
   /**
+   * Bumped on every window CHANGE. The read id counts changes rather than naming the window, so going
+   * back to an earlier window is a new read and does not bring back the notes recorded under it.
+   */
+  private readonly windowChanges = signal(0);
+  /**
    * The keyword (by `redditKeywordNoteKey`) whose campaign's revision is being read, by campaign UUID.
    * Read-independent, like the notes, so the row's spinner follows the keyword through a re-read.
    */
@@ -135,8 +140,8 @@ export class RedditKeywordsTableComponent {
    * the add was confirmed in (`negativeKeywordsScopesMatch`: a transient empty brief is not leaving).
    */
   private readonly scope$ = toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId() })));
-  /** Identifies the keyword read the rows come from: changes on Refresh, Retry and window change. */
-  private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.selectedWindow()}`);
+  /** Identifies the keyword read the rows come from: changes on Refresh, Retry and window change, and never repeats. */
+  private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.windowChanges()}`);
 
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
   /** The rows with their campaign label and action precomputed, so the template calls no method. */
@@ -169,7 +174,11 @@ export class RedditKeywordsTableComponent {
   }
 
   protected selectWindow(window: RedditKeywordsWindow): void {
+    if (window === this.selectedWindow()) {
+      return;
+    }
     this.selectedWindow.set(window);
+    this.windowChanges.update((n) => n + 1);
   }
 
   protected retry(): void {
