@@ -1800,8 +1800,8 @@ describe('VoteService', () => {
 
     it.each([IndexedVoteResponseStatus.AWAITING_RESPONSE, IndexedVoteResponseStatus.RESPONDED])(
       'excludes removed invitations regardless of ballot status: %s',
-      async (vote_status) => {
-        fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status, voter_removed: true }]);
+      async (voteStatus) => {
+        fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: voteStatus, voter_removed: true }]);
 
         await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: true });
         expect(proxyRequest).not.toHaveBeenCalled();
