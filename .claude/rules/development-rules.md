@@ -29,7 +29,7 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 ## AI Service
 
-- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content)
+- **AI Service Integration**: a Claude model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content). The model is `AI_MODEL` in `packages/shared/src/constants/ai.constants.ts`, and must be one of the short names the proxy publishes — never a provider-prefixed Bedrock id (#4333)
 - **AI Environment Variables**: `AI_PROXY_URL` and `AI_API_KEY` required for AI functionality
 - **M2M Environment Variables**: `M2M_AUTH_CLIENT_ID`, `M2M_AUTH_CLIENT_SECRET` for machine-to-machine auth
 

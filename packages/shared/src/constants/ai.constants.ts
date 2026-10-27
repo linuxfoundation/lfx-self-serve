@@ -177,13 +177,19 @@ Respond with a JSON object matching the provided schema exactly. Do not include 
 /**
  * AI model configuration
  *
- * Carries the `bedrock/` provider prefix because the v2 LiteLLM instances
- * (`litellm.*.v2.cluster.linuxfound.info`) route on the prefixed name, while the retired OCI
- * instance (`litellm.tools.lfx.dev`) routed on the bare inference profile id and answered
- * `401` to the prefixed one. The two names are not interchangeable, so the host and the name
- * have to move together — see #4087, where the host moved alone and every AI call failed.
+ * Must be one of the short names the LiteLLM proxy publishes in its own `model_list`
+ * (`lfx-v2-argocd`, `values/global/lfit-litellm.yaml`) — never a provider-prefixed Bedrock id.
+ * The prefixed ids appear in that file only as `litellm_params.model`, the destination each
+ * short name resolves to; sending one asks the router for a model it publishes no deployment
+ * for, which answers `429` rather than a `400` that would name the real problem.
+ *
+ * The host and the name have to move together, and neither can be checked from this repo alone:
+ * `AI_PROXY_URL` and the proxy's model list both live in argocd. See #4333, where the name was a
+ * routing destination rather than a published name, and #4087 before it, where the host moved
+ * alone. `lfx-v2-campaign-service` sends the same value from its own `AI_MODEL` env var; keep the
+ * two in step.
  */
-export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'claude-sonnet-5-5';
 
 /**
  * AI request configuration
