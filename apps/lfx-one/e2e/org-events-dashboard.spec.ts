@@ -9,6 +9,26 @@ const ORG_EVENTS_URL = '/org/events';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
+/**
+ * The fields an event row needs to render, minus the three the staff-goal test varies. Deliberately
+ * separate from the base stub, which omits `eventRegistrationsGoal` because that is the EXTERNAL
+ * admin shape (#4432); spread this and add the goal to get the LF staff shape.
+ */
+const STAFF_EVENT = {
+  eventName: 'Open Source Summit',
+  foundation: 'Linux Foundation',
+  eventStartDate: '2026-06-30',
+  eventEndDate: '2026-07-02',
+  eventLocation: null,
+  eventCity: 'Seattle',
+  eventCountry: 'United States',
+  eventUrl: 'https://events.linuxfoundation.org/open-source-summit',
+  eventRegistrationUrl: null,
+  orgSpeakerAcceptedCount: 1,
+  orgSpeakerSubmittedCount: 2,
+  isOrgSponsor: false,
+} as const;
+
 test.setTimeout(120_000);
 
 function skipWhenAuthMissing(page: Page): void {
@@ -257,6 +277,42 @@ test.describe('Org Events Dashboard', () => {
     const panel = page.getByTestId('org-events-panel-past');
     await expect(panel).toBeVisible();
     await expect(panel.getByText('No past events', { exact: true })).toBeVisible();
+  });
+
+  test('renders the goal for an LF staff response, on both tabs and at zero attendees', async ({ page }) => {
+    await gotoOrgEventsPage(page);
+    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // The base stub omits `eventRegistrationsGoal`, which is what an EXTERNAL admin receives — the
+    // server leaves the key off entirely (#4432). This override is the LF staff shape: the key is
+    // present, so the template must render it. Without a staff-shaped fixture a regression that
+    // hid the goal from staff would pass every other check on this page.
+    await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events?**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { ...STAFF_EVENT, eventId: 'event-1', orgAttendeeCount: 3, eventRegistrationsGoal: 1500 },
+            // Zero attendees takes the other template branch, which renders a span rather than a button.
+            { ...STAFF_EVENT, eventId: 'event-2', orgAttendeeCount: 0, eventRegistrationsGoal: 2200 },
+          ],
+          total: 2,
+          pageSize: 10,
+          offset: 0,
+        }),
+      })
+    );
+
+    for (const tab of ['upcoming', 'past'] as const) {
+      await page.getByTestId(`org-events-stat-${tab}`).click();
+      const panel = page.getByTestId(`org-events-panel-${tab}`);
+      await expect(panel).toBeVisible();
+
+      await expect(panel.getByText('My Org / Goal')).toBeVisible();
+      await expect(panel.getByTestId('org-event-attendees-event-1')).toHaveText('3 / 1,500');
+      await expect(panel.getByTestId('org-event-attendees-event-2')).toHaveText('0 / 2,200');
+    }
   });
 
   test('opens attendee and speaker drawers with non-PII row test ids', async ({ page }) => {
