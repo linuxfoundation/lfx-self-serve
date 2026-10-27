@@ -69,23 +69,26 @@ export class OrgLensMembershipsService {
   }
 
   public addKeyContact(orgUid: string, foundationId: string, body: AddKeyContactRequest): Observable<KeyContactMutationResponse> {
-    return this.http.post<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts`,
-      body
-    );
+    return this.http
+      .post<KeyContactMutationResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts`, body)
+      .pipe(this.dropCachedRoster(orgUid));
   }
 
   public replaceKeyContact(orgUid: string, foundationId: string, contactUid: string, body: ReplaceKeyContactRequest): Observable<KeyContactMutationResponse> {
-    return this.http.put<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts/${encodeURIComponent(contactUid)}`,
-      body
-    );
+    return this.http
+      .put<KeyContactMutationResponse>(
+        `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts/${encodeURIComponent(contactUid)}`,
+        body
+      )
+      .pipe(this.dropCachedRoster(orgUid));
   }
 
   public removeKeyContact(orgUid: string, foundationId: string, contactUid: string): Observable<KeyContactMutationResponse> {
-    return this.http.delete<KeyContactMutationResponse>(
-      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts/${encodeURIComponent(contactUid)}`
-    );
+    return this.http
+      .delete<KeyContactMutationResponse>(
+        `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/key-contacts/${encodeURIComponent(contactUid)}`
+      )
+      .pipe(this.dropCachedRoster(orgUid));
   }
 
   // LFXV2-2067 — slug-keyed catalog GET + write proxies, used by the People → Key Contacts tab.
@@ -130,10 +133,11 @@ export class OrgLensMembershipsService {
   /**
    * Drop the client's cached All Employees roster once a key-contact write settles.
    *
-   * It lives here, on the three mutation methods, rather than at each call site: People → Key Contacts
-   * and the membership-detail page both write through this service, and an invalidation remembered per
-   * caller is one a later caller forgets. The server evicts its own entry in OrgLensKeyContactsService
-   * for the same reason.
+   * It lives here, on all six key-contact mutation methods, rather than at each call site: the
+   * membership-detail page writes through the id-keyed trio and People → Key Contacts through the
+   * slug-keyed one, and an invalidation remembered per caller is one a later caller forgets. Piping
+   * only one trio is the same bug a layer up, so a new write method here needs this pipe too. The
+   * server evicts its own entry in OrgLensKeyContactsService for the same reason.
    *
    * On error as well as success, because the client cannot tell a clean failure from a replace whose
    * create landed before its delete failed. A needless drop costs one refetch; a missed one shows a

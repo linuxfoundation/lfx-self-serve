@@ -14,6 +14,8 @@ import { OrgPeopleDirectoryStateService } from './org-people-directory-state.ser
 
 const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
 const BASE = `/api/orgs/${ORG}/lens/key-contacts/membership/cncf`;
+// The membership-detail page writes through the id-keyed routes instead.
+const BY_ID = `/api/orgs/${ORG}/lens/memberships/f-1/key-contacts`;
 
 const body = { contactType: 'billing', email: 'asilva@lfx-partner.example', firstName: 'Avery', lastName: 'Silva', jobTitle: null };
 
@@ -71,6 +73,32 @@ describe('OrgLensMembershipsService — a key-contact write drops the cached All
   it('invalidates when a replace fails, since the create may still have landed', async () => {
     const pending = firstValueFrom(service.replaceKeyContactBySlug(ORG, 'cncf', 'kc-1', body as ReplaceKeyContactRequest)).catch(() => undefined);
     http.expectOne({ method: 'PUT', url: `${BASE}/kc-1` }).flush({ message: 'added but not removed' }, { status: 409, statusText: 'Conflict' });
+    await pending;
+
+    expect(invalidate).toHaveBeenCalledWith(ORG);
+  });
+
+  // The membership-detail page calls these, not the slug-keyed trio. Piping only one set was the whole
+  // of the round-7 gap, so each route gets its own case rather than one standing in for the others.
+  it('invalidates after a successful add from the membership-detail page', async () => {
+    const pending = firstValueFrom(service.addKeyContact(ORG, 'f-1', body as AddKeyContactRequest));
+    http.expectOne({ method: 'POST', url: BY_ID }).flush({});
+    await pending;
+
+    expect(invalidate).toHaveBeenCalledWith(ORG);
+  });
+
+  it('invalidates after a successful replace from the membership-detail page', async () => {
+    const pending = firstValueFrom(service.replaceKeyContact(ORG, 'f-1', 'kc-1', body as ReplaceKeyContactRequest));
+    http.expectOne({ method: 'PUT', url: `${BY_ID}/kc-1` }).flush({});
+    await pending;
+
+    expect(invalidate).toHaveBeenCalledWith(ORG);
+  });
+
+  it('invalidates after a successful remove from the membership-detail page', async () => {
+    const pending = firstValueFrom(service.removeKeyContact(ORG, 'f-1', 'kc-1'));
+    http.expectOne({ method: 'DELETE', url: `${BY_ID}/kc-1` }).flush({});
     await pending;
 
     expect(invalidate).toHaveBeenCalledWith(ORG);

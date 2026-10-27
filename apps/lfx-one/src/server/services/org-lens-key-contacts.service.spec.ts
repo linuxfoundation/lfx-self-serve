@@ -6,13 +6,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 
-const { fetchAllQueryResourcesMock, proxyRequestMock, invalidatePerUserCache, evictPerUserOrgFetch, getEffectiveUsername } = vi.hoisted(() => ({
-  fetchAllQueryResourcesMock: vi.fn(),
-  proxyRequestMock: vi.fn(),
-  invalidatePerUserCache: vi.fn(async () => true),
-  evictPerUserOrgFetch: vi.fn(),
-  getEffectiveUsername: vi.fn(() => 'tester'),
-}));
+const { fetchAllQueryResourcesMock, proxyRequestMock, proxyRequestWithResponseMock, invalidatePerUserCache, evictPerUserOrgFetch, getEffectiveUsername } =
+  vi.hoisted(() => ({
+    fetchAllQueryResourcesMock: vi.fn(),
+    proxyRequestMock: vi.fn(),
+    proxyRequestWithResponseMock: vi.fn(async () => ({ headers: { etag: '"1"' }, data: {} })),
+    invalidatePerUserCache: vi.fn(async () => true),
+    evictPerUserOrgFetch: vi.fn(),
+    getEffectiveUsername: vi.fn(() => 'tester'),
+  }));
 
 vi.mock('./valkey.service', () => ({ invalidatePerUserCache, withPerUserCache: vi.fn() }));
 vi.mock('../utils/single-flight', () => ({ evictPerUserOrgFetch }));
@@ -27,7 +29,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return { isFilterSafeIdentifier, agreedUsername };
 });
 vi.mock('./microservice-proxy.service', () => ({
-  MicroserviceProxyService: vi.fn().mockImplementation(() => ({ proxyRequest: proxyRequestMock })),
+  MicroserviceProxyService: vi.fn().mockImplementation(() => ({ proxyRequest: proxyRequestMock, proxyRequestWithResponse: proxyRequestWithResponseMock })),
 }));
 const resolveContext = vi.fn(async () => ({ b2bOrgUid: SYNTHETIC_ORG_ACCOUNT_ID, membershipUid: 'm-active', projectUid: 'p-1' }));
 vi.mock('./org-membership-resolver.service', () => ({ OrgMembershipResolverService: vi.fn().mockImplementation(() => ({ resolveContext })) }));
@@ -253,6 +255,25 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
       } as never)
     ).rejects.toThrow();
 
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
+  });
+
+  // A create-then-delete replace leaves the role holding both contacts in between, so one eviction
+  // before the delete is not enough: a read that starts in that window caches the two-holder roster.
+  it('invalidates again after the delete half of a create-then-delete replace', async () => {
+    // Not in the org's contacts, so replaceKeyContact takes the create+delete path rather than the PUT.
+    upstream([], [membership()]);
+    proxyRequestMock.mockResolvedValue({ uid: 'kc-new', role: 'Billing Contact', status: 'Active', email: 'new@lfx-partner.example' });
+
+    await new OrgLensKeyContactsService().replaceKeyContact(req, ORG, 'cncf', 'kc-old', {
+      contactType: 'billing',
+      email: 'new@lfx-partner.example',
+      firstName: 'New',
+      lastName: 'Person',
+    } as never);
+
+    // This service invalidates only the directory namespace, so every call here is one of ours.
+    expect(invalidatePerUserCache.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v4', 'tester', ORG);
   });
 

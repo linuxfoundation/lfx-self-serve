@@ -103,9 +103,9 @@ export class OrgLensKeyContactsService {
       // delete-failed window exists where the role transiently holds BOTH contacts. On a delete failure
       // surface a reload-and-review message so the user doesn't blind-retry and create a second duplicate.
       authoritative = await this.createContact(req, ctx, body);
-      // The create has landed, so the role row has already changed. Invalidating here rather than at
-      // the end covers every exit below it, including the 409 thrown when the delete fails — which is
-      // the case that most needs it, since that message sends the user off to review the contacts.
+      // The create has landed, so the role row has already changed. Invalidating here rather than only
+      // at the end covers every exit below it, including the 409 thrown when the delete fails — the case
+      // that most needs it, since that message sends the user off to review the contacts.
       await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
       const etag = await this.fetchEtag(req, ctx.membershipUid, contactUid);
       try {
@@ -132,6 +132,10 @@ export class OrgLensKeyContactsService {
           { operation: 'replace_org_key_contact', service: 'LFX_V2_SERVICE', path: `/project_memberships/${ctx.membershipUid}/key_contacts/${contactUid}` }
         );
       }
+      // Again, now that the delete has landed. Between the two the role genuinely holds BOTH contacts,
+      // and a read that started in that window caches that transient roster — the eviction above is
+      // already behind it, so without this the caller is served a two-holder row until the TTL expires.
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     }
 
     // Single-slot replace: the role ends with exactly the new contact. Drop the old uid + dedup the new.
