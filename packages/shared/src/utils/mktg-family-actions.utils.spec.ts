@@ -208,6 +208,8 @@ describe('One rule for every family action', () => {
     expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('');
     view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: ' ', number: 0 } } };
     expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('after the framework is approved');
+    view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: 42 as unknown as string, number: 1 } } };
+    expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('after the framework is approved');
   });
   it('presents create destinations relative to Kit, with fresh run mode and honest copy', () => {
     const step = resolveMktgFamilyNextStep(family(), context);

@@ -72,7 +72,14 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
   for (const row of view.rows) {
     const pointer = row.document?.approvedCurrent;
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
-    if (type?.catalogAgentId && pointer && pointer.revisionId.trim() && Number.isSafeInteger(pointer.number) && pointer.number > 0)
+    if (
+      type?.catalogAgentId &&
+      pointer &&
+      typeof pointer.revisionId === 'string' &&
+      pointer.revisionId.trim() &&
+      Number.isSafeInteger(pointer.number) &&
+      pointer.number > 0
+    )
       approved.add(type.catalogAgentId);
   }
   const ctx = { ...context, approvedSourceAgentIds: [...approved] };
@@ -125,7 +132,7 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
       rows,
       header: {
         kind: 'create',
-        label: MKTG_FAMILY_ACTION_LABELS.create(next.row.asset.runName ?? (type?.kind === 'run' ? next.row.asset.label : next.row.asset.label.toLowerCase())),
+        label: MKTG_FAMILY_ACTION_LABELS.create(next.row.asset.runName ?? next.row.asset.label),
         agentId: next.action.agentId,
         mode: type?.kind === 'living' ? MKTG_RUN_NEW_MODE : null,
         link: null,

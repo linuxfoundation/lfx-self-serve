@@ -18,7 +18,7 @@ import {
   summarizeMktgKit,
 } from './mktg-kit.utils';
 
-function document(agentKey: MktgDocumentListItem['agentKey'], createdAt: string | null = '2026-10-01T12:00:00'): MktgDocumentListItem {
+function document(agentKey: MktgDocumentListItem['agentKey'], createdAt: string | null = '2026-10-01T12:00:00Z'): MktgDocumentListItem {
   return {
     agentKey,
     documentId: 'living',
@@ -136,8 +136,8 @@ describe('Marketing kit plan of record', () => {
   it('counts one-off runs by UTC calendar month, never marking them stale', () => {
     const data = listing([
       document('linkedin-post'),
-      document('linkedin-post', '2026-10-31T12:00:00'),
-      document('linkedin-post', '2026-09-30T12:00:00'),
+      document('linkedin-post', '2026-10-31T12:00:00Z'),
+      document('linkedin-post', '2026-09-30T12:00:00Z'),
       document('linkedin-post', '2025-10-01T12:00:00'),
       document('linkedin-post', null),
     ]);

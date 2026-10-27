@@ -380,7 +380,7 @@ test.describe('Marketing family content', () => {
       await page
         .getByTestId(id)
         .getByRole('link')
-        .click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+        .click({ modifiers: ['ControlOrMeta'] });
       const destination = await newPage;
       await destination.waitForURL((url) => url.pathname + url.search === href);
       await destination.waitForLoadState('domcontentloaded');

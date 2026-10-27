@@ -311,6 +311,19 @@ describe('Marketing family page', () => {
     expect(reveal).toHaveBeenCalledOnce();
   });
 
+  it('formats living Current dates in UTC even when the application default would show the previous day', async () => {
+    TestBed.overrideProvider(DATE_PIPE_DEFAULT_OPTIONS, { useValue: { timezone: '-0700' } });
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((row) => ({ ...row, document: row.document ? { ...row.document, updatedAt: '2026-10-01T00:30:00Z' } : null })),
+      }))
+    );
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-current-messaging-framework"]')?.textContent).toContain('1 Oct');
+  });
+
   it('shows run dates without pretending revisionCount is a current version', async () => {
     families.update((value) =>
       value.map((family) => ({
