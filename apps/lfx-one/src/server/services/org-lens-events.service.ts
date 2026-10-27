@@ -54,16 +54,23 @@ export class OrgLensEventsService {
     const searchQueryFilter = searchQuery ? 'AND oe.EVENT_NAME ILIKE ?' : '';
 
     /**
-     * The list in two spellings. `scoped` is the real one; the unscoped one reads the precomputed
-     * `ORG_EVENTS.ORG_REGISTRATION_COUNT` and never touches the address table, and exists only for the
-     * degraded path in the catch below. `status=registered` has to follow the same expression, or the
-     * filter offers rows whose displayed count is 0.
+     * The list in THREE spellings, each needing strictly less than the one above it, and each entered
+     * only for a confirmed missing object (see the catch below).
+     *
+     * - `scoped` — the real one. Counts registrations whose address is in `ORG_PEOPLE_COMPANY_EMAILS`.
+     * - `unscoped` — for that address table being absent. Still RECOMPUTES from `EVENT_REGISTRATIONS`
+     *   at the drawer's grain, dropping the company-email filter and nothing else, so a row and the
+     *   drawer it opens still agree. It does not read the precomputed column.
+     * - `platinum` — for `EVENT_REGISTRATIONS` itself being absent. `ORG_EVENTS` alone with the
+     *   precomputed `ORG_REGISTRATION_COUNT`; the pre-PR query. This is the one mode where the count
+     *   does NOT agree with the drawer, because the drawer cannot degrade this far at all — it has
+     *   nothing to list without registrations, so a row count may stand beside an empty drawer.
+     *
+     * `status=registered` follows `countExpression` in every mode, or the filter offers rows whose
+     * displayed count is 0.
      */
     const buildListQuery = (mode: ListQueryMode): { sql: string; binds: string[] } => {
       const scoped = mode === 'scoped';
-      // `platinum` is the pre-PR query: ORG_EVENTS alone, no registrations, no address table. It is
-      // the only spelling that survives EVENT_REGISTRATIONS being unavailable — which this PR made
-      // load-bearing for the list when it started recomputing counts.
       const countExpression = mode === 'platinum' ? 'oe.ORG_REGISTRATION_COUNT' : 'COALESCE(cr.REGISTRATION_COUNT, 0)';
       let statusFilter = '';
       if (status === 'registered') {
@@ -264,7 +271,11 @@ export class OrgLensEventsService {
 
     const searchFilter = searchQuery ? 'AND (UPPER(COALESCE(er.FULL_NAME, er.EMAIL)) LIKE UPPER(?) OR UPPER(er.EMAIL) LIKE UPPER(?))' : '';
 
-    /** As with the list: the scoped drawer, and the pre-rule one for the degraded path below. */
+    /**
+     * The drawer in TWO spellings, not three: scoped, and unscoped for the address table being
+     * absent. There is no platinum equivalent — without `EVENT_REGISTRATIONS` the drawer has nothing
+     * to list, so it returns empty while the list falls through to its precomputed count.
+     */
     const buildAttendeesQuery = (scoped: boolean): { sql: string; binds: string[] } => {
       const sql = `
       ${scoped ? `WITH ${COMPANY_EMAIL_COVERAGE_CTE}` : ''}
