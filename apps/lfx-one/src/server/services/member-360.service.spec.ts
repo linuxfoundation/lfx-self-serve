@@ -279,6 +279,7 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), sha256: '0'.repeat(64) }), rootFinal(envelope)]);
     expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'hash' });
   });
   it('prefers direct finalized output over a newer receipt-bound carrier', async () => {
     const direct = member360Fixture();

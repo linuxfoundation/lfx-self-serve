@@ -139,14 +139,11 @@ export class Member360Service {
         for (const payload of payloads) {
           for (const text of this.finalCarrierTexts(payload)) {
             for (const candidate of extractMktgEnvelopeCandidates(text, MEMBER_360_CONTRACT_ID)) {
-              if (
-                !candidate ||
-                typeof candidate !== 'object' ||
-                !('content_sha256' in candidate) ||
-                typeof candidate.content_sha256 !== 'string' ||
-                !receipts.has(candidate.content_sha256)
-              )
+              if (!candidate || typeof candidate !== 'object') continue;
+              if (!('content_sha256' in candidate) || typeof candidate.content_sha256 !== 'string' || !receipts.has(candidate.content_sha256)) {
+                logger.debug(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'hash' });
                 continue;
+              }
               const receipt = receipts.get(candidate.content_sha256);
               const envelope = this.acceptCandidate(req, candidate, project, redactIdentity, 'receipt_bound_final');
               if (!receipt || !envelope) continue;
