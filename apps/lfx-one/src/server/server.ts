@@ -86,7 +86,7 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
-import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload, refreshExpiredSsrAccessToken } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -499,6 +499,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     persona: null,
     organizations: [],
   };
+
+  // See refreshExpiredSsrAccessToken's docstring — this is what makes an idle-but-valid session
+  // render as authenticated on a full page load instead of tripping the GH-4179 LaunchDarkly stall.
+  await refreshExpiredSsrAccessToken(req);
 
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
