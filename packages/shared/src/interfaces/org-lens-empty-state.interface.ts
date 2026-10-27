@@ -115,10 +115,14 @@ export interface OrgLensEmployerAffiliation {
    * - `non-member` — every one of them resolved to a Salesforce account, and none of those accounts
    *   has an active membership. This is the only value that may render "is not a member": it is a
    *   checked negative.
-   * - `unresolved` — at least one current employer could not be matched to an account at all, so
-   *   nothing is known about its membership. An unmatched name is not proof of no membership: the
-   *   match is by name, and a member company whose account name differs from the profile's wording
-   *   lands here. Callers must treat it like a failed lookup, never as `non-member`.
+   * - `unresolved` — the lookup succeeded but settled nothing. Two cases produce it: the caller has no
+   *   current employer at all (`employerName` is then `null`), or at least one of their current employers
+   *   could not be matched to an account. An unmatched name is not proof of no membership: the match is
+   *   by name, and a member company whose account name differs from the profile's wording lands here.
+   *
+   * `unresolved` is a successful answer of "unknown", not an outage: callers keep whatever they would show
+   * without an employer answer — today the `no-organization` empty state — and reserve `could-not-load` for
+   * a request that actually failed. Neither an unknown nor a failure may ever render as `non-member`.
    */
   membership: OrgLensEmployerMembership;
 }
