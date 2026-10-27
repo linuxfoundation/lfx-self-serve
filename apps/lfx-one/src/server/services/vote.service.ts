@@ -840,7 +840,7 @@ export class VoteService {
       });
     }
 
-    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid), this.getVoteSummaryRecipients(req, voteUid)]);
+    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
 
     const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
 
@@ -895,7 +895,7 @@ export class VoteService {
   // ============================================
 
   /**
-   * Fetches votes the current user has been invited to.
+   * Fetches votes the current user is still invited to; removed invitations never make a ballot actionable.
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<MyVotesResponse> {
@@ -906,18 +906,19 @@ export class VoteService {
         complete = false;
       },
     });
+    const eligibleResponses = responses.filter((response) => !response.voter_removed);
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
     // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
-    for (const r of responses) {
+    for (const r of eligibleResponses) {
       const id = getParentVoteId(r);
       if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(eligibleResponses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return { votes: [], complete };

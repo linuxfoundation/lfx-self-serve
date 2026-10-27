@@ -34,8 +34,8 @@ export class VoteDetailHeaderComponent {
   /** Active vote awaiting the viewer's ballot — shows Cast vote. */
   public readonly canCastVote = input<boolean>(false);
   /**
-   * Shows only the title, status and back navigation (#4330): set for a viewer who was never invited or was
-   * removed, and while access is still loading so vote metadata and actions never flash for them.
+   * Shows only the title, status and back navigation (#4330) until manager access or a successful,
+   * non-removed invitation lookup for this vote is verified, including loading and failed-lookup states.
    */
   public readonly limited = input<boolean>(false);
 

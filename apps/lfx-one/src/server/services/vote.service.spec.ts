@@ -1798,6 +1798,34 @@ describe('VoteService', () => {
       });
     });
 
+    it.each([IndexedVoteResponseStatus.AWAITING_RESPONSE, IndexedVoteResponseStatus.RESPONDED])(
+      'excludes removed invitations regardless of ballot status: %s',
+      async (vote_status) => {
+        fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status, voter_removed: true }]);
+
+        await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: true });
+        expect(proxyRequest).not.toHaveBeenCalled();
+        expect(getProjectsByIds).not.toHaveBeenCalled();
+      }
+    );
+
+    it('uses only current invitations for the feed and response status after a re-invitation', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: 'removed-vote', username: 'spec-user', voter_removed: true },
+        { vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: IndexedVoteResponseStatus.RESPONDED, voter_removed: true },
+        { vote_uid: MY_VOTE_UID, username: 'spec-user', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, voter_removed: false },
+      ]);
+      proxyRequest.mockResolvedValue(detailVote);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyVotes(req);
+
+      expect(result.complete).toBe(true);
+      expect(result.votes).toEqual([expect.objectContaining({ uid: MY_VOTE_UID, response_status: VoteResponseStatus.AWAITING_RESPONSE })]);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${MY_VOTE_UID}`, 'GET');
+    });
+
     it('orders by the canonical recency comparator — active tier first, creation_time desc within it (GH-1558)', async () => {
       // end_time desc (the pre-GH-1558 inline sort) would put UID_B before UID_A; creation_time desc must win.
       const UID_A = 'v0000000-0000-0000-0000-00000000d201';
@@ -2778,6 +2806,8 @@ describe('VoteService', () => {
 
     it('sends one email per recipient and returns the sent count', async () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(service.getVoteResults).toHaveBeenCalledWith(req, CANONICAL_UID, { canWrite: true });
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
       expect(result).toEqual({ recipient_count: 2, failed_count: 0 });

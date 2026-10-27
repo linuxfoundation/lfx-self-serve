@@ -82,8 +82,9 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
  * On a pseudo-anonymous vote the BFF holds totals, the abstention count and comments until the vote ends (`results_held`,
  * #3916): the page shows a held panel in their place and keeps the participation numbers.
  *
- * Non-managers see comments as text only, on named votes too (#4330) — the BFF strips commenter identity for them. A
- * viewer who was never invited or was removed (`isOutsider`) sees only the header basics and the voter-state panel.
+ * Non-managers see comments as text only, on named votes too (#4330) — the BFF strips commenter identity for them.
+ * Until manager access or a successful, non-removed invitation lookup for this vote is verified (`showVoteDetails`),
+ * the page shows only the header basics and the loading or voter-state panel.
  */
 @Component({
   selector: 'lfx-vote-detail',
