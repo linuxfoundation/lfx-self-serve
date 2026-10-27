@@ -14,7 +14,7 @@ Tasks are how a program gives a mentee work and tracks it. Program Admins and th
 ## Before you begin
 
 - You must be a Program Admin or an approved mentor on the program.
-- The mentee must be accepted on the term before they can be given non-prerequisite tasks.
+- The mentee must be accepted on the term before they can be given non-prerequisite tasks. Until a mentee is accepted, **Create Group Task** is disabled.
 
 ## The task form
 
