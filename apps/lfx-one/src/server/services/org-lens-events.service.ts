@@ -86,6 +86,7 @@ export class OrgLensEventsService {
         oe.EVENT_URL,
         oe.EVENT_REGISTRATION_URL,
         ${countExpression} AS ORG_REGISTRATION_COUNT,
+        ${scoped ? 'cov.COVERAGE_ROWS' : '-1'} AS COVERAGE_ROWS,
         NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
         oe.ORG_SPEAKER_ACCEPTED_COUNT,
         oe.ORG_SPEAKER_SUBMITTED_COUNT,
@@ -94,6 +95,7 @@ export class OrgLensEventsService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
       LEFT JOIN event_registration_counts cr
         ON cr.EVENT_ID = oe.EVENT_ID
+      ${scoped ? 'CROSS JOIN company_email_coverage cov' : ''}
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
         ${searchQueryFilter}
@@ -118,20 +120,34 @@ export class OrgLensEventsService {
         `events:v2:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventListRows(scopedQuery.sql, scopedQuery.binds, true),
-        isEventRowArray
+        isEventRowArray,
+        hasCompanyEmailCoverage
       );
     } catch (scopedError) {
       /**
        * Before this rule the list read ORG_EVENTS alone. Joining the address table means its being
        * missing, ungranted or mid-deploy would take the whole Events page down — an org with events
        * would render as an org with none, which is indistinguishable from the truth. `org-lens-people`
-       * treats this same table as independently failable, so this does too: fall back to the
-       * precomputed count, which is exactly what shipped before the scoping existed.
+       * treats this same table as independently failable, so this does too.
+       *
+       * ONLY for a confirmed missing object. Retrying after any failure would drop the company-email
+       * filter whenever the scoped query timed out or hit a transient fault with the address table
+       * perfectly healthy — silently showing personal-email registrants, which is the one thing this
+       * rule exists to prevent. A timeout retry would also pile on work while the first query may
+       * still be holding its connection.
        *
        * Deliberately NOT cached. The result is unscoped, and storing it under the scoped key would
        * keep serving unfiltered counts long after the table came back.
        */
-      logger.warning(req, 'get_org_lens_events', 'Company-email scoping failed, retrying unscoped', {
+      if (!SnowflakeService.isMissingObjectError(scopedError)) {
+        logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
+          err: scopedError,
+          account_id: accountId,
+        });
+        return { data: [], total: 0, pageSize, offset };
+      }
+
+      logger.warning(req, 'get_org_lens_events', 'Address table unavailable, retrying unscoped', {
         err: scopedError,
         account_id: accountId,
       });
@@ -211,7 +227,8 @@ export class OrgLensEventsService {
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
         MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
-        MAX(er.EVENT_NAME)                             AS EVENT_NAME
+        MAX(er.EVENT_NAME)                             AS EVENT_NAME,
+        ${scoped ? 'MAX(cov.COVERAGE_ROWS)' : '-1'}        AS COVERAGE_ROWS
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
       ${scoped ? COMPANY_EMAIL_JOINS : ''}
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
@@ -243,13 +260,23 @@ export class OrgLensEventsService {
         `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds, true),
-        isContactRowArray
+        isContactRowArray,
+        hasCompanyEmailCoverage
       );
     } catch (scopedError) {
-      // Same reasoning as the list, and the same reason it is not cached: an unavailable address table
-      // degrades this drawer to the unscoped roster rather than to an empty one. Both surfaces fall
-      // back together, so a row and the drawer it opens still agree.
-      logger.warning(req, 'get_event_attendees', 'Company-email scoping failed, retrying unscoped', {
+      // Same reasoning as the list, including the missing-object guard: any other failure must not
+      // quietly drop the filter. Both surfaces fall back on the same condition, so a row and the
+      // drawer it opens still agree.
+      if (!SnowflakeService.isMissingObjectError(scopedError)) {
+        logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
+          err: scopedError,
+          account_id: accountId,
+          event_id: eventId,
+        });
+        return { eventId, eventName: '', total: 0, data: [] };
+      }
+
+      logger.warning(req, 'get_event_attendees', 'Address table unavailable, retrying unscoped', {
         err: scopedError,
         account_id: accountId,
         event_id: eventId,
@@ -550,6 +577,23 @@ function registrationCountsCte(scoped: boolean): string {
         ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         GROUP BY er.EVENT_ID
       )`;
+}
+
+/**
+ * Refuses to cache a result produced while the account had NO address coverage.
+ *
+ * Those rows are unfiltered — the `cov.COVERAGE_ROWS = 0` arm of the rule let every registration
+ * through — so they are a fallback by a different mechanism than the missing-table retry, and they
+ * deserve the same treatment. Cached, they would keep a list unfiltered for up to a full TTL after
+ * coverage first lands for an org, while an uncached drawer alongside it already applied the new
+ * filter. Reads are unaffected; only the write is skipped, so a zero-coverage org simply queries
+ * live until it has coverage worth caching.
+ *
+ * An empty result carries no flag and is cacheable: with zero coverage nothing is filtered out, so
+ * no rows means no rows either way.
+ */
+function hasCompanyEmailCoverage(rows: readonly { COVERAGE_ROWS?: unknown }[]): boolean {
+  return !rows.some((row) => row.COVERAGE_ROWS === 0);
 }
 
 /** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */

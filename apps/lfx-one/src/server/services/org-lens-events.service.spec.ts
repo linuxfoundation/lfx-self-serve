@@ -20,8 +20,13 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
 }));
 
-vi.mock('./snowflake.service', () => ({
-  SnowflakeService: { getInstance: () => ({ execute }) },
+vi.mock('./snowflake.service', async () => ({
+  SnowflakeService: {
+    getInstance: () => ({ execute }),
+    // The REAL predicate, not a stub: snowflake-error.helper.ts says it was extracted precisely so
+    // specs depend on it rather than a hand-copied regex that can drift.
+    isMissingObjectError: (await import('../helpers/snowflake-error.helper')).isMissingObjectError,
+  },
 }));
 /**
  * The REAL `withOrgCache` over a Map-backed Redis, as `org-lens-people.service.spec.ts` does. A stub
@@ -165,7 +170,19 @@ beforeEach(() => {
       .replaceAll('ILIKE', 'LIKE')
       // Snowflake spells it CHR (CHAR is also a type name there); SQLite spells it char.
       .replaceAll(/\bCHR\(/g, 'char(');
-    return { rows: database.prepare(translated).all(...binds) };
+    try {
+      return { rows: database.prepare(translated).all(...binds) };
+    } catch (error) {
+      // The harness already translates dialect; it has to translate the ERROR SHAPE too, or the real
+      // isMissingObjectError predicate can never recognise a dropped fixture table and the
+      // missing-object branch goes untested.
+      const message = error instanceof Error ? error.message : String(error);
+      const missingTable = /no such table: (\w+)/i.exec(message);
+      if (missingTable) {
+        throw new Error(`SQL compilation error: Object '${missingTable[1]}' does not exist or not authorized.`);
+      }
+      throw error;
+    }
   });
 
   service = new OrgLensEventsService();
@@ -386,6 +403,30 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
   });
 
+  it('does not drop the company-email filter when the scoped query fails for another reason', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    addRegistration('someone@gmail.example', 'Someone Else');
+
+    // A timeout, a transient fault, anything that is not "the table isn't there". Falling back here
+    // would quietly show personal-email registrants with the address table perfectly healthy — the
+    // one outcome this whole rule exists to prevent.
+    const realExecute = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[], options?: unknown) => {
+      if (query.includes('company_email_coverage')) {
+        throw new Error('JavaScript execution error: Operation timed out');
+      }
+      return realExecute(query, binds, options);
+    });
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data).toEqual([]);
+    expect(drawer.data).toEqual([]);
+  });
+
   it('keeps a missing address table out of the shared circuit breaker', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
@@ -422,6 +463,26 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data).toHaveLength(1);
     expect(list.data[0].orgAttendeeCount).toBe(2);
     expect(drawer.total).toBe(2);
+  });
+
+  it('does not cache results produced while the org had no coverage', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('someone@gmail.example', 'Someone Else');
+
+    // Zero coverage, so the in-SQL fallback let this registration through unfiltered.
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(drawer.total).toBe(1);
+
+    // Unfiltered rows are a fallback by another mechanism and must not be stored, or coverage
+    // arriving mid-TTL leaves a cached unfiltered list beside a freshly filtered drawer.
+    expect([...cacheValues.keys()]).toEqual([]);
+
+    addCompanyEmail('grace@company.example');
+
+    expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].orgAttendeeCount).toBe(0);
+    expect((await service.getEventAttendees(REQ, ACCOUNT, EVENT)).total).toBe(0);
   });
 
   it('does not cache the unscoped fallback, for either surface', async () => {
