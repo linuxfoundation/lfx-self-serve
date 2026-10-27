@@ -296,14 +296,14 @@ describe('OrgLensEventsService company-email scoping', () => {
 
   it('does not strip characters that merely appear in an escape sequence', async () => {
     addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.net');
-    // `.net` ends in `t`. A character-set TRIM written as '\t\n\r ' eats it under SQLite's
-    // non-escaping literals, which is why the normalization uses code points.
-    addRegistration('  ada@company.net  ', 'Ada Lovelace');
+    addCompanyEmail('ada@company.test');
+    // `.test` ends in `t` (and is a reserved TLD). A character-set TRIM written as '\t\n\r ' eats
+    // that `t` under SQLite's non-escaping literals, which is why the normalization uses code points.
+    addRegistration('  ada@company.test  ', 'Ada Lovelace');
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.net']);
+    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.test']);
   });
 
   it('enriches every address variant in a group from the same profile', async () => {

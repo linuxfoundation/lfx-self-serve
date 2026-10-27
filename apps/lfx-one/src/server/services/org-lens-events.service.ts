@@ -353,7 +353,7 @@ export class OrgLensEventsService {
  * Spelled with code points rather than the obvious `TRIM(x, '\t\n\r ')`, because that literal is
  * not portable and fails unsafely: SQLite does not treat backslash as an escape, so the character
  * set reads as the literal characters `\`, `t`, `n`, `r` and space — and
- * `TRIM('ada@company.net ', '\t\n\r ')` returns `ada@company.ne`, silently eating the `t`. The
+ * `TRIM('ada@company.test ', '\t\n\r ')` returns `ada@company.tes`, silently eating the `t`. The
  * spec harness runs this SQL against SQLite, so that spelling would corrupt addresses in tests while
  * behaving differently in production. `CHR` is unambiguous in Snowflake; the harness maps it to
  * SQLite's `char`.
