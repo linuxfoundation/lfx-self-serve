@@ -469,6 +469,15 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
  *
+ * KNOWN GAP, NOT CLOSED HERE. The list and the drawer are separate requests with separate cache
+ * entries, so each picks its own spelling. During an address-table outage a list row served from a
+ * cache entry written while the table was healthy (scoped) can sit next to a drawer that just fell
+ * back (unscoped), and the drawer then lists people the row did not count. Both are internally
+ * consistent; they disagree with each other for at most one `ORG_LENS_SNOWFLAKE_TTL_SECONDS`, and
+ * they re-converge once the entry expires or the table returns. Closing it properly means carrying
+ * the chosen scope across both requests and both cache keys, or reporting the drawer as unavailable
+ * when it cannot honour the list's scope — the labelled-unavailable surface tracked in #4408.
+ *
  * KNOWN, DELIBERATE GAP. The non-blank requirement applies on the fallback path too, so a registration
  * with no address at all is dropped there, where before this rule it would have reached the drawer.
  * Upstream dedup is `PARTITION BY email, event_id` and NULLs partition together, so this is at most one
