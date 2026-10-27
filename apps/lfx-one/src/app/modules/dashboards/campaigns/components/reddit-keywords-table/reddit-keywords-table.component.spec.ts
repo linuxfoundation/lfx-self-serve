@@ -825,6 +825,24 @@ describe('RedditKeywordsTableComponent', () => {
       expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
     });
 
+    // The same for a project round trip: the table stays mounted, and returning to the project is a new
+    // read, so a note recorded there before the switch must stay gone.
+    it('does not bring a "Not sent" note back when the project is switched away and back', () => {
+      getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
+
+      fixture.componentRef.setInput('projectSlug', 'cncf');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.detectChanges();
+
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+      expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).toBeNull();
+    });
+
     // The newer attempt that went nowhere is shown, beside the older write outcome it does not erase.
     it('shows a retry that was not sent beside the earlier unconfirmed outcome, and keeps the verify-first advice', () => {
       addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
@@ -964,6 +982,23 @@ describe('RedditKeywordsTableComponent', () => {
         expect(note).not.toBeNull();
         expect(note!.getAttribute('role')).toBe('alert');
         expect(note!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      });
+
+      // Leaving the PROJECT abandons the add after the page has moved on, so no read of the add's project
+      // is current. The note must still be there on the return, and go on the next re-read after it.
+      it('shows the "Not sent" note on returning to the project an add was abandoned by leaving', () => {
+        fixture.componentRef.setInput('projectSlug', 'cncf');
+        fixture.detectChanges();
+        expect(read.observed).toBe(false);
+
+        fixture.componentRef.setInput('projectSlug', 'tlf');
+        fixture.detectChanges();
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+
+        fixture.componentRef.setInput('reloadToken', 1);
+        fixture.detectChanges();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
       });
 
       // Leaving the scope cancels the read; the row still says why nothing went out.
