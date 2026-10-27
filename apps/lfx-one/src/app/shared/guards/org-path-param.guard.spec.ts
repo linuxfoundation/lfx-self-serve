@@ -301,20 +301,18 @@ describe('orgPathParamGuard', () => {
    * whose loss had been a high-severity regression in round 1.
    */
   describe('All Organizations roll-up', () => {
-    it('adopts /org/all without asking the resolver', async () => {
+    /**
+     * The `admitWhilePending` argument is the contract this guard owes the service, so it is pinned
+     * here: on a cold deep link the grant sets have not answered, and without opting in a
+     * conglomerate admin whose siblings are inherited grants would be bounced to their single
+     * persona seed before anyone knows better. What that flag then *does* is the service's
+     * behaviour and is covered by its own specs — asserting it here against a mock that honours the
+     * argument would only restate this expectation.
+     */
+    it('adopts /org/all without asking the resolver, opting into admission while pending', async () => {
       expect(await runGuard('all', '/org/all/people')).toBe(true);
       expect(selectRollUp).toHaveBeenCalledWith({ admitWhilePending: true });
       expect(resolve).not.toHaveBeenCalled();
-    });
-
-    /**
-     * On a cold deep link the grant sets have not answered. A conglomerate admin whose siblings are
-     * inherited grants would otherwise be bounced to their single persona seed before anyone knows
-     * better; the service admits on `admitWhilePending` and its reconciliation effect settles it.
-     */
-    it('admits the roll-up while eligibility is still pending', async () => {
-      selectRollUp.mockImplementation((options?: { admitWhilePending?: boolean }) => options?.admitWhilePending === true);
-      expect(await runGuard('all', '/org/all/people')).toBe(true);
     });
 
     // Re-pointed at the organization they do hold, keeping the page they asked for — not bounced to
