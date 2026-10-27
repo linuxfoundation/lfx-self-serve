@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -18,7 +19,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_SUMMARY_NOT_ENDED, VOTES_MOBILE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -83,6 +84,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
+    NgTemplateOutlet,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -100,6 +102,7 @@ export class VotesTableComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
+  private readonly breakpointObserver = inject(BreakpointObserver);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -187,6 +190,10 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  // Phone layout (cards) below the sm breakpoint; always false on the server so SSR renders the table and the client swaps on hydration.
+  protected readonly isMobile: Signal<boolean> = this.initIsMobile();
+  protected readonly actionButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'whitespace-nowrap min-h-[44px]' : 'whitespace-nowrap'));
+  protected readonly moreButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'min-w-[44px] min-h-[44px]' : ''));
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();
@@ -508,6 +515,13 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initIsMobile(): Signal<boolean> {
+    if (!isPlatformBrowser(this.platformId)) return signal(false);
+    return toSignal(this.breakpointObserver.observe(VOTES_MOBILE_MEDIA_QUERY).pipe(map((state) => state.matches)), {
+      initialValue: this.breakpointObserver.isMatched(VOTES_MOBILE_MEDIA_QUERY),
+    });
+  }
+
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const base: FilterPillOption[] = [
