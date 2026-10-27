@@ -116,7 +116,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventUrl: 'https://events.linuxfoundation.org/open-source-summit',
         eventRegistrationUrl: 'https://events.linuxfoundation.org/open-source-summit/register',
         orgAttendeeCount: 3,
-        eventRegistrationsGoal: 1500,
         orgSpeakerAcceptedCount: 1,
         orgSpeakerSubmittedCount: 2,
         isOrgSponsor: true,
@@ -136,7 +135,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventUrl: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america',
         eventRegistrationUrl: null,
         orgAttendeeCount: 2,
-        eventRegistrationsGoal: 2200,
         orgSpeakerAcceptedCount: 0,
         orgSpeakerSubmittedCount: 1,
         isOrgSponsor: false,
@@ -231,7 +229,7 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-events-data-table')).toBeVisible();
     // Shared columns still render, but the Action column is dropped on the past tab.
     await expect(page.getByTestId('org-event-attendees-event-1')).toBeVisible();
-    // The org's own registrant count only — never the event-wide goal the stub still carries.
+    // The org's own registrant count only. The goal is no longer in the payload at all (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
@@ -265,7 +263,7 @@ test.describe('Org Events Dashboard', () => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Upcoming tab: the cell is the org's count alone, with no `/ 1500` goal beside it.
+    // Upcoming tab: the cell is the org's count alone; no goal is served or rendered (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
 
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();

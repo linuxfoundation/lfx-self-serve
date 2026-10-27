@@ -29,8 +29,6 @@ export interface OrgEvent {
   readonly eventUrl: string | null;
   readonly eventRegistrationUrl: string | null;
   readonly orgAttendeeCount: number;
-  /** Event-wide registration goal/target (EVENT_REGISTRATIONS_GOAL); null when no goal is set. */
-  readonly eventRegistrationsGoal: number | null;
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
   readonly isOrgSponsor: boolean;
