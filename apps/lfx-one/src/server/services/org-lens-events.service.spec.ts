@@ -61,10 +61,10 @@ let database: SqlDatabase;
 let service: OrgLensEventsService;
 
 /** One registration for `email`, attributed upstream to `account` regardless of the address used. */
-function addRegistration(email: string | null, fullName: string, account = ACCOUNT, eventId = EVENT): void {
+function addRegistration(email: string | null, fullName: string, account = ACCOUNT, eventId = EVENT, jobTitle = 'Engineer'): void {
   database
     .prepare('INSERT INTO EVENT_REGISTRATIONS VALUES (?, ?, ?, ?, ?, ?)')
-    .run(account, eventId, email, fullName, 'Engineer', 'KubeCon + CloudNativeCon North America 2026');
+    .run(account, eventId, email, fullName, jobTitle, 'KubeCon + CloudNativeCon North America 2026');
 }
 
 /** An address the warehouse holds for the org — the employer ∩ employee intersection. */
@@ -122,7 +122,9 @@ beforeEach(() => {
       .replaceAll('ANALYTICS.SILVER_FACT.', '')
       .replaceAll('oe.IS_PAST_EVENT = TRUE', '0')
       .replaceAll('oe.IS_PAST_EVENT = FALSE', '1')
-      .replaceAll('ILIKE', 'LIKE');
+      .replaceAll('ILIKE', 'LIKE')
+      // Snowflake spells it CHR (CHAR is also a type name there); SQLite spells it char.
+      .replaceAll(/\bCHR\(/g, 'char(');
     return { rows: database.prepare(translated).all(...binds) };
   });
 
@@ -279,14 +281,40 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data[0].contactId).toBe('ada@company.example');
   });
 
+  it('matches an address padded with tabs or newlines, not just spaces', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    // Coverage exists, so a registrant this normalization fails to match is dropped outright.
+    addRegistration('\tada@company.example\n', 'Ada Lovelace');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example']);
+  });
+
+  it('does not strip characters that merely appear in an escape sequence', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.net');
+    // `.net` ends in `t`. A character-set TRIM written as '\t\n\r ' eats it under SQLite's
+    // non-escaping literals, which is why the normalization uses code points.
+    addRegistration('  ada@company.net  ', 'Ada Lovelace');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.net']);
+  });
+
   it('enriches every address variant in a group from the same profile', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
     addProfile('ada@company.example', 'Ada Lovelace', 'Principal Engineer');
     addRegistration('ada@company.example', 'Ada L');
-    // Same person, padded. Its registration name sorts above the profile name, so if this row misses
-    // the profile join the MAX() below returns the registration fallback instead of the profile.
-    addRegistration('  Ada@Company.Example  ', 'Zed Padded');
+    // Same person, padded. BOTH its name and its title sort above the profile's, so if this row
+    // misses the profile join the MAX() below returns the registration fallback for each. Seeding a
+    // title that sorts BELOW the profile's would leave the title assertion passing either way.
+    addRegistration('  Ada@Company.Example  ', 'Zed Padded', ACCOUNT, EVENT, 'Zzz Registration Title');
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 

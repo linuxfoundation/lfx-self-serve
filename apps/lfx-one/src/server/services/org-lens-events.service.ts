@@ -344,11 +344,32 @@ export class OrgLensEventsService {
  * every cache miss rather than as an error. Hoisting coverage into a one-row CTE keeps both `OR`
  * operands plain column predicates. Takes one bind (the account id).
  */
+/**
+ * Snowflake's single-argument `TRIM` removes spaces and nothing else — its docs are explicit that
+ * "a specification of `' '` in characters does not remove other whitespace characters". A tab- or
+ * newline-padded address would therefore survive normalization and match nothing, excluding a real
+ * registrant whenever the account has coverage.
+ *
+ * Spelled with code points rather than the obvious `TRIM(x, '\t\n\r ')`, because that literal is
+ * not portable and fails unsafely: SQLite does not treat backslash as an escape, so the character
+ * set reads as the literal characters `\`, `t`, `n`, `r` and space — and
+ * `TRIM('ada@company.net ', '\t\n\r ')` returns `ada@company.ne`, silently eating the `t`. The
+ * spec harness runs this SQL against SQLite, so that spelling would corrupt addresses in tests while
+ * behaving differently in production. `CHR` is unambiguous in Snowflake; the harness maps it to
+ * SQLite's `char`.
+ */
+const EMAIL_WHITESPACE = `CHR(9) || CHR(10) || CHR(13) || ' '`;
+
+/** One normalization, used everywhere an address is compared, grouped, counted or tested for blankness. */
+function normalizedEmail(column: string): string {
+  return `LOWER(TRIM(${column}, ${EMAIL_WHITESPACE}))`;
+}
+
 const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
         SELECT COUNT(*) AS COVERAGE_ROWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
         WHERE ACCOUNT_ID = ?
-          AND NULLIF(TRIM(EMAIL), '') IS NOT NULL
+          AND NULLIF(TRIM(EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL
       )`;
 
 /**
@@ -361,7 +382,7 @@ const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
 const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
         ON ce.ACCOUNT_ID = er.ACCOUNT_ID
-        AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))`;
+        AND ${normalizedEmail('ce.EMAIL')} = ${normalizedEmail('er.EMAIL')}`;
 
 /**
  * A registration counts for this org only when its address is one the warehouse already holds for the
@@ -379,7 +400,7 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
  */
-const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL), '') IS NOT NULL
+const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL
           AND (ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
 
 /**
@@ -392,7 +413,7 @@ const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL), '') IS NOT NULL
  * It is also the drawer's `CONTACT_ID`, which is sound because nothing resolves a person from it —
  * downstream it is a list-tracking key and an avatar colour seed.
  */
-const REGISTRANT_EMAIL_KEY = `LOWER(TRIM(er.EMAIL))`;
+const REGISTRANT_EMAIL_KEY = normalizedEmail('er.EMAIL');
 
 /**
  * The person-table side of that same identity, so the profile join sees exactly what the grouping
@@ -403,7 +424,7 @@ const REGISTRANT_EMAIL_KEY = `LOWER(TRIM(er.EMAIL))`;
  * name over the profile's. Normalizing both sides identically means every row in a group carries the
  * same enrichment, so the aggregate has nothing inconsistent to choose between.
  */
-const ORG_PERSON_EMAIL_KEY = `LOWER(TRIM(p.EMAIL))`;
+const ORG_PERSON_EMAIL_KEY = normalizedEmail('p.EMAIL');
 
 /**
  * Per-event registrant count under that rule, so a row and the drawer it opens never disagree.
