@@ -181,7 +181,7 @@ export class OrgLensEventsService {
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
       ${COMPANY_EMAIL_JOINS}
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-        ON UPPER(p.EMAIL) = UPPER(er.EMAIL) AND p.ACCOUNT_ID = ?
+        ON ${ORG_PERSON_EMAIL_KEY} = ${REGISTRANT_EMAIL_KEY} AND p.ACCOUNT_ID = ?
       WHERE er.EVENT_ID = ?
         AND er.ACCOUNT_ID = ?
         AND ${COMPANY_EMAIL_QUALIFIES}
@@ -393,6 +393,17 @@ const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL), '') IS NOT NULL
  * downstream it is a list-tracking key and an avatar colour seed.
  */
 const REGISTRANT_EMAIL_KEY = `LOWER(TRIM(er.EMAIL))`;
+
+/**
+ * The person-table side of that same identity, so the profile join sees exactly what the grouping
+ * does. It previously matched on `UPPER(p.EMAIL) = UPPER(er.EMAIL)` — case-insensitive but not
+ * whitespace-insensitive — which stopped mattering only while the drawer grouped on the raw column.
+ * Once variants collapse into one group, a padded registration misses the profile while its unpadded
+ * twin matches, and `MAX(COALESCE(p.NAME, er.FULL_NAME, …))` can then return the registration's own
+ * name over the profile's. Normalizing both sides identically means every row in a group carries the
+ * same enrichment, so the aggregate has nothing inconsistent to choose between.
+ */
+const ORG_PERSON_EMAIL_KEY = `LOWER(TRIM(p.EMAIL))`;
 
 /**
  * Per-event registrant count under that rule, so a row and the drawer it opens never disagree.

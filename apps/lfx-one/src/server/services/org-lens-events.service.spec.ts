@@ -72,6 +72,11 @@ function addCompanyEmail(email: string | null, account = ACCOUNT): void {
   database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(account, `person-${email}`, null, email, 1);
 }
 
+/** A roster profile, the source the drawer prefers over the registration's own name and title. */
+function addProfile(email: string, name: string, title: string, account = ACCOUNT): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?, ?)').run(account, email, name, title);
+}
+
 function addEvent(eventId = EVENT, precomputedCount = 99): void {
   database
     .prepare('INSERT INTO ORG_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -272,6 +277,22 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data[0].orgAttendeeCount).toBe(1);
     expect(drawer.total).toBe(1);
     expect(drawer.data[0].contactId).toBe('ada@company.example');
+  });
+
+  it('enriches every address variant in a group from the same profile', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addProfile('ada@company.example', 'Ada Lovelace', 'Principal Engineer');
+    addRegistration('ada@company.example', 'Ada L');
+    // Same person, padded. Its registration name sorts above the profile name, so if this row misses
+    // the profile join the MAX() below returns the registration fallback instead of the profile.
+    addRegistration('  Ada@Company.Example  ', 'Zed Padded');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.total).toBe(1);
+    expect(drawer.data[0].name).toBe('Ada Lovelace');
+    expect(drawer.data[0].jobTitle).toBe('Principal Engineer');
   });
 
   /**
