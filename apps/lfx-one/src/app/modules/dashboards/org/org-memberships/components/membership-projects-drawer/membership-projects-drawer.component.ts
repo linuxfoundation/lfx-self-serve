@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, ElementRef, inject, input, model, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  type AfterRenderRef,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  model,
+  PLATFORM_ID,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -27,6 +40,7 @@ export class MembershipProjectsDrawerComponent {
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -48,6 +62,28 @@ export class MembershipProjectsDrawerComponent {
   private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
   private previouslyFocusedElement: HTMLElement | null = null;
 
+  // Gates the live region's real text (see statusMessage() and the template). Reset to false on
+  // every close (initProjectsData()'s !visible branch — the one path every close goes through),
+  // not on show: PrimeNG's onShow fires after the panel node is already inserted for that open, so
+  // resetting only there would leave a stale `true` from the previous open sitting on the first
+  // paint of every reopen. Flips true via afterNextRender(), so the real text always arrives as a
+  // mutation on an already-painted node — which is what makes it announce.
+  protected readonly contentRevealed = signal(false);
+  private revealRef: AfterRenderRef | null = null;
+
+  // Text for the sr-only live region. Lives inside <p-drawer>'s content deliberately: the panel is
+  // aria-modal="true", and AT treats content outside an open modal's subtree as unreachable, so a
+  // hoisted sibling region would be announced unreliably. Being inside means the node is destroyed
+  // and recreated on every open — contentRevealed handles what that implies. Covers every state
+  // transition a Retry click can cause (failure -> success, or failure -> failure again), where the
+  // visible content looks identical without reading it.
+  protected readonly statusMessage = computed<string>(() => {
+    if (this.loading()) return 'Loading projects…';
+    if (this.loadFailed()) return 'Unable to load projects.';
+    const count = this.projectsData()?.projects.length ?? 0;
+    return `${count} project${count === 1 ? '' : 's'} loaded.`;
+  });
+
   // p-drawer never moves focus into the panel on open, nor restores it on close; it only traps Tab
   // once focus is already inside. Capture the trigger before moving focus in, so (onHide) can hand
   // it back. (onHide) fires for Escape and the close button, not for a programmatic
@@ -57,6 +93,11 @@ export class MembershipProjectsDrawerComponent {
     if (!isPlatformBrowser(this.platformId)) return;
     this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.titleRef()?.nativeElement.focus();
+
+    // Belt-and-braces, not the sole guarantee — see contentRevealed's own comment.
+    this.contentRevealed.set(false);
+    this.revealRef?.destroy();
+    this.revealRef = afterNextRender(() => this.contentRevealed.set(true), { injector: this.injector });
   }
 
   protected onDrawerHide(): void {
@@ -97,7 +138,15 @@ export class MembershipProjectsDrawerComponent {
     return toSignal(
       trigger$.pipe(
         switchMap(({ visible, orgUid, foundationId }) => {
-          if (!visible || !orgUid || !foundationId) return of(null);
+          if (!visible || !orgUid || !foundationId) {
+            // The one path every close goes through, unlike (onHide) — see contentRevealed's
+            // comment. Destroys any pending reveal too, so a programmatic close can't have its
+            // afterNextRender callback fire afterwards and re-set contentRevealed to true.
+            this.contentRevealed.set(false);
+            this.revealRef?.destroy();
+            this.revealRef = null;
+            return of(null);
+          }
           this.searchTerm.set('');
           this.loading.set(true);
           this.loadFailed.set(false);

@@ -77,7 +77,35 @@ async function render(memberships: OrgActiveMembership[] = []) {
           getActiveMemberships: () => of(activeResponse(memberships)),
           getExpiredMemberships: vi.fn(),
           getDiscoverOpportunities: vi.fn(),
-          getFoundationProjects: () => of({ accountId: 'acc-1', foundationId: 'cncf', projects: [] }),
+          getFoundationProjects: () =>
+            of({
+              accountId: 'acc-1',
+              foundationId: 'cncf',
+              projects: [
+                {
+                  projectId: 'p-1',
+                  projectSlug: 'k8s',
+                  projectName: 'Kubernetes',
+                  isLfProject: true,
+                  influence: 'Leading',
+                  maintainers: 2,
+                  contributors: 9,
+                  collaborators: 4,
+                  commits: 120,
+                },
+                {
+                  projectId: 'p-2',
+                  projectSlug: 'envoy',
+                  projectName: 'Envoy',
+                  isLfProject: true,
+                  influence: 'Silent',
+                  maintainers: 0,
+                  contributors: 1,
+                  collaborators: 0,
+                  commits: 3,
+                },
+              ],
+            }),
         },
       },
     ],
@@ -149,6 +177,24 @@ describe('OrgMembershipsComponent', () => {
 
     expect(hasInDocument('membership-projects-drawer-title')).toBe(true);
     expect(document.querySelector('[data-testid="membership-projects-drawer-subtitle"]')?.textContent).toContain('Cloud Native Computing Foundation (CNCF)');
+  });
+
+  it("announces the loaded project count in the panel's live region", async () => {
+    const { fixture } = await render([membershipRow(3)]);
+    await settleActiveFetch(fixture);
+
+    (fixture.nativeElement.querySelector('[data-testid="memberships-org-projects-cncf"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    // afterNextRender gates the real text, so the first paint is deliberately empty.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fixture.detectChanges();
+
+    const status = document.querySelector('[data-testid="membership-projects-drawer-status"]');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.textContent?.trim()).toBe('2 projects loaded.');
   });
 
   it('closes the projects side panel when the selected organization changes', async () => {

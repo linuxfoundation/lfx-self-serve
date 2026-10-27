@@ -42,6 +42,14 @@
     </div>
   </ng-template>
 
+  <!-- Inside <p-drawer>, deliberately not hoisted out: the panel is aria-modal="true" (via [pt]
+       above), and content outside a modal's subtree is unreliable for AT to reach while it's open.
+       That means this node IS destroyed and recreated on every open; contentRevealed (see its own
+       comment in the .ts) handles what that implies for the first paint. -->
+  <p class="sr-only" role="status" aria-live="polite" data-testid="membership-projects-drawer-status">
+    {{ contentRevealed() ? statusMessage() : '' }}
+  </p>
+
   <div class="flex flex-col gap-4 h-full">
     <!-- Search -->
     <div class="relative">
@@ -59,7 +67,7 @@
 
     <!-- List -->
     @if (loading()) {
-      <div class="flex items-center justify-center py-16">
+      <div class="flex items-center justify-center py-16" data-testid="membership-projects-loading">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
       </div>
     } @else if (loadFailed()) {
