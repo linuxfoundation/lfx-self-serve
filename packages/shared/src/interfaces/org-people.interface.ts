@@ -208,12 +208,3 @@ export interface OrgDrawerDetailResult {
   detail: OrgAllEmployeeDetail | null;
   error: boolean;
 }
-
-// Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
-
-/** One row of `ORG_PEOPLE_COMPANY_EMAILS`. */
-export interface OrgPersonCompanyEmailRow {
-  EMAIL: string | null;
-  /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
-  IS_PRIMARY: boolean | number | null;
-}
