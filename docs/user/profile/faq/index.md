@@ -4,7 +4,7 @@ description: Frequently asked questions about your personal profile and public p
 audience: [all]
 product_area: Profile
 tags: [profile, faq, about-me, photo, public-profile, visibility]
-last_updated: 2026-08-17
+last_updated: 2026-10-27
 intercom_collection: Profile
 ---
 
@@ -34,4 +34,4 @@ Those live in the [Account](../../account/) section, not your personal profile. 
 
 ## Who do I contact if I cannot access my account?
 
-Contact LFX support via in-app messaging. If you cannot sign in at all, use the login page's help or forgotten password link.
+Contact LFX support. If you cannot sign in at all, use the login page's help or forgotten password link.
