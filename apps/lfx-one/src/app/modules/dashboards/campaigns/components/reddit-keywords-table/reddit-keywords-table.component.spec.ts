@@ -904,6 +904,53 @@ describe('RedditKeywordsTableComponent', () => {
         expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
       });
 
+      // The parent passes `null` targets while it re-reads its campaign list: unknown, not "left the
+      // lever". The add waits for the list, then checks it against the targets that come back.
+      it('waits out a campaign-list reload and then sends', () => {
+        fixture.componentRef.setInput('negativeTargets', null);
+        fixture.detectChanges();
+        answer();
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+
+        fixture.componentRef.setInput('negativeTargets', { t3_a: { campaignId: 'c-uuid-a', campaignName: 'KubeCon EU' } });
+        fixture.detectChanges();
+
+        expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'brief-1', 'c-uuid-a', [{ text: 'service mesh', matchType: 'Broad' }], 'rev-1');
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+      });
+
+      it('sends nothing, and says so, when the reloaded list no longer offers the campaign', () => {
+        fixture.componentRef.setInput('negativeTargets', null);
+        fixture.detectChanges();
+        answer();
+
+        fixture.componentRef.setInput('negativeTargets', {});
+        fixture.detectChanges();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      });
+
+      // A failed metrics re-read leaves no row to carry the note: it must still be said, above the error.
+      it('says "Not sent" above a failed metrics read when the revision read then fails', () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getRedditKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+        fixture.componentRef.setInput('reloadToken', 1);
+        fixture.detectChanges();
+        expect(q('reddit-keywords-error')).not.toBeNull();
+
+        read.error(new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } }));
+        fixture.detectChanges();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        const note = q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh');
+        expect(note).not.toBeNull();
+        expect(note!.getAttribute('role')).toBe('alert');
+        expect(note!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      });
+
       // Leaving the scope cancels the read; the row still says why nothing went out.
       it('says "Not sent" when leaving the brief cancels the read', () => {
         fixture.componentRef.setInput('briefId', 'brief-2');

@@ -107,7 +107,9 @@ export class RedditKeywordsTableComponent {
    * The brief's Reddit campaigns that take negative keywords now, by Reddit campaign id. A row whose
    * campaign is not here offers no "Add as negative".
    */
-  public readonly negativeTargets = input<Record<string, RedditKeywordNegativeTarget>>({});
+  public readonly negativeTargets = input<Record<string, RedditKeywordNegativeTarget> | null>({});
+  /** `negativeTargets` as a stream, so a pending add can wait out the parent's list reload (`null`). */
+  private readonly negativeTargets$ = toObservable(this.negativeTargets);
 
   protected readonly confirmKey = 'reddit-keywords-add-negative';
   protected readonly notSentLabel = CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL;
@@ -260,13 +262,13 @@ export class RedditKeywordsTableComponent {
 
   private initUnplacedNotes(): Signal<RedditKeywordUnplacedNote[]> {
     return computed(() => {
-      if (this.view().state !== 'loaded') {
-        return [];
-      }
       const projectSlug = this.projectSlug();
       const readId = this.readId();
+      // With no report loaded (loading, error, unavailable) no row can carry a note, so every showable
+      // note is said above the table: a failed metrics read must not hide a confirmed add that went nowhere.
+      const loaded = this.view().state === 'loaded' ? (this.view().data?.keywords ?? []) : [];
       const placed = new Set(
-        (this.view().data?.keywords ?? []).map((row) => {
+        loaded.map((row) => {
           const text = redditNegativeKeywordText(row.keyword);
           return text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
         })
@@ -323,7 +325,8 @@ export class RedditKeywordsTableComponent {
   private addNegative(projectSlug: string, briefId: string, row: RedditKeywordDisplayRow, target: RedditKeywordNegativeTarget, text: string): void {
     const { campaignId, campaignName } = target;
     const noteKey = redditKeywordNoteKey(projectSlug, row.campaignId, text);
-    if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
+    // Unknown targets (the parent's list is reloading) are checked once the list is back, below.
+    if (this.negativeTargets() !== null && !this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
       this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
@@ -338,6 +341,17 @@ export class RedditKeywordsTableComponent {
       .getKeywordTargeting(projectSlug, briefId, campaignId)
       .pipe(
         take(1),
+        // A reload of the parent's campaign list passes `null` targets while it reads: that is not the
+        // campaign leaving the lever, so wait for the list before checking it still takes negatives.
+        switchMap((targeting) =>
+          this.negativeTargets() !== null
+            ? of(targeting)
+            : this.negativeTargets$.pipe(
+                filter((targets) => targets !== null),
+                take(1),
+                map(() => targeting)
+              )
+        ),
         // Leaving the project or brief abandons the read: nothing is sent for a scope the operator left.
         takeUntil(this.scope$.pipe(filter((scope) => !negativeKeywordsScopesMatch(scope.projectSlug, scope.briefId, projectSlug, briefId)))),
         finalize(() => {
@@ -420,7 +434,7 @@ export class RedditKeywordsTableComponent {
       return false;
     }
     const targets = this.negativeTargets();
-    return Object.hasOwn(targets, redditCampaignId) && targets[redditCampaignId].campaignId === campaignId;
+    return targets !== null && Object.hasOwn(targets, redditCampaignId) && targets[redditCampaignId].campaignId === campaignId;
   }
 
   /**
@@ -449,7 +463,7 @@ export class RedditKeywordsTableComponent {
   /** The brief campaign a row's add would write to, or `null`: none without a brief, nor for a campaign not offered. */
   private targetFor(redditCampaignId: string): RedditKeywordNegativeTarget | null {
     const targets = this.negativeTargets();
-    if (this.briefId() === '' || !Object.hasOwn(targets, redditCampaignId)) {
+    if (this.briefId() === '' || targets === null || !Object.hasOwn(targets, redditCampaignId)) {
       return null;
     }
     return targets[redditCampaignId];

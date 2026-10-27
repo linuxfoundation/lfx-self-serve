@@ -345,7 +345,7 @@ export class OptimizationTabComponent implements OnInit {
    * available), by Reddit campaign id, for the Reddit keyword table's "Add as negative". A Reddit id
    * held by more than one row maps to neither: the table must not choose between them.
    */
-  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget>> = this.initRedditNegativeTargets();
+  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget> | null> = this.initRedditNegativeTargets();
 
   /**
    * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
@@ -2214,11 +2214,17 @@ export class OptimizationTabComponent implements OnInit {
     });
   }
 
-  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget>> {
+  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget> | null> {
     return computed(() => {
+      // `null` while the campaign list is (re)loading: unknown, not empty. The keyword table waits it out
+      // rather than reading an in-flight reload as every campaign leaving the negative-keyword lever.
+      const rows = this.campaignRows();
+      if (rows === null) {
+        return null;
+      }
       const targets: Record<string, RedditKeywordNegativeTarget> = {};
       const ambiguous = new Set<string>();
-      for (const row of this.campaignRows() ?? []) {
+      for (const row of rows) {
         const redditId = row.campaign.platform_campaign_id;
         if (row.negativeKeywordsPlatform !== 'reddit-ads' || !row.negativeKeywordsAvailable || typeof redditId !== 'string' || redditId === '') {
           continue;

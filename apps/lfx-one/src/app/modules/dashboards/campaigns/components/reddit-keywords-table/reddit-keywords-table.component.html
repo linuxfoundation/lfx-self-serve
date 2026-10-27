@@ -25,6 +25,16 @@
   <!-- Persistent and empty until a read starts: only its text changes (see liveRegionMounted). -->
   <div role="status" aria-live="polite" class="sr-only" data-testid="reddit-keywords-live">{{ loadingAnnouncement() }}</div>
 
+  <!-- Adds that went nowhere for a keyword no row shows (not listed, or no report loaded): said here, never dropped. -->
+  @for (note of unplacedNotes(); track note.key) {
+    <p
+      role="alert"
+      class="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600"
+      [attr.data-testid]="'reddit-keywords-unplaced-not-sent-' + note.testIdKey">
+      <span class="font-medium">{{ notSentLabel }}:</span> "{{ note.keyword }}" ({{ note.campaignName }}). {{ note.message }}
+    </p>
+  }
+
   @switch (view().state) {
     @case ('loading') {
       <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="reddit-keywords-loading">
@@ -64,16 +74,6 @@
             <p data-testid="reddit-keywords-truncated">Showing the top {{ report.keywords.length }} keywords by impressions; the totals cover only those.</p>
           }
         </div>
-
-        <!-- Adds that went nowhere for a keyword this report no longer lists: said here, never dropped. -->
-        @for (note of unplacedNotes(); track note.key) {
-          <p
-            role="alert"
-            class="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600"
-            [attr.data-testid]="'reddit-keywords-unplaced-not-sent-' + note.testIdKey">
-            <span class="font-medium">{{ notSentLabel }}:</span> "{{ note.keyword }}" ({{ note.campaignName }}). {{ note.message }}
-          </p>
-        }
 
         @if (rows().length === 0) {
           <p class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500" data-testid="reddit-keywords-empty">
