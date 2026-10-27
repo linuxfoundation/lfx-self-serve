@@ -54,6 +54,7 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
   hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -380,6 +381,19 @@ export class CommitteeViewComponent {
   public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /** Link to the full edit wizard (type, name, parent, settings, members) — tier-aware like the table's edit link, with the flat path as fallback. */
+  public editLink: Signal<{ commands: string[]; queryParams: Record<string, string> } | null> = computed(() => {
+    const committee = this.committee();
+    if (!committee?.uid) {
+      return null;
+    }
+    const queryParams: Record<string, string> = {};
+    if (committee.project_slug) {
+      queryParams['project'] = committee.project_slug;
+    }
+    return { commands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'], queryParams };
+  });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {

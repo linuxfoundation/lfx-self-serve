@@ -21,13 +21,22 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 
 @Component({
   selector: 'lfx-committee-settings-tab',
-  imports: [CommitteeSettingsComponent, ButtonComponent, TagComponent, ConfirmDialogModule, MailingListEmailPipe, MailingListTypePipe],
+  imports: [
+    CommitteeGeneralSettingsComponent,
+    CommitteeSettingsComponent,
+    ButtonComponent,
+    TagComponent,
+    ConfirmDialogModule,
+    MailingListEmailPipe,
+    MailingListTypePipe,
+  ],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
   styleUrl: './committee-settings-tab.component.scss',
@@ -77,6 +86,9 @@ export class CommitteeSettingsTabComponent {
 
   // Form
   public form = new FormGroup({
+    name: new FormControl('', [Validators.required]),
+    category: new FormControl('', [Validators.required]),
+    parent_uid: new FormControl<string | null>(null),
     member_visibility: new FormControl(''),
     join_mode: new FormControl(''),
     business_email_required: new FormControl(false),
@@ -152,6 +164,9 @@ export class CommitteeSettingsTabComponent {
         this.lastCommitteeUid = c.uid;
         const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
         this.form.patchValue({
+          name: c.name,
+          category: c.category,
+          parent_uid: c.parent_uid ?? null,
           member_visibility: c.member_visibility || 'hidden',
           join_mode: c.join_mode || 'invite_only',
           business_email_required: c.business_email_required || false,
@@ -275,7 +290,28 @@ export class CommitteeSettingsTabComponent {
     });
   }
 
+  /** Saves the form; a changed type is confirmed first because it re-labels the group and every member record. */
   public saveSettings(): void {
+    const currentCategory = this.committee().category;
+    const nextCategory = this.form.getRawValue().category;
+    if (!nextCategory || nextCategory === currentCategory) {
+      this.persistSettings();
+      return;
+    }
+
+    this.confirmationService.confirm({
+      message: `Change the type of "${this.committee().name}" from ${currentCategory} to ${nextCategory}? This updates how the group is labeled and governed, including on its members' records.`,
+      header: 'Change Group Type',
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptButtonStyleClass: 'p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-outlined p-button-sm',
+      acceptLabel: 'Change Type',
+      rejectLabel: 'Cancel',
+      accept: () => this.persistSettings(),
+    });
+  }
+
+  private persistSettings(): void {
     this.saving.set(true);
     const values = this.form.getRawValue();
     // Gated on the control's own dirty flag, not on whether the input happens to be rendered —
@@ -310,6 +346,9 @@ export class CommitteeSettingsTabComponent {
     );
     this.committeeService
       .updateCommittee(this.committee().uid, {
+        name: values.name?.trim() || undefined,
+        category: values.category || undefined,
+        parent_uid: values.parent_uid || null,
         member_visibility: (values.member_visibility as CommitteeMemberVisibility) || undefined,
         join_mode: (values.join_mode as JoinMode) || undefined,
         business_email_required: values.business_email_required ?? false,

@@ -738,7 +738,9 @@ export interface CommitteeCreateData {
  * Data for updating existing committee
  * @description Partial update payload allowing any field from create data to be modified
  */
-export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
+export interface CommitteeUpdateData extends Partial<Omit<CommitteeCreateData, 'parent_uid'>> {
+  /** Re-parent the committee, or `null` to detach it from its parent */
+  parent_uid?: string | null;
   /** Update or clear mailing list email */
   mailing_list?: string | null;
   /** Update or clear chat channel */
