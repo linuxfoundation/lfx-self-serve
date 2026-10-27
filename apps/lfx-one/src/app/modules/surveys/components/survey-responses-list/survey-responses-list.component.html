@@ -126,7 +126,7 @@
                       <div class="flex flex-col gap-0.5">
                         <span class="font-medium text-slate-900">{{ recipientName(item) }}</span>
                         @if (item.email) {
-                          <a [href]="mailtoFor(item)" class="text-blue-600 hover:underline">{{ item.email }}</a>
+                          <a [href]="mailtoById().get(item.id)" class="text-blue-600 hover:underline">{{ item.email }}</a>
                         }
                       </div>
                     </td>

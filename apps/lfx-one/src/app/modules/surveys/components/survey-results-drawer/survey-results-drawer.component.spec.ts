@@ -3,10 +3,11 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SurveyResultsDrawerComponent } from './survey-results-drawer.component';
@@ -26,12 +27,14 @@ async function mount(hasPMOAccess: boolean, responses$ = of(ROWS)) {
     imports: [SurveyResultsDrawerComponent],
     providers: [
       { provide: SurveyService, useValue: { getSurvey: vi.fn().mockReturnValue(of(SURVEY)), getAllSurveyResponses } },
+      provideNoopAnimations(),
       { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'p-1' }) } },
     ],
   });
   const fixture = TestBed.createComponent(SurveyResultsDrawerComponent);
   fixture.componentRef.setInput('surveyId', 's-1');
   fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+  fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, getAllSurveyResponses };
@@ -57,6 +60,41 @@ describe('SurveyResultsDrawerComponent', () => {
     expect(getAllSurveyResponses).toHaveBeenCalledWith('s-1', 'p-1');
     expect(component['comments']().map((c) => c.comment)).toEqual(['Newer', 'Older']);
     expect(component['engagementRates']()).toMatchObject({ recipients: 3, delivered: 3, opened: 3, responded: 2, commentRate: 100 });
+  });
+
+  it('retries a failed load when the drawer is closed and reopened', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, component, getAllSurveyResponses } = await mount(
+      true,
+      throwError(() => new Error('boom'))
+    );
+    current = fixture;
+    expect(component['responsesLoadError']()).toBe(true);
+
+    getAllSurveyResponses.mockReturnValue(of(ROWS));
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getAllSurveyResponses).toHaveBeenCalledTimes(2);
+    expect(component['responsesLoadError']()).toBe(false);
+    expect(component['responses']()).toEqual(ROWS);
+  });
+
+  it("clears the previous survey's rows while the next survey loads", async () => {
+    const { fixture, component, getAllSurveyResponses } = await mount(true);
+    current = fixture;
+    expect(component['responses']()).toEqual(ROWS);
+
+    getAllSurveyResponses.mockReturnValue(new Subject<SurveyResponseItem[]>());
+    fixture.componentRef.setInput('surveyId', 's-2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['responses']()).toEqual([]);
+    expect(component['engagementRates']()).toBeNull();
   });
 
   it('flags an incomplete list when the rows fail to load', async () => {

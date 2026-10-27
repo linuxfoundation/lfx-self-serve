@@ -101,6 +101,11 @@ export class SurveyResponsesListComponent {
   protected readonly groups: Signal<{ key: string; label: string; count: number; items: SurveyResponseItem[] }[]> = this.initGroups();
   protected readonly respondedCount: Signal<number> = this.initRespondedCount();
   protected readonly totalRecipients: Signal<number> = this.initTotalRecipients();
+  /** Prefilled follow-up email per recipient, built once per data change rather than per change-detection pass. */
+  protected readonly mailtoById: Signal<Map<string, string>> = computed(() => {
+    const survey = this.survey();
+    return new Map(this.responses().map((r) => [r.id, (survey && buildSurveyFollowUpMailto(survey, r)) || `mailto:${encodeURIComponent(r.email ?? '')}`]));
+  });
   protected readonly isFiltered: Signal<boolean> = computed(
     () => this.searchTerm() !== '' || this.npsFilter() !== 'all' || this.commentFilter() !== 'all' || this.deliveryFilter() !== 'all'
   );
@@ -119,7 +124,7 @@ export class SurveyResponsesListComponent {
         command: () => this.clipboardShareService.copyLink(item.survey_link ?? '', 'Personal survey link copied.'),
       });
     }
-    const mailto = survey ? buildSurveyFollowUpMailto(survey, item) : null;
+    const mailto = item.email ? this.mailtoById().get(item.id) : undefined;
     if (mailto) {
       items.push({
         label: 'Email recipient',
@@ -185,12 +190,6 @@ export class SurveyResponsesListComponent {
 
   protected deliveryTimestamp(item: SurveyResponseItem): string | null {
     return getResponseDeliveryTimestamp(item);
-  }
-
-  /** Prefilled follow-up email (with their personal link) for the recipient's address. */
-  protected mailtoFor(item: SurveyResponseItem): string {
-    const survey = this.survey();
-    return (survey && buildSurveyFollowUpMailto(survey, item)) || `mailto:${encodeURIComponent(item.email ?? '')}`;
   }
 
   protected comment(item: SurveyResponseItem): string | null {

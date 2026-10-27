@@ -458,7 +458,11 @@
 
 <!-- Delivery, open, click and comment rates (Manage users only — derived from per-recipient rows) -->
 <ng-template #engagementRatesTpl>
-  @if (engagementRates(); as rates) {
+  @if (responsesLoadError()) {
+    <p class="pt-3 border-t border-slate-200 text-sm text-red-700" data-testid="survey-engagement-error">
+      Delivery rates and participant comments couldn't be loaded. Close and reopen the survey to try again.
+    </p>
+  } @else if (engagementRates(); as rates) {
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200" data-testid="survey-engagement-rates">
       <div class="text-center">
         <p class="text-xs text-slate-500">Delivery Rate</p>

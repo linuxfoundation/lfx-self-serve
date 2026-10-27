@@ -21,16 +21,23 @@ const SURVEY = {
 } as unknown as Survey;
 const RESPONSE = { id: 'r-1', first_name: 'Ana', last_name: 'Lee', committee_uid: 'c-1' } as SurveyResponseItem;
 
-async function mount(survey: Survey, settings$ = of({ executive_director: { name: 'Jane Doe', email: 'jane@example.com' } })) {
+async function mount(
+  survey: Survey,
+  settings$ = of({ executive_director: { name: 'Jane Doe', email: 'jane@example.com' } }),
+  response: SurveyResponseItem = RESPONSE
+) {
   TestBed.resetTestingModule();
   const getProjectSettings = vi.fn().mockReturnValue(settings$);
   TestBed.configureTestingModule({
     imports: [SurveySentEmailDialogComponent],
     providers: [
       { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
-      { provide: DynamicDialogConfig, useValue: { data: { survey, response: RESPONSE } } },
+      { provide: DynamicDialogConfig, useValue: { data: { survey, response } } },
       { provide: PermissionsService, useValue: { getProjectSettings } },
-      { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'p-1' }), activeProject: signal({ name: 'CNCF', logo_url: '' }) } },
+      {
+        provide: ProjectContextService,
+        useValue: { activeContext: signal({ uid: 'p-1' }), activeProject: signal({ uid: 'p-1', name: 'CNCF', logo_url: '' }) },
+      },
     ],
   });
   const fixture = TestBed.createComponent(SurveySentEmailDialogComponent);
@@ -48,6 +55,13 @@ describe('SurveySentEmailDialogComponent', () => {
     const html = component['email']()!.html;
     expect(html).toContain('Hi Ana, from Jane Doe.');
     expect(html).toContain('<a href="https://lfx.dev" target="_blank" rel="noopener noreferrer">https://lfx.dev</a>');
+  });
+
+  it("reads ED/PM names from the recipient's own project, not the active context", async () => {
+    const { component, getProjectSettings } = await mount(SURVEY, undefined, { ...RESPONSE, project: { uid: 'p-2', name: 'Other Foundation' } });
+
+    expect(getProjectSettings).toHaveBeenCalledWith('p-2');
+    expect(component['email']()!.subject).toBe('Feedback for Other Foundation');
   });
 
   it('still renders when project settings cannot be read', async () => {

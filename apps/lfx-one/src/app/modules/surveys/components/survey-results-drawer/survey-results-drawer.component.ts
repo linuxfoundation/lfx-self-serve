@@ -141,10 +141,12 @@ export class SurveyResultsDrawerComponent {
 
   private initResponses(): Signal<SurveyResponseItem[]> {
     return toSignal(
-      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.hasPMOAccess)]).pipe(
-        switchMap(([id, projectUid, canManage]) => {
+      // `visible` is a trigger so reopening the drawer refetches (and retries a failed load);
+      // closing it cancels an in-flight load.
+      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.hasPMOAccess), toObservable(this.visible)]).pipe(
+        switchMap(([id, projectUid, canManage, visible]) => {
           this.responsesLoadError.set(false);
-          if (!id || !canManage) {
+          if (!id || !canManage || !visible) {
             this.responsesLoading.set(false);
             return of([] as SurveyResponseItem[]);
           }
@@ -155,7 +157,9 @@ export class SurveyResultsDrawerComponent {
               this.responsesLoadError.set(true);
               return of([] as SurveyResponseItem[]);
             }),
-            finalize(() => this.responsesLoading.set(false))
+            finalize(() => this.responsesLoading.set(false)),
+            // Clear the previous survey's rows while this one loads, so they never show under its title.
+            startWith([] as SurveyResponseItem[])
           );
         })
       ),
