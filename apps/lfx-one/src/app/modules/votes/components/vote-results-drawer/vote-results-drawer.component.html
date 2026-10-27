@@ -1,6 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- 44px targets are exact [44px]: the 14px html root makes Tailwind's min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets). -->
 <p-drawer
   [(visible)]="visible"
   position="right"
@@ -60,7 +61,7 @@
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center min-w-[44px] min-h-[44px] -my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                    class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                     [pTooltip]="earlyCloseTooltip"
                     tooltipEvent="both"
                     tooltipPosition="top"
@@ -128,7 +129,7 @@
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center min-w-[44px] min-h-[44px] -my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                    class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                     [pTooltip]="earlyCloseTooltip"
                     tooltipEvent="both"
                     tooltipPosition="top"

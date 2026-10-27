@@ -16,7 +16,8 @@
  * every vote API is stubbed with page.route. The permalink is entered through the SPA router because
  * page.route cannot intercept the server-side fetch of a hard navigation.
  *
- * Deep imports only: vote.utils.ts imports @angular/forms, which this Node runtime can't load
+ * The only shared import is `@lfx-one/shared/constants`; never import the `utils` barrel here, since
+ * vote.utils.ts pulls in @angular/forms, which this Node runtime can't load
  * (.claude/rules/development-rules.md § Testing).
  *
  * Prerequisites:

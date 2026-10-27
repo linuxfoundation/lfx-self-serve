@@ -192,6 +192,7 @@ export class VotesTableComponent {
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
   // Phone layout (cards) below the sm breakpoint; always false on the server so SSR renders the table and the client swaps on hydration.
   protected readonly isMobile: Signal<boolean> = this.initIsMobile();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
   protected readonly actionButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'whitespace-nowrap min-h-[44px]' : 'whitespace-nowrap'));
   protected readonly moreButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'min-w-[44px] min-h-[44px]' : ''));
   protected readonly isFiltered = computed(() => {

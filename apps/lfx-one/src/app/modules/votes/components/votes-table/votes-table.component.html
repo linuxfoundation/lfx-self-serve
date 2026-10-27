@@ -198,6 +198,7 @@
   }
 </lfx-card>
 
+<!-- Card touch targets use an exact min-h-[44px] (14px html root; see drawer-pattern.md § Phone sheet and touch targets). -->
 <!-- Cell templates shared by the desktop table row and the mobile card so both render the same data and actions. -->
 <ng-template #participationCell let-vote>
   @if (!showParticipationProgress()) {

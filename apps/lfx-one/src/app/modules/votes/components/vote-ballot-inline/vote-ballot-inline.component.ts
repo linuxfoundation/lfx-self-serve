@@ -57,6 +57,7 @@ export class VoteBallotInlineComponent {
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
   // Phone layout below the sm breakpoint; always false on the server so SSR renders the desktop shape.
   protected readonly isMobile: Signal<boolean> = this.initIsMobile();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
   protected readonly touchClass: Signal<string> = computed(() => (this.isMobile() ? 'min-h-[44px]' : ''));
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
