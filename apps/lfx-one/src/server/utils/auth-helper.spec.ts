@@ -548,5 +548,10 @@ describe('refreshExpiredSsrAccessToken', () => {
     const req = buildReqWithAccessToken({ authenticated: true, isExpired: () => true, refresh });
     await expect(refreshExpiredSsrAccessToken(req)).resolves.toBeUndefined();
     expect(refresh).toHaveBeenCalledTimes(1);
+    expect(req.log.warn).toHaveBeenCalledTimes(1);
+    expect(req.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'ssr_token_refresh', data: expect.objectContaining({ failure_reason: 'token_refresh_failed' }) }),
+      expect.any(String)
+    );
   });
 });
