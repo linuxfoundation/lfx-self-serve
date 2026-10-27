@@ -4,7 +4,9 @@
 import { Subject, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createVisibilityPoll, pollBackoffDelayMs, VisibilityPollEvent } from './visibility-poll.util';
+import type { VisibilityPollEvent } from '@lfx-one/shared/interfaces';
+
+import { createVisibilityPoll, pollBackoffDelayMs } from './visibility-poll.util';
 
 describe('createVisibilityPoll', () => {
   const options = { intervalMs: 5000, backoffBaseMs: 5000, backoffMaxMs: 30000 };

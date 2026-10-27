@@ -67,11 +67,15 @@ function buildVote(overrides: Record<string, unknown> = {}): Record<string, unkn
 }
 
 async function stubVote(page: Page, state: StubState): Promise<void> {
-  await page.route(`**/api/votes/${VOTE_UID}`, (route) => {
-    if (state.offline) return route.abort('failed');
-    const wantsWriter = new URL(route.request().url()).searchParams.get('include_writer') === 'true';
-    return fulfillJson(route, wantsWriter ? { ...state.vote, writer: state.writer } : state.vote);
-  });
+  // A predicate, not a glob: the guard's request carries ?include_writer=true, which a bare-path glob would not match.
+  await page.route(
+    (url) => url.pathname === `/api/votes/${VOTE_UID}`,
+    (route) => {
+      if (state.offline) return route.abort('failed');
+      const wantsWriter = new URL(route.request().url()).searchParams.get('include_writer') === 'true';
+      return fulfillJson(route, wantsWriter ? { ...state.vote, writer: state.writer } : state.vote);
+    }
+  );
   await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => {
     state.resultsRequests += 1;
     return fulfillJson(route, { num_recipients: 10, num_votes_cast: 9, num_abstained: 0, generic_choice_votes: [] });
@@ -124,6 +128,20 @@ test.describe('Vote presenter (#4140)', () => {
     state.vote = buildVote({ status: 'ended', num_response_received: 9 });
     await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: POLL_TIMEOUT });
     expect((await new AxeBuilder({ page }).include('[data-testid="vote-presenter"]').analyze()).violations).toEqual([]);
+  });
+
+  test('zero eligible voters shows the empty state with only Exit', async ({ page }) => {
+    const state: StubState = {
+      vote: buildVote({ total_voting_request_invitations: 0, num_response_received: 0 }),
+      writer: true,
+      offline: false,
+      resultsRequests: 0,
+    };
+    await stubVote(page, state);
+    await openPresenter(page);
+
+    await expect(page.getByTestId('vote-presenter-empty')).toContainText('No eligible voters are assigned to this vote', { timeout: RENDER_TIMEOUT });
+    await expect(page.getByTestId('vote-presenter-close')).toHaveCount(0);
   });
 
   test('non-writer is redirected and never sees the presenter', async ({ page }) => {

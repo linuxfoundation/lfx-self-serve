@@ -339,7 +339,7 @@ export class VotesTableComponent {
 
   /** Opens the presenter view in a new tab; browser-only (menu commands only run from a click). */
   protected openPresenter(voteUid: string): void {
-    this.document.defaultView?.open(votePresenterPath(voteUid), '_blank', 'noopener');
+    this.document.defaultView?.open(votePresenterPath(voteUid), '_blank', 'noopener,noreferrer');
   }
 
   /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */

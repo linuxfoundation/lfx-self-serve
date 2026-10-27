@@ -769,7 +769,7 @@ describe('VotesTableComponent — row More menu', () => {
   it('opens the presenter in a new tab from the Present item, only for writers of an open or ended vote (#4140)', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
     table['openPresenter']('vote-9');
-    expect(open).toHaveBeenCalledWith('/votes/vote-9/present', '_blank', 'noopener');
+    expect(open).toHaveBeenCalledWith('/votes/vote-9/present', '_blank', 'noopener,noreferrer');
     open.mockRestore();
   });
 

@@ -21,8 +21,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function makeVote(status: PollStatus, uid = 'vote-1'): Vote {
-  return { uid, name: 'Charter ratification', description: '<p>Approve the revised charter.</p>', project_uid: 'project-1', status } as Vote;
+function makeVote(status: PollStatus, uid = 'vote-1', writer?: boolean): Vote {
+  return { uid, writer, name: 'Charter ratification', description: '<p>Approve the revised charter.</p>', project_uid: 'project-1', status } as Vote;
 }
 
 async function setupDrawer(vote: Vote, myResponse: Observable<MyVoteResponse | null> = of(null), audience: 'voter' | 'creator' = 'voter') {
@@ -881,13 +881,21 @@ describe('VoteResultsDrawerComponent — mobile layout (#4148)', () => {
 });
 
 describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => {
-  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('offers Present and Copy slide to a creator on a %s vote', async (status) => {
-    await setupDrawer(makeVote(status), of(null), 'creator');
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('offers Present and Copy slide to a decorated writer on a %s vote', async (status) => {
+    const service = await setupDrawer(makeVote(status, 'vote-1', true), of(null), 'creator');
+    expect(service.getVote).toHaveBeenCalledWith('vote-1', expect.objectContaining({ includeWriter: true }));
 
     const present = document.querySelector<HTMLAnchorElement>('[data-testid="vote-results-drawer-present"]');
     expect(present?.getAttribute('href')).toBe('/votes/vote-1/present');
     expect(present?.getAttribute('target')).toBe('_blank');
     expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+  });
+
+  it.each([undefined, false])('hides both from a creator-audience viewer who is not a writer (writer: %s)', async (writer) => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', writer), of(null), 'creator');
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeNull();
   });
 
   it('hides both from a voter', async () => {
@@ -898,7 +906,7 @@ describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => 
   });
 
   it('hides Present for a draft vote', async () => {
-    await setupDrawer(makeVote(PollStatus.DISABLED), of(null), 'creator');
+    await setupDrawer(makeVote(PollStatus.DISABLED, 'vote-1', true), of(null), 'creator');
     expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
   });
 });

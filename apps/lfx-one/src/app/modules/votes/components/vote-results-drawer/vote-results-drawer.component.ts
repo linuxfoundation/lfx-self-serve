@@ -32,7 +32,8 @@ import {
   mergeCommentResults,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
-import { exportVoteSlide, voteSlideFileName, VoteSlideExportResult } from '@shared/utils/vote-slide.util';
+import type { VoteSlideExportResult } from '@lfx-one/shared/interfaces';
+import { exportVoteSlide, voteSlideFileName } from '@shared/utils/vote-slide.util';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
@@ -145,10 +146,10 @@ export class VoteResultsDrawerComponent {
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
 
-  /** Present is offered to managers of an open or ended vote; a decorated `writer: false` hides it. votePresenterGuard re-checks vote#writer. */
+  /** Present and Copy slide are offered only when the vote came back decorated `writer: true` (the creator audience asks for it); votePresenterGuard re-checks vote#writer. */
   protected readonly canPresent: Signal<boolean> = computed(() => {
     const v = this.vote();
-    return this.audience() === 'creator' && !!v && v.writer !== false && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
+    return this.audience() === 'creator' && !!v && v.writer === true && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
   });
   protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
   protected readonly isBrowserRender = isPlatformBrowser(this.platformId);
@@ -252,7 +253,7 @@ export class VoteResultsDrawerComponent {
             this.loadingVoteDetails.set(true);
           }
 
-          return this.voteService.getVote(id, { skipCache }).pipe(
+          return this.voteService.getVote(id, { skipCache, ...(this.audience() === 'creator' && { includeWriter: true }) }).pipe(
             tap((v) => {
               lastVoteId = id;
               lastVote = v;

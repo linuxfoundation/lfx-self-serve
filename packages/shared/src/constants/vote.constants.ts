@@ -102,3 +102,9 @@ export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
 /** Copy-slide PNG (#4145): fixed 16:9 export size so it drops into Google Slides / PowerPoint uncropped. */
 export const VOTE_SLIDE_WIDTH_PX = 1920;
 export const VOTE_SLIDE_HEIGHT_PX = 1080;
+
+/** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
+export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
+
+/** QR code quiet zone in modules; the spec asks for 4, 2 still scans reliably on a projector and keeps the code large. */
+export const VOTE_QR_QUIET_ZONE_MODULES = 2;

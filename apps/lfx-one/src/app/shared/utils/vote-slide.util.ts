@@ -2,12 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { VOTE_SLIDE_HEIGHT_PX, VOTE_SLIDE_WIDTH_PX } from '@lfx-one/shared/constants';
+import type { VoteSlideExportResult, VoteSlideRenderer } from '@lfx-one/shared/interfaces';
 import { slugify } from '@lfx-one/shared/utils';
-
-export type VoteSlideExportResult = 'copied' | 'downloaded' | 'failed';
-
-/** Turns the slide element into a PNG blob; injectable so tests need not run html-to-image in jsdom. */
-export type VoteSlideRenderer = (element: HTMLElement) => Promise<Blob | null>;
 
 async function renderSlideToBlob(element: HTMLElement): Promise<Blob | null> {
   const { toBlob } = await import('html-to-image');

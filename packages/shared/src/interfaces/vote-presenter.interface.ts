@@ -11,3 +11,24 @@ export interface VotePresenterSnapshot {
   vote: Vote;
   receivedAtMs: number;
 }
+
+/** Outcome of one poll attempt. `failures` counts consecutive failures so a caller can show "Reconnecting". */
+export type VisibilityPollEvent<T> = { kind: 'ok'; value: T } | { kind: 'error'; error: unknown; failures: number };
+
+/** Tuning for createVisibilityPoll. */
+export interface VisibilityPollOptions<T> {
+  /** Delay between a successful poll and the next. */
+  intervalMs: number;
+  /** First retry delay after a failure; doubles per consecutive failure. */
+  backoffBaseMs: number;
+  /** Ceiling for the retry delay. */
+  backoffMaxMs: number;
+  /** Returning false after a successful poll stops the loop until the tab next becomes visible. */
+  shouldContinue?: (value: T) => boolean;
+}
+
+/** Result of exporting the vote slide PNG. */
+export type VoteSlideExportResult = 'copied' | 'downloaded' | 'failed';
+
+/** Turns the slide element into a PNG blob; injectable so tests need not run html-to-image in jsdom. */
+export type VoteSlideRenderer = (element: HTMLElement) => Promise<Blob | null>;

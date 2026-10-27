@@ -1,21 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { VisibilityPollEvent, VisibilityPollOptions } from '@lfx-one/shared/interfaces';
 import { defer, EMPTY, expand, fromEvent, map, Observable, of, startWith, switchMap, timer, catchError } from 'rxjs';
-
-/** Outcome of one poll attempt. `failures` counts consecutive failures so a caller can show "Reconnecting". */
-export type VisibilityPollEvent<T> = { kind: 'ok'; value: T } | { kind: 'error'; error: unknown; failures: number };
-
-export interface VisibilityPollOptions<T> {
-  /** Delay between a successful poll and the next. */
-  intervalMs: number;
-  /** First retry delay after a failure; doubles per consecutive failure. */
-  backoffBaseMs: number;
-  /** Ceiling for the retry delay. */
-  backoffMaxMs: number;
-  /** Returning false after a successful poll stops the loop until the tab next becomes visible. */
-  shouldContinue?: (value: T) => boolean;
-}
 
 /** Capped exponential backoff: base, 2×base, 4×base … never above `maxMs`. */
 export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: number): number {

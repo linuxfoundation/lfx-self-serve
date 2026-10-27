@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { VOTE_SLIDE_HEIGHT_PX, VOTE_SLIDE_WIDTH_PX } from '@lfx-one/shared/constants';
+import { truncateVoteTitle } from '@lfx-one/shared/utils';
 
 import { VoteQrComponent } from '../vote-qr/vote-qr.component';
 
@@ -20,6 +21,8 @@ export class VoteSlideComponent {
   public readonly title = input.required<string>();
   public readonly link = input.required<string>();
 
+  /** Same 80-char word-safe cap as the presenter, so a long title never overflows the fixed artboard. */
+  protected readonly displayTitle = computed(() => truncateVoteTitle(this.title()));
   protected readonly width = VOTE_SLIDE_WIDTH_PX;
   protected readonly height = VOTE_SLIDE_HEIGHT_PX;
 }

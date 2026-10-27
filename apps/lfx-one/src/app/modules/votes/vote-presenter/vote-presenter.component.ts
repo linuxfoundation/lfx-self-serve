@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, Signal, untracked, viewChild } from '@angular/core';
+import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, ElementRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   VOTE_PRESENTER_BACKOFF_BASE_MS,
   VOTE_PRESENTER_BACKOFF_MAX_MS,
+  VOTE_PRESENTER_COPY_CONFIRMATION_MS,
   VOTE_PRESENTER_CLOCK_TICK_MS,
   VOTE_PRESENTER_POLL_INTERVAL_MS,
 } from '@lfx-one/shared/constants';
@@ -25,10 +26,11 @@ import {
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
-import { exportVoteSlide, voteSlideFileName, VoteSlideExportResult } from '@shared/utils/vote-slide.util';
+import type { VoteSlideExportResult } from '@lfx-one/shared/interfaces';
+import { exportVoteSlide, voteSlideFileName } from '@shared/utils/vote-slide.util';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { TooltipModule } from 'primeng/tooltip';
-import { filter, map, switchMap, timer } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap, timer } from 'rxjs';
 
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
@@ -36,9 +38,6 @@ import { VoteParticipationCardComponent } from '../components/vote-participation
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteSlideComponent } from '../components/vote-slide/vote-slide.component';
-
-/** How long the "Link copied" confirmation stays before the button label returns. */
-const COPY_CONFIRMATION_MS = 2000;
 
 /**
  * Chrome-less presenter view for a live vote (#4140). Route: /votes/:id/present (top-level, outside MainLayout).
@@ -81,8 +80,8 @@ export class VotePresenterComponent {
   // === Writable Signals ===
   private readonly snapshot = signal<VotePresenterSnapshot | null>(null);
   private readonly failures = signal(0);
-  private readonly results = signal<VoteResultsResponse | null>(null);
   protected readonly resultsError = signal(false);
+  private readonly locale = inject(LOCALE_ID);
   protected readonly nowMs = signal(Date.now());
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
@@ -92,6 +91,16 @@ export class VotePresenterComponent {
 
   // === Computed Signals ===
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
+  /** Set only while the vote is ended; a reopen drops it to null so `/results` is requested once per ended period. */
+  private readonly endedVoteUid = computed(() => {
+    const vote = this.vote();
+    return vote?.status === PollStatus.ENDED ? vote.uid : null;
+  });
+  private readonly results: Signal<VoteResultsResponse | null> = this.initResults();
+  private readonly formattedEndTime = computed(() => {
+    const end = this.vote()?.end_time;
+    return end ? formatDate(end, 'medium', this.locale) : 'its deadline';
+  });
   protected readonly phase: Signal<VotePresenterPhase> = this.initPhase();
   protected readonly participation = computed(() => {
     const vote = this.vote();
@@ -109,19 +118,16 @@ export class VotePresenterComponent {
     const vote = this.vote();
     return vote?.early_end_time || vote?.end_time || null;
   });
-  protected readonly closeTooltip = computed(() => `Ending a vote early is coming; this vote ends at ${this.vote()?.end_time ?? 'its deadline'}`);
+  protected readonly closeTooltip = computed(() => `Ending a vote early is coming; this vote ends at ${this.formattedEndTime()}`);
   protected readonly showAbstain = computed(() => this.vote()?.allow_abstain === true);
   protected readonly isRanked = computed(() => isRankedPollType(this.vote()?.poll_type));
   protected readonly stats = computed(() => computeVoteParticipationStats(this.results()));
   protected readonly questions: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.results(), true));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.results()));
 
-  /** True once `/results` has been requested for the current ended period; reset when a reopen makes the vote active again. */
-  private resultsRequested = false;
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
-    this.initResultsFetch();
     this.destroyRef.onDestroy(() => this.copyResetTimer && clearTimeout(this.copyResetTimer));
     if (this.isBrowser) {
       this.startPolling();
@@ -149,7 +155,7 @@ export class VotePresenterComponent {
       this.copyFailed.set(false);
       this.copied.set(true);
       if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
-      this.copyResetTimer = setTimeout(() => this.copied.set(false), COPY_CONFIRMATION_MS);
+      this.copyResetTimer = setTimeout(() => this.copied.set(false), VOTE_PRESENTER_COPY_CONFIRMATION_MS);
     } catch {
       this.copied.set(false);
       this.copyFailed.set(true);
@@ -192,27 +198,26 @@ export class VotePresenterComponent {
       });
   }
 
-  private initResultsFetch(): void {
-    effect(() => {
-      const vote = this.vote();
-      if (vote?.status !== PollStatus.ENDED) {
-        // Active (or never loaded): results stay unrequested and any prior ended-period snapshot is dropped.
-        this.resultsRequested = false;
-        untracked(() => {
-          this.results.set(null);
-          this.resultsError.set(false);
-        });
-        return;
-      }
-      if (this.resultsRequested) return;
-      this.resultsRequested = true;
-      untracked(() =>
-        this.voteService.getVoteResults(vote.uid).subscribe({
-          next: (results) => this.results.set(results),
-          error: () => this.resultsError.set(true),
-        })
-      );
-    });
+  /** `/results` is requested exactly once per ended period and never while the vote is open (the voting service does not gate it). */
+  private initResults(): Signal<VoteResultsResponse | null> {
+    return toSignal(
+      toObservable(this.endedVoteUid).pipe(
+        distinctUntilChanged(),
+        tap(() => this.resultsError.set(false)),
+        switchMap((uid) =>
+          uid
+            ? this.voteService.getVoteResults(uid).pipe(
+                catchError((error) => {
+                  console.error('Failed to load vote results for the presenter', error);
+                  this.resultsError.set(true);
+                  return of(null);
+                })
+              )
+            : of(null)
+        )
+      ),
+      { initialValue: null }
+    );
   }
 
   private initPhase(): Signal<VotePresenterPhase> {
