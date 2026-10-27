@@ -13,12 +13,12 @@ describe('AudienceSummaryBarComponent', () => {
     await TestBed.configureTestingModule({ imports: [AudienceSummaryBarComponent] }).compileComponents();
   });
 
-  function render(inputs: { attached?: boolean; reachExact?: boolean } = {}): HTMLElement {
+  function render(inputs: { attached?: boolean; reachLabel?: string } = {}): HTMLElement {
     fixture = TestBed.createComponent(AudienceSummaryBarComponent);
     fixture.componentRef.setInput('included', 3);
     fixture.componentRef.setInput('excluded', 2);
     fixture.componentRef.setInput('reachText', '≤ 1,200');
-    fixture.componentRef.setInput('reachExact', inputs.reachExact ?? false);
+    fixture.componentRef.setInput('reachLabel', inputs.reachLabel ?? 'Reach (at most)');
     fixture.componentRef.setInput('attached', inputs.attached ?? false);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
@@ -31,14 +31,14 @@ describe('AudienceSummaryBarComponent', () => {
 
     expect(host.querySelector('[data-testid="campaigns-audience-summary-bar-included"]')?.textContent?.trim()).toBe('3');
     expect(host.querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('2');
-    expect(host.textContent, 'a sum of list sizes was labelled as a measured reach').toContain('Reach (sum)');
+    expect(host.querySelector('[data-testid="campaigns-audience-summary-bar-reach-label"]')?.textContent?.trim()).toBe('Reach (at most)');
     host.querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-summary-bar-review"]')?.click();
 
     expect(reviewed).toBe(1);
   });
 
-  it('labels a previewed union as such', () => {
-    expect(render({ reachExact: true }).textContent).toContain('Reach before exclusions');
+  it('shows the label the container chose for the figure', () => {
+    expect(render({ reachLabel: 'Reach before exclusions' }).textContent).toContain('Reach before exclusions');
   });
 
   it('says the audience is attached instead of offering review', () => {

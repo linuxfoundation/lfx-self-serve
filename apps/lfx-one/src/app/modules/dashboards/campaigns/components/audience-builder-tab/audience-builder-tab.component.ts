@@ -494,8 +494,14 @@ export class AudienceBuilderTabComponent {
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
   /** What the last attach expected to create, so its result can say what it actually created. */
   private readonly attachDispatch = signal<AudienceWriteDispatchContext | null>(null);
-  /** The compose confirmation is open: the first click on Compose asks before anything is created. */
-  protected readonly composeConfirming = signal(false);
+  /**
+   * The compose request the operator opened a confirmation for, as `writeRequestKey`; null when
+   * none is open. Stored as the request rather than a flag so ANY change to what compose would send
+   * -- a tick, a reload filling an id, a new edition -- withdraws the confirmation by itself.
+   */
+  private readonly composeConfirmedFor = signal<string | null>(null);
+  /** The same, for a direct attach that will create a list in HubSpot. */
+  private readonly attachConfirmedFor = signal<string | null>(null);
   /** The "combine into a master list" disclosure is open. Direct use is the default action. */
   protected readonly composeOpen = signal(false);
   /**
@@ -739,6 +745,47 @@ export class AudienceBuilderTabComponent {
 
   /** The next attach or compose creates the standing standard list: it applies and does not exist yet. */
   protected readonly standingWillCreate = computed(() => this.standardApplied() && this.standardList() === null);
+
+  /**
+   * The lists the next attach or compose CREATES in HubSpot, by name: the standing standard list
+   * on first use, and the edition's current-registrants list while it does not exist yet.
+   */
+  protected readonly writeCreates = computed<readonly string[]>(() => {
+    const created: string[] = [];
+    if (this.standingWillCreate()) {
+      created.push("the project's shared standard suppression list");
+    }
+    const edition = this.registrantsToCreate();
+    if (edition !== '') {
+      created.push(`"${this.registrantsRow()?.name || `${edition} - Current Registrants`}"`);
+    }
+    return created;
+  });
+
+  /** `writeCreates` as one phrase, for the confirmations. */
+  protected readonly writeCreatesText = computed(() => this.writeCreates().join(' and '));
+
+  /** What a direct attach does in HubSpot, for the line under "Use selected lists". */
+  protected readonly directUseNote = computed(() => {
+    const created = this.writeCreates();
+    if (created.length > 0) {
+      return `Also creates ${created.join(' and ')} in HubSpot, so it asks first.`;
+    }
+    return this.standardApplied()
+      ? 'Nothing new is created in HubSpot; the shared standard suppression list is reused (refreshed if the standard lists changed).'
+      : 'Nothing new is created in HubSpot.';
+  });
+
+  /** Everything an attach or compose would send, so a confirmation is tied to exactly that request. */
+  private readonly writeRequestKey = computed(() =>
+    JSON.stringify([[...this.inclusion().keys()].sort(), [...this.sentExcludeIds()].sort(), this.registrantsEvent(), this.writeCreates()])
+  );
+
+  /** The compose confirmation is open, and still describes what compose would send. */
+  protected readonly composeConfirming = computed(() => this.composeConfirmedFor() !== null && this.composeConfirmedFor() === this.writeRequestKey());
+
+  /** The direct-attach confirmation is open, and still describes what the attach would send. */
+  protected readonly attachConfirming = computed(() => this.attachConfirmedFor() !== null && this.attachConfirmedFor() === this.writeRequestKey());
 
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
   protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
@@ -1244,6 +1291,7 @@ export class AudienceBuilderTabComponent {
       excluded: this.excludeIds().length,
       reachText: preview === '' ? reachText : preview,
       reachExact: preview !== '',
+      reachLabel: this.reachLabel(preview !== '', known.length, included.length),
       reachPartial: preview === '' && known.length > 0 && known.length < included.length,
       reachKnownCount: known.length,
     };
@@ -1907,8 +1955,13 @@ export class AudienceBuilderTabComponent {
   }
 
   /** Sends to every selected list directly, with the ticked suppression — no master list built. */
-  protected onUseSelectionDirectly(): void {
+  protected onUseSelectionDirectly(confirmed = false): void {
     if (!this.canUseSelectionDirectly()) {
+      return;
+    }
+    // "Nothing new is created" holds only when neither list attach may create is missing.
+    if (!confirmed && this.writeCreates().length > 0) {
+      this.attachConfirmedFor.set(this.writeRequestKey());
       return;
     }
     const entries = this.inclusionEntries();
@@ -2068,12 +2121,32 @@ export class AudienceBuilderTabComponent {
 
   /** Compose creates real HubSpot lists, so the first click asks; only the confirmation composes. */
   protected onRequestCompose(): void {
-    if (this.canCompose()) this.composeConfirming.set(true);
+    if (this.canCompose()) this.composeConfirmedFor.set(this.writeRequestKey());
   }
 
   protected onConfirmCompose(): void {
-    this.composeConfirming.set(false);
+    if (!this.composeConfirming()) {
+      return;
+    }
+    this.composeConfirmedFor.set(null);
     this.onComposeMaster();
+  }
+
+  protected onCancelCompose(): void {
+    this.composeConfirmedFor.set(null);
+  }
+
+  /** Direct attach that creates a list asks first, naming the lists, as compose does. */
+  protected onConfirmUseSelection(): void {
+    if (!this.attachConfirming()) {
+      return;
+    }
+    this.attachConfirmedFor.set(null);
+    this.onUseSelectionDirectly(true);
+  }
+
+  protected onCancelUseSelection(): void {
+    this.attachConfirmedFor.set(null);
   }
 
   /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
@@ -3084,6 +3157,8 @@ export class AudienceBuilderTabComponent {
     this.loadedRegistrantsEdition.set('');
     this.composeResult.set(null);
     this.composeDispatch.set(null);
+    this.composeConfirmedFor.set(null);
+    this.attachConfirmedFor.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
@@ -3132,6 +3207,20 @@ export class AudienceBuilderTabComponent {
     this.previewCount.set(null);
     this.previewError.set(null);
     this.previewing.set(false);
+  }
+
+  /**
+   * The summary bar's name for the reach figure, matching what the figure is: a previewed union, an
+   * upper bound summed over every list's size, or a sum over only the lists that reported one.
+   */
+  private reachLabel(previewed: boolean, known: number, included: number): string {
+    if (previewed) {
+      return this.previewCount()?.exact ? 'Reach before exclusions' : 'Reach estimate before exclusions';
+    }
+    if (known === 0) {
+      return 'Reach';
+    }
+    return known === included ? 'Reach (at most)' : `Known sizes (${known} of ${included} lists)`;
   }
 
   /** Scrolls to (or focuses) an element by test id once the view has rendered the change that shows it. */

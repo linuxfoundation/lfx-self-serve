@@ -16,7 +16,7 @@
       <dd class="font-semibold text-gray-900" data-testid="campaigns-audience-summary-bar-excluded">{{ excluded() }}</dd>
     </div>
     <div class="flex items-center gap-1">
-      <dt>{{ reachExact() ? 'Reach before exclusions' : 'Reach (sum)' }}</dt>
+      <dt data-testid="campaigns-audience-summary-bar-reach-label">{{ reachLabel() }}</dt>
       <dd class="font-semibold text-gray-900" data-testid="campaigns-audience-summary-bar-reach">{{ reachText() }}</dd>
     </div>
   </dl>

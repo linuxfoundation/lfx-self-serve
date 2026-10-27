@@ -19,8 +19,11 @@ export class AudienceSummaryBarComponent {
   public readonly included = input.required<number>();
   public readonly excluded = input.required<number>();
   public readonly reachText = input.required<string>();
-  /** True when the reach figure is the exact union from "Preview audience size", not a sum. */
-  public readonly reachExact = input(false);
+  /**
+   * What the reach figure is -- a previewed union, an upper bound summed over every list, or a sum
+   * over only the lists that reported a size -- so the label never calls a bound or a partial a sum.
+   */
+  public readonly reachLabel = input('Reach');
   public readonly attached = input(false);
   public readonly review = output<void>();
 }

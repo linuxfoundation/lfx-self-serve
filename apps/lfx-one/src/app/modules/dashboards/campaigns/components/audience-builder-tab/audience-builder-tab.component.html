@@ -77,8 +77,8 @@
         @if (pendingStartOver() === 'draft') {
           <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-draft">
             <p class="text-xs text-gray-800">
-              The lists discovered below are for a different event page. Drafting from this one starts over: the discovered lists, your selection and step 3's
-              ticks are cleared, so one event drives the draft, the registrants suppression and QA.
+              The lists discovered below are for a different event page. Drafting from this one starts over: the discovered lists, your selection and the
+              suppression ticks are cleared, so one event drives the draft, the registrants suppression and QA.
             </p>
             <div class="flex flex-wrap gap-2">
               <button
@@ -202,8 +202,8 @@
       @if (pendingStartOver() === 'discover') {
         <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-discover">
           <p class="text-xs text-gray-800">
-            Discovering starts over: the lists you included or excluded, any list built on the Build tab and its planned event, and step 3's ticks are cleared.
-            Lists already created in HubSpot stay there.
+            Discovering starts over: the lists you included or excluded, any list built on the Build tab and its planned event, and the suppression ticks are
+            cleared. Lists already created in HubSpot stay there.
           </p>
           <div class="flex flex-wrap gap-2">
             <button
@@ -802,7 +802,38 @@
               } @else if (directUseLimitMessage(); as limit) {
                 <p class="text-xs text-amber-700" data-testid="campaigns-audience-use-direct-limit">{{ limit }}</p>
               } @else {
-                <p class="text-xs text-gray-500">Sends to the {{ inclusionEntries().length }} selected list(s) directly. Nothing new is created in HubSpot.</p>
+                <p class="text-xs text-gray-500" data-testid="campaigns-audience-use-direct-note">
+                  Sends to the {{ inclusionEntries().length }} selected list(s) directly. {{ directUseNote() }}
+                </p>
+              }
+              @if (attachConfirming() && canUseSelectionDirectly()) {
+                <div
+                  class="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3"
+                  role="alertdialog"
+                  aria-labelledby="audience-attach-confirm-title"
+                  data-testid="campaigns-audience-use-direct-confirming">
+                  <p id="audience-attach-confirm-title" class="text-xs font-medium text-gray-900">
+                    Attaching also creates {{ writeCreatesText() }} in HubSpot. Continue?
+                  </p>
+                  <p class="text-xs text-gray-700">Later emails reuse these lists by name rather than creating them again.</p>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      (click)="onConfirmUseSelection()"
+                      class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                      data-testid="campaigns-audience-use-direct-confirm">
+                      <i class="fa-light fa-link" aria-hidden="true"></i>
+                      Create and attach
+                    </button>
+                    <button
+                      type="button"
+                      (click)="onCancelUseSelection()"
+                      class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      data-testid="campaigns-audience-use-direct-cancel">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               }
             </div>
           }
@@ -840,6 +871,9 @@
                     Create a master list in HubSpot from {{ inclusionEntries().length }} list(s), excluding {{ excludeIds().length }}?
                   </p>
                   <p class="text-xs text-gray-700">This creates real contact lists and cannot be undone here. Composing twice creates duplicates.</p>
+                  @if (writeCreatesText(); as creates) {
+                    <p class="text-xs text-gray-700" data-testid="campaigns-audience-compose-confirm-creates">It also creates {{ creates }}.</p>
+                  }
                   <div class="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -851,7 +885,7 @@
                     </button>
                     <button
                       type="button"
-                      (click)="composeConfirming.set(false)"
+                      (click)="onCancelCompose()"
                       class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                       data-testid="campaigns-audience-compose-cancel">
                       Cancel
@@ -1084,7 +1118,7 @@
       [included]="summary().included"
       [excluded]="summary().excluded"
       [reachText]="summary().reachText"
-      [reachExact]="summary().reachExact"
+      [reachLabel]="summary().reachLabel"
       [attached]="!!attachedListId()"
       (review)="onGoToStep('compose')" />
   }
