@@ -7,6 +7,7 @@ import {
   COMING_SOON_SENTINEL,
   DEFAULT_EVENT_SORT_FIELD,
   DEFAULT_VISA_REQUEST_SORT_FIELD,
+  EVENT_REQUEST_SOURCE_TABLES,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
   TRAVEL_FUND_LATEST_DEADLINE_AGG,
@@ -17,6 +18,7 @@ import {
   WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
+  EventRequestSourceTable,
   EventRow,
   EventSortOrder,
   EventsResponse,
@@ -667,7 +669,7 @@ export class EventsService {
       req,
       userEmail,
       options,
-      'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS',
+      EVENT_REQUEST_SOURCE_TABLES.VISA_LETTERS,
       'VL_REQUEST_STATUS',
       'VL_APPLICATION_DATE',
       'get_visa_requests'
@@ -680,7 +682,7 @@ export class EventsService {
       req,
       userEmail,
       options,
-      'ANALYTICS.PLATINUM_LFX_ONE.TRAVEL_FUND_REQUESTS',
+      EVENT_REQUEST_SOURCE_TABLES.TRAVEL_FUNDING,
       'TF_REQUEST_STATUS',
       'TF_APPLICATION_DATE',
       'get_travel_fund_requests'
@@ -1048,7 +1050,7 @@ export class EventsService {
     req: Request,
     userEmail: string,
     options: GetEventRequestsOptions,
-    sourceTable: string,
+    sourceTable: EventRequestSourceTable,
     statusColumn: string,
     applicationDateColumn: string,
     operationName: string
