@@ -91,6 +91,18 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     primary: { label: 'Contact support', action: 'contact-support' },
     secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
   },
+  // #4225 — the caller is affiliated with an employer that IS an LF member, but holds no grant on it.
+  // Distinct from `no-organization`, whose "Add an affiliation" CTA is a promise the code cannot keep
+  // for this caller: they already have the affiliation, and adding another never produces a grant.
+  // The employer is deliberately not named — the copy is about the caller, so it needs no interpolation.
+  'affiliated-no-grant': {
+    headline: 'You do not have access to the Organization Lens',
+    reason:
+      'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects. Because this includes sensitive information, access is limited to a small set of admins. If you need access, you can contact an admin (likely your OSPO) and they can grant you access.',
+    icon: 'fa-light fa-lock',
+    primary: { label: 'Contact support', action: 'contact-support' },
+    secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
+  },
   'section-empty': {
     headline: 'No {noun} in this period',
     reason: '{orgName} has no {noun} recorded for {period}. Try a wider date range.',

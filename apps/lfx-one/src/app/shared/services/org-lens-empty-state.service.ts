@@ -26,11 +26,12 @@ import { PersonaService } from './persona.service';
  *      AND caller holds nothing loaded                          → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
- *   6. caller holds nothing, and their own employer holds no
+ *   6. caller holds nothing, but works for an LF member org     → `affiliated-no-grant` (#4225)
+ *   7. caller holds nothing, and their own employer holds no
  *      active LF membership                                     → `affiliated-non-member` (#4314)
- *   7. caller holds nothing, and the employer lookup failed      → `could-not-load` (#4314)
- *   8. caller holds nothing                                     → `no-organization`
- *   9. otherwise (a selection is pending)                       → `null`
+ *   8. caller holds nothing, and the employer lookup failed      → `could-not-load` (#4314)
+ *   9. caller holds nothing                                     → `no-organization`
+ *  10. otherwise (a selection is pending)                       → `null`
  *
  * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
  * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
@@ -54,8 +55,9 @@ import { PersonaService } from './persona.service';
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
- * instead (DR-002). Rule 4 before 5–6 is the epic's never-fall-through rule (FR-011): a failed team check
- * must not read as the contractor or employee copy.
+ * instead (DR-002). Rule 4 before 5–7 is the epic's never-fall-through rule (FR-011): a failed team check
+ * must not read as the contractor or employee copy. Rule 6 keeps it too: the employer verdict is
+ * rendered only when the server says it completed, never inferred from its absence.
  *
  * The addressed-but-unheld states (FR-007 / FR-008) are not decided here: `orgPathParamGuard` already
  * lands every unheld or unknown address on `/org/not-found`, which picks between them (research R6) —
@@ -136,7 +138,13 @@ export class OrgLensEmptyStateService {
     }
     // Rule 5 — a contractor verdict either way answers before rule 6; `null` is "not a contractor",
     // or an answer still owed, which `settled` has already caught through `contractorProbePending`.
-    return this.contractorVerdict(holdsAnything) === null;
+    if (this.contractorVerdict(holdsAnything) !== null) {
+      return false;
+    }
+    // Rule 6 (#4225) outranks #4314's states and is already in hand, so a caller whose employer is a
+    // known member owes nothing further: waiting on a probe whose answer rule 7 will never reach
+    // would hold them on the skeleton for a CDP and warehouse round trip that changes no wording.
+    return !this.roleGrants.affiliatedToMember();
   });
 
   /** The shared bootstrap: both one-shot loads have answered, and a contractor's read check when one is owed. */
@@ -220,6 +228,15 @@ export class OrgLensEmptyStateService {
       return null;
     }
     if (!holdsAnything) {
+      // #4225 and #4314 split rule 6 on the caller's own employer from opposite ends. Neither may
+      // send someone to "add an affiliation" they already have: the member employee was never
+      // granted access, and the non-member employee cannot be granted any. The member answer is
+      // asked first — it rides the role-grants response the page already waits for, and a caller
+      // whose employer is a member is by definition not one of #4314's. Both are false whenever the
+      // server could not establish them, so an outage or an older server keeps today's wording.
+      if (this.roleGrants.affiliatedToMember()) {
+        return 'affiliated-no-grant';
+      }
       if (this.employerAffiliation.affiliatedToNonMember()) {
         return 'affiliated-non-member';
       }

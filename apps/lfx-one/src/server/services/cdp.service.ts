@@ -441,40 +441,6 @@ export class CdpService {
   }
 
   /**
-   * Work history for a member that already exists, for callers that must not write and must not put
-   * the caller's identity in the log sink (#4314: the Org Lens employer probe, which every no-grant
-   * visit fires automatically, for people who may never open their profile).
-   *
-   * Unlike {@link getWorkExperiencesForUser} it resolves through {@link resolveMemberId} and stops
-   * there: no member is created, so a passive read cannot seed a CDP profile, and the INFO line that
-   * create path writes with the caller's LFID is never reached. No identifier is logged here either —
-   * `request_id` already correlates the line.
-   */
-  public async getWorkExperiencesForExistingMember(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
-    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_existing_member');
-
-    try {
-      const memberId = await this.resolveMemberId(req, [sub]);
-      if (!memberId) {
-        logger.success(req, 'get_cdp_work_experiences_for_existing_member', startTime, { member_found: false, work_experience_count: 0 });
-        return [];
-      }
-
-      const entries = this.toWorkExperienceEntries(await this.getMemberWorkExperiences(req, memberId), sub);
-
-      logger.success(req, 'get_cdp_work_experiences_for_existing_member', startTime, { member_found: true, work_experience_count: entries.length });
-
-      return entries;
-    } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 404) {
-        return [];
-      }
-      logger.error(req, 'get_cdp_work_experiences_for_existing_member', startTime, error);
-      throw error;
-    }
-  }
-
-  /**
    * Orchestrates the full flow: token → resolve → get work experiences
    * Maps raw CDP work experiences to frontend-ready WorkExperienceEntry format
    */
@@ -488,7 +454,7 @@ export class CdpService {
 
       const rawExperiences = await this.getMemberWorkExperiences(req, memberId);
 
-      const entries: WorkExperienceEntry[] = this.toWorkExperienceEntries(rawExperiences, sub);
+      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => this.toWorkExperienceEntry(raw, sub));
 
       logger.success(req, 'get_cdp_work_experiences_for_user', startTime, {
         sub,
@@ -504,6 +470,48 @@ export class CdpService {
       }
 
       logger.error(req, 'get_cdp_work_experiences_for_user', startTime, error, { sub });
+      throw error;
+    }
+  }
+
+  /**
+   * #4225 — work history for a caller we are only reading about, which never creates a CDP member.
+   *
+   * {@link getWorkExperiencesForUser} resolves through `resolveMember`, and that helper *creates* a
+   * member when CDP has none. That is right on the profile, where the user is curating their own
+   * record, but wrong on `GET /api/orgs/me/role-grants`: it would make a read endpoint write to CDP
+   * for precisely the population this lookup runs for — callers with no Org Lens grant, who are the
+   * most likely to have no CDP profile yet — and make a page-blocking call wait on that create.
+   *
+   * An unknown member is not an error here: they simply have no work history, so the caller reads
+   * "no employer" and gets the unchanged copy.
+   */
+  public async getWorkExperiencesForKnownUser(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
+    // `sub` is the caller's LFID username, not an opaque id, so it stays out of every log line here:
+    // this runs on a page-blocking request for every grant-less caller, which would put a username in
+    // production logs for exactly that group (PR #4318 review; `security/pii-in-logs-and-identifiers`).
+    // CDP's own member id is opaque and safe, and the request-scoped logger already identifies the caller.
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user');
+
+    try {
+      const memberId = await this.resolveMemberId(req, [sub]);
+      if (!memberId) {
+        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for caller; reporting no work history');
+        return [];
+      }
+
+      const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
+
+      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { member_id: memberId, work_experience_count: entries.length });
+
+      return entries;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for caller');
+        return [];
+      }
+
+      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error);
       throw error;
     }
   }
@@ -987,6 +995,22 @@ export class CdpService {
     return data.memberId;
   }
 
+  /** Shared wire → `WorkExperienceEntry` mapping for both work-history readers. */
+  private toWorkExperienceEntry(raw: CdpWorkExperience, sub: string): WorkExperienceEntry {
+    return {
+      id: raw.id,
+      organization: raw.organizationName,
+      organizationId: raw.organizationId,
+      organizationLogo: raw.organizationLogo || undefined,
+      jobTitle: raw.jobTitle,
+      startDate: this.formatDateToMonthYear(raw.startDate),
+      endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
+      source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
+      cdpSource: raw.source,
+      needsReview: !(raw.verified && raw.verifiedBy === sub),
+    };
+  }
+
   /**
    * Resolve an LFID/emails to a CDP member ID via CDP's resolve endpoint.
    * Returns undefined when CDP has no member for the request — either a 404
@@ -998,9 +1022,10 @@ export class CdpService {
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;
     const requestId = randomUUID();
 
-    // Counts, not the identities: `request_id` correlates the line, and this runs on every CDP read,
-    // including the automatic Org Lens employer probe (#4314).
-    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfid_count: lfids.length, email_count: emails?.length ?? 0, request_id: requestId });
+    // The LFIDs themselves are usernames, so they stay out of the metadata: `request_id` is the
+    // value sent upstream as `X-LFX-Request-ID` and is the correlation key worth having here
+    // (`security/pii-in-logs-and-identifiers`; PR #4318 review).
+    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfid_count: lfids.length, has_emails: !!emails?.length, request_id: requestId });
 
     const body: { lfids: string[]; emails?: string[] } = { lfids };
     if (emails?.length) {
@@ -1023,9 +1048,9 @@ export class CdpService {
       // LFID/emails — treat as "no member" so resolveMember creates one. This is an
       // expected path, so skip reading the body here. Other statuses are genuine failures.
       if (response.status === 404) {
-        // Counts, not the identities — this branch is the common case for the Org Lens employer probe
-        // (#4314), which fires for people who have never opened their profile. `request_id` correlates it.
-        logger.debug(req, 'resolve_cdp_member', 'No CDP member found', { lfid_count: lfids.length, email_count: emails?.length ?? 0, request_id: requestId });
+        // "will create" was only ever true of `resolveMember`; this helper just reports the miss,
+        // and `getWorkExperiencesForKnownUser` deliberately does not create.
+        logger.debug(req, 'resolve_cdp_member', 'No CDP member matched', { lfid_count: lfids.length, request_id: requestId });
         return undefined;
       }
       const errorText = await response.text();
@@ -1060,21 +1085,5 @@ export class CdpService {
     const date = new Date(isoDate);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
-  }
-
-  /** Maps CDP's raw work-experience rows to the frontend-ready shape both readers return. */
-  private toWorkExperienceEntries(rawExperiences: CdpWorkExperience[], sub: string): WorkExperienceEntry[] {
-    return rawExperiences.map((raw) => ({
-      id: raw.id,
-      organization: raw.organizationName,
-      organizationId: raw.organizationId,
-      organizationLogo: raw.organizationLogo || undefined,
-      jobTitle: raw.jobTitle,
-      startDate: this.formatDateToMonthYear(raw.startDate),
-      endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
-      source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
-      cdpSource: raw.source,
-      needsReview: !(raw.verified && raw.verifiedBy === sub),
-    }));
   }
 }

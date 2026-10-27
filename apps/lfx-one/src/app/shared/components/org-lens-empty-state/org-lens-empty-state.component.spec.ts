@@ -206,15 +206,20 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('staff-check-failed'), 'description')?.textContent).toContain('Reference: —');
   });
 
-  // FR-002: the reason opens with what Organization Lens is on the two states a first-time visitor
+  // FR-002: the reason opens with what Organization Lens is on the states a first-time visitor
   // can reach — and nowhere else.
   // The states a caller can reach before ever seeing Org Lens open with what it is (FR-002); #2961 adds
-  // the contractor who has no grant.
+  // the contractor who has no grant, #4225 the employee of a member org who was never granted access.
+  // That one says it in the product's own words ("the Organization section of LFX Self-Serve"), so it
+  // is asserted on its own sentence rather than the two older phrasings.
   it('opens the reason with the product sentence only on the first-visit states', () => {
-    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant'];
+    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant', 'affiliated-no-grant'];
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
     expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    expect(byTestId(render('affiliated-no-grant'), 'description')?.textContent).toContain(
+      'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
+    );
     // #4314 `affiliated-non-member` is also a first-visit state, but its approved copy opens on the
     // "Organization" section of LFX Self-Serve rather than the FR-002 sentence, so it sits with the rest.
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));

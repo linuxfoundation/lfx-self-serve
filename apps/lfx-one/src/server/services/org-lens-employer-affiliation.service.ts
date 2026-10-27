@@ -86,7 +86,7 @@ export class OrgLensEmployerAffiliationService {
   public async getEmployerAffiliation(req: Request, lfid: string): Promise<OrgLensEmployerAffiliation> {
     // The read-only CDP path: a passive probe must not create a member, and must not put the caller's
     // identity in the log sink.
-    const workExperiences = await this.cdpService.getWorkExperiencesForExistingMember(req, lfid);
+    const workExperiences = await this.cdpService.getWorkExperiencesForKnownUser(req, lfid);
     const employerNames = OrgLensEmployerAffiliationService.currentEmployerNames(workExperiences);
 
     if (employerNames.length === 0) {

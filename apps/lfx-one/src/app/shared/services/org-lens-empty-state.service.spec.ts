@@ -37,6 +37,8 @@ interface Harness {
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
   claLookupFailed: WritableSignal<boolean>;
+  /** #4225 — the server established the caller works for an LF member org and holds no grant on it. */
+  affiliatedToMember: WritableSignal<boolean>;
   /** #4314 — the employer-affiliation probe is owed an answer. */
   affiliationPending: WritableSignal<boolean>;
   /** #4314 — a resolved "affiliated with a company that holds no active LF membership". */
@@ -81,6 +83,7 @@ function setup(): Harness {
   const hasOrgSelectorAccess = signal(false);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
+  const affiliatedToMember = signal(false);
   const affiliationPending = signal(false);
   const affiliatedToNonMember = signal(false);
   const affiliationEmployerName = signal<string | null>(null);
@@ -119,6 +122,7 @@ function setup(): Harness {
           auditorSet: signal(new Set<string>()),
           inheritedWriterSet: signal(new Set<string>()),
           inheritedAuditorSet,
+          affiliatedToMember,
           refresh,
         },
       },
@@ -161,6 +165,7 @@ function setup(): Harness {
     hasOrgSelectorAccess,
     claOnlyUids,
     claLookupFailed,
+    affiliatedToMember,
     affiliationPending,
     affiliatedToNonMember,
     affiliationEmployerName,
@@ -266,7 +271,41 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.hasPageState()).toBe(true);
   });
 
-  // #4314 — the rule-6 split. "Add an affiliation" is only an answer for someone who has none.
+  // #4225 — rule 6: an employee of a member org was never granted access, so the affiliation CTA of
+  // `no-organization` is the one action that cannot help them.
+  it('renders affiliated-no-grant for an employee of a member org who holds nothing', () => {
+    h.affiliatedToMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
+    expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // The server reports an unestablished employer as false, so an outage or an older BFF keeps today's copy.
+  it('keeps no-organization when the employer verdict was not established', () => {
+    h.affiliatedToMember.set(false);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
+  });
+
+  // Rule 6 before 7: the member answer rides the role-grants response the page already waits for, and
+  // a caller whose employer is a member is by definition not #4314's non-member employee.
+  it('renders affiliated-no-grant ahead of affiliated-non-member', () => {
+    h.affiliatedToMember.set(true);
+    h.affiliatedToNonMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
+  });
+
+  // The #4314 probe cannot hold the skeleton for a decision rule 6 has already made.
+  it('settles without the employer probe once the member verdict has answered', () => {
+    h.affiliatedToMember.set(true);
+    h.affiliationPending.set(true);
+
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
+  });
+
+  // #4314 — the rule-7 split. "Add an affiliation" is only an answer for someone who has none.
   it('renders affiliated-non-member when the caller already has an employer and it holds no LF membership', () => {
     h.affiliatedToNonMember.set(true);
     h.affiliationEmployerName.set('Delta Harbour');
@@ -303,6 +342,14 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
   });
 
+  // FR-011 again: an outage outranks the employer verdict, which says nothing about the roster.
+  it('renders could-not-load ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
   it('prefers a resolved non-member answer over a stale lookup failure', () => {
     h.affiliationLookupFailed.set(true);
     h.affiliatedToNonMember.set(true);
@@ -324,10 +371,35 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
   });
 
+  it('renders staff-check-failed ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.staffCheck.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
+  });
+
+  // Rule 5 before 6: a contractor gets the reason that applies to them, whatever their work history says.
+  it('renders contractor-no-grant ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('contractor-no-grant');
+  });
+
   it('never shows the non-member copy to a caller who holds an organization', () => {
     h.affiliatedToNonMember.set(true);
     h.selectedAccount.set(account(HELD));
     h.writerSet.set(new Set([HELD]));
+
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  // Rule 1 still wins: holding the selected organization renders the page, employer or not.
+  it('renders the page for a holder even when the employer verdict is set', () => {
+    h.affiliatedToMember.set(true);
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.selectedAccount.set(account(HELD));
 
     expect(h.service.pageState()).toBeNull();
   });
