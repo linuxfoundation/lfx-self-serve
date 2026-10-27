@@ -10,6 +10,7 @@ import type {
   OrgContributionRepoRow,
   OrgContributionRepoRowVm,
   OrgLensTimeRange,
+  OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
 
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -109,4 +110,14 @@ export function describeContributionsCaption(filters: OrgCommitFilters, companyN
   }
   const branch = filters.commitScope === 'merged' ? 'only commits on the main branch' : 'on any branch (including pull-request commits not yet merged)';
   return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
+}
+
+/** Who the People -> Contributors tab counts, worded like {@link describeContributionsCaption}. */
+export function describeContributorsTooltip(projectScope: OrgProjectScope, companyName: string, window: string): string {
+  return (
+    `People with at least one code contribution (commit, pull request, review or comment) credited to ${companyName}` +
+    `${CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[projectScope]}, ${window}. ` +
+    'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
+    'Declared project maintainers count as Maintainers; everyone else counts as Contributors. Bots excluded.'
+  );
 }

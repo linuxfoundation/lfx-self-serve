@@ -59,6 +59,8 @@ import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
+import { describeContributionsWindow, describeContributorsTooltip } from '../../../org-contributions/org-contributions.util';
+
 import { ContributorsService } from '../../services/contributors.service';
 
 /** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainers / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
@@ -127,6 +129,13 @@ export class ContributorsComponent {
   private readonly commitFilters$ = toObservable(this.commitFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
   protected readonly countLabel = computed(() => ORG_CODE_METRIC_LABEL[this.commitFilters().metric]);
   protected readonly countTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.commitFilters()).metric]);
+  protected readonly contributorsTooltip = computed(() =>
+    describeContributorsTooltip(
+      this.commitFilters().projectScope,
+      this.accountContext.selectedAccount().accountName,
+      describeContributionsWindow(this.filterValues().timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE)
+    )
+  );
 
   protected readonly response: Signal<OrgContributorsResponse> = this.initResponse();
 

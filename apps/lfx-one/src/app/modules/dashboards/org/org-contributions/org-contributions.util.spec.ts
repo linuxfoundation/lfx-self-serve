@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
-import { describeContributionsCaption, describeContributionsWindow } from './org-contributions.util';
+import { describeContributionsCaption, describeContributionsWindow, describeContributorsTooltip } from './org-contributions.util';
 
 describe('describeContributionsWindow', () => {
   const now = new Date('2026-10-21T23:26:00.000Z');
@@ -54,6 +54,22 @@ describe('describeContributionsCaption', () => {
   ] as const)('describes code contributions with projectScope=%s, ignoring the commit scope', (projectScope, phrase) => {
     expect(caption({ metric: 'code', projectScope, commitScope: 'merged' })).toBe(
       `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with Acme${phrase}, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.`
+    );
+  });
+});
+
+describe('describeContributorsTooltip', () => {
+  it('names the scope and window and credits the employer at the time', () => {
+    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history')).toBe(
+      'People with at least one code contribution (commit, pull request, review or comment) credited to Acme in LF projects, across all recorded history. ' +
+        'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
+        'Declared project maintainers count as Maintainers; everyone else counts as Contributors. Bots excluded.'
+    );
+  });
+
+  it('adds no scope phrase for every project', () => {
+    expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)')).toContain(
+      'credited to Acme, from Oct 21, 2025 to Oct 21, 2026 (UTC).'
     );
   });
 });
