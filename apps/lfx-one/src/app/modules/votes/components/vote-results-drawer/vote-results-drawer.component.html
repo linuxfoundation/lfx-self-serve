@@ -1,24 +1,25 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- 44px targets are exact [44px]: the 14px html root makes Tailwind's min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets). -->
 <p-drawer
   [(visible)]="visible"
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full max-sm:h-dvh vote-results-drawer"
   data-testid="vote-results-drawer">
   @if (vote(); as voteData) {
     <ng-template #header>
       <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
-        <div class="flex items-center justify-between gap-2">
-          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-results-drawer-title">
+        <div class="flex items-start justify-between gap-2">
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 break-words" data-testid="vote-results-drawer-title">
             {{ voteData.name }}
           </h1>
           <button
             type="button"
             (click)="onClose()"
-            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+            class="flex items-center justify-center min-w-[44px] min-h-[44px] text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
             aria-label="Close panel"
             data-testid="vote-results-drawer-close">
             <i class="fa-light fa-xmark text-xl pointer-events-none"></i>
@@ -60,7 +61,7 @@
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                    class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                     [pTooltip]="earlyCloseTooltip"
                     tooltipEvent="both"
                     tooltipPosition="top"
@@ -128,7 +129,7 @@
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                    class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                     [pTooltip]="earlyCloseTooltip"
                     tooltipEvent="both"
                     tooltipPosition="top"
@@ -161,9 +162,18 @@
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
       <!-- LFXV2-1587 inline cast CTA — creator scope only; voter scope uses the dedicated State A panel below. -->
       @if (audience() === 'creator' && !isLoading() && canCastVoteFromDrawer() && allowCastFromDrawer()) {
-        <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-center justify-between gap-3" data-testid="vote-results-drawer-cast-cta">
+        <div
+          class="rounded-lg border border-blue-200 bg-blue-50 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          data-testid="vote-results-drawer-cast-cta">
           <p class="text-sm text-blue-900">You haven't cast your vote yet.</p>
-          <lfx-button size="small" severity="primary" label="Cast Vote" (onClick)="onCastVote()" data-testid="vote-results-drawer-cast-button" />
+          <lfx-button
+            size="small"
+            severity="primary"
+            label="Cast Vote"
+            [fluid]="true"
+            styleClass="w-full sm:w-auto min-h-[44px]"
+            (onClick)="onCastVote()"
+            data-testid="vote-results-drawer-cast-button" />
         </div>
       }
 

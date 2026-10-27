@@ -57,8 +57,9 @@ export function member360TerminalResult(payloads: string[], contacts: (string | 
     return {
       status: 'failed',
       reason: classifyMember360FailureReason(message),
-      message: message.slice(0, MEMBER_360_FAILURE_MESSAGE_MAX_CHARS) || MEMBER_360_FAILURE_MESSAGE,
+      message: message.slice(0, MEMBER_360_FAILURE_MESSAGE_MAX_CHARS) || (failed ? MEMBER_360_STOPPED_MESSAGE : MEMBER_360_FAILURE_MESSAGE),
     };
   }
-  return failed ? { status: 'failed', reason: 'agent_stopped', message: MEMBER_360_STOPPED_MESSAGE } : null;
+  // Error events can be recoverable; only a session end proves terminal failure.
+  return null;
 }

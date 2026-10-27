@@ -134,22 +134,17 @@
                 <div class="flex gap-0.5">
                   @for (cell of row.heat; track cell.label) {
                     <span
-                      class="group relative inline-block h-4 w-4 shrink-0 rounded"
+                      class="inline-block h-4 w-4 shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                       tabindex="0"
                       [ngClass]="cell.color"
                       [attr.data-testid]="'member-360-heat-' + row.member.rank + '-' + cell.label"
-                      (focus)="tooltipDismissed.set(false)"
-                      (mouseenter)="tooltipDismissed.set(false)"
-                      (keydown.escape)="tooltipDismissed.set(true)"
+                      [pTooltip]="cell.label + ': ' + (cell.value ?? 'no data')"
+                      tooltipPosition="bottom"
+                      tooltipEvent="both"
+                      [escape]="true"
+                      appendTo="body"
                       [attr.aria-label]="cell.label + ': ' + (cell.value ?? 'no data')"
-                      role="img"
-                      ><span
-                        aria-hidden="true"
-                        [class.invisible]="tooltipDismissed()"
-                        class="absolute left-0 top-full z-10 hidden min-w-32 rounded bg-gray-900 p-2 text-white group-hover:block group-focus:block"
-                        >{{ cell.label }}: {{ cell.value ?? 'no data' }}</span
-                      ></span
-                    >
+                      role="img"></span>
                   }
                 </div>
               </td>
@@ -213,8 +208,8 @@
       </table>
     </div>
     <p class="border-t border-gray-200 p-4 text-sm text-gray-500">
-      Heat strip: the category order (events, speaking, ambassadors, committees, content, marketing), green to red. Gray means no data, not zero. Renewal days:
-      red under 60, amber under 120.
+      Heat strip: the category order (events, speaking, ambassadors, committees, content, marketing), green to red. Gray means no data, not zero.
+      {{ renewalLegend }}
     </p>
   </section>
   <div class="grid items-start gap-5 lg:grid-cols-2">
@@ -285,8 +280,8 @@
           @for (category of method().categories_no_data; track category.category) {
             <p>No data: {{ category.category }} — {{ category.reason }}</p>
           }
-          @for (source of method().data_sources; track source.source) {
-            <p>{{ source.label }}: {{ source.status }} {{ source.note }}</p>
+          @for (source of methodSources(); track source.source) {
+            <p>{{ source.label }}: {{ source.statusText }} {{ source.note }}</p>
           }
           <p>Routing rule version: {{ method().routing_rule_version }}</p>
           @for (note of method().notes; track $index) {

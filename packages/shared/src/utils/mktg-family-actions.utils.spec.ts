@@ -78,9 +78,17 @@ describe('One rule for every family action', () => {
     }
   });
   it('an unavailable agent has no row button and reads Coming soon, even with a registered run type', () => {
-    const result = resolveMktgFamilyActions(family('website-web'), context);
-    expect(result.rows['aeo-geo']).toMatchObject({ row: { state: 'coming-soon', badge: 'Coming soon' }, action: null });
-    expect(result.header).toBeNull();
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'aeo-geo');
+    if (!agent) throw new Error('Missing synthetic catalog agent');
+    const status = agent.status;
+    agent.status = 'coming-soon';
+    try {
+      const result = resolveMktgFamilyActions(family('website-web'), context);
+      expect(result.rows['aeo-geo']).toMatchObject({ row: { state: 'coming-soon', badge: 'Coming soon' }, action: null });
+      expect(result.header).toBeNull();
+    } finally {
+      agent.status = status;
+    }
     expect(isMktgFamilyAgentAvailable('icp')).toBe(false);
     expect(isMktgFamilyAgentAvailable('not-registered')).toBe(false);
     const excluded = family();
@@ -133,8 +141,7 @@ describe('One rule for every family action', () => {
     expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Review 2 drafts');
     view.rows.forEach((row) => (row.state = 'approved'));
     expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the kit', agentId: null, mode: null, link: null });
-    const unsupported = built(family('website-web'));
-    unsupported.rows.forEach((row) => (row.state = 'approved'));
+    const unsupported = { ...view, family: { ...view.family, id: 'synthetic-no-exporter' } };
     expect(resolveMktgFamilyActions(unsupported, context).header).toBeNull();
     view.rows[0].state = 'needs-rebuild';
     expect(resolveMktgFamilyActions(view, context).header?.kind).toBe('rebuild');

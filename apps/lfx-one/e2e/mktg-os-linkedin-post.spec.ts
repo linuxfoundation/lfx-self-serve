@@ -329,6 +329,42 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.screenshot({ path: info.outputPath('file-source-reset.png'), fullPage: true });
   });
 
+  test('opens profile edit ahead of pending-run recovery', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true });
+    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending', activity: [] }));
+    await openLinkedin(page);
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Unfinished synthetic run.');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.evaluate(() => {
+      const url = new URL(location.href);
+      url.pathname = url.pathname.replace(/\/documents\/linkedin-post\/[^/]+$/, '/linkedin-post');
+      url.search = new URLSearchParams({ project: url.searchParams.get('project') ?? '', profile: 'edit' }).toString();
+      history.replaceState({}, '', url);
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(page.getByTestId('mktg-linkedin-save-profile').getByRole('button')).toBeEnabled();
+    await page.screenshot({ path: info.outputPath('pending-run-profile-edit.png'), fullPage: true });
+  });
+  test('setup-only Continue after run-page Edit leaves one Back to Family', async ({ page }, info) => {
+    await setupLinkedin(page); // openLinkedin includes suppressCookieBanner(page).
+    await openLinkedin(page);
+    await page.getByTestId('mktg-breadcrumb-link-1').click();
+    await page.getByTestId('mktg-family-run').getByRole('link').click();
+    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
+      await page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea').fill(value);
+    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
+    await page.getByTestId('mktg-linkedin-edit-profile').click();
+    await expect(page).toHaveURL(/profile=edit/);
+    await page.getByTestId('mktg-linkedin-profile-tone').locator('input').fill('Direct');
+    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await expect(page).not.toHaveURL(/profile=edit/);
+    await page.goBack();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('setup-edit-continue-back.png'), fullPage: true });
+  });
   test('drops cancelled optional setup edits when the form reopens', async ({ page }, info) => {
     await setupLinkedin(page);
     await openLinkedin(page);

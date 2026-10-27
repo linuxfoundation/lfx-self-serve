@@ -231,6 +231,18 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  it('does not route another one-off intake into the dedicated audit form', async () => {
+    SHELL_INTAKE.oneOffDocument = true;
+    try {
+      await configure();
+      expect(component['dedicatedAudit']).toBe(false);
+      expect(query('mktg-agent-run-page')).toBeNull();
+      expect(host().querySelector('lfx-aeo-geo-run')).toBeNull();
+    } finally {
+      delete SHELL_INTAKE.oneOffDocument;
+    }
+  });
+
   it('shows fixed Kit and Family parents instead of a separate back arrow', async () => {
     await configure('browser', 'foundation-setup');
     const breadcrumb: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb"]');
@@ -297,6 +309,18 @@ describe('MktgAgentRunComponent', () => {
     for (const field of MKTG_AGENT_INTAKES['faq'].fields.filter((field) => !field.optional)) {
       expect(component['sourcesHint']).toContain(field.question);
     }
+  });
+
+  it('pushes user navigation with only the active project', async () => {
+    await configure();
+    activeContext.set(PROJECT_2);
+    await fixture.whenStable();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    component['onOpenAgent']('foundation-setup');
+    expect(navigate).toHaveBeenLastCalledWith(['..', 'foundation-setup'], {
+      relativeTo: TestBed.inject(ActivatedRoute),
+      queryParams: { project: PROJECT_2.slug },
+    });
   });
 
   describe('explicit new-run Sources', () => {
@@ -582,10 +606,10 @@ describe('MktgAgentRunComponent', () => {
     it('clears entry-only fresh mode when opening a sibling agent', async () => {
       await configure('browser', agentId, { mode: 'new', project: 'synthetic' });
       component['onOpenAgent']('brand-kit');
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
-        ['..', 'brand-kit'],
-        expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
-      );
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'brand-kit'], {
+        relativeTo: TestBed.inject(ActivatedRoute),
+        queryParams: { project: null },
+      });
     });
 
     it('keeps a deliberately cleared optional source blank through submit, save and reopening', async () => {
@@ -868,7 +892,7 @@ describe('MktgAgentRunComponent', () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
       try {
         await configure('browser', agentId);
-        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParams: { project: null }, replaceUrl: true }));
       } finally {
         navigate.mockRestore();
       }
@@ -1166,10 +1190,12 @@ describe('MktgAgentRunComponent', () => {
         component['onProgress'](mktgRunProgressFixture(event, run, 1, attempt), PROJECT_1.uid);
         await fixture.whenStable();
         expect(navigate).toHaveBeenCalledTimes(1);
+        expect(navigate.mock.calls[0]?.[1]?.replaceUrl).toBe(true);
+        expect(navigate.mock.calls[0]?.[1]?.queryParamsHandling).toBeUndefined();
         if (receipted) {
           expect(navigate).toHaveBeenCalledWith(
             expect.anything(),
-            expect.objectContaining({ queryParams: expect.objectContaining({ revision: location.revisionId }) })
+            expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT_1.slug, revision: location.revisionId }) })
           );
         } else {
           const token = component['navigation']()?.generation;
@@ -1203,7 +1229,8 @@ describe('MktgAgentRunComponent', () => {
         expect(navigate).toHaveBeenCalledWith(
           ['..', 'documents', type.agentKey, 'living'],
           expect.objectContaining({
-            queryParams: expect.objectContaining({ revision: `000001-${'a'.repeat(64)}` }),
+            replaceUrl: true,
+            queryParams: expect.objectContaining({ project: PROJECT_1.slug, revision: `000001-${'a'.repeat(64)}` }),
           })
         );
       }
@@ -1959,10 +1986,7 @@ describe('MktgAgentRunComponent', () => {
 
         (chip as HTMLButtonElement | null)?.click();
 
-        expect(navigate).toHaveBeenCalledWith(
-          ['..', 'foundation-setup'],
-          expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
-        );
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
       });
 
       it.each(['none stored', 'stored but unapproved'])('requires approval when the framework is %s', async () => {
@@ -1985,10 +2009,7 @@ describe('MktgAgentRunComponent', () => {
 
         link?.querySelector('button')?.click();
 
-        expect(navigate).toHaveBeenCalledWith(
-          ['..', 'foundation-setup'],
-          expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
-        );
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
         component['onSubmit']();
         expect(generate).not.toHaveBeenCalled();
       });
@@ -2274,7 +2295,7 @@ describe('MktgAgentRunComponent', () => {
       const link = query('mktg-agent-run-missing-dependency-link');
       expect(link?.textContent).toContain('Open the Messaging Framework page');
       link?.querySelector('button')?.click();
-      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' }));
+      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
     });
@@ -2885,7 +2906,17 @@ describe('MktgAgentRunComponent', () => {
           { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' },
           { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
         ];
-        const run = assetRun([{ version: 1, document: '', asset: ASSET, questions: QUESTIONS, answers, createdAt: '2026-10-17T00:00:00.000Z' }]);
+        const run = assetRun([
+          {
+            version: 1,
+            document: '',
+            asset: ASSET,
+            questions: QUESTIONS,
+            answers,
+            createdAt: '2026-10-17T00:00:00.000Z',
+            documentLocation: { agentKey: 'foundation-message', documentId: 'living', revisionId: 'synthetic-selected-revision' },
+          },
+        ]);
         answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, mktgRunProgressFixture('document', run, 1)]));
 
         await click('mktg-run-questions-next');
@@ -2911,6 +2942,40 @@ describe('MktgAgentRunComponent', () => {
         expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'documents', 'foundation-message', 'living'], expect.anything());
       });
 
+      it('keeps the answered run feed through checking and receipt-less readiness, then replaces with the exact revision', async () => {
+        const progress = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(progress);
+        const navigate = TestBed.inject(Router).navigate;
+        const prepare = vi.spyOn(TestBed.inject(MktgRunAttemptService), 'prepare');
+        await sendWith('Avoid "synergy".');
+        progress.next({ type: 'submitted' });
+        progress.next({
+          type: 'activity',
+          activity: [{ id: 'synthetic-check', kind: 'checking', label: 'Checking the draft', status: 'running', startedAt: '2026-10-24T01:00:00Z' }],
+        });
+        await fixture.whenStable();
+        expect(component['answersSending']()).toBe(false);
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-activity')).not.toBeNull();
+        expect(navigate).not.toHaveBeenCalled();
+        const earlier = assetRun([{ version: 1, document: '# Exact answer result', createdAt: '2026-10-17T00:00:00Z' }]);
+        progress.next(mktgRunProgressFixture('document', earlier, 1));
+        expect(navigate).not.toHaveBeenCalled();
+        expect(prepare).not.toHaveBeenCalled();
+        const location = { agentKey: 'foundation-message' as const, documentId: 'living', revisionId: 'synthetic-answer-revision' };
+        const stored = assetRun([
+          { ...earlier.versions[0], version: 1, document: '# Exact answer result', createdAt: '2026-10-17T00:00:00Z', documentLocation: location },
+        ]);
+        progress.next(mktgRunProgressFixture('persisted', stored, 1));
+        await fixture.whenStable();
+        expect(navigate).toHaveBeenLastCalledWith(['..', 'documents', 'foundation-message', 'living'], {
+          relativeTo: TestBed.inject(ActivatedRoute),
+          queryParams: { project: PROJECT_1.slug, generation: null, questions: null, revision: location.revisionId, run: null },
+          replaceUrl: true,
+        });
+        expect(answerQuestions).toHaveBeenCalledTimes(1);
+      });
+
       it('marks an edited suggestion as edited, goes back with Back, and shows the writing feed once sent', async () => {
         answerQuestions.mockReturnValue(concat(of<MktgGenerateProgress>({ type: 'submitted' }), NEVER));
 
@@ -2926,6 +2991,56 @@ describe('MktgAgentRunComponent', () => {
         expect(sent[0]).toEqual({ key: 'ranked-goals', text: 'Adoption, then community.', origin: 'edited' });
         expect(component['phase']()).toBe('running');
         expect(query('mktg-run-activity-title')?.textContent).toContain('Writing your Messaging framework');
+      });
+
+      it('exits a bounded receipt wait honestly without navigation or another answers POST', async () => {
+        const progress = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(progress);
+        await sendWith('Avoid "synergy".');
+        progress.next({ type: 'submitted' });
+        progress.complete();
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('check Documents');
+        expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+        expect(answerQuestions).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not offer to resend accepted answers when their result poll fails', async () => {
+        const progress = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(progress);
+        await sendWith('Avoid "synergy".');
+        progress.next({ type: 'submitted' });
+        progress.error(new Error('Synthetic result-poll error'));
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('form');
+        expect(component['questionsPending']()).toBeNull();
+        expect(query('mktg-agent-run-error')?.textContent).toContain('check Documents');
+        expect(answerQuestions).toHaveBeenCalledTimes(1);
+      });
+
+      it('disarms Retry after an acknowledged answers stream errors without starting another Generate', async () => {
+        const progress = new Subject<MktgGenerateProgress>();
+        answerQuestions.mockReturnValue(progress);
+        const startGeneration = vi.spyOn(component as unknown as { startGeneration: () => void }, 'startGeneration');
+        generate.mockClear();
+        const request = component['activeRequest'];
+        await sendWith('Avoid "synergy".');
+        progress.next({ type: 'submitted' });
+        progress.error(new Error('Synthetic post-ACK poll failure'));
+        await fixture.whenStable();
+
+        expect(component['runFailed']()).toBe(false);
+        expect(component['phase']()).toBe('form');
+        expect(component['errorText']()).toContain('check Documents');
+        expect(component['questionsPending']()).toBeNull();
+        expect(component['answersSending']()).toBe(false);
+        expect(component['writingStretch']()).toBe(false);
+        expect(component['activeRequest']).toBe(request);
+        expect(query('mktg-agent-run-retry')).toBeNull();
+        component['onRetryRun']();
+        expect(startGeneration).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
       });
 
       it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {

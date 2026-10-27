@@ -444,5 +444,6 @@ export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';

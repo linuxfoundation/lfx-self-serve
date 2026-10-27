@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable, Signal, signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import type { KeywordTargetingRemovalOutcomeRow, KeywordTargetingRemovalState, KeywordTargetingRemovalSubmission } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import {
@@ -9,7 +9,12 @@ import {
   keywordTargetingRemovalOutcomeRows,
   summarizeKeywordTargetingRemovals,
 } from '@shared/utils/campaign-keyword-targeting.utils';
-import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
+import {
+  campaignKeywordWriteKey,
+  campaignNegativeKeywordsKey,
+  negativeKeywordsScopesMatch,
+  pendingKeywordWrites,
+} from '@shared/utils/campaign-negative-keywords.utils';
 import { MessageService } from 'primeng/api';
 import { take } from 'rxjs';
 
@@ -34,21 +39,32 @@ export class CampaignKeywordTargetingService {
   private readonly messageService = inject(MessageService);
 
   private readonly state = signal<Record<string, KeywordTargetingRemovalState>>({});
+  private readonly settled = signal<Record<string, number>>({});
   /** `undefined` until `setScope` is first called (nothing scoped), `null` once released. */
   private activeScope: string | null | undefined = undefined;
 
   /** The latest removal per (project, brief, campaign) key. */
   public readonly removals: Signal<Record<string, KeywordTargetingRemovalState>> = this.state.asReadonly();
+  /**
+   * The campaigns (by `campaignKeywordWriteKey`, brief-independent) with a removal in flight under
+   * ANY brief key: what the other keyword lever holds on, and what refuses a second removal.
+   */
+  public readonly pendingWrites: Signal<Record<string, true>> = computed(() => pendingKeywordWrites(this.state()));
+  /** How many removals of each campaign (by `campaignKeywordWriteKey`) have settled: a change means a revision read is stale. */
+  public readonly settledWrites: Signal<Record<string, number>> = this.settled.asReadonly();
 
   /** Sends one removal, unless one is already in flight for the campaign. Sent once: never retried, never cancelled. */
   public remove(submission: KeywordTargetingRemovalSubmission): void {
     const { projectSlug, briefId, campaignId, campaignName, platform, request, sent } = submission;
     const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
-    if (this.state()[key]?.pending) {
+    const writeKey = campaignKeywordWriteKey(projectSlug, campaignId);
+    // Campaign-wide, not per brief: the brief id can change under a removal in flight.
+    if (this.pendingWrites()[writeKey]) {
       return;
     }
     const settleCount = this.state()[key]?.settleCount ?? 0;
     this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, sent, settleCount });
+    const countSettle = (): void => this.settled.update((all) => ({ ...all, [writeKey]: (all[writeKey] ?? 0) + 1 }));
 
     this.campaignService
       .removeKeywordTargeting(projectSlug, campaignId, request)
@@ -57,11 +73,13 @@ export class CampaignKeywordTargetingService {
         next: (result) => {
           const rows = keywordTargetingRemovalOutcomeRows(sent, result);
           this.settle(key, { pending: false, outcomeRows: rows, batchOutcome: null, sent, settleCount: settleCount + 1 });
+          countSettle();
           this.announce(campaignName, rows);
         },
         error: (err: unknown) => {
           const outcome = classifyKeywordTargetingRemovalFailure(err, platform);
           this.settle(key, { pending: false, outcomeRows: [], batchOutcome: outcome, sent, settleCount: settleCount + 1 });
+          countSettle();
           this.messageService.add({
             severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
             summary: outcome.state === 'unconfirmed' ? `Keyword removal not confirmed for ${campaignName}` : `Keywords not removed from ${campaignName}`,
@@ -103,7 +121,7 @@ export class CampaignKeywordTargetingService {
     }
     const [activeProject, activeBrief] = scope.split('|');
     const [project, brief] = key.split('|');
-    return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
+    return negativeKeywordsScopesMatch(project, brief, activeProject, activeBrief);
   }
 
   private set(key: string, removal: KeywordTargetingRemovalState): void {

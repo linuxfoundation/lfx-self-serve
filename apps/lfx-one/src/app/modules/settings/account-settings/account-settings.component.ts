@@ -12,7 +12,13 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, INSIGHTS_PUBLIC_API_FLAG, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_SETTINGS_SECTIONS,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  INSIGHTS_PUBLIC_API_FLAG,
+  PROFILE_EMAILS_PATH,
+} from '@lfx-one/shared/constants';
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
@@ -355,7 +361,9 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.cancelOtpStep();
             this.emailRefresh.next();
-            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+            // An address already connected to this account was not added — don't claim it was.
+            const detail = response.status === EMAIL_ALREADY_CONNECTED_STATUS ? EMAIL_ALREADY_CONNECTED_MESSAGE : 'Email address added successfully';
+            this.messageService.add({ severity: 'success', summary: 'Success', detail });
           } else {
             this.messageService.add({
               severity: 'error',

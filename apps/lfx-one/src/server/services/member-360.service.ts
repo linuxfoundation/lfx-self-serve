@@ -4,15 +4,19 @@
 import {
   MEMBER_360_CONTRACT_ID,
   MEMBER_360_FINALIZE_TOOL,
+  MEMBER_360_FINALIZE_RECEIPT_ID,
+  MEMBER_360_PARTIAL_SUMMARY_PREFIX,
   MEMBER_360_MAX_BYTES,
   MEMBER_360_COMPARISON_UNAVAILABLE,
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_ARTIFACT_SHA256_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   Member360Envelope,
+  Member360FinalizeReceipt,
   Member360GenerateRequest,
   Member360GenerationStart,
   Member360PriorRun,
@@ -33,7 +37,8 @@ import {
   findMember360Questions,
   member360TerminalResult,
 } from '@lfx-one/shared/server';
-import { extractMktgToolResults } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { extractMktgToolResults, isMktgReasoningEvent, isMktgToolTaskEvent, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -93,6 +98,7 @@ export class Member360Service {
 
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
+    const redactIdentity = createMember360Redactor([]);
     let best: Member360Envelope | null = null;
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
@@ -103,38 +109,94 @@ export class Member360Service {
       label: redactActivity(step.label),
       ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),
     }));
-    for (const payload of payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL))) {
+    const finalizeResults = payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL));
+    for (const payload of finalizeResults) {
       for (const candidate of extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID)) {
-        const parsed = envelopeSchema.safeParse(candidate);
-        if (!parsed.success) {
-          logger.debug(req, 'member_360_result', 'Rejected envelope schema', { issues: parsed.error.issues.map((issue) => issue.path.join('.')) });
-          continue;
+        const envelope = this.acceptCandidate(req, candidate, project, redactIdentity, 'finalize_result');
+        if (envelope && (!best || envelope.version >= best.version)) best = envelope;
+      }
+    }
+    if (!best) {
+      const receipts = new Map<string, Pick<Member360FinalizeReceipt, 'partial' | 'rows'>>();
+      for (const text of finalizeResults) {
+        try {
+          const receipt: unknown = JSON.parse(text);
+          if (
+            receipt &&
+            typeof receipt === 'object' &&
+            !Array.isArray(receipt) &&
+            'finalize_receipt' in receipt &&
+            receipt.finalize_receipt === MEMBER_360_FINALIZE_RECEIPT_ID &&
+            'ok' in receipt &&
+            receipt.ok === true &&
+            'sha256' in receipt &&
+            typeof receipt.sha256 === 'string' &&
+            MKTG_ARTIFACT_SHA256_REGEX.test(receipt.sha256) &&
+            'partial' in receipt &&
+            typeof receipt.partial === 'boolean' &&
+            'rows' in receipt &&
+            receipt.rows &&
+            typeof receipt.rows === 'object' &&
+            !Array.isArray(receipt.rows) &&
+            'ranking' in receipt.rows &&
+            typeof receipt.rows.ranking === 'number' &&
+            Number.isInteger(receipt.rows.ranking) &&
+            receipt.rows.ranking >= 0 &&
+            'evidence' in receipt.rows &&
+            typeof receipt.rows.evidence === 'number' &&
+            Number.isInteger(receipt.rows.evidence) &&
+            receipt.rows.evidence >= 0
+          )
+            receipts.set(receipt.sha256, { partial: receipt.partial, rows: { ranking: receipt.rows.ranking, evidence: receipt.rows.evidence } });
+        } catch {
+          // Direct envelopes and non-JSON tool replies are not receipts.
         }
-        // Hash the ORIGINAL property order, never zod's reconstructed object.
-        const envelope = candidate as Member360Envelope;
-        if (Buffer.byteLength(JSON.stringify(envelope)) > MEMBER_360_MAX_BYTES || this.sha(JSON.stringify(envelope.tabs)) !== envelope.content_sha256) {
-          logger.debug(req, 'member_360_result', 'Rejected envelope size or integrity', {});
-          continue;
+      }
+      if (receipts.size) {
+        logger.debug(req, 'member_360_result', 'Found finalize receipts', { receipts: receipts.size });
+        // Agent code writes a receipt only after finalize validation succeeds.
+        // Bind its tabs hash, partial flag and row counts; summary text itself
+        // remains model prose in both paths, not hash-authenticated bytes.
+        // The BFF still checks schema, size, original tabs hash and project scope;
+        // the unchanged storage path redacts both tabs and summary before saving.
+        for (const payload of payloads) {
+          for (const text of this.finalCarrierTexts(payload)) {
+            for (const candidate of extractMktgEnvelopeCandidates(text, MEMBER_360_CONTRACT_ID)) {
+              if (!candidate || typeof candidate !== 'object') continue;
+              if (!('content_sha256' in candidate) || typeof candidate.content_sha256 !== 'string' || !receipts.has(candidate.content_sha256)) {
+                logger.debug(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'hash' });
+                continue;
+              }
+              const receipt = receipts.get(candidate.content_sha256);
+              const envelope = this.acceptCandidate(req, candidate, project, redactIdentity, 'receipt_bound_final');
+              if (!receipt || !envelope) continue;
+              if (receipt.partial !== envelope.summary_markdown.startsWith(MEMBER_360_PARTIAL_SUMMARY_PREFIX)) {
+                logger.debug(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'partial' });
+                continue;
+              }
+              if (receipt.rows.ranking !== envelope.tabs.member_ranking.length || receipt.rows.evidence !== envelope.tabs.evidence.length) {
+                logger.debug(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'rows' });
+                continue;
+              }
+              if (!best || envelope.version >= best.version) best = envelope;
+            }
+          }
         }
-        if (
-          envelope.project_uid !== project.uid ||
-          envelope.project_name !== project.name ||
-          (envelope.project_slug && envelope.project_slug !== project.slug)
-        ) {
-          logger.debug(req, 'member_360_result', 'Rejected envelope scope', { project: project.uid });
-          continue;
-        }
-        if (!best || envelope.version >= best.version) best = parsed.data;
+        if (best)
+          logger.info(req, 'member_360_result', 'Accepted the receipt-bound final envelope', { source: 'receipt_bound_final', receipts: receipts.size });
       }
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
-      if (questionsText) return { status: 'needs_input', activity };
+      if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
+        return { status: 'needs_input', activity };
+      }
       const failed = member360TerminalResult(payloads, contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
+      if (questionsText) return { status: 'needs_input', activity };
       return { status: 'pending', activity };
     }
     const type = findMktgDocumentType('member-360');
@@ -147,9 +209,13 @@ export class Member360Service {
       // Verify upstream bytes first, then exclude contact identity from the immutable store.
       const redact = createMember360Redactor(best.tabs.member_ranking.map((row) => row.key_contact));
       const tabs = redactMember360Tabs(best.tabs, redact);
-      const redactIdentity = createMember360Redactor([]);
+      // This provenance field is BFF-owned, never trusted from the agent contract.
+      const storedEnvelope = { ...best };
+      delete storedEnvelope.lfx_project_uid;
       let member360 = {
-        ...best,
+        ...storedEnvelope,
+        project_uid: project.uid,
+        ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),
         project_name: redactIdentity(best.project_name),
         ...(best.lfx_project_name !== undefined && { lfx_project_name: redactIdentity(best.lfx_project_name) }),
         tabs,
@@ -172,6 +238,12 @@ export class Member360Service {
         document_markdown: summary,
         content_sha256: this.sha(summary),
       };
+      if (best.project_uid !== undefined && best.project_uid !== project.uid) {
+        logger.info(req, 'member_360_result', 'Envelope uid differs from the LFX One project uid; accepted by name and slug', {
+          project: project.uid,
+          envelope_project_uid: best.project_uid,
+        });
+      }
       const stored = await this.documents.recordGeneration(req, type, project.uid, bundle, sessionId);
       return {
         status: 'ready',
@@ -193,6 +265,67 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  private finalCarrierTexts(payload: string): string[] {
+    let event: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(payload);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+      event = parsed as Record<string, unknown>;
+    } catch {
+      return [];
+    }
+    if (isMktgReasoningEvent(event) || isMktgToolTaskEvent(event)) return [];
+    const task = event['task'];
+    const root = task && typeof task === 'object' && !Array.isArray(task) ? (task as Record<string, unknown>) : null;
+    if (root && (root['entity_type'] !== 'EntTaskAgent' || root['parent_task_id'] != null)) return [];
+    const content = event['content'];
+    // Guild's task-less notifications are root output bound by the receipt; task metadata, when present, must identify the root agent.
+    if (event['type'] === 'agent_notification_message' && typeof content === 'string') return [content];
+    if (!content || typeof content !== 'object' || Array.isArray(content) || !('type' in content) || content.type !== 'text') return [];
+    if (event['type'] === 'runtime_done' && root && 'text' in content && typeof content.text === 'string') return [content.text];
+    if (event['type'] === 'agent_notification_message' && 'data' in content && typeof content.data === 'string') return [content.data];
+    return [];
+  }
+
+  private acceptCandidate(
+    req: Request,
+    candidate: unknown,
+    project: Project,
+    redactIdentity: ReturnType<typeof createMember360Redactor>,
+    source: 'finalize_result' | 'receipt_bound_final'
+  ): Member360Envelope | null {
+    const parsed = envelopeSchema.safeParse(candidate);
+    if (!parsed.success) {
+      logger.debug(req, 'member_360_result', 'Rejected envelope schema', { source, issues: parsed.error.issues.map((issue) => issue.path.join('.')) });
+      return null;
+    }
+    // Hash the ORIGINAL property order, never zod's reconstructed object.
+    const envelope = candidate as Member360Envelope;
+    if (Buffer.byteLength(JSON.stringify(envelope)) > MEMBER_360_MAX_BYTES || this.sha(JSON.stringify(envelope.tabs)) !== envelope.content_sha256) {
+      logger.debug(req, 'member_360_result', 'Rejected envelope size or integrity', { source });
+      return null;
+    }
+    if (!this.member360EnvelopeMatchesProject(envelope, project)) {
+      logger.debug(req, 'member_360_result', 'Rejected envelope scope', {
+        source,
+        project: project.uid,
+        envelope_project_uid: envelope.project_uid && redactIdentity(envelope.project_uid),
+        envelope_project_slug: envelope.project_slug && redactIdentity(envelope.project_slug),
+      });
+      return null;
+    }
+    return parsed.data;
+  }
+
+  private member360EnvelopeMatchesProject(envelope: Member360Envelope, project: Project): boolean {
+    if (envelope.project_uid !== undefined && !MKTG_ARTIFACT_PARTITION_REGEX.test(envelope.project_uid)) return false;
+    return (
+      envelope.project_name === project.name &&
+      ((envelope.project_uid === project.uid && (envelope.project_slug === undefined || envelope.project_slug === project.slug)) ||
+        (envelope.project_slug !== undefined && envelope.project_slug === project.slug))
+    );
   }
 
   private async resolveProject(req: Request, uid: string): Promise<Project> {

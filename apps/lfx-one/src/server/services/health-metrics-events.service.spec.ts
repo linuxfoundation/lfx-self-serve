@@ -227,6 +227,63 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
   });
 });
 
+describe('HealthMetricsEventsService.getRegistrationHistory', () => {
+  const historyRow = (overrides: Record<string, unknown> = {}) => ({
+    DAYS_TO_EVENT: -30,
+    EVENT_REGISTRATION_TYPE: 'In Person',
+    REGISTRATIONS: 300,
+    PRIOR_YEAR: 260,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('binds event, window and foundation, scopes the event through the past-events view and reads each day once', async () => {
+    execute.mockResolvedValue({ rows: [historyRow()] });
+
+    await new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['evt-1', -180, 'acme']);
+    expect(sql).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS');
+    expect(sql).toContain('event_start_date < CURRENT_DATE()');
+    expect(sql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS p\s*WHERE p\.foundation_slug = \?/);
+    // Blank or padded formats fold into one series rather than splitting the curve.
+    expect(sql).toContain("NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type");
+    expect(sql).toContain("GROUP BY NULLIF(TRIM(h.event_registration_type), ''), h.days_to_event");
+  });
+
+  it('maps every day as measured, by format, with no forecast', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        historyRow(),
+        historyRow({ DAYS_TO_EVENT: 0, REGISTRATIONS: 480, PRIOR_YEAR: 410 }),
+        historyRow({ EVENT_REGISTRATION_TYPE: 'Virtual', PRIOR_YEAR: null }),
+      ],
+    });
+
+    const curve = await new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+    expect(curve.eventId).toBe('evt-1');
+    expect(curve.formats.map((series) => series.format)).toEqual(['In Person', 'Virtual']);
+    expect(curve.formats[0].points).toEqual([
+      { daysToEvent: -30, actual: 300, forecastAvg: null, forecastLow: null, forecastHigh: null, priorYear: 260 },
+      { daysToEvent: 0, actual: 480, forecastAvg: null, forecastLow: null, forecastHigh: null, priorYear: 410 },
+    ]);
+    expect(curve.formats[1].points[0].priorYear).toBeNull();
+  });
+
+  it('returns the unmeasured curve for an event with no history, or another foundation’s', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-9' })).resolves.toBe(
+      HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED
+    );
+  });
+});
+
 describe('HealthMetricsEventsService.getPastEvents', () => {
   beforeEach(() => {
     vi.clearAllMocks();

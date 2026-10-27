@@ -99,10 +99,10 @@ export class GuildService {
    * would silently create an unrouted session. For the same reason a
    * structured input without a handle is rejected outright.
    *
-   * `mentionOnOwnLine` puts the `@handle` prefix on a line of its own instead
-   * of before the message's first line: for a coded agent that parses its
-   * intake by an exact header line (the Slides exporter), a mention on that
-   * line would make it refuse the intake. Mention routing reads it the same.
+   * Text routing puts `@handle` on its own line by default so exact intake
+   * header lines remain intact. `mentionOnOwnLine: false` explicitly opts
+   * out for a caller needing the legacy same-line format; mention routing
+   * reads either format the same.
    */
   public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string; mentionOnOwnLine?: boolean }): Promise<string> {
     this.assertConfigured('guild_create_session');
@@ -125,7 +125,7 @@ export class GuildService {
 
     const agentInput: object = params.agentInput ?? {
       type: 'text',
-      text: this.applyRouting(params.message ?? '', params.handle, params.mentionOnOwnLine ? '\n' : ' '),
+      text: this.applyRouting(params.message ?? '', params.handle, params.mentionOnOwnLine === false ? ' ' : '\n'),
     };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
@@ -360,10 +360,10 @@ export class GuildService {
    * Prepend the `@handle` routing prefix when targeting a specific agent.
    * Any client-supplied leading `@mention` is stripped first so routing is
    * driven only by the catalog handle, never by text the user typed.
-   * `separator` joins the mention to the message: a space, or a line break
-   * to keep it off the message's first line.
+   * `separator` defaults to a line break, keeping the first message line
+   * intact for both initial intake and answers follow-up turns.
    */
-  private applyRouting(message: string, handle?: string, separator = ' '): string {
+  private applyRouting(message: string, handle?: string, separator = '\n'): string {
     const cleaned = message.replace(MENTION_PREFIX_RE, '').trim();
     if (!handle) {
       return cleaned;

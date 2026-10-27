@@ -13,6 +13,7 @@ import {
   LINKEDIN_FILE_TYPES_LABEL,
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
@@ -764,7 +765,7 @@ describe('LinkedIn profile and post surface', () => {
     const writes = vi.spyOn(router, 'navigate');
     fixture.componentInstance['onEdit']();
     await fixture.whenStable();
-    expect(location.getState()).toMatchObject({ [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true });
+    expect(location.getState()).toMatchObject({ [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.run });
     fixture.componentInstance['onProfileSubmit']();
     await vi.waitFor(() => expect(router.url).toBe(runUrl));
     await fixture.whenStable();
@@ -806,7 +807,7 @@ describe('LinkedIn profile and post surface', () => {
     const documentUrl = '/project/mktg-os-agents/documents/linkedin-post/synthetic?project=example-project';
     await router.navigateByUrl(documentUrl);
     await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&profile=edit', {
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
     });
     const fixture = await render();
     if (action === 'cancel') fixture.componentInstance['onCancelEdit']();
@@ -815,12 +816,36 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
   });
 
-  it('keeps setup-only answers on intake after an edit pushed from a stored document', async () => {
+  it('setup → run-page Edit → Continue keeps answers and the next Back leaves intake', async () => {
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(Location);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    await router.navigateByUrl('/project/mktg-os-agents/families/social-community?project=example-project');
+    const runUrl = '/project/mktg-os-agents/linkedin-post?project=example-project';
+    await router.navigateByUrl(runUrl);
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['profileForm'].patchValue({ ...profile.about });
+    component['onProfileSubmit']();
+    component['onEdit']();
+    await fixture.whenStable();
+    component['profileForm'].controls['tone'].setValue('direct');
+    component['onProfileSubmit']();
+    await vi.waitFor(() => expect(router.url).toBe(runUrl));
+    expect(component['setup']()?.tone).toBe('direct');
+    expect(component['editing']()).toBe(false);
+    location.back();
+    await vi.waitFor(() => expect(router.url).toContain('/families/social-community'));
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
+  it.each([true, LINKEDIN_PROFILE_EDIT_ORIGINS.document])('keeps setup-only answers after a document edit (marker %s)', async (marker) => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
     await router.navigateByUrl('/project/mktg-os-agents/documents/linkedin-post/synthetic?project=example-project');
     await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&profile=edit', {
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: marker },
     });
     const fixture = await render();
     const component = fixture.componentInstance;

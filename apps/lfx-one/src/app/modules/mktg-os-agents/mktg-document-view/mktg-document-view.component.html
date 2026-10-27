@@ -4,11 +4,13 @@
 <div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
   <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
-    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="runAgainParams().project" />
+    <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
-        <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">{{ title() }}</h1>
+        <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
+          {{ isAeoDocument() ? 'AEO/GEO' : title() }}
+        </h1>
         @if (header(); as meta) {
           @if (!isLinkedinDocument() && hasAssetMetadata()) {
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
@@ -69,7 +71,7 @@
           (onClick)="onDraftAnother()"
           data-testid="mktg-linkedin-draft-another" />
       } @else if (view(); as current) {
-        @if (!isLinkedinDocument() && !hasAssetView() && current.revision.format !== 'json') {
+        @if (!isLinkedinDocument() && !isAeoDocument() && !hasAssetView() && current.revision.format !== 'json') {
           <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
             Revision {{ current.revision.number }} of {{ current.revisions.length }}
             @if (current.revision.latest) {
@@ -94,14 +96,18 @@
             <lfx-button
               label="Download workbook"
               icon="fa-light fa-download"
-              [loading]="result.downloading()"
-              (onClick)="result.download()"
+              [loading]="downloadingWorkbook()"
+              [disabled]="!writer()"
+              (onClick)="onDownloadWorkbook()"
               data-testid="member-360-download" />
             <span class="break-all text-xs text-gray-500" data-testid="member-360-workbook-filename">{{ result.workbookFilename() }} · Excel workbook</span>
           </div>
         </div>
       }
     </div>
+    @if (workbookError()) {
+      <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
+    }
 
     @if (runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
@@ -232,7 +238,7 @@
             <p class="mt-3 whitespace-pre-wrap break-words text-sm text-gray-600" data-testid="member-360-failure-message">{{ failureDetails() }}</p>
           </details>
         }
-      } @else {
+      } @else if (!isAeoDocument()) {
         <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
       }
     }
@@ -246,7 +252,155 @@
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
     }
 
-    @if (loading()) {
+    <!-- AEO/GEO presentation seam: no other document type enters this block. -->
+    @if (isAeoDocument()) {
+      @if (!loading() && errorText()) {
+        <a
+          [routerLink]="['../../..', runAgent()?.id]"
+          (click)="onRunAgain()"
+          [queryParams]="runAgainParams()"
+          queryParamsHandling="merge"
+          class="text-blue-600 underline"
+          data-testid="mktg-document-view-run-again"
+          >Run again</a
+        >
+      }
+      @if (retryGenerating()) {
+        <button
+          type="button"
+          class="self-start min-h-10 rounded-lg border border-gray-300 px-4 text-blue-600"
+          data-testid="mktg-document-view-retry"
+          (click)="reload.set(reload() + 1)">
+          Check again
+        </button>
+      }
+      @if (loading()) {
+        @if (generating() && activity().length > 0) {
+          <lfx-mktg-run-activity
+            [activity]="activity()"
+            [startedAt]="aeoActivityStartedAt()"
+            [title]="'Auditing the site…'"
+            [icon]="runAgent()?.icon ?? ''"
+            [iconClass]="activityIconClass()"
+            data-testid="mktg-document-view-activity" />
+        } @else {
+          <div
+            class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500"
+            role="status"
+            data-testid="mktg-document-view-loading">
+            <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden="true"></span>
+            @if (generating()) {
+              <div data-testid="mktg-document-view-generating">
+                <h2 class="font-semibold text-gray-900">Generating your report</h2>
+                <p>The agent is auditing the site. This view will open the report once it is stored. Three to six minutes.</p>
+              </div>
+            } @else {
+              Loading the document…
+            }
+          </div>
+        }
+      }
+    }
+    <ng-template #auditReport>
+      @if (view()?.aeoGeoReport; as report) {
+        <section
+          class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white px-6 py-6"
+          data-testid="mktg-document-view-report-summary"
+          aria-label="Audit summary">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-bold text-gray-900">{{ report.report?.headline ?? aeoTitle() }}</h2>
+              <p class="text-sm text-gray-500" data-testid="mktg-document-view-audit-subline">
+                AEO/GEO audit — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
+                @if (report.auditCounts; as counts) {
+                  ·
+                  @if (counts.keyPagesNamed === 0) {
+                    no key pages named,
+                  } @else {
+                    {{ counts.keyPagesNamed }} key pages named,
+                  }
+                  {{ counts.pagesAudited }} audited
+                }
+                · stored under AEO/GEO reports
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+              <a
+                [routerLink]="['../../..', runAgent()?.id]"
+                [queryParams]="runAgainParams()"
+                queryParamsHandling="merge"
+                class="inline-flex min-h-10 items-center rounded-lg border border-gray-300 px-4 font-semibold text-gray-700"
+                data-testid="mktg-document-view-run-again"
+                (click)="onRunAgain()"
+                >Run again</a
+              >
+              <button
+                type="button"
+                class="min-h-10 rounded-lg bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"
+                (click)="onDownload()"
+                data-testid="mktg-document-view-download">
+                Download PDF
+              </button>
+            </div>
+          </div>
+          <ng-template #auditHero let-print="print">
+            <!-- 200px summary column matches the design board; stack it on narrow screens. -->
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
+              <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-center">
+                <span class="text-xs uppercase tracking-wider text-gray-500">Overall score</span>
+                <div
+                  class="text-4xl font-bold tabular-nums"
+                  [ngClass]="report.overall_score >= 7 ? 'text-emerald-700' : 'text-amber-700'"
+                  [attr.data-testid]="print ? 'mktg-document-view-print-overall' : 'mktg-document-view-overall'">
+                  {{ report.overall_score | number: '1.1-1' }}<span class="text-lg text-gray-500"> / 10</span>
+                </div>
+                <p class="text-sm text-gray-700" [attr.data-testid]="print ? 'mktg-document-view-print-verdict' : 'mktg-document-view-verdict'">
+                  {{ report.verdict }}
+                </p>
+              </div>
+              <div class="flex min-w-0 flex-col gap-3" [attr.data-testid]="print ? 'mktg-document-view-print-scorecard' : 'mktg-document-view-scorecard'">
+                <!-- Page-7 AeoGeoResult.dc.html specifies 220px labels and 56px score columns. -->
+                @for (row of scoreRows(); track row.key) {
+                  <div
+                    class="grid grid-cols-[1fr_56px] items-center gap-3 text-sm sm:grid-cols-[minmax(0,220px)_1fr_56px]"
+                    [attr.data-testid]="(print ? 'mktg-document-view-print-score-' : 'mktg-document-view-score-') + row.key">
+                    <span>{{ row.label }}</span>
+                    <div class="hidden h-2.5 overflow-hidden rounded-full bg-gray-100 sm:block" aria-hidden="true">
+                      <div class="h-full rounded-full" [ngClass]="row.score >= 7 ? 'bg-emerald-600' : 'bg-amber-600'" [style.width.%]="row.score * 10"></div>
+                    </div>
+                    <span class="text-right font-mono">{{ row.score }}/10</span>
+                  </div>
+                }
+                <p class="text-xs text-gray-500">
+                  Six categories, scored out of 10; the overall is their simple average to one decimal. Green at 7 and above, amber below.
+                </p>
+              </div>
+            </div>
+          </ng-template>
+          <ng-container [ngTemplateOutlet]="auditHero" />
+          @if (report.report; as typed) {
+            <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
+          }
+          <p class="text-sm text-gray-500">Report · one-off document · never revised. Run again creates a separate report.</p>
+        </section>
+        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. -->
+        <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
+          <article class="lfx-framework-print bg-white text-gray-900 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
+            <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+            @if (report.report; as typed) {
+              <lfx-aeo-geo-report [report]="typed" />
+            } @else {
+              <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
+            }
+          </article>
+        </div>
+      }
+    </ng-template>
+    @if (isAeoDocument() && !view()?.aeoGeoReport?.report) {
+      <ng-container [ngTemplateOutlet]="auditReport" />
+    }
+
+    @if (loading() && !isAeoDocument()) {
       <div class="rounded-xl border border-gray-200 bg-white" data-testid="mktg-document-view-loading">
         <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
       </div>
@@ -316,6 +470,9 @@
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
         <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
+          @if (isAeoDocument() && current.aeoGeoReport?.report) {
+            <ng-container [ngTemplateOutlet]="auditReport" />
+          }
           @if (current.type.kind === 'living' && !current.revision.latest) {
             @let active = currentRevision();
             @let viewedAuthor = viewedAuthorLabel();
@@ -448,7 +605,7 @@
                 "
                 data-testid="mktg-document-view-unreadable-json" />
             </div>
-          } @else {
+          } @else if (!current.aeoGeoReport?.report) {
             <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
               @if (current.revision.format === 'json') {
                 <lfx-message
@@ -577,7 +734,7 @@
           @if (historyError()) {
             <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
           }
-          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" [project]="current.project" />
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" />
         }
       }
     }

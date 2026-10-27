@@ -40,6 +40,16 @@ export const DEFAULT_WEIGHTS: Readonly<Record<(typeof CATEGORY_KEYS)[number], nu
 };
 
 export const ENGAGEMENT_TIERS = ['Champion', 'Engaged', 'Passive', 'At Risk', 'Dormant'] as const;
+/** Shared by the workbook and the result page's renewal/tier presentation. */
+export const MEMBER_360_RENEWAL_RED_DAYS = 120;
+export const MEMBER_360_RENEWAL_AMBER_DAYS = 240;
+export const MEMBER_360_TIER_TONES = {
+  Champion: 'emerald',
+  Engaged: 'emerald',
+  Passive: 'amber',
+  'At Risk': 'red',
+  Dormant: 'red',
+} as const;
 export const ACTION_OWNERS = ['Marketing', 'Member Success', 'Sales'] as const;
 export const MEMBER_360_TIER_OPTIONS = [{ label: 'All', value: '' }, ...ENGAGEMENT_TIERS.map((value) => ({ label: value, value }))];
 export const MEMBER_360_OWNER_OPTIONS = [{ label: 'All', value: '' }, ...ACTION_OWNERS.map((value) => ({ label: value, value }))];
@@ -65,6 +75,10 @@ export const MEMBER_360_TRACKER_FILENAME_ERROR = 'Use a shorter file name withou
 export const MEMBER_360_TRACKER_EXTENSION_REGEX = /\.(csv|xlsx)$/i;
 export const MEMBER_360_CONTRACT_ID = 'member-360-output/v1';
 export const MEMBER_360_FINALIZE_TOOL = 'finalize_member_360';
+/** Agent 2.1.1 compactFinalizeRequest receipt. */
+export const MEMBER_360_FINALIZE_RECEIPT_ID = 'member-360-finalize/v1';
+/** Byte-exact agent partial-run summary prefix (checkpoint-batch.ts / partial-run.ts). */
+export const MEMBER_360_PARTIAL_SUMMARY_PREFIX = 'Partial report.';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';
 export const MEMBER_360_API = '/api/mktg-agents/member-360';
 /** A Member 360 pause never expires by the clock; only a Guild session end fails it. */
@@ -83,6 +97,14 @@ export const MEMBER_360_REDACTED_SUMMARY =
 /** Bound ZIP metadata and actual inflated bytes before ExcelJS parses XML. */
 export const MEMBER_360_MAX_ZIP_ENTRIES = 1000;
 export const MEMBER_360_WORKBOOK_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/**
+ * Live 21-member runs take 5–6 minutes; a 291-member run remained active past 10.
+ * Work scales with members and reads. Two hours exceeds plausible run time, stays
+ * inside the 24-hour pending TTL, and only stops polling sessions Guild never closes.
+ */
+export const MEMBER_360_RUN_CEILING_MS = 7_200_000;
+/** Slower polling while the run waits for the user's answers. */
+export const MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS = 30_000;
 export const MEMBER_360_TRACKER_KINDS = ['event_sponsors', 'attendees', 'speaking', 'ambassadors', 'content', 'webinars', 'other'] as const;
 export const MEMBER_360_HEAT_ORDER = ['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social'] as const;
 export const MEMBER_360_WINDOW_OPTIONS = [

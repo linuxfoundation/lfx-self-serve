@@ -11,7 +11,6 @@ import { SelectComponent } from '@components/select/select.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { mktgKitCrumbsFor, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import {
   MEMBER_360_INTRO,
@@ -71,9 +70,6 @@ export class Member360RunComponent {
   protected readonly latestPeriod = computed(() => this.latest()?.period.label.replace(/^(\d{4})-(Q[1-4])$/, '$2 $1') ?? '');
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor('member-360', this.context.activeContext()?.name ?? '', mktgKitRootPath(this.router.url), 'Member 360')
-  );
   private lastScope = '';
   private uploadSequence = 0;
   private nextTrackerId = 0;

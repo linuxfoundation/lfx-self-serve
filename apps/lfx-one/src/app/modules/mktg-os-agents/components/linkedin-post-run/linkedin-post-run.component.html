@@ -4,7 +4,7 @@
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
   <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-[32px] py-[14px]">
-    <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="context.activeContext()?.slug ?? null" data-testid="mktg-linkedin-breadcrumb" />
+    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: intake().agentId }" data-testid="mktg-linkedin-breadcrumb" />
     <div class="grow"></div>
     @if (writingAs()) {
       <div class="text-sm text-gray-500" data-testid="mktg-linkedin-identity">
@@ -76,6 +76,7 @@
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
             [busy]="answering()"
+            [allowNonAnswers]="true"
             (answered)="onAnswers($event)" />
         </div>
       } @else if (writer() && editing()) {

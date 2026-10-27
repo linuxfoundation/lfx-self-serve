@@ -3,7 +3,7 @@
 
 <!-- Run.dc.html uses exact pixel spacing because this app's rem base is 14px. The app shell supplies the global header. -->
 <div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
-  <lfx-mktg-breadcrumb [crumbs]="crumbs()" [project]="context.activeContext()?.slug ?? null" data-testid="member-360-breadcrumb" />
+  <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'member-360' }" data-testid="member-360-breadcrumb" />
   <section class="flex w-full min-w-0 flex-col gap-[20px]">
     <header class="flex flex-col gap-[6px]">
       <h1 class="font-display font-light text-xl text-gray-900">Member 360</h1>

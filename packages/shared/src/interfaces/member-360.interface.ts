@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import type { envelopeSchema, tabsSchema, memberRankingRowSchema } from '../server/member-360-schema.utils';
 import type { formInputSchema, trackerSchema, priorRunSchema } from '../server/member-360.utils';
 import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunSessionResponse } from './mktg-run.interface';
-import type { CATEGORY_KEYS } from '../constants/member-360.constants';
+import type { CATEGORY_KEYS, MEMBER_360_FINALIZE_RECEIPT_ID } from '../constants/member-360.constants';
 export type Member360Envelope = z.infer<typeof envelopeSchema>;
 export type Member360Tabs = z.infer<typeof tabsSchema>;
 export type Member360RankingRow = z.infer<typeof memberRankingRowSchema>;
@@ -13,6 +13,15 @@ export type Member360FormInput = z.infer<typeof formInputSchema>;
 export type Member360Tracker = z.infer<typeof trackerSchema>;
 export type Member360PriorRun = z.infer<typeof priorRunSchema>;
 export type Member360Category = (typeof CATEGORY_KEYS)[number];
+/** Agent 2.1.1 compact finalize receipt; its hash covers tabs only. */
+export interface Member360FinalizeReceipt {
+  finalize_receipt: typeof MEMBER_360_FINALIZE_RECEIPT_ID;
+  ok: true;
+  sha256: string;
+  rows: { ranking: number; evidence: number };
+  partial: boolean;
+  violations?: string[];
+}
 export interface Member360GenerateRequest {
   project: string;
   window?: '12' | '6' | 'year';

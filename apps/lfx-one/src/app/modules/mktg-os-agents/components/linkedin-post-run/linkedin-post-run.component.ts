@@ -13,8 +13,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   LINKEDIN_ABOUT_FIELDS,
-  LINKEDIN_INTAKE_LABEL,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_CONTENT_SOURCES,
   LINKEDIN_FILE_ACCEPT,
@@ -38,7 +38,7 @@ import {
   MktgRunAnswer,
   MktgRunQuestion,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitCrumbsFor, mktgKitRootPath, parseLinkedinContentSource } from '@lfx-one/shared/utils';
+import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitRootPath, parseLinkedinContentSource } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -103,9 +103,6 @@ export class LinkedinPostRunComponent {
   protected readonly fileTypesLabel = LINKEDIN_FILE_TYPES_LABEL;
   protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
   protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.intake().agentId, this.projectName(), mktgKitRootPath(this.router.url), LINKEDIN_INTAKE_LABEL)
-  );
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
   protected readonly freshMode = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('mode') === MKTG_RUN_NEW_MODE)), { initialValue: false });
   private readonly historyGrant = signal('');
@@ -277,7 +274,7 @@ export class LinkedinPostRunComponent {
     this.editing.set(true);
     void this.router.navigate([], {
       relativeTo: this.route,
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.run },
       queryParams: { profile: 'edit', project: this.context.activeContext()?.slug ?? null },
       queryParamsHandling: 'merge',
     });
@@ -543,10 +540,12 @@ export class LinkedinPostRunComponent {
   private finishEditing(returnToOrigin = true): void {
     this.editing.set(false);
     if (this.route.snapshot.queryParamMap.get('profile') !== 'edit') return;
-    if (returnToOrigin && this.editEntryWasPushed()) {
+    const origin = this.editEntryOrigin();
+    if (origin && (returnToOrigin || origin === LINKEDIN_PROFILE_EDIT_ORIGINS.run)) {
       this.location.back();
       return;
     }
+    // A document-origin setup has no persisted profile yet; cold entries also stay here.
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
@@ -558,9 +557,15 @@ export class LinkedinPostRunComponent {
       replaceUrl: true,
     });
   }
-  private editEntryWasPushed(): boolean {
+
+  private editEntryOrigin(): string | null {
     const state = this.location.getState();
-    return !!state && typeof state === 'object' && LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY in state && state[LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY] === true;
+    if (!state || typeof state !== 'object' || !(LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY in state)) return null;
+    const marker = state[LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY];
+    if (marker === LINKEDIN_PROFILE_EDIT_ORIGINS.run) return marker;
+    // Legacy boolean entries stay conservative for setup-only submissions.
+    if (marker === true || marker === LINKEDIN_PROFILE_EDIT_ORIGINS.document) return LINKEDIN_PROFILE_EDIT_ORIGINS.document;
+    return null;
   }
   private fillProfile(): void {
     this.profileForm.reset();

@@ -77,15 +77,27 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-// An image for the brief, stored by campaign-service and named by `redditConfig.imageAssetId`
-// (decision D3). The body is the raw PNG/JPEG bytes, buffered here (at most
-// CREATIVE_ASSET_MAX_BYTES) so the upstream JSON body can be sent with a declared Content-Length.
+// An image for the brief, stored by campaign-service and named by asset id in a platform's
+// creative config — `redditConfig.imageAssetId` (decision D3), and the Google creative fields. The
+// body is the raw PNG/JPEG bytes, buffered here (at most CREATIVE_ASSET_MAX_BYTES) so the upstream
+// JSON body can be sent with a declared Content-Length.
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
   handleCreativeAssetParseError,
   (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
 );
+// Reads and pruning of that same library. Unlike the upload they are gated on
+// LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS alone, not on either creative-asset capability flag: they are
+// addressed by a campaign-service brief, and a deployment must be able to see and prune what it
+// already stores whatever platform may currently consume it.
+router.get('/brief/creative-assets', (req, res, next) => campaignController.listCreativeAssets(req, res, next));
+// BEFORE the `:assetId` route below: Express matches in registration order, so a `plan` registered
+// after it would be swallowed as an asset id. The handler also refuses an `:assetId` that is not a
+// UUID, so reordering this fails loudly instead of silently reading `plan` as an id.
+router.get('/brief/creative-assets/plan', (req, res, next) => campaignController.getCreativeAssetPlan(req, res, next));
+router.get('/brief/creative-assets/:assetId', (req, res, next) => campaignController.getCreativeAsset(req, res, next));
+router.delete('/brief/creative-assets/:assetId', (req, res, next) => campaignController.deleteCreativeAsset(req, res, next));
 router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —

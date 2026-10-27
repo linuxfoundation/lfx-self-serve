@@ -4,6 +4,7 @@
 import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES, MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
 import express, { NextFunction, raw, Request, RequestHandler, Response, Router } from 'express';
 
+import { AeoGeoController } from '../controllers/aeo-geo.controller';
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
@@ -69,6 +70,7 @@ const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
 const member360Controller = new Member360Controller();
 const member360Workbook = new Member360WorkbookController();
+const aeoGeoController = new AeoGeoController();
 
 router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
 router.post(
@@ -86,6 +88,9 @@ router.post(
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+router.post('/aeo-geo/generate', (req, res, next) => aeoGeoController.generate(req, res, next));
+router.post('/aeo-geo/result', (req, res, next) => aeoGeoController.result(req, res, next));
+router.post('/aeo-geo/answers', (req, res, next) => aeoGeoController.answers(req, res, next));
 
 let rebuild: MktgRebuildController | undefined;
 function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {

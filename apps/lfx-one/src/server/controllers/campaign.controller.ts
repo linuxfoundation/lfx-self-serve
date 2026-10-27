@@ -191,6 +191,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateWithBidding,
+  canUseGoogleCreativeAssets,
   canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
@@ -2192,8 +2193,9 @@ export class CampaignController {
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
    * the image was stored and 200 when an identical one already was (the id is usable either way).
    *
-   * Refused before anything is sent upstream: the capability off (`canUseRedditCreativeAssets` —
-   * nothing could use the asset), a missing `project` or `brief_id`, a type outside
+   * Refused before anything is sent upstream: BOTH capabilities off (`canUseRedditCreativeAssets`
+   * and `canUseGoogleCreativeAssets` — nothing could use the asset; either one alone admits the
+   * upload), a missing `project` or `brief_id`, a type outside
    * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
    * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
    * the length is re-checked here so a direct caller of this method gets the same answer.
@@ -2206,7 +2208,17 @@ export class CampaignController {
       next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
     };
 
-    if (!canUseRedditCreativeAssets()) {
+    // EITHER capability admits an upload: the stored library is one library, and a deployment that
+    // can use an image on either platform is reason enough to let it in. Refusing unless Reddit's
+    // flag were on would mean a Google-only deployment could read and delete the library it is not
+    // allowed to add to.
+    //
+    // The Google arm runs AHEAD of the field that will consume it: at this commit the Google
+    // creative interfaces carry image URLs only, so an asset uploaded on GOOGLE_ASSETS alone is
+    // stored, listed, planned and deletable but cannot yet be named in a Google create. That is
+    // the intended order — the library has to exist before the asset-id field can reference it —
+    // and it costs an operator nothing worse than a stored image they can prune.
+    if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets()) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
       return;
     }
@@ -2259,6 +2271,132 @@ export class CampaignController {
       const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
       logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
       res.status(asset.created ? 201 : 200).json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets?project=&brief_id=` — the brief's stored image
+   * library with the quota the next upload is judged against.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like `getCampaignMetrics`: the route is addressed
+   * by a campaign-service BRIEF, and with the flag off no such brief exists here, so it answers 404
+   * rather than reaching upstream. It is deliberately NOT behind either creative-asset capability
+   * flag — reading and pruning a library a deployment already holds must not depend on whether a
+   * platform may currently consume it, or images uploaded under one flag would become unreachable
+   * the moment it was turned off.
+   *
+   * Query parameters are `project` and `brief_id`, matching the upload sibling above rather than
+   * the camelCase the Optimize metrics reads use.
+   */
+  public async listCreativeAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_list_creative_assets';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug });
+    try {
+      const library = await this.campaignServiceClient.listCreativeAssets(req, scope.projectSlug, scope.briefId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, count: library.count, bytesUsed: library.bytesUsed });
+      res.json(library);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/plan?project=&brief_id=&platforms=` — which stored
+   * images fit which platform slots, and what is still missing.
+   *
+   * Registered BEFORE the `:assetId` route, and gated the same way as the list above.
+   *
+   * `platforms` is repeatable (`?platforms=google-ads&platforms=reddit`), which Express surfaces as
+   * a string for one value and an array for several; both are normalized to an array here. Absent
+   * or empty means every platform the service publishes slot rules for, which is what an operator
+   * asking "is my library ready" wants. An unknown platform is IGNORED upstream rather than
+   * refused, so it is passed through rather than validated against a list this tier would have to
+   * keep in step with the service.
+   */
+  public async getCreativeAssetPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_creative_asset_plan';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const raw = req.query['platforms'];
+    const platforms = (Array.isArray(raw) ? raw : [raw]).filter((value): value is string => typeof value === 'string').map((value) => value.trim());
+    const requested = [...new Set(platforms.filter((value) => value.length > 0))];
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, platforms: requested });
+    try {
+      const plan = await this.campaignServiceClient.getCreativeAssetPlan(req, scope.projectSlug, scope.briefId, requested);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assignments: plan.assignments.length, gaps: plan.gaps.length });
+      res.json(plan);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — one stored image's
+   * metadata. Gated like the list above.
+   *
+   * `assetId` is validated as a UUID here as well as being registered after the literal `plan`
+   * route: the ordering is what keeps `/plan` off this handler, and the shape check is what makes
+   * that safe to rely on, so a later reordering fails loudly rather than reading `plan` as an id.
+   */
+  public async getCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_get_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      const asset = await this.campaignServiceClient.getCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId: asset.id });
+      res.json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `DELETE /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — permanently remove
+   * a stored image and free its bytes against the brief's quota. Answers 204.
+   *
+   * Gated like the list above, and for the same reason: pruning a full library must stay possible
+   * on a deployment where no platform may currently consume it.
+   *
+   * Upstream refuses with 409 `reason=creative_asset_in_use` while a live campaign on the brief
+   * could still need the image, and that refusal carries its own remedy text; it passes through
+   * untouched rather than being restated here.
+   */
+  public async deleteCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_delete_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      await this.campaignServiceClient.deleteCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -6206,5 +6344,67 @@ export class CampaignController {
         ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
         : {}),
     };
+  }
+
+  /**
+   * The flag gate and the `project` + `brief_id` pair every creative-asset READ shares.
+   *
+   * Returns `null` once it has handed the refusal to `next` — the caller returns immediately — so
+   * the four handlers above cannot drift apart on which refusal they give for the same input.
+   */
+  private creativeAssetScope(req: Request, operation: string, next: NextFunction): { projectSlug: string; briefId: string } | null {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return null;
+    }
+
+    // DELIBERATELY stricter than `uploadCreativeAsset`, which takes any non-empty `brief_id`. The
+    // upload is a write the operator just made a brief for, and a wrong id there is upstream's
+    // 404 to give; these four are reads whose only caller is the campaigns page, which always has
+    // the UUID campaign-service minted. Spending the shape check here keeps a malformed id out of
+    // a path segment without an upstream round trip, and the upload stays lenient rather than
+    // being tightened in a PR that does not own it.
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('brief_id', 'the brief UUID is required to read its stored images', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    // Refused, not defaulted, for the reason the upload refuses: a constant here would read
+    // another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+
+    return { projectSlug, briefId };
+  }
+
+  /** The `:assetId` path segment, refused unless it is the UUID campaign-service declares. */
+  private creativeAssetId(req: Request, operation: string, next: NextFunction): string | null {
+    const assetId = req.params['assetId'];
+    if (typeof assetId !== 'string' || !isCampaignServiceJobId(assetId)) {
+      next(
+        ServiceValidationError.forField('assetId', 'assetId must be a creative asset UUID', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return assetId;
   }
 }

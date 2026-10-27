@@ -3,8 +3,10 @@
 
 import {
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
-  HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME,
+  HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
+  HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
+  HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_OVERVIEW_STROKES,
@@ -12,13 +14,13 @@ import {
 } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel } from './date-time.utils';
-import { resolveHealthMetricsEventsPastStatus } from './health-metrics-events.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsSponsorship,
@@ -38,6 +40,7 @@ import type {
   HealthMetricsOverviewDonutSegmentView,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
+  HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewEventsView,
@@ -223,15 +226,14 @@ export function buildHealthMetricsOverviewBalanceView(balance: HealthMetricsOver
 }
 
 /**
- * The period's events, sponsorship against its goal, and the event list: upcoming events for YTD, otherwise
- * the year's past events. `periodLabel` names a past year in the list title.
+ * The period's events split into held and upcoming, sponsorship against its goal, and the event list: upcoming
+ * events for YTD, otherwise the year's past events.
  */
 export function buildHealthMetricsOverviewEventsView(
   glance: HealthMetricsEventsAtAGlance,
   sponsorship: HealthMetricsEventsSponsorship,
   events: HealthMetricsOverviewEvents,
-  range: HealthMetricsRange,
-  periodLabel: string
+  range: HealthMetricsRange
 ): HealthMetricsOverviewEventsView {
   const l2 = toHealthMetricsOverviewRange(range);
   const isYtd = range === 'YTD';
@@ -246,16 +248,18 @@ export function buildHealthMetricsOverviewEventsView(
   return {
     isEmpty: !total && listed.length === 0 && !revenue,
     total: {
-      key: 'total',
-      label: 'Total events',
       value: formatCount(total),
-      // The view's change covers held events only, so a YTD total that adds upcoming ones carries none, as on the Events tab.
-      delta: isYtd ? null : buildPctDelta(period?.changes?.events ?? null, true, ' vs last year'),
-      note: isYtd ? `${formatCount(held)} held · ${formatCount(upcoming)} upcoming` : `${formatCount(held)} held`,
+      // The view's change compares every event in the period, held and upcoming, with last year.
+      delta: buildPctDelta(period?.changes?.events ?? null, true, ' vs last year'),
+      pastLabel: formatCount(held),
+      upcomingLabel: formatCount(upcoming),
+      pastPct: total ? clampPct(((held ?? 0) / total) * 100) : 0,
+      upcomingPct: total ? clampPct(((upcoming ?? 0) / total) * 100) : 0,
     },
     sponsorship: buildSponsorshipView(revenue, sponsorshipPeriod?.goalUsd ?? null, sponsorshipPeriod?.progressToGoal ?? null),
-    listTitle: isYtd ? 'Upcoming events' : `Events in ${periodLabel}`,
-    rows: listed.map((event) => buildEventRow(event, isYtd)),
+    listTitle: isYtd ? 'Upcoming events' : 'Past events',
+    listInfo: isYtd ? HEALTH_METRICS_OVERVIEW_EVENTS_INFO.upcoming : HEALTH_METRICS_OVERVIEW_EVENTS_INFO.past,
+    rows: listed.map((event) => buildEventRow(event, !isYtd)),
   };
 }
 
@@ -403,9 +407,53 @@ export function buildHealthMetricsOverviewTrendView(
   headline: HealthMetricsEventsForecastEvent | null,
   series: HealthMetricsEventsForecastCurveSeries | null
 ): HealthMetricsOverviewTrendView {
+  const goal = headline?.goal ?? row.registrationsGoal;
+
+  return {
+    kpis: [
+      kpi('current', 'Current', formatCount(headline?.registrationsNow ?? row.registrations)),
+      kpi('last-year', 'Same point last year', formatCount(headline?.priorYearSamePoint)),
+      kpi('predicted', 'Predicted', formatCount(headline?.forecastAvg ?? null)),
+      kpi('goal', 'Registration goal', formatCount(goal)),
+      kpi('days-left', 'Days left', formatCount(headline?.daysLeft)),
+    ],
+    ...buildTrendChart(series, goal),
+  };
+}
+
+/**
+ * One past event's registration history: what it drew against last year's event, with no forecast. Last year's
+ * final count adds each format's last day, which the formats share once registration closes.
+ */
+export function buildHealthMetricsOverviewPastTrendView(
+  row: HealthMetricsOverviewEvent,
+  curve: HealthMetricsEventsForecastCurve | null,
+  series: HealthMetricsEventsForecastCurveSeries | null
+): HealthMetricsOverviewTrendView {
+  const lastYearFinals = (curve?.formats ?? [])
+    .map((format) => [...format.points].reverse().find((point) => point.priorYear !== null)?.priorYear ?? null)
+    .filter((value): value is number => value !== null);
+  const lastYear = lastYearFinals.length ? lastYearFinals.reduce((sum, value) => sum + value, 0) : null;
+  const chart = buildTrendChart(series, row.registrationsGoal);
+
+  return {
+    kpis: [
+      kpi('current', 'Current', formatCount(row.registrations)),
+      kpi('last-year', 'Same point last year', formatCount(lastYear)),
+      kpi('final', 'Final', formatCount(row.registrations)),
+      kpi('goal', 'Registration goal', formatCount(row.registrationsGoal)),
+      kpi('days-left', 'Event held', '0'),
+    ],
+    ...chart,
+    // The event is over, so nothing marks today.
+    todayX: null,
+  };
+}
+
+/** The trend chart's lines and goal; the forecast and its band start at the last measured day, so the lines meet. */
+function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, goal: number | null): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
   const window = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -window && point.daysToEvent <= 0);
-  const goal = headline?.goal ?? row.registrationsGoal;
   const peak = Math.max(goal ?? 0, ...points.flatMap((point) => [point.actual ?? 0, point.forecastHigh ?? 0, point.forecastAvg ?? 0, point.priorYear ?? 0]));
   const max = peak > 0 ? peak * 1.08 : 1;
   const x = (daysToEvent: number): number => ((window + daysToEvent) / window) * 600;
@@ -417,22 +465,16 @@ export function buildHealthMetricsOverviewTrendView(
     (point) => point.forecastLow !== null && point.forecastHigh !== null && (lastActual === null || point.daysToEvent >= lastActual.daysToEvent)
   );
   const path = (coords: [number, number][]): string => coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
-  const predicted = headline?.forecastAvg ?? null;
 
   return {
-    kpis: [
-      kpi('current', 'Current', formatCount(headline?.registrationsNow ?? row.registrations)),
-      kpi('last-year', 'Same point last year', formatCount(headline?.priorYearSamePoint)),
-      kpi('predicted', 'Predicted', formatCount(predicted)),
-      kpi('goal', 'Registration goal', formatCount(goal)),
-      kpi('days-left', 'Days left', formatCount(headline?.daysLeft)),
-    ],
     currentPath: path(actual.map((point) => [x(point.daysToEvent), y(point.actual as number)])),
     lastYearPath: path(points.filter((point) => point.priorYear !== null).map((point) => [x(point.daysToEvent), y(point.priorYear as number)])),
-    predictedPath: path([
-      ...(lastActual ? ([[x(lastActual.daysToEvent), y(lastActual.actual as number)]] as [number, number][]) : []),
-      ...forecast.map((point): [number, number] => [x(point.daysToEvent), y(point.forecastAvg as number)]),
-    ]),
+    predictedPath: forecast.length
+      ? path([
+          ...(lastActual ? ([[x(lastActual.daysToEvent), y(lastActual.actual as number)]] as [number, number][]) : []),
+          ...forecast.map((point): [number, number] => [x(point.daysToEvent), y(point.forecastAvg as number)]),
+        ])
+      : '',
     bandPath: band.length
       ? `${path([
           ...band.map((point): [number, number] => [x(point.daysToEvent), y(point.forecastHigh as number)]),
@@ -440,6 +482,7 @@ export function buildHealthMetricsOverviewTrendView(
         ])} Z`
       : '',
     todayX: lastActual ? x(lastActual.daysToEvent).toFixed(1) : null,
+    goalY: goal !== null && goal > 0 ? y(goal).toFixed(1) : null,
   };
 }
 
@@ -560,6 +603,7 @@ function trainingArcPath(fraction: number): string {
   return `M${point(start)} A88 88 0 ${span * fraction > Math.PI ? 1 : 0} 1 ${point(end)}`;
 }
 
+/** The bar is blue until the goal is reached, then green. */
 function buildSponsorshipView(revenue: number | null, goal: number | null, modelledProgress: number | null): HealthMetricsOverviewEventsView['sponsorship'] {
   const hasGoal = goal !== null && goal > 0;
   const progress = hasGoal ? (modelledProgress ?? (revenue ?? 0) / goal) : 0;
@@ -570,15 +614,12 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
     hasGoal,
     goalLabel: hasGoal ? formatCurrency(goal) : '',
     widthPct: clampPct(progress * 100),
+    barClass: progress >= 1 ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
     progressLabel: hasGoal ? `${formatShare(progress, false)} reached · ${remainingLabel(remaining)}` : 'No goal set',
   };
 }
 
-function buildEventRow(event: HealthMetricsOverviewEvent, isUpcoming: boolean): HealthMetricsOverviewEventRowView {
-  const goal = event.registrationsGoal;
-  const hasGoal = goal !== null && goal > 0;
-  const fraction = hasGoal ? (event.registrations ?? 0) / goal : 0;
-  const status = isUpcoming ? resolvePace(event.compScore) : resolveOutcome(event);
+function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRowView {
   const accepted = event.acceptedTalks ?? 0;
   const proposals = event.totalProposals ?? 0;
 
@@ -586,50 +627,55 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isUpcoming: boolean): 
     eventId: event.eventId,
     name: event.eventName,
     meta: buildHealthMetricsOverviewEventMeta(event),
-    clickable: isUpcoming,
-    registrations: {
-      countLabel: formatCount(event.registrations),
-      hasGoal,
-      goalLabel: hasGoal ? formatCount(goal) : '',
-      pctLabel: hasGoal ? formatShare(fraction, false) : '',
-      widthPct: clampPct(fraction * 100),
-      barClass: status?.barClass ?? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-      badge: hasGoal && status ? { label: status.label, className: status.badgeClass } : null,
-    },
+    isPast,
+    registrations: buildRegistrationsBar(event, isPast),
     talks: {
       hasProposals: proposals > 0,
-      acceptedLabel: formatCount(accepted),
-      totalLabel: formatCount(proposals),
+      countLabel: formatCount(accepted),
+      sideLabel: `of ${formatCount(proposals)}${isPast ? ' submitted' : ''}`,
       widthPct: proposals > 0 ? clampPct((accepted / proposals) * 100) : 0,
+      // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
+      barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
       note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP in review' : 'No call for proposals',
     },
   };
 }
 
-function resolvePace(compScore: string | null): (typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE)[keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE] | null {
+/**
+ * Without a goal the bar is full and green; otherwise upcoming events take their pace and past ones their share of
+ * the goal. An unmeasured count draws a grey bar with no status, so it never reads as missed.
+ */
+function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRegistrationsView {
+  const goal = event.registrationsGoal;
+  const countLabel = formatCount(event.registrations);
+  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', widthPct: 100, ...statusFields(HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack) };
+  if (event.registrations === null) {
+    return { countLabel, sideLabel: `of ${formatCount(goal)}`, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
+  }
+
+  const share = event.registrations / goal;
+  return {
+    countLabel,
+    sideLabel: `of ${formatCount(goal)}`,
+    widthPct: clampPct(share * 100),
+    ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)),
+  };
+}
+
+function statusFields(status: { label: string; fillClass: string } | null): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel'> {
+  return status ? { barClass: status.fillClass, statusLabel: status.label } : { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null };
+}
+
+function paceStatus(compScore: string | null): { label: string; fillClass: string } | null {
   return compScore && compScore in HEALTH_METRICS_OVERVIEW_EVENT_PACE
     ? HEALTH_METRICS_OVERVIEW_EVENT_PACE[compScore as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE]
     : null;
 }
 
-/** The Events tab's own rule, so a closed event reads the same on both pages. */
-function resolveOutcome(
-  event: HealthMetricsOverviewEvent
-): (typeof HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME)[keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME] | null {
-  const status = resolveHealthMetricsEventsPastStatus({
-    eventId: event.eventId,
-    eventName: event.eventName,
-    eventStartDate: event.startDate,
-    registrations: event.registrations,
-    goal: event.registrationsGoal,
-    goalMet: event.goalMet,
-    revenueUsd: null,
-    paceStatus: event.paceStatus,
-    ranges: event.ranges,
-  });
-  return status in HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME
-    ? HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME[status as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME]
-    : null;
+function goalShareStatus(share: number): { label: string; fillClass: string } {
+  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack;
+  if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk;
+  return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;
 }
 
 /** "Dec 15, 2026", "Dec 8–10, 2026", "Nov 30 – Dec 2, 2026" or "Dec 30, 2026 – Jan 2, 2027". */

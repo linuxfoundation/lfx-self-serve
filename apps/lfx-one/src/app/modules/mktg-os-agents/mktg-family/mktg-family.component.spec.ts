@@ -76,7 +76,10 @@ describe('Marketing family page', () => {
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
         { provide: MktgRebuildService, useValue: { run } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-writer' }), impersonating: signal(false) } },
-        { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'synthetic', name: 'Synthetic project' }), canWrite: writer } },
+        {
+          provide: ProjectContextService,
+          useValue: { activeContext: computed(() => ({ uid: 'synthetic', name: 'Synthetic project', slug: projectSlug() })), canWrite: writer },
+        },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
         provideRouter([
@@ -233,7 +236,9 @@ describe('Marketing family page', () => {
     }
     families.update((value) => value.map((family) => ({ ...family, rows: family.rows.map((row) => ({ ...row, state: 'missing', monthlyCount: null })) })));
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-aeo-geo"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-aeo-geo"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/aeo-geo?project=synthetic'
+    );
   });
 
   it.each(['inactive', 'intake-less'])('omits row actions for %s catalog entries', async (reason) => {
@@ -363,12 +368,31 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/unknown', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-not-found"]')).not.toBeNull();
   });
-  it('hides coming-soon primary actions while preserving their row state', async () => {
+  it('offers active AEO/GEO through the shared Create path and preserves unavailable Member state', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"]')).toBeNull();
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-state-aeo-geo"]')?.textContent).toContain('Coming soon');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.textContent).toContain('Create AEO/GEO scorecard');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/aeo-geo?project=synthetic'
+    );
+    const rows = families().flatMap((family) => family.rows);
+    const stored = rows.find((row) => row.document)?.document;
+    const audit = rows.find((row) => row.asset.agentKey === 'aeo-geo');
+    if (!stored || !audit) throw new Error('Missing synthetic audit row fixtures');
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((row) =>
+          row.asset.agentKey === 'aeo-geo' ? { ...row, document: { ...stored, agentKey: 'aeo-geo' as const, documentId: 'run-synthetic-audit' } } : row
+        ),
+      }))
+    );
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-open-aeo-geo"]')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/documents/aeo-geo/run-synthetic-audit?project=synthetic'
+    );
     await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
     const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
     expect(run).toBeNull();

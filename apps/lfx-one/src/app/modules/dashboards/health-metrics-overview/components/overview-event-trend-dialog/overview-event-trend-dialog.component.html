@@ -45,65 +45,91 @@
         }
       </div>
 
-      <div class="flex flex-col gap-[6px]">
-        <svg
-          width="100%"
-          height="220"
-          viewBox="0 0 600 220"
-          preserveAspectRatio="none"
-          class="block"
-          role="img"
-          aria-label="Registrations by days to event"
-          data-testid="overview-trend-chart">
-          @for (y of [55, 110, 165]; track y) {
-            <line x1="0" x2="600" vector-effect="non-scaling-stroke" [attr.y1]="y" [attr.y2]="y" [attr.stroke]="strokes.gridline"></line>
-          }
-          <line x1="0" y1="220" x2="600" y2="220" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.baseline"></line>
-          @if (view().bandPath) {
-            <path stroke="none" [attr.fill]="bandFill" [attr.d]="view().bandPath"></path>
-          }
-          @if (view().lastYearPath) {
-            <path fill="none" stroke-width="2" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.lastYear" [attr.d]="view().lastYearPath"></path>
-          }
-          @if (view().predictedPath) {
-            <path
-              fill="none"
-              stroke-width="2"
-              stroke-dasharray="5 4"
-              vector-effect="non-scaling-stroke"
-              [attr.stroke]="strokes.progress"
-              [attr.d]="view().predictedPath"></path>
-          }
-          @if (view().currentPath) {
-            <path fill="none" stroke-width="2.5" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.thisYear" [attr.d]="view().currentPath"></path>
-          }
-          @if (view().todayX; as todayX) {
-            <line
-              y1="0"
-              y2="220"
-              stroke-dasharray="3 3"
-              vector-effect="non-scaling-stroke"
-              [attr.stroke]="strokes.today"
-              [attr.x1]="todayX"
-              [attr.x2]="todayX"></line>
-          }
-        </svg>
-        <div class="flex justify-between text-[11px] text-gray-500" aria-hidden="true">
-          <span>180 days out</span><span>120</span><span>60</span><span>Event day</span>
+      @if (hasCurve()) {
+        <div class="flex flex-col gap-[6px]">
+          <svg
+            width="100%"
+            height="220"
+            viewBox="0 0 600 220"
+            preserveAspectRatio="none"
+            class="block"
+            role="img"
+            aria-label="Registrations by days to event"
+            data-testid="overview-trend-chart">
+            @for (y of [55, 110, 165]; track y) {
+              <line x1="0" x2="600" vector-effect="non-scaling-stroke" [attr.y1]="y" [attr.y2]="y" [attr.stroke]="strokes.gridline"></line>
+            }
+            <line x1="0" y1="220" x2="600" y2="220" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.baseline"></line>
+            @if (view().goalY; as goalY) {
+              <line
+                x1="0"
+                x2="600"
+                stroke-width="1.5"
+                stroke-dasharray="4 4"
+                vector-effect="non-scaling-stroke"
+                data-testid="overview-trend-goal"
+                [attr.stroke]="strokes.high"
+                [attr.y1]="goalY"
+                [attr.y2]="goalY"></line>
+            }
+            @if (view().bandPath) {
+              <path stroke="none" [attr.fill]="bandFill" [attr.d]="view().bandPath"></path>
+            }
+            @if (view().lastYearPath) {
+              <path fill="none" stroke-width="2" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.lastYear" [attr.d]="view().lastYearPath"></path>
+            }
+            @if (view().predictedPath) {
+              <path
+                fill="none"
+                stroke-width="2"
+                stroke-dasharray="5 4"
+                vector-effect="non-scaling-stroke"
+                [attr.stroke]="strokes.progress"
+                [attr.d]="view().predictedPath"></path>
+            }
+            @if (view().currentPath) {
+              <path fill="none" stroke-width="2.5" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.thisYear" [attr.d]="view().currentPath"></path>
+            }
+            @if (view().todayX; as todayX) {
+              <line
+                y1="0"
+                y2="220"
+                stroke-dasharray="3 3"
+                vector-effect="non-scaling-stroke"
+                [attr.stroke]="strokes.today"
+                [attr.x1]="todayX"
+                [attr.x2]="todayX"></line>
+            }
+          </svg>
+          <div class="flex justify-between text-[11px] text-gray-500" aria-hidden="true">
+            <span>180 days out</span><span>120</span><span>60</span><span>Event day</span>
+          </div>
         </div>
-      </div>
 
-      <div class="flex flex-wrap gap-x-[16px] gap-y-[6px]" aria-hidden="true">
-        <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-          ><span class="h-[3px] w-[14px] rounded-full" [class]="thisYearClass"></span>This year</span
-        >
-        <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-          ><span class="h-[3px] w-[14px] rounded-full bg-gray-400"></span>Last year</span
-        >
-        <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-          ><span class="h-[3px] w-[14px] rounded-full bg-blue-500"></span>Predicted</span
-        >
-      </div>
+        <div class="flex flex-wrap gap-x-[16px] gap-y-[6px]" aria-hidden="true">
+          <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+            ><span class="h-[3px] w-[14px] rounded-full" [class]="thisYearClass"></span>This year</span
+          >
+          <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+            ><span class="h-[3px] w-[14px] rounded-full bg-gray-400"></span>Last year</span
+          >
+          @if (!isPast) {
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-0 w-[14px] border-t-2 border-dashed border-blue-500"></span>Predicted</span
+            >
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-[8px] w-[14px] rounded-[2px] bg-blue-500/20"></span>Predicted range</span
+            >
+          }
+          @if (view().goalY) {
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-0 w-[14px] border-t-2 border-dashed border-emerald-500"></span>Registration goal</span
+            >
+          }
+        </div>
+      } @else {
+        <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="overview-trend-empty">No registration history for this event yet.</p>
+      }
     }
   }
 </div>

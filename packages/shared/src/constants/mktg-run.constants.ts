@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat } from '../interfaces';
+import { AEO_GEO_SECTIONS } from './aeo-geo.constants';
 import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
@@ -701,6 +702,25 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   persistsDocument: true,
 };
 
+/** Domain-only audit; key pages are optional but must number 2–5 when supplied. */
+export const AEO_GEO_INTAKE: MktgAgentIntake = {
+  agentId: 'aeo-geo',
+  formTitleAction: 'Run',
+  documentName: 'AEO/GEO report',
+  intro:
+    'Scores how a website shows up in AI search and answer engines, with prioritized recommendations. One input: the site. Each run is its own report; nothing is revised, run again instead.',
+  batchPreamble: [],
+  fields: [
+    { key: 'domain', question: 'The website to audit', kind: 'text' },
+    { key: 'key_pages', question: 'Key pages', kind: 'textarea', optional: true },
+  ],
+  sections: AEO_GEO_SECTIONS.map((heading) => heading.replace(/^## /, '')),
+  endpoints: { generate: '/api/mktg-agents/aeo-geo/generate', result: '/api/mktg-agents/aeo-geo/result', answers: '/api/mktg-agents/aeo-geo/answers' },
+  persistsDocument: true,
+  oneOffDocument: true,
+  liveActivity: true,
+};
+
 /** A last runtime error must settle before it is considered terminal. */
 export const MKTG_RUN_ERROR_SETTLE_MS = 30_000;
 /** Legacy exported timing retained for compatibility; passive events never prove recovery. */
@@ -730,6 +750,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
     persistsDocument: true,
     regenerateViaGenerate: true,
   },
+  [AEO_GEO_INTAKE.agentId]: AEO_GEO_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
@@ -836,6 +857,8 @@ export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*statu
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
+/** User/project/document-scoped capabilities for pending one-off documents. */
+export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
 /** Separately scoped intake/attempt recovery, including submissions that never received an ACK. */
 export const MKTG_PENDING_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-pending-run';
 

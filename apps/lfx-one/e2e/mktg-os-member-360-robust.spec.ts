@@ -158,9 +158,11 @@ test('the document has a loading state, then a recoverable read error', async ({
   });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
+  await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   release?.();
   await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not be loaded');
   await expect(page.getByTestId('mktg-document-view-retry')).toBeVisible();
+  await expect(page.getByTestId('member-360-download')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('document-error.png'), fullPage: true });
 });
 
@@ -170,9 +172,11 @@ test('evidence and method disclosures are keyboard accessible', async ({ page },
   const heat = page.getByRole('img', { name: /no data/ }).first();
   await heat.focus();
   await expect(heat).toBeFocused();
-  await expect(heat.locator('span')).toBeVisible();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toHaveText((await heat.getAttribute('aria-label')) ?? '');
+  expect(await tooltip.evaluate((element) => element.parentElement === document.body)).toBe(true);
   await page.keyboard.press('Escape');
-  await expect(heat.locator('span')).toBeHidden();
+  await expect(tooltip).toHaveCount(0);
   await expect(heat).toBeFocused();
   const evidence = page.getByTestId('member-360-evidence');
   await evidence.locator('summary').focus();

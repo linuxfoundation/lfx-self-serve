@@ -366,6 +366,8 @@ export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
 /** One row on the Mentoring History section of the mentor profile page. */
 export interface MentorshipMentoringHistoryEntry {
   id: string;
+  /** The program the row names, when exactly one of the mentor's programs has that name; links its public page. */
+  programId?: string;
   /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
   programName: string;
   /** Term the mentor supported, e.g. "Fall 2026". */

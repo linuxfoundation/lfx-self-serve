@@ -399,7 +399,11 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-empty-living')).toBeNull();
     expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.textContent?.trim()).toBe('Open');
     expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
-    if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    if (state === 'questions') {
+      expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+      expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
+      expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Needs answers');
+    }
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
       expect(store.listDocuments).toHaveBeenCalledTimes(1);
@@ -546,6 +550,17 @@ describe('MktgDocumentsComponent', () => {
     vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
     expect(store.listDocuments).toHaveBeenCalledTimes(1);
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
+  });
+
+  it('labels a Member 360 questions run as paused in the started list and navigation', async () => {
+    const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
+    await render('/?type=member-360');
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Paused — the run needs input');
+    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Waiting for your answers');
+    expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Paused');
+    expect(query('mktg-documents-nav-member-360')?.textContent).not.toContain('Needs answers');
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {

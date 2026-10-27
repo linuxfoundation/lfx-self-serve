@@ -3,7 +3,7 @@
 
 <div #documentContainer class="@container mx-auto w-full min-w-0 max-w-screen-2xl px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
   <div class="flex flex-col gap-6">
-    <lfx-mktg-breadcrumb [project]="projectSlug()" [crumbs]="crumbs()" />
+    <lfx-mktg-breadcrumb [page]="{ kind: 'kit-tab', tab: 'documents' }" />
     <lfx-mktg-kit-header [projectName]="projectName()" titleTestId="mktg-documents-project-title" />
     <lfx-mktg-kit-tabs />
     <section class="flex flex-col gap-1" aria-labelledby="mktg-documents-heading">
@@ -40,7 +40,11 @@
                     Writing the document
                   }
                   @case ('questions') {
-                    Waiting for your answers
+                    @if (run.agentKey === 'member-360') {
+                      Paused — the run needs input
+                    } @else {
+                      Waiting for your answers
+                    }
                   }
                   @case ('storing') {
                     Storing the revision
