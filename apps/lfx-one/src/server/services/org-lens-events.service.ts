@@ -57,7 +57,8 @@ export class OrgLensEventsService {
      * filter offers rows whose displayed count is 0.
      */
     const buildListQuery = (scoped: boolean): { sql: string; binds: string[] } => {
-      const countExpression = scoped ? 'COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0)' : 'oe.ORG_REGISTRATION_COUNT';
+      // Both spellings read the recomputed count; only the scoping differs. See registrationCountsCte.
+      const countExpression = 'COALESCE(cr.REGISTRATION_COUNT, 0)';
       let statusFilter = '';
       if (status === 'registered') {
         statusFilter = `AND ${countExpression} > 0`;
@@ -72,7 +73,7 @@ export class OrgLensEventsService {
       const pastCondition = isPast ? 'oe.IS_PAST_EVENT = TRUE' : 'oe.IS_PAST_EVENT = FALSE';
 
       const sql = `
-      ${scoped ? COMPANY_EMAIL_REGISTRATION_COUNTS_CTE : ''}
+      ${registrationCountsCte(scoped)}
       SELECT
         oe.EVENT_ID,
         oe.EVENT_NAME,
@@ -91,7 +92,8 @@ export class OrgLensEventsService {
         oe.IS_ORG_SPONSOR,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
-      ${scoped ? 'LEFT JOIN company_email_registrations cr ON cr.EVENT_ID = oe.EVENT_ID' : ''}
+      LEFT JOIN event_registration_counts cr
+        ON cr.EVENT_ID = oe.EVENT_ID
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
         ${searchQueryFilter}
@@ -100,8 +102,8 @@ export class OrgLensEventsService {
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
-      // Positional binds, in statement order: the two CTEs when scoped, then the outer WHERE.
-      const binds: string[] = scoped ? [accountId, accountId, accountId] : [accountId];
+      // Positional binds, in statement order: coverage CTE (scoped only), counts CTE, outer WHERE.
+      const binds: string[] = scoped ? [accountId, accountId, accountId] : [accountId, accountId];
       if (searchQuery) binds.push(`%${searchQuery}%`);
       return { sql, binds };
     };
@@ -216,6 +218,7 @@ export class OrgLensEventsService {
         ON ${ORG_PERSON_EMAIL_KEY} = ${REGISTRANT_EMAIL_KEY} AND p.ACCOUNT_ID = ?
       WHERE er.EVENT_ID = ?
         AND er.ACCOUNT_ID = ?
+        AND ${REGISTRANT_HAS_ADDRESS}
         ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         ${searchFilter}
       GROUP BY ${REGISTRANT_EMAIL_KEY}
@@ -475,8 +478,17 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * disagree again. Giving it a synthesized identity instead needs a registration-level key this query
  * does not select. Revisit with the platinum measure in #4409, where the grain can carry one.
  */
-const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL
-          AND (ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
+const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
+
+/**
+ * A registrant needs a usable address whichever spelling is running. This half of the rule is NOT
+ * about company scoping, so it applies to the unscoped fallback too: without it that path returns a
+ * row whose `CONTACT_ID` is null — against the non-nullable `OrgEventAttendee.contactId`, rejected by
+ * `isContactRowArray`, and with a null `name` when the registration carries none either, which the
+ * drawer then calls `computePersonInitials` on. The scoped predicate used to carry this clause, so
+ * splitting the fallback out of it originally dropped the guard on exactly the degraded path.
+ */
+const REGISTRANT_HAS_ADDRESS = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL`;
 
 /**
  * The identity of a registrant, for counting and for grouping. Addresses reach the fact table in
@@ -502,22 +514,34 @@ const REGISTRANT_EMAIL_KEY = normalizedEmail('er.EMAIL');
 const ORG_PERSON_EMAIL_KEY = normalizedEmail('p.EMAIL');
 
 /**
- * Per-event registrant count under that rule, so a row and the drawer it opens never disagree.
+ * Per-event registrant count, so a row and the drawer it opens never disagree.
  * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used: it is precomputed with no company-email scoping.
- * It counts on `REGISTRANT_EMAIL_KEY`, the same grain the drawer groups by. Takes two binds
- * (the account id, twice). Replacing this with a scoped column on the platinum model is #4409.
+ * It counts on `REGISTRANT_EMAIL_KEY`, the same grain the drawer groups by.
+ *
+ * The unscoped spelling drops the company-email filter and nothing else — it still recomputes from the
+ * same registrations, at the same grain, with the same address guard. Falling back to the precomputed
+ * platinum column instead would restore pre-rule behaviour literally, but it would also break the one
+ * invariant this PR is built on: a row saying 99 while the drawer it opens lists 2. Dropping the scope
+ * is the point of the fallback; dropping the agreement is not.
+ *
+ * Binds: two account ids when scoped (coverage CTE, registrations CTE), one when not.
+ * Replacing the scoped spelling with a column on the platinum model is #4409.
  */
-const COMPANY_EMAIL_REGISTRATION_COUNTS_CTE = `WITH ${COMPANY_EMAIL_COVERAGE_CTE},
-      company_email_registrations AS (
+function registrationCountsCte(scoped: boolean): string {
+  return `WITH ${scoped ? `${COMPANY_EMAIL_COVERAGE_CTE},` : ''}
+      event_registration_counts AS (
         SELECT
           er.EVENT_ID,
-          COUNT(DISTINCT ${REGISTRANT_EMAIL_KEY}) AS COMPANY_EMAIL_REGISTRATION_COUNT
+          COUNT(DISTINCT ${REGISTRANT_EMAIL_KEY}) AS REGISTRATION_COUNT
         FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
-        ${COMPANY_EMAIL_JOINS}
+        ${scoped ? COMPANY_EMAIL_JOINS : ''}
         WHERE er.ACCOUNT_ID = ?
-          AND ${COMPANY_EMAIL_QUALIFIES}
+          AND ${REGISTRANT_HAS_ADDRESS}
+          AND ${REGISTRANT_HAS_ADDRESS}
+        ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         GROUP BY er.EVENT_ID
       )`;
+}
 
 /** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
 function paramSignature(parts: readonly (string | number | boolean | null)[]): string {

@@ -6,13 +6,15 @@ import { createRequire } from 'node:module';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+const { execute, cacheValues } = vi.hoisted(() => ({ execute: vi.fn(), cacheValues: new Map<string, string>() }));
 
 // Narrow the shared barrels to the modules this service actually reads: the full barrels reach
 // Angular-dependent code that will not load in the plain-Node server environment.
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/date-time.utils')),
   ...(await import('../../../../../packages/shared/src/utils/url.utils')),
+  // Needed by the real valkey.service, which this spec now exercises rather than stubs.
+  ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
@@ -21,15 +23,50 @@ vi.mock('@lfx-one/shared/constants', async () => ({
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute }) },
 }));
-// The cache is not under test here; every call goes straight to the fetcher so the real SQL runs.
-vi.mock('./valkey.service', () => ({
-  withOrgCache: <T>(_account: string, _key: string, _ttl: number, fetcher: () => Promise<T>): Promise<T> => fetcher(),
+/**
+ * The REAL `withOrgCache` over a Map-backed Redis, as `org-lens-people.service.spec.ts` does. A stub
+ * that always calls the fetcher cannot tell a cached read from an uncached one, so the assertion that
+ * the unscoped fallback is never stored under the scoped key would pass even if the fallback were
+ * moved inside the cached fetcher — which is the one refactor that would reintroduce the bug.
+ */
+vi.mock('ioredis', () => ({
+  default: class {
+    public status = 'ready';
+    public on(): this {
+      return this;
+    }
+    public async get(key: string): Promise<string | null> {
+      return cacheValues.get(key) ?? null;
+    }
+    public async set(key: string, value: string): Promise<void> {
+      cacheValues.set(key, value);
+    }
+    public async quit(): Promise<void> {
+      /* No connection in this fixture. */
+    }
+  },
 }));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
+vi.mock('./valkey.service', async () => {
+  const actual = await vi.importActual<typeof import('./valkey.service')>('./valkey.service');
+  return {
+    ...actual,
+    withOrgCache: <T>(
+      account: string,
+      key: string,
+      ttl: number,
+      fetcher: () => Promise<T>,
+      accept?: (value: unknown) => boolean,
+      storable?: (value: T) => boolean
+    ): Promise<T> => actual.ValkeyService.getInstance().withCache(actual.buildOrgCacheKey(account, key), ttl, fetcher, accept, storable),
+  };
+});
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
 import { OrgLensEventsService } from './org-lens-events.service';
+import { ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
@@ -101,6 +138,9 @@ function addEvent(eventId = EVENT, precomputedCount = 99): void {
 }
 
 beforeEach(() => {
+  vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+  cacheValues.clear();
+  ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec(
     `CREATE TABLE ORG_EVENTS (
@@ -133,6 +173,8 @@ beforeEach(() => {
 
 afterEach(() => {
   database.close();
+  ValkeyService.resetInstance();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
@@ -328,6 +370,22 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data[0].jobTitle).toBe('Principal Engineer');
   });
 
+  it('still requires an address on the fallback path', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('someone@gmail.example', 'Someone Else');
+    // No address and no name: the pair that previously reached the drawer as contactId null and
+    // name null, which computePersonInitials then splits.
+    addRegistration(null, null as unknown as string);
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(drawer.total).toBe(1);
+    expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
+  });
+
   it('keeps a missing address table out of the shared circuit breaker', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
@@ -358,28 +416,39 @@ describe('OrgLensEventsService company-email scoping', () => {
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    // An org with events must not render as an org with none. Both fall back to the pre-rule
-    // behaviour — the precomputed count and the unscoped roster — and still agree with each other.
+    // An org with events must not render as an org with none. The fallback drops the company-email
+    // scoping and nothing else: the count is still recomputed at the drawer's grain, so the row and
+    // the drawer it opens agree (2 and 2) rather than the row showing the stale precomputed 99.
     expect(list.data).toHaveLength(1);
-    expect(list.data[0].orgAttendeeCount).toBe(99);
+    expect(list.data[0].orgAttendeeCount).toBe(2);
     expect(drawer.total).toBe(2);
   });
 
-  it('does not cache the unscoped fallback under the scoped key', async () => {
+  it('does not cache the unscoped fallback, for either surface', async () => {
     addEvent(EVENT, 99);
     addRegistration('ada@company.example', 'Ada Lovelace');
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
 
     await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // Asserted against the cache itself, not inferred from a later read: nothing was written, so a
+    // refactor that moved the fallback inside the cached fetcher fails here rather than silently
+    // serving unfiltered counts for the rest of the TTL.
+    expect([...cacheValues.keys()]).toEqual([]);
 
     // Restored: the table was briefly unavailable, not gone. The scoped answer must come back on the
-    // next read rather than a cached unfiltered count outliving the outage.
+    // next read for both surfaces.
     database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
     addCompanyEmail('grace@company.example');
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
     expect(list.data[0].orgAttendeeCount).toBe(0);
+    expect(drawer.total).toBe(0);
+    // And the scoped answers ARE cached, so the assertion above is about the fallback specifically.
+    expect(cacheValues.size).toBe(2);
   });
 
   it('does not count an address made only of whitespace as coverage', async () => {
