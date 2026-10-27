@@ -354,8 +354,8 @@ const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
 /**
  * Joins that decide whether a registration's address is one this org holds. The `LEFT JOIN` may fan a
  * registration out when an address is recorded against more than one person key, which is harmless
- * here: both readers are already distinct on the address (`COUNT(DISTINCT er.EMAIL)` and
- * `GROUP BY er.EMAIL`). `company_email_coverage` is one row, so the `CROSS JOIN` does not multiply.
+ * here: both readers are already distinct on the address, counting and grouping on
+ * `REGISTRANT_EMAIL_KEY`. `company_email_coverage` is one row, so the `CROSS JOIN` does not multiply.
  * Needs no bind of its own.
  */
 const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
