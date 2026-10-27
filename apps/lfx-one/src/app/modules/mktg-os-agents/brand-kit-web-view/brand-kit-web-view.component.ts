@@ -188,16 +188,6 @@ export class BrandKitWebViewComponent {
   }
 
   /**
-   * A shortcut into a tab from outside the tablist (the Overview's "Open …"
-   * buttons, the header's sources link): the button that was clicked goes
-   * with the panel it sat in, so focus moves to the new panel's start once it
-   * has rendered, as on the framework view.
-   */
-  protected onGoToTab(id: BrandKitWebViewTabId): void {
-    void this.onSelectTab(id);
-  }
-
-  /**
    * Keyboard tabs, as on the framework view: only the selected tab is in the
    * tab order (roving tabindex), so the arrow keys, Home and End move the
    * selection and the focus along the tablist. Other keys pass through.
@@ -248,7 +238,7 @@ export class BrandKitWebViewComponent {
         const selected = tab.id === this.selectedTab();
         return {
           id: tab.id,
-          label: tab.label,
+          label: tab.id === 'sources' && this.gapCount() > 0 ? `${tab.label} (${this.gapCount()})` : tab.label,
           selected,
           tabClass: this.tabClasses[selected ? 'selected' : 'idle'],
           tabId: `brand-kit-web-view-tab-${tab.id}`,

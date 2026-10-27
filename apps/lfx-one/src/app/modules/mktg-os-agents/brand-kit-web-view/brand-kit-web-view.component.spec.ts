@@ -317,7 +317,7 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(tab('color').getAttribute('aria-selected')).toBe('true');
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
-      // The clicked Overview shortcut leaves with its panel; focus moves to the new panel's start.
+      // Selecting a chapter tab moves focus to the new panel's start.
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
@@ -432,6 +432,7 @@ describe('BrandKitWebViewComponent', () => {
       fixture.componentRef.setInput('kit', kit);
       await fixture.whenStable();
       expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (3)');
 
       tab('sources').click();
       await fixture.whenStable();
@@ -443,8 +444,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-report-notes')?.querySelectorAll('li')).toHaveLength(2);
     });
 
-    it('says so where the run left nothing to report, and shows no count on Report', async () => {
-      expect(query('brand-kit-web-view-report')?.querySelector('.p-badge')).toBeNull();
+    it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
+      expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps');
       await open('sources');
 
       expect(query('brand-kit-web-view-sources-failed-empty')).not.toBeNull();

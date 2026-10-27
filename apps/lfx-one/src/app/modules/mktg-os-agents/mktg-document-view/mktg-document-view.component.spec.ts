@@ -126,12 +126,10 @@ describe('MktgDocumentViewComponent', () => {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
   }
 
-  function expectHeaderRunAgain(headerId: string, actionsId: string): HTMLElement {
+  function expectTitleCardRunAgain(): HTMLElement {
     const action = query('mktg-document-view-run-again');
-    if (!action) throw new Error('Missing Run again action');
+    if (!action) throw new Error('Missing Create a new version action');
     expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-run-again"]')).toHaveLength(1);
-    expect(query(headerId)?.contains(action) ?? false).toBe(false);
-    expect(query(actionsId)?.contains(action) ?? false).toBe(false);
     expect(query('mktg-document-view-title-actions')?.contains(action)).toBe(true);
     expect(action.textContent?.trim()).toBe('Create a new version');
     expect(action.tabIndex).toBe(0);
@@ -1739,7 +1737,7 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), runs: [run], sidecar: kitSidecar() }));
     await render('/documents/brand-kit/living?run=' + run.runId);
     expect(query('mktg-document-view-run')).not.toBeNull();
-    const action = expectHeaderRunAgain('brand-kit-web-view-header', 'brand-kit-web-view-actions');
+    const action = expectTitleCardRunAgain();
     const explanation = query('brand-kit-web-view-approval-required');
     if (!explanation) throw new Error('Missing draft export explanation');
     expect(action.compareDocumentPosition(explanation) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
@@ -1762,7 +1760,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
     expect(query('mktg-document-view-history-bar-back')?.getAttribute('href')).toBe(`/documents/brand-kit/living?revision=${LATEST.id}`);
     const summary = query('mktg-document-view-history-bar-summary');
-    const runAgain = expectHeaderRunAgain('brand-kit-web-view-header', 'brand-kit-web-view-actions');
+    const runAgain = expectTitleCardRunAgain();
     if (!summary) throw new Error('Missing history fixture');
     expect(runAgain.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     const focusable = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLElement>('a[href], button, [tabindex]') ?? []).filter(
@@ -1863,7 +1861,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-framework-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
-    const runAgain = expectHeaderRunAgain('mktg-framework-view-header', 'mktg-framework-view-actions');
+    const runAgain = expectTitleCardRunAgain();
     const exportAction = query('mktg-framework-view-export-slides');
     if (!exportAction) throw new Error('Missing framework export');
     expect(runAgain.compareDocumentPosition(exportAction) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
@@ -2383,7 +2381,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
   });
 
-  it('exports and prints approved current while the screen shows a different newer Draft', async () => {
+  it('a newer Draft shows the export explanation instead of exporting the approved current', async () => {
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
     const approved = revision(1, { latest: true, approval });
     const draft = revision(3, { latest: false });
@@ -2516,7 +2514,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view')).toBeNull();
     expect(query('mktg-boilerplates-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v3');
-    const runAgain = expectHeaderRunAgain('mktg-boilerplates-view-header', 'mktg-boilerplates-view-actions');
+    const runAgain = expectTitleCardRunAgain();
     expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit&mode=new');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');

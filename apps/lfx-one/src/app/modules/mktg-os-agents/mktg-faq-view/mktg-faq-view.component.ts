@@ -101,17 +101,6 @@ export class MktgFaqViewComponent {
   }
 
   /**
-   * A shortcut into a tab from outside the tablist (the header's "need an
-   * answer" chip, the FAQ tab's callout): the button that was clicked may go
-   * with the panel it sat in, so focus moves to the new panel's start once it
-   * has rendered. afterNextRender is bound to this component's injector, so
-   * the hook is dropped with the component and never fires after it is gone.
-   */
-  protected onGoToTab(id: FaqViewTab): void {
-    void this.onSelectTab(id);
-  }
-
-  /**
    * Keyboard tabs, as on the framework view: only the selected tab is in the
    * tab order (roving tabindex), so the arrow keys, Home and End move the
    * selection and the focus along the tablist. Other keys pass through.
