@@ -60,7 +60,10 @@ interface CodeContributionRow {
   PROJECT_NAME: string | null;
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
+  /** The person's commit credit in this project: each commit lands on one project, so these sum to the person's total. */
   TOTAL_COMMITS: number;
+  /** Distinct commits the person authored in this project; a mirrored commit counts in every project it appears in. */
+  PROJECT_COMMITS: number;
   IS_MAINTAINER: boolean;
   LAST_ACTIVITY_DATE: Date | string | null;
 }
@@ -184,7 +187,7 @@ export class OrgLensPeopleService {
     // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
     // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
-      return { personKey, boardSeats: [], committeeSeats: [], code: [], events: [], training: [] };
+      return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, events: [], training: [] };
     }
 
     const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeActivityRaw(accountId, personKey);
@@ -218,6 +221,8 @@ export class OrgLensPeopleService {
       boardSeats,
       committeeSeats,
       code: codeRows.map((row) => this.mapCodeRow(row)),
+      // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
+      totalCommits: codeRows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
       events,
       training,
     };
@@ -542,14 +547,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  /**
+   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v2`: the code rows carry
+   * PROJECT_COMMITS, so an entry stored without it must miss.
+   */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     if (!isFilterSafeIdentifier(personKey)) {
       return this.runEmployeeActivityFetch(accountId, personKey);
     }
     return withOrgCache(
       accountId,
-      `people-detail:${personKey}`,
+      `people-detail:v2:${personKey}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
@@ -681,11 +689,12 @@ export class OrgLensPeopleService {
         FOUNDATION_ID,
         FOUNDATION_NAME,
         TOTAL_COMMITS,
+        PROJECT_COMMITS,
         IS_MAINTAINER,
         LAST_ACTIVITY_DATE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-      ORDER BY TOTAL_COMMITS DESC NULLS LAST, PROJECT_NAME ASC NULLS LAST
+      ORDER BY PROJECT_COMMITS DESC NULLS LAST, PROJECT_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<CodeContributionRow>(query, [accountId, personKey]);
     return result.rows;
@@ -745,7 +754,7 @@ export class OrgLensPeopleService {
       projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
       foundationId: row.FOUNDATION_ID ?? '',
       foundationName: row.FOUNDATION_NAME ?? '',
-      totalCommits: row.TOTAL_COMMITS ?? 0,
+      commits: row.PROJECT_COMMITS ?? 0,
       lastActivityDate: toDateString(row.LAST_ACTIVITY_DATE),
       isMaintainer: row.IS_MAINTAINER === true,
     };

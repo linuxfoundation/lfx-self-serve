@@ -34,6 +34,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     boardSeats: [],
     committeeSeats: [],
     code: [],
+    totalCommits: 0,
     events: [
       {
         eventId: 'event-1',
@@ -312,11 +313,12 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
           projectName: 'Project One',
           foundationId: 'foundation-1',
           foundationName: 'Foundation One',
-          totalCommits: 7,
+          commits: 7,
           lastActivityDate: null,
           isMaintainer: false,
         },
       ],
+      totalCommits: 7,
     });
     drawer.setTab('code');
     await render();
@@ -324,6 +326,28 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
     const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+  });
+
+  it("shows a mirrored commit in each project's count and once in the Commits total", async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    // 3 commits only in project-1 and 4 mirrored in project-1 and project-2: 7 distinct commits.
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 7), project('project-2', 4)], totalCommits: 7 });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('7');
+    expect(byTestId('person-detail-drawer-code-project-project-1')?.textContent).toContain('7 commits');
+    expect(byTestId('person-detail-drawer-code-project-project-2')?.textContent).toContain('4 commits');
   });
 
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {

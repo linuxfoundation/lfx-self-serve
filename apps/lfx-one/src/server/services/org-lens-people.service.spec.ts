@@ -408,11 +408,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
         projectName: 'Project One',
         foundationId: 'foundation-one',
         foundationName: 'Foundation One',
-        totalCommits: 12,
+        commits: 12,
         lastActivityDate: '2026-04-12',
         isMaintainer: true,
       },
     ],
+    totalCommits: 12,
     events: [
       {
         eventId: 'event-one',
@@ -443,7 +444,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       );
       CREATE TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, PROJECT_NAME TEXT, FOUNDATION_ID TEXT,
-        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, IS_MAINTAINER INTEGER, LAST_ACTIVITY_DATE TEXT
+        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, PROJECT_COMMITS INTEGER, IS_MAINTAINER INTEGER, LAST_ACTIVITY_DATE TEXT
       );
       CREATE TABLE ORG_PEOPLE_EVENTS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, EVENT_END_DATE TEXT,
@@ -460,8 +461,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'committee-one', 'Technical Committee', 'Technical', 0, 'Member', 'Observer', 'foundation-one', 'Foundation One');
     database
-      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 1, '2026-04-12');
+      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 12, 1, '2026-04-12');
     database
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
@@ -482,6 +483,22 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({ personKey, ...activity });
     const addressReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
     expect(addressReads).toEqual([]);
+  });
+
+  it("counts a mirrored commit in every project's row and once in the total", async () => {
+    // 3 commits only in project-one, 4 more mirrored into project-two: credit 7 + 0, distinct per project 7 and 4.
+    database.exec('DELETE FROM ORG_PEOPLE_CODE_CONTRIBUTIONS');
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 7, 7, 0, '2026-04-12');
+    insert.run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 0, 4, 0, '2026-04-11');
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.code.map((row) => [row.projectId, row.commits])).toEqual([
+      ['project-one', 7],
+      ['project-two', 4],
+    ]);
+    expect(detail.totalCommits).toBe(7);
   });
 
   it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
@@ -518,8 +535,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addRangeRow(ACCOUNT, formerKey, '12mo', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
       addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
       database
-        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(ACCOUNT, formerKey, 'project-two', 'Project Two', 'foundation-two', 'Foundation Two', 4, 0, '2026-05-01');
+        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(ACCOUNT, formerKey, 'project-two', 'Project Two', 'foundation-two', 'Foundation Two', 4, 4, 0, '2026-05-01');
     });
 
     it('returns former employees flagged as former, with tiles counted over them and the foundations of their code', async () => {
@@ -574,8 +591,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       database.exec('ALTER TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS ADD COLUMN IS_LF_PROJECT INTEGER DEFAULT 1');
       addRangeRow(ACCOUNT, 'person-non-lf', '12mo', true, 'nonlf', 'Non Lf', null, 7, { projectScope: 'non_lf' });
       database
-        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(ACCOUNT, 'person-non-lf', 'project-x', 'Project X', 'foundation-x', 'Foundation X', 7, 0, '2026-05-01', 0);
+        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(ACCOUNT, 'person-non-lf', 'project-x', 'Project X', 'foundation-x', 'Foundation X', 7, 7, 0, '2026-05-01', 0);
 
       const response = await service.getFormerEmployees(ACCOUNT, '12mo', { ...FILTERS, projectScope: 'non_lf' });
 

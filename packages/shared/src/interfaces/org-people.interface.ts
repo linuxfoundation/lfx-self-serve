@@ -150,13 +150,14 @@ export interface OrgAllEmployeeCommitteeMembership {
   isBoard: boolean;
 }
 
-/** One project the employee contributed code to. */
+/** One project the employee contributed code to (trailing 12 months). */
 export interface OrgAllEmployeeCodeContribution {
   projectId: string;
   projectName: string;
   foundationId: string;
   foundationName: string;
-  totalCommits: number;
+  /** Distinct commits the person authored in this project. A commit mirrored in several projects counts in each, so the rows can sum to more than {@link OrgAllEmployeeDetail.totalCommits}. */
+  commits: number;
   lastActivityDate: string | null;
   isMaintainer: boolean;
 }
@@ -190,6 +191,8 @@ export interface OrgAllEmployeeDetail {
   boardSeats: OrgAllEmployeeCommitteeMembership[];
   committeeSeats: OrgAllEmployeeCommitteeMembership[];
   code: OrgAllEmployeeCodeContribution[];
+  /** Distinct commits the person authored across all projects (trailing 12 months), each counted once. */
+  totalCommits: number;
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
 }

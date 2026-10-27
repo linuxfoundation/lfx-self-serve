@@ -124,7 +124,7 @@
               </thead>
               <tbody>
                 @for (row of code(); track row.projectId + '-' + $index) {
-                  <tr class="border-b border-gray-100 last:border-b-0">
+                  <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-people-all-employees-detail-code-' + row.projectId">
                     <td class="px-3 py-2 font-medium text-gray-800">{{ row.projectName }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
                     <td class="px-3 py-2">
@@ -140,7 +140,7 @@
                         </span>
                       }
                     </td>
-                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.totalCommits | number }}</td>
+                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.commits | number }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.lastActivityDate ?? '—' }}</td>
                   </tr>
                 }

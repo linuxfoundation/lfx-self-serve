@@ -40,11 +40,12 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
       projectName: 'Kubernetes',
       foundationId: 'fdn-cncf',
       foundationName: 'CNCF',
-      totalCommits: 1240,
+      commits: 1240,
       lastActivityDate: '2026-05-13',
       isMaintainer: true,
     },
   ],
+  totalCommits: 1240,
   events: [],
   training: [],
 };

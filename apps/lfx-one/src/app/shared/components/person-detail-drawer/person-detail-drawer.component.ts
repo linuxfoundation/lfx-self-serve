@@ -89,15 +89,13 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     return [...detail.boardSeats, ...detail.committeeSeats];
   }
 
+  /** The total comes from the server: the per-project counts overlap on mirrored commits, so summing them would double count. */
   private initCodeTotals(): { commits: number; projects: number } {
     const detail = this.drawer.detail();
     if (!detail) {
       return { commits: 0, projects: 0 };
     }
-    return {
-      commits: detail.code.reduce((sum, row) => sum + row.totalCommits, 0),
-      projects: detail.code.length,
-    };
+    return { commits: detail.totalCommits, projects: detail.code.length };
   }
 
   // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.
