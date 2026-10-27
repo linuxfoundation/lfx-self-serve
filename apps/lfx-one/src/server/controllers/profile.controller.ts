@@ -2042,7 +2042,7 @@ export class ProfileController {
         return;
       }
 
-      // Decode id_token sub claim to log the social identity being linked
+      // Decode the id_token subject for the same-account reconnect check.
       const socialSub = this.getIdTokenSubject(req, tokenResponse.id_token);
 
       // Same subject as the signed-in session: the identity already resolves to this account
@@ -3087,7 +3087,7 @@ export class ProfileController {
   }
 
   /**
-   * Reads the `sub` claim of a social id_token for audit logging and the same-account check.
+   * Reads the `sub` claim of a social id_token for the same-account check without logging its claims.
    * Plain JSON decoding — no signature verification — so callers must only use it on a token from
    * their own server-side code exchange, and never to authorize a write. Returns undefined unless
    * the token is a three-segment JWT whose payload is an object with a nonempty string `sub`.
@@ -3100,14 +3100,10 @@ export class ProfileController {
       const decoded: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString());
       if (!decoded || typeof decoded !== 'object') return undefined;
 
-      const { sub, email } = decoded as Record<string, unknown>;
-      logger.info(req, 'social_auth_callback', 'Social identity being linked', {
-        social_sub: sub,
-        social_email: email,
-      });
+      const { sub } = decoded as Record<string, unknown>;
       return typeof sub === 'string' && sub.length > 0 ? sub : undefined;
     } catch {
-      logger.debug(req, 'social_auth_callback', 'Could not decode id_token payload for audit logging');
+      logger.debug(req, 'social_auth_callback', 'Could not decode social id_token subject');
       return undefined;
     }
   }

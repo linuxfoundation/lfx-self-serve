@@ -1439,6 +1439,22 @@ describe('ProfileController social callback — already-connected identity (#432
     expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
   });
 
+  it.each([sessionSub, 'linkedin|synthetic-member'])('does not log decoded identity values for subject %s', async (sub) => {
+    const email = 'synthetic.user@example.com';
+    const idToken = idTokenWith({ sub, email });
+
+    await callbackWithToken(idToken);
+
+    const loggedDetails = JSON.stringify(
+      [logger.startOperation, logger.success, logger.info, logger.warning, logger.error, logger.debug].flatMap((method) =>
+        vi.mocked(method).mock.calls.map((args) => args.slice(1))
+      )
+    );
+    expect(loggedDetails).not.toContain(sub);
+    expect(loggedDetails).not.toContain(email);
+    expect(loggedDetails).not.toContain(idToken);
+  });
+
   it.each([
     '/profile',
     '/profile/email',
