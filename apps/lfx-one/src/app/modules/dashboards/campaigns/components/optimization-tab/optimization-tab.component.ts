@@ -2218,9 +2218,11 @@ export class OptimizationTabComponent implements OnInit {
     return computed(() => {
       // `null` while the campaign list is (re)loading: unknown, not empty. The keyword table waits it out
       // rather than reading an in-flight reload as every campaign leaving the negative-keyword lever.
+      // A FAILED read is not loading, and nothing will end the wait, so it offers no campaign: a waiting
+      // add then says "Not sent" and releases its campaign instead of holding it until a retry.
       const rows = this.campaignRows();
       if (rows === null) {
-        return null;
+        return this.campaignsUnavailable() ? {} : null;
       }
       const targets: Record<string, RedditKeywordNegativeTarget> = {};
       const ambiguous = new Set<string>();

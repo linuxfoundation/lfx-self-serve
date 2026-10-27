@@ -933,6 +933,21 @@ describe('RedditKeywordsTableComponent', () => {
         expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       });
 
+      // The parent hands `{}` once a list reload FAILS: the waiting add ends, says why, and frees the campaign.
+      it('says "Not sent" and releases the campaign when the campaign-list reload fails', () => {
+        fixture.componentRef.setInput('negativeTargets', null);
+        fixture.detectChanges();
+        answer();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({ 'tlf|c-uuid-a': true });
+
+        fixture.componentRef.setInput('negativeTargets', {});
+        fixture.detectChanges();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      });
+
       // A failed metrics re-read leaves no row to carry the note: it must still be said, above the error.
       it('says "Not sent" above a failed metrics read when the revision read then fails', () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -3839,6 +3839,20 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(table.negativeTargets()).toEqual({ t3_abc: { campaignId: 'c-1', campaignName: 'Reddit one' } });
   });
 
+  // Unknown is not empty: a list still loading hands the table `null`, which a pending add waits out.
+  // A FAILED list read ends nothing on its own, so it hands `{}` and the add stops, saying so.
+  it('hands the Reddit keyword table null while the campaign list loads, and no targets once it fails', () => {
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.detectChanges();
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.negativeTargets()).toBeNull();
+
+    fixture.componentRef.setInput('campaignsUnavailable', true);
+    fixture.detectChanges();
+    expect(table.negativeTargets()).toEqual({});
+  });
+
   // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
   it('holds the keyword-targeting panel open while its removal is in flight', () => {
     const pending = new Subject<unknown>();
