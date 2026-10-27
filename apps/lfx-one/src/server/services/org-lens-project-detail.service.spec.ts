@@ -472,6 +472,30 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   });
 });
 
+describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('TECH_COMMITS_PCT')) return { rows: [{ TECH_COMMITS_PCT: 12.34 }] };
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return { rows: [] };
+    });
+  });
+
+  it('labels the card "Commits" under a versioned cache key', async () => {
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+
+    const commits = block!.technical.find((card) => card.key === 'commits');
+    expect(commits?.label).toBe('Commits');
+    expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v2:/));
+  });
+});
+
 /**
  * The board is cached for an hour, so entries written before it began serving `organizationId`
  * outlive the deploy that needs it. Those rows are structurally valid but cannot open the drawer:

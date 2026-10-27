@@ -356,3 +356,75 @@ describe('NavMenuBase — link-active options (#3358)', () => {
     expect(isActive(peopleLink, peopleOptions())).toBe(false);
   });
 });
+
+/**
+ * The Org Lens range carries between People and Code Contributions (lfx-self-serve#4159): their links copy `?range=` from a
+ * page that is one of them, and nothing else from it, while other pages' params never leak into those links.
+ */
+describe('NavMenuBase — carried query params', () => {
+  @Component({ selector: 'lfx-carry-blank-page', template: '' })
+  class CarryBlankPageStubComponent {}
+
+  const items: SidebarMenuItem[] = [
+    { label: 'Projects', routerLink: '/org/acme-inc/projects' },
+    {
+      label: 'Organization Engagement',
+      isSection: true,
+      items: [
+        { label: 'People', routerLink: '/org/acme-inc/people', carryQueryParams: ['range'] },
+        { label: 'Code Contributions', routerLink: '/org/acme-inc/contributions', carryQueryParams: ['range'] },
+      ],
+    },
+  ];
+
+  let router: Router;
+  let component: NavMenuTestHostComponent;
+
+  /** Query params each link renders with, by label (absent = the plain project params). */
+  const linkParams = (): Record<string, unknown> => {
+    const carried = component['carriedQueryParams']();
+    const section = component['itemsWithTestIds']()[1].items ?? [];
+    return Object.fromEntries(section.map((item) => [item.label, carried[item.trackKey]]));
+  };
+
+  beforeEach(async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [NavMenuTestHostComponent],
+      providers: [provideRouter([{ path: '**', component: CarryBlankPageStubComponent }]), ...navMenuServiceStubs()],
+    });
+    const fixture = TestBed.createComponent(NavMenuTestHostComponent);
+    fixture.componentRef.setInput('items', items);
+    await fixture.whenStable();
+    router = TestBed.inject(Router);
+    component = fixture.componentInstance;
+  });
+
+  it('carries only the range from a People tab to Code Contributions and back', async () => {
+    await router.navigateByUrl('/org/acme-inc/people?tab=contributors&range=90d&projectScope=lf');
+    expect(linkParams()).toEqual({ People: { range: '90d' }, 'Code Contributions': { range: '90d' } });
+
+    await router.navigateByUrl('/org/acme-inc/contributions?range=all&view=commits&projects=k8s');
+    expect(linkParams()).toEqual({ People: { range: 'all' }, 'Code Contributions': { range: 'all' } });
+  });
+
+  it('follows a range picked on the page', async () => {
+    await router.navigateByUrl('/org/acme-inc/people?tab=training');
+    expect(linkParams()).toEqual({ People: undefined, 'Code Contributions': undefined });
+
+    await router.navigateByUrl('/org/acme-inc/people?tab=training&range=30d');
+    expect(linkParams()['Code Contributions']).toEqual({ range: '30d' });
+  });
+
+  it.each(['12mo', '2y', '365d'])('carries no ?range=%s, which is legacy, unknown or the default', async (range) => {
+    await router.navigateByUrl(`/org/acme-inc/contributions?range=${range}`);
+
+    expect(linkParams()).toEqual({ People: undefined, 'Code Contributions': undefined });
+  });
+
+  it('carries nothing from a page that does not carry the range', async () => {
+    await router.navigateByUrl('/org/acme-inc/projects?range=2y');
+
+    expect(linkParams()).toEqual({ People: undefined, 'Code Contributions': undefined });
+  });
+});
