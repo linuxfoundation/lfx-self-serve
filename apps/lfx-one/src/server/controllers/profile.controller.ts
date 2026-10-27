@@ -19,6 +19,7 @@ import {
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   ERROR_CODES,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
   PROFILE_PASSWORD_PATH,
@@ -2042,19 +2043,18 @@ export class ProfileController {
       }
 
       // Decode id_token sub claim to log the social identity being linked
-      let socialSub: string | undefined;
-      try {
-        const payloadB64 = tokenResponse.id_token.split('.')[1];
-        if (payloadB64) {
-          const decoded = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-          socialSub = decoded.sub;
-          logger.info(req, 'social_auth_callback', 'Social identity being linked', {
-            social_sub: socialSub,
-            social_email: decoded.email,
-          });
-        }
-      } catch {
-        logger.debug(req, 'social_auth_callback', 'Could not decode id_token payload for audit logging');
+      const socialSub = this.getIdTokenSubject(req, tokenResponse.id_token);
+
+      // Same subject as the signed-in session: the identity already resolves to this account
+      // (e.g. reconnecting an owned social identity via Add identity or Verify). A successful
+      // no-op — nothing is linked, verified in CDP, or synced. The token came from the direct,
+      // state-checked code exchange above; the decode is plain JSON, not signature verification,
+      // so this only selects a presentation outcome and never authorizes a write.
+      const sessionSub = req.oidc?.user?.['sub'];
+      if (socialSub && typeof sessionSub === 'string' && sessionSub.length > 0 && socialSub === sessionSub) {
+        logger.success(req, 'social_auth_callback', startTime, { status: IDENTITY_ALREADY_CONNECTED_STATUS });
+        res.redirect(`${returnTo}?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+        return;
       }
 
       // Link the social identity via NATS (reuses existing email verification linking)
@@ -3084,6 +3084,32 @@ export class ProfileController {
     });
     res.redirect(`${returnTo}?error=impersonation_read_only`);
     return true;
+  }
+
+  /**
+   * Reads the `sub` claim of a social id_token for audit logging and the same-account check.
+   * Plain JSON decoding — no signature verification — so callers must only use it on a token from
+   * their own server-side code exchange, and never to authorize a write. Returns undefined unless
+   * the token is a three-segment JWT whose payload is an object with a nonempty string `sub`.
+   */
+  private getIdTokenSubject(req: Request, idToken: string): string | undefined {
+    try {
+      const segments = idToken.split('.');
+      if (segments.length !== 3 || !segments[1]) return undefined;
+
+      const decoded: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString());
+      if (!decoded || typeof decoded !== 'object') return undefined;
+
+      const { sub, email } = decoded as Record<string, unknown>;
+      logger.info(req, 'social_auth_callback', 'Social identity being linked', {
+        social_sub: sub,
+        social_email: email,
+      });
+      return typeof sub === 'string' && sub.length > 0 ? sub : undefined;
+    } catch {
+      logger.debug(req, 'social_auth_callback', 'Could not decode id_token payload for audit logging');
+      return undefined;
+    }
   }
 
   /**

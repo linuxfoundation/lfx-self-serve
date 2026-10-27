@@ -8,6 +8,7 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_CALLBACK_RETRY_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
@@ -678,6 +679,24 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
         email_status: status,
       },
       'server'
+    );
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBe(pendingSave);
+  });
+
+  // #4327: the social already-connected marker belongs to the Identities tab (or the mentorship
+  // card), never to this layout — a second toast or refresh here would duplicate the child's notice.
+  it.each(['browser', 'server'])('leaves the social already-connected marker to the child consumer (%s)', async (platform) => {
+    const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
+
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      `/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`,
+      { success: IDENTITY_ALREADY_CONNECTED_STATUS },
+      platform
     );
 
     expect(add).not.toHaveBeenCalled();
