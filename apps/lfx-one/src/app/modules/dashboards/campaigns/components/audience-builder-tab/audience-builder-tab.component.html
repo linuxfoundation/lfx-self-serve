@@ -93,7 +93,7 @@
         }
         <p class="text-xs text-gray-500" data-testid="campaigns-audience-event-generate-scope">
           Drafts this event's past registrants, education enrollees in the brand's courses, and the event page's visitors, and adds the project's and the LF
-          Newsletter's existing opt-in lists. Not limited to the host city or country unless you ask for it.
+          Newsletter's existing opt-in lists once the drafted list is created. Not limited to the host city or country unless you ask for it.
         </p>
         <!-- Opt-ins come from lists the portal already keeps, never from new filters: see lookUpOptIns. -->
         @if (optIns(); as lookup) {
@@ -124,6 +124,16 @@
                   } @else {
                     <span class="font-medium">{{ list.name }}</span>
                   }
+                  @if (list.size !== undefined) {
+                    <span class="text-gray-500">· {{ list.size | number }} contacts</span>
+                  }
+                </span>
+              }
+              @for (list of lookup.pending; track list.listId) {
+                <span class="flex flex-wrap items-center gap-1" [attr.data-testid]="'campaigns-audience-opt-in-pending-' + list.listId">
+                  <i class="fa-light fa-clock text-gray-500" aria-hidden="true"></i>
+                  Joins Include once the drafted list is created:
+                  <span class="font-medium">{{ list.name }}</span>
                   @if (list.size !== undefined) {
                     <span class="text-gray-500">· {{ list.size | number }} contacts</span>
                   }

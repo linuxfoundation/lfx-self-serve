@@ -6203,8 +6203,17 @@ export type AudienceOptInSignal = 'project_opt_in' | 'lf_newsletter_opt_in';
  */
 export interface AudienceOptInLookup {
   status: 'idle' | 'loading' | 'done' | 'failed';
-  /** One list per signal, the largest found, added to Include. */
+  /**
+   * Lists this lookup actually inserted into Include: one per signal, the largest found. A list
+   * the operator had already included, or had marked Exclude, is never counted here, so a later
+   * draft's clean-up cannot take out a list the operator chose.
+   */
   added: AudienceDiscoveredList[];
+  /**
+   * Picked lists waiting for the drafted list to be created. Added before it, they enabled the main
+   * attach with only the portfolio-wide newsletter list in the send.
+   */
+  pending: AudienceDiscoveredList[];
   /** Further opt-in lists found, offered but not added. */
   others: AudienceDiscoveredList[];
   /** Opt-in signals discovery found no list for. */
