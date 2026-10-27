@@ -101,7 +101,7 @@ test.describe('AEO/GEO audit content', () => {
       };
     });
     await expect(page.getByTestId('mktg-document-view-download')).toHaveText('Download PDF');
-    await page.getByTestId('mktg-document-view-download').click();
+    await page.getByTestId('mktg-document-view-download').getByRole('button').click();
     await expect(page.locator('html')).toHaveAttribute('data-audit-printed', 'yes', { timeout: 10_000 });
     await expect(page.getByTestId('mktg-document-view-print')).toContainText('Add a detailed FAQ');
     expect(downloads).toHaveLength(0);

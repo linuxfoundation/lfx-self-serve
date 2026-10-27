@@ -452,6 +452,10 @@ export class MktgDocumentViewComponent {
   protected readonly aeoActivityStartedAt = signal(0);
   protected readonly retryGenerating = signal(false);
   protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
+  protected readonly aeoHeaderTitle = computed(() => {
+    const site = this.view()?.aeoGeoReport?.domain;
+    return site ? `AEO/GEO report · ${site}` : 'AEO/GEO report';
+  });
   protected readonly aeoTitle = computed(() => this.view()?.aeoGeoReport?.report_filename.replace(/\.md$/, '') ?? 'AEO/GEO report');
   protected readonly scoreRows = computed(() => {
     const report = this.view()?.aeoGeoReport;

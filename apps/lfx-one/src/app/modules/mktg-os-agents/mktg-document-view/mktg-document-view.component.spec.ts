@@ -772,7 +772,28 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-revision-chip')).toBeNull();
       expect(query('mktg-document-view-download')).not.toBeNull();
       const subline = query('mktg-document-view-audit-subline')?.textContent?.replace(/\s+/g, ' ');
-      expect(subline).toContain('AEO/GEO audit — 13 Oct 2026');
+      expect(subline).toContain('AEO/GEO report — 13 Oct 2026');
+      expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('AEO/GEO report · project.example');
+      const header = query('mktg-document-view-title-card');
+      const again = query('mktg-document-view-run-again');
+      const download = query('mktg-document-view-download');
+      expect(again?.textContent?.trim()).toBe('Audit again');
+      expect(again?.classList.contains('text-blue-700')).toBe(true);
+      expect(header?.contains(again)).toBe(true);
+      expect(header?.contains(download)).toBe(true);
+      expect(query('mktg-document-view-report-summary')?.contains(download)).toBe(false);
+      expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-download"]')).toHaveLength(1);
+      expect(again && download && again.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(download?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
+      const revision = query('mktg-document-view-revision-2');
+      expect(revision?.classList.contains('border-blue-600')).toBe(false);
+      expect(revision?.classList.contains('border-gray-200')).toBe(true);
+      expect(query('mktg-document-view-revision-label-2')?.textContent).toContain('13 Oct 2026, 12:02');
+      expect(query('mktg-document-view-revision-label-2')?.textContent).not.toContain('v2');
+      expect(query('mktg-document-view-current-2')?.classList.contains('bg-blue-100')).toBe(true);
+      expect(query('mktg-document-view-current-2')?.classList.contains('text-white')).toBe(false);
+      expect(query('mktg-document-view-about')).not.toBeNull();
+      expect(query('mktg-document-view-report-summary')?.textContent).toContain('Audit again creates a separate report.');
       if (copy) {
         expect(subline).toContain(copy);
       } else {
@@ -827,6 +848,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(aside?.querySelector('[data-testid="mktg-document-view-revision-2"]')).not.toBeNull();
       expect(query('mktg-document-view-revisions')?.style.display).not.toBe('none');
       expect(query('mktg-document-view-report-summary')?.textContent).toContain(typed.headline);
+      expect(query('mktg-document-view-title')?.textContent?.trim()).toBe(`AEO/GEO report · ${envelope.domain}`);
+      expect(query('mktg-document-view-audit-subline')?.textContent).toContain('AEO/GEO report');
       expect(query('mktg-document-view-document')).toBeNull();
       expect(query('mktg-document-view-print')?.textContent).toContain(typed.recommendations[0].title);
       expect(query('mktg-aeo-typed-findings')?.querySelectorAll('h4')).toHaveLength(5);
@@ -1005,7 +1028,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-print')?.textContent).toContain('Revision 2');
       expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
       expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=testorbit');
-      query('mktg-document-view-download')?.click();
+      query('mktg-document-view-download')?.querySelector('button')?.click();
       expect(print.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
       harness.fixture.destroy();
       expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
@@ -2341,6 +2364,7 @@ describe('MktgDocumentViewComponent', () => {
     component['view'].set({ ...response, revision: { ...LATEST, createdAt: 'not-a-date' } });
     expect(() => component['breadcrumbPage']()).not.toThrow();
     expect(component['breadcrumbPage']()).toEqual(expect.objectContaining({ kind: 'asset', label: type.itemLabel }));
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('AEO/GEO report');
   });
 
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {

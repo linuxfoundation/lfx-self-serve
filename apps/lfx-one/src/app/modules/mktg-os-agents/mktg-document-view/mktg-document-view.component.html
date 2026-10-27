@@ -9,7 +9,7 @@
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
         <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
-          {{ isAeoDocument() ? 'AEO/GEO' : title() }}
+          {{ isAeoDocument() ? aeoHeaderTitle() : title() }}
         </h1>
         @if (header(); as meta) {
           @if (!isLinkedinDocument() && hasAssetMetadata()) {
@@ -82,6 +82,20 @@
             }
           </span>
         }
+      }
+      @if (isAeoDocument() && view()?.aeoGeoReport) {
+        <div class="flex flex-wrap items-center gap-4" data-testid="mktg-aeo-report-actions">
+          <a
+            [routerLink]="['../../..', runAgent()?.id]"
+            [queryParams]="runAgainParams()"
+            queryParamsHandling="merge"
+            class="text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            data-testid="mktg-document-view-run-again"
+            (click)="onRunAgain()"
+            >Audit again</a
+          >
+          <lfx-button label="Download PDF" icon="fa-light fa-file-pdf" (onClick)="onDownload()" data-testid="mktg-document-view-download" />
+        </div>
       }
       @if (memberResult(); as result) {
         <div class="ml-auto flex flex-wrap items-start gap-4" data-testid="member-360-result-actions">
@@ -311,7 +325,7 @@
             <div>
               <h2 class="text-2xl font-bold text-gray-900">{{ report.report?.headline ?? aeoTitle() }}</h2>
               <p class="text-sm text-gray-500" data-testid="mktg-document-view-audit-subline">
-                AEO/GEO audit — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
+                AEO/GEO report — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
                 @if (report.auditCounts; as counts) {
                   ·
                   @if (counts.keyPagesNamed === 0) {
@@ -323,24 +337,6 @@
                 }
                 · stored under AEO/GEO reports
               </p>
-            </div>
-            <div class="flex flex-wrap gap-3">
-              <a
-                [routerLink]="['../../..', runAgent()?.id]"
-                [queryParams]="runAgainParams()"
-                queryParamsHandling="merge"
-                class="inline-flex min-h-10 items-center rounded-lg border border-gray-300 px-4 font-semibold text-gray-700"
-                data-testid="mktg-document-view-run-again"
-                (click)="onRunAgain()"
-                >Run again</a
-              >
-              <button
-                type="button"
-                class="min-h-10 rounded-lg bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"
-                (click)="onDownload()"
-                data-testid="mktg-document-view-download">
-                Download PDF
-              </button>
             </div>
           </div>
           <ng-template #auditHero let-print="print">
@@ -381,7 +377,7 @@
           @if (report.report; as typed) {
             <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
           }
-          <p class="text-sm text-gray-500">Report · one-off document · never revised. Run again creates a separate report.</p>
+          <p class="text-sm text-gray-500">Report · one-off document · never revised. Audit again creates a separate report.</p>
         </section>
         <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. -->
         <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
@@ -634,20 +630,26 @@
               @for (revision of visibleRevisionRows(); track revision.id) {
                 <li
                   class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
-                  [ngClass]="revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [ngClass]="revision.id === current.revision.id && !isAeoDocument() ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [class.bg-gray-50]="isAeoDocument()"
                   [attr.data-testid]="'mktg-document-view-revision-' + revision.number">
                   <div class="min-w-0 flex-1 break-words">
                     <span [attr.data-testid]="'mktg-document-view-revision-label-' + revision.number">
-                      <span class="font-mono" [textContent]="'v' + revision.number"></span>
+                      @if (isAeoDocument()) {
+                        <span>{{ revision.createdAt | date: 'd MMM y, HH:mm' }}</span>
+                      } @else {
+                        <span class="font-mono" [textContent]="'v' + revision.number"></span>
+                      }
                       <span [textContent]="revision.approval ? ' · Approved' : ' · Draft'"></span>
-                      @if (revision.createdAt) {
+                      @if (revision.createdAt && !isAeoDocument()) {
                         <span [textContent]="' · ' + (revision.createdAt | date: 'd MMM')"></span>
                       }
                       @if (revision.latest) {
                         <span [textContent]="' · '"></span>
                         <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
                         <span
-                          class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
+                          class="inline-flex items-center rounded-full px-2 py-px text-[12px]"
+                          [ngClass]="isAeoDocument() ? 'bg-blue-100 font-semibold text-blue-700' : 'bg-blue-700 font-bold text-white'"
                           [attr.data-testid]="'mktg-document-view-current-' + revision.number"
                           >Current</span
                         >
