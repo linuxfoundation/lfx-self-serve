@@ -27,6 +27,8 @@ vi.mock('./logger.service', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn().mockReturnValue(0) },
 }));
 
+const { logger } = await import('./logger.service');
+
 const { OrgLensKeyContactsService } = await import('./org-lens-key-contacts.service');
 
 const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
@@ -58,6 +60,19 @@ function upstream(contacts: KeyContactDoc[], memberships: ProjectMembershipIndex
   proxyRequestMock.mockImplementation(async (_req: unknown, _service: string, _path: string, _method: string, params: { type?: string }) => ({
     resources: params?.type === 'project_membership' ? memberships : contacts,
   }));
+  fetchAllQueryResourcesMock.mockImplementation(async (_req: unknown, page: (token?: string) => Promise<{ resources?: unknown[] }>) => {
+    const response = await page(undefined);
+    return response.resources ?? [];
+  });
+}
+
+/** Same discrimination, but one arm rejects — the membership index being down while contacts answer. */
+function upstreamWithFailure(which: 'contacts' | 'memberships', contacts: KeyContactDoc[], memberships: ProjectMembershipIndexedDoc[]): void {
+  proxyRequestMock.mockImplementation(async (_req: unknown, _service: string, _path: string, _method: string, params: { type?: string }) => {
+    const isMembership = params?.type === 'project_membership';
+    if (isMembership === (which === 'memberships')) throw new Error(`${which} upstream is down`);
+    return { resources: isMembership ? memberships : contacts };
+  });
   fetchAllQueryResourcesMock.mockImplementation(async (_req: unknown, page: (token?: string) => Promise<{ resources?: unknown[] }>) => {
     const response = await page(undefined);
     return response.resources ?? [];
@@ -154,5 +169,34 @@ describe('OrgLensKeyContactsService.getEmployees — roles are scoped to active 
     expect(employees).toHaveLength(1);
     expect(employees[0].email).toBe('dclarke@lfx-partner.example');
     expect(employees[0].roles).toEqual([]);
+  });
+});
+
+describe('OrgLensKeyContactsService.getEmployees — a membership outage costs roles, not people', () => {
+  it('still returns the employees when the membership read fails, with no roles', async () => {
+    upstreamWithFailure('memberships', [contact()], [membership()]);
+
+    const employees = await new OrgLensKeyContactsService().getEmployees(req, ORG);
+
+    // The pickers search this list and replaceKeyContact reads it to choose PUT over create+delete, and
+    // the directory folds this source in with allSettled — a rejection here would drop every
+    // key-contact-only person out of the roster for the sake of a column.
+    expect(employees).toHaveLength(1);
+    expect(employees[0].email).toBe('dclarke@lfx-partner.example');
+    expect(employees[0].roles).toEqual([]);
+  });
+
+  it('says so in the logs rather than failing quietly', async () => {
+    upstreamWithFailure('memberships', [contact()], [membership()]);
+
+    await new OrgLensKeyContactsService().getEmployees(req, ORG);
+
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_org_key_contact_employees', expect.stringContaining('Membership read failed'), expect.anything());
+  });
+
+  it('still fails when the contacts themselves fail, since they are the read', async () => {
+    upstreamWithFailure('contacts', [contact()], [membership()]);
+
+    await expect(new OrgLensKeyContactsService().getEmployees(req, ORG)).rejects.toThrow('contacts upstream is down');
   });
 });

@@ -195,7 +195,13 @@ export class OrgLensKeyContactsService {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
     // Username agreement is only sound over the complete document set, so a dropped page fails the fetch.
     // The memberships ride alongside (not after) the contacts, so scoping the roles costs no serial latency.
-    const [docs, memberships] = await Promise.all([
+    //
+    // allSettled, not all: the memberships only scope the ROLES, while the employee list they travel with
+    // is what the reassign pickers search and what replaceKeyContact reads to choose PUT over create+delete.
+    // Letting a membership-index blip reject the whole read would take a write path and a people picker
+    // down for the sake of a column, and would drop every key-contact-only person out of the directory
+    // roster — the directory folds this source in with allSettled, so a rejection removes it entirely.
+    const [docsResult, membershipsResult] = await Promise.allSettled([
       fetchAllQueryResources<KeyContactDoc>(
         req,
         (pageToken) =>
@@ -220,10 +226,26 @@ export class OrgLensKeyContactsService {
       ),
     ]);
 
+    // The contacts are this read's reason to exist, so their failure is still fatal.
+    if (docsResult.status === 'rejected') throw docsResult.reason;
+    const docs = docsResult.value;
+
     // A contact document stays Active after its membership lapses, so a role is only real while the
     // membership behind it is. The Key Contacts tab joins the same way (OrgPeopleKeyContactsService), and
     // the two views have to agree about who holds what. This scopes the ROLES only — the employee list
     // itself stays as it was, because the people pickers that share this read search the whole org.
+    //
+    // With the memberships unavailable there is no way to tell a live role from a lapsed one, so every
+    // role is dropped rather than guessed at. The column then reads as "no key-contact roles", which is
+    // wrong in the quiet direction; serving them unscoped would re-open the very disagreement with the
+    // Key Contacts tab that scoping them closed.
+    if (membershipsResult.status === 'rejected') {
+      logger.warning(req, 'get_org_key_contact_employees', 'Membership read failed; serving employees without key-contact roles', {
+        b2b_org_uid: b2bOrgUid,
+        err: membershipsResult.reason,
+      });
+    }
+    const memberships = membershipsResult.status === 'fulfilled' ? membershipsResult.value : [];
     const activeMembershipUids = new Set(
       memberships.filter((m) => m.uid && OrgLensKeyContactsService.activeMembershipStatuses.has((m.status ?? '').toLowerCase())).map((m) => m.uid as string)
     );
