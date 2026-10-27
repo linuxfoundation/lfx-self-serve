@@ -70,33 +70,34 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1" data-testid="dashboard-pending-actions-vote-footer">
     @if (allowAbstain()) {
       <label
-        class="flex items-center gap-1.5 text-sm sm:text-xs text-gray-600 max-sm:order-1"
+        class="flex items-center gap-1.5 text-sm sm:text-xs text-gray-600"
         [class]="touchClass()"
         data-testid="dashboard-pending-actions-vote-abstain-label">
         <p-checkbox [formControl]="abstainControl" [binary]="true" data-testid="dashboard-pending-actions-vote-abstain" />
         <span>Abstain</span>
       </label>
     }
-    <lfx-button
-      size="small"
-      severity="secondary"
-      [outlined]="true"
-      class="max-sm:order-3"
-      label="Cancel"
-      [fluid]="isMobile()"
-      [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
-      (onClick)="cancelled.emit()"
-      data-testid="dashboard-pending-actions-vote-cancel" />
-    <lfx-button
-      size="small"
-      severity="primary"
-      class="max-sm:order-2"
-      label="Submit"
-      [fluid]="isMobile()"
-      [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
-      [disabled]="submitDisabled()"
-      [loading]="submitting()"
-      (onClick)="onSubmit()"
-      data-testid="dashboard-pending-actions-vote-submit" />
+    <!-- Submit is first in the DOM so focus order matches what a phone shows (Submit above Cancel); sm+ reverses the row so Cancel stays on the left. -->
+    <div class="flex flex-col sm:flex-row-reverse gap-2">
+      <lfx-button
+        size="small"
+        severity="primary"
+        label="Submit"
+        [fluid]="isMobile()"
+        [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
+        [disabled]="submitDisabled()"
+        [loading]="submitting()"
+        (onClick)="onSubmit()"
+        data-testid="dashboard-pending-actions-vote-submit" />
+      <lfx-button
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        label="Cancel"
+        [fluid]="isMobile()"
+        [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
+        (onClick)="cancelled.emit()"
+        data-testid="dashboard-pending-actions-vote-cancel" />
+    </div>
   </div>
 </div>

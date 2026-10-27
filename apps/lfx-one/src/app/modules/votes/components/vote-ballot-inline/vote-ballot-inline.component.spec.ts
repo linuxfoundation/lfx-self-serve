@@ -211,8 +211,13 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
     const footer = q('dashboard-pending-actions-vote-footer') as HTMLElement;
     expect(footer.className).toContain('flex-col');
     expect(footer.className).toContain('sm:flex-row');
-    expect(q('dashboard-pending-actions-vote-submit')?.className).toContain('max-sm:order-2');
-    expect(q('dashboard-pending-actions-vote-cancel')?.className).toContain('max-sm:order-3');
+    // Submit precedes Cancel in the DOM (focus order matches the phone layout); no CSS order is used.
+    const submit = q('dashboard-pending-actions-vote-submit')!;
+    const cancel = q('dashboard-pending-actions-vote-cancel')!;
+    expect(submit.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(submit.className).not.toContain('order-');
+    expect(cancel.className).not.toContain('order-');
+    expect(submit.parentElement?.className).toContain('sm:flex-row-reverse');
     const choices = q('dashboard-pending-actions-vote-choice-c1')?.parentElement as HTMLElement;
     expect(choices.className).toContain('flex-col');
     expect(choices.className).toContain('sm:flex-row');

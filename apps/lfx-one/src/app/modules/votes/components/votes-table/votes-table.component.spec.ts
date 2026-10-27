@@ -4,7 +4,7 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -1572,13 +1572,14 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
     vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z' }),
   ];
 
-  async function render(matches: boolean): Promise<void> {
+  async function render(matches: boolean, platform: 'browser' | 'server' = 'browser', votes: Vote[] = MOBILE_VOTES): Promise<void> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platform },
         { provide: BreakpointObserver, useValue: { observe: () => of({ matches, breakpoints: {} }), isMatched: () => matches } },
         { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
@@ -1587,7 +1588,7 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
-    fixture.componentRef.setInput('votes', MOBILE_VOTES);
+    fixture.componentRef.setInput('votes', votes);
     fixture.componentRef.setInput('quickFilterNowMs', NOW);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1639,5 +1640,32 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
   it('hides the "Showing x to y" page report on phones to avoid overflow', async () => {
     await render(true);
     expect(fixture.nativeElement.textContent).not.toContain('Showing');
+  });
+
+  // The server renders the desktop table and the client's FIRST render must equal it, or Angular throws NG0500
+  // during hydration. The viewport is therefore not read until afterNextRender, and never on the server platform.
+  it('renders the desktop table on the server even when the viewport matches the phone query', async () => {
+    await render(true, 'server');
+
+    expect(q('[data-testid="votes-card-cast"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBeGreaterThan(0);
+  });
+
+  it('starts as the desktop table on the client (matching the server HTML), then swaps to cards after the first render', async () => {
+    await render(true, 'browser');
+    const firstRenderIsMobile = TestBed.createComponent(VotesTableComponent).componentInstance['isMobile']();
+
+    expect(firstRenderIsMobile).toBe(false);
+    expect(q('[data-testid="votes-card-cast"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBe(0);
+  });
+
+  it('gives the ended-early info button a 44px phone target on the card', async () => {
+    await render(true, 'browser', [vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z', early_end_time: '2026-08-30T12:00:00Z' })]);
+
+    const info = q('[data-testid="votes-ended-early-info-closed"]');
+    expect(info).toBeTruthy();
+    expect(info!.className).toContain('max-sm:min-w-[44px]');
+    expect(info!.className).toContain('max-sm:min-h-[44px]');
   });
 });

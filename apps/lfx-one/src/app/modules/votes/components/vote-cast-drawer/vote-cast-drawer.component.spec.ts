@@ -376,7 +376,11 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
     expect(footer?.contains(el('vote-cast-submit-button'))).toBe(true);
     expect(el('vote-cast-drawer-content')?.contains(el('vote-cast-submit-button'))).toBe(false);
     expect(footer?.className).toContain('pb-[env(safe-area-inset-bottom)]');
-    expect(footer?.className).toContain('flex-col-reverse');
+    // Focus order follows the DOM, so Submit must come first there; sm+ reverses the row to keep Cancel on the left.
+    expect(footer?.className).toContain('flex-col');
+    expect(footer?.className).not.toContain('flex-col-reverse');
+    expect(footer?.className).toContain('sm:flex-row-reverse');
+    expect(el('vote-cast-submit-button')!.compareDocumentPosition(el('vote-cast-cancel-button')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // [fluid] makes PrimeNG add p-button-fluid so the button, not just the host, fills the phone footer.
     for (const id of ['vote-cast-submit-button', 'vote-cast-cancel-button']) {
       expect(el(id)?.querySelector('button')?.className).toContain('p-button-fluid');

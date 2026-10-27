@@ -244,19 +244,11 @@
 
   <!-- Touch targets use an exact [44px]: the 14px html root makes Tailwind's rem scale (min-h-11) render ~38px. -->
   <!-- Pinned footer: stays above the safe area while the ballot scrolls. Declared statically (PrimeNG resolves it via ContentChild);
-       drawerPt() hides it until there is a ballot to submit. Submit is the primary action and sits first on phones. -->
+       drawerPt() hides it until there is a ballot to submit. Submit is first in the DOM so focus order matches the phone layout (Submit above Cancel); sm+ reverses the row so Cancel stays on the left. -->
   <ng-template #footer>
     <div
-      class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pb-[env(safe-area-inset-bottom)]"
+      class="flex flex-col sm:flex-row-reverse sm:items-center sm:justify-start gap-2 sm:gap-3 pb-[env(safe-area-inset-bottom)]"
       data-testid="vote-cast-footer">
-      <lfx-button
-        label="Cancel"
-        severity="secondary"
-        [fluid]="true"
-        styleClass="w-full sm:w-auto min-h-[44px]"
-        (onClick)="onClose()"
-        [disabled]="submitting()"
-        data-testid="vote-cast-cancel-button"></lfx-button>
       <lfx-button
         label="Submit Vote"
         icon="fa-light fa-check"
@@ -267,6 +259,14 @@
         [loading]="submitting()"
         (onClick)="onSubmit()"
         data-testid="vote-cast-submit-button"></lfx-button>
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [fluid]="true"
+        styleClass="w-full sm:w-auto min-h-[44px]"
+        (onClick)="onClose()"
+        [disabled]="submitting()"
+        data-testid="vote-cast-cancel-button"></lfx-button>
     </div>
   </ng-template>
 </p-drawer>
