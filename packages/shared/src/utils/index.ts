@@ -140,6 +140,7 @@ export * from './member-360-ranking.utils';
 export * from './member-360.utils';
 export * from './mktg-family-export.utils';
 export * from './aeo-geo.utils';
+export * from './display-name.utils';
 export * from './mktg-run-failure.utils';
 export * from './org-people-stats.utils';
 export * from './org-commit-filters.utils';

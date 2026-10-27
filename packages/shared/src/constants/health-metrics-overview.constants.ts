@@ -39,7 +39,7 @@ export const HEALTH_METRICS_OVERVIEW_CARDS = {
   nps: { title: 'Net Promoter Score', info: 'Share of promoters minus share of detractors' },
   churn: { title: 'Membership churn', info: 'Memberships that did not renew, by tier' },
   balance: { title: 'Outstanding balance', info: 'Unpaid membership invoices past their due date' },
-  events: { title: 'Events', info: 'Events run by this foundation in the period' },
+  events: { title: 'Events', info: 'The data here corresponds to the selected time period at the top right of the page.\n\n(Source: Salesforce)' },
   training: { title: 'Training and certification', info: 'Enrollments and revenue from LF Education' },
   code: { title: 'Code contribution', info: "Contributors across the foundation's repositories" },
   board: { title: 'Board meeting participation', info: 'Attendance of board members at governing board meetings' },
@@ -162,14 +162,6 @@ export const HEALTH_METRICS_OVERVIEW_FILL_CLASSES = {
   purple: 'bg-[#AD46FF]',
 } as const;
 
-/** Status pills for upcoming (pace against last year) and past (outcome against the goal) events. */
-export const HEALTH_METRICS_OVERVIEW_BADGE_CLASSES = {
-  good: 'bg-emerald-50 text-emerald-700',
-  watch: 'bg-amber-50 text-amber-700',
-  nearMiss: 'bg-amber-50 text-amber-800',
-  bad: 'bg-red-50 text-red-700',
-} as const;
-
 /** The same tones as SVG strokes, for the donut, gauge, training arc and trend chart. */
 export const HEALTH_METRICS_OVERVIEW_STROKES = {
   high: lfxColors.emerald[500],
@@ -188,21 +180,45 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
 /** The forecast range band behind the predicted line: the progress blue at 10%. */
 export const HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL = `${lfxColors.blue[500]}1A`;
 
-/** An upcoming event's `comp_score` → its pill and bar. An unknown or empty score draws neither. */
+/** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {
+  onTrack: { label: 'On track', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
+  atRisk: { label: 'At risk', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
+  action: { label: 'Action required', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+} as const;
+
+/** An upcoming event's `comp_score` → its status; an unknown or empty score keeps the neutral blue, with no status. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_PACE = {
-  high: { label: 'On track', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.good, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
-  medium: { label: 'At risk', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.watch, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
-  low: { label: 'Action required', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.bad, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+  high: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack,
+  medium: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk,
+  low: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action,
 } as const;
 
-/** A past event's outcome → its pill and bar; the labels match the Events tab's past section. */
-export const HEALTH_METRICS_OVERVIEW_EVENT_OUTCOME = {
-  hit: { label: 'Hit goal', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.good, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
-  'near-miss': { label: 'Just missed', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.nearMiss, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
-  missed: { label: 'Missed goal', badgeClass: HEALTH_METRICS_OVERVIEW_BADGE_CLASSES.bad, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+/** The design's thresholds for a past event's registrations against its goal: at or above the first green, the second amber, else red. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES = { onTrack: 1, atRisk: 0.8 } as const;
+
+/** The status legend beside the event list; the registrations bar's fill carries the same three tones. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRICS_OVERVIEW_EVENT_STATUS).map(([key, status]) => ({
+  key,
+  label: status.label,
+  dotClass: status.fillClass,
+}));
+
+/** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
+export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;
+
+/** The events card's tooltips. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
+  total:
+    'Total past and upcoming events that had their start date in the selected time period or have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
+  sponsorship: 'Total received sponsorship for all events in the selected period.\n\n(Source: Salesforce)',
+  upcoming: 'All events that have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
+  past: 'All events that had their start date in the selected time period.\n\n(Source: Salesforce)',
+  registrations: 'Total number of registrations for the event.\n\n(Source: Cvent)',
+  talks: 'Accepted speaking proposals out of all proposals for the event. CFP In Review shows while proposals are being reviewed.\n\n(Source: Sessionize)',
 } as const;
 
-/** Events shown before "Load more", and how many each click adds. */
+/** Events shown before "View all". */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
 
 /** The registration trend's window: days before the event at the chart's left edge. */

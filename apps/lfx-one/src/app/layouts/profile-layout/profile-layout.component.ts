@@ -20,7 +20,7 @@ import {
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -152,7 +152,9 @@ export class ProfileLayoutComponent {
 
   public readonly organization = computed(() => this.profileData()?.organization || '');
 
-  public readonly emailInfo = computed(() => this.profileData()?.email || '');
+  // Prefer the same primary row as Identities, including after a primary change or an optimistic
+  // metadata save that still holds the previous email in profileData.
+  public readonly emailInfo = computed(() => this.identities().find((identity) => identity.isPrimary)?.value || this.profileData()?.email || '');
 
   public readonly fullAddress: Signal<string[]> = this.initFullAddress();
 
@@ -171,9 +173,12 @@ export class ProfileLayoutComponent {
   // Connected identities — fetched once and reused for the tab notification dots and the GitHub handle
   private readonly identities: Signal<EnrichedIdentity[]> = this.initIdentities();
 
-  // Tab notification dots — show when identities are unverified
+  // Tab notification dots — show when identities are unverified. The primary email is skipped: an
+  // unverified primary has no action on the Identities tab, so it must not nag.
   public readonly tabNotifications: Signal<Map<string, boolean>> = computed(() => {
-    const hasUnverified = this.identities().some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified');
+    const hasUnverified = this.identities().some(
+      (id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified' && !id.isPrimary
+    );
     return new Map<string, boolean>([['identities', hasUnverified]]);
   });
 
@@ -304,9 +309,11 @@ export class ProfileLayoutComponent {
 
     const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
     const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
-    const name = `${givenName} ${familyName}`.trim();
-    if (name && name !== currentUser.name) {
-      this.userService.user.set({ ...currentUser, name });
+    const name = buildDisplayName(givenName, familyName);
+    if (name) {
+      // `saved` latches the name so the post-hydration profile fetch can't overwrite it with a stale
+      // body — even when the name is already the one shown, so this must not be skipped on equality.
+      this.userService.applyDisplayName(givenName, familyName, true);
     }
   }
 

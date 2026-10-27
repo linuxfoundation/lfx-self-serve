@@ -217,7 +217,7 @@ export interface HealthMetricsEventsAtAGlancePeriod {
   organizations: number | null;
   speakers: number | null;
   countries: number | null;
-  /** Events held in the period; for YTD that is the events held so far. */
+  /** Events in the period; for YTD that is those held so far plus this year's upcoming ones, which its change compares too. */
   events: number | null;
   pastEvents: number | null;
   /** Attendees over registrations, 0–1; `null` with no registrations, since that rate is undefined. */

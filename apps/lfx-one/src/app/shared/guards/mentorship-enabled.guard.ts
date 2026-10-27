@@ -11,7 +11,7 @@ import { FeatureFlagService } from '../services/feature-flag.service';
 /**
  * CanMatch guard gating the Mentorship module behind the `mentorship-enabled` flag. SSR defers to
  * the browser, a local override decides before the provider is consulted, and an unready provider
- * fails closed to the Me Lens dashboard.
+ * fails open so a slow or blocked LaunchDarkly never bounces the user to the Me Lens dashboard.
  */
 export const mentorshipEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -34,11 +34,12 @@ export const mentorshipEnabledGuard: CanMatchFn = async () => {
 
   if (!featureFlagService.providerReady()) {
     const ready = await featureFlagService.waitForReady({ guard: 'mentorshipEnabledGuard', flag: MENTORSHIP_ENABLED_FLAG });
-    // Provider never became ready in time (no client id / LD unreachable) → fail CLOSED. This is a
-    // dark launch, so failing open would expose an unfinished module to every user whenever
-    // LaunchDarkly is slow — turning an outage into a release. waitForReady() reports the timeout to RUM.
+    // Provider never became ready in time (LD slow / unreachable / blocked) → fail open so users
+    // aren't silently redirected away from the module. Before go-live this can expose the pages to a
+    // non-tester during an LD outage; anything written then is replaced by the final data import.
+    // waitForReady() reports the timeout to RUM so the frequency stays visible.
     if (!ready) {
-      return router.parseUrl('/');
+      return true;
     }
   }
 

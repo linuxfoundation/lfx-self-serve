@@ -212,6 +212,12 @@ export interface OrgPersonCompanyEmailsResponse {
   /** Addresses on the org's domains, primary-first. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
+   * The address flagged primary in the warehouse, when there is one — always also present in
+   * `companyEmails`, and always its first entry. `null` when the person has no primary on record;
+   * absent on cache entries written before this field existed, so read it as optional.
+   */
+  primaryEmail?: string | null;
+  /**
    * `resolved`: the lookup succeeded; an empty list means none on record. A username that resolves to one
    * roster person is looked up by that person's key, so it follows this rule too; only the fallback for
    * other usernames is `resolved` solely with at least one address. `unavailable`: no usable identity, or a

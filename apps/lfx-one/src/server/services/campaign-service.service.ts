@@ -2281,8 +2281,16 @@ export class CampaignServiceClient {
         service: 'campaign_service_client',
       });
     }
-    if (briefId === '' || assetId === '') {
-      throw ServiceValidationError.forField('asset_id', 'A creative-asset read requires the brief and asset it names.', {
+    // Each field reports ITSELF. Folding the two into one `asset_id` refusal told a caller who
+    // omitted the brief to go and look at the asset id, which is the one thing they got right.
+    if (briefId === '') {
+      throw ServiceValidationError.forField('brief_id', 'A creative-asset read requires the brief it is scoped to.', {
+        operation: 'get_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+    if (assetId === '') {
+      throw ServiceValidationError.forField('asset_id', 'A creative-asset read requires the asset it names.', {
         operation: 'get_creative_asset',
         service: 'campaign_service_client',
       });
@@ -2411,8 +2419,16 @@ export class CampaignServiceClient {
         service: 'campaign_service_client',
       });
     }
-    if (briefId === '' || assetId === '') {
-      throw ServiceValidationError.forField('asset_id', 'A creative-asset delete requires the brief and asset it names.', {
+    // Split for the same reason as the read above: the field named in the refusal is the field the
+    // caller has to fix.
+    if (briefId === '') {
+      throw ServiceValidationError.forField('brief_id', 'A creative-asset delete requires the brief it is scoped to.', {
+        operation: 'delete_creative_asset',
+        service: 'campaign_service_client',
+      });
+    }
+    if (assetId === '') {
+      throw ServiceValidationError.forField('asset_id', 'A creative-asset delete requires the asset it names.', {
         operation: 'delete_creative_asset',
         service: 'campaign_service_client',
       });

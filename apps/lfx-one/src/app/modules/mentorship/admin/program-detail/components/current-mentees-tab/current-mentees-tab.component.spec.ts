@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { environment } from '@environments/environment';
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteesQuery,
@@ -20,6 +21,7 @@ import {
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
@@ -38,6 +40,7 @@ describe('CurrentMenteesTabComponent', () => {
   const mentee = (overrides: Partial<MentorshipProgramApplicant> = {}): MentorshipProgramApplicant => ({
     id: 'app_1',
     name: 'Ifeoma Adeyemi',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
     termId: 'trm_fall26',
@@ -154,6 +157,7 @@ describe('CurrentMenteesTabComponent', () => {
 
     fixture = TestBed.createComponent(CurrentMenteesTabComponent);
     fixture.componentRef.setInput('programId', 'prog_1');
+    fixture.componentRef.setInput('programPublished', true);
     fixture.componentRef.setInput('terms', [term('Fall 2026', 'open'), term('Winter 2027', 'open'), term('Spring 2026', 'closed')]);
     settle();
   });
@@ -202,6 +206,20 @@ describe('CurrentMenteesTabComponent', () => {
     expect(rowText('app_1')).not.toContain('Tasks Completed');
     expect(rowText('app_2')).toContain('Tasks Completed');
     expect(rowText('app_3')).toContain('Declined');
+  });
+
+  it("links the mentee's name to the public mentee page in a new tab", () => {
+    const link = element().querySelector('[data-testid="mentorship-current-mentee-link-app_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('shows the mentee name as plain text when the program is not published', () => {
+    fixture.componentRef.setInput('programPublished', false);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-link-app_1"]')).toBeNull();
+    expect(rowText('app_1')).toContain('Ifeoma Adeyemi');
   });
 
   it('shows the created and updated dates, and links out to other active applications', () => {
@@ -475,6 +493,7 @@ describe('CurrentMenteesTabComponent', () => {
       fixture.destroy();
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
       clickNote('app_1');
 
@@ -500,6 +519,7 @@ describe('CurrentMenteesTabComponent', () => {
       getProgramMentees.mockReturnValue(staleRead);
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
 
       pending.next();
@@ -930,6 +950,7 @@ describe('CurrentMenteesTabComponent', () => {
       fixture.destroy();
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
       const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
       createFor('app_4');

@@ -70,3 +70,10 @@ export interface OrgPeopleFoundationOptionRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
 }
+
+/** One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`. */
+export interface OrgPersonCompanyEmailRow {
+  EMAIL: string | null;
+  /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
+  IS_PRIMARY: boolean | number | null;
+}

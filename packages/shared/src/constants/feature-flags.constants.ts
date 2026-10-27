@@ -68,16 +68,14 @@ export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Gates Org Lens surfaces still restricted to internal audiences — person-detail-drawer company
- * emails (GH-1655) and the Company Logo Upload control on the Org Profile edit page (LFXV2-3288).
- * Remove each gate as its real-data backend lands; retire this flag once all are unguarded.
+ * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
+ * restricted to internal audiences while their real-data backends were built, and both gates are
+ * gone: Org Profile logo upload was ungated in #1887, and person-detail-drawer company emails in
+ * #4373 once #1705 → #1830 → #2402 had landed the data behind them.
  *
- * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview
- * but not the upload affordance.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
- * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
- * source of truth for whether an upload actually succeeds.
+ * Setting it in LaunchDarkly now changes nothing. The constant is kept only so the retirement is a
+ * deliberate step — deleting the key from LaunchDarkly as well as this line — rather than a silent
+ * drop. Do not add a new gate to it; a new surface should get its own flag with its own rollout.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 
@@ -100,8 +98,9 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 /**
  * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
  * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
- * flag keeps the module invisible, and the route guard fails closed like `akritesEnabledGuard`
- * rather than open like `myClasEnabledGuard`, because nothing here has shipped to users yet.
+ * flag keeps the module invisible. The route guard fails open like `myClasEnabledGuard` when the
+ * provider is not ready, so a slow or blocked LaunchDarkly never bounces testers away; before
+ * go-live anything a non-tester writes in that window is replaced by the final data import.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
@@ -128,7 +127,7 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
  * GW_EMBED_ROUTE_PREFIXES) that
  * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
  * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
- * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
+ * rather than open, since the embed is not ready for general users.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The BFF routes

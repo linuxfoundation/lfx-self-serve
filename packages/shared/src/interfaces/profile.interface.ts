@@ -601,6 +601,20 @@ export interface EnrichedIdentity extends CdpIdentity {
   displayState: IdentityDisplayState;
   inAuth0: boolean;
   auth0UserId?: string;
+  /** True on the single row representing the account's primary email; display-only. */
+  isPrimary?: boolean;
+}
+
+/**
+ * The account's primary email as reconciled into the identities list.
+ * `verified` requires an IdP-verified session email (`getEffectiveEmail`); the auth-service primary
+ * is then trusted even if it differs from that possibly stale session claim. A session-only fallback
+ * is verified only when it matches that verified email (the target's stored email while impersonating).
+ * Display-only — never written to CDP.
+ */
+export interface IdentitiesPrimaryEmail {
+  email: string;
+  verified: boolean;
 }
 
 // --- CDP Work Experience Types ---

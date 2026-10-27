@@ -20,6 +20,8 @@ import {
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
 } from '../../../../../packages/shared/src/constants/profile.constants';
+// The real classifier — `@lfx-one/shared/utils` is mocked below, so link-failure specs opt into it.
+import { isIdentityAlreadyLinkedError } from '../../../../../packages/shared/src/utils/identity.utils';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -43,6 +45,7 @@ const {
   meetingPrefSvc,
   socialVerificationSvc,
   authStateSvc,
+  auth0Svc,
   auth0ToCdpProviderMap,
   cdpPlatformToTypeMap,
 } = vi.hoisted(() => ({
@@ -72,6 +75,10 @@ const {
     getIdentitiesForUser: vi.fn(),
     verifyIdentityForUser: vi.fn(),
     rejectIdentityForUser: vi.fn(),
+    createIdentityForUser: vi.fn(),
+  },
+  auth0Svc: {
+    getUserIdentities: vi.fn(),
   },
   userSvc: {
     updateUserMetadata: vi.fn(),
@@ -129,8 +136,8 @@ const {
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
-  CDP_DISPLAYABLE_IDENTITY_COMBOS: [],
-  CDP_PLATFORM_ICONS: {},
+  CDP_DISPLAYABLE_IDENTITY_COMBOS: new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']),
+  CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', google: 'fa-brands fa-google' },
   CDP_PLATFORM_TO_TYPE_MAP: cdpPlatformToTypeMap,
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_CONNECTED_MESSAGE,
@@ -198,7 +205,7 @@ vi.mock('../services/logger.service', () => ({
 
 vi.mock('../services/auth0.service', () => ({
   Auth0Service: vi.fn(function () {
-    return {};
+    return auth0Svc;
   }),
 }));
 vi.mock('../services/cdp.service', () => ({
@@ -709,6 +716,59 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
     expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
+  });
+
+  it.each(['email', 'google'])('preserves the primary CDP row when removing a %s identity on that address', async (provider) => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ provider, email: 'Dev@Example.com' }, { params: { identityId: 'cdp-primary' }, path: '/api/profile/identities/cdp-primary' }),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a LinkedIn CDP row even when its email matches the account primary', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq(
+        { provider: 'linkedin', email: 'Dev@Example.com' },
+        { params: { identityId: 'cdp-linkedin' }, path: '/api/profile/identities/cdp-linkedin' }
+      ),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledWith(expect.anything(), 'testuser', 'cdp-linkedin');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('still rejects the CDP row when the removed address is not the account primary', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ email: 'alt@example.com' }, { params: { identityId: 'cdp-alt' }, path: '/api/profile/identities/cdp-alt' }),
+      res,
+      next
+    );
+
+    expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledWith(expect.anything(), 'testuser', 'cdp-alt');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
@@ -1283,6 +1343,47 @@ describe('ProfileController social connect — returnTo', () => {
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=social_auth_failed');
   });
+
+  // #4124: the Identities conflict banner keys off error=already_linked. Driven through the real
+  // classifier with auth-service's own wording, so a rephrased marker can't silently drop the banner.
+  describe('link failures', () => {
+    const socialIdToken = `synthetic-header.${Buffer.from(JSON.stringify({ sub: 'linkedin|synthetic-member' })).toString('base64url')}.synthetic-sig`;
+
+    async function callbackWithLinkResult(linkResult: Record<string, unknown>): Promise<any> {
+      socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+      socialVerificationSvc.validateState.mockReturnValue(true);
+      profileAuthSvc.getManagementToken.mockReturnValue('synthetic-mgmt-token');
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: socialIdToken });
+      emailVerificationSvc.linkIdentity.mockResolvedValue(linkResult);
+      isIdentityAlreadyLinkedErrorMock.mockImplementationOnce(isIdentityAlreadyLinkedError);
+      const res = buildRes();
+
+      await controller.handleSocialCallback(
+        buildReq({ path: '/social/callback', query: { code: 'c', state: 's' }, oidc: { user: { sub: 'auth0|synthetic-user' } } }),
+        res
+      );
+
+      return res;
+    }
+
+    it('redirects a social link conflict to error=already_linked without the owning account', async () => {
+      const res = await callbackWithLinkResult({
+        success: false,
+        error: 'validation',
+        message: 'the provided identity token belongs to an existing LFID account and cannot be linked',
+      });
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=already_linked');
+      expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    });
+
+    it('redirects any other social link failure to error=link_failed', async () => {
+      const res = await callbackWithLinkResult({ success: false, error: 'internal', message: 'upstream unavailable' });
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+      expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // The root callbacks (/passwordless/callback, /social/callback in server.ts) are redirect-only and
@@ -1469,6 +1570,7 @@ describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () =>
     vi.clearAllMocks();
     isImpersonatingMock.mockReturnValue(false);
     getUsernameFromAuthMock.mockResolvedValue('testuser');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
     controller = new ProfileController();
   });
 
@@ -1870,6 +1972,462 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'management_token_required' }));
     expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.getIdentities — primary email and multi-LFID reconciliation (#4123)', () => {
+  const lfid = 'dev-user';
+  const primary = 'dev@example.com';
+  let controller: ProfileController;
+
+  function cdpRow(overrides: Record<string, unknown> & { id: string; platform: string; type: string; value: string }): Record<string, unknown> {
+    return { verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '', ...overrides };
+  }
+
+  const ownLfidRow = cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid, verified: true, verifiedBy: lfid });
+  // A second LFID row marks a merged multi-LFID CDP profile.
+  const otherLfidRow = cdpRow({ id: 'cdp-lfid-other', platform: 'lfid', type: 'username', value: 'other-lfid', verified: true, verifiedBy: 'other-lfid' });
+  // The root account carries the primary email; it never maps to a CDP platform.
+  const rootIdentity = {
+    provider: 'auth0',
+    user_id: 'root-1',
+    connection: 'Username-Password-Authentication',
+    isSocial: false,
+    profileData: { email: primary },
+  };
+
+  async function fetchIdentities(oidcUser: Record<string, unknown> = { sub: 'auth0|dev-user', email: primary }): Promise<any[]> {
+    const res = buildRes();
+    const next = vi.fn();
+    await controller.getIdentities(buildReq({ path: '/api/profile/identities', oidc: { user: oidcUser } }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    return res.json.mock.calls[0][0];
+  }
+
+  async function fetchProfileEmail(oidcUser: Record<string, unknown> = { sub: 'auth0|dev-user', email: primary }): Promise<string> {
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+    await controller.getCurrentUserProfile(buildReq({ path: '/api/profile', oidc: { user: oidcUser } }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    return res.json.mock.calls[0][0].user.email;
+  }
+
+  const visible = (rows: any[]): any[] => rows.filter((row) => row.displayState !== 'hidden');
+  const byId = (rows: any[], id: string): any => rows.find((row) => row.id === id);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.assign(auth0ToCdpProviderMap, { 'google-oauth2': 'google', github: 'github', email: 'email', linkedin: 'linkedin' });
+    Object.assign(cdpPlatformToTypeMap, { google: 'email', email: 'email', linkedin: 'email', github: 'username', lfid: 'username' });
+    getEffectiveUsernameMock.mockReturnValue(lfid);
+    getUsernameFromAuthMock.mockResolvedValue(lfid);
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: {} });
+    getEffectiveEmailMock.mockReturnValue(primary);
+    getEffectiveSubMock.mockReturnValue('auth0|dev-user');
+    isImpersonatingMock.mockReturnValue(false);
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: primary, alternate_emails: [] });
+    auth0Svc.getUserIdentities.mockResolvedValue([rootIdentity]);
+    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
+    cdpSvc.createIdentityForUser.mockResolvedValue(undefined);
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    for (const map of [auth0ToCdpProviderMap, cdpPlatformToTypeMap]) {
+      for (const key of Object.keys(map)) {
+        delete map[key];
+      }
+    }
+  });
+
+  it('starts primary-email and metadata reads before either lookup completes', async () => {
+    let releaseMetadata!: () => void;
+    let releasePrimaryEmail!: () => void;
+    const metadataRead = new Promise<void>((resolve) => {
+      releaseMetadata = resolve;
+    });
+    const primaryEmailRead = new Promise<void>((resolve) => {
+      releasePrimaryEmail = resolve;
+    });
+    userSvc.getUserInfo.mockImplementationOnce(async () => {
+      await metadataRead;
+      return { success: true, data: {} };
+    });
+    emailVerificationSvc.getUserEmails.mockImplementationOnce(async () => {
+      await primaryEmailRead;
+      return { primary_email: 'current-primary@example.org', alternate_emails: [] };
+    });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+    const profileRequest = controller.getCurrentUserProfile(
+      buildReq({ path: '/api/profile', oidc: { user: { sub: 'auth0|dev-user', email: primary } } }),
+      res,
+      next
+    );
+
+    try {
+      // Let the initial username lookup settle without releasing either service read.
+      await Promise.resolve();
+      expect(userSvc.getUserInfo).toHaveBeenCalledWith(expect.anything(), lfid);
+      expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), lfid);
+      expect(res.json).not.toHaveBeenCalled();
+
+      releaseMetadata();
+      await Promise.resolve();
+      expect(res.json).not.toHaveBeenCalled();
+    } finally {
+      releaseMetadata();
+      releasePrimaryEmail();
+      await profileRequest;
+    }
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ email: 'current-primary@example.org' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('uses the same current primary for the profile and identities after a mid-session change', async () => {
+    const currentPrimary = 'new-primary@example.org';
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${currentPrimary} `, alternate_emails: [primary] });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    expect(await fetchProfileEmail()).toBe(currentPrimary);
+    const rows = await fetchIdentities();
+    expect(rows.find((row) => row.isPrimary)?.value).toBe(currentPrimary);
+    expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), lfid);
+  });
+
+  it.each(['missing', 'blank', 'failure'])('keeps the profile and identities fallback aligned when auth-service primary is %s', async (scenario) => {
+    if (scenario === 'failure') {
+      emailVerificationSvc.getUserEmails.mockRejectedValue(new Error('unavailable'));
+    } else {
+      emailVerificationSvc.getUserEmails.mockResolvedValue(scenario === 'blank' ? { primary_email: '  ', alternate_emails: [] } : null);
+    }
+    getEffectiveEmailMock.mockReturnValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    expect(await fetchProfileEmail()).toBe(primary);
+    const rows = await fetchIdentities();
+    expect(rows.find((row) => row.isPrimary)).toEqual(expect.objectContaining({ value: primary, verified: false }));
+  });
+
+  it('uses the impersonation target primary for both displays, never the operator session email', async () => {
+    const targetPrimary = 'target-primary@example.org';
+    isImpersonatingMock.mockReturnValue(true);
+    // The profile helper's legacy bearer-token shortcut must not select the operator's account.
+    getUsernameFromAuthMock.mockResolvedValue('operator-shortcut');
+    getEffectiveEmailMock.mockReturnValue('target-old@example.org');
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: targetPrimary, alternate_emails: [] });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    const operator = { sub: 'auth0|operator', email: 'operator@example.org' };
+
+    expect(await fetchProfileEmail(operator)).toBe(targetPrimary);
+    expect((await fetchIdentities(operator)).find((row) => row.isPrimary)?.value).toBe(targetPrimary);
+    expect(emailVerificationSvc.getUserEmails.mock.calls.map(([, identifier]) => identifier)).toEqual([lfid, lfid]);
+  });
+
+  it('does not query auth-service using a profile fallback when no effective LFID is available', async () => {
+    getEffectiveUsernameMock.mockReturnValue(null);
+    getUsernameFromAuthMock.mockResolvedValue('profile-fallback');
+
+    expect(await fetchProfileEmail()).toBe(primary);
+    expect(emailVerificationSvc.getUserEmails).not.toHaveBeenCalled();
+  });
+
+  it.each(['target-old@example.org', null])('falls back only to the target email (%s) while impersonating', async (targetEmail) => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveEmailMock.mockReturnValue(targetEmail);
+    emailVerificationSvc.getUserEmails.mockRejectedValue(new Error('unavailable'));
+
+    expect(await fetchProfileEmail({ sub: 'auth0|operator', email: 'operator@example.org' })).toBe(targetEmail || '');
+  });
+
+  it('shows a primary email that CDP attributes to another LFID on a merged profile, without writing to CDP', async () => {
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      otherLfidRow,
+      cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ displayState: 'verified', isPrimary: true }));
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('shows the primary as unverified when the session has not passed email_verified', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      otherLfidRow,
+      cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ displayState: 'unverified', isPrimary: true }));
+  });
+
+  it('adds one display-only synthetic primary row when neither CDP nor auth-service has the address', async () => {
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities();
+
+    const primaryRows = rows.filter((row) => row.isPrimary);
+    expect(primaryRows).toEqual([
+      expect.objectContaining({
+        id: 'primary-email',
+        platform: 'email',
+        type: 'email',
+        value: primary,
+        verified: true,
+        verifiedBy: null,
+        source: 'auth-service',
+        displayState: 'verified',
+        inAuth0: false,
+      }),
+    ]);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('on a merged profile hides only rows verified by a different owner', async () => {
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      otherLfidRow,
+      cdpRow({ id: 'cdp-other-owner', platform: 'email', type: 'email', value: 'old@example.org', verified: true, verifiedBy: 'other-lfid' }),
+      cdpRow({ id: 'cdp-own', platform: 'email', type: 'email', value: 'mine@example.org', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-other-owner').displayState).toBe('hidden');
+    expect(byId(rows, 'cdp-own').displayState).toBe('unverified');
+  });
+
+  it('never treats a LinkedIn row as the primary email', async () => {
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow, cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: primary })]);
+
+    const rows = await fetchIdentities();
+
+    const linkedin = byId(rows, 'cdp-linkedin');
+    expect(linkedin.isPrimary).toBeUndefined();
+    expect(linkedin.displayState).toBe('unverified');
+    expect(byId(rows, 'primary-email')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
+  });
+
+  // #4124: a linked LinkedIn login proves the LinkedIn identity only — it must never verify an email
+  // row that happens to carry the same address, either on display or by an auto-verify write to CDP.
+  it('keeps a non-primary email row unverified next to a verified LinkedIn identity with the same address', async () => {
+    const shared = 'shared@person.example';
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: shared } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-shared-email', platform: 'email', type: 'email', value: shared }),
+      cdpRow({ id: 'cdp-shared-linkedin', platform: 'linkedin', type: 'email', value: shared }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-shared-email')).toEqual(expect.objectContaining({ displayState: 'unverified', inAuth0: false }));
+    expect(byId(rows, 'cdp-shared-email').isPrimary).toBeUndefined();
+    expect(byId(rows, 'cdp-shared-linkedin')).toEqual(expect.objectContaining({ displayState: 'verified', inAuth0: true }));
+    expect(cdpSvc.verifyIdentityForUser.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
+  });
+
+  it('matches an auth-service email identity against CDP case-insensitively', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: 'Dev@Example.com' } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-email', platform: 'email', type: 'email', value: 'dev@example.com', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    const emailRows = visible(rows).filter((row) => row.type === 'email');
+    expect(emailRows).toEqual([expect.objectContaining({ id: 'cdp-email', displayState: 'verified', inAuth0: true, isPrimary: true })]);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps linked Google and email logins on the primary address visible and removable', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'google-oauth2', user_id: 'google-oauth2|1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
+      { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities();
+
+    const emailRows = visible(rows).filter((row) => row.type === 'email');
+    expect(emailRows).toHaveLength(2);
+    expect(emailRows.every((row) => row.auth0UserId)).toBe(true);
+    expect(emailRows.filter((row) => row.isPrimary)).toHaveLength(1);
+    expect(byId(rows, 'primary-email')).toBeUndefined();
+  });
+
+  it('shows the primary address once when CDP holds duplicate rows for it', async () => {
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-dup-1', platform: 'email', type: 'email', value: primary }),
+      cdpRow({ id: 'cdp-dup-2', platform: 'email', type: 'email', value: 'DEV@example.com' }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.type === 'email')).toEqual([expect.objectContaining({ id: 'cdp-dup-1', isPrimary: true })]);
+    expect(byId(rows, 'cdp-dup-2').displayState).toBe('hidden');
+  });
+
+  it('falls back to the session email when the auth-service email read fails', async () => {
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities();
+
+    expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), lfid);
+    expect(byId(rows, 'primary-email')).toEqual(expect.objectContaining({ value: primary, displayState: 'verified', isPrimary: true }));
+  });
+
+  it('trusts a primary changed mid-session while the session still holds the old verified email', async () => {
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'new-primary@example.com', alternate_emails: [] });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'primary-email')).toEqual(
+      expect.objectContaining({ value: 'new-primary@example.com', verified: true, displayState: 'verified', isPrimary: true })
+    );
+  });
+
+  it('keeps an unverified session email as an unverified primary when the auth-service read fails', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities({ sub: 'auth0|dev-user', email: 'Unverified@example.com', email_verified: false });
+
+    expect(byId(rows, 'primary-email')).toEqual(
+      expect.objectContaining({ value: 'Unverified@example.com', verified: false, displayState: 'unverified', isPrimary: true })
+    );
+  });
+
+  it("falls back to the impersonation target's email, never the impersonator's, when the auth-service read fails", async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+
+    const rows = await fetchIdentities({ sub: 'auth0|admin', email: 'admin@example.com', email_verified: true });
+
+    expect(rows.filter((row) => row.isPrimary)).toEqual([expect.objectContaining({ id: 'primary-email', value: 'target@example.com' })]);
+  });
+
+  it('shows one row for a linked login that case-variant CDP rows both match', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-lower', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: lfid }),
+      cdpRow({ id: 'cdp-upper', platform: 'email', type: 'email', value: 'DEV@example.com', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.type === 'email')).toEqual([
+      expect.objectContaining({ id: 'cdp-lower', auth0UserId: 'email|1', isPrimary: true }),
+    ]);
+    expect(byId(rows, 'cdp-upper').displayState).toBe('hidden');
+  });
+
+  it('keeps a linked LinkedIn email visible when a username row with the same value comes first', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-linkedin-username', platform: 'linkedin', type: 'username', value: primary }),
+      cdpRow({ id: 'cdp-linkedin-email', platform: 'linkedin', type: 'email', value: primary }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.platform === 'linkedin')).toEqual([
+      expect.objectContaining({ id: 'cdp-linkedin-email', type: 'email', displayState: 'verified', auth0UserId: 'linkedin|1' }),
+    ]);
+    expect(byId(rows, 'cdp-linkedin-username')).toBeUndefined();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-linkedin-username', lfid);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps a linked Google email visible when an unsupported email username row comes first', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'google-oauth2', user_id: 'google-1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-email-username', platform: 'email', type: 'username', value: primary }),
+      cdpRow({ id: 'cdp-google-email', platform: 'email', type: 'email', value: primary }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.platform === 'google')).toEqual([
+      expect.objectContaining({ id: 'cdp-google-email', type: 'email', displayState: 'verified', auth0UserId: 'google-1' }),
+    ]);
+    expect(byId(rows, 'cdp-email-username')).toBeUndefined();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-email-username', lfid);
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps linked accounts from different providers visible when their provider-specific user IDs collide', async () => {
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'github', user_id: '12345', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
+      { provider: 'linkedin', user_id: '12345', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-linkedin@example.org' } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-github', platform: 'github', type: 'username', value: 'dev-gh', verified: true, verifiedBy: lfid }),
+      cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: 'dev-linkedin@example.org', verified: true, verifiedBy: lfid }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(visible(rows).filter((row) => row.auth0UserId)).toEqual([
+      expect.objectContaining({ id: 'cdp-github', platform: 'github', displayState: 'verified', auth0UserId: '12345' }),
+      expect.objectContaining({ id: 'cdp-linkedin', platform: 'linkedin', displayState: 'verified', auth0UserId: '12345' }),
+    ]);
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+  });
+
+  it('marks the primary without any CDP writes while impersonating', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'github', user_id: 'github|1', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid }),
+      otherLfidRow,
+      cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
   });
 });
 

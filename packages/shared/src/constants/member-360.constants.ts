@@ -75,6 +75,10 @@ export const MEMBER_360_TRACKER_FILENAME_ERROR = 'Use a shorter file name withou
 export const MEMBER_360_TRACKER_EXTENSION_REGEX = /\.(csv|xlsx)$/i;
 export const MEMBER_360_CONTRACT_ID = 'member-360-output/v1';
 export const MEMBER_360_FINALIZE_TOOL = 'finalize_member_360';
+/** Agent 2.1.1 compactFinalizeRequest receipt. */
+export const MEMBER_360_FINALIZE_RECEIPT_ID = 'member-360-finalize/v1';
+/** Byte-exact agent partial-run summary prefix (checkpoint-batch.ts / partial-run.ts). */
+export const MEMBER_360_PARTIAL_SUMMARY_PREFIX = 'Partial report.';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';
 export const MEMBER_360_API = '/api/mktg-agents/member-360';
 export const MEMBER_360_MAX_BYTES = 5 * 1024 * 1024;

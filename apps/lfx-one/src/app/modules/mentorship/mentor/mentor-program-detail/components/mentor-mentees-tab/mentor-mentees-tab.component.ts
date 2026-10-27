@@ -34,6 +34,7 @@ import {
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
 } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { take } from 'rxjs';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
@@ -48,7 +49,7 @@ import { MentorshipTaskDialogService } from '../../../../services/mentorship-tas
  */
 @Component({
   selector: 'lfx-mentorship-mentor-mentees-tab',
-  imports: [ApplicantTasksPanelComponent, ButtonComponent, PersonCellComponent, TableComponent],
+  imports: [ApplicantTasksPanelComponent, ButtonComponent, PersonCellComponent, TableComponent, MentorshipPublicUrlPipe],
   templateUrl: './mentor-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
