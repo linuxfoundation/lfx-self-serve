@@ -4,7 +4,7 @@ description: Frequently asked questions about surveys in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, faq, nps, feedback]
-last_updated: 2026-05-22
+last_updated: 2026-10-27
 intercom_collection: Surveys
 ---
 
@@ -22,7 +22,7 @@ Survey links are shared by the survey creator with respondents directly.
 
 ## Can I see individual survey responses?
 
-Select a survey to view its responses and results. Use the survey settings to edit or close it.
+Users with **Manage** access on the project can. Select a survey and open the **Responses** tab to see each recipient's delivery status, NPS score and comment. Other users see the aggregate results on the **Overview** tab. See [Manage Surveys](../manage-surveys/) for the follow-up tools.
 
 ## Can I edit a survey after it has been published?
 

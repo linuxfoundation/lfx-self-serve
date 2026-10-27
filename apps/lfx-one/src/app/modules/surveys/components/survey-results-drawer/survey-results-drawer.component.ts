@@ -1,25 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NpsGaugeComponent } from '@components/nps-gauge/nps-gauge.component';
 import { SurveyStatus } from '@lfx-one/shared';
-import { NpsBreakdown, Survey, SurveyComment, SurveyParticipationStats, SurveyResultsDetail } from '@lfx-one/shared/interfaces';
-import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { NpsBreakdown, Survey, SurveyComment, SurveyEngagementRates, SurveyParticipationStats, SurveyResponseItem } from '@lfx-one/shared/interfaces';
+import { getResponseComment, getSurveyDisplayStatus, getSurveyEngagementRates, hasSurveyResponse } from '@lfx-one/shared/utils';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
+import { TooltipModule } from 'primeng/tooltip';
+import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
 
 @Component({
   selector: 'lfx-survey-results-drawer',
-  imports: [DrawerModule, DatePipe, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
+  imports: [DrawerModule, DatePipe, NgTemplateOutlet, TooltipModule, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
   templateUrl: './survey-results-drawer.component.html',
   styleUrl: './survey-results-drawer.component.scss',
 })
@@ -44,6 +45,8 @@ export class SurveyResultsDrawerComponent {
   protected readonly loading = signal<boolean>(false);
   protected readonly showAdminMenu = signal<boolean>(false);
   protected readonly activeTab = signal<'overview' | 'responses'>('overview');
+  protected readonly responsesLoading = signal<boolean>(false);
+  protected readonly responsesLoadError = signal<boolean>(false);
 
   // === Computed: project scope + responsive drawer width ===
   protected readonly projectUid: Signal<string | null> = computed(() => this.projectContextService.activeContext()?.uid ?? null);
@@ -56,6 +59,8 @@ export class SurveyResultsDrawerComponent {
 
   // === Derived Signals (from API) ===
   protected readonly survey: Signal<Survey | null> = this.initSurvey();
+  /** Every per-recipient row, loaded only for Manage users (rows carry personal links). */
+  protected readonly responses: Signal<SurveyResponseItem[]> = this.initResponses();
 
   // === Computed Signals ===
   protected readonly isSurveyClosed: Signal<boolean> = this.initIsSurveyClosed();
@@ -64,6 +69,7 @@ export class SurveyResultsDrawerComponent {
   protected readonly npsScore: Signal<number> = this.initNpsScore();
   protected readonly npsBreakdown: Signal<NpsBreakdown | null> = this.initNpsBreakdown();
   protected readonly groupName: Signal<string> = this.initGroupName();
+  protected readonly engagementRates: Signal<SurveyEngagementRates | null> = this.initEngagementRates();
   protected readonly comments: Signal<SurveyComment[]> = this.initComments();
   protected readonly hasComments: Signal<boolean> = computed(() => this.comments().length > 0);
   protected readonly commentsCount: Signal<number> = computed(() => this.comments().length);
@@ -132,6 +138,37 @@ export class SurveyResultsDrawerComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initResponses(): Signal<SurveyResponseItem[]> {
+    return toSignal(
+      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.hasPMOAccess)]).pipe(
+        switchMap(([id, projectUid, canManage]) => {
+          this.responsesLoadError.set(false);
+          if (!id || !canManage) {
+            this.responsesLoading.set(false);
+            return of([] as SurveyResponseItem[]);
+          }
+          this.responsesLoading.set(true);
+          return this.surveyService.getAllSurveyResponses(id, projectUid ?? undefined).pipe(
+            catchError((error) => {
+              console.error(`Failed to load responses for survey ${id}:`, error);
+              this.responsesLoadError.set(true);
+              return of([] as SurveyResponseItem[]);
+            }),
+            finalize(() => this.responsesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] as SurveyResponseItem[] }
+    );
+  }
+
+  private initEngagementRates(): Signal<SurveyEngagementRates | null> {
+    return computed(() => {
+      const rows = this.responses();
+      return rows.length > 0 ? getSurveyEngagementRates(rows) : null;
+    });
   }
 
   private initIsSurveyClosed(): Signal<boolean> {
@@ -231,10 +268,14 @@ export class SurveyResultsDrawerComponent {
     });
   }
 
+  /** Comments come from the response rows (Manage users only); nothing upstream fills an aggregate comments field. */
   private initComments(): Signal<SurveyComment[]> {
-    return computed(() => {
-      const s = this.survey() as SurveyResultsDetail | null;
-      return s?.additional_comments ?? [];
-    });
+    return computed(() =>
+      this.responses()
+        .filter(hasSurveyResponse)
+        .map((row) => ({ id: row.id, comment: getResponseComment(row) ?? '', submitted_at: row.response_datetime ?? '' }))
+        .filter((c) => c.comment !== '')
+        .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at))
+    );
   }
 }

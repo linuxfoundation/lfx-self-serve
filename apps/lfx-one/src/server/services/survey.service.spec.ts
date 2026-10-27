@@ -4,7 +4,7 @@
 import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import type { ApiRequestOptions, Survey, SurveyCommittee } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 const { getEffectiveUsernameMock, getEffectiveNameMock, resolveUserIdentityMock, proxyRequestMock, fetchAllQueryResourcesMock, enrichWithProjectDataMock } =
   vi.hoisted(() => ({
@@ -48,6 +48,7 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
+import { AccessCheckService } from './access-check.service';
 import { ApiClientService } from './api-client.service';
 import { SurveyService } from './survey.service';
 
@@ -368,5 +369,45 @@ describe('SurveyService.getSurveys — caller-scoped committee writer grants', (
     });
     expect(rows[1].committee_writer).toBe(false);
     expect(proxyRequestMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SurveyService.getSurveyResponses — personal link gate', () => {
+  let service: SurveyService;
+  let checkSingleAccessSpy: MockInstance<AccessCheckService['checkSingleAccess']>;
+  const req = { path: '/api/surveys/s-1/responses', bearerToken: 'caller-token' } as Request;
+  const rows = [
+    { id: 'r-1', survey_link: ' https://www.surveymonkey.com/r/abc ' },
+    { id: 'r-2', survey_link: 'https://evil.example.com/phish' },
+    { id: 'r-3' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequestMock.mockReset().mockResolvedValue({ data: rows, meta: { page_token: '' } });
+    service = new SurveyService();
+    checkSingleAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkSingleAccess');
+  });
+
+  afterEach(() => {
+    checkSingleAccessSpy.mockRestore();
+  });
+
+  it('keeps allowlisted links for survey writers and drops the rest', async () => {
+    checkSingleAccessSpy.mockResolvedValue(true);
+
+    const page = await service.getSurveyResponses(req, 's-1', {});
+
+    expect(checkSingleAccessSpy).toHaveBeenCalledWith(req, { resource: 'survey', id: 's-1', access: 'writer' });
+    expect(page.data).toEqual([{ id: 'r-1', survey_link: 'https://www.surveymonkey.com/r/abc' }, { id: 'r-2' }, { id: 'r-3' }]);
+    expect(page.meta.page_token).toBeUndefined();
+  });
+
+  it('strips every link for callers without survey write access', async () => {
+    checkSingleAccessSpy.mockResolvedValue(false);
+
+    const page = await service.getSurveyResponses(req, 's-1', {});
+
+    expect(page.data).toEqual([{ id: 'r-1' }, { id: 'r-2' }, { id: 'r-3' }]);
   });
 });

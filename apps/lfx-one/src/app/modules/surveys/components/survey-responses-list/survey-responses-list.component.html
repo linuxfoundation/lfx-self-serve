@@ -10,6 +10,15 @@
         class="fa-light fa-circle-info text-slate-400 text-sm"
         pTooltip="Recipients who submitted a response out of everyone the survey was sent to."
         tooltipPosition="top"></i>
+      <lfx-button
+        label="Download CSV"
+        icon="fa-light fa-download"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="loading() || responses().length === 0"
+        (onClick)="exportCsv()"
+        data-testid="survey-responses-export-csv" />
     </div>
 
     <form [formGroup]="filterForm" class="flex flex-wrap items-center gap-3">
@@ -33,6 +42,12 @@
         dataTest="survey-responses-search" />
     </form>
   </div>
+
+  @if (loadError()) {
+    <p class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2" data-testid="survey-responses-error">
+      Some responses couldn't be loaded, so this list, its filters and the CSV may be incomplete. Close and reopen the survey to try again.
+    </p>
+  }
 
   @if (loading()) {
     <!-- Loading state -->
@@ -100,6 +115,7 @@
                       Comment <i [class]="sortIcon('comment')"></i>
                     </button>
                   </th>
+                  <th class="px-4 py-3"><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -110,7 +126,7 @@
                       <div class="flex flex-col gap-0.5">
                         <span class="font-medium text-slate-900">{{ recipientName(item) }}</span>
                         @if (item.email) {
-                          <a [href]="'mailto:' + item.email" class="text-blue-600 hover:underline">{{ item.email }}</a>
+                          <a [href]="mailtoFor(item)" class="text-blue-600 hover:underline">{{ item.email }}</a>
                         }
                       </div>
                     </td>
@@ -156,6 +172,20 @@
                         <span class="text-slate-400">—</span>
                       }
                     </td>
+                    <!-- Actions -->
+                    <td class="px-2 py-2 text-right">
+                      <lfx-button
+                        icon="fa-light fa-ellipsis-vertical"
+                        [text]="true"
+                        [rounded]="true"
+                        size="small"
+                        severity="secondary"
+                        ariaLabel="Recipient actions"
+                        ariaHaspopup="menu"
+                        [ariaExpanded]="rowActionMenuOpen() && rowActionMenuResponseId() === item.id"
+                        [attr.data-testid]="'survey-responses-more-' + item.id"
+                        (onClick)="toggleRowActionMenu($event, item, rowActionMenu)" />
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -164,24 +194,15 @@
         }
       </div>
     }
-
-    <!-- Load more -->
-    @if (hasMore()) {
-      <div class="flex justify-center pt-2">
-        <button
-          type="button"
-          (click)="loadMore()"
-          [disabled]="loadingMore()"
-          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-60"
-          data-testid="survey-responses-load-more">
-          @if (loadingMore()) {
-            <i class="fa-light fa-spinner-third fa-spin"></i>
-            Loading…
-          } @else {
-            Load more responses
-          }
-        </button>
-      </div>
-    }
   }
 </div>
+
+<!-- One shared row "More" menu; toggleRowActionMenu rebuilds its items for the clicked recipient. -->
+<lfx-menu
+  #rowActionMenu
+  [model]="rowActionMenuItems()"
+  [popup]="true"
+  appendTo="body"
+  (onShow)="rowActionMenuOpen.set(true)"
+  (onHide)="rowActionMenuOpen.set(false)"
+  data-testid="survey-responses-row-action-menu"></lfx-menu>
