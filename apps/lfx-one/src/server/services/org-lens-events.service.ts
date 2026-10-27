@@ -115,7 +115,7 @@ export class OrgLensEventsService {
         // `:v2` — the count is now company-email-scoped; entries written before this ship hold unfiltered counts.
         `events:v2:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchEventListRows(scopedQuery.sql, scopedQuery.binds),
+        () => this.fetchEventListRows(scopedQuery.sql, scopedQuery.binds, true),
         isEventRowArray
       );
     } catch (scopedError) {
@@ -239,7 +239,7 @@ export class OrgLensEventsService {
         // `:v2` — the row set is now company-email-scoped; see the `events:v2` note above.
         `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds),
+        () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds, true),
         isContactRowArray
       );
     } catch (scopedError) {
@@ -337,8 +337,17 @@ export class OrgLensEventsService {
     return { eventId, eventName, acceptedCount, submittedCount, data };
   }
 
-  private async fetchEventListRows(sql: string, binds: string[]): Promise<OrgEventRow[]> {
-    const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds);
+  /**
+   * `expectMissingObject` on the scoped spelling only. The whole point of the unscoped retry is that
+   * `ORG_PEOPLE_COMPANY_EMAILS` may be absent or ungranted — a schema-rollout condition, not a
+   * Snowflake outage. Without this flag that error calls `recordFailure()` on the POD-WIDE breaker,
+   * and because the fallback is deliberately uncached every request re-runs the failing query: a
+   * handful of concurrent org loads would open the breaker and fail every Snowflake surface for the
+   * reset window. The retry would then be blocked too, turning a degraded Events count into the
+   * outage this path exists to prevent. The flag still rejects, so the fallback runs as before.
+   */
+  private async fetchEventListRows(sql: string, binds: string[], scoped = false): Promise<OrgEventRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
     return result.rows;
   }
 
@@ -347,8 +356,9 @@ export class OrgLensEventsService {
     return result.rows;
   }
 
-  private async fetchEventAttendeeRows(sql: string, binds: string[]): Promise<OrgEventAttendeesDrawerRow[]> {
-    const result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, binds);
+  /** Same reasoning as `fetchEventListRows`: the scoped drawer may legitimately find no address table. */
+  private async fetchEventAttendeeRows(sql: string, binds: string[], scoped = false): Promise<OrgEventAttendeesDrawerRow[]> {
+    const result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
     return result.rows;
   }
 

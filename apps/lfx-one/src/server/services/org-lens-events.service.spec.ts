@@ -328,6 +328,25 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data[0].jobTitle).toBe('Principal Engineer');
   });
 
+  it('keeps a missing address table out of the shared circuit breaker', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // The scoped spelling is the one that may legitimately find no table, and the fallback is
+    // uncached — so every request would re-run it. Without this flag those failures reach
+    // recordFailure() on the POD-WIDE breaker, and enough concurrent loads would fail every
+    // Snowflake surface, blocking the very retry this path exists to perform.
+    const scopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => query.includes('company_email_coverage'));
+    expect(scopedCalls).toHaveLength(2);
+    for (const [, , options] of scopedCalls) {
+      expect(options).toEqual({ expectMissingObject: true });
+    }
+  });
+
   it('keeps serving events when the address table is unavailable', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
