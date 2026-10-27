@@ -223,6 +223,17 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
   });
 
+  it('drops the Former employee badge when the account changes, since employment is per organization', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    selectedAccount.set({ uid: 'org-2' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
   it('ignores an old address response before the switch effect runs, then cancels its subscription', async () => {
     const cancelled = vi.fn();
     const firstEmails = new Subject<unknown>();

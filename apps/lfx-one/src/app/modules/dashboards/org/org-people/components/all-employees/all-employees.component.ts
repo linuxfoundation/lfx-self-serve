@@ -538,7 +538,8 @@ export class AllEmployeesComponent {
     const current = this.response();
     const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
     const liveRows = current.accountId === accountId ? current.rows : [];
-    const formerUsernames = new Set(formerRows.map((row) => row.lfUsername).filter((username) => !!username));
+    // Usernames are matched case-insensitively, as the server merge does.
+    const formerUsernames = new Set(formerRows.map((row) => AllEmployeesComponent.usernameKey(row.lfUsername)).filter((username) => !!username));
     const storedKeys = new Set<string>();
     const liveRoles = new Map<string, OrgAllEmployeeRow>();
     const liveAccess = new Map<string, OrgAllEmployeeRow['accessBadge']>();
@@ -547,24 +548,26 @@ export class AllEmployeesComponent {
       const [createdBy] = row.sources;
       if (createdBy === 'snowflake') {
         storedKeys.add(`key:${row.personKey}`);
-        if (row.lfUsername) storedKeys.add(`username:${row.lfUsername}`);
+        if (row.lfUsername) storedKeys.add(`username:${AllEmployeesComponent.usernameKey(row.lfUsername)}`);
         continue;
       }
-      if (!row.lfUsername || !formerUsernames.has(row.lfUsername)) continue;
+      const liveUsername = AllEmployeesComponent.usernameKey(row.lfUsername);
+      if (!liveUsername || !formerUsernames.has(liveUsername)) continue;
       if (createdBy !== 'board' && createdBy !== 'committee' && createdBy !== 'access') continue;
       if (row.sources.some((source) => source === 'board' || source === 'committee' || source === 'keyContact')) {
-        liveRoles.set(row.lfUsername, row);
+        liveRoles.set(liveUsername, row);
       } else {
-        liveAccess.set(row.lfUsername, row.accessBadge);
+        liveAccess.set(liveUsername, row.accessBadge);
       }
       folded.add(row);
     }
     const shownFormerRows: OrgAllEmployeeRow[] = [];
     const rejoinedRows: OrgAllEmployeeRow[] = [];
     for (const row of formerRows) {
-      if (storedKeys.has(`key:${row.personKey}`) || (row.lfUsername && storedKeys.has(`username:${row.lfUsername}`))) continue;
-      const role = row.lfUsername ? liveRoles.get(row.lfUsername) : undefined;
-      const accessBadge = (row.lfUsername ? liveAccess.get(row.lfUsername) : undefined) ?? row.accessBadge;
+      const formerUsername = AllEmployeesComponent.usernameKey(row.lfUsername);
+      if (storedKeys.has(`key:${row.personKey}`) || (formerUsername && storedKeys.has(`username:${formerUsername}`))) continue;
+      const role = formerUsername ? liveRoles.get(formerUsername) : undefined;
+      const accessBadge = (formerUsername ? liveAccess.get(formerUsername) : undefined) ?? row.accessBadge;
       if (!role) {
         shownFormerRows.push({ ...row, accessBadge });
         continue;
@@ -949,6 +952,11 @@ export class AllEmployeesComponent {
   /** `?employment=` value → filter; anything unknown (or absent) is the default view. */
   private static parseEmployment(value: string | null): OrgAllEmployeeEmploymentFilter {
     return ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
+  }
+
+  /** Username identity key, trimmed and lowercased like the server merge's; empty when there is none. */
+  private static usernameKey(username: string | null | undefined): string {
+    return (username ?? '').trim().toLowerCase();
   }
 
   private static computeInitials(name: string): string {

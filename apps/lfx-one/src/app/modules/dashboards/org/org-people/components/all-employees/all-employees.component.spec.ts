@@ -404,6 +404,21 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
     });
 
+    it('matches a live row to the former row whatever the username case, so the person shows once', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response([row('p-1', 'Ada Lovelace'), row('live-grace', 'Grace Hopper', { lfUsername: 'Grace', sources: ['access'], accessBadge: 'viewer' })], 1)
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
       await mount('browser');
       await answerCurrent();

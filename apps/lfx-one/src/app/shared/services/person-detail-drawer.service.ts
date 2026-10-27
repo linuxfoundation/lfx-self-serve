@@ -69,6 +69,8 @@ export class PersonDetailDrawerService {
     const supplied = this._activeContext()?.keyContactAssignments;
     return supplied && this._openedOrgUid() === this.orgUid() ? supplied : null;
   });
+  /** The opener's Former tag, likewise only while its organization is still selected: employment status is per organization. */
+  public readonly isFormer = computed(() => !!this._activeContext()?.isFormer && this._openedOrgUid() === this.orgUid());
   private readonly keyContactsRequest = computed(() => ({
     ...this.detailRequest(),
     keyContactsRequested: this._keyContactsRequested(),
