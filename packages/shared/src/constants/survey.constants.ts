@@ -305,6 +305,12 @@ export const SURVEY_RESPONSES_PAGE_SIZE = 200;
 export const SURVEY_RESPONSES_MAX_PAGES = 50;
 
 /**
+ * Most recipients one reminder request may name. Each one is emailed, and the write rate
+ * limiter counts requests, not recipients. Larger than any board or committee survey.
+ */
+export const SURVEY_REMINDER_MAX_RECIPIENTS = 1000;
+
+/**
  * Position of each delivery status in the email funnel (higher = further along).
  * A row at a later stage counts toward every earlier stage's rate.
  */

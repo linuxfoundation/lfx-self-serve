@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS, SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
+import {
+  ACCESS_CHECK_BATCH_SIZE,
+  SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS,
+  SURVEY_LINK_ALLOWLIST,
+  SURVEY_RESPONSES_MAX_PAGES,
+  SURVEY_RESPONSES_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import {
   CreateSurveyRequest,
@@ -9,6 +15,7 @@ import {
   QueryServiceResponse,
   SendSurveyRemindersResult,
   Survey,
+  SurveyResponseItem,
   SurveyResponseRecord,
   SurveyResponsesPage,
   SurveyResyncPreview,
@@ -16,7 +23,7 @@ import {
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthenticationError, ResourceNotFoundError } from '../errors';
+import { AuthenticationError, AuthorizationError, ResourceNotFoundError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -250,25 +257,30 @@ export class SurveyService {
    * Fails closed: a failed project check counts as not managed.
    */
   public async getManagedCommitteeUids(req: Request, surveyUid: string): Promise<Set<string>> {
-    const survey = await this.microserviceProxy.proxyRequest<Pick<Survey, 'committees'>>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
-    const committees = (survey?.committees ?? []).filter((c) => c.committee_uid && c.project_uid);
-    const projectUids = [...new Set(committees.map((c) => c.project_uid))];
-    if (projectUids.length === 0) {
-      return new Set();
-    }
-
-    const grants = await this.accessCheckService.checkAccess(
-      req,
-      projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
-    );
-    return new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid));
+    return (await this.getCommitteeAccess(req, surveyUid)).managed;
   }
 
   /**
-   * Resends the survey email to the given response rows (`bulk_resend`). The gateway
-   * enforces `survey#writer` on the caller's token; ITX rejects closed surveys.
+   * Resends the survey email to the given response rows (`bulk_resend`). The gateway only checks
+   * `survey#writer`, so every row must belong to a committee the caller manages (403 otherwise);
+   * ITX rejects closed surveys.
    */
   public async sendSurveyReminders(req: Request, surveyUid: string, recipientIds: string[]): Promise<SendSurveyRemindersResult> {
+    const [managed, rows] = await Promise.all([this.getManagedCommitteeUids(req, surveyUid), this.fetchAllResponseRows(req, surveyUid)]);
+    const committeeByRow = new Map(rows.map((r) => [r.id, r.committee_uid]));
+    const unmanaged = recipientIds.some((id) => {
+      const committeeUid = committeeByRow.get(id);
+      return !committeeUid || !managed.has(committeeUid);
+    });
+    if (unmanaged) {
+      throw new AuthorizationError('You can only remind recipients of committees in projects you manage.', {
+        operation: 'send_survey_reminders',
+        service: 'survey_service',
+        path: req.path,
+        code: 'SURVEY_RECIPIENT_NOT_MANAGED',
+      });
+    }
+
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/bulk_resend`, 'POST', undefined, {
       recipient_ids: recipientIds,
     });
@@ -277,9 +289,10 @@ export class SurveyService {
 
   /**
    * Lists the committee members a resync would send the survey to (`preview_send`).
-   * Optional `committeeUid` limits it to one committee.
+   * Optional `committeeUid` limits it to one committee; see assertManagesResyncScope.
    */
   public async getResyncPreview(req: Request, surveyUid: string, committeeUid?: string): Promise<SurveyResyncPreview> {
+    await this.assertManagesResyncScope(req, surveyUid, committeeUid, 'get_survey_resync_preview');
     const preview = await this.microserviceProxy.proxyRequest<Partial<SurveyResyncPreview> | null>(
       req,
       'LFX_V2_SERVICE',
@@ -295,9 +308,11 @@ export class SurveyService {
 
   /**
    * Sends the survey to committee members who joined after it launched (`send_missing_recipients`).
-   * Only adds recipients; never removes any. Optional `committeeUid` limits it to one committee.
+   * Only adds recipients; never removes any. Optional `committeeUid` limits it to one committee;
+   * see assertManagesResyncScope.
    */
   public async resyncRecipients(req: Request, surveyUid: string, committeeUid?: string): Promise<void> {
+    await this.assertManagesResyncScope(req, surveyUid, committeeUid, 'resync_survey_recipients');
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
@@ -611,5 +626,58 @@ export class SurveyService {
       });
       return new Set<string>();
     }
+  }
+
+  /** The survey's committee UIDs and the subset whose project the caller writes. Fails closed. */
+  private async getCommitteeAccess(req: Request, surveyUid: string): Promise<{ committeeUids: string[]; managed: Set<string> }> {
+    const survey = await this.microserviceProxy.proxyRequest<Pick<Survey, 'committees'>>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
+    const committees = (survey?.committees ?? []).filter((c) => c.committee_uid && c.project_uid);
+    const projectUids = [...new Set(committees.map((c) => c.project_uid))];
+    if (projectUids.length === 0) {
+      return { committeeUids: [], managed: new Set() };
+    }
+
+    const grants = await this.accessCheckService.checkAccess(
+      req,
+      projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
+    );
+    return {
+      committeeUids: committees.map((c) => c.committee_uid),
+      managed: new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid)),
+    };
+  }
+
+  /**
+   * A resync emails committee members, and the gateway only checks `survey#writer`. Allow it for
+   * one committee the caller manages, or for the whole survey only when the caller manages every
+   * committee on it; anything else is a 403.
+   */
+  private async assertManagesResyncScope(req: Request, surveyUid: string, committeeUid: string | undefined, operation: string): Promise<void> {
+    const { committeeUids, managed } = await this.getCommitteeAccess(req, surveyUid);
+    const allowed = committeeUid ? managed.has(committeeUid) : committeeUids.length > 0 && committeeUids.every((uid) => managed.has(uid));
+    if (!allowed) {
+      throw new AuthorizationError('You can only resync committees in projects you manage.', {
+        operation,
+        service: 'survey_service',
+        path: req.path,
+        code: 'SURVEY_COMMITTEE_NOT_MANAGED',
+      });
+    }
+  }
+
+  /** Every response row of a survey, following upstream page tokens (bounded by SURVEY_RESPONSES_MAX_PAGES). */
+  private async fetchAllResponseRows(req: Request, surveyUid: string): Promise<SurveyResponseItem[]> {
+    const rows: SurveyResponseItem[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < SURVEY_RESPONSES_MAX_PAGES; page++) {
+      const result = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', {
+        per_page: SURVEY_RESPONSES_PAGE_SIZE,
+        ...(pageToken && { page_token: pageToken }),
+      });
+      rows.push(...(Array.isArray(result?.data) ? result.data : []));
+      pageToken = result?.meta?.page_token?.trim() || undefined;
+      if (!pageToken) break;
+    }
+    return rows;
   }
 }

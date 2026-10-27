@@ -41,6 +41,8 @@ vi.mock('../services/logger.service', () => ({
   },
 }));
 
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
+
 import { SurveyController } from './survey.controller';
 import { ServiceValidationError } from '../errors';
 
@@ -154,6 +156,16 @@ describe('SurveyController follow-up actions (#4340)', () => {
     it.each([[undefined], [[]], [['not-a-uuid']], [[RESPONSE_UID, 42]]])('rejects recipient_ids %j without calling the service', async (ids) => {
       const { req, res, next } = buildReqRes(VALID_UID);
       req.body = { recipient_ids: ids };
+
+      await controller.sendSurveyReminders(req, res, next);
+
+      expect(surveySvc.sendSurveyReminders).not.toHaveBeenCalled();
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    });
+
+    it('rejects more recipients than the per-request cap', async () => {
+      const { req, res, next } = buildReqRes(VALID_UID);
+      req.body = { recipient_ids: Array.from({ length: SURVEY_REMINDER_MAX_RECIPIENTS + 1 }, () => RESPONSE_UID) };
 
       await controller.sendSurveyReminders(req, res, next);
 

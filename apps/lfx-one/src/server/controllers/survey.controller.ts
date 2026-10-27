@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
 import { CreateSurveyRequest, SendSurveyRemindersRequest } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -185,6 +186,9 @@ export class SurveyController {
       if (!this.validateSurveyUid(surveyUid, req, next, context.operation)) return;
       if (!validateRequestBody(payload, req, next, context)) return;
       if (!validateArrayParameter(payload.recipient_ids, 'recipient_ids', req, next, context)) return;
+      if (payload.recipient_ids.length > SURVEY_REMINDER_MAX_RECIPIENTS) {
+        throw ServiceValidationError.forField('recipient_ids', `recipient_ids may name at most ${SURVEY_REMINDER_MAX_RECIPIENTS} recipients`, context);
+      }
       if (payload.recipient_ids.some((id) => typeof id !== 'string' || !isUuid(id))) {
         throw ServiceValidationError.forField('recipient_ids', 'recipient_ids must contain only response UUIDs', context);
       }
