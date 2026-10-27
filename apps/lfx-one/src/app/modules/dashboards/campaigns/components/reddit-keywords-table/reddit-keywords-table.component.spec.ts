@@ -984,6 +984,23 @@ describe('RedditKeywordsTableComponent', () => {
         expect(note!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
       });
 
+      // Leaving the PROJECT abandons the add after the page has moved on, so no read of the add's project
+      // is current. The note must still be there on the return, and go on the next re-read after it.
+      it('shows the "Not sent" note on returning to the project an add was abandoned by leaving', () => {
+        fixture.componentRef.setInput('projectSlug', 'cncf');
+        fixture.detectChanges();
+        expect(read.observed).toBe(false);
+
+        fixture.componentRef.setInput('projectSlug', 'tlf');
+        fixture.detectChanges();
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+
+        fixture.componentRef.setInput('reloadToken', 1);
+        fixture.detectChanges();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+      });
+
       // Leaving the scope cancels the read; the row still says why nothing went out.
       it('says "Not sent" when leaving the brief cancels the read', () => {
         fixture.componentRef.setInput('briefId', 'brief-2');
