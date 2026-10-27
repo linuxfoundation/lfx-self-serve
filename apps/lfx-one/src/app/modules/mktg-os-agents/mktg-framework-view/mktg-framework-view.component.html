@@ -21,55 +21,58 @@
         {{ stateLabel() }}
       </span>
     }
-    @if (ready()) {
+    @if (ready() && showMetadata()) {
       <div class="grow"></div>
       <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or export it to Google Slides (the panel below the header shows the export). -->
       <div class="flex flex-wrap items-center gap-2" data-testid="mktg-framework-view-actions">
-        <span
-          [pTooltip]="pdfTooltip()"
-          tooltipPosition="bottom"
-          tooltipEvent="both"
-          [attr.aria-label]="pdfTooltip() || null"
-          [attr.tabindex]="pdfTooltip() ? 0 : null">
-          <lfx-button
-            label="Download PDF"
-            icon="fa-light fa-file-pdf"
-            [outlined]="true"
-            size="small"
-            [disabled]="!printView()"
-            ariaLabel="Download the approved current messaging framework as a PDF"
-            data-testid="mktg-framework-view-download-pdf"
-            (onClick)="onDownloadPdf()" />
-        </span>
-        <span
-          [pTooltip]="slidesExport.disabledReason()"
-          tooltipPosition="bottom"
-          tooltipEvent="both"
-          [attr.aria-label]="slidesExport.disabledReason() || null"
-          [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
-          <lfx-button
-            label="Export to Google Slides"
-            icon="fa-light fa-presentation-screen"
-            [outlined]="true"
-            size="small"
-            [loading]="slidesExport.busy()"
-            [disabled]="!slidesExport.canExport()"
-            ariaLabel="Export the messaging framework to Google Slides"
-            data-testid="mktg-framework-view-export-slides"
-            (onClick)="slidesExport.onExport()" />
-        </span>
+        <ng-container [ngTemplateOutlet]="titleActions" />
         <ng-content select="[asset-actions]" />
       </div>
     }
   </div>
+
+  <ng-template #titleActions>
+    @if (viewingDraft()) {
+      <p class="text-xs text-gray-500" data-testid="mktg-framework-view-approval-required">Export is available once this version is approved</p>
+    } @else {
+      <span
+        [pTooltip]="slidesExport.disabledReason()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="slidesExport.disabledReason() || null"
+        [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          [loading]="slidesExport.busy()"
+          [disabled]="!slidesExport.canExport()"
+          ariaLabel="Export the messaging framework to Google Slides"
+          data-testid="mktg-framework-view-export-slides"
+          (onClick)="slidesExport.onExport()" />
+      </span>
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current messaging framework as a PDF"
+          data-testid="mktg-framework-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
+    }
+  </ng-template>
 
   @if (ready() && !exportTarget()) {
     @if (approvedLoading()) {
       <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
     } @else if (approvedError()) {
       <lfx-message severity="error" [text]="approvedError()" />
-    } @else {
-      <p class="text-xs text-gray-500" data-testid="mktg-framework-view-approval-required">{{ approvalRequiredNote }}</p>
     }
   }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
@@ -253,13 +256,6 @@
                 <div class="text-sm text-amber-900 [&_a]:underline [&_a]:text-amber-900 hover:[&_a]:text-amber-700" data-testid="mktg-framework-view-notes">
                   <lfx-markdown-renderer [content]="framework.mf.notes" [breaks]="true" [restricted]="true" />
                 </div>
-                <button
-                  type="button"
-                  class="self-start text-xs font-medium text-amber-800 underline hover:text-amber-900"
-                  data-testid="mktg-framework-view-notes-sources"
-                  (click)="onGoToTab('sources')">
-                  Sources read, failed and gaps
-                </button>
                 <lfx-mktg-field-comments field="mf.notes" />
               </div>
             }

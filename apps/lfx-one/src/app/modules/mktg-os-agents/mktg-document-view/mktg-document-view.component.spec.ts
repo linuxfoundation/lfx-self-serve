@@ -129,10 +129,13 @@ describe('MktgDocumentViewComponent', () => {
     const action = query('mktg-document-view-run-again');
     if (!action) throw new Error('Missing Run again action');
     expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-run-again"]')).toHaveLength(1);
-    expect(query(headerId)?.contains(action)).toBe(true);
-    expect(query(actionsId)?.contains(action)).toBe(true);
+    expect(query(headerId)?.contains(action) ?? false).toBe(false);
+    expect(query(actionsId)?.contains(action) ?? false).toBe(false);
+    expect(query('mktg-document-view-title-actions')?.contains(action)).toBe(true);
+    expect(action.textContent?.trim()).toBe('Create a new version');
     expect(action.tabIndex).toBe(0);
-    for (const token of ['inline-flex', 'border', 'rounded-md', 'px-3', 'py-2']) expect(action.classList.contains(token)).toBe(true);
+    expect(action.classList.contains('text-blue-700')).toBe(true);
+    expect(action.classList.contains('border')).toBe(false);
     return action;
   }
 
@@ -1709,9 +1712,9 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/brand-kit/living?run=' + run.runId);
     expect(query('mktg-document-view-run')).not.toBeNull();
     const action = expectHeaderRunAgain('brand-kit-web-view-header', 'brand-kit-web-view-actions');
-    const download = query('brand-kit-web-view-download-pdf');
-    if (!download) throw new Error('Missing kit download');
-    expect(action.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    const explanation = query('brand-kit-web-view-approval-required');
+    if (!explanation) throw new Error('Missing draft export explanation');
+    expect(action.compareDocumentPosition(explanation) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
@@ -1733,13 +1736,13 @@ describe('MktgDocumentViewComponent', () => {
     const summary = query('mktg-document-view-history-bar-summary');
     const runAgain = expectHeaderRunAgain('brand-kit-web-view-header', 'brand-kit-web-view-actions');
     if (!summary) throw new Error('Missing history fixture');
-    expect(summary.compareDocumentPosition(runAgain) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(runAgain.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     const focusable = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLElement>('a[href], button, [tabindex]') ?? []).filter(
       (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
     );
     const navigationLink = query('mktg-breadcrumb-link-1');
     if (!navigationLink) throw new Error('Missing shared parent breadcrumb');
-    expect(focusable[focusable.indexOf(navigationLink) + 1]).toBe(summary);
+    expect(focusable[focusable.indexOf(navigationLink) + 1]).toBe(runAgain);
     const bar = query('mktg-document-view-history-bar');
     for (const token of ['sticky', 'h-[34px]', 'text-[13px]', 'bg-gray-50']) expect(bar?.classList.contains(token)).toBe(true);
     expect(query('mktg-document-view-hash')).toBeNull();
@@ -1835,7 +1838,7 @@ describe('MktgDocumentViewComponent', () => {
     const runAgain = expectHeaderRunAgain('mktg-framework-view-header', 'mktg-framework-view-actions');
     const exportAction = query('mktg-framework-view-export-slides');
     if (!exportAction) throw new Error('Missing framework export');
-    expect(exportAction.compareDocumentPosition(runAgain) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(runAgain.compareDocumentPosition(exportAction) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(runAgain.getAttribute('href')).toBe(
       '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit&mode=new'
     );
@@ -2373,22 +2376,37 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v1, approved by Project writer');
     expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
     expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
-    query('brand-kit-web-view-export-slides')?.querySelector('button')?.click();
-    await settle();
+    expect(query('brand-kit-web-view-export-slides')).toBeNull();
+    expect(query('brand-kit-web-view-download-pdf')).toBeNull();
+    expect(query('brand-kit-web-view-approval-required')?.textContent).toContain('Export is available once this version is approved');
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
-    expect(slidesExport.start).toHaveBeenCalledWith({
-      project: 'proj-1',
-      agentKey: 'brand-kit',
-      documentId: 'living',
-      revisionId: approved.id,
-      mode: 'create',
-    });
+    expect(slidesExport.start).not.toHaveBeenCalled();
   });
 
   it.each([true, false])('passes the viewed framework Draft state (%s) through to its export panel', async (viewingDraft) => {
     useFrameworkRevision(viewingDraft);
     await render('/documents/foundation-message/living');
     expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(viewingDraft);
+    const actions = query('mktg-document-view-title-actions');
+    expect(actions?.querySelector('[data-testid="mktg-document-view-run-again"]')?.textContent?.trim()).toBe('Create a new version');
+    expect(query('mktg-framework-view-actions')).toBeNull();
+    if (viewingDraft) {
+      expect(actions?.querySelector('[data-testid="mktg-framework-view-approval-required"]')?.textContent?.trim()).toBe(
+        'Export is available once this version is approved'
+      );
+      expect(query('mktg-framework-view-download-pdf')).toBeNull();
+      const approve = actions?.querySelector<HTMLButtonElement>('[data-testid="mktg-document-view-approve"] button');
+      expect(approve?.textContent?.trim()).toBe('Approve');
+      expect(approve?.classList.contains('p-button-success')).toBe(false);
+      expect(approve?.classList.contains('p-button-sm')).toBe(false);
+    } else {
+      expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
+        'Export to Google Slides',
+        'Download PDF',
+      ]);
+      expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(true);
+    }
   });
 
   it.each(['loading', 'error'] as const)('keeps approved PDF/Slides disabled while the approved payload is %s', async (state) => {
@@ -2420,18 +2438,19 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledTimes(1);
     expect(pendingApproved.observed).toBe(true);
     expect(pendingLast.observed).toBe(true);
-    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('brand-kit-web-view-export-slides')).toBeNull();
     expect(query('mktg-document-view-approve')).toBeNull();
     pendingLast.next({ last: null, latestRevision: null });
     pendingLast.complete();
   });
 
-  it('shows an asset without approved current but disables its real PDF and Slides actions', async () => {
+  it('shows a draft export explanation instead of disabled PDF and Slides actions', async () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
     await render('/documents/brand-kit/living');
     expect(query('brand-kit-web-view-print')).toBeNull();
-    expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
-    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('brand-kit-web-view-download-pdf')).toBeNull();
+    expect(query('brand-kit-web-view-export-slides')).toBeNull();
+    expect(query('brand-kit-web-view-approval-required')?.textContent).toContain('Export is available once this version is approved');
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
   });
 
@@ -2542,7 +2561,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
     expect(query('mktg-faq-view-needs-answer-0-1')).not.toBeNull();
-    expect(query('mktg-faq-view-unanswered-chip')?.textContent).toContain('1 question needs an answer from your team');
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
+    expect(query('mktg-faq-view-tab-unanswered')?.textContent).toContain('Needs an answer (1)');
     expectContentColumn('mktg-faq-view');
   });
 });

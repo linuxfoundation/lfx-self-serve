@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -173,6 +173,8 @@ export class MktgDocumentViewComponent {
   private readonly attempts = inject(MktgRunAttemptService);
 
   protected readonly frameworkKey = MKTG_KIT_FRAMEWORK_KEY;
+  protected readonly frameworkView = viewChild(MktgFrameworkViewComponent);
+  protected readonly brandKitView = viewChild(BrandKitWebViewComponent);
 
   protected readonly linkForm = new FormGroup({ share_link: new FormControl('', { nonNullable: true }) });
   protected readonly shareLinkAnswerKey = LINKEDIN_SHARE_LINK_ANSWER_KEY;

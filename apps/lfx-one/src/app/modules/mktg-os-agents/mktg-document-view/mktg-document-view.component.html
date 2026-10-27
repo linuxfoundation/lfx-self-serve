@@ -16,6 +16,33 @@
         }
       </div>
       <div class="grow"></div>
+      @if (!loading() && hasAssetView() && proseView(); as current) {
+        <div class="ml-auto flex flex-wrap items-center justify-end gap-4" data-testid="mktg-document-view-title-actions">
+          @if (runAgainLink(); as link) {
+            <a
+              [routerLink]="link"
+              [queryParams]="runAgainParams()"
+              class="text-base font-medium text-blue-700 hover:text-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+              data-testid="mktg-document-view-run-again"
+              >Create a new version</a
+            >
+          }
+          <ng-container [ngTemplateOutlet]="frameworkView()?.titleActions() ?? brandKitView()?.titleActions() ?? null" />
+          @if (mayApprove()) {
+            <div class="flex flex-col gap-2">
+              <lfx-button
+                label="Approve"
+                [loading]="approvingId() === current.revision.id"
+                [disabled]="writePending()"
+                data-testid="mktg-document-view-approve"
+                (onClick)="onApprove()" />
+              @if (approvalError()) {
+                <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
+              }
+            </div>
+          }
+        </div>
+      }
       @if (linkedinContent(); as content) {
         @if (content.author; as author) {
           <span class="text-sm text-gray-500" data-testid="mktg-linkedin-document-author">
@@ -230,32 +257,6 @@
         }
       </article>
     } @else if (proseView(); as current) {
-      <ng-template #approveActions>
-        @if (runAgainLink(); as link) {
-          <a
-            [routerLink]="link"
-            [queryParams]="runAgainParams()"
-            class="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-            data-testid="mktg-document-view-run-again"
-            >Run again</a
-          >
-        }
-        @if (mayApprove()) {
-          <div class="flex flex-col gap-2">
-            <lfx-button
-              [label]="'Approve v' + current.revision.number"
-              severity="success"
-              size="small"
-              [loading]="approvingId() === current.revision.id"
-              [disabled]="writePending()"
-              data-testid="mktg-document-view-approve"
-              (onClick)="onApprove()" />
-            @if (approvalError()) {
-              <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
-            }
-          </div>
-        }
-      </ng-template>
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
         <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
@@ -342,9 +343,7 @@
               [exportLookupTarget]="exportLookupTarget()"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-framework">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-framework-view>
+              data-testid="mktg-document-view-framework" />
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
             <lfx-mktg-boilerplates-view
@@ -355,9 +354,7 @@
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-boilerplates">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-boilerplates-view>
+              data-testid="mktg-document-view-boilerplates" />
           } @else if (faq(); as faqAsset) {
             <lfx-mktg-faq-view
               class="block min-w-0"
@@ -366,9 +363,7 @@
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-faq">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-faq-view>
+              data-testid="mktg-document-view-faq" />
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view
@@ -385,9 +380,7 @@
               [exportLookupTarget]="exportLookupTarget()"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-brand-kit">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-brand-kit-web-view>
+              data-testid="mktg-document-view-brand-kit" />
           } @else if (unsupportedAsset()) {
             <div data-testid="mktg-document-view-unsupported-asset">
               <lfx-message
