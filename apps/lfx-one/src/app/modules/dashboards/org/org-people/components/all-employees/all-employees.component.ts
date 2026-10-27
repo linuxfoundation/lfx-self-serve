@@ -34,6 +34,7 @@ import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-s
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
+import { orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
@@ -46,8 +47,6 @@ import type {
   OrgAllEmployeeSortDirection,
   OrgDropdownOption,
 } from '@lfx-one/shared/interfaces';
-
-import { rolePillClass } from '../key-contacts/helpers/key-contacts.helper';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
 
@@ -288,7 +287,8 @@ export class AllEmployeesComponent {
       // regardless of which live source (access / board / committee / keyContact) added them.
       isSynthetic: !row.sources.includes('snowflake'),
       // Only a single role gets a pill — several collapse to a count chip, so building pills for them would be dead work.
-      keyContactRolePills: row.keyContactRoles.length === 1 ? [{ role: row.keyContactRoles[0], pillClass: rolePillClass(row.keyContactRoles[0]) }] : [],
+      keyContactRolePills:
+        row.keyContactRoles.length === 1 ? [{ role: row.keyContactRoles[0], pillClass: orgKeyContactRolePillClass(row.keyContactRoles[0]) }] : [],
       keyContactRolesTooltip: row.keyContactRoles.length > 1 ? row.keyContactRoles.join(', ') : '',
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
