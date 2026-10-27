@@ -38,6 +38,7 @@ function row(personKey: string, name: string, email: string, sources: OrgPersonS
     seatsCount,
     boardSeatsCount: 0,
     committeeSeatsCount: seatsCount,
+    keyContactRoles: [],
     commitsCount: 3,
     eventsCount: 0,
     coursesCount: 0,
