@@ -8,8 +8,10 @@ export const MKTG_FAMILY_ACTION_LABELS = {
   blocked: (document: string) => `Review and approve the ${document.toLowerCase()}`,
   create: (asset: string) => `Create ${asset}`,
   review: (count: number) => (count === 1 ? 'Review the draft' : `Review ${count} drafts`),
-  run: (asset: string) => `Run ${asset}`,
+  export: () => 'Export the kit',
 };
+
+export const MKTG_FAMILY_FRAMEWORK_REQUIRED = 'after the framework is approved';
 
 export const MKTG_FAMILY_WRITE_REQUIRED = 'You need write access to this project to run its agents';
 /**

@@ -54,6 +54,7 @@ export class MktgFamilyComponent {
   // Writable signals
   private readonly navigationIntent = signal<MktgRebuildNavigationIntent | null>(null);
   protected readonly rebuildPanel = viewChild(MktgRebuildComponent);
+  protected readonly exportPanel = viewChild(MktgFamilyExportActionsComponent);
   protected readonly rebuildFamilyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });

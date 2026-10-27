@@ -37,13 +37,13 @@ function built(view: MktgKitFamilyView): MktgKitFamilyView {
 }
 
 describe('One rule for every family action', () => {
-  it('every available never-run row has Run X; required approved documents disable it with the reason', () => {
+  it('every available never-run row has Create X; required approved documents disable it with the reason', () => {
     const result = resolveMktgFamilyActions(family(), context);
-    expect(result.rows['messaging-framework'].action).toMatchObject({ kind: 'run', label: 'Run messaging framework', mode: 'new', blockedReason: '' });
+    expect(result.rows['messaging-framework'].action).toMatchObject({ kind: 'run', label: 'Create messaging framework', mode: 'new', blockedReason: '' });
     expect(result.rows['boilerplates'].action).toMatchObject({
       kind: 'run',
-      label: 'Run boilerplates',
-      blockedReason: 'Approve the messaging framework first: Boilerplates Agent builds on the approved one.',
+      label: 'Create boilerplates',
+      blockedReason: 'after the framework is approved',
     });
     expect(result.rows['one-pager'].action).toBeNull();
     expect(resolveMktgFamilyActions(family(), { ...context, approvedFramework: true }).rows['boilerplates'].action?.blockedReason).toBe('');
@@ -66,7 +66,7 @@ describe('One rule for every family action', () => {
       ['member-sponsor', 'member-360', 'Member 360'],
     ]) {
       const result = resolveMktgFamilyActions(family(id), context);
-      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Run ${label}`, mode: id === 'social-community' ? 'new' : null });
+      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Create ${label}`, mode: id === 'social-community' ? 'new' : null });
       expect(result.header).toMatchObject({ kind: 'create', label: `Create ${label}`, mode: null });
       expect(resolveMktgFamilyActions(built(family(id)), context).header).toEqual(result.header);
     }
@@ -112,7 +112,7 @@ describe('One rule for every family action', () => {
       link: { commands: ['../../documents', 'foundation-message', 'living'], queryParams: {} },
     });
   });
-  it('nothing to create means Review drafts in family order, otherwise no header', () => {
+  it('nothing to create means Review drafts, then Export the kit only for approved fresh exportable families', () => {
     const view = built(family());
     view.rows[0].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header).toMatchObject({
@@ -123,7 +123,12 @@ describe('One rule for every family action', () => {
     view.rows[1].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Review 2 drafts');
     view.rows.forEach((row) => (row.state = 'approved'));
-    expect(resolveMktgFamilyActions(view, context).header).toBeNull();
+    expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the kit', agentId: null, mode: null, link: null });
+    const unsupported = built(family('website-web'));
+    unsupported.rows.forEach((row) => (row.state = 'approved'));
+    expect(resolveMktgFamilyActions(unsupported, context).header).toBeNull();
+    view.rows[0].state = 'needs-rebuild';
+    expect(resolveMktgFamilyActions(view, context).header?.kind).toBe('rebuild');
     expect(resolveMktgFamilyActions(family('events'), context).header).toBeNull();
   });
   it('Create names the first not-built available asset and preserves living fresh mode', () => {
@@ -192,7 +197,7 @@ describe('One rule for every family action', () => {
     view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: 'approved', number: 1 } } };
     expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('');
     view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: ' ', number: 0 } } };
-    expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toContain('Approve');
+    expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('after the framework is approved');
   });
   it('is deterministic and leaves the input family and catalogs untouched', () => {
     const view = family();

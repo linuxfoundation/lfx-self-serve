@@ -82,8 +82,14 @@ test('shows the stale badge without hiding the last link', async ({ page }, info
 
 test('empty approved family disables both actions and explains approval', async ({ page }, info) => {
   await openFamilyExports(page, { empty: true });
-  await expect(page.getByTestId('family-export-empty')).toContainText('Approve a revision first');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  await expect(page.getByTestId('family-export-empty')).toHaveText('Available once the framework is approved: PDF and Slides use the approved current.');
+  for (const action of ['pdf', 'slides']) {
+    const button = page.getByTestId(`family-export-${action}`).getByRole('button');
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveClass(/p-button-outlined/);
+    await button.hover({ force: true });
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  }
   await page.screenshot({ path: info.outputPath('no-approved-family.png'), fullPage: true });
 });
 

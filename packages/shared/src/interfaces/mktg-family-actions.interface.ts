@@ -20,7 +20,7 @@ export interface MktgFamilyRunAction {
 }
 
 export interface MktgFamilyHeaderAction {
-  kind: 'rebuild' | 'blocked' | 'create' | 'review';
+  kind: 'rebuild' | 'blocked' | 'create' | 'review' | 'export';
   label: string;
   agentId: string | null;
   mode: 'new' | null;

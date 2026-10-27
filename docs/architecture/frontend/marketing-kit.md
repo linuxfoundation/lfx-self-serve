@@ -90,7 +90,7 @@ lens/project context. `resolveMktgFamilyActions` is the pure shared policy for F
 row actions and Kit card row data. Availability requires an active, non-excluded catalog
 agent with a registered intake; unavailable rows read Coming soon and offer no Run action.
 `mktgFamilyRowAction(row, ctx)` is the **one place to flip** the row rule. Available,
-not-built rows offer a quiet **Run X** link in the same place; copy comes from `runName`
+not-built rows offer a quiet **Create X** link in the same place; copy comes from `runName`
 or the asset label. Required non-optional approved JSON dependencies and missing write
 access disable that row action with its reason in plain inline text, not tooltip-only.
 Optional dependencies never block. Existing living and one-off assets have no row action:
@@ -102,12 +102,12 @@ asset gives **Review and approve the <document>** linking to its missing approva
 **Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
 (singular **Review the draft**) links to the first draft in family order. One-off families
 always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
-Fresh, fully approved living families need no primary. There is no caption/sub-line.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. There is no caption/sub-line.
 No header renders while loading, after a failed read, without write access (including
 403), or for an unavailable agent. The service still distinguishes access denial from
 read failure; loading status remains mounted. Accessible names equal the primary label.
 
-All enabled header and row Run actions are real anchors. Native Cmd/Ctrl-click opens a new
+All enabled header and row Create/review actions are real anchors; rebuild and Export the kit are local buttons. Native Cmd/Ctrl-click opens a new
 tab without navigating the original family. Replacement query params preserve the selected
 project and drop stale questions/generation/revision/run selectors. Living actions use
 `?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
@@ -140,15 +140,15 @@ Slides exports the supported approved family assets and branding, offers Update 
 Create for an existing deck, shows progress and a dated revision-linked last export,
 and marks changed approved member sets stale. Families without an export target render only
 the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
-Drive note. Supported families retain their actions, tooltip notes and export behaviour.
+Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
 Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
 than guessing that no deck exists. Lookup starts independently of document-list loading;
 the slot stays available after a listing error/403. Browser family and document clients
 share one polling deadline/attempt/error policy. The family BFF and record model are
 documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
 
-`lfx-mktg-family-details` adds the board's static Approve explainer and Family-only source
-read. It reads only the framework row's latest document revision via the existing endpoint,
+`lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
+read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
 then renders the validated `sidecar.report.sources_read` / `sources_failed`
 (name/reason) as the board's sentences. Missing documents/reports omit the source block;
 loading and failure/retry are explicit, never a fabricated list. Project/family switches

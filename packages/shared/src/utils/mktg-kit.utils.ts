@@ -147,6 +147,8 @@ export function mktgKitSources(sidecar: Record<string, unknown> | null): MktgKit
   if (!read.length && !failed.length) return null;
   const sourceLabel = failed.length === 1 ? 'source' : 'sources';
   return {
+    readCount: read.length,
+    failedCount: failed.length,
     readText: read.length ? `Sources read on the last run: ${read.join(', ')}.` : '',
     failedText: failed.length ? `${failed.length} ${sourceLabel} failed: ${failed.map((source) => `${source.name}: ${source.reason}`).join('; ')}.` : '',
   };

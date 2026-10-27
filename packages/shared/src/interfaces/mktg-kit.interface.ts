@@ -74,6 +74,8 @@ export interface MktgKitAgentGroup {
 }
 
 export interface MktgKitSourcesView {
+  readCount: number;
+  failedCount: number;
   readText: string;
   failedText: string;
 }

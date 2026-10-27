@@ -191,7 +191,12 @@ describe('Marketing kit plan of record', () => {
   it('reads only the framework report source fields and omits absent or malformed data', () => {
     expect(
       mktgKitSources({ report: { sources_read: ['project.example', 'Synthetic plan'], sources_failed: [{ name: 'README', reason: 'Timed out' }] } })
-    ).toEqual({ readText: 'Sources read on the last run: project.example, Synthetic plan.', failedText: '1 source failed: README: Timed out.' });
+    ).toEqual({
+      readCount: 2,
+      failedCount: 1,
+      readText: 'Sources read on the last run: project.example, Synthetic plan.',
+      failedText: '1 source failed: README: Timed out.',
+    });
     expect(
       mktgKitSources({
         report: {

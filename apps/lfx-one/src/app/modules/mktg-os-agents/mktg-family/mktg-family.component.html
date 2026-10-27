@@ -16,6 +16,8 @@
               [ariaLabel]="header.label"
               (onClick)="rebuildPanel()?.start()"
               data-testid="mktg-family-rebuild" />
+          } @else if (header.kind === 'export') {
+            <lfx-button [label]="header.label" [ariaLabel]="header.label" (onClick)="exportPanel()?.focusDownload()" data-testid="mktg-family-run" />
           } @else {
             <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
             <lfx-button
@@ -101,7 +103,7 @@
                               styleClass="p-0 text-sm"
                               [disabled]="true"
                               [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
-                            <span class="ml-2 text-xs text-gray-500" [attr.data-testid]="'mktg-family-run-reason-' + row.asset.id">{{ reason }}</span>
+                            <span class="ml-2 text-xs text-gray-500" [attr.data-testid]="'mktg-family-run-reason-' + row.asset.id">· {{ reason }}</span>
                           </span>
                         } @else {
                           <lfx-button
