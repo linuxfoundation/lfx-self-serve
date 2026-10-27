@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { Observable, Subject, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -23,6 +23,10 @@ interface Harness {
   answers: Subject<OrgLensEmployerAffiliation>[];
   /** `UserService.workExperienceRevision` — bumped by a profile work-experience write. */
   workExperienceRevision: WritableSignal<number>;
+  /** #4225's verdict, which rule 6 of the classifier reads before anything this service answers. */
+  affiliatedToMember: WritableSignal<boolean>;
+  /** `OrgRoleGrantsService.refresh`, which re-asks that verdict. */
+  refreshGrants: Mock<(bypassCache?: boolean) => Observable<void>>;
 }
 
 interface SetupOptions {
@@ -30,13 +34,17 @@ interface SetupOptions {
   failing?: boolean;
   staff?: boolean;
   holdsOrg?: boolean;
+  /** The server already established the caller works for an LF member org (#4225). */
+  memberEmployer?: boolean;
   /** False leaves the grants lookup unanswered. */
   grantsLoaded?: boolean;
 }
 
-function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded = true }: SetupOptions = {}): Harness {
+function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded = true, memberEmployer = false }: SetupOptions = {}): Harness {
   const loaded = signal(grantsLoaded);
   const isStaff = signal(staff);
+  const affiliatedToMember = signal(memberEmployer);
+  const refreshGrants: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const hasOrgSelectorAccess = signal(holdsOrg);
   const answers: Subject<OrgLensEmployerAffiliation>[] = [];
   const workExperienceRevision = signal(0);
@@ -52,13 +60,23 @@ function setup({ failing = false, staff = false, holdsOrg = false, grantsLoaded 
   TestBed.configureTestingModule({
     providers: [
       { provide: HttpClient, useValue: { get } },
-      { provide: OrgRoleGrantsService, useValue: { loaded, isStaff } },
+      { provide: OrgRoleGrantsService, useValue: { loaded, isStaff, affiliatedToMember, refresh: refreshGrants } },
       { provide: AccountContextService, useValue: { hasOrgSelectorAccess } },
       { provide: UserService, useValue: { workExperienceRevision } },
     ],
   });
 
-  const harness = { service: TestBed.inject(OrgLensEmployerAffiliationService), loaded, isStaff, hasOrgSelectorAccess, get, answers, workExperienceRevision };
+  const harness = {
+    service: TestBed.inject(OrgLensEmployerAffiliationService),
+    loaded,
+    isStaff,
+    hasOrgSelectorAccess,
+    get,
+    answers,
+    workExperienceRevision,
+    affiliatedToMember,
+    refreshGrants,
+  };
   flush();
   return harness;
 }
@@ -83,6 +101,53 @@ describe('OrgLensEmployerAffiliationService', () => {
     h = setup();
     expect(h.service.pending()).toBe(true);
     expect(h.get).toHaveBeenCalledWith('/api/profile/employer-affiliation');
+  });
+
+  // #4225 answers rule 6 before this probe is read, so asking would buy nothing and cost a CDP round
+  // trip plus a Snowflake query for the population least likely to have a CDP profile at all.
+  it('never asks when the member-employer verdict is already established', () => {
+    h = setup({ memberEmployer: true });
+
+    expect(h.get).not.toHaveBeenCalled();
+    expect(h.service.pending()).toBe(false);
+    expect(h.service.affiliatedToNonMember()).toBe(false);
+  });
+
+  // The verdict is cached server-side and derived from the same work history, so an edit must
+  // invalidate it too — otherwise rule 6 keeps answering from the old employer and this probe's
+  // answer is never reached.
+  it('re-asks the member-employer verdict, cache bypassed, after a work-history edit', () => {
+    h = setup({ memberEmployer: true });
+    expect(h.refreshGrants).not.toHaveBeenCalled();
+
+    h.workExperienceRevision.set(1);
+    flush();
+
+    expect(h.refreshGrants).toHaveBeenCalledWith(true);
+  });
+
+  // The whole transition the finding describes: member employer replaced by a non-member one.
+  it('starts asking once a refreshed verdict clears the member employer', () => {
+    h = setup({ memberEmployer: true });
+
+    h.workExperienceRevision.set(1);
+    h.affiliatedToMember.set(false);
+    flush();
+
+    expect(h.get).toHaveBeenCalledWith('/api/profile/employer-affiliation');
+    h.answers[0].next(affiliation());
+    expect(h.service.affiliatedToNonMember()).toBe(true);
+  });
+
+  // Nobody outside the population has a verdict worth re-asking, so an edit must not spend a
+  // cache-bypassing round trip on them.
+  it('leaves the member-employer verdict alone for a caller who holds an organization', () => {
+    h = setup({ holdsOrg: true });
+
+    h.workExperienceRevision.set(1);
+    flush();
+
+    expect(h.refreshGrants).not.toHaveBeenCalled();
   });
 
   it('never asks for a caller who holds an organization', () => {

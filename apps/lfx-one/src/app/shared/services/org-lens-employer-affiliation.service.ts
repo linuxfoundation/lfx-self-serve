@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal, Signal, untracked, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
 import { catchError, distinctUntilChanged, map, Observable, of, startWith, switchMap } from 'rxjs';
@@ -41,9 +41,35 @@ export class OrgLensEmployerAffiliationService {
    * The caller is in the population this question is about: the grants lookup has answered, they are
    * not staff, and they hold no organization. Anything else leaves the probe idle and silent.
    */
-  private readonly needed: Signal<boolean> = computed(
+  private readonly inPopulation: Signal<boolean> = computed(
     () => this.roleGrants.loaded() && !this.roleGrants.isStaff() && !this.accountContext.hasOrgSelectorAccess()
   );
+
+  /**
+   * …and #4225 has not already answered for them. Rule 6 of the classifier asks that verdict first, so
+   * for a caller whose employer is a known LF member this probe's answer is never read — asking anyway
+   * would spend a CDP round trip and a Snowflake query on wording that is already decided.
+   */
+  private readonly needed: Signal<boolean> = computed(() => this.inPopulation() && !this.roleGrants.affiliatedToMember());
+
+  /**
+   * #4225's verdict is derived from the same work history as this probe, but it rides the role-grants
+   * response and is cached server-side. The classifier reads it before anything here, so an edit that
+   * replaces a member employer with a non-member one would otherwise keep answering `affiliated-no-grant`
+   * from the stale verdict and never reach the state this service exists to render. Re-ask it — cache
+   * bypassed — on the same revision the probe keys off.
+   *
+   * Only the revision is tracked: reading the population predicate here would re-run this effect on the
+   * very signals `refresh` writes, which is a loop.
+   */
+  private readonly memberVerdictInvalidation = effect(() => {
+    const revision = this.userService.workExperienceRevision();
+    // 0 is the seed, not an edit: the initial grants load has already asked.
+    if (revision === 0 || !untracked(() => this.inPopulation())) {
+      return;
+    }
+    this.roleGrants.refresh(true).subscribe();
+  });
 
   /**
    * What the probe is asking about: `null` when nothing should be asked, otherwise a key that changes
