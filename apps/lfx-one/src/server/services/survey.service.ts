@@ -3,7 +3,16 @@
 
 import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS, SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
+import {
+  CreateSurveyRequest,
+  MySurveyResponse,
+  QueryServiceResponse,
+  SendSurveyRemindersResult,
+  Survey,
+  SurveyResponseRecord,
+  SurveyResponsesPage,
+  SurveyResyncPreview,
+} from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -253,6 +262,49 @@ export class SurveyService {
       projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
     );
     return new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid));
+  }
+
+  /**
+   * Resends the survey email to the given response rows (`bulk_resend`). The gateway
+   * enforces `survey#writer` on the caller's token; ITX rejects closed surveys.
+   */
+  public async sendSurveyReminders(req: Request, surveyUid: string, recipientIds: string[]): Promise<SendSurveyRemindersResult> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/bulk_resend`, 'POST', undefined, {
+      recipient_ids: recipientIds,
+    });
+    return { recipient_count: recipientIds.length };
+  }
+
+  /**
+   * Lists the committee members a resync would send the survey to (`preview_send`).
+   * Optional `committeeUid` limits it to one committee.
+   */
+  public async getResyncPreview(req: Request, surveyUid: string, committeeUid?: string): Promise<SurveyResyncPreview> {
+    const preview = await this.microserviceProxy.proxyRequest<Partial<SurveyResyncPreview> | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/surveys/${surveyUid}/preview_send`,
+      'GET',
+      committeeUid ? { committee_uid: committeeUid } : undefined
+    );
+    return {
+      affected_recipients: Array.isArray(preview?.affected_recipients) ? preview.affected_recipients : [],
+      affected_committees: Array.isArray(preview?.affected_committees) ? preview.affected_committees : [],
+    };
+  }
+
+  /**
+   * Sends the survey to committee members who joined after it launched (`send_missing_recipients`).
+   * Only adds recipients; never removes any. Optional `committeeUid` limits it to one committee.
+   */
+  public async resyncRecipients(req: Request, surveyUid: string, committeeUid?: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/surveys/${surveyUid}/send_missing_recipients`,
+      'POST',
+      committeeUid ? { committee_uid: committeeUid } : undefined
+    );
   }
 
   /**

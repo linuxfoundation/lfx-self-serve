@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Survey, SurveyResponseItem } from '../interfaces/survey.interface';
-import { buildSurveyFollowUpMailto, buildSurveyResponsesCsvRows, getSurveyEngagementRates, renderSurveyEmailForRecipient } from './survey.utils';
+import {
+  buildSurveyFollowUpMailto,
+  buildSurveyResponsesCsvRows,
+  getSurveyEngagementRates,
+  getSurveyResyncScope,
+  renderSurveyEmailForRecipient,
+} from './survey.utils';
 
 const survey = {
   uid: 's-1',
@@ -120,5 +126,24 @@ describe('buildSurveyResponsesCsvRows', () => {
       'Great',
     ]);
     expect(rows.flat()).not.toContain('https://www.surveymonkey.com/r/x');
+  });
+});
+
+describe('getSurveyResyncScope', () => {
+  const withCommittees = (...projects: string[]) =>
+    ({ ...survey, committees: projects.map((p, i) => ({ committee_uid: `c-${i}`, project_uid: p })) }) as unknown as Survey;
+
+  it('resyncs the whole survey when every committee is in the project', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1'), 'p-1')).toEqual({});
+  });
+
+  it("scopes a multi-project survey to the project's one committee", () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2', 'p-3'), 'p-2')).toEqual({ committeeUid: 'c-1' });
+  });
+
+  it('offers no resync when the project has no committee, several among other projects, or no project is active', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2'), 'p-9')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1', 'p-2'), 'p-1')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1'), null)).toBeNull();
   });
 });

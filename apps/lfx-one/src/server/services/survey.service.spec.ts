@@ -437,3 +437,36 @@ describe('SurveyService.getSurveyResponses — personal link gate', () => {
     expect(page.data.every((r) => r.survey_link === undefined)).toBe(true);
   });
 });
+
+describe('SurveyService follow-up proxies (#4340)', () => {
+  let service: SurveyService;
+  const req = { path: '/api/surveys/s-1/resync', bearerToken: 'caller-token' } as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequestMock.mockReset().mockResolvedValue(undefined);
+    service = new SurveyService();
+  });
+
+  it('sends reminders through bulk_resend with the response ids', async () => {
+    const result = await service.sendSurveyReminders(req, 's-1', ['r-1', 'r-2']);
+
+    expect(proxyRequestMock).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/surveys/s-1/bulk_resend', 'POST', undefined, { recipient_ids: ['r-1', 'r-2'] });
+    expect(result).toEqual({ recipient_count: 2 });
+  });
+
+  it('resyncs with committee_uid as a query param', async () => {
+    await service.resyncRecipients(req, 's-1', 'c-1');
+
+    expect(proxyRequestMock).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/surveys/s-1/send_missing_recipients', 'POST', { committee_uid: 'c-1' });
+  });
+
+  it('normalizes a preview with missing lists', async () => {
+    proxyRequestMock.mockResolvedValue({ affected_recipients: null });
+
+    const preview = await service.getResyncPreview(req, 's-1');
+
+    expect(proxyRequestMock).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/surveys/s-1/preview_send', 'GET', undefined);
+    expect(preview).toEqual({ affected_recipients: [], affected_committees: [] });
+  });
+});

@@ -20,11 +20,11 @@ const ROWS = [
   { id: 'r-3', response_status: 'Opened' },
 ] as SurveyResponseItem[];
 
-async function mount(hasPMOAccess: boolean, responses$ = of(ROWS)) {
+async function mount(hasPMOAccess: boolean, responses$ = of(ROWS), survey: Survey = SURVEY) {
   const activeContext = signal<{ uid: string } | null>({ uid: 'p-1' });
   TestBed.resetTestingModule();
   const getAllSurveyResponses = vi.fn().mockReturnValue(responses$);
-  const getSurvey = vi.fn().mockReturnValue(of(SURVEY));
+  const getSurvey = vi.fn().mockReturnValue(of(survey));
   TestBed.configureTestingModule({
     imports: [SurveyResultsDrawerComponent],
     providers: [
@@ -122,5 +122,29 @@ describe('SurveyResultsDrawerComponent', () => {
 
     expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2');
     expect(getAllSurveyResponses).toHaveBeenLastCalledWith('s-1', 'p-2');
+  });
+
+  it("offers resync only to managers of an open survey, scoped to the project's committee", async () => {
+    const open = {
+      ...SURVEY,
+      survey_status: 'sent',
+      survey_cutoff_date: '2099-01-01T00:00:00Z',
+      committees: [
+        { committee_uid: 'c-1', project_uid: 'p-1' },
+        { committee_uid: 'c-2', project_uid: 'p-2' },
+      ],
+    } as unknown as Survey;
+
+    const manager = await mount(true, of(ROWS), open);
+    current = manager.fixture;
+    expect(manager.component['resyncScope']()).toEqual({ committeeUid: 'c-1' });
+
+    const viewer = await mount(false, of(ROWS), open);
+    current = viewer.fixture;
+    expect(viewer.component['resyncScope']()).toBeNull();
+
+    const closed = await mount(true, of(ROWS), { ...open, response_status: 'closed' });
+    current = closed.fixture;
+    expect(closed.component['resyncScope']()).toBeNull();
   });
 });

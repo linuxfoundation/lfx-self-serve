@@ -4,7 +4,15 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { SURVEY_DETAIL_CACHE_TTL_MS, SURVEY_RESPONSES_MAX_PAGES, SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponseItem, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
+import {
+  CreateSurveyRequest,
+  MySurveyResponse,
+  SendSurveyRemindersResult,
+  Survey,
+  SurveyResponseItem,
+  SurveyResponsesPage,
+  SurveyResyncPreview,
+} from '@lfx-one/shared/interfaces';
 import { catchError, EMPTY, expand, map, Observable, of, reduce, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
@@ -128,6 +136,26 @@ export class SurveyService {
         return rows;
       }),
       catchError((error) => (error?.status === 404 ? of([] as SurveyResponseItem[]) : throwError(() => error)))
+    );
+  }
+
+  /** Resends the survey email to the given response rows (#4340). */
+  public sendSurveyReminders(surveyUid: string, recipientIds: string[]): Observable<SendSurveyRemindersResult> {
+    return this.http.post<SendSurveyRemindersResult>(`/api/surveys/${encodeURIComponent(surveyUid)}/reminders`, { recipient_ids: recipientIds }).pipe(take(1));
+  }
+
+  /** Committee members a resync would add (#4340). */
+  public getResyncPreview(surveyUid: string, committeeUid?: string): Observable<SurveyResyncPreview> {
+    const params = committeeUid ? new HttpParams().set('committee_uid', committeeUid) : undefined;
+    return this.http.get<SurveyResyncPreview>(`/api/surveys/${encodeURIComponent(surveyUid)}/resync-preview`, { params }).pipe(take(1));
+  }
+
+  /** Sends the survey to committee members added since launch (#4340). */
+  public resyncRecipients(surveyUid: string, committeeUid?: string): Observable<void> {
+    const params = committeeUid ? new HttpParams().set('committee_uid', committeeUid) : undefined;
+    return this.http.post<void>(`/api/surveys/${encodeURIComponent(surveyUid)}/resync`, null, { params }).pipe(
+      take(1),
+      tap(() => this.evictSurveyDetailCache(surveyUid))
     );
   }
 

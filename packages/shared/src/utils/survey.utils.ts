@@ -12,6 +12,7 @@ import type {
   SurveyEmailRenderContext,
   SurveyEngagementRates,
   SurveyResponseItem,
+  SurveyResyncScope,
   SurveyStatusInput,
 } from '../interfaces/survey.interface';
 import { escapeHtml } from './html-utils';
@@ -338,4 +339,31 @@ export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly Surve
   });
 
   return [header, ...body];
+}
+
+/**
+ * Whether follow-up actions that email recipients (reminders, resync) apply: only while the survey accepts responses.
+ * @param survey - The survey
+ */
+export function isSurveyOpenForFollowUp(survey: Survey): boolean {
+  return getSurveyDisplayStatus(survey) === SurveyStatus.OPEN;
+}
+
+/**
+ * Resolve how a resync started from a project is scoped, so it never reaches another project's committee.
+ * @description Whole survey when every committee belongs to the project; that project's single committee
+ * when the survey spans several projects (a multi-foundation board survey); null when it can't be scoped
+ * to one committee, in which case the resync is not offered.
+ * @param survey - The survey
+ * @param projectUid - The active project
+ * @returns The scope, or null when no safe scope exists
+ */
+export function getSurveyResyncScope(survey: Survey, projectUid: string | null | undefined): SurveyResyncScope | null {
+  const committees = survey.committees ?? [];
+  if (!projectUid || committees.length === 0) return null;
+
+  const inProject = committees.filter((c) => c.project_uid === projectUid);
+  if (inProject.length === committees.length) return {};
+  if (inProject.length === 1) return { committeeUid: inProject[0].committee_uid };
+  return null;
 }
