@@ -83,7 +83,14 @@
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
             <!-- Description is poll-creator-authored rich HTML (PCC editor); Angular's [innerHTML] sanitizer applies. Matches vote-results-drawer. -->
             <!-- whitespace-pre-line is intentional: preserves line breaks in legacy plain-text descriptions (GH-2326). -->
-            <div class="text-sm text-slate-700 whitespace-pre-line" [innerHTML]="voteData.description" data-testid="vote-cast-drawer-description"></div>
+            <!-- Phones: cap the description so the ballot starts in view; it scrolls inside its own focusable region (Submit is pinned either way). -->
+            <div
+              class="text-sm text-slate-700 whitespace-pre-line break-words max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
+              [innerHTML]="voteData.description"
+              [attr.tabindex]="0"
+              role="region"
+              aria-label="Vote description"
+              data-testid="vote-cast-drawer-description"></div>
           </div>
         }
 

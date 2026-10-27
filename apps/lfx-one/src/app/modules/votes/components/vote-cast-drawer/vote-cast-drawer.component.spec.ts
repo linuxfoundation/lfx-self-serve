@@ -458,4 +458,16 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
     ]);
     expect(dragPayload.userVoteContent).toEqual(arrowPayload.userVoteContent);
   });
+
+  it('caps a long description on phones so the ballot starts in view, in a focusable scroll region', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, description: '<p>Long background text.</p>' })));
+
+    await openWithoutListVote();
+
+    const description = el('vote-cast-drawer-description') as HTMLElement;
+    expect(description.className).toContain('max-sm:max-h-[40dvh]');
+    expect(description.className).toContain('max-sm:overflow-y-auto');
+    expect(description.getAttribute('tabindex')).toBe('0');
+    expect(description.getAttribute('role')).toBe('region');
+  });
 });
