@@ -23,7 +23,7 @@ export interface OrgAllEmployeesInternalResponse {
   foundations: OrgAllEmployeeFoundationOption[];
 }
 
-/** Per-(account, person) roster row for one time range, from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`. */
+/** Per-(account, person) roster row: one time range of `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`, or the unranged `ORG_PEOPLE_ALL`. */
 export interface OrgPeopleAllRow {
   ACCOUNT_ID: string;
   PERSON_KEY: string;

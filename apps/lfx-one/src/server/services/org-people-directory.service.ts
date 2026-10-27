@@ -203,10 +203,11 @@ function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmpl
 /**
  * Unified people directory for the Org Lens People page (`?live` path).
  *
- * Merges the stored Snowflake roster for one time range (`ORG_PEOPLE_ALL_RANGES`, the source of
- * activity counts) with three LIVE sources — committee/board seats, key contacts, and the org's
- * writers/auditors — deduped by lowercased email so a person who was added since the last dbt build
- * still appears. The live sources are current state and are not windowed. The response keeps the
+ * Merges the stored Snowflake roster — one time range of `ORG_PEOPLE_ALL_RANGES`, or the unranged
+ * `ORG_PEOPLE_ALL` roster the reassign pickers read; the source of activity counts — with three LIVE
+ * sources — committee/board seats, key contacts, and the org's writers/auditors — deduped by
+ * lowercased email so a person who was added since the last dbt build still appears. The live
+ * sources are current state and are not windowed. The response keeps the
  * exact `OrgAllEmployeesResponse` shape; live-only people surface with zero activity counts and a
  * `sources` provenance array. Each source is fetched with `Promise.allSettled` so a single upstream
  * outage degrades the roster gracefully rather than failing the whole tab.
@@ -225,11 +226,11 @@ export class OrgPeopleDirectoryService {
   }
 
   /**
-   * Merged stored + live roster for one time range, served through the per-caller shared cache: the
-   * merge folds in request-scoped permission-filtered reads (committee seats, FGA-filtered key
-   * contacts, the caller's access view), so keying by caller + org stops one caller's roster from
-   * being replayed to another within the TTL. Each range has its own namespace, so the key and the
-   * in-process flight below both carry it.
+   * Merged stored + live roster for one time range (`null`: the unranged roster), served through the
+   * per-caller shared cache: the merge folds in request-scoped permission-filtered reads (committee
+   * seats, FGA-filtered key contacts, the caller's access view), so keying by caller + org stops one
+   * caller's roster from being replayed to another within the TTL. Each range, and the unranged
+   * roster, has its own namespace, so the key and the in-process flight below both carry it.
    *
    * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
    * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
@@ -245,9 +246,9 @@ export class OrgPeopleDirectoryService {
    * response is read-only downstream — it is serialized to the client or searched by
    * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
    */
-  public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange): Promise<OrgAllEmployeesResponse> {
+  public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    const namespace = VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACES[range];
+    const namespace = VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACES[range ?? 'roster'];
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
@@ -266,7 +267,7 @@ export class OrgPeopleDirectoryService {
     return fromCompactDirectory(entry);
   }
 
-  private async computeLive(req: Request, accountId: string, range: OrgPeopleTimeRange): Promise<OrgAllEmployeesResponse> {
+  private async computeLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.

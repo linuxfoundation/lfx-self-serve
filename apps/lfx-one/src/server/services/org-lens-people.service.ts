@@ -121,22 +121,23 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range; the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange): Promise<OrgAllEmployeesResponse> {
+  /** Bundled rows + stats + foundations payload for one time range (`null`: the unranged roster); the wire projection of the internal roster. */
+  public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
     return toWireResponse(await this.getAllEmployeesInternal(accountId, range));
   }
 
   /**
-   * Internal roster for one time range with merge-only fields retained — the live directory's stored
-   * seed. The cache holds raw warehouse rows and both accessors map after every read, so this split
-   * changes no cached shape. Stats are counted over the rows, so the tiles match the table.
+   * Internal roster with merge-only fields retained — the live directory's stored seed. A time range
+   * reads that range's current employees; `null` reads the unranged ORG_PEOPLE_ALL roster the
+   * reassign pickers use. The cache holds raw warehouse rows and both accessors map after every read,
+   * so this split changes no cached shape. Stats are counted over the rows, so the tiles match the table.
    */
-  public async getAllEmployeesInternal(accountId: string, range: OrgPeopleTimeRange): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v3:{range}` (lfx-self-serve#4163): the roster is read per time range and carries no
-    // stats table, so a `v2` (unwindowed, with stats) entry must miss rather than decode.
+  public async getAllEmployeesInternal(accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesInternalResponse> {
+    // `people-all:v3:{range|roster}` (lfx-self-serve#4163): one entry per time range plus the unranged
+    // roster, none carrying a stats table, so a `v2` (with stats) entry must miss rather than decode.
     const raw = await withOrgCompactCache(
       accountId,
-      `people-all:v3:${range}`,
+      `people-all:v3:${range ?? 'roster'}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchAllEmployeesRaw(accountId, range),
       {
@@ -425,8 +426,15 @@ export class OrgLensPeopleService {
     return isFormer;
   }
 
-  /** Two parallel Snowflake reads returning raw rows (the current roster for the range, and the foundation pairs); mapping happens after the cache read. */
-  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange): Promise<AllEmployeesRaw> {
+  /**
+   * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
+   * mapping happens after the cache read. A range reads that range's current rows of
+   * ORG_PEOPLE_ALL_RANGES; `null` reads the unranged ORG_PEOPLE_ALL roster.
+   */
+  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null): Promise<AllEmployeesRaw> {
+    const source = range
+      ? { from: 'ORG_PEOPLE_ALL_RANGES', where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND IS_FORMER = FALSE', binds: [accountId, range] }
+      : { from: 'ORG_PEOPLE_ALL', where: 'ACCOUNT_ID = ?', binds: [accountId] };
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -445,8 +453,8 @@ export class OrgLensPeopleService {
         EVENTS_COUNT,
         COURSES_COUNT,
         ENGAGED_FOUNDATION_IDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND IS_FORMER = FALSE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.${source.from}
+      WHERE ${source.where}
       ORDER BY NAME ASC NULLS LAST
     `;
 
@@ -475,7 +483,7 @@ export class OrgLensPeopleService {
     `;
 
     const [rowsResult, foundationResult] = await Promise.all([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range]),
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, source.binds),
       this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
     ]);
 

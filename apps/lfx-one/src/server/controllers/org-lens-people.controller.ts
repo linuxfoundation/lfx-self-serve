@@ -41,7 +41,7 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|12mo|all] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster (default `12mo`). */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|12mo|all] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range). */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_all';
@@ -49,11 +49,12 @@ export class OrgLensPeopleController {
 
     try {
       assertOrgUid(orgUid, operation);
+      // `null` (no range) is the unranged roster, not a default range.
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         live,
-        time_range: range,
+        time_range: range ?? 'roster',
       });
 
       const response = live ? await this.directoryService.getLive(req, orgUid, range) : await this.service.getAllEmployees(orgUid, range);
@@ -61,7 +62,7 @@ export class OrgLensPeopleController {
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         live,
-        time_range: range,
+        time_range: range ?? 'roster',
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
@@ -81,7 +82,7 @@ export class OrgLensPeopleController {
 
     try {
       assertOrgUid(orgUid, operation);
-      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: range,
@@ -430,7 +431,7 @@ export class OrgLensPeopleController {
 
     try {
       assertOrgUid(orgUid, operation);
-      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation);
+      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation) ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: timeRange,
@@ -508,10 +509,10 @@ function parseLiveFlag(req: Request): boolean {
   return raw === '' || raw === 'true' || raw === '1';
 }
 
-/** Validate a People time-range query param (`range` / `timeRange`): missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
-function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgPeopleTimeRange {
+/** Validate a People time-range query param (`range` / `timeRange`): missing → `null` (each caller picks its default); invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
+function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgPeopleTimeRange | null {
   if (!raw) {
-    return ORG_PEOPLE_DEFAULT_TIME_RANGE;
+    return null;
   }
   const option = ORG_PEOPLE_TIME_RANGE_OPTIONS.find((candidate) => candidate.value === raw);
   if (!option) {

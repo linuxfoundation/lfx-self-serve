@@ -66,13 +66,13 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     getLive.mockResolvedValue(EMPTY_ROSTER);
   });
 
-  it('defaults a missing range to 12mo on every roster read', async () => {
+  it('reads the unranged roster when /all has no range, and defaults /former to 12mo', async () => {
     await controller.getAllEmployees(buildRosterReq({}), buildRes(), vi.fn());
     await controller.getAllEmployees(buildRosterReq({ live: 'true' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({}), buildRes(), vi.fn());
 
-    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '12mo');
-    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '12mo');
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null);
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null);
     expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo');
   });
 

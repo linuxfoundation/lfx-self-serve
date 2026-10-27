@@ -14,6 +14,7 @@ import { OrgPeopleDirectoryStateService } from './org-people-directory-state.ser
 
 const URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=12mo`;
 const urlFor = (range: string): string => `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}`;
+const ROSTER_URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
 
 function roster(name: string): OrgAllEmployeesResponse {
   const row: OrgAllEmployeeRow = {
@@ -111,10 +112,13 @@ describe('OrgPeopleDirectoryStateService', () => {
     http.expectNone(urlFor('all'));
   });
 
-  it('invalidate() drops every range of the org, cached or in flight', async () => {
+  it('invalidate() drops the unranged roster and every range of the org, cached or in flight', async () => {
     const cached = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
     http.expectOne(urlFor('30d')).flush(roster('Before'));
     await cached;
+    const cachedRoster = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
+    http.expectOne(ROSTER_URL).flush(roster('Before'));
+    await cachedRoster;
     const pending = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
     const pendingRequest = http.expectOne(urlFor('all'));
 
@@ -124,16 +128,26 @@ describe('OrgPeopleDirectoryStateService', () => {
 
     const recent = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
     const allTime = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
+    const unranged = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID));
     http.expectOne(urlFor('30d')).flush(roster('After'));
     http.expectOne(urlFor('all')).flush(roster('After'));
+    http.expectOne(ROSTER_URL).flush(roster('After'));
     await expect(recent).resolves.toEqual(roster('After'));
     await expect(allTime).resolves.toEqual(roster('After'));
+    await expect(unranged).resolves.toEqual(roster('After'));
   });
 
-  it('serves the reassign pickers from the widest (all) range', async () => {
+  // The reassign pickers keep the pre-#4163 directory: the unranged roster, never a time range.
+  it('serves the reassign pickers from the unranged roster, requested without a range and cached apart from 12mo', async () => {
     const employees = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
-    http.expectOne(urlFor('all')).flush(roster('Ada Lovelace'));
+    http.expectOne(ROSTER_URL).flush({ ...roster('Ada Lovelace'), rows: [{ ...roster('Ada Lovelace').rows[0], email: 'ada@example.com' }] });
+    await expect(employees).resolves.toEqual([expect.objectContaining({ email: 'ada@example.com' })]);
 
-    await expect(employees).resolves.toEqual([]);
+    const ranged = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    http.expectOne(URL).flush(roster('Last 12 Months'));
+    await expect(ranged).resolves.toEqual(roster('Last 12 Months'));
+
+    await firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
+    http.expectNone(ROSTER_URL);
   });
 });

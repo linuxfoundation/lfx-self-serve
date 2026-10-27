@@ -100,6 +100,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   VALKEY_CACHE: {
     ORG_PEOPLE_DIRECTORY_NAMESPACES: {
+      roster: 'org-people-dir:v4:roster',
       '30d': 'org-people-dir:v4:30d',
       '90d': 'org-people-dir:v4:90d',
       '12mo': 'org-people-dir:v4:12mo',
@@ -212,7 +213,7 @@ function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
   };
 }
 
-async function run(range: OrgPeopleTimeRange = '12mo'): Promise<OrgAllEmployeesResponse> {
+async function run(range: OrgPeopleTimeRange | null = '12mo'): Promise<OrgAllEmployeesResponse> {
   return new OrgPeopleDirectoryService().getLive(req, ACCOUNT, range);
 }
 
@@ -974,5 +975,19 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       [ACCOUNT, 'all'],
     ]);
     expect(cache.namespaces).toEqual(['org-people-dir:v4:30d', 'org-people-dir:v4:all']);
+  });
+
+  it('serves the unranged roster (no range) from its own cache namespace and stored read', async () => {
+    getAllEmployeesInternal
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'Roster' })]))
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'Ranged' })]));
+
+    expect((await run(null)).rows[0].name).toBe('Roster');
+    expect((await run('12mo')).rows[0].name).toBe('Ranged');
+    expect(getAllEmployeesInternal.mock.calls).toEqual([
+      [ACCOUNT, null],
+      [ACCOUNT, '12mo'],
+    ]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v4:roster', 'org-people-dir:v4:12mo']);
   });
 });

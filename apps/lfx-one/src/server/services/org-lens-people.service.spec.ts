@@ -104,7 +104,7 @@ function addPerson(account: string, personKey: string, username: string | null, 
 }
 
 function addRosterRow(account: string, key: string, username: string): void {
-  database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
+  database.prepare('INSERT INTO ORG_PEOPLE_ALL (ACCOUNT_ID, PERSON_KEY, LF_USERNAME) VALUES (?, ?, ?)').run(account, key, username);
 }
 
 /** One ORG_PEOPLE_ALL_RANGES row: `commits` code contributions in `range`, foundation-two engaged. */
@@ -130,7 +130,14 @@ beforeEach(() => {
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
-  database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
+  // Unranged roster (the reassign pickers' read, and the username → person-key lookup).
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_ALL (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT,
+      PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER,
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
+    )
+  `);
   // Per-range roster (lfx-self-serve#4163); empty unless a test adds someone.
   database.exec(`
     CREATE TABLE ORG_PEOPLE_ALL_RANGES (
@@ -172,6 +179,20 @@ describe('OrgLensPeopleService username company emails', () => {
 
     await expectBothPaths({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  // Ranges are nested, so someone live-only in the range on screen is live-only in 30d too, while the all
+  // range may hold a stored row for them instead — their `live-` key is then only in the 30d directory.
+  it('resolves a live-only key on the 30d directory, where a wider range would hold a stored row instead', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    getLive.mockImplementation(async (_req: unknown, _account: string, range: string | null) => ({
+      rows: [range === '30d' ? { personKey: LIVE_PERSON, lfUsername: 'mixeduser' } : { personKey: 'person-one', lfUsername: 'mixeduser' }],
+    }));
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual({
+      companyEmails: ['first@company.example'],
       companyEmailsStatus: 'resolved',
     });
   });
@@ -537,6 +558,24 @@ describe('OrgLensPeopleService person-key company emails', () => {
       for (const subResource of ['people-all:v3:30d', 'people-all:v3:all', 'people-former:v2:30d', 'people-former:v2:all']) {
         expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, subResource)!)).toBe(true);
       }
+    });
+
+    // The reassign pickers ask for no range: they keep the pre-#4163 roster.
+    it('reads the unranged ORG_PEOPLE_ALL roster when no range is given, cached apart from 12mo', async () => {
+      addRosterRow(ACCOUNT, 'person-roster', 'rosteruser');
+      addRangeRow(ACCOUNT, personKey, '12mo', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+
+      const roster = await service.getAllEmployees(ACCOUNT, null);
+      const ranged = await service.getAllEmployees(ACCOUNT, '12mo');
+
+      expect(roster.rows.map((row) => row.personKey)).toEqual(['person-roster']);
+      expect(ranged.rows.map((row) => row.personKey)).toEqual([personKey]);
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ENGAGED_FOUNDATION_IDS/.test(query));
+      expect(rosterRead?.[0]).toMatch(/ORG_PEOPLE_ALL\s/);
+      expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
+      expect(rosterRead?.[1]).toEqual([ACCOUNT]);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v3:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v3:12mo')!)).toBe(true);
     });
   });
 
