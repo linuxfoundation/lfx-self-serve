@@ -160,7 +160,7 @@ test.describe('Vote permalink (#3659)', () => {
       await expect(page).toHaveURL(new RegExp(`/votes/${VOTE_UID}$`));
       await expect(page.getByRole('heading', { name: "You're not a voter on this vote", exact: true })).toBeVisible({ timeout: RENDER_TIMEOUT });
       await expect(page.getByTestId('vote-detail-voter-not-participant')).toBeVisible();
-      await expect(page.getByTestId('vote-detail-header-title')).toHaveText(VOTE_NAME);
+      await expect(page.getByTestId('vote-detail-header-title')).toHaveText(linkedVote.name);
       await expect(page.getByTestId('vote-detail-header-status')).toBeVisible();
       await expect(page.getByTestId('vote-detail-description')).toHaveCount(0);
       await expect(page.getByTestId('vote-detail-facts')).toHaveCount(0);
