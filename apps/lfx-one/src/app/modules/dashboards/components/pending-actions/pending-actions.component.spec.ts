@@ -590,4 +590,33 @@ describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)'
     expect(castVoteRequested).toHaveBeenCalledWith('vote-1');
     expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeNull();
   });
+
+  // #4148: at phone width the inline ballot stacks 44px choice rows and is taller than the row's 12rem
+  // max-height, so the row's overflow:hidden clipped it to its first lines (prompt text only, no choices
+  // or Submit). The expanded row lifts the cap; a collapsed row and a drawer-bound vote keep it.
+  it('lifts the row height cap only while the inline ballot is expanded', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+    const row = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-item-Vote"]');
+
+    expect(row().classList).not.toContain('is-vote-expanded');
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+    expect(row().classList).toContain('is-vote-expanded');
+  });
+
+  it('does not lift the cap for a drawer-bound vote', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-item-Vote"]').classList).not.toContain('is-vote-expanded');
+  });
 });
