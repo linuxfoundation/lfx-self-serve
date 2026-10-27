@@ -1163,4 +1163,115 @@ describe('AccountContextService — All Organizations roll-up', () => {
     expect(service.selectedAccount().uid).toBe(UID_A);
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
   });
+
+  /**
+   * Regression, PR #4415 review 10. The demotion re-points the address; that navigation runs
+   * `orgPathParamGuard`, which adopts through `adoptFromAddress` → `setAccount`. An ordinary write
+   * clears the hold, so the demotion's own follow-up wrote the concrete uid over `{ uid: 'all' }` a
+   * moment after taking the hold — for the inherited-grants caller it exists for.
+   */
+  it('survives the address adoption its own re-point sets off', () => {
+    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    expect(service.isRollUp()).toBe(true);
+
+    rollUpFlag.set(false);
+    TestBed.tick();
+    const demotedTo = service.selectedAccount().uid as string;
+
+    // What the guard does on the re-pointed navigation.
+    service.adoptFromAddress({ accountId: demotedTo, accountName: 'Alpha Inc', membershipTier: '', uid: demotedTo, slug: 'alpha-inc' });
+
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // A different organization is the caller going somewhere themselves, which IS a choice.
+  it('releases the hold when a different organization is adopted from an address', () => {
+    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    rollUpFlag.set(false);
+    TestBed.tick();
+
+    const other = service.selectedAccount().uid === UID_A ? UID_B : UID_A;
+    service.adoptFromAddress({ accountId: other, accountName: 'Other', membershipTier: '', uid: other, slug: 'other-inc' });
+
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: other });
+  });
+
+  /**
+   * Regression, PR #4415 review 10 (high). With the flag resolved off and the grants not yet
+   * answered, `rollUpEligibilityPending` short-circuits to false — so a caller with no persona
+   * seeds had nothing to be demoted to, and the guard's only answer was `/org/not-found`: a dead
+   * end later grants cannot repair, since reconciliation stops once the roll-up is deselected.
+   */
+  it('admits a cold /org/all visit it cannot yet decide, rather than stranding the caller', () => {
+    rollUpFlag.set(false);
+    grants.loaded.set(false);
+    service.initializeUserOrganizations([]);
+
+    expect(service.selectRollUp({ admitWhilePending: true })).toBe(true);
+    expect(service.demoteAddressedRollUp()).toBeNull();
+  });
+
+  it('demotes that caller as soon as the grants name an organization', () => {
+    rollUpFlag.set(false);
+    grants.loaded.set(false);
+    service.initializeUserOrganizations([]);
+    service.selectRollUp({ admitWhilePending: true });
+
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_B);
+  });
+
+  // Settled grants with nothing in them is a real answer, so the dead end is still correct.
+  it('still refuses when the grants have settled on nothing', () => {
+    rollUpFlag.set(false);
+    grants.loaded.set(true);
+    service.initializeUserOrganizations([]);
+
+    expect(service.selectRollUp({ admitWhilePending: true })).toBe(false);
+  });
+
+  /**
+   * Regression, PR #4415 review 11. The effect-driven demotion applied its fallback with a bare
+   * `setAccount`, leaving it unpinned — so for a grant-only caller an empty persona re-seed between
+   * the demotion and the router settling reset the selection to the placeholder, and the deferred
+   * re-point then read that placeholder and redirected to `/org/not-found` despite the grant.
+   */
+  it('pins the effect-driven demotion fallback against an empty re-seed', () => {
+    currentNavigation = { id: 1 };
+    routerUrl = '/';
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([]);
+    expect(service.isRollUp()).toBe(true);
+
+    // Grants settle on one organization: demotion fires, the re-point is deferred behind the
+    // in-flight navigation.
+    grants.loaded.set(true);
+    TestBed.tick();
+    expect(service.selectedAccount().uid).toBe(UID_B);
+
+    // The persona refresh lands, with nothing in it — this used to blank the selection.
+    service.initializeUserOrganizations([]);
+    expect(service.selectedAccount().uid).toBe(UID_B);
+
+    // So the deferred re-point addresses the organization, not the dead end.
+    currentNavigation = null;
+    routerUrl = '/org/all/people';
+    routerEvents.next(new NavigationEnd(1, '/org/all/people', '/org/all/people'));
+
+    return Promise.resolve().then(() => {
+      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(navigateByUrl).toHaveBeenCalledTimes(1);
+      expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_B}/people`);
+    });
+  });
 });

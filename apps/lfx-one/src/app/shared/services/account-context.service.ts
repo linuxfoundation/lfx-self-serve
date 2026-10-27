@@ -86,6 +86,17 @@ export class AccountContextService {
    * match), re-selecting the roll-up, or `clearAccount`.
    */
   private rollUpChoicePreserved = false;
+
+  /**
+   * While `rollUpChoicePreserved` holds, the uid the demotion moved to.
+   *
+   * The demotion re-points the address, that navigation runs `orgPathParamGuard`, and the guard
+   * adopts through `adoptFromAddress` → `setAccount` → which clears the hold and writes the concrete
+   * uid. So the demotion's own follow-up undid the hold a moment after taking it (#4415 review 10).
+   * Matching on the uid keeps that one adoption automatic while a later adoption of a DIFFERENT
+   * organization — the caller navigating somewhere themselves — still counts as a deliberate choice.
+   */
+  private rollUpHoldTargetUid: string | null = null;
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -248,8 +259,16 @@ export class AccountContextService {
     if (!this.rollUpFlag()) {
       return false;
     }
-    return !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok';
+    return this.grantsUnsettled();
   });
+
+  /**
+   * True while the grant sets are not a usable answer — still loading, or loaded from a lookup that
+   * failed or came back partial, which `OrgRoleGrantsService` reports as grants "unknown, not
+   * empty". Anything derived from them (the roll-up count, the demotion fallback) is a lower bound
+   * until this clears.
+   */
+  public readonly grantsUnsettled: Signal<boolean> = computed(() => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok');
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -451,10 +470,17 @@ export class AccountContextService {
     }
     this.selectedAccount.set(next);
     // `persist: false` keeps the stored selection as it is while still changing the live one — used
-    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`). Any
-    // ordinary write is a deliberate choice and ends that hold.
+    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`).
+    //
+    // An ordinary write ends the hold, because it is a deliberate choice — with one exception: a
+    // write of the very organization the hold demoted to. That is the demotion's own address
+    // re-point coming back through the guard, not the caller choosing anything.
     if (options?.persist !== false) {
-      this.rollUpChoicePreserved = false;
+      const isHeldTarget = this.rollUpChoicePreserved && !!next.uid && next.uid === this.rollUpHoldTargetUid;
+      if (!isHeldTarget) {
+        this.rollUpChoicePreserved = false;
+        this.rollUpHoldTargetUid = null;
+      }
       this.persistToStorage(next);
     }
   }
@@ -469,7 +495,16 @@ export class AccountContextService {
    * `/org/all` cannot put a single-org caller into a mode built for several.
    */
   public selectRollUp(options?: { admitWhilePending?: boolean }): boolean {
-    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && this.rollUpEligibilityPending());
+    // `rollUpEligibilityPending` short-circuits to false the moment the flag resolves off, without
+    // consulting the grants. On a cold `/org/all/…` with the flag off and the grants not yet
+    // answered, a caller with no persona seeds therefore had nothing to be demoted TO, and the
+    // guard's only remaining answer was `/org/not-found` — a dead end later grants cannot repair,
+    // because reconciliation stops once the roll-up is deselected and no default may leave
+    // not-found. Admitting here is transiently wrong (the pages fail closed while the flag is off)
+    // and self-correcting: the reconciliation effect demotes and re-points as soon as the grants
+    // land. A dead end is neither (#4415 review 10).
+    const undecidable = this.grantsUnsettled() && this.rollUpFallbackOrganization() === null;
+    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && (this.rollUpEligibilityPending() || undecidable));
     if (!admissible) {
       return false;
     }
@@ -537,14 +572,9 @@ export class AccountContextService {
 
     if (preserveStoredChoice) {
       this.rollUpChoicePreserved = true;
+      this.rollUpHoldTargetUid = next.uid ?? null;
     }
-    this.setAccount(next, { persist: !preserveStoredChoice });
-    this.addressedUid.set(next.uid ?? null);
-    this.pinSource.set(next.uid ? 'address' : null);
-    // A uid-only stub (a grant with no seed behind it) has no display fields yet.
-    if (!next.accountName) {
-      void this.refreshCanonicalRecord(next);
-    }
+    this.applyDemotionFallback(next, preserveStoredChoice);
     return next;
   }
 
@@ -594,6 +624,7 @@ export class AccountContextService {
 
   public clearAccount(): void {
     this.rollUpChoicePreserved = false;
+    this.rollUpHoldTargetUid = null;
     this.addressedUid.set(null);
     this.pinSource.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
@@ -792,11 +823,11 @@ export class AccountContextService {
     // Grants settling on fewer than two organizations is the other reason, and that IS about the
     // caller: the roll-up is now *wrong* for them, so the cookie is updated like any other switch.
     const preserveStoredChoice = !this.rollUpFlag();
+    const fallback = this.rollUpFallbackOrganization();
     if (preserveStoredChoice) {
       this.rollUpChoicePreserved = true;
+      this.rollUpHoldTargetUid = fallback?.uid ?? null;
     }
-
-    const fallback = this.rollUpFallbackOrganization();
     if (!fallback) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       if (!preserveStoredChoice) {
@@ -806,12 +837,28 @@ export class AccountContextService {
       return;
     }
 
-    this.setAccount(fallback, { persist: !preserveStoredChoice });
-    // A uid-only stub (a grant with no seed behind it) has no display fields yet.
-    if (!fallback.accountName) {
-      void this.refreshCanonicalRecord(fallback);
-    }
+    this.applyDemotionFallback(fallback, preserveStoredChoice);
     this.repointAddressAfterDemotion(fallback);
+  }
+
+  /**
+   * Select the organization a demotion lands on, identically for both demotion paths.
+   *
+   * The pin is the part that is easy to leave out, and it was: the effect-driven demotion applied
+   * its fallback with a bare `setAccount`, so for a grant-only caller an empty persona re-seed
+   * arriving between the demotion and the router settling reset the selection to the placeholder —
+   * and the deferred re-point then read that placeholder and sent them to `/org/not-found` despite
+   * the grant they still held (#4415 review 11). Pinned as an address selection, exactly as a
+   * resolver hit, nothing may replace it before the navigation lands.
+   */
+  private applyDemotionFallback(next: Account, preserveStoredChoice: boolean): void {
+    this.setAccount(next, { persist: !preserveStoredChoice });
+    this.addressedUid.set(next.uid ?? null);
+    this.pinSource.set(next.uid ? 'address' : null);
+    // A uid-only stub (a grant with no seed behind it) has no display fields yet.
+    if (!next.accountName) {
+      void this.refreshCanonicalRecord(next);
+    }
   }
 
   /**
@@ -887,6 +934,7 @@ export class AccountContextService {
   /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
   private applyRollUpSelection(): void {
     this.rollUpChoicePreserved = false;
+    this.rollUpHoldTargetUid = null;
     this.selectedAccount.set(ROLLUP_ACCOUNT);
     this.persistToStorage(ROLLUP_ACCOUNT);
     this.addressedUid.set(ORG_ROLLUP_SEGMENT);
