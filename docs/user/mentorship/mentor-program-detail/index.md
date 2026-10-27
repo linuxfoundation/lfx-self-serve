@@ -48,7 +48,7 @@ On the **Tasks** tab, each submitted task offers **Approve** or **Request Change
 
 Approving a task locks it for the mentee: from then on only a mentor can change it.
 
-**Request Changes** sends the task back to the mentee as **In Progress**. The mentee is not emailed and sees no reason, so tell them directly what to change.
+**Request Changes** sends the task back to the mentee as **To Do**. The mentee is not emailed and sees no reason, so tell them directly what to change.
 
 ## Applicant task status
 
