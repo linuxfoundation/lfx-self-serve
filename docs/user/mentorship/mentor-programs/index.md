@@ -28,9 +28,9 @@ Only approved programs appear here. A request still waiting on a Program Admin d
 2. Select **Edit Mentor Profile**.
 3. Under **Mentorship Program Details**, open **Select LFX Mentorship** and pick the program. You can type to search.
 
-**Selecting the program sends the request immediately.** It does not wait for you to save, and closing the drawer with **Cancel** does not take it back — **Save** only persists edits to the profile fields. If you picked the wrong program, withdraw the request from its row.
+**Selecting the program sends the request immediately.** It does not wait for you to save, and closing the panel with **Cancel** does not take it back — **Save** only persists edits to the profile fields. If you picked the wrong program, withdraw the request from its row.
 
-A program you have already requested, already mentor, or were declined for is not offered in the picker. Withdrawing a request puts the program back in the list, and you can ask again.
+A program you have already requested, already mentor, or were declined for is not offered in the list. Withdrawing a request puts the program back in the list, and you can ask again.
 
 ## Withdraw a request
 

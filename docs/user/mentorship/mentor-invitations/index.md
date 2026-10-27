@@ -18,7 +18,7 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 
 ## Steps
 
-1. Open the invitation email and select its link. It opens `/mentorship/mentor/invites` with the token on the URL.
+1. Open the invitation email and select its link. It opens your mentor invitations page, already showing that invitation.
 2. Sign in at [app.lfx.dev](https://app.lfx.dev) if you are not already signed in.
 3. Review the program named on the page.
 4. Select **Accept** or **Decline**.

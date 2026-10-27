@@ -43,7 +43,7 @@ Where you create a task depends on your role. In both cases it is the mentee lis
 2. For one mentee, use the **+** on their row. For several, use **Create Group Task** above the table and pick the assignees.
 3. Fill in the form and select **Add Task**.
 
-The **Assign to** picker only appears when you are creating a group task. A per-row create is assigned to that mentee already.
+The **Assign to** list only appears when you are creating a group task. A per-row create is assigned to that mentee already.
 
 ### Change a task
 

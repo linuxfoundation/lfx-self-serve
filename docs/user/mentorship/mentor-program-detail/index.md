@@ -37,7 +37,7 @@ The applicant's row and name do not open a profile page, and there is no cover l
 
 Tasks are created from the **Mentees** tab, not the Tasks tab, and only for an accepted mentee:
 
-- **One mentee** — use the **+** on their row. The task is assigned to them, with no assignee picker.
+- **One mentee** — use the **+** on their row. The task is assigned to them, with no assignee to choose.
 - **Several mentees** — use **Create Group Task** above the table, then pick the assignees, with **Select all** and **Clear** to hand.
 
 To change a task, expand the mentee's row with **View Tasks** and use **Edit Task**. A task's assignee cannot be changed after it is created.

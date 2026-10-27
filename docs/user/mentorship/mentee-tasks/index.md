@@ -18,7 +18,7 @@ The **My Tasks** tab holds everything a program has assigned you — the prerequ
 
 ## Task status
 
-You set a task's status yourself from its dropdown, but only certain moves are allowed:
+You set a task's status yourself from the status menu on its row, but only certain moves are allowed:
 
 | Status          | What it means                       | Where you can move it                                           |
 | --------------- | ----------------------------------- | --------------------------------------------------------------- |
@@ -28,7 +28,7 @@ You set a task's status yourself from its dropdown, but only certain moves are a
 
 **Submitted** is greyed out on a task still in **To Do** — start it first. You cannot move a task back to **To Do** once it is under way.
 
-A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, the dropdown locks: "Completed tasks can only be changed by your mentor."
+A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, the status menu locks: "Completed tasks can only be changed by your mentor."
 
 ## Steps
 
@@ -72,7 +72,7 @@ Contact your mentor or the Program Admin if you need a task reopened.
 
 ## Troubleshooting
 
-Each of these appears as a toast, and your task list is re-read so it matches what the program sees.
+Each of these appears as a short message on screen, and your task list reloads so it matches what the program sees.
 
 | What you see                                                                                                                                 | What it means                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |

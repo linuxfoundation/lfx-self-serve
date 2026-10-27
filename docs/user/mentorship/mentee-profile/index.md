@@ -19,7 +19,7 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee 
 
 1. Open [app.lfx.dev/mentorship/mentee/profile](https://app.lfx.dev/mentorship/mentee/profile).
 2. Edit your introduction.
-3. Adjust **skills you have** and **skills you want** with the skills picker. Up to 100 skills, each up to 300 characters.
+3. Adjust **skills you have** and **skills you want** from the skills list. Up to 100 skills, each up to 300 characters.
 4. Save.
 
 ## After completing

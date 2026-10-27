@@ -9,7 +9,9 @@ last_updated: 2026-10-26
 intercom_collection: Mentorship
 ---
 
-**Download by Status** produces a CSV of one tab's applications — open terms on **Current Mentees**, closed terms on **Past Mentees** — for one status or for all of them.
+These steps apply to Program Admins.
+
+**Download by Status** produces a CSV (comma-separated values) file of one tab's applications — open terms on **Current Mentees**, closed terms on **Past Mentees** — for one status or for all of them.
 
 ## Before you begin
 

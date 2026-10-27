@@ -20,7 +20,7 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 
 1. Open [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select the program.
 2. Go to the **Mentors** tab.
-3. To bring someone on, send an invitation. They receive an email and answer it in LFX.
+3. To bring someone on, send an invitation. They receive an email and answer it in LFX Self Serve.
 4. Use the row action. Which one a row offers depends on the mentor's status:
 
    | Status              | Row action                                             |

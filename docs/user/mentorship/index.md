@@ -35,20 +35,20 @@ Go to **app.lfx.dev** and select **Mentorship** from the left navigation sidebar
 
 - **Program**: a project's mentorship offering. A program has a status that decides whether it is listed and whether it can take applications.
 - **Term**: the dated run of a program. A program may have several terms; a term is **Open** or **Closed**.
-- **Application**: one person's request to join a program for a term, as a mentee or a mentor. The `role` distinguishes them, and the status vocabulary is shared.
+- **Application**: one person's request to join a program for a term, as a mentee or a mentor. An application is either a mentee application or a mentor application, and both use the same set of statuses.
 - **Task**: work assigned to a mentee. A **prerequisite** task is part of an application; a non-prerequisite task is the term's work. A task can require a file upload.
 - **Reviewer note**: free text saved on an application and visible to every admin and mentor of that program — not to the mentee.
-- **Program Admin**: the person who administers a program. Not the same thing as an upstream project maintainer.
+- **Program Admin**: the person who administers a mentorship program — they enroll it, invite mentors, and decide on applications.
 
 ## Program status
 
-| Status             | Meaning                              |
-| ------------------ | ------------------------------------ |
-| **Open**           | Approved and running                 |
-| **Pending Review** | Awaiting LFX review after enrollment |
-| **Completed**      | The program's terms have finished    |
-| **Rejected**       | Not approved during review           |
-| **Hidden**         | Removed from public listings         |
+| Status             | Meaning                                           |
+| ------------------ | ------------------------------------------------- |
+| **Open**           | Approved and running                              |
+| **Pending Review** | Awaiting Linux Foundation review after enrollment |
+| **Completed**      | The program's terms have finished                 |
+| **Rejected**       | Not approved during review                        |
+| **Hidden**         | Removed from public listings                      |
 
 **Rejected** applies only to a program. An application that is turned down is **Declined**.
 
@@ -67,4 +67,4 @@ Go to **app.lfx.dev** and select **Mentorship** from the left navigation sidebar
 
 - [Mentorship FAQ](./faq/) — answers to common questions across all three roles
 - [Profile](../profile/) — the account details your mentee and mentor profiles build on
-- [Transactions](../account/transactions/) — payment history across LFX products
+- [Transactions](../account/transactions/) — payment history across the Linux Foundation's LFX products

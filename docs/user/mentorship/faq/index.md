@@ -13,7 +13,7 @@ intercom_collection: Mentorship
 
 ### How many programs can I apply to at once?
 
-Three. Withdrawing an application frees a slot straight away.
+You can have up to three applications open at a time. Withdrawing an application frees a slot straight away.
 
 ### My application says "Not Selected" — what happened?
 
@@ -21,7 +21,7 @@ The program declined it for that term. You can apply to a different program, or 
 
 ### Why can't I mark my task as Submitted?
 
-One of four reasons:
+A task cannot be submitted for one of four reasons:
 
 - **The task is still in To Do.** Move it to **In Progress** first.
 - **It needs a file you have not uploaded.** The row says "This task needs a file before it can be submitted. Upload one first." Upload it — that submits the task for you, so there is no separate step.
@@ -34,7 +34,7 @@ Prerequisite tasks are part of your application and come before a decision. Task
 
 ### Can I undo a withdrawal?
 
-No. You would have to apply again, and the term may have closed in the meantime.
+No, a withdrawal cannot be undone. You would have to apply again, and the term may have closed in the meantime.
 
 ### Where do I actually apply?
 
@@ -44,34 +44,34 @@ Find the program at [mentorship.linuxfoundation.org](https://mentorship.linuxfou
 
 ### How do I join a program?
 
-Two ways, and they do not work the same:
+There are two ways onto a program, and they do not work the same:
 
 - **A Program Admin invites you.** Accepting the invitation puts you straight onto the program; no further approval is needed.
 - **You raise a request yourself**, from **Mentor Profile → Edit Mentor Profile → Select LFX Mentorship**. That one waits for a Program Admin to approve it.
 
 You cannot request a program from **My Programs** — that tab only lists the programs you already mentor.
 
-### My invitation link does not work
+### Why doesn't my invitation link work?
 
-Invitation links are single use. Ask the Program Admin to send a new one.
+Invitation links can only be used once. Ask the Program Admin to send a new one.
 
 ### Can I decide on an application?
 
-No. Mentors review applicants, set and review tasks, and leave reviewer notes. Accepting, declining, withdrawing and graduating are Program Admin actions.
+No, mentors cannot accept or decline applications. Mentors review applicants, set and review tasks, and leave reviewer notes. Accepting, declining, withdrawing and graduating are Program Admin actions.
 
 ### Who can see my reviewer note?
 
-Every admin and mentor of that program. The mentee cannot.
+Every Program Admin and mentor on that program can see your note. The mentee cannot.
 
 ## For Program Admins
 
 ### When do I invite mentors?
 
-After the program is approved, from the **Mentors** tab. Enrollment does not invite mentors.
+You invite mentors after the program is approved, from the **Mentors** tab. Enrolling a program does not invite mentors.
 
 ### How many open terms can a program have?
 
-Four.
+A program can have up to four open terms at a time.
 
 ### What does "Decline by Term" do?
 
@@ -79,25 +79,21 @@ It declines every **pending** application in the term you pick. Accepted mentees
 
 ### What happens if I graduate a mentee with unfinished tasks?
 
-The confirmation tells you how many tasks are not Submitted or Completed. You can still graduate them.
+You can graduate a mentee who still has unfinished tasks. The confirmation tells you how many are not Submitted or Completed before you go ahead.
 
-### A decision failed and the list refreshed — why?
+### Why did my decision fail and the list refresh?
 
-Someone else decided first, or the application changed. Check its new status before acting again.
+The application had already changed before your decision was saved — either someone else decided first, or its status moved for another reason. Check the new status before acting again.
 
 ### Why does my logo upload fail?
 
-The logo must be JPG or PNG, 420 × 420 px, and 2 MB or smaller. SVG is not accepted. If the program saved but the logo did not, add it later from the program card.
+A logo is rejected when it is the wrong format, the wrong size, or too large a file. It must be JPG or PNG, 420 × 420 px, and 2 MB or smaller. SVG is not accepted. If the program saved but the logo did not, add it later from the program card.
 
-## Terminology
+## Statuses
 
-### Rejected or declined?
+### What is the difference between Rejected and Declined?
 
-**Rejected** is only ever used for a program that was not approved during review. An application that is turned down — mentee or mentor — is **Declined**.
-
-### Program Admin or maintainer?
-
-**Program Admin**. "Maintainer" means an upstream project maintainer elsewhere in LFX; the person who administers a mentorship program is a Program Admin.
+**Rejected** applies only to a program that was not approved during review. **Declined** applies to an application that was turned down, whether it was a mentee or a mentor application.
 
 ## Related sections
 

@@ -22,7 +22,7 @@ Registering creates your mentee profile. Program mentors read it when they revie
 1. Go to [app.lfx.dev/mentorship/mentee](https://app.lfx.dev/mentorship/mentee).
 2. Fill in the registration form:
    - **About me** — a short introduction for mentors.
-   - **Skills you have** and **skills you want** — add them with the skills picker. You can add up to 100 skills of up to 300 characters each.
+   - **Skills you have** and **skills you want** — add them from the skills list. You can add up to 100 skills of up to 300 characters each.
    - **Country of residence** — required; the form will not submit without it.
 3. Complete the **Demographics** section if you wish. It is optional, and you can answer "prefer not to say" to any of it.
 4. Tick each statement under **Eligibility Requirements**:
@@ -35,9 +35,9 @@ Registering creates your mentee profile. Program mentors read it when they revie
 
 ## After completing
 
-You land on **My Mentorship**, the mentee shell, with three tabs: **Overview**, **My Tasks** and **Mentee Profile**.
+You land on **My Mentorship**, your mentee area, which has three tabs: **Overview**, **My Tasks** and **Mentee Profile**.
 
-If you already have a mentee profile, opening `/mentorship/mentee` does not show the form again — it takes you straight to your overview, or to the apply page when you arrived from a program link.
+If you already have a mentee profile, returning to the Mentee area does not show the form again — it takes you straight to your overview, or to the apply page when you arrived from a program link.
 
 ## Troubleshooting
 

@@ -27,13 +27,13 @@ The list is paged twelve programs at a time.
 
 ## Program status
 
-| Status             | What it means                     |
-| ------------------ | --------------------------------- |
-| **Open**           | Approved and running              |
-| **Pending Review** | Submitted and awaiting LFX review |
-| **Completed**      | Its terms have finished           |
-| **Rejected**       | Not approved during review        |
-| **Hidden**         | Removed from public listings      |
+| Status             | What it means                                  |
+| ------------------ | ---------------------------------------------- |
+| **Open**           | Approved and running                           |
+| **Pending Review** | Submitted and awaiting Linux Foundation review |
+| **Completed**      | Its terms have finished                        |
+| **Rejected**       | Not approved during review                     |
+| **Hidden**         | Removed from public listings                   |
 
 ## Troubleshooting
 

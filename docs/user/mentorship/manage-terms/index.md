@@ -9,7 +9,7 @@ last_updated: 2026-10-26
 intercom_collection: Mentorship
 ---
 
-A **term** is a dated run of a program. Applications are always made to a term, not to the program as a whole.
+A **term** is a dated run of a program. Applications are always made to a term, not to the program as a whole. Only a Program Admin can create or change a term.
 
 ## Before you begin
 

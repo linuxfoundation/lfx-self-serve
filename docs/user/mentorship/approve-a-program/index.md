@@ -13,7 +13,7 @@ When a program is enrolled, reviewers receive an email with approve and reject l
 
 ## Before you begin
 
-Use the link in the review email. It opens `/mentorship/program-review/:programId` with the decision pre-selected.
+Use the link in the review email. It opens that program's review page with your decision already selected.
 
 ## Steps
 

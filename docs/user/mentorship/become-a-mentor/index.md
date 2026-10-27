@@ -25,9 +25,9 @@ Registering creates your mentor profile. Program Admins and applicants both read
 
 ## After completing
 
-You land on the mentor shell, with two tabs: **My Programs** and **Mentor Profile**.
+You land on the Mentor area, which has two tabs: **My Programs** and **Mentor Profile**.
 
-If you already have a mentor profile, opening `/mentorship/mentor` takes you straight to **My Programs** rather than showing the form again.
+If you already have a mentor profile, returning to the Mentor area takes you straight to **My Programs** rather than showing the form again.
 
 ## Related
 

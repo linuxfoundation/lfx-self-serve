@@ -9,7 +9,7 @@ last_updated: 2026-10-26
 intercom_collection: Mentorship
 ---
 
-Enrollment is a three-step form that submits a program for LFX review. Nothing is saved until you submit on the final step — moving between steps only validates them — so the form warns you before you leave with unsaved answers. Set aside enough time to finish it in one sitting.
+Enrollment is a three-step form that submits a program for Linux Foundation review. Nothing is saved until you submit on the final step — moving between steps only validates them — so the form warns you before you leave with unsaved answers. Set aside enough time to finish it in one sitting.
 
 ## Before you begin
 
