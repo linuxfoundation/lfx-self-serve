@@ -1,21 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH, VOTES_MOBILE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
-import { finalize } from 'rxjs';
+import { finalize, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-ballot-inline',
@@ -28,6 +30,8 @@ export class VoteBallotInlineComponent {
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly breakpointObserver = inject(BreakpointObserver);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs / Outputs ===
   public readonly vote = input.required<Vote>();
@@ -51,6 +55,9 @@ export class VoteBallotInlineComponent {
   protected readonly allowAbstain = computed(() => !!this.vote().allow_abstain);
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  // Phone layout below the sm breakpoint; always false on the server so SSR renders the desktop shape.
+  protected readonly isMobile: Signal<boolean> = this.initIsMobile();
+  protected readonly touchClass: Signal<string> = computed(() => (this.isMobile() ? 'min-h-[44px]' : ''));
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
@@ -111,6 +118,13 @@ export class VoteBallotInlineComponent {
   }
 
   // === Private Initializers ===
+  private initIsMobile(): Signal<boolean> {
+    if (!isPlatformBrowser(this.platformId)) return signal(false);
+    return toSignal(this.breakpointObserver.observe(VOTES_MOBILE_MEDIA_QUERY).pipe(map((state) => state.matches)), {
+      initialValue: this.breakpointObserver.isMatched(VOTES_MOBILE_MEDIA_QUERY),
+    });
+  }
+
   private initSubmitDisabled(): Signal<boolean> {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }

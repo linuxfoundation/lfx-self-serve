@@ -6,16 +6,19 @@
 
   <div [formGroup]="form">
     @if (isMultipleChoice()) {
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
         @for (choice of question()?.choices ?? []; track choice.choice_id) {
-          <label class="flex items-center gap-1.5 text-xs" [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id">
+          <label
+            class="flex items-center gap-1.5 text-sm sm:text-xs break-words"
+            [class]="touchClass()"
+            [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id">
             <p-checkbox [value]="choice.choice_id" [formControlName]="question()!.question_id" [binary]="false" />
             <span>{{ choice.choice_text }}</span>
           </label>
         }
       </div>
     } @else {
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
         @for (choice of question()?.choices ?? []; track choice.choice_id) {
           <lfx-radio-button
             [form]="form"
@@ -24,6 +27,7 @@
             [value]="choice.choice_id"
             [inputId]="'vote-ballot-inline-choice-' + choice.choice_id"
             [label]="choice.choice_text"
+            [touchTarget]="isMobile()"
             [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id" />
         }
       </div>
@@ -62,9 +66,12 @@
     </div>
   }
 
-  <div class="flex items-center justify-end gap-2 pt-1">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1" data-testid="dashboard-pending-actions-vote-footer">
     @if (allowAbstain()) {
-      <label class="flex items-center gap-1.5 text-xs text-gray-600" data-testid="dashboard-pending-actions-vote-abstain-label">
+      <label
+        class="flex items-center gap-1.5 text-sm sm:text-xs text-gray-600 max-sm:order-1"
+        [class]="touchClass()"
+        data-testid="dashboard-pending-actions-vote-abstain-label">
         <p-checkbox [formControl]="abstainControl" [binary]="true" data-testid="dashboard-pending-actions-vote-abstain" />
         <span>Abstain</span>
       </label>
@@ -73,13 +80,17 @@
       size="small"
       severity="secondary"
       [outlined]="true"
+      class="max-sm:order-3"
       label="Cancel"
+      [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
       (onClick)="cancelled.emit()"
       data-testid="dashboard-pending-actions-vote-cancel" />
     <lfx-button
       size="small"
       severity="primary"
+      class="max-sm:order-2"
       label="Submit"
+      [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
       [disabled]="submitDisabled()"
       [loading]="submitting()"
       (onClick)="onSubmit()"
