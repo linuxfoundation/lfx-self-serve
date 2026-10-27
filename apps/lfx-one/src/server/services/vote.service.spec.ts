@@ -42,6 +42,7 @@ const {
   stripAuthPrefix,
   computeIsFoundation,
   addAccessToResources,
+  addAccessToResource,
   assertVoteWrite,
   sendEmail,
 } = vi.hoisted(() => ({
@@ -59,6 +60,7 @@ const {
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
   addAccessToResources: vi.fn(async (_req: unknown, resources: unknown[]) => resources),
+  addAccessToResource: vi.fn(async (_req: unknown, resource: object) => ({ ...resource, writer: false })),
   assertVoteWrite: vi.fn(),
   sendEmail: vi.fn(),
 }));
@@ -109,6 +111,7 @@ vi.mock('./project.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
+    public addAccessToResource = addAccessToResource;
   },
 }));
 vi.mock('./email.service', () => ({
@@ -220,6 +223,19 @@ describe('VoteService', () => {
       );
       expect(toEntityProjectFields).toHaveBeenCalledWith(project);
       expect(vote).toMatchObject(mappedFields);
+    });
+
+    it('decorates vote#writer only when includeWriter is set', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      addAccessToResource.mockImplementationOnce(async (_req: unknown, resource: object) => ({ ...resource, writer: true }));
+
+      const withWriter = await service.getVoteById(req, CANONICAL_UID, { includeWriter: true });
+      expect(addAccessToResource).toHaveBeenCalledWith(req, expect.objectContaining({ uid: voteFixture.uid }), 'vote');
+      expect(withWriter.writer).toBe(true);
+
+      addAccessToResource.mockClear();
+      await service.getVoteById(req, CANONICAL_UID);
+      expect(addAccessToResource).not.toHaveBeenCalled();
     });
 
     it('leaves the vote unenriched when the project lookup finds nothing', async () => {

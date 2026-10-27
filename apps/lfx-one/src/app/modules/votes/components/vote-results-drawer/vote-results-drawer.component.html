@@ -155,6 +155,18 @@
             <span class="text-slate-400">•</span>
             <span>{{ votingMethodText() }}</span>
           </div>
+          @if (canPresent()) {
+            <!-- Plain anchor: opens the chrome-less presenter in a new tab. votePresenterGuard (vote#writer) is the real gate. -->
+            <a
+              [href]="presenterPath()"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex w-fit items-center justify-center gap-2 min-h-[44px] px-4 rounded-md border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              data-testid="vote-results-drawer-present">
+              <i class="fa-light fa-presentation-screen" aria-hidden="true"></i>
+              Present
+            </a>
+          }
         }
       </div>
     </ng-template>

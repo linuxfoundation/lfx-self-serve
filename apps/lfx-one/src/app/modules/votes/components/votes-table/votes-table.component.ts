@@ -43,6 +43,7 @@ import {
   matchesMyVotesQuickFilter,
   toAbsoluteUrl,
   votePermalinkPath,
+  votePresenterPath,
 } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
@@ -300,6 +301,10 @@ export class VotesTableComponent {
     // other status. Gated on the vote's own writer flag, not project-level hasPMOAccess() — a
     // committee writer without project write access can still extend their own vote's deadline
     // (per @copilot-pull-request-reviewer).
+    // Present: chrome-less presenter in a new tab (#4140). Open votes show the live count, ended votes land on the result state.
+    if (vote.writer === true && (vote.status === PollStatus.ACTIVE || vote.status === PollStatus.ENDED)) {
+      items.push({ label: 'Present', icon: 'fa-light fa-presentation-screen', command: () => this.openPresenter(vote.uid) });
+    }
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Extend', icon: 'fa-light fa-calendar', command: () => this.onExtendDeadline(vote) });
       items.push({
@@ -330,6 +335,11 @@ export class VotesTableComponent {
     }
     this.rowActionMenuItems.set(items);
     menu.toggle(event);
+  }
+
+  /** Opens the presenter view in a new tab; browser-only (menu commands only run from a click). */
+  protected openPresenter(voteUid: string): void {
+    this.document.defaultView?.open(votePresenterPath(voteUid), '_blank', 'noopener');
   }
 
   /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */

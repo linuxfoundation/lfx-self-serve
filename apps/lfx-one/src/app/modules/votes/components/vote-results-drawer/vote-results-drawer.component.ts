@@ -25,6 +25,7 @@ import {
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isRankedPollType,
+  votePresenterPath,
   isVoteEndedEarly,
   mergeCommentResults,
 } from '@lfx-one/shared/utils';
@@ -138,6 +139,13 @@ export class VoteResultsDrawerComponent {
   /** One-line plain-English explainer for each vote type, shown on hover of the voter header pill. */
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
+
+  /** Present is offered to managers of an open or ended vote; a decorated `writer: false` hides it. votePresenterGuard re-checks vote#writer. */
+  protected readonly canPresent: Signal<boolean> = computed(() => {
+    const v = this.vote();
+    return this.audience() === 'creator' && !!v && v.writer !== false && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
+  });
+  protected readonly presenterPath: Signal<string> = computed(() => votePresenterPath(this.vote()?.uid ?? ''));
 
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
   // close-date text falls back to UTC there and is replaced on client hydration.
