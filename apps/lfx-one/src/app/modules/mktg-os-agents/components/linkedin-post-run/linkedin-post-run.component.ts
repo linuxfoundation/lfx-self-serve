@@ -238,7 +238,8 @@ export class LinkedinPostRunComponent {
         this.editing.set(!response.profile || editProfile);
         const token = params.get('questions');
         const prepared = token && !editProfile ? this.attempts.consumeQuestions(token, this.context.activeContextUid(), this.intake().agentId) : null;
-        const latest = !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
+        const latest =
+          !this.freshMode() && !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
         this.pendingNotice.set(latest);
         const pending =
           prepared?.pending ??
