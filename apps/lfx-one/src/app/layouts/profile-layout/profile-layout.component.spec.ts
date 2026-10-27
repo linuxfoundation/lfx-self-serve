@@ -715,7 +715,13 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
       getCurrentUserProfile,
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of([])),
-      applyDisplayName: vi.fn((first: string, last: string) => user.update((current) => (current ? { ...current, name: `${first} ${last}`.trim() } : current))),
+      // Mirrors UserService.applyDisplayName: the user object is only replaced when the name changes.
+      applyDisplayName: vi.fn((first: string, last: string) =>
+        user.update((current) => {
+          const name = `${first} ${last}`.trim();
+          return current && current.name !== name ? { ...current, name } : current;
+        })
+      ),
     };
 
     TestBed.configureTestingModule({
@@ -778,13 +784,14 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     expect(user()).toBe(before);
   });
 
-  it('leaves the shared user untouched when the name did not change', async () => {
-    const { fixture, user } = await setup();
+  it('leaves the shared user untouched when the name did not change, but still latches the save', async () => {
+    const { fixture, user, applyDisplayName } = await setup();
     const before = user();
 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Lovelace' });
 
     expect(user()).toBe(before);
+    expect(applyDisplayName).toHaveBeenCalledWith('Ada', 'Lovelace', true);
   });
 
   it('leaves the shared user untouched while impersonating', async () => {

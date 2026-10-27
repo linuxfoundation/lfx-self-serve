@@ -536,7 +536,12 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     // overridden below.
     const [personaResult, storedName] = await Promise.all([
       resolvePersonaForSsr(req, res),
-      auth.user && !isImpersonating(req) ? resolveStoredDisplayName(req) : Promise.resolve(null),
+      auth.user && !isImpersonating(req)
+        ? resolveStoredDisplayName(req, {
+            given_name: auth.user.given_name || auth.user.first_name,
+            family_name: auth.user.family_name || auth.user.last_name,
+          })
+        : Promise.resolve(null),
     ]);
     if (auth.user && storedName) {
       auth.user = { ...auth.user, name: storedName };

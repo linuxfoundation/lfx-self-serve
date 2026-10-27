@@ -3,7 +3,9 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { UserMetadataUpdateResponse } from '@lfx-one/shared/interfaces';
+import { OidcNameParts, UserMetadataUpdateResponse } from '@lfx-one/shared/interfaces';
+// Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls in `@angular/forms`, which throws at load in
+// plain-Node runtimes (e.g. this helper's vitest spec) that have no Angular compiler.
 import { buildDisplayName } from '@lfx-one/shared/utils/display-name.utils';
 import { Request } from 'express';
 
@@ -13,7 +15,7 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
 
 let natsService: NatsService | null = null;
 
-async function readStoredDisplayName(req: Request): Promise<string | null> {
+async function readStoredDisplayName(req: Request, fallback: OidcNameParts): Promise<string | null> {
   const username = await getUsernameFromAuth(req);
   if (!username) {
     return null;
@@ -29,7 +31,9 @@ async function readStoredDisplayName(req: Request): Promise<string | null> {
     return null;
   }
 
-  return buildDisplayName(body.data.given_name, body.data.family_name) || null;
+  // Per-part fallback to the OIDC claims, matching `GET /api/profile`, so a single stored part doesn't
+  // render alone on first paint and then change once the client fetches the profile.
+  return buildDisplayName(body.data.given_name || fallback.given_name, body.data.family_name || fallback.family_name) || null;
 }
 
 /**
@@ -40,14 +44,14 @@ async function readStoredDisplayName(req: Request): Promise<string | null> {
  * (NATS_CONFIG.SSR_DISPLAY_NAME_TIMEOUT) and resolves to null on timeout or any failure, so it can
  * only ever fall back to the OIDC name, never delay or break the render beyond that budget.
  */
-export async function resolveStoredDisplayName(req: Request): Promise<string | null> {
+export async function resolveStoredDisplayName(req: Request, fallback: OidcNameParts = {}): Promise<string | null> {
   let timer: NodeJS.Timeout | undefined;
   const budget = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), NATS_CONFIG.SSR_DISPLAY_NAME_TIMEOUT);
   });
 
   try {
-    return await Promise.race([readStoredDisplayName(req), budget]);
+    return await Promise.race([readStoredDisplayName(req, fallback), budget]);
   } catch (error) {
     logger.debug(req, 'ssr_display_name', 'Stored display name unavailable; using OIDC name', { err: error });
     return null;

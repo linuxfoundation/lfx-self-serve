@@ -233,6 +233,27 @@ describe('UserService', () => {
       expect(service.user()?.name).toBe('Ada Byron');
     });
 
+    it('keeps a saved name that matches the displayed name over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      const before = service.user();
+      service.applyDisplayName('Ada', 'Lovelace', true);
+      expect(service.user()).toBe(before);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('ignores the post-hydration name when the stored profile metadata did not load', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Old', last_name: 'Login' }, profile: null }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Byron' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
     it('does not apply the stored name while impersonating', async () => {
       httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
       service.impersonating.set(true);

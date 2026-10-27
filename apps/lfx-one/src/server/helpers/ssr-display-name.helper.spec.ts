@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { request, getUsernameFromAuth } = vi.hoisted(() => ({
   request: vi.fn(),
@@ -29,6 +29,10 @@ describe('resolveStoredDisplayName', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getUsernameFromAuth.mockResolvedValue('ada');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns the stored given and family name', async () => {
@@ -66,6 +70,11 @@ describe('resolveStoredDisplayName', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     await expect(result).resolves.toBeNull();
-    vi.useRealTimers();
+  });
+
+  it('fills a missing stored name part from the OIDC claims', async () => {
+    request.mockResolvedValue(reply({ success: true, username: 'ada', data: { family_name: 'Byron' } }));
+
+    await expect(resolveStoredDisplayName(req, { given_name: 'Ada', family_name: 'Lovelace' })).resolves.toBe('Ada Byron');
   });
 });

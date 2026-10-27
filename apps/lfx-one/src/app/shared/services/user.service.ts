@@ -191,8 +191,10 @@ export class UserService {
             this.uploadedAvatarUrl.set(profile.profile.picture);
           }
           // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
-          // a saved name change reverts on reload. The profile body carries the stored name.
-          if (!this.impersonating() && !this.profileNameSaved) {
+          // a saved name change reverts on reload. The profile body carries the stored name — but only
+          // trust it when the stored metadata loaded: on a failed read `/api/profile` still returns 200
+          // with `profile: null` and OIDC-derived names, which would replace the correct SSR name.
+          if (profile.profile && !this.impersonating() && !this.profileNameSaved) {
             this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
           }
         });
@@ -211,7 +213,9 @@ export class UserService {
     }
     // A name just saved in-session must win over the (eventually consistent) post-hydration fetch.
     this.profileNameSaved = this.profileNameSaved || saved;
-    this.user.set({ ...current, name });
+    if (name !== current.name) {
+      this.user.set({ ...current, name });
+    }
   }
 
   // Create a new user with permissions
