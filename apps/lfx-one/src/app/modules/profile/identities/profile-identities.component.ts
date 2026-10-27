@@ -74,9 +74,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       .map((enriched) => this.mapToConnectedIdentity(enriched))
   );
   public readonly loading: Signal<boolean> = computed(() => !this.identitiesState().loaded);
-  public readonly isEmpty: Signal<boolean> = computed(
-    () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
-  );
+  public readonly isEmpty: Signal<boolean> = computed(() => !this.identitiesLoadError() && this.identitiesState().loaded && this.identities().length === 0);
 
   // Raw EnrichedIdentity[] passed to ProfileLinuxEmailComponent to avoid a duplicate
   // getIdentities() fetch when both panels render on the Identities tab.
@@ -85,6 +83,8 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
+  // An unverified primary has no Verify action here, so it alone must not prompt the user to verify.
+  public readonly hasActionableUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().some((i) => !i.isPrimary));
   // Preferred meeting-invitation email (meeting-service). Its identity cannot be removed here — doing so
   // would orphan the meeting-service preference. Null address = no override (uses primary).
   public readonly meetingInviteEmail: Signal<string | null> = computed(() => this.identitiesState().inviteEmail);
@@ -241,7 +241,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       identifier: enriched.value,
       state: enriched.displayState === 'verified' ? 'verified' : 'unverified',
       icon: enriched.icon,
-      isPrimary: false,
+      isPrimary: enriched.isPrimary === true,
       ...(enriched.auth0UserId ? { auth0UserId: enriched.auth0UserId } : {}),
     };
   }
