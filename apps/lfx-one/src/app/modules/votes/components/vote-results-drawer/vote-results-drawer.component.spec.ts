@@ -826,3 +826,56 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
     });
   });
 });
+
+/**
+ * #4148: mobile layout. jsdom has no layout engine, so these pin the class contract: a full-height
+ * sheet below sm, option name and counts stacked vertically, wrapping text, and 44px controls.
+ */
+describe('VoteResultsDrawerComponent — mobile layout (#4148)', () => {
+  it('uses a full-height sheet below sm and keeps the existing width chain', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    const root = document.querySelector('.vote-results-drawer') as HTMLElement;
+    expect(root.className).toContain('max-sm:h-dvh');
+    expect(root.className).toContain('w-full');
+    expect(root.className).toContain('xl:w-[45%]');
+  });
+
+  it('stacks the option name above its votes and percentage on phones (live and final)', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+    const live = byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement;
+    expect(live.className).toContain('flex-col');
+    expect(live.className).toContain('sm:flex-row');
+    fixture.destroy();
+    document.body.innerHTML = '';
+    TestBed.resetTestingModule();
+
+    await setupResultsDrawer(makeResultsVote({ status: PollStatus.ENDED }), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+    const final = byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement;
+    expect(final.className).toContain('flex-col');
+    expect(final.className).toContain('sm:flex-row');
+  });
+
+  it('wraps long option text instead of truncating it', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    expect((byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement).className).toContain('break-words');
+    expect(byTestId('vote-results-drawer-title')?.className).toContain('break-words');
+    expect(byTestId('vote-results-drawer-title')?.className).not.toContain('truncate');
+  });
+
+  it('stacks the participation stats in a two-column grid on phones', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    const stats = byTestId('vote-results-participation')?.firstElementChild as HTMLElement;
+    expect(stats.className).toContain('grid-cols-2');
+    expect(stats.className).toContain('sm:flex');
+  });
+
+  it('gives the close button a 44px touch target', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    expect(byTestId('vote-results-drawer-close')?.className).toContain('min-h-[44px]');
+    expect(byTestId('vote-results-drawer-close')?.className).toContain('min-w-[44px]');
+  });
+});

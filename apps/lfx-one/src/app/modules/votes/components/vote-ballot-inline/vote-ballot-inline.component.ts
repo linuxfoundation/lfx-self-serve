@@ -12,6 +12,7 @@ import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -51,6 +52,10 @@ export class VoteBallotInlineComponent {
   protected readonly allowAbstain = computed(() => !!this.vote().allow_abstain);
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  // Phone layout below the sm breakpoint; false through the first render so it matches the SSR shape, then swaps.
+  protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
+  protected readonly touchClass: Signal<string> = computed(() => (this.isMobile() ? 'min-h-[44px]' : ''));
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();

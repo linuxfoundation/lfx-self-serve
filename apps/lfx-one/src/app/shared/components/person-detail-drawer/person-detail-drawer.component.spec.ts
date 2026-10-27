@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeDetail, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeDetail, OrgKeyContactAssignment, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
@@ -51,6 +51,18 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     primaryEmail,
     companyEmailsStatus: 'resolved',
   });
+  const assignment: OrgKeyContactAssignment = {
+    contactUid: 'contact-1',
+    membershipUid: 'membership-1',
+    email: 'first.person@vendor-corp.example',
+    firstName: 'First',
+    lastName: 'Person',
+    displayName: 'First Person',
+    title: 'Events Manager',
+    role: 'Billing Contact',
+    foundationSlug: 'foundation-one',
+    foundationName: 'Foundation One',
+  };
   // One subject per URL, created on first request, so each test answers activity and addresses independently.
   const reply = (url: string): Subject<unknown> => {
     let subject = responses.get(url);
@@ -296,6 +308,119 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(drawer.loading()).toBe(true);
     await render();
     expect(emailState('none')).toBeNull();
+  });
+
+  it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {
+    drawer.open(person);
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).next({
+      status: 'resolved',
+      assignments: [
+        { ...assignment, contactUid: 'contact-2', role: 'Marketing Contact', foundationName: 'Foundation Two' },
+        { ...assignment, contactUid: 'contact-1', role: 'Billing Contact', foundationName: 'Foundation One' },
+      ],
+    });
+    await render();
+
+    const rows = [...document.querySelectorAll('[data-testid="person-detail-drawer-key-contacts-list"] li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toEqual(['Billing ContactFoundation One', 'Marketing ContactFoundation Two']);
+    expect(byTestId('person-detail-drawer-key-contacts-empty')).toBeNull();
+  });
+
+  it('asks for the roles only once the tab is opened, then keeps them across tab switches', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    // Most drawer opens never visit this tab, and the read costs a company-address lookup.
+    expect(requested()).not.toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('events');
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested().filter((url) => url === `${BY_PERSON_KEY}/key-contacts`)).toHaveLength(1);
+  });
+
+  it('opens straight into the roles request when the opener defaults to that tab', async () => {
+    drawer.open({ ...person, defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_USERNAME}/key-contacts`);
+  });
+
+  // The server resolves the roster username for a person key, so no identity rides in the URL.
+  it('never puts a username in the roles request for a person key', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', username: 'first-person', defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+    expect(requested().some((url) => url.includes('username='))).toBe(false);
+  });
+
+  // The drawer stays open across an account switch, and every other read drops its stale answer at once.
+  // Supplied roles belong to the organization they were read under, so they must not outlive it.
+  it('drops opener-supplied roles when the account changes, and fetches for the new one', async () => {
+    drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
+    await render();
+    expect(drawer.keyContacts()).toEqual([assignment]);
+    expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
+
+    selectedAccount.set({ uid: 'org-2' });
+    // Synchronously, before any new response lands: the previous org's roles are already gone.
+    expect(drawer.keyContacts()).toEqual([]);
+    expect(drawer.keyContactsIdentified()).toBe(false);
+
+    await render();
+    expect(requested()).toContain('/api/orgs/org-2/lens/people/by-username/first-person/key-contacts');
+    expect(document.body.textContent).not.toContain('Billing Contact');
+  });
+
+  it('renders roles supplied by the opener without requesting them', async () => {
+    drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
+    await render();
+
+    expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
+    expect(drawer.keyContactsLoading()).toBe(false);
+    expect(drawer.keyContactsIdentified()).toBe(true);
+    expect(document.body.textContent).toContain('Billing Contact');
+  });
+
+  it.each([
+    { label: 'an identified person with no roles', response: { status: 'resolved', assignments: [] }, testId: 'empty' },
+    { label: 'a person the lookup never identified', response: { status: 'unidentified', assignments: [] }, testId: 'unavailable' },
+    { label: 'a lookup that errored upstream', response: { status: 'failed', assignments: [] }, testId: 'error' },
+    // A response with no status at all is a failure, never a verified empty list.
+    { label: 'a response missing its status', response: { assignments: [] }, testId: 'error' },
+  ])('keeps $label distinct in the Key Contacts tab', async ({ response, testId }) => {
+    drawer.open(person);
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).next(response);
+    await render();
+
+    expect(byTestId(`person-detail-drawer-key-contacts-${testId}`)).not.toBeNull();
+  });
+
+  it('shows a failed roles read without disturbing the activity tabs', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next(detail());
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).error(new HttpErrorResponse({ status: 500 }));
+    await render();
+    expect(byTestId('person-detail-drawer-key-contacts-error')).not.toBeNull();
+
+    drawer.setTab('events');
+    await render();
+    expect(drawer.error()).toBe(false);
+    expect(document.body.textContent).toContain('Member Summit');
   });
 
   it('loads activity and governance for a username-only opener (lfx-self-serve-ops#894)', async () => {
