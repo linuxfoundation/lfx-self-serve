@@ -166,11 +166,17 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/by-username/:username/company-emails', (req, res, next) =>
     orgLensPeopleController.getCompanyEmailsByUsername(req, res, next)
   );
+  // The key contact roles one person holds, for the drawer's Key Contacts tab. Registered before the
+  // `:personKey` routes for the same reason as the reads above — 'by-username' must not be consumed as a personKey.
+  router.get('/:orgUid/lens/people/by-username/:username/key-contacts', (req, res, next) =>
+    orgLensPeopleController.getPersonKeyContactsByUsername(req, res, next)
+  );
   // lfx-self-serve-ops#894 — person detail for openers that carry only an LF username (Board/Committee/Key Contact/Access).
   router.get('/:orgUid/lens/people/by-username/:username/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetailByUsername(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
   // Company addresses for a person key; split from `/detail` so the drawer never waits on the address view.
   router.get('/:orgUid/lens/people/:personKey/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmails(req, res, next));
+  router.get('/:orgUid/lens/people/:personKey/key-contacts', (req, res, next) => orgLensPeopleController.getPersonKeyContacts(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).
   router.get('/:orgUid/lens/access/users', (req, res, next) => orgLensAccessController.getUsers(req, res, next));
