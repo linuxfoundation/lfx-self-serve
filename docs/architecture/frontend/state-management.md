@@ -497,6 +497,7 @@ the selected asset's comments through the same redraft flow. Framework, Kit and
 Boilerplates keep Comments, Revisions and About together in the right-hand column
 at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
 800px host-container threshold and each asset's inner container grids remain intact.
+The side panel uses one empty-comments instruction (Send and its reason appear only with open comments after a successful read), revision labels limited to version/state/date plus the Current pill, hover/focus Make current help rather than a footnote, and About rows for Agent and Stored only.
 Run previews, legacy/unreadable assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
 and boilerplate lengths identically in pins and the panel.
 The controls appear on hover/focus, and stay visible on hover-less devices; threads

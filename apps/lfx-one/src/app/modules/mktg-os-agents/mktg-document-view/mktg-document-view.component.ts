@@ -18,6 +18,7 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+  MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
@@ -36,7 +37,6 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
-  MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
   MktgApprovedRevisionState,
@@ -52,7 +52,6 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
-  describeMktgRevision,
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
@@ -76,6 +75,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
+import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import {
   catchError,
   combineLatest,
@@ -147,6 +147,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgFrameworkViewComponent,
     MktgCommentsPanelComponent,
     TooltipModule,
+    TooltipHostFocusDirective,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
     InputTextComponent,
@@ -250,28 +251,15 @@ export class MktgDocumentViewComponent {
         'Document'
     )
   );
-  protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
-    const view = this.view();
-    return view
-      ? view.revisions.map((revision) => ({
-          revision,
-          how: describeMktgRevision(revision, view.type),
-          authorLabel: describeMktgRevisionAuthor(revision.author),
-        }))
-      : [];
-  });
-  protected readonly currentSelectorLabel = computed(() => describeMktgRevisionAuthor(this.view()?.current?.changedBy));
+  protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
+  protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
   });
   protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
   protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
-  protected readonly visibleRevisionRows: Signal<MktgRevisionRow[]> = this.initVisibleRevisionRows();
-  protected readonly shortHash: Signal<string> = computed(() => {
-    const sha = this.view()?.revision.contentSha256 ?? '';
-    return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
-  });
+  protected readonly visibleRevisionRows: Signal<MktgRevisionSummary[]> = this.initVisibleRevisionRows();
   /**
    * The revision as a framework asset, when it is one: a JSON revision of the
    * foundation-message document whose text parses as a framework. Null for
@@ -1064,12 +1052,12 @@ export class MktgDocumentViewComponent {
     return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
   }
 
-  private initVisibleRevisionRows(): Signal<MktgRevisionRow[]> {
+  private initVisibleRevisionRows(): Signal<MktgRevisionSummary[]> {
     return computed(() => {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((row, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || row.revision.latest || row.revision.id === openId);
+      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
     });
   }
 
