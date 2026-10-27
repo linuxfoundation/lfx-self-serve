@@ -495,14 +495,16 @@ export class ProjectSelectorComponent {
     }
 
     // Favorited projects are pinned flat directly under the favorited foundations, so a star is never
-    // buried below the nested foundation block (GH-2995). They are excluded from nesting below.
+    // buried below the nested foundation block (GH-2995, #4397). They are excluded from nesting below,
+    // and favorited foundations are emitted as header rows only: their unstarred children fall through
+    // to the flat tail rather than sitting above the starred projects.
     const favoritedUids = this.favoriteProjectsService.state().data;
     const favoritedFoundations = sortedFoundations.filter((f) => favoritedUids.has(f.uid));
     const otherFoundations = sortedFoundations.filter((f) => !favoritedUids.has(f.uid));
     const favoritedProjects = sortedProjects.filter((p) => favoritedUids.has(p.uid));
     const unpinnedProjects = sortedProjects.filter((p) => !favoritedUids.has(p.uid));
 
-    const foundationUidSet = new Set(sortedFoundations.map((f) => f.uid));
+    const foundationUidSet = new Set(otherFoundations.map((f) => f.uid));
     const childrenByFoundationUid = new Map<string, LensItem[]>();
     const nestedProjectUids = new Set<string>();
     for (const project of unpinnedProjects) {

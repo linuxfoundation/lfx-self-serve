@@ -258,6 +258,14 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
     expect(renderedSlugs()).toEqual(['zeta-foundation', 'zeta-project', 'alpha-foundation', 'alpha-project']);
   });
 
+  it('keeps unstarred children of a starred foundation below the starred projects (#4397)', async () => {
+    setFavorites(['f1', 'p2']);
+    await build(true);
+
+    expect(nestedSlugs()).toEqual([]);
+    expect(renderedSlugs()).toEqual(['alpha-foundation', 'zeta-project', 'zeta-foundation', 'alpha-project']);
+  });
+
   it('flattens the All tab while searching so a match is not hidden under its parent', async () => {
     await build(true);
     await type('zeta');
