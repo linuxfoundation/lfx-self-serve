@@ -56,7 +56,7 @@ import type {
   OrgProjectScopeOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { orgCommitFiltersUrlParams, readOrgCommitFilters } from '@lfx-one/shared/utils';
+import { orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -214,6 +214,19 @@ export class OrgContributionsComponent {
     combineLatest([toObservable(this.commitSort), toObservable(this.commitDir)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.page.set(1));
+
+    // A query-only navigation (back/forward, a link from another Org Lens page) keeps this component, so the commit
+    // filters follow `?projectScope=` / `?commitScope=` / `?metric=`. The guard skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => readOrgCommitFilters((name) => params.get(name))),
+        distinctUntilChanged(sameOrgCommitFilters),
+        takeUntilDestroyed()
+      )
+      .subscribe((filters) => {
+        const { projectScope, commitScope, metric } = this.filterForm.getRawValue();
+        if (!sameOrgCommitFilters(filters, { projectScope, commitScope, metric })) this.filterForm.patchValue(filters);
+      });
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {

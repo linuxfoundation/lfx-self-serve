@@ -39,7 +39,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -73,7 +73,7 @@ export class ContributorsComponent {
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
 
-  // The commit filters start from `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and are written back on change.
+  // The commit filters follow `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and are written back on change.
   private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
 
   protected readonly filterForm = new FormGroup({
@@ -99,9 +99,12 @@ export class ContributorsComponent {
   protected readonly fetchError = this.fetchErrorState.asReadonly();
 
   // Mirror reactive form into a signal; debounce ~150ms so per-keystroke filtering doesn't thrash through the computed graph.
-  private readonly filterValues = toSignal(this.filterForm.valueChanges.pipe(debounceTime(150)), {
-    initialValue: this.filterForm.getRawValue(),
-  });
+  // A selection cleared for a new response skips the debounce, so the response never renders behind it.
+  private readonly selectionsPruned$ = new Subject<void>();
+  private readonly filterValues = toSignal(
+    merge(this.filterForm.valueChanges.pipe(debounceTime(150)), this.selectionsPruned$.pipe(map(() => this.filterForm.getRawValue()))),
+    { initialValue: this.filterForm.getRawValue() }
+  );
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
@@ -163,7 +166,15 @@ export class ContributorsComponent {
       else commitScope.enable({ emitEvent: false });
     });
 
-    this.commitFilters$.pipe(skip(1), takeUntilDestroyed()).subscribe((filters) => {
+    // Written back only when they differ from the URL, so following a URL change does not navigate again.
+    this.commitFilters$.pipe(takeUntilDestroyed()).subscribe((filters) => {
+      if (
+        sameOrgCommitFilters(
+          filters,
+          readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name))
+        )
+      )
+        return;
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: orgCommitFiltersUrlParams(filters),
@@ -171,6 +182,17 @@ export class ContributorsComponent {
         replaceUrl: true,
       });
     });
+
+    // A query-only navigation (back/forward, the All Employees tab writing the shared params) keeps this component.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => readOrgCommitFilters((name) => params.get(name))),
+        distinctUntilChanged(sameOrgCommitFilters),
+        takeUntilDestroyed()
+      )
+      .subscribe((filters) => {
+        if (!sameOrgCommitFilters(filters, this.commitFilters())) this.filterForm.patchValue(filters);
+      });
   }
 
   protected onSort(column: OrgContributorSortColumn): void {
@@ -386,7 +408,10 @@ export class ContributorsComponent {
             return of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange });
           }
           return this.dataService.getContributors(orgUid, timeRange, filters).pipe(
-            tap(() => this.loadingState.set(false)),
+            tap((res) => {
+              this.dropSelectionsAbsentFrom(res);
+              this.loadingState.set(false);
+            }),
             catchError(() => {
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
@@ -413,6 +438,20 @@ export class ContributorsComponent {
       return { projectScope, commitScope, metric };
     };
     return toSignal(this.filterForm.valueChanges.pipe(map(read)), { initialValue: read() });
+  }
+
+  /**
+   * A new range or project scope can drop the picked foundation or project from the response, and filtering on it would
+   * hide every row. The selection is cleared before the response renders.
+   */
+  private dropSelectionsAbsentFrom(res: OrgContributorsResponse): void {
+    const { foundation, project } = this.filterForm.getRawValue();
+    const patch: { foundation?: string; project?: string } = {};
+    if (foundation && !res.foundationOptions.some((option) => option.foundationId === foundation)) patch.foundation = '';
+    if (project && !res.projectOptions.some((option) => option.projectId === project)) patch.project = '';
+    if (patch.foundation === undefined && patch.project === undefined) return;
+    this.filterForm.patchValue(patch);
+    this.selectionsPruned$.next();
   }
 
   private resetAllState(): void {

@@ -174,4 +174,69 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(detail.indexOf('OpenTelemetry')).toBeLessThan(detail.indexOf('Kubernetes'));
     expect(detail).toContain('300');
   });
+
+  it('follows the filter params on a query-only navigation without being recreated, and does not write them back', async () => {
+    await mount('/?tab=contributors');
+    const instance = fixture.componentInstance;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+
+    await TestBed.inject(Router).navigateByUrl('/?tab=contributors&projectScope=lf&commitScope=merged&metric=code');
+    await settle();
+
+    expect(fixture.componentInstance).toBe(instance);
+    expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', commitScope: 'merged', metric: 'code' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', { projectScope: 'lf', commitScope: 'merged', metric: 'code' });
+    expect(text('org-people-contributors-count-header')).toBe('Code contributions');
+
+    await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
+    await settle();
+
+    expect(form().getRawValue()).toMatchObject(DEFAULT_ORG_COMMIT_FILTERS);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
+  });
+
+  it('clears a picked project and foundation the new project scope no longer returns, so its contributors still show', async () => {
+    const lfResponse: OrgContributorsResponse = {
+      ...contributorsResponse(),
+      foundationOptions: [{ foundationId: 'cncf', foundationName: 'CNCF' }],
+      projectOptions: [{ projectId: 'k8s', projectName: 'Kubernetes', foundationName: 'CNCF' }],
+    };
+    const nonLfResponse: OrgContributorsResponse = {
+      ...contributorsResponse(),
+      contributors: [{ ...contributorsResponse().contributors[0], personKey: 'p-2', displayName: 'Alan Turing' }],
+      projects: [
+        { ...contributorsResponse().projects[0], personKey: 'p-2', projectId: 'rails', projectName: 'Rails', foundationId: null, foundationName: null },
+      ],
+      foundationOptions: [],
+      projectOptions: [{ projectId: 'rails', projectName: 'Rails', foundationName: null }],
+    };
+    getContributors = vi.fn((_orgUid: string, _timeRange: OrgPeopleTimeRange, filters: OrgCommitFilters) =>
+      of(filters.projectScope === 'non_lf' ? nonLfResponse : lfResponse)
+    );
+    await mount();
+    form().patchValue({ foundation: 'cncf', project: 'k8s' });
+    // Past the form's 150ms debounce.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await settle();
+    expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')).not.toBeNull();
+
+    form().controls['projectScope'].setValue('non_lf');
+    await settle();
+
+    expect(form().getRawValue()).toMatchObject({ foundation: '', project: '' });
+    expect(el().querySelector('[data-testid="org-people-contributors-row-p-2"]')).not.toBeNull();
+  });
+
+  it('keeps a picked project the new response still returns', async () => {
+    getContributors = vi.fn(() => of({ ...contributorsResponse(), projectOptions: [{ projectId: 'k8s', projectName: 'Kubernetes', foundationName: 'CNCF' }] }));
+    await mount();
+    form().patchValue({ project: 'k8s' });
+
+    form().controls['projectScope'].setValue('lf');
+    await settle();
+
+    expect(form().getRawValue()).toMatchObject({ project: 'k8s' });
+  });
 });

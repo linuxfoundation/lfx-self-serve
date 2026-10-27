@@ -11,7 +11,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgContributionsComponent } from './org-contributions.component';
@@ -44,13 +44,14 @@ async function render(
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const getContributions = vi.fn(() => of(response));
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+  const queryParamMap = new BehaviorSubject(convertToParamMap(queryParams));
 
   await TestBed.configureTestingModule({
     imports: [OrgContributionsComponent],
     providers: [
       provideRouter([]),
       MessageService,
-      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
+      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: queryParamMap.value }, queryParamMap } },
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
@@ -74,7 +75,7 @@ async function render(
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, getContributions };
+  return { fixture, navigate, getContributions, queryParamMap };
 }
 
 describe('OrgContributionsComponent', () => {
@@ -162,6 +163,32 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith(
       [],
       expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: 'merged', metric: null }) })
+    );
+  });
+
+  it('follows the commit filters on a query-only navigation without being recreated, ignoring the echo of its own URL write', async () => {
+    const { fixture, navigate, getContributions, queryParamMap } = await render(null);
+    const instance = fixture.componentInstance;
+
+    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }));
+    // Past the form's 250ms debounce.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance).toBe(instance);
+    const { projectScope, commitScope, metric } = fixture.componentInstance['filterForm'].controls;
+    expect([projectScope.value, commitScope.value, metric.value]).toEqual(['non_lf', 'merged', 'code']);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }));
+    expect(fixture.componentInstance['kpiCards']().map((card) => card.label)).toContain('Code contributions');
+
+    // The page's own write of the same params comes back through the URL; it must not patch the form again.
+    const patchValue = vi.spyOn(fixture.componentInstance['filterForm'], 'patchValue');
+    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code', page: '1' }));
+    expect(patchValue).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }) })
     );
   });
 
