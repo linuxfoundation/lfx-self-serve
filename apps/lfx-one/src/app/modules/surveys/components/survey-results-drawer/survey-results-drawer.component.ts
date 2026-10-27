@@ -13,14 +13,13 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
 
 @Component({
   selector: 'lfx-survey-results-drawer',
-  imports: [DrawerModule, DatePipe, NgTemplateOutlet, TooltipModule, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
+  imports: [DrawerModule, DatePipe, NgTemplateOutlet, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
   templateUrl: './survey-results-drawer.component.html',
   styleUrl: './survey-results-drawer.component.scss',
 })

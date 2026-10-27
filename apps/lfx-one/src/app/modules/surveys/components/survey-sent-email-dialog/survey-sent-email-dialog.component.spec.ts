@@ -47,7 +47,7 @@ describe('SurveySentEmailDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="survey-sent-email-subject"]').textContent).toContain('Feedback for CNCF');
     const html = component['email']()!.html;
     expect(html).toContain('Hi Ana, from Jane Doe.');
-    expect(html).toContain('<a href="https://lfx.dev" target="_blank" rel="noopener">https://lfx.dev</a>');
+    expect(html).toContain('<a href="https://lfx.dev" target="_blank" rel="noopener noreferrer">https://lfx.dev</a>');
   });
 
   it('still renders when project settings cannot be read', async () => {

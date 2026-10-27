@@ -14,6 +14,7 @@ import type {
   SurveyResponseItem,
   SurveyStatusInput,
 } from '../interfaces/survey.interface';
+import { escapeHtml } from './html-utils';
 
 /**
  * Sentinel value the API uses on `response_status` to signal that responses
@@ -234,10 +235,10 @@ export function getSurveyEngagementRates(rows: readonly SurveyResponseItem[]): S
   };
 }
 
-const HTML_ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+/** Formats a survey cutoff date as e.g. "November 30, 2026" (UTC), or '' when absent or invalid. */
+function formatSurveyCutoffDate(value: string | null | undefined): string {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '';
 }
 
 /** Matches `{{.Name}}` (ITX/Go templates, used by board surveys) and `{{Name}}` (Self Serve's wizard). */
@@ -255,6 +256,7 @@ const SURVEY_EMAIL_PLACEHOLDER = /\{\{\s*\.?([A-Za-z]+)\s*\}\}/g;
  */
 export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyResponseItem, context: SurveyEmailRenderContext = {}): RenderedSurveyEmail {
   const committee = survey.committees?.find((c) => c.committee_uid === item.committee_uid);
+  const surveyLink = item.survey_link || '#';
   const values: Record<string, string> = {
     FirstName: item.first_name ?? '',
     LastName: item.last_name ?? '',
@@ -264,7 +266,8 @@ export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyRespon
     CommitteeType: survey.committee_category ?? '',
     OrganizationName: item.organization?.name ?? '',
     MembershipTier: item.membership_tier ?? '',
-    SurveyLink: item.survey_link || '#',
+    SurveyLink: surveyLink,
+    CutoffDate: formatSurveyCutoffDate(survey.survey_cutoff_date),
     ExecutiveDirectorName: context.executiveDirectorName ?? '',
     ProgramManagerName: context.programManagerName ?? '',
     ProjectLogo: context.projectLogo ?? '',
@@ -273,6 +276,10 @@ export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyRespon
 
   const render = (template: string, escape: boolean): string =>
     template.replace(SURVEY_EMAIL_PLACEHOLDER, (match, name: string) => {
+      // {{SurveyButton}} (Self Serve wizard) is markup, not a value: a link to the recipient's survey.
+      if (name === 'SurveyButton') {
+        return escape ? `<a href="${escapeHtml(surveyLink)}" target="_blank" rel="noopener noreferrer">Take the survey</a>` : 'Take the survey';
+      }
       if (!(name in values)) return match;
       return escape ? escapeHtml(values[name]) : values[name];
     });
@@ -293,11 +300,8 @@ export function buildSurveyFollowUpMailto(survey: Survey, item: SurveyResponseIt
   if (!item.email) return null;
 
   const greeting = item.first_name ? `Hi ${item.first_name},` : 'Hi,';
-  const cutoff = survey.survey_cutoff_date ? new Date(survey.survey_cutoff_date) : null;
-  const deadline =
-    cutoff && !Number.isNaN(cutoff.getTime())
-      ? ` by ${cutoff.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`
-      : '';
+  const cutoff = formatSurveyCutoffDate(survey.survey_cutoff_date);
+  const deadline = cutoff ? ` by ${cutoff}` : '';
   const linkLine = item.survey_link ? `\n\nYour personal survey link:\n${item.survey_link}` : '';
   const body = `${greeting}\n\nA quick reminder to share your feedback in the "${survey.survey_title}" survey${deadline}.${linkLine}\n\nThank you!`;
 

@@ -60,6 +60,18 @@ describe('renderSurveyEmailForRecipient', () => {
   });
 });
 
+describe('renderSurveyEmailForRecipient — Self Serve wizard placeholders', () => {
+  it('fills the cutoff date and renders the survey button as a link', () => {
+    const email = renderSurveyEmailForRecipient(
+      { ...survey, email_subject: 'Due {{CutoffDate}}', email_body: '<p>{{SurveyButton}}</p>' },
+      row({ survey_link: 'https://www.surveymonkey.com/r/x' })
+    );
+
+    expect(email.subject).toBe('Due November 30, 2026');
+    expect(email.html).toBe('<p><a href="https://www.surveymonkey.com/r/x" target="_blank" rel="noopener noreferrer">Take the survey</a></p>');
+  });
+});
+
 describe('buildSurveyFollowUpMailto', () => {
   it('prefills subject and body with the personal link', () => {
     const url = buildSurveyFollowUpMailto(survey, row({ email: 'ana@example.com', first_name: 'Ana', survey_link: 'https://www.surveymonkey.com/r/x' }));
