@@ -1083,4 +1083,84 @@ describe('AccountContextService — All Organizations roll-up', () => {
 
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
   });
+
+  /**
+   * lfx-self-serve#4415 review 9. `orgPathParamGuard` used to decide this itself, and got three
+   * things wrong that `demoteFromRollUp` already had right: it persisted over the saved choice
+   * whatever the reason, it could reuse the roll-up as its own fallback (`orgUrlSegment` answers the
+   * sentinel, so the re-point no-opped and the caller stayed on `/org/all`), and it left the result
+   * unpinned where a persona re-seed could replace it.
+   */
+  describe('demoteAddressedRollUp', () => {
+    it('never answers with the roll-up itself', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+      service.selectRollUp();
+      expect(service.isRollUp()).toBe(true);
+
+      grants.inheritedWriterSet.set(new Set([UID_B]));
+      rollUpFlag.set(false);
+
+      const next = service.demoteAddressedRollUp();
+
+      expect(next).not.toBeNull();
+      expect(next?.uid).not.toBe('all');
+      expect(service.isRollUp()).toBe(false);
+    });
+
+    it('keeps the saved choice when the roll-up is merely unavailable', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+      service.initializeUserOrganizations([seedA, seedB]);
+      rollUpFlag.set(false);
+
+      service.demoteAddressedRollUp();
+
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+    });
+
+    it('writes the concrete choice when the caller no longer qualifies', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+      service.initializeUserOrganizations([seedA, seedB]);
+      service.selectRollUp();
+      // Flag still on; the caller simply holds one organization now.
+      service.initializeUserOrganizations([seedA]);
+
+      service.demoteAddressedRollUp();
+
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_A });
+    });
+
+    // Pinned like a resolver hit, so a persona re-seed cannot replace it before the address lands.
+    it('pins the result as an address selection', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+      service.selectRollUp();
+      rollUpFlag.set(false);
+
+      const next = service.demoteAddressedRollUp();
+
+      expect(next?.uid).toBe(UID_A);
+      expect(service.isAdoptedFromAddress()).toBe(true);
+
+      // The re-seed that used to clear it.
+      service.initializeUserOrganizations([seedA, seedB]);
+      expect(service.selectedAccount().uid).toBe(UID_A);
+    });
+
+    it('answers null when there is nothing addressable to fall back to', () => {
+      service.initializeUserOrganizations([]);
+      expect(service.demoteAddressedRollUp()).toBeNull();
+    });
+  });
+
+  // Review 9: the bootstrap fall-through reached with a sentinel cookie and the flag resolved off
+  // must not write the default selection over the stored choice either.
+  it('keeps the saved choice when bootstrap defaults past an unavailable roll-up', () => {
+    rollUpFlag.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+
+    service.initializeUserOrganizations([seedA, seedB]);
+
+    expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
 });

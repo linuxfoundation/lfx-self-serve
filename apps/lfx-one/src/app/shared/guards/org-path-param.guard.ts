@@ -100,20 +100,11 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     // primary segment and keeps child segments, query and fragment — the address the viewer asked
     // for, re-pointed, rather than a bounce to overview.
     //
-    // The selection first, then the grant-aware fallback. A caller whose organizations are all
-    // inherited grants has no persona seeds, so nothing has selected one and `selectedAccount()` is
-    // the placeholder — falling back to it alone sent them to `/org/not-found` while they held an
-    // organization the roll-up had just been counting (#4415 review 7).
-    const selected = accountContext.selectedAccount();
-    const fallback = orgUrlSegment(selected) ? selected : accountContext.rollUpFallbackOrganization();
-    if (!fallback) {
-      return notFound;
-    }
-    if (fallback !== selected) {
-      accountContext.setAccount(fallback);
-      void accountContext.refreshCanonicalRecord(fallback);
-    }
-    return orgUrlSegment(fallback) ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
+    // The service owns which organization that is, whether the stored roll-up choice survives, and
+    // the address pin: it is the same decision `demoteFromRollUp` makes when eligibility changes
+    // under a page that is already open, and the two must not drift (#4415 review 9).
+    const fallback = accountContext.demoteAddressedRollUp();
+    return fallback ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
   }
 
   // `slug === null` is a confirmed "no slug"; `undefined` is a slug not known from the index yet — a

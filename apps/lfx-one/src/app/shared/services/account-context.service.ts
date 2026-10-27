@@ -395,6 +395,13 @@ export class AccountContextService {
     // It must not reach the uid-stub path below, which would select `{ uid: 'all' }` as though it
     // were an organization and leave `isRollUp()` true after the demotion.
     const concreteStoredUid = isOrgRollUpSegment(storedUid) ? null : storedUid;
+    // Reached with a sentinel cookie only when the roll-up was refused above. If that refusal was
+    // the flag being off rather than a confirmed loss of organizations, the default selection below
+    // must not write over the stored choice — same rule as `demoteFromRollUp` (#4415 review 9).
+    const preserveStoredRollUp = isOrgRollUpSegment(storedUid) && !this.rollUpFlag();
+    if (preserveStoredRollUp) {
+      this.rollUpChoicePreserved = true;
+    }
     const matchedSeed = concreteStoredUid ? (seeds.find((seed) => seed.uid === concreteStoredUid) ?? null) : null;
     if (matchedSeed) {
       this.setAccount(matchedSeed);
@@ -403,7 +410,9 @@ export class AccountContextService {
       this.setAccount(stub);
       void this.refreshCanonicalRecord(stub);
     } else {
-      this.setAccount(seeds[0]);
+      // `persist: false` where the stored roll-up is being held: an ordinary write would clear the
+      // hold it was just given and put the default organization in the cookie.
+      this.setAccount(seeds[0], { persist: !preserveStoredRollUp });
     }
 
     this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
@@ -498,6 +507,45 @@ export class AccountContextService {
       }
     }
     return null;
+  }
+
+  /**
+   * Leave an addressed `/org/all/…` this caller may not have, and answer with the organization the
+   * address should name instead — `orgPathParamGuard`'s half of `demoteFromRollUp`.
+   *
+   * Same two reasons as that one, and the same rule about which touches the stored choice: the flag
+   * being off (or its wait timed out) makes the roll-up *unavailable* and leaves `{ uid: 'all' }`
+   * alone; grants settling below two organizations makes it *wrong* for this caller and writes the
+   * concrete uid. The guard previously made no distinction, so a grant-only caller opening
+   * `/org/all/…` during an outage lost the very choice review 6 set out to protect (#4415 review 9).
+   *
+   * The result is adopted as an ADDRESS selection, not a bare `setAccount`. The address is about to
+   * name it, so a persona re-seed or an empty org-items first page must not replace or clear it
+   * before that navigation settles — the same reason a resolver hit pins.
+   */
+  public demoteAddressedRollUp(): Account | null {
+    const preserveStoredChoice = !this.rollUpFlag();
+    const current = this.selectedAccount();
+    // The current selection counts only when it is a CONCRETE organization. `orgUrlSegment` is
+    // truthy for the roll-up itself (it answers the sentinel), so reusing it would leave the caller
+    // on the very combined-view address this is trying to leave, with `canonicalizeAddress` a no-op.
+    const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) ? current : null;
+    const next = concrete ?? this.rollUpFallbackOrganization();
+    if (!next || !orgUrlSegment(next)) {
+      return null;
+    }
+
+    if (preserveStoredChoice) {
+      this.rollUpChoicePreserved = true;
+    }
+    this.setAccount(next, { persist: !preserveStoredChoice });
+    this.addressedUid.set(next.uid ?? null);
+    this.pinSource.set(next.uid ? 'address' : null);
+    // A uid-only stub (a grant with no seed behind it) has no display fields yet.
+    if (!next.accountName) {
+      void this.refreshCanonicalRecord(next);
+    }
+    return next;
   }
 
   /** Spec 050: select the organization the `/org/{segment}/…` address names (resolver hit, or the uid-only stub of FR-020) and pin it against bootstrap re-seeding — see `addressedUid`. */

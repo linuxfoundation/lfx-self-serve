@@ -32,7 +32,7 @@ describe('orgPathParamGuard', () => {
   let noteAddressed: Mock;
   let selectRollUp: Mock;
   let setAccount: Mock;
-  let rollUpFallbackOrganization: Mock;
+  let demoteAddressedRollUp: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -74,7 +74,7 @@ describe('orgPathParamGuard', () => {
     noteAddressed = vi.fn();
     selectRollUp = vi.fn(() => true);
     setAccount = vi.fn((next: Account) => selectedAccount.set(next));
-    rollUpFallbackOrganization = vi.fn(() => null);
+    demoteAddressedRollUp = vi.fn(() => null);
 
     TestBed.configureTestingModule({
       providers: [
@@ -90,7 +90,7 @@ describe('orgPathParamGuard', () => {
             refreshCanonicalRecord,
             selectRollUp,
             setAccount,
-            rollUpFallbackOrganization,
+            demoteAddressedRollUp,
           },
         },
         { provide: OrgSlugResolverService, useValue: { resolve } },
@@ -334,14 +334,8 @@ describe('orgPathParamGuard', () => {
     it('re-points an ineligible caller at their own organization, same page', async () => {
       selectRollUp.mockReturnValue(false);
       selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_A, slug: 'alpha-inc' }));
       expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
-    });
-
-    // Nothing concrete to fall back to: the dead end is correct there.
-    it('lands on not-found when an ineligible caller holds no addressable organization', async () => {
-      selectRollUp.mockReturnValue(false);
-      selectedAccount.set(placeholder);
-      expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
     });
 
     /**
@@ -350,22 +344,21 @@ describe('orgPathParamGuard', () => {
      * Falling back to it alone sent them to the dead end while they held an organization the
      * roll-up had been counting a moment earlier.
      */
-    it('re-points a grant-only caller at their organization rather than the dead end', async () => {
+    it('re-points at the organization the service demotes to, keeping the page', async () => {
       selectRollUp.mockReturnValue(false);
-      selectedAccount.set(placeholder);
-      rollUpFallbackOrganization.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
 
       expect(await outcome('all', '/org/all/people')).toBe('/org/beta-llc/people');
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(demoteAddressedRollUp).toHaveBeenCalledTimes(1);
     });
 
-    it('prefers an already-selected organization over the grant fallback', async () => {
+    // Which organization, whether the stored choice survives, and the address pin are all the
+    // service's call — the guard only turns its answer into an address (#4415 review 9).
+    it('lands on not-found only when the service has nothing to demote to', async () => {
       selectRollUp.mockReturnValue(false);
-      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
-      rollUpFallbackOrganization.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+      demoteAddressedRollUp.mockReturnValue(null);
 
-      expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
     });
 
     it('renders without a selection on the server rather than redirecting', async () => {
