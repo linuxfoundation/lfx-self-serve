@@ -45,10 +45,11 @@ vi.mock('./logger.service', () => ({
 
 import type { CompactOrgTraineesRawCache } from '@lfx-one/shared/interfaces';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleTraineesService } from './org-people-trainees.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 
 let service: OrgPeopleTraineesService;
 

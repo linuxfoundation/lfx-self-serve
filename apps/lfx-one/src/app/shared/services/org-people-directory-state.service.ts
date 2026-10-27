@@ -63,12 +63,16 @@ export class OrgPeopleDirectoryStateService {
     return request$;
   }
 
-  /** Picker projection: people with an email, mapped to the shared employee-picker shape. Reads the unranged roster, so the picker does not depend on the All Employees range. */
+  /**
+   * Picker projection: current people with an email, mapped to the shared employee-picker shape. Reads the unranged roster,
+   * so the picker does not depend on the All Employees range. A row the server tagged former (Org Lens access held by
+   * someone who left) is never offered for assignment.
+   */
   public getEmployees(orgUid: string): Observable<KeyContactEmployee[]> {
     return this.getDirectory(orgUid).pipe(
       map((res) =>
         res.rows
-          .filter((row): row is OrgAllEmployeeRow & { email: string } => !!row.email)
+          .filter((row): row is OrgAllEmployeeRow & { email: string } => !!row.email && !row.isFormer)
           .map((row) => toEmployee(row))
           .sort((a, b) => a.fullName.localeCompare(b.fullName))
       )

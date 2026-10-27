@@ -235,11 +235,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     await new Promise((resolve) => setTimeout(resolve, 200));
     await settle();
 
+    const callsBeforeClear = getContributors.mock.calls.length;
     clear()?.click();
     await new Promise((resolve) => setTimeout(resolve, 200));
     await settle();
 
     expect(form().getRawValue()).toEqual({ search: '', foundation: '', project: '', timeRange: '365d', projectScope: 'all', metric: 'commits' });
+    // The range and the commit filters reset together, so one read starts, not one per changed value.
+    expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
@@ -391,6 +394,18 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
     expect(form().controls['timeRange'].value).toBe('all');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, 'all', DEFAULT_ORG_COMMIT_FILTERS);
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('reads the picked range for the filtering state and the tooltip without waiting for the search debounce', async () => {
+    getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
+    await mount('/?tab=contributors');
+    const component = fixture.componentInstance as unknown as { isFiltering: () => boolean; contributorsTooltip: () => string };
+    expect(component.isFiltering()).toBe(false);
+
+    form().controls['timeRange'].setValue('all');
+
+    expect(component.isFiltering()).toBe(true);
+    expect(component.contributorsTooltip()).toContain('across all recorded history');
   });
 
   it('keeps the range when the organization changes', async () => {

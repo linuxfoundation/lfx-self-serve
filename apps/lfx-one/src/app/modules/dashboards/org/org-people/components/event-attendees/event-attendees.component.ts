@@ -39,7 +39,7 @@ import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
-import { filterEndedEventsInRange } from './event-attendees.util';
+import { eventDateOf, filterEndedEventsInRange } from './event-attendees.util';
 
 /** Event Attendees tab body — search + foundation + event + range filters, four stat cards, sortable table with chevron-toggled Events detail. */
 @Component({
@@ -281,7 +281,7 @@ export class EventAttendeesComponent {
       for (const d of personDetails) {
         eventIds.add(d.eventId);
         if (d.isSpeaker) anySpeaker = true;
-        const eventDate = d.eventEndDate ?? d.eventStartDate;
+        const eventDate = eventDateOf(d);
         if (eventDate && (!lastAttendedTs || eventDate > lastAttendedTs)) {
           lastAttendedTs = eventDate;
         }
@@ -426,7 +426,7 @@ export class EventAttendeesComponent {
   }
 }
 
-/** Most-recent row per Item 4 R4.3 tiebreak: EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC. */
+/** Most-recent row per Item 4 R4.3 tiebreak: event date (end, else start) DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC. */
 function pickMostRecent(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeDetailRow | null {
   if (rows.length === 0) return null;
   let best = rows[0];
@@ -440,15 +440,15 @@ function pickMostRecent(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeDeta
 }
 
 function compareMostRecent(a: OrgEventAttendeeDetailRow, b: OrgEventAttendeeDetailRow): number {
-  const ta = a.eventEndDate ?? '';
-  const tb = b.eventEndDate ?? '';
+  const ta = eventDateOf(a) ?? '';
+  const tb = eventDateOf(b) ?? '';
   if (ta !== tb) return ta > tb ? -1 : 1;
   const cmp = a.eventName.localeCompare(b.eventName);
   if (cmp !== 0) return cmp;
   return a.eventId.localeCompare(b.eventId);
 }
 
-/** Collapse per-(person, event) rows; 1:1 map + location fallback + sort EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC (R5.4). */
+/** Collapse per-(person, event) rows; 1:1 map + location fallback + sort event date (end, else start) DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC (R5.4). */
 function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeExpandedRowVm[] {
   const out: OrgEventAttendeeExpandedRowVm[] = rows.map((r) => ({
     eventId: r.eventId,
@@ -457,7 +457,7 @@ function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttend
     role: r.isSpeaker ? 'Speaker' : 'Attendee',
     startTs: r.eventStartDate,
     startLabel: r.eventStartDate ? formatLongDateUtc(r.eventStartDate) : '—',
-    sortTs: r.eventEndDate,
+    sortTs: eventDateOf(r),
   }));
 
   return out.sort((a, b) => {

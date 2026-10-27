@@ -19,9 +19,10 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgContributionsService } from './org-contributions.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const COMMITS_TABLE = 'ORG_CODE_CONTRIBUTIONS';
 const CODE_TABLE = 'ORG_CODE_ACTIVITY_DAILY';
 

@@ -137,4 +137,14 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     expect(getTrainees).toHaveBeenLastCalledWith(ORG, '90d');
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it('reads the picked range for the filtering state without waiting for the search debounce', async () => {
+    await mount('/?tab=trainees');
+    const isFiltering = (): boolean => (fixture.componentInstance as unknown as { isFiltering: () => boolean }).isFiltering();
+    expect(isFiltering()).toBe(false);
+
+    form().controls['timeRange'].setValue('30d');
+
+    expect(isFiltering()).toBe(true);
+  });
 });

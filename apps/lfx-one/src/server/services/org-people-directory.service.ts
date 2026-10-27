@@ -239,7 +239,8 @@ export class OrgPeopleDirectoryService {
    * A consumer that needs to mutate it must copy first.
    *
    * A roster computed while the former-employee read failed is served but not cached: its access-only
-   * former employees went untagged, so storing it would list them as current for the whole TTL.
+   * principals went unclassified, so they are served without address or title, and storing it would
+   * list the former ones as current for the whole TTL.
    */
   public async getLive(req: Request, accountId: string, range: OrgLensTimeRange | null, requestedFilters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const filters = range ? requestedFilters : DEFAULT_ORG_COMMIT_FILTERS;
@@ -280,17 +281,18 @@ export class OrgPeopleDirectoryService {
     // Board/committee seats are LF engagement, so `non_lf` reads none, and there the live sources only enrich
     // stored rows: no row exists only because of a live seat, key contact or access.
     const lfEngagement = projectScope !== 'non_lf';
-    // Only a ranged view with live-only rows can list a former employee through their Org Lens access; the
-    // unranged picker roster never reads former employees. Whether someone left is not a property of the
-    // view: the range's former rows need code in that range and scope, so a former employee whose code is
-    // older or outside the scope would read as current. The account's whole former population decides instead,
-    // read as usernames only: the full all-time former roster outgrows its cache on the largest accounts.
+    // Whether someone left is not a property of the view: the range's former rows need code in that range and scope,
+    // so a former employee whose code is older or outside the scope would read as current. The account's former
+    // employees with credited code, in any range and scope, decide instead, read as usernames only: the full all-time
+    // former roster outgrows its cache on the largest accounts. The warehouse lists only people with code as former,
+    // so someone who left without credited code and still holds Org Lens access stays listed as current (a known gap).
+    // The unranged picker roster is classified the same way, so the assignment pickers do not offer them.
     const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
       this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
-      range && lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
+      lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
     ]);
 
     const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
@@ -301,24 +303,25 @@ export class OrgPeopleDirectoryService {
       });
     }
 
-    const formerUsernames = new Set<string>(former.status === 'fulfilled' ? former.value : []);
+    const formerUsernames = former.status === 'fulfilled' ? new Set<string>(former.value) : null;
     if (former.status === 'rejected') {
-      // Served untagged rather than without access-only rows: hiding every access-only principal would drop
-      // current people who are not in the stored roster yet, while an untagged former one is a brief
-      // misclassification that `getLive` keeps out of the cache.
-      logger.warning(req, 'get_org_people_directory', 'Former employees read failed; serving access-only rows untagged and uncached', {
+      // Served rather than without access-only rows: hiding every access-only principal would drop current
+      // people who are not in the stored roster yet. Unclassified, each is served the way a former one would
+      // be — no address or title — and `getLive` keeps the roster out of the cache.
+      logger.warning(req, 'get_org_people_directory', 'Former employees read failed; serving access-only rows without address or title, uncached', {
         org_uid: accountId,
         err: former.reason,
       });
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    return { directory, formerResolved: former.status === 'fulfilled' };
+    return { directory, formerResolved: formerUsernames !== null };
   }
 
   /**
    * Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows.
-   * `formerUsernames` are the account's former employees, whose access-only live rows are tagged former.
+   * `formerUsernames` are the account's former employees, whose access-only live rows are tagged former; `null` when
+   * they could not be read, and then no access-only row is tagged but none carries an address or title.
    */
   private merge(
     req: Request,
@@ -328,7 +331,7 @@ export class OrgPeopleDirectoryService {
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
     access: PromiseSettledResult<OrgAccessUser[]>,
     addLiveOnlyRows: boolean,
-    formerUsernames: ReadonlySet<string>
+    formerUsernames: ReadonlySet<string> | null
   ): OrgAllEmployeesCountedResponse {
     const byKey = new Map<string, OrgAllEmployeeRowInternal>();
     const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
@@ -415,7 +418,11 @@ export class OrgPeopleDirectoryService {
     }
 
     this.absorbIdentitylessRows(byKey);
-    this.tagFormerAccessPrincipals(byKey, formerUsernames);
+    if (formerUsernames) {
+      this.tagFormerAccessPrincipals(byKey, formerUsernames);
+    } else {
+      this.redactAccessOnlyPrincipals(byKey);
+    }
 
     const merged = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
@@ -500,21 +507,38 @@ export class OrgPeopleDirectoryService {
    * former row shown under "All" and "Former employees" can take its access badge. A stored current row is
    * never tagged, and a pending invite has no username to match.
    *
-   * A tagged row is shaped like the former roster's own rows: no address is sent for someone who left, and
-   * none stands in for a blank name, so a name taken from the address falls back to the LF username. The
-   * title goes too: it is the access record's, which describes the role they held here.
+   * A tagged row is shaped like the former roster's own rows ({@link redactPrincipal}).
    */
   private tagFormerAccessPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>, formerUsernames: ReadonlySet<string>): void {
     if (formerUsernames.size === 0) return;
     for (const row of byKey.values()) {
       if (row.lfUsername && row.sources.every((source) => source === 'access') && formerUsernames.has(row.lfUsername)) {
         row.isFormer = true;
-        if (row.name === row.email || row.emails.includes(row.name.toLowerCase())) row.name = row.lfUsername;
-        row.email = null;
-        row.emails = [];
-        row.title = null;
+        this.redactPrincipal(row, row.lfUsername);
       }
     }
+  }
+
+  /**
+   * With the former employees unknown, every access-only row that could have been tagged — one with a username — is
+   * served as a tagged one would be, untagged: fail closed on the data rather than on the listing. A pending invite has
+   * no username to match, so it is served as it always is.
+   */
+  private redactAccessOnlyPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
+    for (const row of byKey.values()) {
+      if (row.lfUsername && row.sources.every((source) => source === 'access')) this.redactPrincipal(row, row.lfUsername);
+    }
+  }
+
+  /**
+   * No address is sent, and none stands in for a blank name, so a name taken from the address falls back to the LF
+   * username. The title goes too: it is the access record's, which may describe a role they held here.
+   */
+  private redactPrincipal(row: OrgAllEmployeeRowInternal, lfUsername: string): void {
+    if (row.name === row.email || row.emails.includes(row.name.toLowerCase())) row.name = lfUsername;
+    row.email = null;
+    row.emails = [];
+    row.title = null;
   }
 
   private addSource(row: OrgAllEmployeeRowInternal, source: OrgPersonSource): void {

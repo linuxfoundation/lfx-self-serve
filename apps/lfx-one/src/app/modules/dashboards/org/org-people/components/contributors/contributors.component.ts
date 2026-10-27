@@ -121,19 +121,24 @@ export class ContributorsComponent {
     distinctUntilChanged()
   );
 
-  // Time range observable feeds the BFF refetch (A1 architecture: one slice per timeRange). distinctUntilChanged guards against duplicate emits when the form is reset to its current value.
-  private readonly timeRange$ = toObservable(this.timeRangeControl()).pipe(distinctUntilChanged());
+  // The range, undebounced: it drives the BFF read (A1 architecture: one slice per timeRange), the filtering state and the tooltip.
+  private readonly timeRange: Signal<OrgLensTimeRange> = this.timeRangeControl();
 
   // The commit filters also refetch (they change the read and the most-active project), undebounced like the time range.
   protected readonly commitFilters: Signal<OrgCommitFilters> = this.initCommitFilters();
   private readonly commitFilters$ = toObservable(this.commitFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
+  // Range and commit filters as one value, so a change to both (Clear filters, a URL step) starts a single read.
+  private readonly contributorsQuery = computed(() => ({ range: this.timeRange(), filters: this.commitFilters() }));
+  private readonly contributorsQuery$ = toObservable(this.contributorsQuery).pipe(
+    distinctUntilChanged((a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters))
+  );
   protected readonly countLabel = computed(() => ORG_CODE_METRIC_LABEL[this.commitFilters().metric]);
   protected readonly countTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.commitFilters()).metric]);
   protected readonly contributorsTooltip = computed(() =>
     describeContributorsTooltip(
       this.commitFilters().projectScope,
       this.accountContext.selectedAccount().accountName,
-      describeContributionsWindow(this.filterValues().timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE)
+      describeContributionsWindow(this.timeRange())
     )
   );
 
@@ -371,8 +376,7 @@ export class ContributorsComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
-    const timeRange: OrgLensTimeRange = values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE;
-    const hasTimeFilter = timeRange !== ORG_LENS_DEFAULT_TIME_RANGE;
+    const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
     // A project scope changes who the BFF returns, so an empty LF or non-LF result is a filtered result, not an empty org.
     const hasProjectScope = this.commitFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope;
     return hasSearch || hasFoundation || hasProject || hasTimeFilter || hasProjectScope;
@@ -427,12 +431,12 @@ export class ContributorsComponent {
 
   private initResponse(): Signal<OrgContributorsResponse> {
     return toSignal(
-      combineLatest([this.orgUid$, this.timeRange$, this.commitFilters$, toObservable(this.retryTrigger)]).pipe(
+      combineLatest([this.orgUid$, this.contributorsQuery$, toObservable(this.retryTrigger)]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, timeRange, filters]) => {
+        switchMap(([orgUid, { range: timeRange, filters }]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange });

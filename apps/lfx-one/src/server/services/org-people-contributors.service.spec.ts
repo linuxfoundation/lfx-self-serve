@@ -47,10 +47,11 @@ vi.mock('./logger.service', () => ({
 import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
 import type { CompactOrgContributorRowsCache, ContributorPersonProjectRow, OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const FILTERS: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS;
 
 let service: OrgPeopleContributorsService;

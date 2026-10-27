@@ -91,6 +91,8 @@ export class TraineesComponent {
     startWith(this.filterForm.controls.timeRange.value),
     distinctUntilChanged()
   );
+  // The range as a signal, undebounced like the read, so the filtering state follows the picked range at once.
+  private readonly timeRange: Signal<OrgLensTimeRange> = toSignal(this.timeRange$, { initialValue: this.filterForm.controls.timeRange.value });
 
   protected readonly response: Signal<OrgTraineesResponse> = this.initResponse();
 
@@ -334,7 +336,7 @@ export class TraineesComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasCourse = !!(values.course ?? '');
-    const hasTimeFilter = (values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE) !== ORG_LENS_DEFAULT_TIME_RANGE;
+    const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasCourse || hasTimeFilter;
   }
 

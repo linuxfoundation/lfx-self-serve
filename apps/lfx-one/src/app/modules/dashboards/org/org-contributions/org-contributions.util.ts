@@ -88,7 +88,7 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
 
 /**
  * Exact window the KPI strip and tables aggregate over, in UTC — mirrors the BFF predicates
- * (`activity_ts >= DATEADD(day, -N, CURRENT_TIMESTAMP())`) so reviewers can match filters against source records.
+ * (`activity_ts::date >= DATEADD(day, -N, CURRENT_DATE())`) so reviewers can match filters against source records.
  */
 export function describeContributionsWindow(range: OrgLensTimeRange, now: Date = new Date()): string {
   if (range === 'all') {

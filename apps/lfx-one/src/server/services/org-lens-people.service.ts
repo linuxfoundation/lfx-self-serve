@@ -164,7 +164,7 @@ export class OrgLensPeopleService {
    */
   public async getFormerEmployees(req: Request, accountId: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const raw = await this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope);
-    const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, EMAIL: null }), isFormer: true }));
+    const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
     return toWireResponse(
       { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
       filters
@@ -260,7 +260,7 @@ export class OrgLensPeopleService {
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed', {
+      logger.warning(req, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed', {
         err: error,
       });
       return FAILED_COMPANY_EMAILS;
@@ -429,7 +429,7 @@ export class OrgLensPeopleService {
         LF_USERNAME,
         CDP_MEMBER_ID,
         NAME,
-        TITLE,
+        NULL AS TITLE,
         NULL AS EMAIL,
         PHOTO,
         SEATS_COUNT,
@@ -686,7 +686,7 @@ export class OrgLensPeopleService {
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails', 'company email lookup failed', {
+      logger.warning(req, 'get_org_lens_people_company_emails', 'company email lookup failed', {
         person_key: personKey,
         err: error,
       });
@@ -910,6 +910,14 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
+}
+
+/** A former employee's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
+function formerDisplayName(row: OrgPeopleAllRowRaw): string | null {
+  if (!row.NAME?.includes('@')) {
+    return row.NAME;
+  }
+  return (row.LF_USERNAME ?? '').trim() || ORG_PEOPLE_UNKNOWN_MEMBER_NAME;
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */

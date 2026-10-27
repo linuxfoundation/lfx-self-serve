@@ -228,11 +228,12 @@ export class AllEmployeesComponent {
 
   // Every view's rows are reconciled across both rosters, so the table waits for both.
   protected readonly isLoading = computed(() => this.loadingState() || this.formerLoadingState());
-  // A failed former read is a full error only in the Former view; under "All" the current employees stay, with a warning.
+  // A failed former read is a full error only in the Former view. Under "All" and "Current" the current employees stay, with
+  // a warning: "All" lists no former employees, and "Current" cannot fold the stored activity of someone who is current again.
   protected readonly fetchError = computed(
     () => (this.showCurrent() && this.fetchErrorState()) || (this.selectedEmployment() === 'former' && this.formerErrorState())
   );
-  protected readonly formerUnavailable = computed(() => this.selectedEmployment() === 'all' && this.formerErrorState());
+  protected readonly formerUnavailable = computed(() => this.showCurrent() && this.formerErrorState());
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),

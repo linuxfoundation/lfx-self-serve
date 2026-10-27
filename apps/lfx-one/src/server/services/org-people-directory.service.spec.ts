@@ -1060,7 +1060,7 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     expect(response.stats.inGovernance).toBe(2);
   });
 
-  // The unranged roster has one shared entry — what the reassign pickers, Access and Key Contacts read — so an
+  // The unranged roster has one shared entry — what the Board, Committee and Key Contacts assignment pickers read — so an
   // unranged caller's filters must not shape it: a non-LF request cached there would hand the next picker a
   // roster without seats or live-only people until the entry expired.
   it('serves the full unranged roster to an unfiltered read after a non-LF unranged request', async () => {
@@ -1196,17 +1196,29 @@ describe('OrgPeopleDirectoryService.getLive — former employees who still hold 
     expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['committee', 'access'], email: 'grace@lfx-partner.example' });
   });
 
-  it('leaves the unranged roster (pickers, Access, Key Contacts) untagged and never reads former employees for it', async () => {
-    const response = await run(null);
+  // The unranged roster feeds the assignment pickers (Board, Committee and Key Contacts reassign modals), which must not
+  // offer someone who left: it is classified like every ranged view.
+  it('tags an access-only former employee on the unranged picker roster too, without address or title', async () => {
+    cache.serveHits = true;
 
-    expect(getFormerUsernames).not.toHaveBeenCalled();
-    expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({
-      sources: ['access'],
-      accessBadge: 'viewer',
-      email: 'grace@lfx-partner.example',
-    });
-    expect(response.rows.some((row) => row.isFormer)).toBe(false);
-    expect(cache.entry).not.toBeNull();
+    const miss = await run(null);
+    const hit = await run(null);
+
+    expect(getFormerUsernames).toHaveBeenCalledTimes(1);
+    expect(getFormerUsernames).toHaveBeenCalledWith(ACCOUNT);
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:roster', 'org-people-dir:v6:roster']);
+    expect(cache.entry).not.toContain('grace@lfx-partner.example');
+    for (const response of [miss, hit]) {
+      expect(response.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({
+        sources: ['access'],
+        accessBadge: 'viewer',
+        isFormer: true,
+        email: null,
+        title: null,
+      });
+      expect(response.rows.find((row) => row.lfUsername === 'dclarke')).toMatchObject({ email: 'dclarke@lfx-partner.example' });
+      expect(response.rows.find((row) => row.lfUsername === 'dclarke')?.isFormer).toBeUndefined();
+    }
   });
 
   it('does not read former employees under non_lf, where access adds no live-only row', async () => {
@@ -1215,21 +1227,43 @@ describe('OrgPeopleDirectoryService.getLive — former employees who still hold 
     expect(getFormerUsernames).not.toHaveBeenCalled();
   });
 
-  it('serves the roster untagged when the former read fails, with a warning, and does not cache it', async () => {
+  it.each([
+    { label: 'a ranged view', range: '365d' as const },
+    { label: 'the unranged picker roster', range: null },
+  ])('serves access-only principals untagged but without address or title when the former read fails, uncached, on $label', async ({ range }) => {
+    getAccessPrincipals.mockResolvedValue([
+      grace,
+      accessUser({ email: 'ann@lfx-partner.example', username: 'ann', name: 'ann@lfx-partner.example', jobTitle: 'Engineer' }),
+      accessUser({ email: 'kim@lfx-partner.example', username: null, inviteStatus: 'pending', isPending: true }),
+    ]);
     getFormerUsernames.mockRejectedValueOnce(new Error('warehouse down'));
     cache.serveHits = true;
 
-    const failed = await run('365d');
+    const failed = await run(range);
 
-    expect(failed.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'], accessBadge: 'viewer' });
     expect(failed.rows.some((row) => row.isFormer)).toBe(false);
+    expect(failed.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({
+      name: 'Grace Hopper',
+      sources: ['access'],
+      accessBadge: 'viewer',
+      email: null,
+      title: null,
+    });
+    expect(failed.rows.find((row) => row.lfUsername === 'ann')).toMatchObject({ name: 'ann', email: null, title: null });
+    // A pending invite has no username, so it could never be tagged and is served as it always is.
+    expect(failed.rows.find((row) => row.accessBadge === 'invited')).toMatchObject({ email: 'kim@lfx-partner.example' });
+    // A stored row is never an access-only row and keeps its address.
+    expect(failed.rows.find((row) => row.lfUsername === 'dclarke')).toMatchObject({ email: 'dclarke@lfx-partner.example' });
+    expect(JSON.stringify(failed)).not.toContain('grace@lfx-partner.example');
+    expect(JSON.stringify(failed)).not.toContain('ann@lfx-partner.example');
     expect(cache.entry).toBeNull();
     expect(logger.warning).toHaveBeenCalledWith(req, 'get_org_people_directory', expect.stringContaining('Former employees read failed'), expect.anything());
 
-    const recovered = await run('365d');
+    const recovered = await run(range);
 
     expect(getFormerUsernames).toHaveBeenCalledTimes(2);
     expect(recovered.rows.find((row) => row.lfUsername === 'grace')?.isFormer).toBe(true);
+    expect(recovered.rows.find((row) => row.lfUsername === 'ann')).toMatchObject({ email: 'ann@lfx-partner.example', title: 'Engineer' });
     expect(cache.entry).not.toBeNull();
   });
 });

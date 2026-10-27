@@ -71,13 +71,13 @@ describe('EventAttendeesComponent — event dropdown follows the range (lfx-self
     fixture.detectChanges();
   }
 
-  async function mount(initialUrl: string): Promise<void> {
+  async function mount(initialUrl: string, response: OrgEventAttendeesResponse = RESPONSE): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [EventAttendeesComponent],
       providers: [
         provideRouter([]),
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
-        { provide: EventAttendeesService, useValue: { getEventAttendees: vi.fn(() => of(RESPONSE)) } },
+        { provide: EventAttendeesService, useValue: { getEventAttendees: vi.fn(() => of(response)) } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
@@ -123,5 +123,21 @@ describe('EventAttendeesComponent — event dropdown follows the range (lfx-self
       expect(row()).not.toBeNull();
     }
     expect(form().controls['event'].value).toBe('');
+  });
+
+  // An event with no end date is dated by its start everywhere: Last attended, Most recent event and the expanded order agree.
+  it('dates a start-only event by its start in Last attended, Most recent event and the expanded order', async () => {
+    const newerStartOnly: OrgEventAttendeeDetailRow = { ...detail('newer-start-only', daysFromToday(-3)), eventEndDate: null };
+    const olderEnded = detail('older-ended', daysFromToday(-10));
+    await mount('/?tab=events&range=all', { ...RESPONSE, details: [olderEnded, newerStartOnly] });
+
+    const component = fixture.componentInstance as unknown as {
+      viewRows: () => { personKey: string; lastAttendedTs: string | null; mostRecentEventName: string | null }[];
+      expandedRowsMap: () => Record<string, { eventId: string }[]>;
+    };
+    const [ada] = component.viewRows();
+    expect(ada.lastAttendedTs).toBe(daysFromToday(-3));
+    expect(ada.mostRecentEventName).toBe('newer-start-only');
+    expect(component.expandedRowsMap()['p-1'].map((row) => row.eventId)).toEqual(['newer-start-only', 'older-ended']);
   });
 });

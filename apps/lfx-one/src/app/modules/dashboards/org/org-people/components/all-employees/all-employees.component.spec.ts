@@ -499,7 +499,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('1');
     });
 
-    it('shows the error state under "Former employees" and neither the error nor the warning under "Current employees" when the former read fails', async () => {
+    it('shows the error state under "Former employees" and a soft warning, not the error, under "Current employees" when the former read fails', async () => {
       const warning = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-former-error"]');
       const error = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-error"]');
       await mount('browser', '/?employment=former');
@@ -514,7 +514,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(error()).toBeNull();
-      expect(warning()).toBeNull();
+      expect(warning()?.textContent).toContain("Some activity for returning employees couldn't be loaded.");
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
     });
 

@@ -13,9 +13,10 @@ vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => (
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn() } }));
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgLensTrainingService } from './org-lens-training.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const REQ = {} as Request;
 const ENROLLED_WINDOW = "t.ACTIVITY_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND t.ACTIVITY_TS::date < CURRENT_DATE()";
 

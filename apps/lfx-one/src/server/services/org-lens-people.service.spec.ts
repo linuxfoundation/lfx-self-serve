@@ -724,6 +724,17 @@ describe('OrgLensPeopleService person-key company emails', () => {
       }
     });
 
+    it('never sends a title or an address-shaped name for a former employee', async () => {
+      addRangeRow(ACCOUNT, 'former-address-name', '365d', true, 'addressuser', 'gone@personal.example', null, 4);
+
+      const formerRow = (await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS)).rows.find((row) => row.lfUsername === 'addressuser');
+
+      expect(formerRow?.name).toBe('addressuser');
+      expect(formerRow?.title).toBeNull();
+      const formerRead = (execute.mock.calls as [string][]).find(([query]) => /IS_FORMER = TRUE/.test(query) && /ENGAGED_FOUNDATION_IDS/.test(query));
+      expect(formerRead?.[0]).toMatch(/NULL AS TITLE/);
+    });
+
     it('answers unavailable for a former employee by person key and by LF username, even when addresses are on record', async () => {
       addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
 

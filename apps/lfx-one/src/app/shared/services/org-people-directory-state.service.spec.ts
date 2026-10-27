@@ -197,4 +197,31 @@ describe('OrgPeopleDirectoryStateService', () => {
     await firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
     http.expectNone(ROSTER_URL);
   });
+
+  // lfx-self-serve#4378: Org Lens access held by someone who left does not make them assignable.
+  it('leaves rows tagged former out of the picker while the directory itself still lists them', async () => {
+    const [base] = roster('Ada Lovelace').rows;
+    const response: OrgAllEmployeesResponse = {
+      ...roster('Ada Lovelace'),
+      rows: [
+        { ...base, email: 'ada@example.com' },
+        {
+          ...base,
+          personKey: 'live-grace',
+          name: 'Grace Hopper',
+          lfUsername: 'grace',
+          email: 'grace@example.com',
+          sources: ['access'],
+          accessBadge: 'viewer',
+          isFormer: true,
+        },
+      ],
+    };
+
+    const employees = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
+    http.expectOne(ROSTER_URL).flush(response);
+
+    await expect(employees).resolves.toEqual([expect.objectContaining({ email: 'ada@example.com' })]);
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID))).resolves.toEqual(response);
+  });
 });
