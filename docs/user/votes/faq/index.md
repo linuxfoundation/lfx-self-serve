@@ -18,7 +18,7 @@ Voter eligibility and anonymity settings are configured when the poll is created
 
 ## Can I change my vote after submitting?
 
-Yes, until the poll closes. From **Votes**, select **Review** on the poll. Your current choices are filled in, and **Submit changes** replaces your earlier ballot. The **Your ballot** section on the poll's page shows what is recorded.
+No. A submitted ballot is final. From **Votes**, select **Review** on an open poll you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. There is no submit or change action. The **Your ballot** section on the poll's page also shows what is recorded.
 
 ## Are votes anonymous?
 

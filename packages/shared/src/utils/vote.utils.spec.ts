@@ -50,7 +50,7 @@ import {
   getVoteVoterStatus,
   isRankedPollType,
   isVoteAwaitingMyBallot,
-  isVoteBallotChangeable,
+  isVoteBallotReviewable,
   isVoteClosingSoon,
   mapFiltersToEligibility,
   mapMyBallotToCastForm,
@@ -159,7 +159,7 @@ describe('isVoteAwaitingMyBallot', () => {
   });
 });
 
-describe('isVoteBallotChangeable (#4331)', () => {
+describe('isVoteBallotReviewable (#4331)', () => {
   const vote = (overrides: Partial<Vote> = {}): Vote => ({
     uid: 'synthetic-vote',
     name: 'Synthetic election',
@@ -171,15 +171,15 @@ describe('isVoteBallotChangeable (#4331)', () => {
   });
 
   it('is true for an active vote the viewer already responded to', () => {
-    expect(isVoteBallotChangeable(vote())).toBe(true);
+    expect(isVoteBallotReviewable(vote())).toBe(true);
   });
 
   it('is false while the response is still awaited', () => {
-    expect(isVoteBallotChangeable(vote({ response_status: VoteResponseStatus.AWAITING_RESPONSE }))).toBe(false);
+    expect(isVoteBallotReviewable(vote({ response_status: VoteResponseStatus.AWAITING_RESPONSE }))).toBe(false);
   });
 
   it('is false once the vote has ended', () => {
-    expect(isVoteBallotChangeable(vote({ status: PollStatus.ENDED }))).toBe(false);
+    expect(isVoteBallotReviewable(vote({ status: PollStatus.ENDED }))).toBe(false);
   });
 });
 

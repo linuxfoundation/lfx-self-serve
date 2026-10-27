@@ -29,7 +29,6 @@ import {
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
-  UpdateVoteResponseRequest,
   Vote,
   VoteAnswerInput,
   VoteParticipationVoter,
@@ -570,32 +569,17 @@ export class VoteService {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
 
-  /** Replaces the caller's own submitted ballot (#4331). */
-  public updateVoteResponse(voteResponseUid: string, payload: UpdateVoteResponseRequest): Observable<void> {
-    return this.http.put<void>(`/api/votes/responses/${encodeURIComponent(voteResponseUid)}`, payload).pipe(take(1));
-  }
-
   /**
-   * Wraps getMyVoteResponse + createVoteResponse/updateVoteResponse; throws INVITATION_NOT_FOUND if no row exists.
-   * Only an explicit replacement target can update a ballot (#4331); a first-vote form always uses POST.
+   * Wraps getMyVoteResponse + createVoteResponse for an initial ballot; throws INVITATION_NOT_FOUND if no row exists.
    */
   public submitMyResponse(
     voteUid: string,
-    params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[]; replaceResponseUid?: string }
+    params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
   ): Observable<void> {
     return this.getMyVoteResponse(voteUid).pipe(
       take(1),
       switchMap((myResponse) => {
         if (!myResponse?.uid) return throwError(() => new Error(INVITATION_NOT_FOUND));
-        if (params.replaceResponseUid) {
-          if (myResponse.uid !== params.replaceResponseUid) return throwError(() => new Error(INVITATION_NOT_FOUND));
-          // Always send comment_responses on an update: upstream keeps the old comments when it is omitted.
-          return this.updateVoteResponse(myResponse.uid, {
-            abstain: params.abstain,
-            user_vote_content: params.userVoteContent,
-            comment_responses: params.commentResponses ?? [],
-          });
-        }
         const payload: CreateVoteResponseRequest = {
           vote_response_uid: myResponse.uid,
           vote_uid: voteUid,

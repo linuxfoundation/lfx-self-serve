@@ -29,7 +29,6 @@ import type {
   IndexedVoteResponse,
   MyVoteResponse,
   QueryServiceResponse,
-  UpdateVoteResponseRequest,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -144,7 +143,7 @@ vi.mock('../utils/auth-helper', () => ({
   },
 }));
 
-import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { logger } from './logger.service';
 import { VoteService } from './vote.service';
@@ -2326,113 +2325,6 @@ describe('VoteService', () => {
         comment_responses: [],
         vote_creation_time: undefined,
       });
-    });
-  });
-
-  describe('updateVoteResponse (#4331)', () => {
-    const RESPONSE_UID = 'vr000000-0000-0000-0000-00000000d501';
-    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d501';
-    const BASELINE_TIME = '2026-10-20T10:00:00Z';
-    const payload: UpdateVoteResponseRequest = {
-      abstain: false,
-      user_vote_content: [{ question_id: 'q-1', choice_ids: ['c-no'] }],
-      comment_responses: [],
-    };
-    let rowTimes: (string | undefined)[];
-    let ownRows: boolean;
-
-    beforeEach(async () => {
-      vi.useFakeTimers();
-      const realPoll = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
-      pollEndpoint.mockImplementation(realPoll.pollEndpoint);
-      getUsernameFromAuth.mockResolvedValue('spec-voter');
-      getEffectiveEmail.mockReturnValue('spec-voter@example.org');
-      fetchAllQueryResources.mockImplementation(
-        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<unknown>>): Promise<unknown[]> => {
-          const page = await fetchPage();
-          return page.resources.map((r) => r.data);
-        }
-      );
-      rowTimes = [BASELINE_TIME];
-      ownRows = true;
-      proxyRequest.mockImplementation(async (_req: Request, _service: string, path: string, method: string) => {
-        if (path === `/vote_responses/${RESPONSE_UID}` && method === 'PUT') return undefined;
-        if (path !== '/query/resources' || method !== 'GET') throw new Error(`Unexpected transport call: ${method} ${path}`);
-        if (!ownRows) return { resources: [] };
-        // Each read consumes the next indexed time; the last one repeats.
-        const time = rowTimes.length > 1 ? rowTimes.shift() : rowTimes[0];
-        return {
-          resources: [
-            {
-              data: {
-                uid: RESPONSE_UID,
-                vote_uid: VOTE_UID,
-                user_email: 'spec-voter@example.org',
-                vote_status: IndexedVoteResponseStatus.RESPONDED,
-                vote_creation_time: time,
-              },
-            },
-          ],
-        };
-      });
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-      pollEndpoint.mockImplementation(() => Promise.resolve(true));
-      fetchAllQueryResources.mockReset();
-      getEffectiveEmail.mockReset();
-      getUsernameFromAuth.mockReset();
-      proxyRequest.mockReset();
-    });
-
-    const settle = async (): Promise<void> => {
-      const update = service.updateVoteResponse(req, RESPONSE_UID, payload);
-      await vi.runAllTimersAsync();
-      await update;
-    };
-
-    it("rejects a response uid that is not one of the caller's rows without writing", async () => {
-      ownRows = false;
-
-      await expect(service.updateVoteResponse(req, RESPONSE_UID, payload)).rejects.toBeInstanceOf(ResourceNotFoundError);
-      expect(proxyRequest).not.toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', expect.stringContaining('/vote_responses/'), 'PUT', undefined, expect.anything());
-    });
-
-    it('scopes the baseline read to the uid and PUTs the payload upstream', async () => {
-      rowTimes = [BASELINE_TIME, '2026-10-27T09:00:00Z'];
-
-      await settle();
-
-      expect(proxyRequest).toHaveBeenCalledWith(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        expect.objectContaining({ filters: [`uid:${RESPONSE_UID}`] })
-      );
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${RESPONSE_UID}`, 'PUT', undefined, payload);
-    });
-
-    it('resolves once the indexed vote_creation_time changes', async () => {
-      rowTimes = [BASELINE_TIME, BASELINE_TIME, '2026-10-27T09:00:00Z'];
-
-      await settle();
-
-      // Baseline, one unchanged poll read, then the changed one.
-      expect(proxyRequest.mock.calls.filter(([, , path]) => path === '/query/resources')).toHaveLength(3);
-      expect(logger.warning).not.toHaveBeenCalledWith(req, 'update_vote_response', expect.any(String), expect.anything());
-    });
-
-    it('warns when the updated ballot is not indexed before the poll gives up', async () => {
-      await settle();
-
-      expect(logger.warning).toHaveBeenCalledWith(
-        req,
-        'update_vote_response',
-        expect.any(String),
-        expect.objectContaining({ vote_response_uid: RESPONSE_UID })
-      );
     });
   });
 

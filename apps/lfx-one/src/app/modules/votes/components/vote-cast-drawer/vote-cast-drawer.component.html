@@ -77,13 +77,13 @@
           <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
         </div>
       } @else {
-        @if (changingBallot()) {
+        @if (readOnly()) {
           @if (loadingBallot()) {
             <p-skeleton width="100%" height="48px" data-testid="vote-cast-ballot-loading"></p-skeleton>
           } @else if (ballotError()) {
             <p class="text-sm text-red-600" role="alert" data-testid="vote-cast-ballot-error">{{ ballotLoadError }}</p>
           } @else if (myBallot()) {
-            <lfx-message severity="info" [text]="replaceNotice" data-testid="vote-cast-replace-notice"></lfx-message>
+            <lfx-message severity="info" [text]="reviewNotice" data-testid="vote-cast-review-notice"></lfx-message>
           }
         }
 
@@ -96,188 +96,181 @@
           </div>
         }
 
-        <form [formGroup]="form" class="flex flex-col gap-6">
-          <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
-          @for (question of questions(); track question.question_id) {
-            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
-              <div class="flex flex-col gap-1">
-                <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
-                @if (isRankedPoll()) {
-                  <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
-                  @if (changingBallot()) {
-                    <p class="text-xs text-slate-500">Unranked choices stay unranked unless you add them. Remove a preference to leave it unranked.</p>
+        @if (!readOnly() || myBallot()) {
+          <form [formGroup]="form" class="flex flex-col gap-6">
+            <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
+            @for (question of questions(); track question.question_id) {
+              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
+                <div class="flex flex-col gap-1">
+                  <h3 class="text-sm font-semibold text-slate-900">{{ question.prompt }}</h3>
+                  @if (isRankedPoll()) {
+                    @if (readOnly()) {
+                      <p class="text-xs text-slate-500">Your recorded ranking. Top of the list is your first choice.</p>
+                    } @else {
+                      <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
+                    }
+                  } @else if (question.type === 'multiple_choice') {
+                    <p class="text-xs text-slate-500">{{ readOnly() ? 'Your recorded choices.' : 'Select all that apply.' }}</p>
                   }
-                } @else if (question.type === 'multiple_choice') {
-                  <p class="text-xs text-slate-500">Select all that apply.</p>
-                }
-              </div>
+                </div>
 
-              <div class="flex flex-col gap-2">
-                @if (isRankedPoll()) {
-                  <div
-                    cdkDropList
-                    [cdkDropListDisabled]="abstain()"
-                    (cdkDropListDropped)="onRankedDrop(question.question_id, $event)"
-                    class="flex flex-col gap-2"
-                    [class.opacity-60]="abstain()">
-                    @for (choice of rankedOrderByQuestion().get(question.question_id) ?? question.choices; track choice.choice_id; let i = $index) {
-                      <div
-                        cdkDrag
-                        [cdkDragDisabled]="abstain()"
-                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-                        [class.cursor-move]="!abstain()"
-                        [class.cursor-not-allowed]="abstain()"
-                        [attr.data-testid]="'vote-cast-rank-' + choice.choice_id">
-                        <i cdkDragHandle class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
-                        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
-                          {{ i + 1 }}
-                        </span>
-                        <span class="flex-1 text-sm text-slate-800">{{ choice.choice_text }}</span>
-                        <button
-                          type="button"
-                          (click)="moveRank(question.question_id, i, i - 1)"
-                          [disabled]="i === 0 || abstain()"
-                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
-                          [attr.data-testid]="'vote-cast-rank-up-' + choice.choice_id"
-                          [attr.aria-label]="'Move ' + choice.choice_text + ' up'">
-                          <i class="fa-light fa-arrow-up" aria-hidden="true"></i>
-                        </button>
-                        <button
-                          type="button"
-                          (click)="moveRank(question.question_id, i, i + 1)"
-                          [disabled]="i === (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) - 1 || abstain()"
-                          class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
-                          [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
-                          [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
-                          <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
-                        </button>
-                        @if (changingBallot()) {
-                          <lfx-button
-                            icon="fa-light fa-xmark"
-                            size="small"
-                            severity="secondary"
-                            [text]="true"
-                            [ariaLabel]="'Leave ' + choice.choice_text + ' unranked'"
-                            [disabled]="abstain() || submitting() || !myBallot()"
-                            (onClick)="removeRank(question.question_id, choice.choice_id)"
-                            [attr.data-testid]="'vote-cast-unrank-' + choice.choice_id" />
-                        }
-                      </div>
-                    }
-                  </div>
-                  @if (changingBallot()) {
-                    @let unranked = unrankedChoicesByQuestion().get(question.question_id) ?? [];
-                    @if (unranked.length > 0) {
-                      <div class="flex flex-col gap-2" [attr.data-testid]="'vote-cast-unranked-' + question.question_id">
-                        <h4 class="text-sm font-medium text-slate-700">Not ranked</h4>
-                        @for (choice of unranked; track choice.choice_id) {
-                          <div
-                            class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
-                            [attr.data-testid]="'vote-cast-unranked-' + choice.choice_id">
-                            <span class="text-sm text-slate-700">{{ choice.choice_text }}</span>
-                            <lfx-button
-                              label="Rank"
-                              size="small"
-                              severity="secondary"
-                              [outlined]="true"
-                              [ariaLabel]="'Rank ' + choice.choice_text"
-                              [disabled]="
-                                abstain() ||
-                                submitting() ||
-                                !myBallot() ||
-                                (question.type === 'single_choice' && (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) > 0)
-                              "
-                              (onClick)="addRank(question.question_id, choice.choice_id)"
-                              [attr.data-testid]="'vote-cast-add-rank-' + choice.choice_id" />
-                          </div>
-                        }
-                      </div>
-                    }
-                  }
-                } @else if (question.type === 'single_choice') {
-                  @for (choice of question.choices; track choice.choice_id) {
-                    <lfx-radio-button
-                      [form]="form"
-                      [control]="question.question_id"
-                      [name]="question.question_id"
-                      [value]="choice.choice_id"
-                      [inputId]="'vote-cast-choice-' + choice.choice_id"
-                      [label]="choice.choice_text"
-                      [attr.data-testid]="'vote-cast-choice-' + choice.choice_id"></lfx-radio-button>
-                  }
-                } @else if (question.type === 'multiple_choice') {
-                  @for (choice of question.choices; track choice.choice_id) {
-                    <div class="flex items-center gap-2" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
-                      <p-checkbox
-                        [formControlName]="question.question_id"
-                        [value]="choice.choice_id"
-                        [binary]="false"
-                        [inputId]="'vote-cast-choice-' + choice.choice_id" />
-                      <label [for]="'vote-cast-choice-' + choice.choice_id" class="text-sm font-medium text-gray-700 cursor-pointer">
-                        {{ choice.choice_text }}
-                      </label>
+                <div class="flex flex-col gap-2">
+                  @if (isRankedPoll()) {
+                    <div
+                      cdkDropList
+                      [cdkDropListDisabled]="readOnly() || abstain()"
+                      (cdkDropListDropped)="onRankedDrop(question.question_id, $event)"
+                      class="flex flex-col gap-2"
+                      [class.opacity-60]="abstain()">
+                      @for (choice of rankedOrderByQuestion().get(question.question_id) ?? question.choices; track choice.choice_id; let i = $index) {
+                        <div
+                          cdkDrag
+                          [cdkDragDisabled]="readOnly() || abstain()"
+                          class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                          [class.cursor-move]="!readOnly() && !abstain()"
+                          [class.cursor-not-allowed]="readOnly() || abstain()"
+                          [attr.data-testid]="'vote-cast-rank-' + choice.choice_id">
+                          @if (!readOnly()) {
+                            <i cdkDragHandle class="fa-light fa-grip-vertical text-slate-400" aria-hidden="true"></i>
+                          }
+                          <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold flex-shrink-0">
+                            {{ i + 1 }}
+                          </span>
+                          <span class="flex-1 text-sm text-slate-800">{{ choice.choice_text }}</span>
+                          <button
+                            type="button"
+                            (click)="moveRank(question.question_id, i, i - 1)"
+                            [disabled]="readOnly() || i === 0 || abstain()"
+                            class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                            [attr.data-testid]="'vote-cast-rank-up-' + choice.choice_id"
+                            [attr.aria-label]="'Move ' + choice.choice_text + ' up'">
+                            <i class="fa-light fa-arrow-up" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="moveRank(question.question_id, i, i + 1)"
+                            [disabled]="readOnly() || i === (rankedOrderByQuestion().get(question.question_id)?.length ?? 0) - 1 || abstain()"
+                            class="p-1 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                            [attr.data-testid]="'vote-cast-rank-down-' + choice.choice_id"
+                            [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
+                            <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
                     </div>
+                    @if (readOnly()) {
+                      @let unranked = unrankedChoicesByQuestion().get(question.question_id) ?? [];
+                      @if (unranked.length > 0) {
+                        <div class="flex flex-col gap-2" [attr.data-testid]="'vote-cast-unranked-' + question.question_id">
+                          <h4 class="text-sm font-medium text-slate-700">Not ranked</h4>
+                          @for (choice of unranked; track choice.choice_id) {
+                            <div
+                              class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
+                              [attr.data-testid]="'vote-cast-unranked-' + choice.choice_id">
+                              <span class="text-sm text-slate-700">{{ choice.choice_text }}</span>
+                            </div>
+                          }
+                        </div>
+                      }
+                    }
+                  } @else if (question.type === 'single_choice') {
+                    @for (choice of question.choices; track choice.choice_id) {
+                      <lfx-radio-button
+                        [form]="form"
+                        [control]="question.question_id"
+                        [name]="question.question_id"
+                        [value]="choice.choice_id"
+                        [inputId]="'vote-cast-choice-' + choice.choice_id"
+                        [label]="choice.choice_text"
+                        [attr.data-testid]="'vote-cast-choice-' + choice.choice_id"></lfx-radio-button>
+                    }
+                  } @else if (question.type === 'multiple_choice') {
+                    @for (choice of question.choices; track choice.choice_id) {
+                      <div class="flex items-center gap-2" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
+                        <p-checkbox
+                          [formControlName]="question.question_id"
+                          [value]="choice.choice_id"
+                          [binary]="false"
+                          [inputId]="'vote-cast-choice-' + choice.choice_id" />
+                        <label [for]="'vote-cast-choice-' + choice.choice_id" class="text-sm font-medium text-gray-700 cursor-pointer">
+                          {{ choice.choice_text }}
+                        </label>
+                      </div>
+                    }
                   }
-                }
-              </div>
-            </div>
-          }
-        </form>
-
-        @if (commentPromptsData().length > 0) {
-          <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" [formGroup]="commentForm" data-testid="vote-cast-comments">
-            <h2 class="text-lg font-semibold text-slate-900">Additional Comments (Optional)</h2>
-            @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
-              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" [attr.data-testid]="'vote-cast-comment-' + commentData.prompt.prompt_id">
-                <label [for]="'vote-cast-comment-text-' + commentData.prompt.prompt_id" class="text-sm font-medium text-slate-700">
-                  {{ commentData.prompt.prompt }}
-                </label>
-                <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
-                     the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
-                <lfx-textarea
-                  [form]="commentForm"
-                  [control]="commentData.prompt.prompt_id"
-                  [id]="'vote-cast-comment-text-' + commentData.prompt.prompt_id"
-                  placeholder="Share your thoughts"
-                  [rows]="3"
-                  styleClass="w-full"
-                  [dataTest]="'vote-cast-comment-textarea-' + commentData.prompt.prompt_id">
-                </lfx-textarea>
-                <div class="flex justify-between">
-                  @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
-                    <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
-                  } @else {
-                    <span></span>
-                  }
-                  <span class="text-xs text-slate-400" [attr.data-testid]="'vote-cast-comment-counter-' + commentData.prompt.prompt_id">
-                    {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
-                  </span>
                 </div>
               </div>
             }
-          </div>
-        }
+          </form>
 
-        @if (allowAbstain()) {
-          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
-            <div class="flex items-center gap-2" data-testid="vote-cast-abstain-toggle">
-              <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
-              <label for="vote-cast-abstain" class="text-sm font-medium text-gray-700 cursor-pointer">Abstain from this vote</label>
+          @if (commentPromptsData().length > 0) {
+            <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" [formGroup]="commentForm" data-testid="vote-cast-comments">
+              <h2 class="text-lg font-semibold text-slate-900">Additional Comments (Optional)</h2>
+              @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
+                <div
+                  class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2"
+                  [attr.data-testid]="'vote-cast-comment-' + commentData.prompt.prompt_id">
+                  <label [for]="'vote-cast-comment-text-' + commentData.prompt.prompt_id" class="text-sm font-medium text-slate-700">
+                    {{ commentData.prompt.prompt }}
+                  </label>
+                  <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
+                     the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
+                  <lfx-textarea
+                    [form]="commentForm"
+                    [control]="commentData.prompt.prompt_id"
+                    [id]="'vote-cast-comment-text-' + commentData.prompt.prompt_id"
+                    placeholder="Share your thoughts"
+                    [rows]="3"
+                    styleClass="w-full"
+                    [dataTest]="'vote-cast-comment-textarea-' + commentData.prompt.prompt_id">
+                  </lfx-textarea>
+                  <div class="flex justify-between">
+                    @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
+                      <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
+                    } @else {
+                      <span></span>
+                    }
+                    <span class="text-xs text-slate-400" [attr.data-testid]="'vote-cast-comment-counter-' + commentData.prompt.prompt_id">
+                      {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
+                    </span>
+                  </div>
+                </div>
+              }
             </div>
-            <p class="text-xs text-slate-500">An abstention is recorded as a non-vote and overrides your choices above; any comments are still submitted.</p>
-          </div>
+          }
+
+          @if (allowAbstain() || (readOnly() && abstain())) {
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
+              <div class="flex items-center gap-2" data-testid="vote-cast-abstain-toggle">
+                <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
+                <label for="vote-cast-abstain" class="text-sm font-medium text-gray-700 cursor-pointer">Abstain from this vote</label>
+              </div>
+              @if (!readOnly()) {
+                <p class="text-xs text-slate-500">
+                  An abstention is recorded as a non-vote and overrides your choices above; any comments are still submitted.
+                </p>
+              }
+            </div>
+          }
         }
 
         <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
-          <lfx-button label="Cancel" severity="secondary" (onClick)="onClose()" [disabled]="submitting()" data-testid="vote-cast-cancel-button"></lfx-button>
           <lfx-button
-            [label]="submitLabel()"
-            icon="fa-light fa-check"
-            severity="primary"
-            [disabled]="submitDisabled()"
-            [loading]="submitting()"
-            (onClick)="onSubmit()"
-            data-testid="vote-cast-submit-button"></lfx-button>
+            [label]="readOnly() ? 'Close' : 'Cancel'"
+            severity="secondary"
+            (onClick)="onClose()"
+            [disabled]="submitting()"
+            data-testid="vote-cast-cancel-button"></lfx-button>
+          @if (!readOnly()) {
+            <lfx-button
+              label="Submit Vote"
+              icon="fa-light fa-check"
+              severity="primary"
+              [disabled]="submitDisabled()"
+              [loading]="submitting()"
+              (onClick)="onSubmit()"
+              data-testid="vote-cast-submit-button"></lfx-button>
+          }
         </div>
       }
     </div>

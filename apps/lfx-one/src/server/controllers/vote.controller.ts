@@ -10,7 +10,6 @@ import {
   ExtendVoteRequest,
   SendVoteReminderRequest,
   UpdateVoteRequest,
-  UpdateVoteResponseRequest,
 } from '@lfx-one/shared/interfaces';
 import {
   VOTE_COMMENT_PROMPT_MAX_COUNT,
@@ -462,7 +461,7 @@ export class VoteController {
     }
   }
 
-  /** GET /votes/:uid/my-ballot — the caller's own current ballot, used to pre-fill a ballot change and show "Your ballot" (#4331). */
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for read-only review and "Your ballot" (#4331). */
   public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
@@ -491,46 +490,6 @@ export class VoteController {
 
       logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
       res.json(ballot);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * PUT /votes/responses/:responseUid — replaces the caller's own submitted ballot (#4331)
-   */
-  public async updateVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { responseUid } = req.params;
-    const payload: Partial<UpdateVoteResponseRequest> = req.body;
-    const startTime = logger.startOperation(req, 'update_vote_response', {
-      vote_response_uid: responseUid,
-      abstain: payload?.abstain,
-    });
-
-    try {
-      const validationContext = { operation: 'update_vote_response', service: 'vote_controller' } as const;
-
-      if (!validateUidParameter(responseUid, req, next, validationContext)) {
-        return;
-      }
-
-      if (!validateRequestBody(payload, req, next, validationContext)) {
-        return;
-      }
-
-      const validated = this.buildValidatedVoteResponsePayload(payload, validationContext);
-      // Always send comment_responses: upstream keeps the old comments when it is omitted, so a cleared comment must arrive as [].
-      const upstreamPayload: UpdateVoteResponseRequest = { ...validated, comment_responses: validated.comment_responses ?? [] };
-
-      await this.voteService.updateVoteResponse(req, responseUid, upstreamPayload);
-
-      logger.success(req, 'update_vote_response', startTime, {
-        vote_response_uid: responseUid,
-        abstain: upstreamPayload.abstain,
-        status_code: 204,
-      });
-
-      res.status(204).send();
     } catch (error) {
       next(error);
     }

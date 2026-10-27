@@ -15,7 +15,6 @@ const {
   sendVoteReminders,
   getMyVoteBallot,
   createVoteResponse,
-  updateVoteResponse,
   assertVoteWrite,
   hasVoteWrite,
   success,
@@ -30,7 +29,6 @@ const {
   sendVoteReminders: vi.fn(),
   getMyVoteBallot: vi.fn(),
   createVoteResponse: vi.fn(),
-  updateVoteResponse: vi.fn(),
   assertVoteWrite: vi.fn(),
   hasVoteWrite: vi.fn(),
   success: vi.fn(),
@@ -47,7 +45,6 @@ vi.mock('../services/vote.service', () => ({
     public sendVoteReminders = sendVoteReminders;
     public getMyVoteBallot = getMyVoteBallot;
     public createVoteResponse = createVoteResponse;
-    public updateVoteResponse = updateVoteResponse;
   },
 }));
 vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite, hasVoteWrite }));
@@ -447,38 +444,6 @@ describe('VoteController own ballot (#4331)', () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
       expect(getMyVoteBallot).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('updateVoteResponse', () => {
-    const request = (body: unknown) => ({ params: { responseUid: RESPONSE_UID }, body }) as unknown as Request;
-
-    it('forwards validated answers and defaults comment_responses to [] so cleared comments are cleared', async () => {
-      const req = request({ abstain: false, user_vote_content: answers, extra: 'dropped' });
-
-      await controller.updateVoteResponse(req, res, next);
-
-      expect(updateVoteResponse).toHaveBeenCalledWith(req, RESPONSE_UID, { abstain: false, user_vote_content: answers, comment_responses: [] });
-      expect(status).toHaveBeenCalledWith(204);
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('drops answers on an abstention and keeps only validated comment fields', async () => {
-      const req = request({ abstain: true, user_vote_content: answers, comment_responses: [{ prompt_id: 'p-1', comment_text: 'Note', extra: true }] });
-
-      await controller.updateVoteResponse(req, res, next);
-
-      expect(updateVoteResponse).toHaveBeenCalledWith(req, RESPONSE_UID, { abstain: true, comment_responses: [{ prompt_id: 'p-1', comment_text: 'Note' }] });
-    });
-
-    it.each([
-      ['a non-boolean abstain', { abstain: 'no', user_vote_content: answers }],
-      ['missing answers when not abstaining', { abstain: false }],
-    ])('rejects %s', async (_label, body) => {
-      await controller.updateVoteResponse(request(body), res, next);
-
-      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-      expect(updateVoteResponse).not.toHaveBeenCalled();
     });
   });
 

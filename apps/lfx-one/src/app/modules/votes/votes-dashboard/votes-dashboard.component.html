@@ -114,13 +114,13 @@
   }
 </div>
 
-<!-- Vote Cast Drawer (#4330) — Me lens only: opens in place for an active vote, empty to cast a first ballot or pre-filled to change it (#4331). -->
+<!-- Vote Cast Drawer (#4330) — Me lens only: opens in place for an active vote, empty to cast a first ballot or locked to review a submitted ballot (#4331). -->
 @if (isMeLens()) {
   <lfx-vote-cast-drawer
     [(visible)]="castDrawerVisible"
     [voteId]="castDrawerVoteId()"
     [listVote]="castDrawerVote()"
-    [changingBallot]="castDrawerChangingBallot()"
+    [readOnly]="castDrawerReadOnly()"
     (voteSubmitted)="onCastVoteSubmitted($event)"
     data-testid="votes-dashboard-cast-drawer"></lfx-vote-cast-drawer>
 }

@@ -1189,21 +1189,6 @@ export interface CreateVoteResponseRequest {
 }
 
 /**
- * Request body for replacing the caller's own submitted ballot (#4331)
- * @description Aligns with upstream PUT /vote_responses/{vote_response_uid}. Upstream keeps the
- * existing comments when `comment_responses` is omitted, so it is always sent — `[]` clears them.
- * @see https://github.com/linuxfoundation/lfx-v2-voting-service
- */
-export interface UpdateVoteResponseRequest {
-  /** Whether the voter is abstaining */
-  abstain: boolean;
-  /** Voter's answers — required when not abstaining */
-  user_vote_content?: VoteAnswerInput[];
-  /** Voter's responses to comment prompts — replaces the stored comments */
-  comment_responses: CommentResponseInput[];
-}
-
-/**
  * Upstream GET /vote_responses/{vote_response_uid} subset read by the BFF (#4331).
  * @description Read straight from the voting service, which (unlike the query-service index)
  * returns ballot content on pseudo-anonymous votes too. Never forwarded to the client as-is.
