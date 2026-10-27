@@ -66,13 +66,14 @@ vi.mock('./valkey.service', async () => {
     ): Promise<T> => actual.ValkeyService.getInstance().withCache(actual.buildOrgCacheKey(account, key), ttl, fetcher, accept, storable),
   };
 });
-const { getAccessAwareOrgs } = vi.hoisted(() => ({ getAccessAwareOrgs: vi.fn() }));
-vi.mock('./org-role-grants.service', () => ({
-  OrgRoleGrantsService: class {
-    public getAccessAwareOrgs = getAccessAwareOrgs;
+const { checkLFStaff } = vi.hoisted(() => ({ checkLFStaff: vi.fn() }));
+// Mocked rather than exercised: the real module pulls in NATS config this fixture has no use for,
+// and the behaviour under test is "what does the service do with the answer", not how it is derived.
+vi.mock('./persona-detection.service', () => ({
+  PersonaDetectionService: class {
+    public checkLFStaff = checkLFStaff;
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'someone' }));
 
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
@@ -193,7 +194,7 @@ beforeEach(() => {
     }
   });
 
-  getAccessAwareOrgs.mockResolvedValue({ isStaff: false, staffCheck: 'ok' });
+  checkLFStaff.mockResolvedValue(false);
   service = new OrgLensEventsService();
 });
 
@@ -427,7 +428,7 @@ describe('OrgLensEventsService company-email scoping', () => {
   });
 
   it('serves the goal to LF staff', async () => {
-    getAccessAwareOrgs.mockResolvedValue({ isStaff: true, staffCheck: 'ok' });
+    checkLFStaff.mockResolvedValue(true);
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
     addRegistration('ada@company.example', 'Ada Lovelace');
@@ -437,22 +438,31 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data[0].eventRegistrationsGoal).toBe(10000);
   });
 
+  it('withholds the goal from a global auditor or org admin who is not LF staff', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    // `RoleGrantsResponse.isStaff` is true for `lf-staff`, `global-org-auditors` AND
+    // `global_org_admin`, and its own comment says it "is never a read gate" — it drives the Org
+    // Lens search affordance. An earlier revision gated on it, which would have handed the internal
+    // goal to those two non-LF teams. The gate asks `lf-staff#member` alone, so they are external
+    // for this purpose however much else they can read.
+    checkLFStaff.mockResolvedValue(false);
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
+    expect(JSON.stringify(list)).not.toContain('10000');
+    expect(checkLFStaff).toHaveBeenCalled();
+  });
+
   it('withholds the goal when the staff check cannot be trusted', async () => {
     addEvent(EVENT, 99);
     addRegistration('ada@company.example', 'Ada Lovelace');
 
-    // A failed check is not evidence of staff. For a disclosure rule the safe default is to
-    // withhold: an external admin seeing the figure is the failure that matters.
-    for (const grants of [
-      { isStaff: true, staffCheck: 'failed' },
-      { isStaff: false, staffCheck: 'ok' },
-    ]) {
-      getAccessAwareOrgs.mockResolvedValue(grants);
-      const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-      expect(list.data[0], JSON.stringify(grants)).not.toHaveProperty('eventRegistrationsGoal');
-    }
-
-    getAccessAwareOrgs.mockRejectedValue(new Error('authorizer down'));
+    // `checkLFStaff` already degrades to false when the access check fails, so a withheld goal is
+    // the documented outcome of an authorizer problem rather than an accident of this call site.
+    checkLFStaff.mockResolvedValue(false);
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
     expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
   });
@@ -465,10 +475,10 @@ describe('OrgLensEventsService company-email scoping', () => {
     // The Org Lens cache is keyed per ORG, not per user, so a staff read and an external read share
     // one entry. Redaction therefore has to happen AFTER the cache, on every response path — if it
     // moved into the cached fetcher, this is the test that would catch it.
-    getAccessAwareOrgs.mockResolvedValue({ isStaff: true, staffCheck: 'ok' });
+    checkLFStaff.mockResolvedValue(true);
     expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].eventRegistrationsGoal).toBe(10000);
 
-    getAccessAwareOrgs.mockResolvedValue({ isStaff: false, staffCheck: 'ok' });
+    checkLFStaff.mockResolvedValue(false);
     const external = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
     expect(external.data[0]).not.toHaveProperty('eventRegistrationsGoal');

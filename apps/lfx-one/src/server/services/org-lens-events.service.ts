@@ -19,20 +19,19 @@ import type {
 import { formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
-import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
-import { OrgRoleGrantsService } from './org-role-grants.service';
+import { PersonaDetectionService } from './persona-detection.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 /** Service for org-lens event list endpoints — reads org event footprint from platinum ORG_EVENTS. */
 export class OrgLensEventsService {
   private readonly snowflakeService: SnowflakeService;
-  private readonly orgRoleGrants: OrgRoleGrantsService;
+  private readonly personaDetection: PersonaDetectionService;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
-    this.orgRoleGrants = new OrgRoleGrantsService();
+    this.personaDetection = new PersonaDetectionService();
   }
 
   /** GET /api/orgs/:accountId/lens/events — paginated list of events for the org. */
@@ -163,7 +162,7 @@ export class OrgLensEventsService {
         const directPlatinum = buildListQuery('platinum');
         try {
           rows = await this.fetchEventListRows(directPlatinum.sql, directPlatinum.binds);
-          return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsStaff(req));
+          return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsLFStaff(req));
         } catch (platinumError) {
           logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
             err: platinumError,
@@ -214,7 +213,7 @@ export class OrgLensEventsService {
       }
     }
 
-    return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsStaff(req));
+    return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsLFStaff(req));
   }
 
   /** GET /api/orgs/:accountId/lens/events/summary — org-wide total / past / upcoming counts for the stat strip. */
@@ -418,23 +417,20 @@ export class OrgLensEventsService {
    * Is the caller LF staff? #4432 removes the event-wide registration goal from EXTERNAL admins'
    * view and payload; LF staff keep it.
    *
-   * Fail-closed in every direction — no username, a throwing lookup, or `staffCheck === 'failed'`
-   * all answer `false`. For a disclosure rule the safe default is to withhold: showing an external
-   * admin a figure Angela Brown ruled out is the failure that matters, and a staff member briefly
+   * Deliberately NOT `RoleGrantsResponse.isStaff`, which an earlier revision of this used.
+   * `OrgRoleGrantsService` sets that for membership of any team in `ORG_WIDE_READ_TEAM_IDS` —
+   * `lf-staff`, `global-org-auditors` AND `global_org_admin` — and its own comment says it "is never
+   * a read gate", only an Org Lens search affordance. Using it here would have handed the internal
+   * goal to a global auditor or org admin who is not LF staff: a disclosure bug on the one rule that
+   * is entirely about disclosure.
+   *
+   * `checkLFStaff` asks for `lf-staff#member` alone, caches per request, and already degrades to
+   * `false` on a failed access check — fail-closed, which is the right direction here. An external
+   * admin seeing a figure Angela Brown ruled out is the failure that matters; a staff member briefly
    * missing a number they can get elsewhere is not.
    */
-  private async callerIsStaff(req: Request): Promise<boolean> {
-    const username = getEffectiveUsername(req);
-    if (!username) return false;
-    try {
-      const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
-      return access.staffCheck === 'ok' && access.isStaff === true;
-    } catch (error) {
-      logger.warning(req, 'get_org_lens_events', 'Staff lookup failed, withholding the registration goal', {
-        err: error,
-      });
-      return false;
-    }
+  private async callerIsLFStaff(req: Request): Promise<boolean> {
+    return this.personaDetection.checkLFStaff(req);
   }
 
   /** Shared by the normal path and the early platinum return, so both shape the response identically. */
