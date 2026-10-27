@@ -41,6 +41,14 @@ describe('AI_MODEL', () => {
    * two constants are pinned together rather than separately. Upgrading is still allowed; it just
    * has to drop `temperature` from the six send sites in the same change, which turns this
    * assertion red first.
+   *
+   * The early return is what makes that upgrade path legal, and it is only honest because every
+   * send site reads the constant rather than its own literal. Deleting `TEMPERATURE` is then a
+   * compile error at all six — the four in `ai.service.ts` and both campaign request builders in
+   * `campaign-proxy.service.ts` — so the key cannot go away while any site still sends the
+   * parameter. Those two campaign builders previously inlined `temperature: 0.7`, which left this
+   * check skippable while campaign brief generation (the scrape and ad-copy path) kept sending the
+   * forbidden field to a 5-series model.
    */
   it('names a model whose sampling contract accepts the temperature we send', () => {
     if (!('TEMPERATURE' in AI_REQUEST_CONFIG)) return;
