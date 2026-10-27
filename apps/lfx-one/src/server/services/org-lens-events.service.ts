@@ -49,22 +49,30 @@ export class OrgLensEventsService {
     });
 
     const searchQueryFilter = searchQuery ? 'AND oe.EVENT_NAME ILIKE ?' : '';
-    let statusFilter = '';
-    if (status === 'registered') {
-      // Reads the recomputed count, not oe.ORG_REGISTRATION_COUNT, or the filter offers rows whose company-email count is 0.
-      statusFilter = 'AND COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0) > 0';
-    } else if (status === 'speaker-submitted') {
-      statusFilter = 'AND oe.ORG_SPEAKER_SUBMITTED_COUNT > 0';
-    } else if (status === 'speaker-accepted') {
-      statusFilter = 'AND oe.ORG_SPEAKER_ACCEPTED_COUNT > 0';
-    } else if (status === 'event-sponsor') {
-      statusFilter = 'AND oe.IS_ORG_SPONSOR = TRUE';
-    }
 
-    const pastCondition = isPast ? 'oe.IS_PAST_EVENT = TRUE' : 'oe.IS_PAST_EVENT = FALSE';
+    /**
+     * The list in two spellings. `scoped` is the real one; the unscoped one reads the precomputed
+     * `ORG_EVENTS.ORG_REGISTRATION_COUNT` and never touches the address table, and exists only for the
+     * degraded path in the catch below. `status=registered` has to follow the same expression, or the
+     * filter offers rows whose displayed count is 0.
+     */
+    const buildListQuery = (scoped: boolean): { sql: string; binds: string[] } => {
+      const countExpression = scoped ? 'COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0)' : 'oe.ORG_REGISTRATION_COUNT';
+      let statusFilter = '';
+      if (status === 'registered') {
+        statusFilter = `AND ${countExpression} > 0`;
+      } else if (status === 'speaker-submitted') {
+        statusFilter = 'AND oe.ORG_SPEAKER_SUBMITTED_COUNT > 0';
+      } else if (status === 'speaker-accepted') {
+        statusFilter = 'AND oe.ORG_SPEAKER_ACCEPTED_COUNT > 0';
+      } else if (status === 'event-sponsor') {
+        statusFilter = 'AND oe.IS_ORG_SPONSOR = TRUE';
+      }
 
-    const sql = `
-      ${COMPANY_EMAIL_REGISTRATION_COUNTS_CTE}
+      const pastCondition = isPast ? 'oe.IS_PAST_EVENT = TRUE' : 'oe.IS_PAST_EVENT = FALSE';
+
+      const sql = `
+      ${scoped ? COMPANY_EMAIL_REGISTRATION_COUNTS_CTE : ''}
       SELECT
         oe.EVENT_ID,
         oe.EVENT_NAME,
@@ -76,15 +84,14 @@ export class OrgLensEventsService {
         oe.EVENT_COUNTRY,
         oe.EVENT_URL,
         oe.EVENT_REGISTRATION_URL,
-        COALESCE(cr.COMPANY_EMAIL_REGISTRATION_COUNT, 0) AS ORG_REGISTRATION_COUNT,
+        ${countExpression} AS ORG_REGISTRATION_COUNT,
         NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
         oe.ORG_SPEAKER_ACCEPTED_COUNT,
         oe.ORG_SPEAKER_SUBMITTED_COUNT,
         oe.IS_ORG_SPONSOR,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
-      LEFT JOIN company_email_registrations cr
-        ON cr.EVENT_ID = oe.EVENT_ID
+      ${scoped ? 'LEFT JOIN company_email_registrations cr ON cr.EVENT_ID = oe.EVENT_ID' : ''}
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
         ${searchQueryFilter}
@@ -93,9 +100,13 @@ export class OrgLensEventsService {
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
-    // Positional binds, in statement order: coverage CTE, registrations CTE, then the outer WHERE.
-    const binds: string[] = [accountId, accountId, accountId];
-    if (searchQuery) binds.push(`%${searchQuery}%`);
+      // Positional binds, in statement order: the two CTEs when scoped, then the outer WHERE.
+      const binds: string[] = scoped ? [accountId, accountId, accountId] : [accountId];
+      if (searchQuery) binds.push(`%${searchQuery}%`);
+      return { sql, binds };
+    };
+
+    const scopedQuery = buildListQuery(true);
 
     let rows: OrgEventRow[];
     try {
@@ -104,15 +115,34 @@ export class OrgLensEventsService {
         // `:v2` — the count is now company-email-scoped; entries written before this ship hold unfiltered counts.
         `events:v2:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchEventListRows(sql, binds),
+        () => this.fetchEventListRows(scopedQuery.sql, scopedQuery.binds),
         isEventRowArray
       );
-    } catch (error) {
-      logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-        err: error,
+    } catch (scopedError) {
+      /**
+       * Before this rule the list read ORG_EVENTS alone. Joining the address table means its being
+       * missing, ungranted or mid-deploy would take the whole Events page down — an org with events
+       * would render as an org with none, which is indistinguishable from the truth. `org-lens-people`
+       * treats this same table as independently failable, so this does too: fall back to the
+       * precomputed count, which is exactly what shipped before the scoping existed.
+       *
+       * Deliberately NOT cached. The result is unscoped, and storing it under the scoped key would
+       * keep serving unfiltered counts long after the table came back.
+       */
+      logger.warning(req, 'get_org_lens_events', 'Company-email scoping failed, retrying unscoped', {
+        err: scopedError,
         account_id: accountId,
       });
-      return { data: [], total: 0, pageSize, offset };
+      const fallbackQuery = buildListQuery(false);
+      try {
+        rows = await this.fetchEventListRows(fallbackQuery.sql, fallbackQuery.binds);
+      } catch (error) {
+        logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
+          err: error,
+          account_id: accountId,
+        });
+        return { data: [], total: 0, pageSize, offset };
+      }
     }
 
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
@@ -171,30 +201,36 @@ export class OrgLensEventsService {
 
     const searchFilter = searchQuery ? 'AND (UPPER(COALESCE(er.FULL_NAME, er.EMAIL)) LIKE UPPER(?) OR UPPER(er.EMAIL) LIKE UPPER(?))' : '';
 
-    const sql = `
-      WITH ${COMPANY_EMAIL_COVERAGE_CTE}
+    /** As with the list: the scoped drawer, and the pre-rule one for the degraded path below. */
+    const buildAttendeesQuery = (scoped: boolean): { sql: string; binds: string[] } => {
+      const sql = `
+      ${scoped ? `WITH ${COMPANY_EMAIL_COVERAGE_CTE}` : ''}
       SELECT
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
         MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
-      ${COMPANY_EMAIL_JOINS}
+      ${scoped ? COMPANY_EMAIL_JOINS : ''}
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
         ON ${ORG_PERSON_EMAIL_KEY} = ${REGISTRANT_EMAIL_KEY} AND p.ACCOUNT_ID = ?
       WHERE er.EVENT_ID = ?
         AND er.ACCOUNT_ID = ?
-        AND ${COMPANY_EMAIL_QUALIFIES}
+        ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         ${searchFilter}
       GROUP BY ${REGISTRANT_EMAIL_KEY}
       ORDER BY NAME ASC NULLS LAST
     `;
 
-    // Positional binds, in statement order: coverage CTE, then the ORG_PEOPLE_ALL join, then the WHERE.
-    const binds: string[] = [accountId, accountId, eventId, accountId];
-    if (searchQuery) {
-      binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
-    }
+      // Positional binds, in statement order: coverage CTE when scoped, the ORG_PEOPLE_ALL join, the WHERE.
+      const binds: string[] = scoped ? [accountId, accountId, eventId, accountId] : [accountId, eventId, accountId];
+      if (searchQuery) {
+        binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
+      }
+      return { sql, binds };
+    };
+
+    const scopedQuery = buildAttendeesQuery(true);
 
     let rows: OrgEventAttendeesDrawerRow[];
     try {
@@ -203,16 +239,29 @@ export class OrgLensEventsService {
         // `:v2` — the row set is now company-email-scoped; see the `events:v2` note above.
         `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchEventAttendeeRows(sql, binds),
+        () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds),
         isContactRowArray
       );
-    } catch (error) {
-      logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
-        err: error,
+    } catch (scopedError) {
+      // Same reasoning as the list, and the same reason it is not cached: an unavailable address table
+      // degrades this drawer to the unscoped roster rather than to an empty one. Both surfaces fall
+      // back together, so a row and the drawer it opens still agree.
+      logger.warning(req, 'get_event_attendees', 'Company-email scoping failed, retrying unscoped', {
+        err: scopedError,
         account_id: accountId,
         event_id: eventId,
       });
-      return { eventId, eventName: '', total: 0, data: [] };
+      const fallbackQuery = buildAttendeesQuery(false);
+      try {
+        rows = await this.fetchEventAttendeeRows(fallbackQuery.sql, fallbackQuery.binds);
+      } catch (error) {
+        logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
+          err: error,
+          account_id: accountId,
+          event_id: eventId,
+        });
+        return { eventId, eventName: '', total: 0, data: [] };
+      }
     }
 
     const eventName = rows[0]?.EVENT_NAME ?? '';

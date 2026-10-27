@@ -328,6 +328,53 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data[0].jobTitle).toBe('Principal Engineer');
   });
 
+  it('keeps serving events when the address table is unavailable', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    addRegistration('someone@gmail.example', 'Someone Else');
+    // Ungranted, mid-deploy, renamed — from this query's side they are the same failure.
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // An org with events must not render as an org with none. Both fall back to the pre-rule
+    // behaviour — the precomputed count and the unscoped roster — and still agree with each other.
+    expect(list.data).toHaveLength(1);
+    expect(list.data[0].orgAttendeeCount).toBe(99);
+    expect(drawer.total).toBe(2);
+  });
+
+  it('does not cache the unscoped fallback under the scoped key', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    // Restored: the table was briefly unavailable, not gone. The scoped answer must come back on the
+    // next read rather than a cached unfiltered count outliving the outage.
+    database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+    addCompanyEmail('grace@company.example');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0].orgAttendeeCount).toBe(0);
+  });
+
+  it('does not count an address made only of whitespace as coverage', async () => {
+    addEvent(EVENT, 99);
+    // Non-breaking space alone: blank once trimmed, so it cannot match anything and must not switch
+    // the fallback off.
+    addCompanyEmail('\u00a0');
+    addRegistration('someone@gmail.example', 'Someone Else');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0].orgAttendeeCount).toBe(1);
+  });
+
   /**
    * SQLite accepts a correlated `EXISTS` under `OR`; Snowflake does not —
    * https://docs.snowflake.com/en/sql-reference/operators-subquery: "Correlated EXISTS subqueries
