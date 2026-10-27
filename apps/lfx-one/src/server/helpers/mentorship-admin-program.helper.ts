@@ -13,6 +13,7 @@ import {
   MentorshipUpstreamProgramManagementSummary,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils/string.utils';
 
 import { MENTORSHIP_ADMIN_MENTOR_STATUS_MAP, MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS } from '../constants';
 
@@ -95,6 +96,8 @@ export const mapMentorshipAdminMentorRow = (row: MentorshipUpstreamMemberManagem
       name: row.name || row.username || row.email || '',
       email: row.email ?? '',
       ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+      // Keys the mentor's public page, so only a UUID is kept.
+      ...(isUuid(row.user_id) ? { userId: row.user_id } : {}),
       status: status ?? 'pending',
       ...(invitedOn ? { invitedOn } : {}),
       profileCreated: row.profile_created,

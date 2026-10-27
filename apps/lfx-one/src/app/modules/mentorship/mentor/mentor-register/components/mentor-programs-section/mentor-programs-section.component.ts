@@ -40,6 +40,7 @@ import {
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { OverlayOptions } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
@@ -73,7 +74,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
-  imports: [ButtonComponent, SelectComponent],
+  imports: [ButtonComponent, SelectComponent, MentorshipPublicUrlPipe],
   templateUrl: './mentor-programs-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

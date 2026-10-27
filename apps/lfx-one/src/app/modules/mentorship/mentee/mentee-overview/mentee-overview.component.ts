@@ -30,6 +30,7 @@ import {
 import { MentorshipMenteeOverview } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeOverview, buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -43,7 +44,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule, MentorshipPublicUrlPipe],
   providers: [ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

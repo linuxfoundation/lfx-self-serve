@@ -136,12 +136,17 @@ export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number]
 /** Mentee lifecycle on the Current Mentees / Past Mentees tabs. An accepted mentee is `accepted` (a mentor is `approved`), and only mentees reach `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
+/** A page on the public mentorship site: a program's, or a mentee's or mentor's public profile. */
+export type MentorshipPublicPage = 'programs' | 'mentees' | 'mentors';
+
 /** Shared row fields consumed by the admin program-detail people tables. */
 export interface MentorshipProgramPersonBase {
   id: string;
   name: string;
   email: string;
   avatarUrl?: string;
+  /** Upstream user id, which keys the person's public page; absent when upstream sent no UUID. */
+  userId?: string;
 }
 
 /** Mentee row on the admin Past Mentees tab and the mentor program-detail tables. */

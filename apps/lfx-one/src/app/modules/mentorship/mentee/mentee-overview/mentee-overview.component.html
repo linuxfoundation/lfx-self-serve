@@ -89,13 +89,23 @@
                 {{ app.statusLabel }}
               </span>
             </div>
-            <p class="text-sm font-semibold text-gray-900">{{ app.programName }}</p>
+            <p class="text-sm font-semibold text-gray-900">
+              @if (app.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
+                <a
+                  class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                  [href]="programUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="mentee-application-card-program-link"
+                  >{{ app.programName }}</a
+                >
+              } @else {
+                {{ app.programName }}
+              }
+            </p>
             <p class="text-xs text-gray-400">
               <!-- UTC so the server render and the browser show the same calendar day in every timezone -->
               Last updated {{ app.lastUpdatedOn | date: 'MMM d, y' : 'UTC' }}
-              @if (app.decisionExpectedDate) {
-                · Decision expected {{ app.decisionExpectedDate | date: 'MMM d, y' : 'UTC' }}
-              }
             </p>
           </div>
           <!-- Task progress + actions — stacks on mobile, row on md+ -->
@@ -165,7 +175,20 @@
             <ng-template #body let-past>
               <tr>
                 <td class="px-4 py-3">
-                  <p class="font-medium text-gray-900">{{ past.programName }}</p>
+                  <p class="font-medium text-gray-900">
+                    @if (past.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
+                      <a
+                        class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                        [href]="programUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="mentee-past-application-program-link"
+                        >{{ past.programName }}</a
+                      >
+                    } @else {
+                      {{ past.programName }}
+                    }
+                  </p>
                   <p class="text-xs text-gray-400">
                     @if (past.projectName) {
                       {{ past.projectName }} &middot;

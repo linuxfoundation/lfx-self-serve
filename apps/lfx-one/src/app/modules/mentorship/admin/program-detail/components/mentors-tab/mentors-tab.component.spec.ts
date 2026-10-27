@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { environment } from '@environments/environment';
 import {
   MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
@@ -29,6 +30,7 @@ import {
   MentorshipAdminMentorStatusUpdate,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -44,6 +46,7 @@ describe('MentorsTabComponent', () => {
     status: 'approved',
     invitedOn: '2026-03-04',
     profileCreated: true,
+    userId: 'user-1',
     ...overrides,
   });
 
@@ -119,6 +122,14 @@ describe('MentorsTabComponent', () => {
     expect(rowText('mem_1')).toContain('Yes');
     expect(rowText('mem_2')).toContain(MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited);
     expect(rowText('mem_2')).toContain('No');
+  });
+
+  it('links a mentor with a profile to the public mentor page, and leaves the rest as plain text', () => {
+    const link = element().querySelector('[data-testid="mentorship-mentor-link-mem_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentors', 'user-1'));
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_2"]')).toBeNull();
+    expect(rowText('mem_2')).toContain('Diego Souza');
   });
 
   it('offers every upstream status in the status filter', () => {

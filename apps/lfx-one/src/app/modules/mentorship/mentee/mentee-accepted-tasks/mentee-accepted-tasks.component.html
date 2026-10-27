@@ -13,7 +13,20 @@
           }
           {{ app.termName }}
         </p>
-        <h3 class="text-lg font-semibold text-gray-900">{{ app.programName }}</h3>
+        <h3 class="text-lg font-semibold text-gray-900">
+          @if (app.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
+            <a
+              class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+              [href]="programUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="mentee-tasks-accepted-program-link"
+              >{{ app.programName }}</a
+            >
+          } @else {
+            {{ app.programName }}
+          }
+        </h3>
       </div>
       <span
         class="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"

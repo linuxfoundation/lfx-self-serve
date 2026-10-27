@@ -49,6 +49,7 @@ import {
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
@@ -73,6 +74,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
     InputTextComponent,
     SelectComponent,
     TableComponent,
+    MentorshipPublicUrlPipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './mentors-tab.component.html',

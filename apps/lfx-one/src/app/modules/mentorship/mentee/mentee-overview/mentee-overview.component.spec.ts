@@ -5,8 +5,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX, MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplication, MentorshipMenteeApplicationsResponse } from '@lfx-one/shared/interfaces';
+import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { ConfirmationService } from 'primeng/api';
@@ -231,23 +233,24 @@ describe('MenteeOverviewComponent', () => {
     expect(text(cards[1])).not.toContain('Project One');
   });
 
-  it('shows the last updated and decision expected dates', async () => {
+  it('shows the last updated date and no decision expected date', async () => {
     await bootstrap({ applications: [menteeTestApplication()] });
     const card = text(byTestId('mentee-application-card'));
     expect(card).toContain('Last updated Jun 2, 2026');
-    expect(card).toContain('Decision expected Aug 1, 2026');
-  });
-
-  it('hides the decision expected date when the term has none', async () => {
-    await bootstrap({ applications: [menteeTestApplication({ decisionExpectedDate: undefined })] });
-    expect(text(byTestId('mentee-application-card'))).not.toContain('Decision expected');
-  });
-
-  it('hides the decision expected date once the application is accepted', async () => {
-    await bootstrap({ applications: [menteeTestApplication({ upstreamStatus: 'accepted' })] });
-    const card = text(byTestId('mentee-application-card'));
-    expect(card).toContain('Last updated');
     expect(card).not.toContain('Decision expected');
+  });
+
+  it("links the program name to the program's public page in a new tab", async () => {
+    await bootstrap({ applications: [menteeTestApplication()] });
+    const link = byTestId('mentee-application-card-program-link');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, 'prog-1'));
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('shows the program name as plain text without a program id', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ programId: '' })] });
+    expect(byTestId('mentee-application-card-program-link')).toBeNull();
+    expect(text(byTestId('mentee-application-card'))).toContain('Program One');
   });
 
   it('labels pending progress as prerequisite tasks and counts only prerequisites', async () => {

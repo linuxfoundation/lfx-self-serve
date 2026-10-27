@@ -10,12 +10,13 @@ import {
   MENTORSHIP_MENTORING_HISTORY_TITLE,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentoringHistoryEntry } from '@lfx-one/shared/interfaces';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 
 /**
  * Read-only mentoring history list for the mentor profile page. Each row is a
  * program the mentor has supported: program name, term, mentee count, and the
- * lifecycle badge. Rows are not clickable yet — the mentor program detail page
- * ships in a later change.
+ * lifecycle badge. The program name links to the program's public page when the
+ * row carries its id.
  *
  * Row-level display fields (badge label + Tailwind classes) are resolved from
  * the shared status maps in a single `computed` so the template only reads
@@ -23,6 +24,7 @@ import { MentorshipMentoringHistoryEntry } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-mentorship-mentoring-history',
+  imports: [MentorshipPublicUrlPipe],
   templateUrl: './mentoring-history.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

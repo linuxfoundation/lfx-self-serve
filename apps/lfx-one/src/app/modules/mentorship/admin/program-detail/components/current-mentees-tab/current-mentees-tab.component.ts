@@ -73,6 +73,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -123,6 +124,7 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
     SelectComponent,
     TableComponent,
     TooltipModule,
+    MentorshipPublicUrlPipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './current-mentees-tab.component.html',

@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, signal, Signal } f
 import { FormControl, FormGroup } from '@angular/forms';
 import { MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationView, MentorshipMenteeTaskStatus, MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
 
@@ -15,7 +16,7 @@ import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.compo
  */
 @Component({
   selector: 'lfx-mentee-accepted-tasks',
-  imports: [NgClass, MenteeTaskRowComponent],
+  imports: [NgClass, MenteeTaskRowComponent, MentorshipPublicUrlPipe],
   templateUrl: './mentee-accepted-tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
