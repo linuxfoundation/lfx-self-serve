@@ -433,6 +433,43 @@ describe('VoteVotersComponent', () => {
     expect(byTestId(fixture, 'vote-voters-open-ballot-b-blake')).toBeNull();
   });
 
+  it.each([
+    { label: 'omitted', prompts: undefined },
+    { label: 'empty', prompts: [] },
+  ])('passes recovered prompts to the ballot dialog when detail prompts are $label', async ({ prompts }) => {
+    const prompt = { prompt_id: 'result-prompt', prompt: 'Any concerns?' };
+    const vote = { ...VOTE, poll_comment_prompts: prompts };
+    const voters = VOTERS.map((voter) => ({
+      ...voter,
+      comment_responses: [{ prompt_id: prompt.prompt_id, comment_text: 'Synthetic ballot comment' }],
+    }));
+    const { fixture, component, open } = await mount({ vote, voters: () => of(voters) });
+    current = fixture;
+    fixture.componentRef.setInput('commentPrompts', [prompt]);
+    await settle(fixture);
+
+    component['openBallot']('b-avery');
+
+    const data = open.mock.calls[0][1].data as VoteBallotDialogData;
+    expect(data.vote.poll_comment_prompts).toEqual([prompt]);
+    expect(data.ballots[data.index].voter.comment_responses).toEqual(voters[0].comment_responses);
+    expect(vote.poll_comment_prompts).toBe(prompts);
+  });
+
+  it('keeps detail prompts when recovered prompts are also supplied', async () => {
+    const prompt = { prompt_id: 'detail-prompt', prompt: 'Detail question' };
+    const vote = { ...VOTE, poll_comment_prompts: [prompt] };
+    const { fixture, component, open } = await mount({ vote });
+    current = fixture;
+    fixture.componentRef.setInput('commentPrompts', [{ prompt_id: 'result-prompt', prompt: 'Results question' }]);
+    await settle(fixture);
+
+    component['openBallot']('b-avery');
+
+    const data = open.mock.calls[0][1].data as VoteBallotDialogData;
+    expect(data.vote.poll_comment_prompts).toEqual([prompt]);
+  });
+
   it('opens the linked ballot once after the list loads', async () => {
     const { fixture, component, open } = await mount({ initialBallotUid: 'b-casey' });
     current = fixture;

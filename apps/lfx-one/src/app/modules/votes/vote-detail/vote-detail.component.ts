@@ -13,6 +13,7 @@ import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS, VOTE
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
   MyVoteResponse,
+  PollCommentPrompt,
   PollCommentResponse,
   PollCommentResult,
   RankedQuestionView,
@@ -209,6 +210,7 @@ export class VoteDetailComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.commentResults().map((result) => result.prompt));
   protected readonly commentPromptCount: Signal<number> = computed(() =>
     Math.max(this.vote()?.poll_comment_prompts?.length ?? 0, this.commentResults().length)
   );

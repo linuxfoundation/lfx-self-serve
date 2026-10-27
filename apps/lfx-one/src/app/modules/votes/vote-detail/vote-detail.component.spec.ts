@@ -984,6 +984,31 @@ describe('VoteDetailComponent', () => {
     it.each([
       { label: 'omitted', prompts: undefined },
       { label: 'empty', prompts: [] },
+    ])('passes result-only prompts to the Voters tab when detail prompts are $label', async ({ prompts }) => {
+      const vote = makeVote({ pseudo_anonymity: false, poll_comment_prompts: prompts });
+      const prompt = { prompt_id: 'result-prompt', prompt: 'Any concerns?' };
+      const results = new Subject<VoteResultsResponse>();
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(vote));
+      voteService.getVoteResults.mockReturnValue(results);
+      queryParamMap.next(convertToParamMap({ tab: 'voters', voters_ballot: 'response-1' }));
+      const fixture = await setup();
+
+      results.next({
+        ...makeResults(),
+        comment_results: [{ prompt, responses: [{ vote_id: 'response-1', comment_text: 'Synthetic ballot comment', abstained: false }] }],
+      });
+      TestBed.tick();
+
+      const voters = fixture.debugElement.query(By.css('lfx-vote-voters'));
+      expect(voters.properties['commentPrompts']).toEqual([prompt]);
+      expect(voters.properties['vote']).toBe(vote);
+      expect(vote.poll_comment_prompts).toBe(prompts);
+    });
+
+    it.each([
+      { label: 'omitted', prompts: undefined },
+      { label: 'empty', prompts: [] },
     ])('resolves a direct Comments link when result-only prompts load ($label)', async ({ prompts }) => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_comment_prompts: prompts })));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));

@@ -26,6 +26,7 @@ import {
 import { PollStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
+  PollCommentPrompt,
   Vote,
   VoteBallotDialogData,
   VoteParticipationStatusCounts,
@@ -92,6 +93,8 @@ export class VoteVotersComponent {
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
+  /** Resolved prompts from results, used when the vote detail omits its prompt metadata. */
+  public readonly commentPrompts = input<PollCommentPrompt[]>([]);
   /** `voters_choice` from the URL — a `<question_id>:<choice_id>` key, or the abstain row's status key. */
   public readonly initialChoice = input<string | null>(null);
   /** `voters_ballot` from the URL — the vote response uid whose ballot opens once the list loads. */
@@ -239,7 +242,9 @@ export class VoteVotersComponent {
     const index = ballots.findIndex((row) => row.uid === uid);
     if (index < 0) return;
 
-    const data: VoteBallotDialogData = { vote: this.vote(), ballots, index };
+    const vote = this.vote();
+    const dialogVote = vote.poll_comment_prompts?.length ? vote : { ...vote, poll_comment_prompts: this.commentPrompts() };
+    const data: VoteBallotDialogData = { vote: dialogVote, ballots, index };
     this.dialogService.open(VoteBallotDialogComponent, {
       header: 'Ballot',
       width: 'min(720px, 96vw)',

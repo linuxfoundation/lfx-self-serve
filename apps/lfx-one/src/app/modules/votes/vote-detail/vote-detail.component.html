@@ -196,7 +196,11 @@
                 <!-- activeTab only resolves to voters while showVotersTab() holds; the guard keeps it explicit. Pseudo-anonymous votes get a participation-only tab. -->
                 @if (showVotersTab()) {
                   <lfx-card data-testid="vote-detail-voters">
-                    <lfx-vote-voters [vote]="voteData" [initialChoice]="votersChoice()" [initialBallotUid]="votersBallot()" />
+                    <lfx-vote-voters
+                      [vote]="voteData"
+                      [commentPrompts]="commentPrompts()"
+                      [initialChoice]="votersChoice()"
+                      [initialBallotUid]="votersBallot()" />
                   </lfx-card>
                 }
               }
