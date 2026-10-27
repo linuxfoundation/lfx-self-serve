@@ -57,7 +57,7 @@ const MOCK_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
 
 const BASE_RESPONSE: OrgContributionsResponse = {
   accountId: MOCK_ACCOUNT_ID,
-  dateRange: '12mo',
+  dateRange: '365d',
   kpis: { projectsWithActivity: 2, repositories: 2, commits: 1780 },
   repositories: [
     {

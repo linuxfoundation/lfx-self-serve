@@ -11,7 +11,7 @@ describe('describeContributionsWindow', () => {
   const now = new Date('2026-10-21T23:26:00.000Z');
 
   it.each([
-    ['12mo', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)'],
+    ['365d', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)'],
     ['90d', 'from Jul 23, 2026 to Oct 21, 2026 (UTC)'],
     ['30d', 'from Sep 21, 2026 to Oct 21, 2026 (UTC)'],
     ['all', 'across all recorded history'],
@@ -19,15 +19,10 @@ describe('describeContributionsWindow', () => {
     expect(describeContributionsWindow(range, now)).toBe(expected);
   });
 
-  // Twelve months back lands in the same calendar month, so the leap day is the only date where the
-  // target month is shorter. `DATEADD(month, -12, ...)` clamps to Feb 28; a bare `setUTCMonth` would
-  // overflow to Mar 1 and put the caption a day off exactly when someone is reconciling source rows.
-  it('clamps the 12-month start on a leap day instead of overflowing', () => {
-    expect(describeContributionsWindow('12mo', new Date('2028-02-29T12:00:00.000Z'))).toBe('from Feb 28, 2027 to Feb 29, 2028 (UTC)');
-  });
-
-  it('leaves the 12-month start alone on a date the target month can hold', () => {
-    expect(describeContributionsWindow('12mo', new Date('2028-02-28T12:00:00.000Z'))).toBe('from Feb 28, 2027 to Feb 28, 2028 (UTC)');
+  // 365 days, not 12 months: across a leap day the window starts a day later than the same date last year,
+  // matching `DATEADD(day, -365, ...)` in the BFF.
+  it('counts 365 days back across a leap day, not twelve months', () => {
+    expect(describeContributionsWindow('365d', new Date('2028-03-15T12:00:00.000Z'))).toBe('from Mar 16, 2027 to Mar 15, 2028 (UTC)');
   });
 });
 

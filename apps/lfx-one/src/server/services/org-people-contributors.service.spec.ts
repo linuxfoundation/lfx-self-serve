@@ -369,20 +369,37 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     ['lf', 'AND is_lf_project = TRUE'],
     ['non_lf', 'AND is_lf_project = FALSE'],
   ] as const)('reads project scope %s with the matching LF predicate', async (projectScope, predicate) => {
-    await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, projectScope });
+    await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope });
 
     if (predicate) expect(lastQuery()).toContain(predicate);
     else expect(lastQuery()).not.toMatch(/is_lf_project/);
     expect(execute.mock.calls.at(-1)![1]).toEqual([ACCOUNT]);
   });
 
+  it.each([
+    ['30d', 'AND activity_date >= DATEADD(day, -30, CURRENT_DATE())'],
+    ['90d', 'AND activity_date >= DATEADD(day, -90, CURRENT_DATE())'],
+    ['365d', 'AND activity_date >= DATEADD(day, -365, CURRENT_DATE())'],
+  ] as const)('windows %s by days before today', async (timeRange, predicate) => {
+    await service.getContributors(ACCOUNT, timeRange, FILTERS);
+
+    expect(lastQuery()).toContain(predicate);
+    expect(lastQuery()).not.toMatch(/month/i);
+  });
+
+  it('reads all time without a date predicate', async () => {
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
+
+    expect(lastQuery()).not.toContain('activity_date >=');
+  });
+
   it("reads authored and merged commits in one query and shows the commit scope's count", async () => {
-    await service.getContributors(ACCOUNT, '12mo', FILTERS);
+    await service.getContributors(ACCOUNT, '365d', FILTERS);
     expect(lastQuery()).toContain('SUM(daily_commits) AS commits');
     expect(lastQuery()).toContain('SUM(daily_merged_commits) AS merged_commits');
 
-    const authored = await service.getContributors(ACCOUNT, '12mo', FILTERS);
-    const merged = await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, commitScope: 'merged' });
+    const authored = await service.getContributors(ACCOUNT, '365d', FILTERS);
+    const merged = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, commitScope: 'merged' });
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(authored.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(40);
@@ -391,7 +408,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
   });
 
   it.each(['lf', 'non_lf'] as const)('sums the per-scope commit credit for project scope %s', async (projectScope) => {
-    await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, projectScope });
+    await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope });
 
     expect(lastQuery()).toContain('SUM(daily_scope_commits) AS commits');
     expect(lastQuery()).toContain('SUM(daily_scope_merged_commits) AS merged_commits');
@@ -402,8 +419,8 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     execute.mockReset();
     execute.mockResolvedValue({ rows: [projectRow('commit-heavy', 50, 60), projectRow('review-heavy', 5, 400)] });
 
-    const byCommits = await service.getContributors(ACCOUNT, '12mo', FILTERS);
-    const byCode = await service.getContributors(ACCOUNT, '12mo', { ...FILTERS, metric: 'code' });
+    const byCommits = await service.getContributors(ACCOUNT, '365d', FILTERS);
+    const byCode = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, metric: 'code' });
 
     expect(byCommits.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'commit-heavy' });
     expect(byCode.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'review-heavy' });

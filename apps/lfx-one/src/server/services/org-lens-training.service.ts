@@ -24,6 +24,13 @@ import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
+/**
+ * The Certifications tab counts enrollments from the last 12 months only (today excluded): ORG_PEOPLE_TRAINING keeps
+ * enrollments of any age for the People › Trainees ranges, so this reproduces the window the table used to apply
+ * upstream. `ACTIVITY_TS` is the enrollment time on enrolled rows. Certified rows were never windowed.
+ */
+const CERT_TAB_ENROLLED_WINDOW = `t.ACTIVITY_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND t.ACTIVITY_TS::date < CURRENT_DATE()`;
+
 interface OrgTrainingStatsRow {
   CERTIFIED_EMPLOYEES: number;
   CERTIFICATIONS_EARNED: number;
@@ -141,6 +148,7 @@ export class OrgLensTrainingService {
           ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
         WHERE t.ACCOUNT_ID = ?
           AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
+          AND (t.STATUS = 'Certified' OR (${CERT_TAB_ENROLLED_WINDOW}))
         GROUP BY COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
       ),
       ${scopedCourseCatalogDimCte('SELECT DISTINCT b.COURSE_ID FROM base b')},
@@ -261,7 +269,7 @@ export class OrgLensTrainingService {
       status,
     });
 
-    const statusCondition = status === 'certified' ? "t.STATUS = 'Certified'" : "t.STATUS IS DISTINCT FROM 'Certified'";
+    const statusCondition = status === 'certified' ? "t.STATUS = 'Certified'" : `t.STATUS IS DISTINCT FROM 'Certified' AND ${CERT_TAB_ENROLLED_WINDOW}`;
     const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
 
     const sql = `

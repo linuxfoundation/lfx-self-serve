@@ -12,7 +12,7 @@ import {
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
 } from '@lfx-one/shared/constants';
-import type { OrgCommitFilters, OrgContributorsResponse, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
+import type { OrgCommitFilters, OrgContributorsResponse, OrgLensTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
@@ -80,7 +80,7 @@ function contributorsResponse(): OrgContributorsResponse {
 
 describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () => {
   let fixture: ComponentFixture<ContributorsComponent>;
-  let getContributors: Mock<(orgUid: string, timeRange: OrgPeopleTimeRange, filters: OrgCommitFilters) => Observable<OrgContributorsResponse>>;
+  let getContributors: Mock<(orgUid: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgContributorsResponse>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
@@ -115,13 +115,13 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
   it('reads the filters from the URL and sends them to the BFF', async () => {
     await mount('/?projectScope=lf&commitScope=merged');
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
   });
 
   it('reads an unknown value as its default', async () => {
     await mount('/?projectScope=everything&metric=prs');
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
   });
 
   it('refetches on a filter change and writes it to the URL, dropping defaults', async () => {
@@ -130,7 +130,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['projectScope'].setValue('non_lf');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'non_lf' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'non_lf' });
     const url = TestBed.inject(Router).url;
     expect(url).toContain('projectScope=non_lf');
     expect(url).toContain('tab=contributors');
@@ -155,7 +155,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['metric'].setValue('code');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', { ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'code' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'code' });
     expect(text('org-people-contributors-count-header')).toBe('Code contributions');
     expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('340');
     info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
@@ -185,14 +185,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
     expect(fixture.componentInstance).toBe(instance);
     expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', commitScope: 'merged', metric: 'code' });
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', { projectScope: 'lf', commitScope: 'merged', metric: 'code' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'code' });
     expect(text('org-people-contributors-count-header')).toBe('Code contributions');
 
     await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
     await settle();
 
     expect(form().getRawValue()).toMatchObject(DEFAULT_ORG_COMMIT_FILTERS);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '12mo', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
     expect(navigate).not.toHaveBeenCalled();
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
   });
@@ -212,7 +212,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
       foundationOptions: [],
       projectOptions: [{ projectId: 'rails', projectName: 'Rails', foundationName: null }],
     };
-    getContributors = vi.fn((_orgUid: string, _timeRange: OrgPeopleTimeRange, filters: OrgCommitFilters) =>
+    getContributors = vi.fn((_orgUid: string, _timeRange: OrgLensTimeRange, filters: OrgCommitFilters) =>
       of(filters.projectScope === 'non_lf' ? nonLfResponse : lfResponse)
     );
     await mount();
@@ -238,5 +238,88 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     await settle();
 
     expect(form().getRawValue()).toMatchObject({ project: 'k8s' });
+  });
+});
+
+describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
+  let fixture: ComponentFixture<ContributorsComponent>;
+  let getContributors: Mock<(orgUid: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgContributorsResponse>>;
+
+  const form = (): FormGroup => (fixture.componentInstance as unknown as { filterForm: FormGroup }).filterForm;
+  const router = (): Router => TestBed.inject(Router);
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function mount(initialUrl: string): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [ContributorsComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: ContributorsService, useValue: { getContributors } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    await router().navigateByUrl(initialUrl);
+    fixture = TestBed.createComponent(ContributorsComponent);
+    await settle();
+  }
+
+  beforeEach(() => {
+    getContributors = vi.fn(() => of(contributorsResponse()));
+  });
+
+  it('opens on the range another tab left in the URL', async () => {
+    await mount('/?tab=contributors&range=90d');
+
+    expect(form().controls['timeRange'].value).toBe('90d');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '90d', DEFAULT_ORG_COMMIT_FILTERS);
+  });
+
+  it('reads a retired or unknown range as Past 365 days', async () => {
+    await mount('/?tab=contributors&range=12mo');
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
+  });
+
+  it('writes a picked range to the URL, keeping the tab, and drops it at the default', async () => {
+    await mount('/?tab=contributors');
+
+    form().controls['timeRange'].setValue('30d');
+    await settle();
+
+    expect(router().url).toBe('/?tab=contributors&range=30d');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '30d', DEFAULT_ORG_COMMIT_FILTERS);
+
+    form().controls['timeRange'].setValue('365d');
+    await settle();
+
+    expect(router().url).toBe('/?tab=contributors');
+  });
+
+  it('follows a range written by another tab or a nav link without navigating again', async () => {
+    await mount('/?tab=contributors');
+    const navigate = vi.spyOn(router(), 'navigate');
+
+    await router().navigateByUrl('/?tab=contributors&range=all');
+    await settle();
+
+    expect(form().controls['timeRange'].value).toBe('all');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, 'all', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the range when the organization changes', async () => {
+    await mount('/?tab=contributors&range=90d');
+    (fixture.componentInstance as unknown as { resetAllState(): void }).resetAllState();
+    await settle();
+
+    expect(form().controls['timeRange'].value).toBe('90d');
+    expect(router().url).toContain('range=90d');
   });
 });

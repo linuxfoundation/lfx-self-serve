@@ -95,6 +95,32 @@ describe('OrgContributionsService — commit filters', () => {
   });
 });
 
+describe('OrgContributionsService — range window', () => {
+  it('windows the default Past 365 days as 365 days, on every commit read', async () => {
+    await service.getContributions(ACCOUNT, query());
+
+    expect(execute).toHaveBeenCalledTimes(5);
+    for (const { sql } of calls()) {
+      expect(sql).toContain('activity_ts >= DATEADD(day, -365, CURRENT_TIMESTAMP())');
+      expect(sql).not.toContain('month');
+    }
+  });
+
+  it('windows Past 365 days code activity on activity_date', async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'code' }));
+
+    expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -365, CURRENT_DATE())');
+  });
+
+  it('reads all time without a date predicate', async () => {
+    await service.getContributions(ACCOUNT, query({ dateRange: 'all' }));
+
+    for (const { sql } of calls()) {
+      expect(sql).not.toContain('DATEADD');
+    }
+  });
+});
+
 describe('OrgContributionsService — metric=code', () => {
   it('reads KPI, repositories and options from the daily code-activity table; the feed stays on commits', async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'code', projectScope: 'lf', commitScope: 'merged' }));

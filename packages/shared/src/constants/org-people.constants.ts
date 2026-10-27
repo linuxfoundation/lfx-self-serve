@@ -13,16 +13,11 @@ import type {
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
   OrgEventAttendeesResponse,
-  OrgEventAttendeeTimeWindow,
-  OrgEventAttendeeTimeWindowOption,
-  OrgPeopleTimeRange,
-  OrgPeopleTimeRangeOption,
   OrgTraineesResponse,
-  OrgTraineeTimeWindow,
-  OrgTraineeTimeWindowOption,
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
+import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -85,37 +80,15 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
 /** Default employment filter — the URL drops `?employment=` when it is active. */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
 
-/** Default People time range (All Employees, Contributors) — Past 12 Months; the All Employees URL drops `?range=` when it is active. */
-export const ORG_PEOPLE_DEFAULT_TIME_RANGE: OrgPeopleTimeRange = '12mo';
-
-/** People time-range dropdown options (All Employees, Contributors) — ordered narrowest-first. Also the BFF's allow-list for `range` / `timeRange`. */
-export const ORG_PEOPLE_TIME_RANGE_OPTIONS: readonly OrgPeopleTimeRangeOption[] = [
-  { label: 'Last 30 Days', value: '30d' },
-  { label: 'Last 90 Days', value: '90d' },
-  { label: 'Last 12 Months', value: '12mo' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
 export const ORG_TRAINEES_INITIAL_LIMIT = 30;
 
-/** Default Trainees time-window — Past 12 Months per Item 2 lock (matches prototype default). */
-export const ORG_TRAINEE_DEFAULT_TIME_WINDOW: OrgTraineeTimeWindow = '12m';
-
-/** Time-window dropdown options for Trainees / Event Attendees families — ordered narrowest-first as the prototype renders them. */
-export const ORG_TRAINEE_TIME_WINDOW_OPTIONS: readonly OrgTraineeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
   foundationOptions: [],
@@ -127,18 +100,6 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
 /** Initial visible-row cap on the Event Attendees table before "Show All" is clicked. */
 export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 
-/** Default Event Attendees time-window — Past 12 Months per Item 2 R2.4 lock (matches prototype default). */
-export const ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW: OrgEventAttendeeTimeWindow = '12m';
-
-/** Time-window dropdown options for the Event Attendees tab — ordered narrowest-first. */
-export const ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS: readonly OrgEventAttendeeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
@@ -148,7 +109,7 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   eventOptions: [],
 };
 
-// Contributors tab (LFXV2-1874) — A1: one BFF slice per timeRange, filter trio client-side; stats anchored on BFF (Item 3); window vocab 30d/90d/12mo/all.
+// Contributors tab (LFXV2-1874) — A1: one BFF slice per range, filter trio client-side; stats anchored on BFF (Item 3).
 
 /** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
 export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
@@ -164,7 +125,7 @@ export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
 /** Zero-valued Contributors response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
   accountId: '',
-  timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE,
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   contributors: [],
   projects: [],
   foundationOptions: [],

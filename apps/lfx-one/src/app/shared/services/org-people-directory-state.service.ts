@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
-import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgCommitFilters, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
+import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgCommitFilters, OrgLensTimeRange } from '@lfx-one/shared/interfaces';
 import { orgCommitFiltersKey } from '@lfx-one/shared/utils';
 import { map, Observable, of, shareReplay, tap } from 'rxjs';
 
@@ -33,7 +33,7 @@ export class OrgPeopleDirectoryStateService {
   private readonly generation = new Map<string, number>();
 
   /** Cached merged directory for the org, time range and commit filters (no range: the unranged roster); fetches once and replays until the TTL lapses. */
-  public getDirectory(orgUid: string, range?: OrgPeopleTimeRange, filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS): Observable<OrgAllEmployeesResponse> {
+  public getDirectory(orgUid: string, range?: OrgLensTimeRange, filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS): Observable<OrgAllEmployeesResponse> {
     const key = range ? `${orgUid}:${range}:${orgCommitFiltersKey(filters)}` : `${orgUid}:roster`;
     const cached = this.byKey.get(key);
     if (cached && cached.expiresAt > Date.now()) return of(cached.value);

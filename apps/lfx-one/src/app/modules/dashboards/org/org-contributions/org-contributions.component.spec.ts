@@ -192,6 +192,40 @@ describe('OrgContributionsComponent', () => {
     );
   });
 
+  // `?range=` is shared with the People tabs and carried by the nav links, so the page opens on and follows it.
+  it('opens on the range carried from People, with the Insights-style options narrowest first', async () => {
+    const { fixture, getContributions } = await render(null, { queryParams: { range: '90d' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('90d');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '90d' }));
+    expect(fixture.componentInstance['dateRangeOptions'].map((option) => option.label)).toEqual(['Past 30 days', 'Past 90 days', 'Past 365 days', 'All time']);
+  });
+
+  it('reads a retired 12mo link as the default Past 365 days', async () => {
+    const { getContributions } = await render(null, { queryParams: { range: '12mo' } });
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
+  });
+
+  it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {
+    const { fixture, navigate, getContributions, queryParamMap } = await render(null);
+
+    queryParamMap.next(convertToParamMap({ range: 'all' }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: 'all' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: 'all' }) }));
+
+    fixture.componentInstance['filterForm'].controls.dateRange.setValue('365d');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }) }));
+  });
+
   it('labels the KPI and repository columns by the metric', async () => {
     // The table renders its header only with at least one row.
     const response: OrgContributionsResponse = {

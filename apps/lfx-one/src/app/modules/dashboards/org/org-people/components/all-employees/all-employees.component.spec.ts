@@ -11,7 +11,7 @@ import type {
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
-  OrgPeopleTimeRange,
+  OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
@@ -60,10 +60,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let snowflake$: Subject<OrgAllEmployeesResponse>;
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
-  let getDirectory: Mock<(orgUid: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
-  let getAllEmployees: Mock<(orgUid: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
+  let getDirectory: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Observable<OrgAllEmployeesResponse>>;
+  let getAllEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
   let former$: Subject<OrgAllEmployeesResponse>;
-  let getFormerEmployees: Mock<(orgUid: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
+  let getFormerEmployees: Mock<(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters) => Subject<OrgAllEmployeesResponse>>;
   let selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
 
   const el = (): HTMLElement => fixture.nativeElement;
@@ -134,7 +134,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('requests the live merge without waiting for the Snowflake roster', () => {
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '12mo', FILTERS);
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS);
       expect(live$.observed).toBe(true);
     });
 
@@ -332,7 +332,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
       await answerFormer();
 
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '12mo', FILTERS);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
       expect(activeStat()).toContain('1');
@@ -613,7 +613,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       former$.complete();
       await settle();
 
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '12mo', FILTERS);
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '365d', FILTERS);
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-8', 'org-people-all-employees-row-p-9']);
       expect(formerTags().sort()).toEqual(['org-people-all-employees-row-p-8-former', 'org-people-all-employees-row-p-9-former']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-8"]')?.textContent).not.toContain('Admin');
@@ -622,8 +622,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
   // lfx-self-serve#4163 — every roster read follows the selected time range, which lives in `?range=`.
   describe('in the browser, with the time range filter', () => {
-    const component = (): { onRangeChange(value: OrgPeopleTimeRange): void; selectedFoundationId: WritableSignal<string> } =>
-      fixture.componentInstance as unknown as { onRangeChange(value: OrgPeopleTimeRange): void; selectedFoundationId: WritableSignal<string> };
+    const component = (): { onRangeChange(value: OrgLensTimeRange): void; selectedFoundationId: WritableSignal<string> } =>
+      fixture.componentInstance as unknown as { onRangeChange(value: OrgLensTimeRange): void; selectedFoundationId: WritableSignal<string> };
     const answer = async (subject: Subject<OrgAllEmployeesResponse>, value: OrgAllEmployeesResponse): Promise<void> => {
       subject.next(value);
       subject.complete();
@@ -641,8 +641,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('ignores an unknown ?range= and reads the default range', async () => {
       await mount('browser', '/?range=3y');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '12mo', FILTERS);
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '12mo', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS);
     });
 
     it('refetches current and former employees on a range change and writes ?range=, dropping the default', async () => {
@@ -665,10 +665,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('3');
       expect(TestBed.inject(Router).url).toContain('range=all');
 
-      component().onRangeChange('12mo');
+      component().onRangeChange('365d');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '12mo', FILTERS);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
       expect(TestBed.inject(Router).url).not.toContain('range=');
       expect(TestBed.inject(Router).url).toContain('employment=all');
     });
@@ -776,15 +776,15 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
       await mount('browser', '/?employment=all&projectScope=lf&commitScope=merged&metric=code');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '12mo', picked);
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '12mo', picked);
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '12mo', picked);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', picked);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
     });
 
     it('reads an unknown value as its default', async () => {
       await mount('browser', '/?projectScope=LF&commitScope=main&metric=prs');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '12mo', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
     });
 
     it('refetches on a change and writes the params, dropping defaults', async () => {
@@ -793,9 +793,9 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ projectScope: 'non_lf' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '12mo', { ...FILTERS, projectScope: 'non_lf' });
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '12mo', { ...FILTERS, projectScope: 'non_lf' });
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '12mo', { ...FILTERS, projectScope: 'non_lf' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' });
       const url = TestBed.inject(Router).url;
       expect(url).toContain('projectScope=non_lf');
       expect(url).not.toContain('commitScope=');
@@ -814,7 +814,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await TestBed.inject(Router).navigateByUrl('/?metric=code');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '12mo', { ...FILTERS, metric: 'code' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'code' });
     });
 
     it('labels the count column, its badges, the code tile and the activity option after the metric', async () => {

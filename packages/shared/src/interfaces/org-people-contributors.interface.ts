@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgPeopleTimeRange } from './org-people.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Role badge — declared-maintainer rule (Item 4 lock); Maintainer > Contributor at the org level on the parent row, per-project on the expansion. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
@@ -68,7 +68,7 @@ export interface OrgContributorFoundationOption {
   foundationName: string;
 }
 
-/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations at 12mo). */
+/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations over 365 days). */
 export interface OrgContributorProjectOption {
   projectId: string;
   projectName: string;
@@ -92,7 +92,7 @@ export interface OrgContributorStatsBaseline {
 export interface OrgContributorsResponse {
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
-  timeRange: OrgPeopleTimeRange;
+  timeRange: OrgLensTimeRange;
   contributors: OrgContributorRow[];
   projects: OrgContributorProjectRow[];
   foundationOptions: OrgContributorFoundationOption[];

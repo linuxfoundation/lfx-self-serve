@@ -121,10 +121,10 @@ afterEach(() => {
 
 describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
-    const fromMiss = await service.getTrainees(ACCOUNT);
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getTrainees(ACCOUNT);
+    const fromHit = await service.getTrainees(ACCOUNT, '365d');
 
     // `toStrictEqual` distinguishes null from undefined from an absent key; the serialized
     // comparison additionally pins key order, which `getTrainees`'s object literals fix and a
@@ -139,10 +139,10 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // warehouse handed back, so only a read-back exercises the decoder at all. A decode that
     // dropped a dictionary column would leave the expanded section blank; the null-COURSE_ID row
     // also pins the documented fallback to COURSE_OR_CERT_ID, which the client groups on.
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
     const warehouseReads = execute.mock.calls.length;
 
-    const { details } = await service.getTrainees(ACCOUNT);
+    const { details } = await service.getTrainees(ACCOUNT, '365d');
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
@@ -168,14 +168,14 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
     // missing data, so the guard has to reject the entry up front rather than serve a tab with
     // holes in it for the rest of the TTL.
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     stored.courses.k = [...stored.courses.k].reverse();
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -191,14 +191,14 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
     // The decode resolves each reference without a fallback, so an unresolvable one would emit a
     // row with no dictionary fields at all. The guard has to reject the entry instead.
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     corrupt(stored);
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -208,9 +208,9 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // refetch on every request forever.
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    const fromMiss = await service.getTrainees(ACCOUNT);
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
 
-    const fromHit = await service.getTrainees(ACCOUNT);
+    const fromHit = await service.getTrainees(ACCOUNT, '365d');
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
@@ -224,7 +224,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
   ])('treats a stored entry whose required COURSE_OR_CERT_ID cell is %s as a miss', async (_label, corrupt) => {
     // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
     // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
     const index = stored.details.k.indexOf('COURSE_OR_CERT_ID');
@@ -232,7 +232,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getTrainees(ACCOUNT);
+    await service.getTrainees(ACCOUNT, '365d');
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -264,10 +264,10 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
         ],
       };
     });
-    const fromMiss = await service.getTrainees(ACCOUNT);
+    const fromMiss = await service.getTrainees(ACCOUNT, '365d');
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getTrainees(ACCOUNT);
+    const fromHit = await service.getTrainees(ACCOUNT, '365d');
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
     expect(fromHit).toStrictEqual(fromMiss);
@@ -277,10 +277,58 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v2')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:365d')!, JSON.stringify(legacy));
 
-    const response = await service.getTrainees(ACCOUNT);
+    const response = await service.getTrainees(ACCOUNT, '365d');
 
     expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+  });
+});
+
+// ORG_PEOPLE_TRAINING holds enrollments of any age; the Trainees tab reads only the selected range's rows, so the stat
+// cards, table and both dropdowns describe that range.
+describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
+  const queries = (): string[] => execute.mock.calls.map(([sql]) => sql as string);
+
+  it.each([
+    ['30d', 30],
+    ['90d', 90],
+    ['365d', 365],
+  ] as const)('windows every read on ACTIVITY_TS for %s', async (range, days) => {
+    const response = await service.getTrainees(ACCOUNT, range);
+
+    expect(response.timeRange).toBe(range);
+    expect(execute).toHaveBeenCalledTimes(4);
+    for (const sql of queries()) {
+      expect(sql).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
+    }
+  });
+
+  it('reads all time without a date predicate', async () => {
+    await service.getTrainees(ACCOUNT, 'all');
+
+    expect(execute).toHaveBeenCalledTimes(4);
+    for (const sql of queries()) {
+      expect(sql).not.toContain('ACTIVITY_TS >=');
+    }
+  });
+
+  it('takes identity from the all-time ranges roster, limited to people with training rows in the range', async () => {
+    await service.getTrainees(ACCOUNT, '90d');
+
+    const identity = queries().find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))!;
+    expect(identity).toContain("TIME_RANGE = 'all'");
+    expect(identity).toContain("PROJECT_SCOPE = 'all'");
+    expect(identity).toMatch(/PERSON_KEY IN \(\s*SELECT PERSON_KEY\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING[\s\S]*DATEADD\(day, -90,/);
+  });
+
+  it('caches each range under its own key', async () => {
+    await service.getTrainees(ACCOUNT, '30d');
+    await service.getTrainees(ACCOUNT, '365d');
+    await service.getTrainees(ACCOUNT, '30d');
+
+    expect(execute).toHaveBeenCalledTimes(8);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v3:365d')!)).toBe(true);
   });
 });

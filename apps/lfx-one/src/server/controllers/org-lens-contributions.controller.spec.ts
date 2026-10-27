@@ -12,7 +12,10 @@ const { getContributions, logger } = vi.hoisted(() => ({
 
 // validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
 // The real commit-filter parsers stand in for the barrel (vi.mock factories are hoisted, so the module loads dynamically).
-vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')) }));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+}));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
     public getContributions = getContributions;
@@ -134,6 +137,36 @@ describe('OrgLensContributionsController commit filters', () => {
     expect(getContributions).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController range', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing range to Past 365 days', async () => {
+    await controller.getContributions(buildReq({}), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '365d' });
+  });
+
+  it.each(['30d', '90d', '365d', 'all'])('passes range=%s through', async (range) => {
+    await controller.getContributions(buildReq({ range }), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: range });
+  });
+
+  it('rejects the retired 12mo value with a 400', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ range: '12mo' }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
   });
 });

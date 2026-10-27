@@ -91,6 +91,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   // Real: the directory namespaces a reassign clears are enumerated from these option lists.
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-commit-filters.constants')),
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-time-range.constants')),
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-people.constants')),
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
   isVotingStatus: () => true,
@@ -474,7 +475,7 @@ describe('seat reassign — caller cache invalidation', () => {
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
     // The People directory is cached per time range and project scope, and for the unranged picker roster; every one shows the reassigned seat.
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v5:roster', 'tester', ORG);
-    for (const range of ['30d', '90d', '12mo', 'all']) {
+    for (const range of ['30d', '90d', '365d', 'all']) {
       for (const projectScope of ['all', 'lf', 'non_lf']) {
         expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v5:${range}:${projectScope}`, 'tester', ORG);
       }

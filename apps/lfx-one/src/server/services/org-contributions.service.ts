@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_LENS_TIME_RANGE_DAYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   ContributionSource,
   ContributionsCommitSortColumn,
-  ContributionsDateRange,
   ContributionsSortColumn,
   ContributionsView,
   OrgContributionCommitRow,
@@ -15,6 +14,7 @@ import type {
   OrgContributionsKpis,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
@@ -521,30 +521,14 @@ function buildCommitSearchFilter(search: string): SearchFilter {
   };
 }
 
-function dateRangePredicate(dateRange: ContributionsDateRange): string {
-  switch (dateRange) {
-    case '30d':
-      return 'AND activity_ts >= DATEADD(day, -30, CURRENT_TIMESTAMP())';
-    case '90d':
-      return 'AND activity_ts >= DATEADD(day, -90, CURRENT_TIMESTAMP())';
-    case '12mo':
-      return 'AND activity_ts >= DATEADD(month, -12, CURRENT_TIMESTAMP())';
-    case 'all':
-      return '';
-  }
+/** Timestamp window on `activity_ts`: on or after N days before now; none for all time. N comes from the allow-listed range, never from input. */
+function dateRangePredicate(dateRange: OrgLensTimeRange): string {
+  return dateRange === 'all' ? '' : `AND activity_ts >= DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[dateRange]}, CURRENT_TIMESTAMP())`;
 }
 
-function activityDatePredicate(dateRange: ContributionsDateRange): string {
-  switch (dateRange) {
-    case '30d':
-      return 'AND activity_date >= DATEADD(day, -30, CURRENT_DATE())';
-    case '90d':
-      return 'AND activity_date >= DATEADD(day, -90, CURRENT_DATE())';
-    case '12mo':
-      return 'AND activity_date >= DATEADD(month, -12, CURRENT_DATE())';
-    case 'all':
-      return '';
-  }
+/** Date window on `activity_date`: on or after N days before today; none for all time. */
+function activityDatePredicate(dateRange: OrgLensTimeRange): string {
+  return dateRange === 'all' ? '' : `AND activity_date >= DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[dateRange]}, CURRENT_DATE())`;
 }
 
 function projectFilterPredicate(projects: string[], binds: string[]): string {
@@ -711,7 +695,7 @@ function parseGithubUsername(value: string | null): string | null {
   return match?.[1] ?? null;
 }
 
-function emptyResponse(accountId: string, dateRange: ContributionsDateRange): OrgContributionsResponse {
+function emptyResponse(accountId: string, dateRange: OrgLensTimeRange): OrgContributionsResponse {
   return {
     accountId,
     dateRange,

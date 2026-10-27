@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_CONTRIBUTOR_PROJECT_COLUMNS,
+  ORG_CONTRIBUTOR_ROW_COLUMNS,
+  ORG_LENS_TIME_RANGE_DAYS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
@@ -13,7 +19,7 @@ import type {
   OrgContributorRow,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgPeopleTimeRange,
+  OrgLensTimeRange,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
@@ -36,7 +42,7 @@ export class OrgPeopleContributorsService {
    * person-grain with argmax-most-active-project. `commits` follows the commit scope; `codeActivities` is always
    * sent so the tab can switch metric; the most-active project follows the metric.
    */
-  public async getContributors(accountId: string, timeRange: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<OrgContributorsResponse> {
+  public async getContributors(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
@@ -61,11 +67,7 @@ export class OrgPeopleContributorsService {
    * projects, so a scoped read sums `daily_scope_commits`, which credits it once within the row's own scope: the
    * per-scope count then matches the Code page's distinct commits for that scope.
    */
-  private async fetchPersonProjectRows(
-    accountId: string,
-    timeRange: OrgPeopleTimeRange,
-    projectScope: OrgProjectScope
-  ): Promise<ContributorPersonProjectRow[]> {
+  private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
     const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
     const [commitsColumn, mergedCommitsColumn] =
@@ -103,30 +105,16 @@ export class OrgPeopleContributorsService {
   }
 }
 
-/** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
-function timeRangeCutoffSnowflake(timeRange: OrgPeopleTimeRange): string | null {
-  switch (timeRange) {
-    case '30d':
-      return 'DATEADD(day, -30, CURRENT_DATE())';
-    case '90d':
-      return 'DATEADD(day, -90, CURRENT_DATE())';
-    case '12mo':
-      return 'DATEADD(month, -12, CURRENT_DATE())';
-    case 'all':
-      return null;
-  }
+/** Snowflake date-cutoff SQL fragment (inline, not bound — the day count comes from the allow-listed range) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
+function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
+  return timeRange === 'all' ? null : `DATEADD(day, -${ORG_LENS_TIME_RANGE_DAYS[timeRange]}, CURRENT_DATE())`;
 }
 
 /**
  * Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active by the
  * metric), stats, foundationOptions[], projectOptions[]. `commits` is the commit scope's column (authored or merged).
  */
-function buildResponse(
-  accountId: string,
-  timeRange: OrgPeopleTimeRange,
-  filters: OrgCommitFilters,
-  raw: ContributorPersonProjectRow[]
-): OrgContributorsResponse {
+function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
   const commitsColumn: ContributorCountColumn = filters.commitScope === 'merged' ? 'MERGED_COMMITS' : 'COMMITS';
   const mostActiveColumn: ContributorCountColumn = filters.metric === 'code' ? 'CODE_ACTIVITIES' : commitsColumn;
   const projects: OrgContributorProjectRow[] = [];

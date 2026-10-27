@@ -4,7 +4,7 @@
 import { afterNextRender, computed, DestroyRef, Directive, ElementRef, inject, input, model, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import type { IsActiveMatchOptions } from '@angular/router';
+import type { IsActiveMatchOptions, Params } from '@angular/router';
 import { environment } from '@environments/environment';
 import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -111,6 +111,13 @@ export abstract class NavMenuBase {
    * left to both, `routerLinkActive` would strip the classes this adds on every navigation.
    */
   protected readonly aliasHighlightedKeys: Signal<Readonly<Record<string, boolean>>> = this.initAliasHighlightedKeys();
+
+  /**
+   * Query params per track key for the links whose `carryQueryParams` apply right now, on top of `projectQueryParams`;
+   * absent keys use `projectQueryParams` alone. A link carries a parameter only from a page that is itself an item
+   * carrying it (e.g. `?range=` between People and Code Contributions), so unrelated pages never leak theirs.
+   */
+  protected readonly carriedQueryParams: Signal<Readonly<Partial<Record<string, Params>>>> = this.initCarriedQueryParams();
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -281,6 +288,36 @@ export abstract class NavMenuBase {
       scan(this.itemsWithTestIds());
       scan(this.footerItemsWithTestIds());
       return keys;
+    });
+  }
+
+  private initCarriedQueryParams(): Signal<Readonly<Partial<Record<string, Params>>>> {
+    return computed(() => {
+      const current = this.router.parseUrl(this.navigatedUrl()).queryParams;
+      const carriers: { trackKey: string; link: string; names: readonly string[]; match: IsActiveMatchOptions }[] = [];
+      const collect = (items: DecoratedSidebarMenuItem[]): void => {
+        for (const item of items) {
+          if (item.routerLink && item.carryQueryParams?.length) {
+            carriers.push({ trackKey: item.trackKey, link: item.routerLink, names: item.carryQueryParams, match: item.activeMatchOptions });
+          }
+          if (item.items) collect(item.items);
+        }
+      };
+      collect(this.itemsWithTestIds());
+      collect(this.footerItemsWithTestIds());
+
+      const source = carriers.find((carrier) => this.router.isActive(carrier.link, carrier.match));
+      if (!source) return {};
+      const project = this.projectQueryParams();
+      const params: Record<string, Params> = {};
+      for (const target of carriers) {
+        const carried: Params = {};
+        for (const name of target.names) {
+          if (source.names.includes(name) && current[name] !== undefined) carried[name] = current[name];
+        }
+        if (Object.keys(carried).length) params[target.trackKey] = { ...project, ...carried };
+      }
+      return params;
     });
   }
 

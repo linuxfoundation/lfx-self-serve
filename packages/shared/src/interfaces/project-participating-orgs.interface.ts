@@ -8,14 +8,20 @@
 
 import type {
   PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS,
+  PROJECT_PARTICIPATING_ORGS_RANGES,
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '../constants/project-participating-orgs.constants';
-import type { ContributionsDateRange } from './org-contributions.interface';
 import type { MembershipTierClass } from './org-lens.interface';
 
-/** Activity window; same vocabulary and options as Org Lens → Code Contributions. */
-export type ProjectParticipatingOrgsRange = ContributionsDateRange;
+/** Activity window — the `time_range` values the project_lens warehouse models are built for. */
+export type ProjectParticipatingOrgsRange = (typeof PROJECT_PARTICIPATING_ORGS_RANGES)[number];
+
+/** Range dropdown option — label rendered as-is. */
+export interface ProjectParticipatingOrgsRangeOption {
+  label: string;
+  value: ProjectParticipatingOrgsRange;
+}
 
 /** Tab: every listed company, current members only, or non-members (including Unidentified). */
 export type ProjectParticipatingOrgsSegment = (typeof PROJECT_PARTICIPATING_ORGS_SEGMENTS)[number];

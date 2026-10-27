@@ -48,8 +48,8 @@ import {
   ORG_CODE_METRIC_UNIT,
   ORG_COMMIT_SCOPE_OPTIONS,
   ORG_COMMITS_DEFINITION,
-  ORG_PEOPLE_DEFAULT_TIME_RANGE,
-  ORG_PEOPLE_TIME_RANGE_OPTIONS,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -71,11 +71,18 @@ import type {
   OrgCommitScopeOption,
   OrgCountUnit,
   OrgDropdownOption,
-  OrgPeopleTimeRange,
-  OrgPeopleTimeRangeOption,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
   OrgProjectScopeOption,
 } from '@lfx-one/shared/interfaces';
-import { computeOrgAllEmployeeStats, orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
+import {
+  computeOrgAllEmployeeStats,
+  orgCommitFiltersUrlParams,
+  orgLensTimeRangeUrlParam,
+  parseOrgLensTimeRange,
+  readOrgCommitFilters,
+  sameOrgCommitFilters,
+} from '@lfx-one/shared/utils';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
 
@@ -104,7 +111,7 @@ export class AllEmployeesComponent {
 
   // Spread to a mutable array so PrimeNG's mutable [options] input type accepts it without an unsafe cast.
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
-  protected readonly rangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
+  protected readonly rangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
   protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
   protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
@@ -120,8 +127,9 @@ export class AllEmployeesComponent {
   );
   private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
   private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
-  // Follows `?range=` the same way; the roster, its tiles and the former employees are all read for this range.
-  protected readonly selectedRange = signal<OrgPeopleTimeRange>(AllEmployeesComponent.parseRange(this.route.snapshot.queryParamMap.get('range')));
+  // Follows `?range=` the same way (shared with the other People tabs and Code Contributions); the roster, its tiles and the
+  // former employees are all read for this range.
+  protected readonly selectedRange = signal<OrgLensTimeRange>(parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range')));
   private readonly selectedRange$ = toObservable(this.selectedRange);
   // Follows `?projectScope=` / `?commitScope=` / `?metric=` (shared with the Contributors tab): the project scope picks who is
   // listed, the commit scope and metric pick the code count. All three are read by the BFF with the range.
@@ -294,7 +302,7 @@ export class AllEmployeesComponent {
 
     this.route.queryParamMap
       .pipe(
-        map((params) => AllEmployeesComponent.parseRange(params.get('range'))),
+        map((params) => parseOrgLensTimeRange(params.get('range'))),
         distinctUntilChanged(),
         takeUntilDestroyed()
       )
@@ -386,11 +394,11 @@ export class AllEmployeesComponent {
     });
   }
 
-  protected onRangeChange(value: OrgPeopleTimeRange): void {
+  protected onRangeChange(value: OrgLensTimeRange): void {
     this.selectedRange.set(value);
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { range: value === ORG_PEOPLE_DEFAULT_TIME_RANGE ? null : value },
+      queryParams: { range: orgLensTimeRangeUrlParam(value) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -595,7 +603,7 @@ export class AllEmployeesComponent {
       !!this.selectedFoundationId() ||
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
-      this.selectedRange() !== ORG_PEOPLE_DEFAULT_TIME_RANGE ||
+      this.selectedRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
       this.selectedFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope
     );
   }
@@ -649,7 +657,7 @@ export class AllEmployeesComponent {
    * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
    * established, so this is guarded like org-groups (#2063).
    */
-  private loadRoster(orgUid: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeesResponse> {
+  private loadRoster(orgUid: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeesResponse> {
     if (!isPlatformBrowser(this.platformId)) {
       return EMPTY;
     }
@@ -839,11 +847,6 @@ export class AllEmployeesComponent {
   /** `?employment=` value → filter; anything unknown (or absent) is the default view. */
   private static parseEmployment(value: string | null): OrgAllEmployeeEmploymentFilter {
     return ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
-  }
-
-  /** `?range=` value → time range; anything unknown (or absent) is the default range. */
-  private static parseRange(value: string | null): OrgPeopleTimeRange {
-    return ORG_PEOPLE_TIME_RANGE_OPTIONS.find((option) => option.value === value)?.value ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
   }
 
   private static computeInitials(name: string): string {

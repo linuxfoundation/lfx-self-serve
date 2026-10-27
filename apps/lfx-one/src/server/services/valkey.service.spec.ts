@@ -419,7 +419,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       const between = { padding: 'x'.repeat(7 * 1_048_576) };
       setMock.mockResolvedValue('OK');
 
-      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:12mo:all')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v4:365d:all')!, between, 60)).resolves.toBe(false);
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
     } finally {
       tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
@@ -467,15 +467,21 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     setMock.mockResolvedValue('OK');
 
     for (const subResource of [
-      'people-all:v4:12mo:all',
+      'people-all:v4:365d:all',
       'people-all:v4:roster',
       'people-contributors:v4:all:all',
       'people-event-attendees:v2',
-      'people-trainees:v2',
+      'people-trainees:v3:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
     }
-    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-all:v3:12mo', 'people-contributors:v3:all:all', 'people-former:v3:all:all']) {
+    for (const subResource of [
+      UNCAPPED_SUB_RESOURCE,
+      'people-all:v3:365d',
+      'people-contributors:v3:all:all',
+      'people-former:v3:all:all',
+      'people-trainees:v2',
+    ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
     for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, ...allOrgPeopleDirectoryNamespaces()]) {

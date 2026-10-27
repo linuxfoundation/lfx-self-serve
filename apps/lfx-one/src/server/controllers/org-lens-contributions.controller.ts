@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
   CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_MAX_PAGE_SIZE,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
-  ContributionsDateRange,
   ContributionsSortColumn,
   ContributionsView,
   OrgContributionsQuery,
+  OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
+import { isOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -25,7 +27,6 @@ import { clampInteger, getStringQueryParam } from '../helpers/validation.helper'
 import { logger } from '../services/logger.service';
 import { OrgContributionsService } from '../services/org-contributions.service';
 
-const VALID_DATE_RANGES: ReadonlySet<ContributionsDateRange> = new Set(['30d', '90d', '12mo', 'all']);
 const VALID_SORT_COLUMNS: ReadonlySet<ContributionsSortColumn> = new Set(['commits', 'firstCommit', 'lastCommit']);
 const VALID_VIEWS: ReadonlySet<ContributionsView> = new Set(['repositories', 'commits']);
 const VALID_COMMIT_SORT_COLUMNS: ReadonlySet<ContributionsCommitSortColumn> = new Set(['project', 'committer', 'username', 'date']);
@@ -126,14 +127,14 @@ function parseCommitSortColumn(raw: string | undefined, operation: string): Cont
   return raw as ContributionsCommitSortColumn;
 }
 
-function parseDateRange(raw: string | undefined, operation: string): ContributionsDateRange {
+function parseDateRange(raw: string | undefined, operation: string): OrgLensTimeRange {
   if (!raw) {
-    return CONTRIBUTIONS_DEFAULT_DATE_RANGE;
+    return ORG_LENS_DEFAULT_TIME_RANGE;
   }
-  if (!VALID_DATE_RANGES.has(raw as ContributionsDateRange)) {
-    throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${[...VALID_DATE_RANGES].join(', ')}`, { operation });
+  if (!isOrgLensTimeRange(raw)) {
+    throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
-  return raw as ContributionsDateRange;
+  return raw;
 }
 
 function parseSortColumn(raw: string | undefined, operation: string): ContributionsSortColumn {

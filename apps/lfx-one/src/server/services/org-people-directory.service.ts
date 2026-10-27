@@ -17,7 +17,7 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
-  OrgPeopleTimeRange,
+  OrgLensTimeRange,
   OrgPersonSource,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
@@ -231,7 +231,7 @@ export class OrgPeopleDirectoryService {
    * downstream — it is serialized to the client or searched by `OrgLensPeopleService`, never mutated.
    * A consumer that needs to mutate it must copy first.
    */
-  public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+  public async getLive(req: Request, accountId: string, range: OrgLensTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
     const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
@@ -255,7 +255,7 @@ export class OrgPeopleDirectoryService {
   private async computeLive(
     req: Request,
     accountId: string,
-    range: OrgPeopleTimeRange | null,
+    range: OrgLensTimeRange | null,
     projectScope: OrgProjectScope
   ): Promise<OrgAllEmployeesCountedResponse> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —

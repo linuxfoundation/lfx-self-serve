@@ -5,11 +5,12 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
-  ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW,
-  ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS,
   ORG_EVENT_ATTENDEES_INITIAL_LIMIT,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgDropdownOption,
@@ -20,8 +21,8 @@ import type {
   OrgEventAttendeeSortColumn,
   OrgEventAttendeeSortDirection,
   OrgEventAttendeeStatsBaseline,
-  OrgEventAttendeeTimeWindow,
-  OrgEventAttendeeTimeWindowOption,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
@@ -33,11 +34,14 @@ import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
+import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
-/** Event Attendees tab body — search + foundation + event + time-window filter trio, four stat cards, sortable table with chevron-toggled Events detail. */
+import { filterEndedEventsInRange } from './event-attendees.util';
+
+/** Event Attendees tab body — search + foundation + event + range filters, four stat cards, sortable table with chevron-toggled Events detail. */
 @Component({
   selector: 'lfx-org-people-event-attendees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
@@ -47,9 +51,11 @@ export class EventAttendeesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(EventAttendeesService);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_EVENT_ATTENDEES_INITIAL_LIMIT;
-  protected readonly timeWindowOptions: OrgEventAttendeeTimeWindowOption[] = [...ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS];
+  protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Speakers', 'Attendees', 'Events', 'Foundations'];
 
@@ -57,7 +63,8 @@ export class EventAttendeesComponent {
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     event: new FormControl<string>('', { nonNullable: true }),
-    timeWindow: new FormControl<OrgEventAttendeeTimeWindow>(ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW, { nonNullable: true }),
+    // Follows `?range=` (shared with every People tab and Code Contributions).
+    timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
   });
 
   // WritableSignals — grouped per component-organization.md (writables → computed/toSignal).
@@ -123,6 +130,8 @@ export class EventAttendeesComponent {
       this.limit.set(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
       this.expansion.set({});
     });
+
+    syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
   }
 
   protected onSort(column: OrgEventAttendeeSortColumn): void {
@@ -184,8 +193,6 @@ export class EventAttendeesComponent {
     const q = (values.search ?? '').trim().toLowerCase();
     const foundationId = values.foundation ?? '';
     const eventId = values.event ?? '';
-    const timeWindow: OrgEventAttendeeTimeWindow = values.timeWindow ?? ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
-    const cutoff = timeWindowCutoff(timeWindow);
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings (R1.1 — no email, no event-name).
     const personIndex = new Map<string, { name: string; title: string | null }>();
@@ -193,14 +200,7 @@ export class EventAttendeesComponent {
       personIndex.set(a.personKey, { name: a.name, title: a.title });
     }
 
-    return this.response().details.filter((row) => {
-      // R2.4 time predicate: 'all' collapses to IS_PAST_EVENT (excludes future-event registrations); finite buckets anchor on EVENT_END_DATE.
-      if (timeWindow === 'all') {
-        if (!row.isPastEvent) return false;
-      } else if (cutoff !== null) {
-        if (!row.eventEndDate) return false;
-        if (row.eventEndDate < cutoff) return false;
-      }
+    return filterEndedEventsInRange(this.response().details, values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE).filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
       if (q) {
@@ -324,8 +324,7 @@ export class EventAttendeesComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasEvent = !!(values.event ?? '');
-    const timeWindow: OrgEventAttendeeTimeWindow = values.timeWindow ?? ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
-    const hasTimeFilter = timeWindow !== ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
+    const hasTimeFilter = (values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE) !== ORG_LENS_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasEvent || hasTimeFilter;
   }
 
@@ -393,7 +392,8 @@ export class EventAttendeesComponent {
   }
 
   private resetAllState(): void {
-    this.filterForm.reset({ search: '', foundation: '', event: '', timeWindow: ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW });
+    // The range is page-level URL state, not per-org, so an org switch keeps it.
+    this.filterForm.patchValue({ search: '', foundation: '', event: '' });
     this.sortColumn.set('events');
     this.sortDirection.set(-1);
     this.limit.set(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
@@ -454,25 +454,4 @@ function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
   if (city) return city;
   if (country) return country;
   return row.foundationName ?? null;
-}
-
-/** ISO date cutoff (UTC) for finite windows; null for 'all'. Lex-comparable to `eventEndDate` — no timezone drift. */
-function timeWindowCutoff(window: OrgEventAttendeeTimeWindow): string | null {
-  if (window === 'all') return null;
-  const now = new Date();
-  switch (window) {
-    case '3m':
-      now.setUTCMonth(now.getUTCMonth() - 3);
-      break;
-    case '6m':
-      now.setUTCMonth(now.getUTCMonth() - 6);
-      break;
-    case '12m':
-      now.setUTCMonth(now.getUTCMonth() - 12);
-      break;
-    case '2y':
-      now.setUTCFullYear(now.getUTCFullYear() - 2);
-      break;
-  }
-  return now.toISOString().slice(0, 10);
 }

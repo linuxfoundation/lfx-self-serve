@@ -14,7 +14,7 @@ import { OrgPeopleDirectoryStateService } from './org-people-directory-state.ser
 
 const urlFor = (range: string, projectScope = 'all', commitScope = 'all', metric = 'commits'): string =>
   `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}&projectScope=${projectScope}&commitScope=${commitScope}&metric=${metric}`;
-const URL = urlFor('12mo');
+const URL = urlFor('365d');
 const ROSTER_URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
 
 function roster(name: string): OrgAllEmployeesResponse {
@@ -56,18 +56,18 @@ describe('OrgPeopleDirectoryStateService', () => {
   });
 
   it('serves a resolved directory from cache without a second request', async () => {
-    const first = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const first = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     http.expectOne(URL).flush(roster('Ada Lovelace'));
     await first;
 
-    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'))).resolves.toEqual(roster('Ada Lovelace'));
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'))).resolves.toEqual(roster('Ada Lovelace'));
     http.expectNone(URL);
   });
 
   // A reassign invalidates while a pre-reassign request is still pending. That request must not put
   // the old roster back into the cache when it lands, or the next read would replay it for the TTL.
   it('does not let a request started before invalidate() repopulate the cache', async () => {
-    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     const staleRequest = http.expectOne(URL);
 
     service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
@@ -75,23 +75,23 @@ describe('OrgPeopleDirectoryStateService', () => {
     // Its own subscriber still gets the answer it asked for.
     await expect(stale).resolves.toEqual(roster('Before Reassign'));
 
-    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     http.expectOne(URL).flush(roster('After Reassign'));
     await expect(fresh).resolves.toEqual(roster('After Reassign'));
   });
 
   it('does not let a superseded request drop its successor from the in-flight dedupe', async () => {
-    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const stale = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     const staleRequest = http.expectOne(URL);
     service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
 
-    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const fresh = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     const freshRequest = http.expectOne(URL);
     staleRequest.flush(roster('Before Reassign'));
     await stale;
 
     // A caller arriving now joins the fresh request instead of issuing a third.
-    const joined = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const joined = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     http.expectNone(URL);
     freshRequest.flush(roster('After Reassign'));
     await expect(fresh).resolves.toEqual(roster('After Reassign'));
@@ -140,31 +140,31 @@ describe('OrgPeopleDirectoryStateService', () => {
 
   // lfx-self-serve#4164 — one cached roster per commit-filter combination too, all dropped by invalidate().
   it('keeps each commit-filter combination apart, and invalidate() drops every one', async () => {
-    const lf = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
-    const code = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
-    http.expectOne(urlFor('12mo', 'lf')).flush(roster('LF Commits'));
-    http.expectOne(urlFor('12mo', 'lf', 'all', 'code')).flush(roster('LF Code'));
+    const lf = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
+    const code = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+    http.expectOne(urlFor('365d', 'lf')).flush(roster('LF Commits'));
+    http.expectOne(urlFor('365d', 'lf', 'all', 'code')).flush(roster('LF Code'));
     await expect(lf).resolves.toEqual(roster('LF Commits'));
     await expect(code).resolves.toEqual(roster('LF Code'));
     await expect(
-      firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }))
+      firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' }))
     ).resolves.toEqual(roster('LF Code'));
-    http.expectNone(urlFor('12mo', 'lf', 'all', 'code'));
+    http.expectNone(urlFor('365d', 'lf', 'all', 'code'));
 
     service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
 
-    const refetched = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
-    http.expectOne(urlFor('12mo', 'lf', 'all', 'code')).flush(roster('After'));
+    const refetched = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+    http.expectOne(urlFor('365d', 'lf', 'all', 'code')).flush(roster('After'));
     await expect(refetched).resolves.toEqual(roster('After'));
   });
 
   // The reassign pickers keep the pre-#4163 directory: the unranged roster, never a time range.
-  it('serves the reassign pickers from the unranged roster, requested without a range and cached apart from 12mo', async () => {
+  it('serves the reassign pickers from the unranged roster, requested without a range and cached apart from 365d', async () => {
     const employees = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
     http.expectOne(ROSTER_URL).flush({ ...roster('Ada Lovelace'), rows: [{ ...roster('Ada Lovelace').rows[0], email: 'ada@example.com' }] });
     await expect(employees).resolves.toEqual([expect.objectContaining({ email: 'ada@example.com' })]);
 
-    const ranged = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo'));
+    const ranged = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
     http.expectOne(URL).flush(roster('Last 12 Months'));
     await expect(ranged).resolves.toEqual(roster('Last 12 Months'));
 

@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  ContributionsDateRange,
-  ContributionsDateRangeOption,
   ContributionsMetricLabels,
   OrgCodeMetric,
   OrgContributionsKpis,
@@ -12,20 +10,9 @@ import type {
   OrgProjectScope,
 } from '../interfaces';
 import { DEFAULT_ORG_COMMIT_FILTERS, ORG_CODE_METRIC_LABEL } from './org-commit-filters.constants';
+import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
-// Org Lens → Code Contributions page (LFXV2-1894). Date-range vocab 30d/90d/12mo/all
-// mirrors the People → Contributors tab; default = Past 12 Months per the prototype.
-
-/** Default date-range window — Past 12 Months per the prototype default. */
-export const CONTRIBUTIONS_DEFAULT_DATE_RANGE: ContributionsDateRange = '12mo';
-
-/** Date-range dropdown options — ordered widest-first to match the prototype. */
-export const CONTRIBUTIONS_DATE_RANGE_OPTIONS: readonly ContributionsDateRangeOption[] = [
-  { label: 'Past 12 Months', value: '12mo' },
-  { label: 'Past 90 Days', value: '90d' },
-  { label: 'Past 30 Days', value: '30d' },
-  { label: 'All Time', value: 'all' },
-] as const;
+// Org Lens → Code Contributions page (LFXV2-1894). Range set shared with the People tabs (org-lens-time-range.constants).
 
 /** Default Repositories page size — Org Lens convention is 10 (open question pending; see ticket). */
 export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
@@ -60,7 +47,7 @@ export const CONTRIBUTIONS_MAX_FILTER_VALUES = 50;
 export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
   ...DEFAULT_ORG_COMMIT_FILTERS,
   view: 'repositories',
-  dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
   search: '',
   projects: [],
   employees: [],
@@ -82,7 +69,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_KPIS: OrgContributionsKpis = {
 /** Zero-valued Contributions response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTIONS_RESPONSE: OrgContributionsResponse = {
   accountId: '',
-  dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
   kpis: EMPTY_ORG_CONTRIBUTIONS_KPIS,
   repositories: [],
   commits: [],

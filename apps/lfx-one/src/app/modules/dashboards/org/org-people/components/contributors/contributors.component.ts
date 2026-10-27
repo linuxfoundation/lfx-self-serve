@@ -14,8 +14,8 @@ import {
   ORG_COMMIT_SCOPE_OPTIONS,
   ORG_COMMITS_DEFINITION,
   ORG_CONTRIBUTORS_INITIAL_LIMIT,
-  ORG_PEOPLE_DEFAULT_TIME_RANGE,
-  ORG_PEOPLE_TIME_RANGE_OPTIONS,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -32,8 +32,8 @@ import type {
   OrgContributorSortColumn,
   OrgContributorSortDirection,
   OrgDropdownOption,
-  OrgPeopleTimeRange,
-  OrgPeopleTimeRangeOption,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
   OrgProjectScope,
   OrgProjectScopeOption,
 } from '@lfx-one/shared/interfaces';
@@ -48,6 +48,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { avatarColorClass, orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
+import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { ContributorsService } from '../../services/contributors.service';
@@ -66,21 +67,22 @@ export class ContributorsComponent {
   private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
-  protected readonly timeRangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
+  protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
   protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
   protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
 
-  // The commit filters follow `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and are written back on change.
+  // The commit filters follow `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and the range follows
+  // `?range=` (shared with every People tab and Code Contributions); all are written back on change.
   private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     project: new FormControl<string>('', { nonNullable: true }),
-    timeRange: new FormControl<OrgPeopleTimeRange>(ORG_PEOPLE_DEFAULT_TIME_RANGE, { nonNullable: true }),
+    timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialFilters.projectScope, { nonNullable: true }),
     commitScope: new FormControl<OrgCommitScope>(this.initialFilters.commitScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMetric>(this.initialFilters.metric, { nonNullable: true }),
@@ -193,6 +195,8 @@ export class ContributorsComponent {
       .subscribe((filters) => {
         if (!sameOrgCommitFilters(filters, this.commitFilters())) this.filterForm.patchValue(filters);
       });
+
+    syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
   }
 
   protected onSort(column: OrgContributorSortColumn): void {
@@ -343,8 +347,8 @@ export class ContributorsComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
-    const timeRange: OrgPeopleTimeRange = values.timeRange ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
-    const hasTimeFilter = timeRange !== ORG_PEOPLE_DEFAULT_TIME_RANGE;
+    const timeRange: OrgLensTimeRange = values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE;
+    const hasTimeFilter = timeRange !== ORG_LENS_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasProject || hasTimeFilter;
   }
 
@@ -425,7 +429,7 @@ export class ContributorsComponent {
   }
 
   /** Stable timeRange Signal — bypass the filter-trio debounce so BFF refetch fires per distinct value. */
-  private timeRangeControl(): Signal<OrgPeopleTimeRange> {
+  private timeRangeControl(): Signal<OrgLensTimeRange> {
     return toSignal(this.filterForm.controls.timeRange.valueChanges, {
       initialValue: this.filterForm.controls.timeRange.value,
     });
@@ -455,8 +459,8 @@ export class ContributorsComponent {
   }
 
   private resetAllState(): void {
-    // The commit filters are page-level URL state, not per-org, so an org switch keeps them.
-    this.filterForm.patchValue({ search: '', foundation: '', project: '', timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE });
+    // The commit filters and range are page-level URL state, not per-org, so an org switch keeps them.
+    this.filterForm.patchValue({ search: '', foundation: '', project: '' });
     this.sortColumn.set('role');
     this.sortDirection.set(1);
     this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);

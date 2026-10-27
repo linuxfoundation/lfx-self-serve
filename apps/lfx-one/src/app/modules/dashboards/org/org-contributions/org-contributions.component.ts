@@ -20,8 +20,6 @@ import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  CONTRIBUTIONS_DATE_RANGE_OPTIONS,
-  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
   CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_METRIC_LABELS,
@@ -32,12 +30,12 @@ import {
   ORG_CODE_METRIC_OPTIONS,
   ORG_COMMIT_SCOPE_OPTIONS,
   ORG_COMMITS_DEFINITION,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
-  ContributionsDateRange,
-  ContributionsDateRangeOption,
   ContributionsFilterOption,
   ContributionsMetricLabels,
   ContributionsSortColumn,
@@ -52,11 +50,13 @@ import type {
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
   OrgProjectScope,
   OrgProjectScopeOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
+import { orgCommitFiltersUrlParams, orgLensTimeRangeUrlParam, parseOrgLensTimeRange, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -97,7 +97,7 @@ export class OrgContributionsComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
-  protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
+  protected readonly dateRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
   protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
@@ -109,7 +109,7 @@ export class OrgContributionsComponent {
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
-    dateRange: new FormControl<ContributionsDateRange>(this.parseInitialDateRange(), { nonNullable: true }),
+    dateRange: new FormControl<OrgLensTimeRange>(parseOrgLensTimeRange(this.initialParams.get('range')), { nonNullable: true }),
     projects: new FormControl<string[]>(this.parseInitialCsv('projects'), { nonNullable: true }),
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCommitFilters.projectScope, { nonNullable: true }),
@@ -227,6 +227,18 @@ export class OrgContributionsComponent {
         const { projectScope, commitScope, metric } = this.filterForm.getRawValue();
         if (!sameOrgCommitFilters(filters, { projectScope, commitScope, metric })) this.filterForm.patchValue(filters);
       });
+
+    // `?range=` is shared with the People tabs and carried by the nav links between them, so a query-only navigation
+    // brings a new range too. The guard skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgLensTimeRange(params.get('range'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((dateRange) => {
+        if (dateRange !== this.filterForm.controls.dateRange.value) this.filterForm.patchValue({ dateRange });
+      });
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
@@ -280,7 +292,7 @@ export class OrgContributionsComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.reset({ search: '', dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE, projects: [], employees: [], ...DEFAULT_ORG_COMMIT_FILTERS });
+    this.filterForm.reset({ search: '', dateRange: ORG_LENS_DEFAULT_TIME_RANGE, projects: [], employees: [], ...DEFAULT_ORG_COMMIT_FILTERS });
   }
 
   protected retry(): void {
@@ -294,7 +306,7 @@ export class OrgContributionsComponent {
       commitScope: values.commitScope ?? DEFAULT_ORG_COMMIT_FILTERS.commitScope,
       metric: values.metric ?? DEFAULT_ORG_COMMIT_FILTERS.metric,
       view: this.mainTab(),
-      dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+      dateRange: values.dateRange ?? ORG_LENS_DEFAULT_TIME_RANGE,
       search: (values.search ?? '').trim(),
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
@@ -424,7 +436,7 @@ export class OrgContributionsComponent {
       queryParams: {
         view: query.view === 'repositories' ? null : query.view,
         q: query.search || null,
-        range: query.dateRange === CONTRIBUTIONS_DEFAULT_DATE_RANGE ? null : query.dateRange,
+        range: orgLensTimeRangeUrlParam(query.dateRange),
         ...orgCommitFiltersUrlParams(query),
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
@@ -438,11 +450,6 @@ export class OrgContributionsComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
-  }
-
-  private parseInitialDateRange(): ContributionsDateRange {
-    const raw = this.initialParams.get('range');
-    return CONTRIBUTIONS_DATE_RANGE_OPTIONS.some((o) => o.value === raw) ? (raw as ContributionsDateRange) : CONTRIBUTIONS_DEFAULT_DATE_RANGE;
   }
 
   private parseInitialSort(): ContributionsSortColumn {

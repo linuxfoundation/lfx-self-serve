@@ -23,7 +23,7 @@ import type {
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
-  OrgPeopleTimeRange,
+  OrgLensTimeRange,
   OrgProjectScope,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
@@ -125,7 +125,7 @@ export class OrgLensPeopleService {
   }
 
   /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not scope); the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+  public async getAllEmployees(accountId: string, range: OrgLensTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters.projectScope), filters);
   }
 
@@ -138,7 +138,7 @@ export class OrgLensPeopleService {
    */
   public async getAllEmployeesInternal(
     accountId: string,
-    range: OrgPeopleTimeRange | null,
+    range: OrgLensTimeRange | null,
     projectScope: OrgProjectScope
   ): Promise<OrgAllEmployeesInternalResponse> {
     // `people-all:v4:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164): a ranged read is
@@ -169,7 +169,7 @@ export class OrgLensPeopleService {
    * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
    * employees" view shows. No address is sent for someone who left, and none stands in for a blank name.
    */
-  public async getFormerEmployees(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+  public async getFormerEmployees(accountId: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const raw = await this.getFormerEmployeesRaw(accountId, range, filters.projectScope);
     const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, EMAIL: null }), isFormer: true }));
     return toWireResponse(
@@ -349,7 +349,7 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
-  private getFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
+  private getFormerEmployeesRaw(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     // `people-former:v3:{range}:{projectScope}` (lfx-self-serve#4164): scoped by project and carrying every
     // code count, so a `v2` entry must miss and one entry serves every commit scope and metric.
     return withOrgCache(
@@ -362,7 +362,7 @@ export class OrgLensPeopleService {
   }
 
   /** Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations of their code rows in that scope. */
-  private async fetchFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
+  private async fetchFormerEmployeesRaw(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -450,7 +450,7 @@ export class OrgLensPeopleService {
    * ORG_PEOPLE_ALL_RANGES in the project scope, with all three code counts; `null` reads the unranged
    * ORG_PEOPLE_ALL roster, whose one code count stands in for all three.
    */
-  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
+  private async fetchAllEmployeesRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     const source = range
       ? {
           from: 'ORG_PEOPLE_ALL_RANGES',

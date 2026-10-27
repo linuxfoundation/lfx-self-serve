@@ -277,6 +277,7 @@ export * from './org-memberships.interface';
 export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
+export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
 

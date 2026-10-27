@@ -75,14 +75,14 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     getLive.mockResolvedValue(EMPTY_ROSTER);
   });
 
-  it('reads the unranged roster when /all has no range, and defaults /former to 12mo', async () => {
+  it('reads the unranged roster when /all has no range, and defaults /former to 365d', async () => {
     await controller.getAllEmployees(buildRosterReq({}), buildRes(), vi.fn());
     await controller.getAllEmployees(buildRosterReq({ live: 'true' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({}), buildRes(), vi.fn());
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null, DEFAULT_FILTERS);
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null, DEFAULT_FILTERS);
-    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo', DEFAULT_FILTERS);
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
   });
 
   it('passes a valid range through to the stored, live and former reads', async () => {
@@ -131,14 +131,14 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', picked);
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', picked);
-    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo', picked);
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '365d', picked);
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked);
   });
 
   it('defaults missing params on the Contributors read', async () => {
     await controller.getContributors(buildRosterReq({}), buildRes(), vi.fn());
 
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '12mo', DEFAULT_FILTERS);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
   });
 
   it.each([

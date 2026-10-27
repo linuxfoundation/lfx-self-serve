@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_REGEX, ORG_PEOPLE_DEFAULT_TIME_RANGE, ORG_PEOPLE_TIME_RANGE_OPTIONS, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
-import type { OrgPeopleTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -42,7 +42,7 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|12mo|all][&projectScope][&commitScope][&metric] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|all][&projectScope][&commitScope][&metric] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_all';
@@ -80,14 +80,14 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|12mo|all][&projectScope][&commitScope][&metric] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default `12mo`). Never merged into the live directory. */
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|all][&projectScope][&commitScope][&metric] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default `365d`). Never merged into the live directory. */
   public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_former';
 
     try {
       assertOrgUid(orgUid, operation);
-      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const filters = parseOrgCommitFilters(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
@@ -379,20 +379,24 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/trainees — bundled rows + details + stats + filter options for the Trainees tab (LFXV2-1876). */
+  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default `365d`). */
   public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const startTime = logger.startOperation(req, 'get_org_lens_people_trainees', {
-      org_uid: orgUid,
-    });
+    const operation = 'get_org_lens_people_trainees';
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_trainees');
-
-      const response = await this.traineesService.getTrainees(orgUid);
-
-      logger.success(req, 'get_org_lens_people_trainees', startTime, {
+      assertOrgUid(orgUid, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
+      const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
+        time_range: range,
+      });
+
+      const response = await this.traineesService.getTrainees(orgUid, range);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        time_range: range,
         trainee_count: response.trainees.length,
         detail_count: response.details.length,
         foundation_count: response.foundationOptions.length,
@@ -433,14 +437,14 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all[&projectScope][&commitScope][&metric] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|all[&projectScope][&commitScope][&metric] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_contributors';
 
     try {
       assertOrgUid(orgUid, operation);
-      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation) ?? ORG_PEOPLE_DEFAULT_TIME_RANGE;
+      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const filters = parseOrgCommitFilters(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
@@ -523,13 +527,13 @@ function parseLiveFlag(req: Request): boolean {
 }
 
 /** Validate a People time-range query param (`range` / `timeRange`): missing → `null` (each caller picks its default); invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
-function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgPeopleTimeRange | null {
+function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgLensTimeRange | null {
   if (!raw) {
     return null;
   }
-  const option = ORG_PEOPLE_TIME_RANGE_OPTIONS.find((candidate) => candidate.value === raw);
+  const option = ORG_LENS_TIME_RANGE_OPTIONS.find((candidate) => candidate.value === raw);
   if (!option) {
-    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_PEOPLE_TIME_RANGE_OPTIONS.map((o) => o.value).join(', ')}`, {
+    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_LENS_TIME_RANGE_OPTIONS.map((o) => o.value).join(', ')}`, {
       operation,
     });
   }

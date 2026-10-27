@@ -260,11 +260,12 @@ export const VALKEY_CACHE = {
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
     // every detail row — so the remaining excess is real data, not repetition.
     'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
-    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,443,884
-    // bytes for the largest org measured (down from 6,440,061 pre-compaction). Same irreducible
-    // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
-    // every row, so there is nothing left to deduplicate.
-    'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+    // `v3` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
+    // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
+    // largest value 6,782,106 bytes (Ericsson, All time; Microsoft 5.39 MB, HPE 3.20 MB). Only All time on those three
+    // orgs needs more than 3 MiB: the default Past 365 days peaks at 0.91 MB. 6,782,106 × 1.25 = 8,477,633, rounded up
+    // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906).
+    'org-lens-sf:v1:people-trainees:v3': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**

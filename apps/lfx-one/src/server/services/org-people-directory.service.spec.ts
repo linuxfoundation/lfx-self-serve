@@ -10,7 +10,7 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
-  OrgPeopleTimeRange,
+  OrgLensTimeRange,
   KeyContactEmployee,
 } from '@lfx-one/shared/interfaces';
 import type * as CompactCacheUtils from '@lfx-one/shared/utils/compact-cache.utils';
@@ -207,7 +207,7 @@ function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
   };
 }
 
-async function run(range: OrgPeopleTimeRange | null = '12mo', filters: OrgCommitFilters = FILTERS): Promise<OrgAllEmployeesResponse> {
+async function run(range: OrgLensTimeRange | null = '365d', filters: OrgCommitFilters = FILTERS): Promise<OrgAllEmployeesResponse> {
   return new OrgPeopleDirectoryService().getLive(req, ACCOUNT, range, filters);
 }
 
@@ -943,7 +943,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v5:12mo:all', 'tester', ACCOUNT);
+    evictPerUserOrgFetch('org-people-dir:v5:365d:all', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
@@ -981,19 +981,19 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValueOnce(baseResponse([storedRow({ name: 'Non-LF' })]));
     cache.serveHits = true;
 
-    const commits = await run('12mo', { ...FILTERS, projectScope: 'lf' });
-    const code = await run('12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
-    const merged = await run('12mo', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+    const commits = await run('365d', { ...FILTERS, projectScope: 'lf' });
+    const code = await run('365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    const merged = await run('365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
 
     expect([commits, code, merged].map((response) => response.rows[0].commitsCount)).toEqual([10, 25, 4]);
     expect(code.stats.codeContributors).toBe(1);
-    expect(getAllEmployeesInternal.mock.calls).toEqual([[ACCOUNT, '12mo', 'lf']]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v5:12mo:lf', 'org-people-dir:v5:12mo:lf', 'org-people-dir:v5:12mo:lf']);
+    expect(getAllEmployeesInternal.mock.calls).toEqual([[ACCOUNT, '365d', 'lf']]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:365d:lf', 'org-people-dir:v5:365d:lf', 'org-people-dir:v5:365d:lf']);
 
     cache.entry = null;
-    expect((await run('12mo', { ...FILTERS, projectScope: 'non_lf' })).rows[0].name).toBe('Non-LF');
-    expect(getAllEmployeesInternal).toHaveBeenLastCalledWith(ACCOUNT, '12mo', 'non_lf');
-    expect(cache.namespaces.at(-1)).toBe('org-people-dir:v5:12mo:non_lf');
+    expect((await run('365d', { ...FILTERS, projectScope: 'non_lf' })).rows[0].name).toBe('Non-LF');
+    expect(getAllEmployeesInternal).toHaveBeenLastCalledWith(ACCOUNT, '365d', 'non_lf');
+    expect(cache.namespaces.at(-1)).toBe('org-people-dir:v5:365d:non_lf');
   });
 
   it('serves the unranged roster (no range) from its own cache namespace and stored read', async () => {
@@ -1002,11 +1002,11 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValueOnce(baseResponse([storedRow({ name: 'Ranged' })]));
 
     expect((await run(null)).rows[0].name).toBe('Roster');
-    expect((await run('12mo')).rows[0].name).toBe('Ranged');
+    expect((await run('365d')).rows[0].name).toBe('Ranged');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
       [ACCOUNT, null, 'all'],
-      [ACCOUNT, '12mo', 'all'],
+      [ACCOUNT, '365d', 'all'],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:12mo:all']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:365d:all']);
   });
 });
