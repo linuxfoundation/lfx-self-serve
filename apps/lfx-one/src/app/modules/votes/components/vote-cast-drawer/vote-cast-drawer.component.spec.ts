@@ -377,6 +377,10 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
     expect(el('vote-cast-drawer-content')?.contains(el('vote-cast-submit-button'))).toBe(false);
     expect(footer?.className).toContain('pb-[env(safe-area-inset-bottom)]');
     expect(footer?.className).toContain('flex-col-reverse');
+    // [fluid] makes PrimeNG add p-button-fluid so the button, not just the host, fills the phone footer.
+    for (const id of ['vote-cast-submit-button', 'vote-cast-cancel-button']) {
+      expect(el(id)?.querySelector('button')?.className).toContain('p-button-fluid');
+    }
   });
 
   it('uses a full-height sheet class below sm while keeping the existing width chain', async () => {

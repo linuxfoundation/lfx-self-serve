@@ -252,6 +252,7 @@
       <lfx-button
         label="Cancel"
         severity="secondary"
+        [fluid]="true"
         styleClass="w-full sm:w-auto min-h-[44px]"
         (onClick)="onClose()"
         [disabled]="submitting()"
@@ -260,6 +261,7 @@
         label="Submit Vote"
         icon="fa-light fa-check"
         severity="primary"
+        [fluid]="true"
         styleClass="w-full sm:w-auto min-h-[44px]"
         [disabled]="submitDisabled()"
         [loading]="submitting()"

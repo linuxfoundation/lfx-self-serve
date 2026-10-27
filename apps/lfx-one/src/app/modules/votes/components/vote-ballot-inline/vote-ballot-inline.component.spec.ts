@@ -197,10 +197,13 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
     expect(q('dashboard-pending-actions-vote-abstain-label')?.className).toContain('min-h-[44px]');
     expect(q('dashboard-pending-actions-vote-submit')?.querySelector('button')?.className).toContain('min-h-[44px]');
     expect(q('dashboard-pending-actions-vote-cancel')?.querySelector('button')?.className).toContain('min-h-[44px]');
+    expect(q('dashboard-pending-actions-vote-submit')?.querySelector('button')?.className).toContain('p-button-fluid');
+    expect(q('dashboard-pending-actions-vote-cancel')?.querySelector('button')?.className).toContain('p-button-fluid');
 
     await render(false);
     expect(q('dashboard-pending-actions-vote-choice-c1')?.querySelector('[class*="min-h-[44px]"]')).toBeNull();
     expect(q('dashboard-pending-actions-vote-submit')?.querySelector('button')?.className).not.toContain('min-h-[44px]');
+    expect(q('dashboard-pending-actions-vote-submit')?.querySelector('button')?.className).not.toContain('p-button-fluid');
   });
 
   it('stacks choices vertically and puts Submit ahead of Cancel below sm', async () => {

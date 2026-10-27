@@ -83,6 +83,7 @@
       [outlined]="true"
       class="max-sm:order-3"
       label="Cancel"
+      [fluid]="isMobile()"
       [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
       (onClick)="cancelled.emit()"
       data-testid="dashboard-pending-actions-vote-cancel" />
@@ -91,6 +92,7 @@
       severity="primary"
       class="max-sm:order-2"
       label="Submit"
+      [fluid]="isMobile()"
       [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
       [disabled]="submitDisabled()"
       [loading]="submitting()"

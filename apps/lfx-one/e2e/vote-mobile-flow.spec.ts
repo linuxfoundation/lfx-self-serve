@@ -108,7 +108,8 @@ async function stubVoteApis(page: Page, pollType: PollTypeUnderTest): Promise<{ 
   });
   await page.route('**/api/votes/my-votes*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    return fulfillJson(route, [buildMyVoteRow(pollType)]);
+    // The object shape carries `complete: true`; the legacy bare array would suppress the status counts.
+    return fulfillJson(route, { votes: [buildMyVoteRow(pollType)], complete: true });
   });
   await page.route(`**/api/votes/${VOTE_UID}`, (route) => fulfillJson(route, buildVoteDetail(pollType)));
   await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) =>
@@ -181,6 +182,18 @@ test.describe('Mobile voting flow (#4148)', () => {
 
     await expect(page.getByTestId(`votes-card-${VOTE_UID}`)).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expect(page.getByTestId('votes-status-tabs')).toBeVisible();
+    // Counts are the point of "stay visible": both pills show (1) and sit inside the phone viewport.
+    for (const [pill, label] of [
+      ['filter-pill-all', /^All\s*\(1\)$/],
+      ['filter-pill-active', /^Active\s*\(1\)$/],
+    ] as const) {
+      const locator = page.getByTestId(pill);
+      await expect(locator).toHaveText(label);
+      const box = await locator.boundingBox();
+      expect(box, `${pill} must be laid out`).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    }
     await expect(page.locator('lfx-votes-table thead th')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
   });
@@ -198,10 +211,13 @@ test.describe('Mobile voting at 360 wide (#4148)', () => {
     await page.getByTestId(`votes-cast-${VOTE_UID}`).click();
     await expect(page.getByTestId('vote-cast-question-q1')).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expectNoHorizontalScroll(page);
+    // The outer drawer can report zero overflow while its scrolling content region still overflows, so check both scrollports.
     const overflow = await page.evaluate(() => {
       const drawer = document.querySelector('.vote-cast-drawer') as HTMLElement;
-      return drawer.scrollWidth - drawer.clientWidth;
+      const content = drawer.querySelector('.p-drawer-content') as HTMLElement;
+      return { drawer: drawer.scrollWidth - drawer.clientWidth, content: content.scrollWidth - content.clientWidth };
     });
-    expect(overflow).toBeLessThanOrEqual(0);
+    expect(overflow.drawer, 'drawer root must not overflow horizontally').toBeLessThanOrEqual(0);
+    expect(overflow.content, 'drawer content scrollport must not overflow horizontally').toBeLessThanOrEqual(0);
   });
 });
