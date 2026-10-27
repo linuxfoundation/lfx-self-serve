@@ -43,7 +43,7 @@ export class PersonDetailDrawerService {
   private readonly _activeTab = signal<PersonDrawerTab>('events');
   public readonly activeTab = this._activeTab.asReadonly();
 
-  private readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
+  public readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
   // Activity and addresses are two requests off the same key, so neither waits on the other.
   private readonly detailRequest = computed(() => ({ orgUid: this.orgUid(), context: this._activeContext() }));
   public readonly isOpen = computed(() => this._activeContext() !== null);

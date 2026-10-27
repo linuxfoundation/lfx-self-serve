@@ -477,7 +477,9 @@ export class OrgLensPeopleService {
       SELECT EMAIL, IS_PRIMARY
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-      ORDER BY IS_PRIMARY DESC, EMAIL ASC
+      -- NULLS LAST is explicit: Snowflake sorts NULL above non-NULL on DESC, which would put an
+      -- unflagged address ahead of the primary and break the primary-first contract.
+      ORDER BY IS_PRIMARY DESC NULLS LAST, EMAIL ASC
     `;
     const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, personKey]);
     return result.rows;
@@ -504,7 +506,7 @@ export class OrgLensPeopleService {
       FROM resolved_person AS person
       INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
         ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
-      ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
+      ORDER BY emails.IS_PRIMARY DESC NULLS LAST, emails.EMAIL ASC
     `;
     const result = await this.snowflakeService.execute<CompanyEmailRow>(query, [accountId, username]);
     const resolved = toCompanyEmails(result.rows);

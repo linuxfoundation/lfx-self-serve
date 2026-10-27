@@ -83,7 +83,21 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
   afterEach(() => {
     fixture?.destroy();
     document.body.innerHTML = '';
+    // Cleaning up here, not at the end of the test that stubs: an assertion that fails mid-test would
+    // otherwise leave the stub in place for the rest of the file.
+    Reflect.deleteProperty(navigator, 'clipboard');
+    vi.restoreAllMocks();
   });
+
+  /**
+   * Defines only the `clipboard` property. jsdom's navigator has none, and replacing the whole object
+   * with `{ ...navigator }` would drop every prototype accessor the rest of the suite may read.
+   */
+  const stubClipboard = (writeText: (text: string) => Promise<void>): void => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  };
+
+  const liveRegion = (): string => document.querySelector('[role="status"]')?.textContent?.trim() ?? '';
 
   it.each([
     { label: 'username', context: person, base: BY_USERNAME },
@@ -318,7 +332,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
   it('copies an address and confirms it, without confirming the others', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    stubClipboard(writeText);
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
     reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org', 'second@example.org']));
@@ -327,8 +341,59 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     (byTestId('person-detail-drawer-email-copy-1') as HTMLButtonElement).click();
     await render();
     expect(writeText).toHaveBeenCalledWith('second@example.org');
-    expect(document.querySelector('[role="status"]')?.textContent?.trim()).toBe('second@example.org copied');
-    vi.unstubAllGlobals();
+    expect(liveRegion()).toBe('second@example.org copied');
+  });
+
+  it.each([
+    { label: 'another person', open: (d: PersonDetailDrawerService) => d.open({ name: 'Second person', personKey: 'second-person' }) },
+    { label: 'another org', open: () => selectedAccount.set({ uid: 'org-2' }) },
+    { label: 'the drawer closing', open: (d: PersonDetailDrawerService) => d.close() },
+  ])('drops a copy confirmation when the drawer switches to $label', async ({ open }) => {
+    stubClipboard(vi.fn().mockResolvedValue(undefined));
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    (byTestId('person-detail-drawer-email-copy-0') as HTMLButtonElement).click();
+    await render();
+    expect(liveRegion()).toBe('first@example.org copied');
+
+    open(drawer);
+    await render();
+    expect(liveRegion()).toBe('');
+  });
+
+  it('ignores a clipboard write that settles after the drawer moved to another person', async () => {
+    let settle: () => void = () => undefined;
+    stubClipboard(() => new Promise<void>((resolve) => (settle = resolve)));
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    (byTestId('person-detail-drawer-email-copy-0') as HTMLButtonElement).click();
+    await render();
+    expect(liveRegion()).toBe('');
+
+    drawer.open({ name: 'Second person', personKey: 'second-person' });
+    settle();
+    await render();
+
+    // The write belonged to the person who is no longer shown; the new one must not inherit it.
+    expect(liveRegion()).toBe('');
+  });
+
+  it('shows an address carrying URI delimiters as text rather than a mailto link that mails the wrong recipient', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['tag#team@example.org', 'plain@example.org']));
+    await render();
+
+    expect(emailState('0')?.tagName).toBe('SPAN');
+    expect(emailState('0')?.textContent?.trim()).toBe('tag#team@example.org');
+    expect(emailState('0')?.getAttribute('href')).toBeNull();
+    // Still copyable, and the safe address beside it still links.
+    expect(byTestId('person-detail-drawer-email-copy-0')).not.toBeNull();
+    expect(emailState('1')?.getAttribute('href')).toBe('mailto:plain@example.org');
   });
 
   it('requests and shows addresses with no feature flag configured', async () => {

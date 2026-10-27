@@ -416,6 +416,19 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
   });
 
+  it('keeps the flagged primary first when another address has no IS_PRIMARY value', async () => {
+    // Snowflake sorts NULL above non-NULL on DESC, so without NULLS LAST the unflagged address leads
+    // and `companyEmails[0]` stops being the primary the contract promises.
+    database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'a-unflagged@company.example', null);
+    database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'z-primary@company.example', 1);
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
+      companyEmails: ['z-primary@company.example', 'a-unflagged@company.example'],
+      primaryEmail: 'z-primary@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
     database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
