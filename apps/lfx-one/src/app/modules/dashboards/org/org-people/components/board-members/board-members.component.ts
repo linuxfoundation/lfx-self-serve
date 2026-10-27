@@ -173,14 +173,9 @@ export class BoardMembersComponent {
     event.stopPropagation();
     // Email-keyed groups may span people: the username is a lookup key only when every seat carries the same one.
     const username = agreedUsername(group.assignments.map((a) => a.person.username));
-    // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is blank —
-    // take the contact address from the assignments instead, as the reassign flow does. The drawer shows it only
-    // when it has no identity of its own to look addresses up with.
-    const email = group.assignments.find((a) => a.person.email)?.person.email ?? null;
     this.drawer.open({
       name: group.displayName,
       title: group.jobTitle,
-      email,
       initials: group.initials,
       avatarColorClass: 'bg-purple-500',
       defaultTab: 'governance',

@@ -68,8 +68,9 @@ export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Gates Org Lens surfaces still restricted to internal audiences — person-detail-drawer company
- * emails (GH-1655) and the Company Logo Upload control on the Org Profile edit page (LFXV2-3288).
+ * Gates Org Lens surfaces still restricted to internal audiences — now only the Company Logo Upload
+ * control on the Org Profile edit page (LFXV2-3288). The person-detail-drawer company-email gate
+ * (GH-1655) was retired once its real-data backend landed (#1705 → #1830 → #2402).
  * Remove each gate as its real-data backend lands; retire this flag once all are unguarded.
  *
  * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview

@@ -7,7 +7,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { OrgAllEmployeeDetail, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { finalize, Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -24,7 +23,6 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
   let responses: Map<string, Subject<unknown>>;
   let httpGet: Mock<(url: string) => Observable<unknown>>;
   const selectedAccount = signal({ uid: 'org-1' });
-  const featureEnabled = signal(true);
   const person: PersonDrawerContext = { name: 'First person', username: 'first-person' };
   const detail = (personKey = 'first-person'): OrgAllEmployeeDetail => ({
     personKey,
@@ -68,7 +66,6 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
   beforeEach(async () => {
     selectedAccount.set({ uid: 'org-1' });
-    featureEnabled.set(true);
     responses = new Map();
     httpGet = vi.fn((url: string) => reply(url));
     await TestBed.configureTestingModule({
@@ -77,7 +74,6 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
         provideNoopAnimations(),
         { provide: HttpClient, useValue: { get: httpGet } },
         { provide: AccountContextService, useValue: { selectedAccount } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => featureEnabled } },
       ],
     }).compileComponents();
     drawer = TestBed.inject(PersonDetailDrawerService);
@@ -191,7 +187,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')?.textContent?.trim()).toBe('second@example.org');
   });
 
-  it('refetches both on account changes, and turning the flag off hides addresses without refetching activity', async () => {
+  it('refetches both on account changes', async () => {
     drawer.open(person);
     await render();
     reply(`${BY_USERNAME}/detail`).next(detail());
@@ -206,26 +202,6 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')).toBeNull();
     expect(requested()).toContain('/api/orgs/org-2/lens/people/by-username/first-person/detail');
     expect(requested()).toContain('/api/orgs/org-2/lens/people/by-username/first-person/company-emails');
-
-    const requestCount = httpGet.mock.calls.length;
-    featureEnabled.set(false);
-    await render();
-    expect(httpGet).toHaveBeenCalledTimes(requestCount);
-    expect(drawer.emailsLoading()).toBe(false);
-    for (const state of ['', 'loading', 'none', 'not-available', 'failed']) {
-      expect(emailState(state)).toBeNull();
-    }
-  });
-
-  it.each([
-    { label: 'username', context: person, base: BY_USERNAME },
-    { label: 'person key', context: { name: 'First person', personKey: 'first-person' }, base: BY_PERSON_KEY },
-  ])('never requests $label addresses while the flag is off', async ({ context, base }) => {
-    featureEnabled.set(false);
-    drawer.open(context);
-    await render();
-    expect(requested()).toEqual([`${base}/detail`]);
-    expect(emailState('loading')).toBeNull();
   });
 
   it('keeps missing identity distinct from an empty lookup and a failed detail fetch distinct from addresses', async () => {
@@ -355,34 +331,23 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     vi.unstubAllGlobals();
   });
 
-  it('shows the opener-supplied address when there is no identity to look addresses up with', async () => {
-    drawer.open({ name: 'Board member', email: 'Chair@Example.Org' });
+  it('requests and shows addresses with no feature flag configured', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
 
-    expect(httpGet).not.toHaveBeenCalled();
-    expect(emailState('0')?.getAttribute('href')).toBe('mailto:chair@example.org');
-    expect(byTestId('person-detail-drawer-email-context')).not.toBeNull();
-    // The fallback is one known address, not a resolved lookup — neither the empty nor the unavailable message belongs.
-    expect(emailState('not-available')).toBeNull();
-    expect(emailState('none')).toBeNull();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/company-emails`);
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
   });
 
-  it('ignores an opener address that is a memberUid fallback rather than an address', async () => {
-    drawer.open({ name: 'Board member', email: 'member-uid-123' });
+  it('says none on record rather than nothing when the lookup resolves empty', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
     await render();
 
+    expect(emailState('none')).not.toBeNull();
     expect(emailState('0')).toBeNull();
-    expect(emailState('not-available')).not.toBeNull();
-  });
-
-  it('prefers the looked-up addresses over the opener-supplied one', async () => {
-    drawer.open({ name: 'First person', personKey: 'first-person', email: 'stale@example.org' });
-    await render();
-    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['fetched@example.org']));
-    await render();
-
-    expect(emailState('0')?.getAttribute('href')).toBe('mailto:fetched@example.org');
-    expect(byTestId('person-detail-drawer-email-context')).toBeNull();
-    expect(emailState('1')).toBeNull();
   });
 });

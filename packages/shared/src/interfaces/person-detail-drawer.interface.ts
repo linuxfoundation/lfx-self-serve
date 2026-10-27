@@ -14,12 +14,6 @@ export interface PersonDrawerContext {
   governanceSeats?: OrgAllEmployeeCommitteeMembership[];
   name: string;
   title?: string | null;
-  /**
-   * Contact address the opener already holds, shown when the warehouse lookup has no identity to read on
-   * (Board/Committee groups have no `personKey`). Openers whose group key falls back to a seat `memberUid`
-   * must pass `null` rather than that uid.
-   */
-  email?: string | null;
   avatarUrl?: string | null;
   initials?: string;
   avatarColorClass?: string;

@@ -58,14 +58,6 @@
                       Primary
                     </span>
                   }
-                  @if (companyEmail.isContextFallback) {
-                    <span
-                      class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-500"
-                      title="The address this view already had. Other company addresses can't be looked up from here."
-                      data-testid="person-detail-drawer-email-context">
-                      Contact
-                    </span>
-                  }
                   <button
                     type="button"
                     class="shrink-0 text-gray-400 hover:text-gray-600"
@@ -86,15 +78,15 @@
                 {{ copied }} copied
               }
             </span>
-          } @else if (companyEmailFeatureEnabled() && drawer.emailsLoading()) {
+          } @else if (drawer.emailsLoading()) {
             <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
+          } @else if (companyEmailsFailed()) {
             <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {
+          } @else if (companyEmailsNotAvailable()) {
             <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-not-available">
               Company emails aren't available from this view
             </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNoneOnRecord()) {
+          } @else if (companyEmailsNoneOnRecord()) {
             <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-none"> No company email on record </span>
           }
         </span>

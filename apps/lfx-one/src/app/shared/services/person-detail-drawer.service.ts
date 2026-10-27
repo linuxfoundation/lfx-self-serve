@@ -4,7 +4,6 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeDetail,
   OrgDrawerDetailResult,
@@ -13,7 +12,6 @@ import type {
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
 const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
@@ -38,9 +36,6 @@ function personPath(orgUid: string, context: PersonDrawerContext | null): string
 export class PersonDetailDrawerService {
   private readonly http = inject(HttpClient);
   private readonly accountContext = inject(AccountContextService);
-  private readonly featureFlagService = inject(FeatureFlagService);
-
-  private readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
 
   private readonly _activeContext = signal<PersonDrawerContext | null>(null);
   public readonly activeContext = this._activeContext.asReadonly();
@@ -49,9 +44,8 @@ export class PersonDetailDrawerService {
   public readonly activeTab = this._activeTab.asReadonly();
 
   private readonly orgUid = computed(() => this.accountContext.selectedAccount().uid);
+  // Activity and addresses are two requests off the same key, so neither waits on the other.
   private readonly detailRequest = computed(() => ({ orgUid: this.orgUid(), context: this._activeContext() }));
-  // The flag keys only the address request, so flipping it never refetches activity.
-  private readonly emailsRequest = computed(() => ({ ...this.detailRequest(), companyEmailFeatureEnabled: this.companyEmailFeatureEnabled() }));
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
   private readonly detailResult = toSignal(
@@ -74,11 +68,11 @@ export class PersonDetailDrawerService {
   );
 
   private readonly emailsResult = toSignal(
-    toObservable(this.emailsRequest).pipe(
+    toObservable(this.detailRequest).pipe(
       switchMap((request): Observable<OrgPersonCompanyEmailsResponse & { request: typeof request }> => {
         const path = request.orgUid ? personPath(request.orgUid, request.context) : null;
-        // Flag off (or nobody to look up): no address request at all.
-        if (!path || !request.companyEmailFeatureEnabled) {
+        // Nobody to look up: no address request at all.
+        if (!path) {
           return of({ request, ...NO_COMPANY_EMAILS });
         }
         return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`).pipe(
@@ -108,7 +102,7 @@ export class PersonDetailDrawerService {
   });
   private readonly currentEmails = computed(() => {
     const result = this.emailsResult();
-    return this._activeContext() && this.orgUid() && result?.request === this.emailsRequest() ? result : null;
+    return this._activeContext() && this.orgUid() && result?.request === this.detailRequest() ? result : null;
   });
 
   public readonly loading = computed(() => {
@@ -119,8 +113,8 @@ export class PersonDetailDrawerService {
   public readonly detail = computed<OrgAllEmployeeDetail | null>(() => this.currentDetail()?.detail ?? null);
 
   public readonly emailsLoading = computed(() => {
-    const { orgUid, context, companyEmailFeatureEnabled } = this.emailsRequest();
-    return !!(companyEmailFeatureEnabled && orgUid && context && (context.personKey || context.username) && !this.currentEmails());
+    const { orgUid, context } = this.detailRequest();
+    return !!(orgUid && context && (context.personKey || context.username) && !this.currentEmails());
   });
   public readonly emailError = computed(() => {
     const result = this.currentEmails();
