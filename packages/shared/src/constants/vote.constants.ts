@@ -159,3 +159,8 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.INSTANT_RUNOFF_VOTE]: 'Instant Runoff Vote',
   [PollType.MEEK_STV]: 'Meek STV',
 };
+
+/** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
+export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';
+export const VOTE_IMPERSONATION_PRIVATE_NOTICE =
+  'This ballot is private while impersonating another user. Choices, abstention and ballot comments are hidden unless the vote is explicitly named.';

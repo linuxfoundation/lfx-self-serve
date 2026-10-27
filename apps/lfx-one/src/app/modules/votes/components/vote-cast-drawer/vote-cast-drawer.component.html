@@ -61,7 +61,12 @@
 
   @if (vote(); as voteData) {
     <div class="flex flex-col gap-6" data-testid="vote-cast-drawer-content">
-      @if (loadingVote()) {
+      @if (impersonating()) {
+        <p class="text-sm text-gray-700" role="note" data-testid="vote-cast-impersonation-notice">{{ impersonationNotice() }}</p>
+      }
+      @if (impersonating() && (!readOnly() || ballotPrivacyRestricted())) {
+        <lfx-button label="Close" severity="secondary" (onClick)="onClose()" data-testid="vote-cast-impersonation-close" />
+      } @else if (loadingVote()) {
         <div class="flex flex-col gap-4">
           <p-skeleton width="60%" height="24px"></p-skeleton>
           @for (i of [1, 2, 3]; track i) {

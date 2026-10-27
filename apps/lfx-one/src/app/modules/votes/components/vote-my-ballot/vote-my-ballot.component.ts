@@ -8,7 +8,7 @@ import { buildVoteBallotQuestions } from '@lfx-one/shared/utils';
 /**
  * Read-only view of the viewer's own current ballot on the vote page (#4331).
  * @description Shows only what the caller's own `my-ballot` read returned, so on a pseudo-anonymous vote a voter still
- * sees just their own choices. Changing the ballot stays a My Votes action.
+ * sees just their own choices. My Votes also provides read-only review; submitted ballots cannot be changed through this app.
  */
 @Component({
   selector: 'lfx-vote-my-ballot',

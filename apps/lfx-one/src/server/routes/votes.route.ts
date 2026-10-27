@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
@@ -28,7 +29,7 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // POST /votes/responses - submit a vote response (ballot)
 // Note: literal-segment routes must precede '/:uid' handlers so Express
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
-router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
+router.post('/responses', blockDuringImpersonation, (req, res, next) => voteController.createVoteResponse(req, res, next));
 
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));

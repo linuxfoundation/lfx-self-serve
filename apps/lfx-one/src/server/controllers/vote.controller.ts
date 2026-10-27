@@ -687,7 +687,7 @@ export class VoteController {
   }
 
   /**
-   * Validates a ballot body shared by create (POST) and update (PUT) and rebuilds it from the validated fields only.
+   * Validates an initial ballot body (POST) and rebuilds it from the validated fields only.
    * @description When abstaining, `user_vote_content` is dropped entirely; otherwise every answer must carry choices.
    * `comment_responses` is independent of abstain — a voter can abstain and still leave comments.
    */

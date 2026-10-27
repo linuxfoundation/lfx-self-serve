@@ -9,7 +9,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS, VOTE_VOTERS_ABSTAINED_CHOICE_KEY } from '@lfx-one/shared/constants';
+import {
+  VOTE_DETAIL_DEFAULT_TAB,
+  VOTE_DETAIL_TABS,
+  VOTE_DETAIL_VALID_TABS,
+  VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
+  VOTE_IMPERSONATION_PRIVATE_NOTICE,
+  VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+} from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
   MyVoteBallot,
@@ -45,6 +52,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
+import { UserService } from '@services/user.service';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PaginatorState } from 'primeng/paginator';
@@ -118,6 +126,7 @@ export class VoteDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly voteService = inject(VoteService);
+  private readonly userService = inject(UserService);
   private readonly projectService = inject(ProjectService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
@@ -132,6 +141,9 @@ export class VoteDetailComponent {
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
+  protected readonly impersonating = this.userService.impersonating;
+  protected readonly impersonationReadOnlyNotice = VOTE_IMPERSONATION_READ_ONLY_NOTICE;
+  protected readonly impersonationPrivateNotice = VOTE_IMPERSONATION_PRIVATE_NOTICE;
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
@@ -191,6 +203,7 @@ export class VoteDetailComponent {
   protected readonly showVotersTab: Signal<boolean> = this.initShowVotersTab();
   /** A missing privacy flag fails closed, as the server does (#3911). */
   protected readonly isPseudoAnonymous: Signal<boolean> = computed(() => this.vote()?.pseudo_anonymity !== false);
+  protected readonly ballotPrivacyRestricted = computed(() => this.impersonating() && this.isPseudoAnonymous());
   /** Ballot and "View voters" links (and their deep-link params) — explicitly named votes only, even though the tab now shows on any vote (#3916). */
   protected readonly showNamedBallotLinks: Signal<boolean> = computed(() => this.showVotersTab() && !this.isPseudoAnonymous());
   protected readonly votersChoice: Signal<string | null> = computed(() => (this.showNamedBallotLinks() ? this.requestedVotersChoice() : null));
@@ -215,7 +228,9 @@ export class VoteDetailComponent {
   protected readonly showsResults: Signal<boolean> = computed(
     () => this.audience() === 'creator' || (this.voterState() === 'closed' && !this.myResponseError())
   );
-  protected readonly canCastVote: Signal<boolean> = computed(() => !this.hasSubmittedBallot() && this.isAwaitingBallot(this.vote(), this.myResponse()));
+  protected readonly canCastVote: Signal<boolean> = computed(
+    () => !this.impersonating() && !this.hasSubmittedBallot() && this.isAwaitingBallot(this.vote(), this.myResponse())
+  );
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE);
   /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
@@ -289,7 +304,7 @@ export class VoteDetailComponent {
   }
 
   protected onCastVote(): void {
-    this.castDrawerVisible.set(true);
+    if (!this.impersonating()) this.castDrawerVisible.set(true);
   }
 
   protected onVoteSubmitted(voteId: string): void {
@@ -430,7 +445,7 @@ export class VoteDetailComponent {
       uid: this.vote()?.uid ?? null,
       tick: this.refreshTick(),
       // canManage() is null while access resolves, and audience() reads 'voter' then — wait so a manager never fetches.
-      submitted: this.voterState() === 'submitted' && this.canManage() !== null && this.audience() === 'voter',
+      submitted: this.voterState() === 'submitted' && this.canManage() !== null && this.audience() === 'voter' && !this.ballotPrivacyRestricted(),
     }));
     const ballot = toSignal(
       toObservable(key).pipe(

@@ -54,7 +54,7 @@ import {
 import { Request } from 'express';
 import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
 
-import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -62,6 +62,7 @@ import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { EmailService } from './email.service';
 import { logger } from './logger.service';
@@ -1007,6 +1008,11 @@ export class VoteService {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       response.uid = match.vote_id;
     }
+    // Admin Mode needs participation metadata, never a legacy index row's ballot content.
+    // Named ballot inspection uses the privacy-checked my-ballot path instead.
+    if (isImpersonating(req)) {
+      return { uid: response.uid, vote_uid: response.vote_uid, vote_status: response.vote_status, voter_removed: response.voter_removed };
+    }
     return response;
   }
 
@@ -1019,6 +1025,17 @@ export class VoteService {
   public async getMyVoteBallot(req: Request, voteUid: string): Promise<MyVoteBallot | null> {
     const row = await this.getMyVoteResponse(req, voteUid);
     if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) return null;
+
+    if (isImpersonating(req)) {
+      const vote = await this.getVoteById(req, voteUid);
+      if (vote.pseudo_anonymity !== false) {
+        throw new AuthorizationError('This ballot is private while impersonating a user.', {
+          code: 'IMPERSONATION_BALLOT_PRIVATE',
+          operation: 'get_my_vote_ballot',
+          service: 'vote_service',
+        });
+      }
+    }
 
     const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
       req,

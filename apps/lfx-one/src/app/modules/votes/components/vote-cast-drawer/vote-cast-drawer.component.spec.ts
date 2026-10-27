@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
+import { UserService } from '@services/user.service';
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
@@ -22,6 +24,7 @@ import { VoteCastDrawerComponent } from './vote-cast-drawer.component';
  */
 let fixture: ComponentFixture<VoteCastDrawerComponent>;
 let getVote: ReturnType<typeof vi.fn>;
+const impersonating = signal(false);
 
 const VOTE: Vote = {
   uid: 'vote-1',
@@ -50,6 +53,7 @@ afterEach(() => {
 
 async function setup(getVoteImpl: ReturnType<typeof vi.fn>, voteServiceOverrides: Record<string, unknown> = {}): Promise<void> {
   getVote = getVoteImpl;
+  impersonating.set(false);
 
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
@@ -59,6 +63,7 @@ async function setup(getVoteImpl: ReturnType<typeof vi.fn>, voteServiceOverrides
       provideRouter([]),
       { provide: VoteService, useValue: { getVote, ...voteServiceOverrides } },
       { provide: MessageService, useValue: { add: vi.fn() } },
+      { provide: UserService, useValue: { impersonating } },
     ],
   }).compileComponents();
 
@@ -429,6 +434,46 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
   function submitButton(): HTMLButtonElement | null {
     return el('vote-cast-submit-button')?.querySelector('button') ?? null;
   }
+
+  it.each([true, undefined, null])('hides private Review content during impersonation (privacy %s)', async (privacy) => {
+    const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
+    const submitMyResponse = vi.fn();
+    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: privacy })), { getMyVoteBallot, submitMyResponse });
+    impersonating.set(true);
+    fixture.componentRef.setInput('readOnly', true);
+    await openWithoutListVote();
+    expect(el('vote-cast-impersonation-notice')?.textContent).toContain('This ballot is private');
+    expect(getMyVoteBallot).not.toHaveBeenCalled();
+    expect(el('vote-cast-question-q1')).toBeNull();
+    expect(submitButton()).toBeNull();
+    fixture.componentInstance['onSubmit']();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+
+  it('allows locked named Review during impersonation', async () => {
+    const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
+    await setup(vi.fn().mockReturnValue(of({ ...REVIEW_VOTE, pseudo_anonymity: false })), { getMyVoteBallot });
+    impersonating.set(true);
+    fixture.componentRef.setInput('readOnly', true);
+    await openWithoutListVote();
+    expect(getMyVoteBallot).toHaveBeenCalledWith(VOTE.uid);
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c2');
+    expect(fixture.componentInstance.form.disabled).toBe(true);
+    expect(el('vote-cast-impersonation-notice')?.textContent).toContain('Ballots are read-only');
+    expect(submitButton()).toBeNull();
+  });
+
+  it('does not expose a first-ballot form or submit during impersonation', async () => {
+    const submitMyResponse = vi.fn();
+    await setup(vi.fn().mockReturnValue(of(REVIEW_VOTE)), { submitMyResponse });
+    impersonating.set(true);
+    await openWithoutListVote();
+    expect(el('vote-cast-impersonation-notice')).not.toBeNull();
+    expect(el('vote-cast-question-q1')).toBeNull();
+    expect(submitButton()).toBeNull();
+    fixture.componentInstance['onSubmit']();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
 
   it('shows recorded single/multiple choices and comments in disabled voting controls', async () => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));

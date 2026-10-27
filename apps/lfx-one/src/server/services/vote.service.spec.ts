@@ -30,6 +30,7 @@ import type {
   MyVoteResponse,
   QueryServiceResponse,
   VoteResultsResponse,
+  Vote,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
 
@@ -132,6 +133,7 @@ vi.mock('../helpers/entity-project-enrichment.helper', () => ({
 vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
 vi.mock('../utils/auth-helper', () => ({
+  isImpersonating: (req: Request) => req.impersonationActive === true,
   getEffectiveEmail,
   getRawEffectiveEmail,
   getUsernameFromAuth,
@@ -161,6 +163,7 @@ describe('VoteService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    req.impersonationActive = false;
     proxyRequest.mockResolvedValue(voteFixture);
     proxyRequestWithResponse.mockResolvedValue({ data: voteFixture, headers: {} });
     assertVoteWrite.mockResolvedValue(undefined);
@@ -2233,6 +2236,32 @@ describe('VoteService', () => {
     });
   });
 
+  describe('Admin Mode response metadata (#4331)', () => {
+    it('never forwards indexed ballot fields while impersonating, regardless of privacy', async () => {
+      req.impersonationActive = true;
+      getEffectiveEmail.mockReturnValue('spec-voter@example.org');
+      fetchAllQueryResources.mockResolvedValue([
+        {
+          uid: 'owned-row',
+          vote_uid: 'vote-1',
+          vote_status: 'responded',
+          user_email: 'spec-voter@example.org',
+          abstained: true,
+          poll_answers: [{ question_id: 'q-1' }],
+          comment_responses: [{ comment_text: 'private' }],
+          vote_creation_time: '2026-10-20T10:00:00Z',
+        },
+      ]);
+
+      await expect(service.getMyVoteResponse(req, 'vote-1')).resolves.toEqual({
+        uid: 'owned-row',
+        vote_uid: 'vote-1',
+        vote_status: 'responded',
+        voter_removed: undefined,
+      });
+    });
+  });
+
   describe('getMyVoteBallot (#4331)', () => {
     const VOTE_UID = 'v0000000-0000-0000-0000-00000000d401';
     const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000d401';
@@ -2307,6 +2336,31 @@ describe('VoteService', () => {
 
       await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toBeNull();
       expect(logger.warning).toHaveBeenCalledWith(req, 'get_my_vote_ballot', expect.any(String), expect.objectContaining({ vote_uid: VOTE_UID }));
+    });
+
+    it.each([true, undefined, null])('blocks impersonated ballot content for privacy %s before the detail read', async (privacy) => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockResolvedValue({ pseudo_anonymity: privacy } as Vote);
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 403, code: 'IMPERSONATION_BALLOT_PRIVATE' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('allows named read-only inspection while impersonating', async () => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockResolvedValue({ pseudo_anonymity: false } as Vote);
+      proxyRequest.mockResolvedValue(detail);
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toMatchObject({ vote_response_uid: OWN_ROW_UID, abstained: false });
+      expect(proxyRequest).toHaveBeenCalledOnce();
+    });
+
+    it('fails closed when impersonated privacy cannot be loaded', async () => {
+      req.impersonationActive = true;
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      vi.spyOn(service, 'getVoteById').mockRejectedValue(new Error('synthetic lookup failure'));
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toThrow('synthetic lookup failure');
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
     it('normalizes missing choice arrays, comments and abstention', async () => {

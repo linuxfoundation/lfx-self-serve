@@ -13,7 +13,12 @@ import { RadioButtonComponent } from '@components/radio-button/radio-button.comp
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
-import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  INVITATION_NOT_FOUND,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_IMPERSONATION_PRIVATE_NOTICE,
+  VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+} from '@lfx-one/shared/constants';
 import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import {
   buildCommentResponses,
@@ -29,6 +34,7 @@ import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
@@ -62,6 +68,7 @@ import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, sta
 export class VoteCastDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
+  private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -110,6 +117,11 @@ export class VoteCastDrawerComponent {
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  protected readonly impersonating = this.userService.impersonating;
+  protected readonly ballotPrivacyRestricted = computed(() => this.impersonating() && this.vote()?.pseudo_anonymity !== false);
+  protected readonly impersonationNotice = computed(() =>
+    this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
+  );
   protected readonly reviewNotice = 'Your vote has been recorded.';
   protected readonly ballotLoadError = "Couldn't load your current ballot. Close this panel and try again.";
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
@@ -194,7 +206,7 @@ export class VoteCastDrawerComponent {
 
   /** Reorder via CDK drag-and-drop — bumpFormVersion() drives submitDisabled re-evaluation since rebuildForm/setValue here suppress statusChanges. */
   protected onRankedDrop(questionId: string, event: CdkDragDrop<string[]>): void {
-    if (this.readOnly()) return;
+    if (this.readOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -205,7 +217,7 @@ export class VoteCastDrawerComponent {
 
   /** Keyboard / arrow-button reorder fallback for the drag list. */
   protected moveRank(questionId: string, fromIndex: number, toIndex: number): void {
-    if (this.readOnly()) return;
+    if (this.readOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -217,7 +229,7 @@ export class VoteCastDrawerComponent {
 
   protected onSubmit(): void {
     const vote = this.vote();
-    if (!vote || this.submitting() || this.readOnly()) return;
+    if (!vote || this.submitting() || this.readOnly() || this.impersonating()) return;
 
     const isAbstain = this.abstain();
     if (!isAbstain && this.form.invalid) {
@@ -364,7 +376,7 @@ export class VoteCastDrawerComponent {
 
   /** Loads the recorded ballot only while reviewing; missing content is an error, never an editable form. */
   private initMyBallot(): Signal<MyVoteBallot | null> {
-    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), reviewing: this.readOnly() }));
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), reviewing: this.readOnly() && !this.ballotPrivacyRestricted() }));
 
     return toSignal(
       toObservable(selection).pipe(
@@ -406,7 +418,7 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
-      if (this.readOnly()) return true;
+      if (this.readOnly() || this.impersonating()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
@@ -531,9 +543,9 @@ export class VoteCastDrawerComponent {
   }
 
   private syncControls(): void {
-    if (this.readOnly() || this.abstainControl.value) this.form.disable({ emitEvent: false });
+    if (this.readOnly() || this.impersonating() || this.abstainControl.value) this.form.disable({ emitEvent: false });
     else this.form.enable({ emitEvent: false });
-    if (this.readOnly()) {
+    if (this.readOnly() || this.impersonating()) {
       this.commentForm.disable({ emitEvent: false });
       this.abstainControl.disable({ emitEvent: false });
     } else {

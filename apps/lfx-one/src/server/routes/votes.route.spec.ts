@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import express from 'express';
-import type { Response } from 'express';
+import type { Request, NextFunction, Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, myBallot, updateVote, voteWriteRateLimiter } = vi.hoisted(() => ({
+const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, myBallot, updateVote, submitBallot, voteWriteRateLimiter } = vi.hoisted(() => ({
   summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
   statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
   byId: vi.fn(),
@@ -15,6 +15,7 @@ const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, 
   sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
   myBallot: vi.fn((_req: unknown, res: Response) => res.json({ vote_response_uid: 'vr-1' })),
   updateVote: vi.fn(),
+  submitBallot: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
   voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
 }));
 vi.mock('../controllers/vote.controller', () => ({
@@ -27,9 +28,11 @@ vi.mock('../controllers/vote.controller', () => ({
     public sendVoteReminders = sendReminders;
     public getMyVoteBallot = myBallot;
     public updateVote = updateVote;
+    public createVoteResponse = submitBallot;
   },
 }));
 vi.mock('../middleware/rate-limit.middleware', () => ({ voteWriteRateLimiter }));
+vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn() } }));
 
 import router from './votes.route';
 
@@ -37,7 +40,15 @@ let server: Server;
 let baseUrl: string;
 beforeAll(async () => {
   const app = express();
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    req.impersonationActive = req.headers['x-test-impersonating'] === 'true';
+    next();
+  });
   app.use('/api/votes', router);
+  app.use((error: { statusCode: number; code: string }, _req: Request, res: Response, _next: NextFunction) => {
+    void _next; // Express identifies error middleware by its four-argument signature.
+    res.status(error.statusCode).json({ code: error.code });
+  });
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -95,6 +106,23 @@ describe('vote voters route dispatch (#3911)', () => {
     expect(voters).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
     expect(voteWriteRateLimiter).not.toHaveBeenCalled();
+  });
+});
+
+describe('ballot writes during impersonation (#4331)', () => {
+  it('rejects before the submission controller runs', async () => {
+    submitBallot.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/responses`, { method: 'POST', headers: { 'x-test-impersonating': 'true' } });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ code: 'IMPERSONATION_READ_ONLY' });
+    expect(submitBallot).not.toHaveBeenCalled();
+  });
+
+  it('preserves ordinary first-ballot submission', async () => {
+    submitBallot.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/responses`, { method: 'POST' });
+    expect(response.status).toBe(204);
+    expect(submitBallot).toHaveBeenCalledOnce();
   });
 });
 
