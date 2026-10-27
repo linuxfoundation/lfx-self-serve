@@ -17,14 +17,17 @@ import {
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { OrgLensMembershipsService } from '@app/shared/services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@app/shared/services/org-lens-navigation.service';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import type { OrgMembershipProject } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
-import { InputTextModule } from 'primeng/inputtext';
 import { catchError, finalize, of, switchMap } from 'rxjs';
+
+/** A project row plus its precomputed router link (see initFilteredProjects). */
+type OrgMembershipProjectVm = OrgMembershipProject & { link: string[] };
 
 /**
  * Side panel behind the Org Projects count on the active-memberships table: the projects the org
@@ -33,7 +36,7 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-membership-projects-drawer',
-  imports: [FormsModule, RouterLink, DrawerModule, InputTextModule, DecimalPipe],
+  imports: [ReactiveFormsModule, RouterLink, DrawerModule, InputTextComponent, DecimalPipe],
   templateUrl: './membership-projects-drawer.component.html',
 })
 export class MembershipProjectsDrawerComponent {
@@ -48,14 +51,18 @@ export class MembershipProjectsDrawerComponent {
   public readonly foundationName = input<string>('');
   public readonly count = input<number>(0);
 
-  protected readonly searchTerm = signal('');
+  // The shared lfx-input-text wrapper is FormGroup-backed (ngModel is not supported), per
+  // docs/reviews/frontend-checklist.md §14.1; searchTerm mirrors the control so the filtering below
+  // stays signal-driven.
+  protected readonly filterForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
+  protected readonly searchTerm = toSignal(this.filterForm.controls.search.valueChanges, { initialValue: '' });
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly retryTrigger = signal(0);
 
   private readonly projectsData = this.initProjectsData();
 
-  protected readonly filteredProjects = computed<OrgMembershipProject[]>(() => this.initFilteredProjects());
+  protected readonly filteredProjects = computed<OrgMembershipProjectVm[]>(() => this.initFilteredProjects());
 
   // PrimeNG moves the real panel to document.body, so it is not a child of this component's host —
   // this is a template ref into our own #header ng-template, which PrimeNG embeds into that panel.
@@ -108,19 +115,18 @@ export class MembershipProjectsDrawerComponent {
     this.previouslyFocusedElement = null;
   }
 
-  protected projectLink(project: OrgMembershipProject): string[] {
-    return this.orgLens.orgLensLink('projects', project.projectSlug || project.projectId);
-  }
-
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);
   }
 
-  private initFilteredProjects(): OrgMembershipProject[] {
+  // The router command array is built here, not in the template: a projectLink(project) call would
+  // allocate a fresh array for every visible row on each change-detection pass
+  // (docs/reviews/frontend-checklist.md §4).
+  private initFilteredProjects(): OrgMembershipProjectVm[] {
     const term = this.searchTerm().toLowerCase().trim();
     const projects = this.projectsData()?.projects ?? [];
-    if (!term) return projects;
-    return projects.filter((p) => p.projectName.toLowerCase().includes(term));
+    const matched = term ? projects.filter((p) => p.projectName.toLowerCase().includes(term)) : projects;
+    return matched.map((p) => ({ ...p, link: this.orgLens.orgLensLink('projects', p.projectSlug || p.projectId) }));
   }
 
   private initProjectsData() {
@@ -147,7 +153,7 @@ export class MembershipProjectsDrawerComponent {
             this.revealRef = null;
             return of(null);
           }
-          this.searchTerm.set('');
+          this.filterForm.controls.search.setValue('');
           this.loading.set(true);
           this.loadFailed.set(false);
           return this.membershipsService.getFoundationProjects(orgUid, foundationId).pipe(
