@@ -145,6 +145,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
 
     const error = emailError(root);
     expect(normalizedText(error)).toBe('Verification failed. Please try again or request a new code.');
+    expect(error?.getAttribute('role')).toBe('alert');
     expect(error?.querySelector('[lfxOpenIntercom]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
@@ -185,6 +186,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
 
       const error = emailError(root);
       expect(normalizedText(error)).toBe(conflictCopy);
+      expect(error?.getAttribute('role')).toBe('alert');
       expect(error?.querySelectorAll('[lfxOpenIntercom]')).toHaveLength(1);
       expect(component.verificationError()).toBe(message);
       expect(close).not.toHaveBeenCalled();
@@ -202,6 +204,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
 
       const error = emailError(root);
       expect(normalizedText(error)).toBe(message);
+      expect(error?.getAttribute('role')).toBe('alert');
       expect(error?.querySelector('[lfxOpenIntercom]')).toBeNull();
       expect(close).not.toHaveBeenCalled();
       expect(component.isVerifying()).toBe(false);
@@ -238,6 +241,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     expect(root.querySelector('[data-testid="verify-otp"]')).toBeNull();
     const sendError = emailError(root);
     expect(normalizedText(sendError)).toBe(EMAIL_ALREADY_LINKED_MESSAGE);
+    expect(sendError?.getAttribute('role')).toBe('alert');
     expect(sendError?.querySelector('[lfxOpenIntercom]')).toBeNull();
   });
 
