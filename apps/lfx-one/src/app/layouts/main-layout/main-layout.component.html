@@ -5,12 +5,15 @@
 <lfx-impersonation-banner />
 
 <div class="flex min-h-screen" [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
-  <!-- Navbar - Desktop: floating 280px panel, 8px inset (288px gutter) -->
+  <!-- Navbar - Desktop: floating 280px panel, 8px inset (288px gutter), or its 56px rail. From lg up; on a non-touch device
+       at every width, where the hamburger and drawer below never show. -->
   <div
-    class="hidden lg:flex flex-shrink-0 fixed left-0 bottom-0 z-40"
+    class="flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
       'top-[36px]': userService.impersonating(),
       'top-0': !userService.impersonating(),
+      flex: navbarCollapse.railAtAnyWidth(),
+      'hidden lg:flex': !navbarCollapse.railAtAnyWidth(),
     }"
     data-testid="navbar-column">
     <lfx-navbar
@@ -60,10 +63,12 @@
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
   @if (selectorPanelOpen()) {
     <div
-      class="hidden lg:block fixed inset-0 bg-black/10 z-30"
+      class="fixed inset-0 bg-black/10 z-30"
       [ngClass]="{
         'top-[36px]': userService.impersonating(),
         'top-0': !userService.impersonating(),
+        block: navbarCollapse.railAtAnyWidth(),
+        'hidden lg:block': !navbarCollapse.railAtAnyWidth(),
       }"
       (click)="selectorPanelOpen.set(false)"
       data-testid="selector-backdrop"></div>
@@ -72,19 +77,11 @@
   <!-- Main Content Area -->
   <!-- On the profile hub, reserve a right gutter (2xl:pr-[300px]) so content and the footer clear the fixed profile rail at 2xl and up; below 2xl the panel renders inline instead. -->
   <!-- The left gutter follows the desktop navbar: 288px docked open, 56px docked to its rail (a peek floats over it). -->
-  <main
-    class="flex-1 min-w-0 flex flex-col"
-    [ngClass]="{
-      '2xl:pr-[300px]': isProfileHub(),
-      'lg:ml-[56px]': navbarCollapse.effectiveCollapsed(),
-      'lg:ml-[288px]': !navbarCollapse.effectiveCollapsed(),
-      'lg:transition-[margin-left] lg:duration-[340ms] lg:ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none': navbarCollapse.animated(),
-    }"
-    data-testid="main-content">
-    <!-- Mobile Menu Button -->
+  <main class="flex-1 min-w-0 flex flex-col" [ngClass]="[navbarCollapse.gutterClass(), isProfileHub() ? '2xl:pr-[300px]' : '']" data-testid="main-content">
+    <!-- Mobile Menu Button — touch devices below lg only; a non-touch device keeps the navbar rail instead. -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
-      [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating() }">
+      [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating(), hidden: navbarCollapse.railAtAnyWidth() }">
       <button
         #mobileMenuButton
         type="button"

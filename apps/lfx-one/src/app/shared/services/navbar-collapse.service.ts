@@ -13,7 +13,8 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_O
  * - `collapsed` is the viewer's docked preference, kept in `localStorage`.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
- * - Touch devices are never narrow and never peek on hover: their sidebar behaves as before.
+ * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
+ *   are for touch devices only. Touch devices are never narrow and never peek on hover.
  *
  * Browser-only state starts at its server defaults (docked open) and is read once the desktop navbar
  * has rendered ({@link init}), so SSR and the first client render agree.
@@ -30,6 +31,7 @@ export class NavbarCollapseService {
   private readonly peekPinnedState = signal(false);
   private readonly peekClosing = signal(false);
   private readonly animatedState = signal(false);
+  private readonly initializedState = signal(false);
   private peekOutTimer: ReturnType<typeof setTimeout> | null = null;
   private initialized = false;
 
@@ -48,6 +50,13 @@ export class NavbarCollapseService {
   /** Width transitions are on — off until the stored preference has been applied, so a reload doesn't animate it in. */
   public readonly animated = this.animatedState.asReadonly();
 
+  /**
+   * The desktop navbar shows at every width (the rail below the narrow breakpoint) instead of handing over to the
+   * hamburger and drawer below `lg`. Non-touch devices only, and only once known in the browser: SSR and the first
+   * client render keep the `lg` switch.
+   */
+  public readonly railAtAnyWidth = computed(() => this.initializedState() && !this.touchDevice());
+
   /** Docked to the rail, by preference or because the viewport is narrow. The page gutter follows this. */
   public readonly effectiveCollapsed = computed(() => this.collapsedPreference() || this.narrowViewport());
   /** What the panel looks like: the rail, unless it is peeking open. */
@@ -55,11 +64,24 @@ export class NavbarCollapseService {
   /** The panel floats over the page (peeking, or shrinking back from a peek) instead of sitting in its gutter. */
   public readonly overlay = computed(() => this.effectiveCollapsed() && (this.peeking() || this.peekClosing()));
 
+  /**
+   * The page's left gutter under the desktop navbar: 288px docked open, 56px on the rail (a peek floats over it) — from
+   * `lg` up, or at every width when {@link railAtAnyWidth}. Full class names, so Tailwind finds them here.
+   */
+  public readonly gutterClass = computed(() => {
+    const collapsed = this.effectiveCollapsed();
+    let gutter: string;
+    if (this.railAtAnyWidth()) gutter = collapsed ? 'ml-[56px]' : 'ml-[288px]';
+    else gutter = collapsed ? 'lg:ml-[56px]' : 'lg:ml-[288px]';
+    return this.animatedState() ? `${gutter} transition-[margin-left] duration-[340ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none` : gutter;
+  });
+
   /** Reads the stored preference and starts tracking the viewport. Browser-only; later calls are no-ops. */
   public init(): void {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
     this.collapsedPreference.set(this.readPreference());
+    this.initializedState.set(true);
 
     const view = this.document.defaultView;
     if (view?.matchMedia) {

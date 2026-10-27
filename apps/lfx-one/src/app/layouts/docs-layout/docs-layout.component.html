@@ -7,7 +7,10 @@
   @if (isAuthenticated()) {
     <!-- Authed: the lens navbar. The previously-active lens tab stays selected; no menu item is active
          on a /docs route, giving the user a way back to their lens. -->
-    <div class="hidden lg:flex flex-shrink-0 fixed left-0 top-0 bottom-0 z-40" data-testid="docs-shell-authed">
+    <div
+      class="flex-shrink-0 fixed left-0 top-0 bottom-0 z-40"
+      [ngClass]="navbarCollapse.railAtAnyWidth() ? 'flex' : 'hidden lg:flex'"
+      data-testid="docs-shell-authed">
       <lfx-navbar
         [items]="sidebarItems()"
         [showMeSelector]="activeLens() === 'me'"
@@ -25,7 +28,11 @@
   <main class="flex flex-1 flex-col" [ngClass]="mainGutterClass()" data-testid="docs-content">
     <!-- Mobile / tablet top bar — surfaces the same docs and sign-in/account affordances
          that the lg+ left rail provides. Hidden at lg+ where the rail does the same job. -->
-    <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden" data-testid="docs-shell-mobile">
+    <!-- Not when the lens navbar's rail is already showing (a signed-in, non-touch device at any width). -->
+    <div
+      class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden"
+      [class.hidden]="isAuthenticated() && navbarCollapse.railAtAnyWidth()"
+      data-testid="docs-shell-mobile">
       <a
         routerLink="/docs"
         class="flex items-center gap-2 text-sm font-semibold text-gray-900"

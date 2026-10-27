@@ -141,6 +141,27 @@ describe('NavbarCollapseService', () => {
     expect(service.overlay()).toBe(false);
   });
 
+  it('keeps the navbar at every width on a non-touch device once known in the browser', () => {
+    const service = setup();
+    expect(service.railAtAnyWidth()).toBe(false);
+    expect(service.gutterClass()).toBe('lg:ml-[288px]');
+
+    service.init();
+    expect(service.railAtAnyWidth()).toBe(true);
+    emit('narrow', true);
+    expect(service.gutterClass()).toBe('ml-[56px]');
+  });
+
+  it('leaves touch devices on the hamburger and drawer below lg', () => {
+    query('touch').matches = true;
+    const service = setup();
+    service.init();
+
+    expect(service.railAtAnyWidth()).toBe(false);
+    service.setCollapsed(true);
+    expect(service.gutterClass()).toBe('lg:ml-[56px]');
+  });
+
   it('docks open from a peek without a closing phase', () => {
     const service = setup();
     service.init();
