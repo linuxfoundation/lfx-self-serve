@@ -93,6 +93,20 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     const { add } = await setup({ error: '' });
     expect(add).not.toHaveBeenCalled();
   });
+
+  // #4124: only the social-connect callback emits already_linked; it owns the inline conflict
+  // banner rather than a toast, so the customer-reported banner text maps to that flow alone.
+  it('shows the conflict banner for error=already_linked and shows no toast', async () => {
+    const { fixture, add } = await setup({ error: 'already_linked' });
+    expect(fixture.componentInstance.conflictBanner()).toBe(true);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('hides the conflict banner after dismissConflictBanner()', async () => {
+    const { fixture } = await setup({ error: 'already_linked' });
+    fixture.componentInstance.dismissConflictBanner();
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
 });
 
 function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'type' | 'value'>): EnrichedIdentity {
