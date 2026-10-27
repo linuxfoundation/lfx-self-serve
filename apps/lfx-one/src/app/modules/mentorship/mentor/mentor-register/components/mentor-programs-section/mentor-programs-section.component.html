@@ -74,18 +74,10 @@
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-invitation-row-' + invitation.id">
               <td class="px-4 py-4">
                 <span class="text-sm font-medium text-gray-900">
-                  @if (invitation.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
-                    <a
-                      class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                      [href]="programUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      [attr.data-testid]="'mentorship-mentor-invitation-program-link-' + invitation.id"
-                      >{{ invitation.programName }}</a
-                    >
-                  } @else {
-                    {{ invitation.programName }}
-                  }
+                  <lfx-mentorship-program-link
+                    [programId]="invitation.programId"
+                    [programName]="invitation.programName"
+                    [testId]="'mentorship-mentor-invitation-program-link-' + invitation.id" />
                 </span>
               </td>
               <td class="px-4 py-4">
@@ -130,18 +122,10 @@
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-request-row-' + row.id">
               <td class="px-4 py-4">
                 <span class="text-sm font-medium text-gray-900">
-                  @if (row.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
-                    <a
-                      class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                      [href]="programUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      [attr.data-testid]="'mentorship-mentor-request-program-link-' + row.id"
-                      >{{ row.programName }}</a
-                    >
-                  } @else {
-                    {{ row.programName }}
-                  }
+                  <lfx-mentorship-program-link
+                    [programId]="row.programId"
+                    [programName]="row.programName"
+                    [testId]="'mentorship-mentor-request-program-link-' + row.id" />
                 </span>
               </td>
               <td class="px-4 py-4">

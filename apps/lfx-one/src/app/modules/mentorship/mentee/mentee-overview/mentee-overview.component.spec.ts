@@ -241,14 +241,14 @@ describe('MenteeOverviewComponent', () => {
   });
 
   it("links the program name to the program's public page in a new tab", async () => {
-    await bootstrap({ applications: [menteeTestApplication()] });
+    await bootstrap({ applications: [menteeTestApplication({ programId: '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b' })] });
     const link = byTestId('mentee-application-card-program-link');
-    expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, 'prog-1'));
+    expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b'));
     expect(link?.getAttribute('target')).toBe('_blank');
   });
 
-  it('shows the program name as plain text without a program id', async () => {
-    await bootstrap({ applications: [menteeTestApplication({ programId: '' })] });
+  it('shows the program name as plain text without a UUID program id', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ programId: 'prog-1' })] });
     expect(byTestId('mentee-application-card-program-link')).toBeNull();
     expect(text(byTestId('mentee-application-card'))).toContain('Program One');
   });

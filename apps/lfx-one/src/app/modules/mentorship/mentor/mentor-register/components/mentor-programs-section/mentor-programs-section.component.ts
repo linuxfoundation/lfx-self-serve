@@ -40,10 +40,11 @@ import {
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
-import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { OverlayOptions } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+
+import { ProgramLinkComponent } from '../../../../components/program-link/program-link.component';
 
 /**
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
@@ -74,7 +75,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
-  imports: [ButtonComponent, SelectComponent, MentorshipPublicUrlPipe],
+  imports: [ButtonComponent, SelectComponent, ProgramLinkComponent],
   templateUrl: './mentor-programs-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

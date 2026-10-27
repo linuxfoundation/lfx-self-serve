@@ -10,7 +10,7 @@ import {
   MentorshipUpstreamMentorProgramTerm,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils/string.utils';
+import { isUuid } from '@lfx-one/shared/utils';
 
 import { chooseMentorshipMentorTerm, isMentorshipMentorTermUnderway, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
 import { asRecord, asString, asStringArray } from './mentorship-profile-columns.helper';

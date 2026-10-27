@@ -10,7 +10,8 @@ import {
   MENTORSHIP_MENTORING_HISTORY_TITLE,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentoringHistoryEntry } from '@lfx-one/shared/interfaces';
-import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
+
+import { ProgramLinkComponent } from '../../../../components/program-link/program-link.component';
 
 /**
  * Read-only mentoring history list for the mentor profile page. Each row is a
@@ -24,7 +25,7 @@ import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
  */
 @Component({
   selector: 'lfx-mentorship-mentoring-history',
-  imports: [MentorshipPublicUrlPipe],
+  imports: [ProgramLinkComponent],
   templateUrl: './mentoring-history.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

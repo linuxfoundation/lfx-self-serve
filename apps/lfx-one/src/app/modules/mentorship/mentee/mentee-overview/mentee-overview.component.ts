@@ -30,11 +30,12 @@ import {
 import { MentorshipMenteeOverview } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeOverview, buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
-import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
+
+import { ProgramLinkComponent } from '../../components/program-link/program-link.component';
 
 /**
  * Overview child of the mentee shell. With no applications it shows the empty state and a
@@ -44,7 +45,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule, MentorshipPublicUrlPipe],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule, ProgramLinkComponent],
   providers: [ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

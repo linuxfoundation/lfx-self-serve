@@ -46,7 +46,7 @@ describe('MentorsTabComponent', () => {
     status: 'approved',
     invitedOn: '2026-03-04',
     profileCreated: true,
-    userId: 'user-1',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     ...overrides,
   });
 
@@ -126,7 +126,7 @@ describe('MentorsTabComponent', () => {
 
   it('links a mentor with a profile to the public mentor page, and leaves the rest as plain text', () => {
     const link = element().querySelector('[data-testid="mentorship-mentor-link-mem_1"]');
-    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentors', 'user-1'));
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentors', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_2"]')).toBeNull();
     expect(rowText('mem_2')).toContain('Diego Souza');

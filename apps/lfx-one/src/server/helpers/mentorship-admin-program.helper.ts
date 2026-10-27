@@ -13,7 +13,7 @@ import {
   MentorshipUpstreamProgramManagementSummary,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils/string.utils';
+import { isUuid } from '@lfx-one/shared/utils';
 
 import { MENTORSHIP_ADMIN_MENTOR_STATUS_MAP, MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS } from '../constants';
 

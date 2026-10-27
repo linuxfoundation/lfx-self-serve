@@ -6,9 +6,9 @@ import { ChangeDetectionStrategy, Component, computed, input, signal, Signal } f
 import { FormControl, FormGroup } from '@angular/forms';
 import { MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationView, MentorshipMenteeTaskStatus, MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
-import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
+import { ProgramLinkComponent } from '../../components/program-link/program-link.component';
 
 /**
  * The accepted application on the My Tasks tab — a program card with overall progress, then
@@ -16,7 +16,7 @@ import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.compo
  */
 @Component({
   selector: 'lfx-mentee-accepted-tasks',
-  imports: [NgClass, MenteeTaskRowComponent, MentorshipPublicUrlPipe],
+  imports: [NgClass, MenteeTaskRowComponent, ProgramLinkComponent],
   templateUrl: './mentee-accepted-tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

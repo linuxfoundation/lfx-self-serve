@@ -6,14 +6,14 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
 import { FormControl, FormGroup } from '@angular/forms';
 import { MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY, MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationView } from '@lfx-one/shared/interfaces';
-import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
+import { ProgramLinkComponent } from '../../components/program-link/program-link.component';
 
 /** Pending applications on the My Tasks tab — one card per application with its prerequisite tasks. */
 @Component({
   selector: 'lfx-mentee-applicant-tasks',
-  imports: [NgClass, MenteeTaskRowComponent, MentorshipPublicUrlPipe],
+  imports: [NgClass, MenteeTaskRowComponent, ProgramLinkComponent],
   templateUrl: './mentee-applicant-tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

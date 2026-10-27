@@ -90,18 +90,7 @@
               </span>
             </div>
             <p class="text-sm font-semibold text-gray-900">
-              @if (app.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
-                <a
-                  class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                  [href]="programUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="mentee-application-card-program-link"
-                  >{{ app.programName }}</a
-                >
-              } @else {
-                {{ app.programName }}
-              }
+              <lfx-mentorship-program-link [programId]="app.programId" [programName]="app.programName" testId="mentee-application-card-program-link" />
             </p>
             <p class="text-xs text-gray-400">
               <!-- UTC so the server render and the browser show the same calendar day in every timezone -->
@@ -176,18 +165,7 @@
               <tr>
                 <td class="px-4 py-3">
                   <p class="font-medium text-gray-900">
-                    @if (past.programId | mentorshipPublicUrl: 'programs'; as programUrl) {
-                      <a
-                        class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                        [href]="programUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-testid="mentee-past-application-program-link"
-                        >{{ past.programName }}</a
-                      >
-                    } @else {
-                      {{ past.programName }}
-                    }
+                    <lfx-mentorship-program-link [programId]="past.programId" [programName]="past.programName" testId="mentee-past-application-program-link" />
                   </p>
                   <p class="text-xs text-gray-400">
                     @if (past.projectName) {
