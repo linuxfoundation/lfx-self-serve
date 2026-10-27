@@ -6,6 +6,7 @@ import {
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
+  AUDIENCE_REGISTRANTS_EVENT_MESSAGE,
   AUDIENCE_SPEAKER_SCOPES,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
@@ -52,8 +53,6 @@ const MAX_LIST_ID_LENGTH = 64;
 
 /** Free text forwarded upstream and stored on the audience row, so it needs a ceiling too. */
 const MAX_INCLUSION_SUMMARY_LENGTH = AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH;
-/** Upstream's `current_registrants_event` / `registrants_event` MaxLength. */
-const MAX_REGISTRANTS_EVENT_LENGTH = AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH;
 
 /** The refusal for a compose or attach with no suppression list: every send must keep one. */
 const MISSING_SUPPRESSION_MESSAGE = 'at least one suppression list is required: every send must keep at least one';
@@ -184,8 +183,6 @@ function invalid(req: Request, operation: string, field: string, message: string
   });
 }
 
-const REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${MAX_REGISTRANTS_EVENT_LENGTH} characters when provided`;
-
 /**
  * The `currentRegistrantsEvent` body field: the trimmed edition name, '' when omitted or blank, or
  * null when provided but not a string or too long. A mistyped value is refused rather than
@@ -195,7 +192,7 @@ function parseRegistrantsEvent(value: unknown): string | null {
   if (value === undefined) {
     return '';
   }
-  if (typeof value !== 'string' || value.trim().length > MAX_REGISTRANTS_EVENT_LENGTH) {
+  if (typeof value !== 'string' || value.trim().length > AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH) {
     return null;
   }
   return value.trim();
@@ -206,7 +203,7 @@ function parseRegistrantsEvent(value: unknown): string | null {
  * look up a list attach can never create (attach refuses the full name), so no row is better.
  */
 function registrantsQuery(value: string): string {
-  return value.length > MAX_REGISTRANTS_EVENT_LENGTH ? '' : value;
+  return value.length > AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH ? '' : value;
 }
 
 /** One trimmed query param, or `''` when absent or repeated. */
@@ -593,7 +590,7 @@ export class AudienceBuilderController {
     }
     const composeRegistrants = parseRegistrantsEvent(body.currentRegistrantsEvent);
     if (composeRegistrants === null) {
-      next(invalid(req, 'audience_compose_master', 'currentRegistrantsEvent', REGISTRANTS_EVENT_MESSAGE));
+      next(invalid(req, 'audience_compose_master', 'currentRegistrantsEvent', AUDIENCE_REGISTRANTS_EVENT_MESSAGE));
       return;
     }
 
@@ -750,7 +747,7 @@ export class AudienceBuilderController {
 
     const attachRegistrants = parseRegistrantsEvent(body.currentRegistrantsEvent);
     if (attachRegistrants === null) {
-      next(invalid(req, 'audience_attach_existing', 'currentRegistrantsEvent', REGISTRANTS_EVENT_MESSAGE));
+      next(invalid(req, 'audience_attach_existing', 'currentRegistrantsEvent', AUDIENCE_REGISTRANTS_EVENT_MESSAGE));
       return;
     }
 

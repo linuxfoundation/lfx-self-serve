@@ -3448,6 +3448,9 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
 /** The longest current-registrants edition name campaign-service accepts (its `MaxLength`). */
 export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
 
+/** The BFF's refusal for a `currentRegistrantsEvent` that is not a string or is too long. */
+export const AUDIENCE_REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH} characters when provided`;
+
 /**
  * The name prefix of the project's standing standard suppression list, which every email in the
  * project reuses: the UI must never call it an orphan to delete.

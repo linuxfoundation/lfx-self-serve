@@ -231,8 +231,12 @@ export class AudienceBuilderTabComponent {
    * The url as a signal. Templates must not read `eventUrlControl.value` directly: this app is
    * zoneless, so a keystroke did not re-evaluate it and Generate stayed disabled until the field
    * lost focus (found in the browser test).
+   *
+   * Writable, not `toSignal(valueChanges)`: the control is reset with `emitEvent: false` on a
+   * project or event change, which a valueChanges-fed signal never saw -- the buttons then judged a
+   * stale URL. Every reset goes through `resetEventUrl`, which sets both.
    */
-  protected readonly eventUrlValue = toSignal(this.eventUrlControl.valueChanges, { initialValue: this.eventUrlControl.value });
+  protected readonly eventUrlValue = signal(this.eventUrlControl.value);
   /** Optional master list name; blank keeps the derived one. */
   protected readonly masterNameControl = new FormControl('', { nonNullable: true });
   /** "Or use an existing list" — the same typeahead as step 5, available in every mode. */
@@ -347,6 +351,12 @@ export class AudienceBuilderTabComponent {
    * attach or compose created a list, so the row kept its empty id; it runs when that load settles.
    */
   private suppressionReloadPending = false;
+  /**
+   * The resolved standard row ids from the last load that SUCCEEDED. A recorded write's standing
+   * list is read back as these; a failed post-write reload empties `suppressionLists`, and mapping
+   * the standing id through the empty current rows made the recorded audience stop matching.
+   */
+  private readonly recordedStandardIds = signal<readonly string[]>([]);
   /**
    * True when the suppression fetch FAILED, as distinct from a portal that has no suppression
    * lists. The two produced identical DOM before this existed -- an empty array renders the grid's
@@ -946,7 +956,7 @@ export class AudienceBuilderTabComponent {
     const includes = new Set(this.attachedIncludeIds());
     // The standing standard list stands for every resolved standard row, so it is compared as them.
     const standingId = attached.standardSuppression?.listId;
-    const excluded = attached.suppressionListIds.flatMap((id) => (id === standingId ? this.standardRowIds() : [id]));
+    const excluded = attached.suppressionListIds.flatMap((id) => (id === standingId ? this.recordedStandardIds() : [id]));
     return [...new Set(excluded)].filter((id) => !includes.has(id));
   });
 
@@ -965,7 +975,7 @@ export class AudienceBuilderTabComponent {
       return null;
     }
     const standingId = composed.suppression?.listId;
-    return [...new Set(composed.suppressionListIds.flatMap((id) => (id === standingId ? this.standardRowIds() : [id])))];
+    return [...new Set(composed.suppressionListIds.flatMap((id) => (id === standingId ? this.recordedStandardIds() : [id])))];
   });
 
   /** The recorded audience's exclusions, whichever write recorded it, for matching a prior send. */
@@ -1376,6 +1386,7 @@ export class AudienceBuilderTabComponent {
     // while its button acted on the url typed in the first.
     this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
       this.eventUrlControl.setValue(value, { emitEvent: false });
+      this.eventUrlValue.set(value);
     });
 
     // The edition gains its year only once the brief's dates arrive; rows loaded before then lack
@@ -1422,7 +1433,7 @@ export class AudienceBuilderTabComponent {
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
         // — so typing in project A would silently suppress project B's advertised brief URL.
-        this.eventUrlControl.reset('', { emitEvent: false });
+        this.resetEventUrl('');
       });
 
     // An attach result or error describes the brief it was made for. The parent swaps briefs
@@ -1493,7 +1504,7 @@ export class AudienceBuilderTabComponent {
         const handWork = this.hasHandWork();
         if (handWork && differentEvent) {
           this.resetForNewContext(this.projectSlug());
-          this.eventUrlControl.reset(advertised, { emitEvent: false });
+          this.resetEventUrl(advertised);
           return;
         }
         if (!(this.hasDiscovered() || this.discovering())) {
@@ -1506,7 +1517,7 @@ export class AudienceBuilderTabComponent {
           // only when that brief advertises it, the same rule discovered work is held to.
           const reseed = previousKey !== '' ? previousKey !== nextKey : differentEvent;
           if (reseed && this.eventUrlControl.dirty) {
-            this.eventUrlControl.reset(advertised, { emitEvent: false });
+            this.resetEventUrl(advertised);
           }
           return;
         }
@@ -1514,7 +1525,7 @@ export class AudienceBuilderTabComponent {
           return;
         }
         this.resetForNewContext(this.projectSlug());
-        this.eventUrlControl.reset(advertised, { emitEvent: false });
+        this.resetEventUrl(advertised);
       });
 
     // Disabling a reactive control has to go through the control, not a `[disabled]` binding on the
@@ -2463,6 +2474,7 @@ export class AudienceBuilderTabComponent {
           }
           this.suppressionLists.set(lists);
           this.standardList.set(standardList ?? null);
+          this.recordedStandardIds.set(lists.filter((list) => list.category === 'standard' && list.listId !== '').map((list) => list.listId));
           this.loadedRegistrantsEdition.set(edition);
           lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
           this.fillCreatedSuppressionIds(lists);
@@ -2796,6 +2808,15 @@ export class AudienceBuilderTabComponent {
     return this.inclusion().size > 0 || this.exclusion().size > 0 || this.plannedEvent() !== null || this.customCreating();
   }
 
+  /**
+   * Resets the event URL field without emitting (the mirror in the constructor must not re-dirty
+   * it), keeping `eventUrlValue` in step so the buttons judge the URL actually in the field.
+   */
+  private resetEventUrl(url: string): void {
+    this.eventUrlControl.reset(url, { emitEvent: false });
+    this.eventUrlValue.set(url);
+  }
+
   /** Whether a brief arriving now is for a different event than the panel's work. See the reset. */
   private isDifferentEvent(previousKey: string, nextKey: string, previousUrl: string, advertised: string): boolean {
     const edited = this.eventUrlControl.dirty;
@@ -2880,6 +2901,7 @@ export class AudienceBuilderTabComponent {
     this.looseComposedMaster.set(null);
     this.suppressionLists.set([]);
     this.standardList.set(null);
+    this.recordedStandardIds.set([]);
     this.suppressionReloadPending = false;
     this.suppressionFailed.set(false);
     this.mastersFailed.set(false);

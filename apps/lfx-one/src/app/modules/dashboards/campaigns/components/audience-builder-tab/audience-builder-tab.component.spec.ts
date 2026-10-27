@@ -3677,4 +3677,78 @@ describe('AudienceBuilderTabComponent', () => {
       expect(getAudienceSuppressionLists.mock.calls.length, 'the queued reload was dropped').toBe(calls + 1);
     });
   });
+
+  describe('event URL state and recorded matches (pre-PR review)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+
+    function disabled(testId: string): boolean | undefined {
+      return host().querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)?.disabled;
+    }
+
+    it('enables Generate and Discover after a reseed fills an emptied field', async () => {
+      await render();
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/a');
+      fixture.detectChanges();
+      typeEventUrl('');
+      expect(disabled('campaigns-audience-discover'), 'fixture precondition').toBe(true);
+
+      // A different event's brief reseeds the typed (dirty) field without emitting.
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/b');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/b');
+      expect(disabled('campaigns-audience-discover'), 'Discover judged the stale empty URL').toBe(false);
+      expect(disabled('campaigns-audience-event-generate'), 'Generate judged the stale empty URL').toBe(false);
+    });
+
+    it('disables Generate and Discover when a project switch empties the field', async () => {
+      await render();
+      typeEventUrl('https://events.example.org/a');
+      expect(disabled('campaigns-audience-discover'), 'fixture precondition').toBe(false);
+
+      fixture.componentRef.setInput('projectSlug', 'other');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(disabled('campaigns-audience-discover')).toBe(true);
+      expect(disabled('campaigns-audience-event-generate')).toBe(true);
+    });
+
+    it('keeps matching a recorded attach on its standing list when the reload after it fails', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await render({ briefId: 'brief-1' });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      getAudienceSuppressionLists.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+          suppressionListIds: ['300'],
+          standardSuppression: STANDING,
+          audience: { id: 'aud-9', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '101', status: 'built', version: 1 },
+        })
+      );
+
+      click('campaigns-audience-use-direct');
+
+      const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null; attachedExclusions: () => readonly string[] };
+      expect(getAudienceSuppressionLists.mock.calls.length, 'the post-attach reload ran').toBeGreaterThan(1);
+      expect([...tab.attachedExclusions()]).toEqual(['201']);
+      expect(tab.attachedMasterId(), 'a failed reload made the recorded attach read as stale').toBe('101');
+    });
+  });
 });
