@@ -399,6 +399,15 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  *
  * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
  * who qualifies — including on the fallback path.
+ *
+ * KNOWN, DELIBERATE GAP. The non-blank requirement applies on the fallback path too, so a registration
+ * with no address at all is dropped there, where before this rule it would have reached the drawer.
+ * Upstream dedup is `PARTITION BY email, event_id` and NULLs partition together, so this is at most one
+ * row per event. Keeping it would mean emitting an attendee whose `CONTACT_ID` is null — against the
+ * non-nullable `OrgEventAttendee.contactId`, rejected by `isContactRowArray` so the event's whole cache
+ * entry is refused on every read, and invisible to `COUNT(DISTINCT …)` so the row and the drawer would
+ * disagree again. Giving it a synthesized identity instead needs a registration-level key this query
+ * does not select. Revisit with the platinum measure in #4409, where the grain can carry one.
  */
 const COMPANY_EMAIL_QUALIFIES = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL
           AND (ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
