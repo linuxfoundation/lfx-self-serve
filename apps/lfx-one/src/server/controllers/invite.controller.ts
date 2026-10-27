@@ -99,8 +99,10 @@ export class InviteController {
         );
       }
 
+      // Forward the original signed token so the invite service can verify the acceptance
+      // and bind it to the stored invite before recording it. Never log the token.
       const codec = this.natsService.getCodec();
-      await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username })));
+      await this.natsService.publish(NatsSubjects.INVITE_ACCEPTED, codec.encode(JSON.stringify({ invite_uid: payload.invite_uid, username, token })));
 
       logger.success(req, 'accept_invite', startTime, {
         invite_uid: payload.invite_uid,

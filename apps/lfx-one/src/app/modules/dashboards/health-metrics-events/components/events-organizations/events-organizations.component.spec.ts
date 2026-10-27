@@ -119,13 +119,64 @@ describe('EventsOrganizationsComponent', () => {
     expect(query(`events-orgs-row-${ACCOUNT_ID}-registrations`)?.textContent?.trim()).toBe('0');
   });
 
-  it('labels members and non-members', async () => {
+  it('labels members and non-members as dotted text, the glyph hidden from screen readers', async () => {
+    await render(
+      response({ rows: [organization(), organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false })], totalRecords: 2 })
+    );
+    const member = query(`events-orgs-row-${ACCOUNT_ID}-membership`);
+    const nonMember = query('events-orgs-row-0014100000BetaAAAA-membership');
+
+    expect(member?.textContent?.trim()).toBe('● Member');
+    expect(member?.classList).toContain('text-emerald-600');
+    expect(member?.classList).toContain('whitespace-nowrap');
+    expect(member?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('●');
+    expect(nonMember?.textContent?.trim()).toBe('○ Non-member');
+    expect(nonMember?.classList).toContain('text-gray-400');
+    expect(nonMember?.classList).not.toContain('rounded-full');
+  });
+
+  it('draws registrations as a tiny light-blue bar before the bold count, with no organization logo', async () => {
+    await render(response({ rows: [organization({ registrations: 640, registrationsShare: 0.5 })], totalRecords: 1 }));
+    const count = query(`events-orgs-row-${ACCOUNT_ID}-registrations`);
+    const track = count?.previousElementSibling as HTMLElement | null;
+
+    expect(count?.tagName).toBe('B');
+    expect(count?.textContent?.trim()).toBe('640');
+    expect(track?.classList).toContain('w-[52px]');
+    expect(track?.classList).toContain('h-[5px]');
+    expect((track?.firstElementChild as HTMLElement | null)?.style.width).toBe('50%');
+    expect(track?.firstElementChild?.classList).toContain('bg-blue-300');
+    expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.querySelector('lfx-avatar')).toBeNull();
+  });
+
+  it('links each name to Members or Non-Members, searched by name and named for where it opens', async () => {
     await render(
       response({ rows: [organization(), organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false })], totalRecords: 2 })
     );
 
-    expect(query(`events-orgs-row-${ACCOUNT_ID}-membership`)?.textContent?.trim()).toBe('Member');
-    expect(query('events-orgs-row-0014100000BetaAAAA-membership')?.textContent?.trim()).toBe('Non-member');
+    const member = query(`events-orgs-row-${ACCOUNT_ID}-name`);
+    const nonMember = query('events-orgs-row-0014100000BetaAAAA-name');
+    expect(member?.getAttribute('href')).toBe('/foundation/health-metrics/members?memSearch=Acme%20Motors#list');
+    expect(member?.getAttribute('aria-label')).toBe('Open Acme Motors in Members');
+    expect(nonMember?.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonSearch=Beta%20Coastal#orgs');
+    expect(nonMember?.getAttribute('aria-label')).toBe('Open Beta Coastal in Non-Members');
+    expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(member?.classList).toContain('!text-gray-900');
+    expect(member?.classList).toContain('!no-underline');
+  });
+
+  it('opens the organization from anywhere on its row', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    query(`events-orgs-row-${ACCOUNT_ID}`)?.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
+      fragment: 'list',
+      queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
+      queryParamsHandling: 'merge',
+    });
   });
 
   it('re-reads from page 1 when the segment changes, and writes it to the URL with the fragment kept', async () => {

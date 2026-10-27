@@ -98,6 +98,7 @@ import type {
   SocialListeningTab,
   SocialListeningWindowCacheEntry,
 } from '@lfx-one/shared/interfaces';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { SocialListeningAnalyticsComponent } from './components/analytics/social-listening-analytics.component';
 import { FeedHeaderComponent } from './components/feed-header/feed-header.component';
@@ -125,6 +126,7 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
     SocialListeningAnalyticsComponent,
     ViewsDropdownComponent,
     ConfirmDialogModule,
+    PageHeaderComponent,
   ],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',

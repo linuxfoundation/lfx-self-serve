@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_updated: 2026-10-06
+last_updated: 2026-10-27
 intercom_collection: Events
 ---
 
@@ -18,7 +18,7 @@ Your current project context or lens may not have any scheduled events. Try swit
 
 ## Can I register for events from LFX Self Serve?
 
-Event registration is handled externally (not within LFX Self Serve). My Events shows events you are already registered for across all foundations. To register for a new event, visit the event's external registration page.
+Event registration is handled externally (not within LFX Self Serve). Events shows events you are already registered for across all foundations. To register for a new event, visit the event's external registration page.
 
 ## Can I filter events by project or date?
 
@@ -26,19 +26,19 @@ Filter using the **All Foundations**, **All Roles**, and **All Statuses** dropdo
 
 ## Can I see events I attended in the past?
 
-Yes. Select the **Past** tab on the My Events page to view events you have previously attended.
+Yes. Select the **Past** tab on the Events page to view events you have previously attended.
 
 ## How do I get notified about new events?
 
-Check the My Events page regularly for new events. Contact your project administrator for information about event announcements in your project.
+Check the Events page regularly for new events. Contact your project administrator for information about event announcements in your project.
 
 ## How do I request a visa support letter?
 
-Open the [**Visa Letters**](../visa-letters/) tab on the My Events page and select **New Letter Application**. You can request a letter only for an event you are registered for. See [Request a Visa Support Letter](../visa-letters/).
+Open the [**Visa Letters**](../visa-letters/) tab on the Events page and select **New Letter Application**. You can request a letter only for an event you are registered for. See [Request a Visa Support Letter](../visa-letters/).
 
 ## How do I apply for travel funding?
 
-Open the [**Travel Funding**](../travel-funding/) tab on the My Events page and select **New Funding Application**. The Travel Fund helps community members attend events they otherwise could not; if your employer can cover the cost, please don't apply. See [Apply for Travel Funding](../travel-funding/).
+Open the [**Travel Funding**](../travel-funding/) tab on the Events page and select **New Funding Application**. The Travel Fund helps community members attend events they otherwise could not; if your employer can cover the cost, please don't apply. See [Apply for Travel Funding](../travel-funding/).
 
 ## Why don't I see my event when applying for a visa letter or travel funding?
 
@@ -51,8 +51,8 @@ If your visa letter event is still missing, check that you registered with the s
 
 ## How do I download my attendance certificate?
 
-Open the **Past** tab on the My Events page, find the event, and select **Download Certificate**. The action appears only for events marked **Attended**, and a certificate may take up to two weeks after the event ends to become available. See [Download an Attendance Certificate](../attendance-certificates/).
+Open the **Past** tab on the Events page, find the event, and select **Download Certificate**. The action appears only for events marked **Attended**, and a certificate may take up to two weeks after the event ends to become available. See [Download an Attendance Certificate](../attendance-certificates/).
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support via in-app messaging.
+Contact the event organizer listed on the event detail page, or reach out to LFX support.

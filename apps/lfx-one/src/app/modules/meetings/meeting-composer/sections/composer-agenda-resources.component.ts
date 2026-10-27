@@ -9,10 +9,11 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
 import type { ComposerLinkRow, MeetingAttachment, MeetingLinkDialogResult, PendingAttachment } from '@lfx-one/shared/interfaces';
-import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed, resolveFileMimeType } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { FileSelectEvent } from 'primeng/fileupload';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
 
@@ -78,8 +79,14 @@ export class ComposerAgendaResourcesComponent {
     }))
   );
 
-  protected onFileSelect(event: { files?: File[]; currentFiles?: File[] }): void {
-    const files = event.files ?? event.currentFiles ?? [];
+  /**
+   * Queue the files from one picker or drop selection.
+   * @description PrimeNG declares `files` as an array but emits the native `FileList`, so it is copied
+   * into an array before use. `files` is only this selection; `currentFiles` is PrimeNG's cumulative list,
+   * which still holds files removed from the queue, so it is read only when `files` is absent.
+   */
+  protected onFileSelect(event: { files?: FileSelectEvent['files'] | FileList; currentFiles?: FileSelectEvent['currentFiles'] }): void {
+    const files = Array.from(event.files ?? event.currentFiles ?? []);
     if (files.length === 0) {
       return;
     }
@@ -97,7 +104,7 @@ export class ComposerAgendaResourcesComponent {
         fileName: file.name,
         file,
         fileSize: file.size,
-        mimeType: file.type,
+        mimeType: resolveFileMimeType(file.type, file.name),
         uploading: false,
         uploaded: false,
       });

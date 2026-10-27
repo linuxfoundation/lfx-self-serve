@@ -1,0 +1,1574 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Navbar v2 (sidebar redesign) — global stylesheet for `lfx-navbar`. Ported verbatim from the
+// design's `navbar.css` plus its floating (`lfxn-float`) and dark (`lfxn-dark`) overrides, with the
+// dark cascade resolved into the base rules. Sizes are exact pixel values from the design and
+// deliberately do not follow the rem-based Tailwind scale (html is 14px) — do not round them. Colours
+// come from the `lfxColors` tokens via `theme('colors.…')` (the design's values are palette stops; the
+// two off-palette navy surfaces are rebuilt from tokens, see the notes where they're used).
+//
+// Global rather than component-scoped: the project/org selectors' `navbar` variant renders the
+// context card inside their own hosts and the popovers/tooltips are appended to <body>, so the rules
+// could only reach them through `::ng-deep`, and the sheet is far beyond the per-component style
+// budget. Rules inside the navbar are scoped under `.lfxn-host` (a host class on `lfx-navbar`);
+// body-level surfaces are top-level. Every selector is `lfxn`-prefixed.
+
+/* stylelint-disable declaration-no-important */
+
+.lfxn-host {
+  // ---------- Floating frame: 8px inset from the viewport (left/top/bottom) ----------
+  .lfxn-float {
+    display: flex;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    height: 100%;
+    padding: 8px 0 8px 8px;
+  }
+
+  .lfxn-float--mobile {
+    padding: 8px;
+  }
+
+  // ---------- Panel ----------
+  .lfxn {
+    // Slate scale as the dark navbar re-maps it.
+    --color-slate-slate-50: theme('colors.blue.900');
+    --color-slate-slate-100: theme('colors.gray.700');
+    --color-slate-slate-200: theme('colors.gray.600');
+    --color-slate-slate-300: theme('colors.gray.600');
+    --color-slate-slate-400: theme('colors.gray.400');
+    --color-slate-slate-500: theme('colors.gray.400');
+    --color-slate-slate-600: theme('colors.gray.400');
+    --color-slate-slate-900: theme('colors.gray.300');
+    --color-azure-azure-500: theme('colors.blue.500');
+    --color-azure-azure-600: theme('colors.blue.600');
+
+    box-sizing: border-box;
+    width: 280px;
+    height: 100%;
+    flex-shrink: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--color-slate-slate-50);
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    * {
+      box-sizing: border-box;
+    }
+
+    button {
+      font-family: inherit;
+    }
+  }
+
+  .lfxn-float--mobile .lfxn {
+    width: 100%;
+  }
+
+  .lfxn__top {
+    align-self: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    overflow: hidden;
+  }
+
+  // Header block: 12px padding, 16px gap
+  .lfxn__head {
+    align-self: stretch;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 12px;
+  }
+
+  .lfxn__brand-row {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 24px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .lfxn__brand {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 4px 6px;
+    margin: -4px -6px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover,
+    &.is-open {
+      background: theme('colors.white / 14%');
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 0;
+    }
+  }
+
+  .lfxn__brand-symbol {
+    display: block;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+
+    path {
+      fill: theme('colors.white');
+    }
+  }
+
+  .lfxn__brand-menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    color: theme('colors.gray.300');
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .lfxn__head-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  // Round icon button — 24px, full radius, 15px icon cell (design's IconButton, ghost-neutral by default).
+  .lfxn__icon-btn {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--color-slate-slate-600);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background: var(--color-slate-slate-200);
+      color: var(--color-slate-slate-600);
+      text-decoration: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 1px;
+    }
+  }
+
+  .lfxn__icon-btn--accent {
+    background: var(--color-azure-azure-500);
+    color: theme('colors.white');
+
+    &:hover {
+      background: var(--color-azure-azure-600);
+      color: theme('colors.white');
+    }
+  }
+
+  .lfxn__icon-btn-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .lfxn__icon-btn-dot {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-azure-azure-500);
+  }
+
+  // ---------- Lens tabs ----------
+  .lfxn__tabs {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 28px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 2px;
+    border-radius: 9999px;
+    background: theme('colors.white / 7%');
+    box-shadow: 0 0 0 1px theme('colors.white / 14%');
+    position: relative;
+    isolation: isolate;
+  }
+
+  // The active pill, sliding between tabs. Sits under the labels (z-index -1 inside the isolated group).
+  .lfxn__tab-indicator {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    z-index: -1;
+    height: 24px;
+    border-radius: 9999px;
+    background: theme('colors.white');
+    box-shadow:
+      0 1px 2px -1px theme('colors.black / 5%'),
+      0 1px 3px 0 theme('colors.black / 5%');
+    transition:
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  // Once the pill is in place the active tab drops its own background, so only the pill moves.
+  .lfxn__tabs.has-indicator .lfxn__tab.is-active {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .lfxn__tab {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    overflow: hidden;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    white-space: nowrap;
+    color: theme('colors.gray.300');
+    transition: color 150ms ease-in-out;
+
+    i {
+      font-size: 12px;
+      line-height: 1;
+      color: theme('colors.gray.300');
+      flex-shrink: 0;
+    }
+
+    &:hover {
+      color: theme('colors.white');
+    }
+
+    &.is-active {
+      font-weight: 500;
+      color: theme('colors.gray.900');
+      background: theme('colors.white');
+      box-shadow:
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
+
+      i {
+        color: theme('colors.blue.500');
+      }
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__tab-rule {
+    width: 1px;
+    height: 12px;
+    flex-shrink: 0;
+    background: theme('colors.white / 12%');
+  }
+
+  // ---------- Context card ----------
+  // The project/org selectors host their own card (variant="navbar"); stretch their host elements.
+  .lfxn__head lfx-project-selector,
+  .lfxn__head lfx-org-selector,
+  .lfxn__context-slot {
+    display: block;
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .lfxn__context-slot.hidden,
+  .lfxn__context.hidden {
+    display: none;
+  }
+
+  .lfxn__context {
+    align-self: stretch;
+    flex-shrink: 0;
+    width: 100%;
+    height: auto;
+    min-height: 54px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border: 0;
+    border-radius: 12px;
+    background: theme('colors.white / 7%');
+    cursor: pointer;
+    text-align: left;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    box-shadow:
+      0 0 0 1px theme('colors.white / 14%'),
+      0 1px 2px -1px theme('colors.black / 5%'),
+      0 1px 3px 0 theme('colors.black / 5%');
+    transition: box-shadow 150ms ease-in-out;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    &:hover {
+      box-shadow:
+        0 0 0 1px theme('colors.white / 28%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__context-body {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .lfxn__context-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .lfxn__context-name {
+    display: block;
+    max-width: 100%;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: theme('colors.white');
+  }
+
+  .lfxn__context-meta {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 14px;
+    white-space: nowrap;
+    color: theme('colors.gray.400');
+  }
+
+  // A context card with nothing to switch to (single organization): no pointer, no hover ring.
+  .lfxn__context--static {
+    cursor: default;
+
+    &:hover {
+      box-shadow:
+        0 0 0 1px theme('colors.white / 14%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
+    }
+  }
+
+  // Up/down chevron on switchable cards (projects, organization).
+  .lfxn__context-chevron {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 14px;
+    margin-left: 8px;
+    // The SVG is only the shape (a mask); its colour is the token behind it, so no hex lives in the data URI.
+    background-color: theme('colors.gray.300');
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14' viewBox='0 0 12 14' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3-3 3 3M3 9l3 3 3-3'/%3E%3C/svg%3E")
+      center / 12px 14px no-repeat;
+  }
+
+  // Role pill under a project's name — outlined in the role's ink.
+  .lfxn__role {
+    --lfxn-role-ink: theme('colors.gray.200');
+
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    margin-top: 4px;
+    padding: 0 7px;
+    border: 1px solid var(--lfxn-role-ink);
+    border-radius: 9999px;
+    background: transparent;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--lfxn-role-ink);
+
+    i {
+      font-size: 9px;
+      line-height: 1;
+    }
+  }
+
+  // Role line under an organization's name — muted glyph + label.
+  .lfxn__org-role {
+    // Same metrics as the plain "Project" / "Foundation" meta line, so the name-to-role gap matches.
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 14px;
+    white-space: nowrap;
+    color: theme('colors.gray.400');
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+
+    i {
+      font-size: 9px;
+      line-height: 1;
+    }
+  }
+
+  // Context tile: 32px logo square (or round photo on the me card).
+  .lfxn__tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: theme('colors.white / 7%');
+    box-shadow: 0 0 0 1px theme('colors.white / 10%');
+    color: theme('colors.gray.300');
+    font-size: 13px;
+
+    > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .lfxn__tile--logo {
+    background: theme('colors.white');
+
+    > img {
+      padding: 5px;
+      object-fit: contain;
+    }
+
+    > i {
+      color: theme('colors.gray.600');
+    }
+  }
+
+  .lfxn__context--org .lfxn__tile--logo > img {
+    padding: 6px;
+  }
+
+  .lfxn__tile--photo {
+    border-radius: 9999px;
+    box-shadow: none;
+
+    > img {
+      object-fit: cover;
+    }
+  }
+
+  .lfxn__tile-initials,
+  .lfxn__avatar-initials {
+    font-size: 11px;
+    font-weight: 600;
+    color: theme('colors.white');
+  }
+
+  // Me card: identity row + role marks, then the My Profile / Account & Settings action strip.
+  .lfxn__context--me {
+    flex-wrap: wrap;
+    cursor: default;
+
+    .lfxn__context-body {
+      gap: 10px;
+    }
+
+    &,
+    &:hover {
+      box-shadow:
+        0 0 0 1px theme('colors.white / 14%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
+    }
+  }
+
+  .lfxn__me-roles {
+    position: relative;
+    z-index: 5;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+    margin-left: auto;
+  }
+
+  .lfxn__me-role {
+    --lfxn-role-ink: theme('colors.blue.400');
+
+    position: relative;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1.5px solid var(--lfxn-role-ink);
+    border-radius: 9999px;
+    background: color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
+    color: var(--lfxn-role-ink);
+    box-shadow: 0 0 0 2px color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+
+    & + & {
+      margin-left: -3px;
+    }
+
+    i {
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__me-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    margin: 10px -10px -10px;
+    border-top: 1px solid theme('colors.white / 10%');
+  }
+
+  .lfxn__me-action {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    height: 30px;
+    margin: 3px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    color: theme('colors.gray.300');
+    text-decoration: none;
+    cursor: pointer;
+
+    i {
+      font-size: 12px;
+    }
+
+    &:hover {
+      background: theme('colors.white / 10%');
+      color: theme('colors.white');
+      text-decoration: none;
+    }
+
+    &.is-active {
+      font-weight: 600;
+      color: theme('colors.white');
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__me-action-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lfxn__me-action-trail {
+    margin-left: auto;
+  }
+
+  // ---------- Menu body: 8px 12px padding, 16px between blocks ----------
+  .lfxn__menu {
+    align-self: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    // 20px at the bottom mirrors the 20px above the first item (12px header padding + 8px here).
+    padding: 8px 12px 20px;
+    overflow-y: auto;
+    // Scrolls, but with no visible scrollbar (Firefox / legacy Edge / WebKit).
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    // Soft fade on whichever edge has content scrolled past it, so rows dissolve under the
+    // header/footer instead of being cut off. Edges with nothing beyond them stay crisp.
+    --lfxn-fade-top: 0px;
+    --lfxn-fade-bottom: 0px;
+
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      theme('colors.black') var(--lfxn-fade-top),
+      theme('colors.black') calc(100% - var(--lfxn-fade-bottom)),
+      transparent 100%
+    );
+
+    &.is-fade-top {
+      --lfxn-fade-top: 28px;
+    }
+
+    &.is-fade-bottom {
+      --lfxn-fade-bottom: 28px;
+    }
+  }
+
+  .lfxn__group {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lfxn__items {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .lfxn__items--nested {
+    margin-top: 2px;
+    padding-left: 23px;
+  }
+
+  .lfxn__nav-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lfxn__section {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 14px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .lfxn__section-label {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    // Lighter than the design's #62748e (~3.2:1 on the #002741 panel) so the 10px label meets WCAG AA (~5.8:1).
+    color: var(--color-slate-slate-400);
+  }
+
+  .lfxn__section-rule,
+  .lfxn__rule {
+    height: 1px;
+    border: 0;
+    background-image: repeating-linear-gradient(to right, var(--color-slate-slate-400) 0 1px, transparent 1px 5px);
+  }
+
+  .lfxn__section-rule {
+    flex-grow: 1;
+  }
+
+  .lfxn__rule {
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  // Menu items
+  .lfxn__item {
+    align-self: stretch;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 27px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    overflow: hidden;
+    text-align: left;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.25;
+    white-space: nowrap;
+    color: theme('colors.gray.300');
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background: theme('colors.gray.700');
+      color: theme('colors.white');
+      text-decoration: none;
+
+      .lfxn__item-icon {
+        color: theme('colors.white');
+      }
+    }
+
+    &.is-active {
+      font-weight: 500;
+      background: theme('colors.gray.500');
+      color: theme('colors.white');
+
+      .lfxn__item-icon {
+        color: theme('colors.white');
+      }
+    }
+
+    &.is-disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    flex-shrink: 0;
+    align-self: stretch;
+    color: theme('colors.gray.300');
+    font-size: 12px;
+    line-height: 1;
+
+    // Font Awesome injects SVGs at 1em with a baseline offset; pin them to the 12px glyph box.
+    .svg-inline--fa {
+      display: block;
+      height: 12px;
+      width: auto;
+      vertical-align: 0;
+    }
+  }
+
+  .lfxn__item-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lfxn__item-trail {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-slate-slate-400);
+    font-size: 10px;
+  }
+
+  .lfxn__item-chevron {
+    transition: transform 200ms ease-in-out;
+
+    &.is-open {
+      transform: rotate(180deg);
+    }
+  }
+
+  // Empty lens menu (no permissions on the selected foundation / project): a message card that
+  // overlaps a faded preview of the menu, which emerges from beneath it and dissolves downward.
+  .lfxn__no-access {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lfxn__empty {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 12px;
+    border: 1px dashed theme('colors.white / 14%');
+    border-radius: 10px;
+    // Opaque (the panel colour with a 7% white tint baked in, mixed from tokens) so the menu behind it is hidden.
+    background: color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
+    box-shadow: 0 10px 18px -10px theme('colors.black / 45%');
+  }
+
+  .lfxn__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-bottom: 2px;
+    border-radius: 9999px;
+    background: theme('colors.white / 7%');
+    color: theme('colors.gray.300');
+    font-size: 12px;
+  }
+
+  .lfxn__empty-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    color: theme('colors.white');
+  }
+
+  .lfxn__empty-body {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: theme('colors.gray.400');
+  }
+
+  // Retry on the lookup-failed card: a compact outline pill in the navbar's dark idiom.
+  .lfxn__empty-action {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border: 1px solid theme('colors.white / 18%');
+    border-radius: 9999px;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    color: theme('colors.gray.200');
+    cursor: pointer;
+    transition: background-color 150ms ease-in-out;
+
+    i {
+      font-size: 11px;
+    }
+
+    &:hover {
+      background: theme('colors.white / 10%');
+      color: theme('colors.white');
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+
+    // Busy while a retry runs: no hover lift, no pointer.
+    &:disabled {
+      background: transparent;
+      color: theme('colors.gray.200');
+      cursor: default;
+      opacity: 0.7;
+    }
+  }
+
+  // A lookup failed but the menu still has items: one dashed row under them with an inline Retry.
+  .lfxn__lookup-notice {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 1px dashed theme('colors.white / 14%');
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 16px;
+    color: theme('colors.gray.400');
+  }
+
+  .lfxn__lookup-notice-icon {
+    width: 15px;
+    flex-shrink: 0;
+    text-align: center;
+    color: theme('colors.amber.400');
+  }
+
+  .lfxn__lookup-notice-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lfxn__lookup-notice-action {
+    flex-shrink: 0;
+    margin-top: 0;
+    margin-left: auto;
+    padding: 2px 8px;
+  }
+
+  // Tucked ~2 rows up under the card, so the first rows read as continuing behind it.
+  .lfxn__ghost {
+    margin-top: -58px;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.6;
+    mask-image: linear-gradient(to bottom, theme('colors.black') 55%, transparent 100%);
+  }
+
+  // Loading placeholders on the dark surface.
+  .lfxn__skeleton {
+    display: block;
+    border-radius: 6px;
+    background: theme('colors.white / 7%');
+  }
+
+  .lfxn__skeleton--item {
+    height: 27px;
+  }
+
+  .lfxn__skeleton--tile {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 8px;
+  }
+
+  .lfxn__skeleton--line {
+    flex: 1 1 auto;
+    height: 12px;
+  }
+
+  .lfxn__context--loading {
+    cursor: default;
+  }
+
+  // ---------- Footer bar ----------
+  .lfxn__foot {
+    align-self: stretch;
+    flex: 0 0 auto;
+    height: 44px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid theme('colors.gray.600');
+  }
+
+  .lfxn__user {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    // Same hover tint as the brand button: padding grows the hit area, negative margin keeps layout.
+    padding: 4px 6px;
+    margin: -4px -6px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover,
+    &.is-open {
+      background: theme('colors.white / 14%');
+    }
+
+    > i {
+      width: 15px;
+      height: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      color: var(--color-slate-slate-600);
+      flex-shrink: 0;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__user-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    white-space: nowrap;
+    color: theme('colors.gray.50');
+  }
+
+  .lfxn__foot-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  // Footer actions sit on the dark navy — a lighter slate than the default ghost icon for contrast —
+  // and turn white and grow slightly on hover/focus. None of them carries a selected state:
+  // Documentation looks the same on `/docs` as anywhere else. The Create button keeps its size;
+  // only its fill darkens (`.lfxn__icon-btn--accent`).
+  .lfxn__foot-actions .lfxn__icon-btn {
+    color: theme('colors.gray.300');
+    transition:
+      background-color 150ms ease-in-out,
+      color 150ms ease-in-out,
+      transform 150ms ease-out;
+
+    &:hover,
+    &:focus-visible {
+      color: theme('colors.white');
+      transform: scale(1.15);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition:
+        background-color 150ms ease-in-out,
+        color 150ms ease-in-out;
+
+      &:hover,
+      &:focus-visible {
+        transform: none;
+      }
+    }
+  }
+
+  .lfxn__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: theme('colors.gray.700');
+
+    > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+}
+
+// ---------- Body-level surfaces (popovers, tooltips) ----------
+// ---------- Popovers (appended to <body>) ----------
+.lfxn-menu-popover.p-popover,
+.lfxn-brand-popover.p-popover {
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  .p-popover-content {
+    padding: 0 !important;
+  }
+}
+
+// Brand menu — pinned under the brand row of the floating navbar, as drawn.
+.lfxn-brand-popover.p-popover {
+  position: fixed !important;
+  top: 56px !important;
+  left: 16px !important;
+  margin-top: 0 !important;
+  // Fixed panels can't be reached by scrolling the page: cap to the viewport and scroll inside.
+  max-height: calc(100dvh - 64px);
+  overflow-y: auto;
+  border: 1px solid theme('colors.gray.200');
+  border-radius: 12px;
+  box-shadow:
+    0 10px 24px -8px theme('colors.gray.900 / 18%'),
+    0 2px 6px -2px theme('colors.gray.900 / 8%');
+}
+
+// Under the impersonation banner the navbar sits 36px lower. Classes stacked so this wins on specificity.
+.lfxn-brand-popover.lfxn-brand-popover--banner-offset.p-popover {
+  top: 92px !important;
+  max-height: calc(100dvh - 100px);
+}
+
+.lfxn-brand-menu {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+.lfxn-brand-menu__app {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  text-decoration: none;
+
+  &:hover {
+    background: theme('colors.gray.50');
+    text-decoration: none;
+  }
+}
+
+.lfxn-brand-menu__icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  color: theme('colors.gray.600');
+}
+
+.lfxn-brand-menu__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lfxn-brand-menu__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: theme('colors.gray.900');
+}
+
+.lfxn-brand-menu__blurb {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: theme('colors.gray.500');
+  text-wrap: pretty;
+}
+
+.lfxn-brand-menu__ext {
+  margin-top: 4px;
+  font-size: 11px;
+  color: theme('colors.gray.400');
+}
+
+.lfxn-brand-menu__rule {
+  height: 1px;
+  margin: 6px 4px;
+  background: theme('colors.gray.200');
+}
+
+.lfxn-brand-menu__site {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+
+  &:hover {
+    background: theme('colors.gray.50');
+    text-decoration: none;
+  }
+
+  .lfxn-brand-menu__ext {
+    margin-top: 0;
+  }
+}
+
+.lfxn-brand-menu__site-name {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: theme('colors.gray.700');
+
+  svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+}
+
+// Account menu — pinned above the footer: 8px viewport inset + 44px footer + 6px gap.
+.lfxn-account-popover.p-popover {
+  position: fixed !important;
+  top: auto !important;
+  bottom: 58px !important;
+  left: 16px !important;
+  margin: 0 !important;
+  border: 1px solid theme('colors.gray.200');
+  border-radius: 12px;
+  box-shadow:
+    0 10px 24px -8px theme('colors.gray.900 / 18%'),
+    0 2px 6px -2px theme('colors.gray.900 / 8%');
+}
+
+.lfxn-account-menu {
+  display: flex;
+  flex-direction: column;
+  width: 264px;
+  padding: 6px;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lfxn-account-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.lfxn-account-menu__avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: theme('colors.gray.700');
+  color: theme('colors.white');
+  font-size: 12px;
+  font-weight: 600;
+
+  > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.lfxn-account-menu__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lfxn-account-menu__name,
+.lfxn-account-menu__email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lfxn-account-menu__name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: theme('colors.gray.900');
+}
+
+.lfxn-account-menu__email {
+  font-size: 12px;
+  line-height: 16px;
+  color: theme('colors.gray.500');
+}
+
+.lfxn-account-menu__rule {
+  height: 1px;
+  margin: 6px 4px;
+  background: theme('colors.gray.200');
+}
+
+.lfxn-account-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: theme('colors.gray.700');
+  transition: background-color 150ms ease-in-out;
+
+  > i {
+    width: 16px;
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 13px;
+    color: theme('colors.gray.500');
+  }
+
+  &:hover {
+    background: theme('colors.gray.50');
+    color: theme('colors.gray.900');
+    text-decoration: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid theme('colors.blue.500');
+    outline-offset: -2px;
+  }
+}
+
+// The Font Awesome kit picks its style by font-weight, but its fa-regular / fa-light classes don't pin
+// one — so an icon inherited a bold or medium parent's weight and rendered in a heavier style. Pin
+// them everywhere in the navbar, its context cards and its tooltips.
+.lfxn,
+.lfxn-tooltip {
+  .fa-regular {
+    font-weight: 400;
+  }
+
+  .fa-light {
+    font-weight: 300;
+  }
+
+  .fa-solid {
+    font-weight: 900;
+  }
+}
+
+// Navbar tooltip (NavTooltipDirective) — compact dark chip with a hairline border, fading and
+// rising 2px into place. Fixed to the viewport; the directive sets top/left.
+.lfxn-tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: 240px;
+  padding: 4px 8px;
+  border: 1px solid theme('colors.white / 8%');
+  border-radius: 6px;
+  background: theme('colors.gray.800');
+  box-shadow:
+    0 4px 12px -2px theme('colors.black / 35%'),
+    0 1px 2px theme('colors.black / 25%');
+  color: theme('colors.gray.200');
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  // Short labels hug their text; longer sentences (org role descriptions) wrap at max-width.
+  width: max-content;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+
+  &.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    // Hoverable once shown (WCAG 1.4.13): the pointer can cross into a label tooltip to read it.
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: opacity 120ms ease-out;
+  }
+}
+
+// Interactive tooltip (role marks): label over chips that jump to each project / foundation.
+.lfxn-tooltip--rich {
+  max-width: 260px;
+  padding: 8px;
+  white-space: normal;
+}
+
+.lfxn-tooltip--interactive {
+  pointer-events: auto;
+}
+
+.lfxn-tooltip__icon {
+  margin-right: 6px;
+  font-size: 11px;
+}
+
+// Interactive cards: the heading is the role, set apart from the chips under it.
+.lfxn-tooltip--rich .lfxn-tooltip__title {
+  padding: 0 2px;
+}
+
+.lfxn-tooltip--rich .lfxn-tooltip__label {
+  color: theme('colors.white');
+  font-weight: 600;
+}
+
+.lfxn-tooltip__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.lfxn-tooltip__chip {
+  display: inline-block;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid theme('colors.white / 8%');
+  border-radius: 9999px;
+  background: theme('colors.white / 6%');
+  color: theme('colors.gray.300');
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+
+  &:hover,
+  &:focus-visible {
+    border-color: theme('colors.white / 16%');
+    background: theme('colors.white / 12%');
+    color: theme('colors.white');
+  }
+
+  &:focus-visible {
+    outline: 2px solid theme('colors.blue.500');
+    outline-offset: 1px;
+  }
+}
+
+// A chip listed for context only (no lens to open it in): a label, so no pointer or hover lift.
+.lfxn-tooltip__chip--static {
+  cursor: default;
+
+  &:hover {
+    border-color: theme('colors.white / 8%');
+    background: theme('colors.white / 6%');
+    color: theme('colors.gray.300');
+  }
+}
+
+.lfxn-tooltip--top {
+  transform: translateY(2px);
+}
+
+.lfxn-tooltip--bottom {
+  transform: translateY(-2px);
+}

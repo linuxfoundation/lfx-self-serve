@@ -6,13 +6,22 @@ import type { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.co
 /** A period the Level 2 views have columns for — `COMPLETED_YEAR_4` is not one of them. */
 export type HealthMetricsL2Range = (typeof HEALTH_METRICS_L2_RANGES)[number];
 
+/** One run of footnote text: plain, bold, or a link to another Health Metrics tab. */
+export interface HealthMetricsFootnotePart {
+  text: string;
+  bold?: boolean;
+  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`; when set, the run links to that tab. */
+  route?: string;
+}
+
 /** One anchored section of a Health Metrics Level 2 tab; the key doubles as its URL fragment. */
 export interface HealthMetricsL2Section {
   key: string;
   label: string;
   heading: string;
   description: string;
-  footnote: string;
+  /** Empty renders no footnote. */
+  footnote: readonly HealthMetricsFootnotePart[];
   footnoteCaution: boolean;
   /** A pill beside the heading, e.g. for figures still pending validation. */
   headingBadge?: string;
@@ -24,16 +33,6 @@ export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   headingId: string;
 }
 
-/** Note under the sub-nav whose trailing tab name links to a section of that tab. */
-export interface HealthMetricsL2CrossReference {
-  text: string;
-  linkLabel: string;
-  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`. */
-  route: string;
-  /** Section key on the target tab, so the link lands on it. */
-  fragment: string;
-}
-
 /** Sub-nav badge for one section: a count plus an optional qualifier note. */
 export interface HealthMetricsL2SubNavItem {
   key: string;
@@ -42,21 +41,4 @@ export interface HealthMetricsL2SubNavItem {
   count: number | null;
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
-}
-
-/** One project in the Health Metrics header's project selector. */
-export interface HealthMetricsProjectOption {
-  slug: string;
-  name: string;
-  initials: string;
-  /** Avatar palette class hashed from the slug, so a project keeps its color. */
-  colorClass: string;
-}
-
-/** One step of the header's project-list load: `projects` is `null` while loading or after a failure. */
-export interface HealthMetricsProjectListState {
-  projects: readonly HealthMetricsProjectOption[] | null;
-  /** False when the server dropped part of the hierarchy, so a missing slug may still be valid. */
-  complete: boolean;
-  failed: boolean;
 }

@@ -5,19 +5,14 @@
   <!-- Auth-aware left rail. Hidden under `lg:`; below the breakpoint a compact top bar (see below)
        keeps the docs nav and sign-in CTA reachable on phones / tablets. -->
   @if (isAuthenticated()) {
-    <!-- Authed: new rail (no lens buttons) + the lens sidebar. The previously-active lens tab stays
-         selected; no menu item is active on a /docs route, giving the user a way back to their lens. -->
-    <div class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 top-0 bottom-0 z-40">
-      <div class="w-[48px] flex-shrink-0" data-testid="docs-shell-authed">
-        <lfx-lens-switcher [showLensButtons]="false" />
-      </div>
-      <div class="w-[300px] flex-shrink-0">
-        <lfx-sidebar
-          [items]="sidebarItems()"
-          [showMeSelector]="activeLens() === 'me'"
-          [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-          [showOrgSelector]="activeLens() === 'org'" />
-      </div>
+    <!-- Authed: the lens navbar. The previously-active lens tab stays selected; no menu item is active
+         on a /docs route, giving the user a way back to their lens. -->
+    <div class="hidden lg:flex flex-shrink-0 fixed left-0 top-0 bottom-0 z-40" data-testid="docs-shell-authed">
+      <lfx-navbar
+        [items]="sidebarItems()"
+        [showMeSelector]="activeLens() === 'me'"
+        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+        [showOrgSelector]="activeLens() === 'org'" />
     </div>
   } @else {
     <!-- Public: minimal docs rail (docs icon + What's new + sign-in CTA). -->
@@ -27,7 +22,7 @@
   }
 
   <!-- Main content -->
-  <main class="flex flex-1 flex-col" [ngClass]="isAuthenticated() ? 'lg:ml-[348px]' : 'lg:ml-16'" data-testid="docs-content">
+  <main class="flex flex-1 flex-col" [ngClass]="isAuthenticated() ? 'lg:ml-[288px]' : 'lg:ml-16'" data-testid="docs-content">
     <!-- Mobile / tablet top bar — surfaces the same docs and sign-in/account affordances
          that the lg+ left rail provides. Hidden at lg+ where the rail does the same job. -->
     <div class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden" data-testid="docs-shell-mobile">
@@ -55,7 +50,7 @@
       <router-outlet />
     </div>
 
-    <!-- App footer — constrained to the 1024px docs content width -->
-    <lfx-footer class="mx-auto mt-auto w-full max-w-[1024px] p-8" cookie-tracking="true"></lfx-footer>
+    <!-- App footer — full width of the content area, matching the main layout -->
+    <lfx-app-footer class="block mt-auto px-5 md:ml-8 md:px-8" data-testid="docs-shell-footer"></lfx-app-footer>
   </main>
 </div>

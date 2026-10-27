@@ -62,9 +62,15 @@ export const MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION = 1;
  * `MktgArtifactService`.
  *
  * Adding the remaining agents is an entry here plus BFF wiring — a `pitch-deck`
- * entry would read exactly like the three below.
+ * entry follows the same shape as the existing entries.
  */
 export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
+  'linkedin-post': {
+    agentKey: 'linkedin-post',
+    keyPrefix: 'linkedin-post',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'linkedin_post',
+  },
   'brand-kit': {
     agentKey: 'brand-kit',
     keyPrefix: 'brand-kit',
@@ -77,6 +83,12 @@ export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
     maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
     logNamespace: 'foundation_message',
   },
+  'aeo-geo': {
+    agentKey: 'aeo-geo',
+    keyPrefix: 'aeo-geo',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'aeo_geo',
+  },
   // Registered ahead of its BFF endpoints: the ICP agent's self-serve page is
   // in flight and its persistence is now a wiring job, not an implementation.
   icp: {
@@ -84,5 +96,22 @@ export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
     keyPrefix: 'icp',
     maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
     logNamespace: 'icp',
+  },
+  // A JSON asset (boilerplates-output/v1): stored as document-store revisions
+  // only, so nothing is ever written under this prefix; the spec names the
+  // document type and the log namespace.
+  boilerplates: {
+    agentKey: 'boilerplates',
+    keyPrefix: 'boilerplates',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'boilerplates',
+  },
+  // The FAQ writes JSON: it is stored as revisions only (the document store's
+  // JSON write), so nothing is ever written under this prefix's `.md` partition.
+  faq: {
+    agentKey: 'faq',
+    keyPrefix: 'faq',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'faq',
   },
 };

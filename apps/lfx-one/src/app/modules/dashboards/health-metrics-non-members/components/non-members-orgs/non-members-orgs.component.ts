@@ -12,6 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
@@ -21,15 +22,21 @@ import {
   HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsNonMembersOrgRows, buildHealthMetricsNonMembersOrgsSummary } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsNonMembersOrgRows,
+  buildHealthMetricsNonMembersOrgsLowConfidence,
+  buildHealthMetricsNonMembersOrgsSummary,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
   FilterPillOption,
+  HealthMetricsFootnotePart,
   HealthMetricsL2Range,
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersOrgs,
@@ -43,7 +50,7 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-orgs',
-  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, InputTextComponent, TableComponent],
   templateUrl: './non-members-orgs.component.html',
 })
 export class NonMembersOrgsComponent {
@@ -69,7 +76,8 @@ export class NonMembersOrgsComponent {
 
   protected readonly filterOptions: FilterPillOption[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS];
-  protected readonly provisionalNote = HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE;
+  protected readonly footnote: readonly HealthMetricsFootnotePart[] = [{ text: HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE }];
+  protected readonly allTimeNote = HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE;
   protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH;
   protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE);
   protected readonly filter = signal<HealthMetricsNonMembersOrgsFilter>(
@@ -108,6 +116,7 @@ export class NonMembersOrgsComponent {
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly filtered = computed(() => this.filter() !== 'all' || this.search() !== '');
   protected readonly summary = computed(() => buildHealthMetricsNonMembersOrgsSummary(this.scopeTotal(), this.response().newCount));
+  protected readonly lowConfidence = computed(() => (this.loading() ? null : buildHealthMetricsNonMembersOrgsLowConfidence(this.scopeTotal())));
   protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
   protected readonly scopeTotalLabel = computed(() => this.scopeTotal().toLocaleString('en-US'));
   protected readonly noMatchLabel = computed(() => (this.search() ? `No organization matches “${this.search()}”.` : 'No organization matches this filter.'));

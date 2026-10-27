@@ -1,0 +1,85 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3">
+  @for (option of options(); track option.choiceId) {
+    @if (variant() === 'live') {
+      <div class="flex flex-col gap-1.5" [attr.data-testid]="testIdPrefix() + option.choiceId">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 sm:gap-2 text-sm break-words">
+          <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+            {{ option.text }}
+          </span>
+          <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+            {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }} · {{ option.percentage }}%
+          </span>
+        </div>
+        <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all"
+            [class.bg-blue-500]="option.isLeading"
+            [class.bg-slate-300]="!option.isLeading"
+            [style.width.%]="option.percentage"></div>
+        </div>
+      </div>
+    } @else {
+      <div
+        class="rounded-lg border p-4 transition-all"
+        [class.border-green-300]="option.isWinner"
+        [class.bg-green-50]="option.isWinner"
+        [class.border-amber-300]="option.isTied"
+        [class.bg-amber-50]="option.isTied"
+        [class.border-slate-200]="!option.isWinner && !option.isTied"
+        [class.bg-slate-50]="!option.isWinner && !option.isTied"
+        [attr.data-testid]="testIdPrefix() + option.choiceId">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 mb-2">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span
+              class="text-sm font-medium break-words min-w-0"
+              [class.text-green-900]="option.isWinner"
+              [class.text-amber-900]="option.isTied"
+              [class.text-slate-900]="!option.isWinner && !option.isTied">
+              {{ option.text }}
+            </span>
+            @if (option.isWinner) {
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                <i class="fa-solid fa-check text-[10px]"></i>
+                Winner
+              </span>
+            }
+            @if (option.isTied) {
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                <i class="fa-solid fa-equals text-[10px]"></i>
+                Tied
+              </span>
+            }
+          </div>
+          <div class="flex items-center gap-2">
+            <span
+              class="text-sm font-semibold"
+              [class.text-green-700]="option.isWinner"
+              [class.text-amber-700]="option.isTied"
+              [class.text-slate-700]="!option.isWinner && !option.isTied">
+              {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+            </span>
+            <span
+              class="text-sm"
+              [class.text-green-600]="option.isWinner"
+              [class.text-amber-600]="option.isTied"
+              [class.text-slate-600]="!option.isWinner && !option.isTied">
+              ({{ option.percentage }}%)
+            </span>
+          </div>
+        </div>
+        <!-- Creator final view keeps a white track; the voter view uses a faint slate-100 track so 0% rows still read as a track, not empty space. -->
+        <div class="w-full rounded-full h-2 overflow-hidden" [class.bg-white]="variant() === 'final'" [class.bg-slate-100]="variant() === 'voter-final'">
+          <div
+            class="h-full transition-all"
+            [class.bg-green-500]="option.isWinner"
+            [class.bg-amber-500]="option.isTied"
+            [class.bg-slate-400]="!option.isWinner && !option.isTied"
+            [style.width.%]="option.percentage"></div>
+        </div>
+      </div>
+    }
+  }
+</div>

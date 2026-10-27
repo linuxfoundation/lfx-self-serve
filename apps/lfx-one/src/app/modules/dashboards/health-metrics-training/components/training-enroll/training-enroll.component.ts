@@ -9,7 +9,6 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
   HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
   lfxColors,
@@ -35,7 +34,7 @@ import type {
 
 /**
  * `#enroll` — the period's enrollments, certifications and revenue, the split by delivery type, and
- * enrollments per year. The by-type bars follow the Enrollments / Revenue toggle.
+ * enrollments per year. The by-type list follows the Enrollments / Revenue toggle.
  */
 @Component({
   selector: 'lfx-training-enroll',
@@ -55,7 +54,6 @@ export class TrainingEnrollComponent {
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly barClass = HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS;
   protected readonly metric = signal<HealthMetricsTrainingEnrollmentMetric>(HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS[0].id);
   protected readonly metricOptions: FilterPillOption[] = [...HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS];
 
@@ -153,7 +151,7 @@ export class TrainingEnrollComponent {
 
   /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
   private buildChart(trend: HealthMetricsTrainingEnrollmentYearView[]): ChartData<'bar'> {
-    const color = lfxColors.blue[600];
+    const color = lfxColors.blue[500];
 
     return {
       labels: trend.map((year) => String(year.year)),

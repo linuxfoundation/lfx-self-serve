@@ -209,7 +209,7 @@ class PersonaService {
 
 **User pin behavior:** `setPersona()` records a `userSelected` flag persisted to the cookie. On refresh, an explicit choice is preserved as long as the persona is still in the detected set; if the role was revoked upstream the pin is dropped and detection's primary persona takes over.
 
-Typical consumers: `LensService` (lens gating), `sidebar.component.ts` (nav items), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
+Typical consumers: `LensService` (lens gating), `SidebarNavService` (nav items rendered by `NavbarComponent`), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
 
 ## End-to-end data flow
 

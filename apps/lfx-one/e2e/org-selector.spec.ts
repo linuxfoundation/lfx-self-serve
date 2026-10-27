@@ -71,7 +71,7 @@ function skipWhenAuthMissing(page: Page): void {
 // unconditionally; an administrator's panel legitimately has none.
 async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
-  // inside <lfx-sidebar>; the test ID is identical across desktop and mobile.
+  // inside <lfx-navbar>; the test ID is identical across desktop and mobile.
   const trigger = page.getByTestId('org-selector');
   await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
   await trigger.click();
@@ -589,7 +589,7 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
 });
 
 // LF-team scenarios (S17–S20). These drive /org/overview rather than APP_HOME because the
-// org-selector slot is ANDed with the me-lens parent input (`sidebar.component.ts`
+// org-selector slot is ANDed with the me-lens parent input (`nav-menu-base.directive.ts`
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
 const ORG_LENS_HOME = '/org/overview';
 
@@ -843,7 +843,7 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
 // Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
 // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
-// hydrating one against the other used to leave "My Engagement" / "Education" sections
+// hydrating one against the other used to leave "Engagement" / "Education" sections
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
@@ -858,7 +858,7 @@ test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)
     });
 
     // The org lens tab and the resolved menu must be consistent: no Me-lens sections remain on screen.
-    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "My Engagement" must not leak into the org sidebar').toHaveCount(0);
+    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "Engagement" must not leak into the org sidebar').toHaveCount(0);
     await expect(page.getByTestId('sidebar-item-education'), 'Me-lens "Education" must not leak into the org sidebar').toHaveCount(0);
   });
 });

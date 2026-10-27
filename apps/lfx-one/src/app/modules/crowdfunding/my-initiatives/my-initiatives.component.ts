@@ -27,10 +27,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { of } from 'rxjs';
 import { catchError, filter, finalize, scan, startWith, switchMap, tap } from 'rxjs/operators';
 import { InitiativesListComponent } from './components/initiatives-list/initiatives-list.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-my-initiatives',
-  imports: [ButtonComponent, EmptyStateComponent, StatCardGridComponent, RouteLoadingComponent, InitiativesListComponent],
+  imports: [ButtonComponent, EmptyStateComponent, StatCardGridComponent, RouteLoadingComponent, InitiativesListComponent, PageHeaderComponent],
   templateUrl: './my-initiatives.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

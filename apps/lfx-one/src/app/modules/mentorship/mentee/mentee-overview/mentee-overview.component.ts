@@ -35,6 +35,8 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
+import { ProgramLinkComponent } from '../../components/program-link/program-link.component';
+
 /**
  * Overview child of the mentee shell. With no applications it shows the empty state and a
  * link to browse programs; otherwise a banner counting the pending applications, one card
@@ -43,7 +45,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule, ProgramLinkComponent],
   providers: [ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

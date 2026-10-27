@@ -1,8 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Each data section reports its reads to the shell, which holds a deep link until they all land.
-     `trend` projects no body: its chart is blocked on a quarterly grain, a follow-up on #2802. -->
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
 <lfx-health-metrics-l2-shell
   #shell
   [sections]="sections"
@@ -10,8 +9,7 @@
   [dataSections]="dataSections"
   [subNavItems]="subNavItems()"
   navLabel="Engagement sections"
-  testIdPrefix="engagement"
-  [crossReference]="crossReference">
+  testIdPrefix="engagement">
   <ng-template lfxHealthMetricsL2Section="participation">
     <lfx-engagement-meeting-participation
       (sectionPicked)="shell.scrollToSection($event)"
@@ -24,6 +22,10 @@
       (countsChange)="groupCounts.set($event)"
       (reading)="shell.sectionReading('committees')"
       (settled)="shell.sectionSettled('committees')" />
+  </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="trend">
+    <lfx-engagement-attendance-trend (reading)="shell.sectionReading('trend')" (settled)="shell.sectionSettled('trend')" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="orgs">

@@ -31,6 +31,17 @@ export function orgClaOpenLabel(group: Pick<OrgClaGroup, 'claGroupName' | 'signi
 }
 
 /**
+ * A signed CCLA the viewer is not a CLA Manager of (#3852).
+ *
+ * `signed` is required, not redundant: the signing preview (`orgClaPreviewGroup`) also carries
+ * `viewerIsClaManager: false`, yet anyone may start signing it, so dropping the check would mark
+ * the preview view only.
+ */
+export function orgClaIsViewOnly(group: Pick<OrgClaGroup, 'signed' | 'viewerIsClaManager'>): boolean {
+  return group.signed === true && group.viewerIsClaManager !== true;
+}
+
+/**
  * Coverage chips for one row, each saying whether it stands for a list worth opening.
  *
  * Only the "Covers N projects" chip does. A foundation name says where the agreement sits, and a

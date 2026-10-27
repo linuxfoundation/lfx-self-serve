@@ -264,6 +264,16 @@ export interface MailingListMember {
 }
 
 /**
+ * Upstream single-member GET response (`GroupsioMember`)
+ * @description Carries `id` instead of the index document's `uid`, and no `mailing_list_uid` —
+ * list membership must be verified against the query-service index instead
+ */
+export interface GroupsIOMemberResponse extends Omit<MailingListMember, 'uid' | 'mailing_list_uid'> {
+  /** Unique member identifier */
+  id: string;
+}
+
+/**
  * Request payload for creating a mailing list member
  * @description Input payload for adding members to mailing lists
  */

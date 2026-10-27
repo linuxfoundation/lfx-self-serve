@@ -1,9 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type {
+  IndexedVoteResponseStatus,
+  IndividualVoteStatus,
+  PollStatus,
+  PollType,
+  VoteResponseStatus,
+  VoteRowParticipationState,
+  VoteVoterStatus,
+} from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
+import type { GroupsIOMailingList } from './mailing-list.interface';
 
 /** Complete authorization-scoped management totals at one server time snapshot. */
 export interface VoteSummary {
@@ -11,6 +20,19 @@ export interface VoteSummary {
   closing_soon: number;
   /** RFC3339 snapshot used to evaluate the closing window. */
   as_of: string;
+}
+
+/**
+ * Per-status vote totals for the votes table's status tabs (#3687).
+ * @description Buckets use the normalized poll status. `all` counts every vote in the matching
+ * collection, including rows whose status is unrecognized after normalization, so it equals the
+ * All-tab list total; unrecognized rows fall into no per-status bucket.
+ */
+export interface VoteStatusCounts {
+  all: number;
+  active: number;
+  disabled: number;
+  ended: number;
 }
 
 /** Closing-filtered lists carry their authoritative pre-pagination count. */
@@ -103,6 +125,14 @@ export interface PollAnswer {
   ranked_user_choice: UserChoice[];
   /** Total voters for this question */
   total_voters?: number;
+}
+
+/** Indexed answer wire format: upstream omits empty choice arrays. */
+export interface IndexedPollAnswer extends Omit<PollAnswer, 'user_choice' | 'ranked_user_choice'> {
+  /** Selected choices for non-ranked questions; omitted when empty */
+  user_choice?: UserChoice[];
+  /** Ranked choices for ranked questions; omitted when empty */
+  ranked_user_choice?: UserChoice[];
 }
 
 /**
@@ -212,6 +242,8 @@ export interface Vote {
   end_time_timezone?: string;
   /** Current poll status */
   status: PollStatus;
+  /** BFF list decoration: effective vote#writer access, including committee-derived grants. */
+  writer?: boolean;
   /** V2 project UID */
   project_uid: string;
   /** Project display name. Carried by indexed list rows (and optionally by the upstream detail payload); the authenticated BFF detail response (GET /api/votes/:uid) re-enriches it canonically from the project record. */
@@ -252,12 +284,45 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Personal feed retains usable votes even when enumeration or required detail reads are incomplete. */
+export interface MyVotesResponse {
+  votes: Vote[];
+  /** Only true when all invitation pages and referenced vote details loaded successfully. */
+  complete: boolean;
+}
+
+/** Legacy arrays have unknown completeness and must not be presented as exact totals. */
+export type MyVotesApiResponse = MyVotesResponse | Vote[];
+
 /** Optional personal-feed filter shared by the summary and client-side table. */
 export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';
+
+/**
+ * Participation summary for one votes-table row
+ * @description Derived from the row's indexed `num_response_received` / `total_voting_request_invitations`; counts are
+ * null when the state carries none, and `percent` is set only for `PROGRESS` (clamped to 0-100)
+ */
+export interface VoteRowParticipation {
+  state: VoteRowParticipationState;
+  /** Responses received (abstentions included), or null when not shown */
+  responses: number | null;
+  /** Invited electorate, or null when not shown */
+  invited: number | null;
+  /** Rounded response rate (0-100) for PROGRESS summaries; capped at 99 until responses reach the invited total. */
+  percent: number | null;
+  /** Visible summary text */
+  label: string;
+  /** Muted follow-up text (e.g. "Total unavailable"), or null */
+  secondaryLabel: string | null;
+  /** Screen-reader summary for an active PROGRESS bar, otherwise null. */
+  ariaLabel: string | null;
+}
 
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;
+  /** Participation summary for the Responses cell in management contexts. */
+  participation: VoteRowParticipation;
   /** Canonical edit-link commands derived from the row's own project tier (`/foundation/...` vs `/project/...`); flat `/votes/:uid/edit` fallback when the tier is unknown (lensRedirectGuard resolves it). */
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
@@ -330,6 +395,137 @@ export interface IndexedVoteResponse {
   vote_status?: string;
   /** Whether the voter has been removed from the poll's eligible list */
   voter_removed?: boolean;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role at invitation time */
+  user_role?: string;
+  /** Invitee's voting eligibility status (e.g. `'Voting Rep'`) */
+  user_voting_status?: string;
+  /** When the ballot was cast — empty until the invitee votes; ITX rewrites it on every ballot change */
+  vote_creation_time?: string;
+  /** Whether the submitted ballot was an abstention */
+  abstained?: boolean;
+  /** The invitee's answers to the poll questions — empty until the invitee votes */
+  poll_answers?: IndexedPollAnswer[];
+  /** The invitee's free-text responses to comment prompts — may be present on an abstention */
+  comment_responses?: CommentResponseInput[];
+  /** Invitee's organization identifier */
+  user_org_id?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
+}
+
+/**
+ * Eligible voter who has not voted yet, returned by GET /api/votes/:uid/reminder-recipients (#3769).
+ * An identity-only projection of an `IndexedVoteResponse` row — ballot content (`poll_answers`,
+ * `comment_responses`) is never forwarded.
+ */
+export interface VoteReminderRecipient {
+  /** Vote response row identifier — the ID `bulk_resend` expects */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+}
+
+/**
+ * Invited voter with their participation status and current ballot, returned by
+ * GET /api/votes/:uid/voters (#3911) to vote writers on named votes.
+ * @description A projection of an `IndexedVoteResponse` row. The ballot fields (`submitted_at`,
+ * `poll_answers`, `comment_responses`) are optional so a participation-only mode for
+ * pseudo-anonymous votes (#3916) can omit them without changing the response shape.
+ */
+export interface VoteVoter {
+  /** Vote response row identifier */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's LFID username — empty when the invitation was email-only */
+  username?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
+  /** Whether the invitee has voted, abstained or not voted yet */
+  status: VoteVoterStatus;
+  /** When the current ballot was last submitted — absent until the invitee votes */
+  submitted_at?: string;
+  /** The invitee's current answers to the poll questions */
+  poll_answers?: PollAnswer[];
+  /** The invitee's current responses to comment prompts */
+  comment_responses?: CommentResponseInput[];
+}
+
+/** Request body for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderRequest {
+  /** Vote response row identifiers (`VoteReminderRecipient.uid`) to remind */
+  recipient_ids: string[];
+}
+
+/** Response for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderResponse {
+  /** Number of distinct voters the reminder was sent to */
+  recipient_count: number;
+}
+
+/**
+ * Identity-only vote recipient for the on-demand close summary (#3662). Same underlying
+ * `vote_response` row as `VoteVoter`, but not gated on `pseudo_anonymity` — the summary email
+ * carries only aggregate results, never an individual ballot, so a pseudo-anonymous vote can still
+ * send it.
+ */
+export interface VoteSummaryRecipient {
+  /** Vote response row identifier */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+}
+
+/** Response for POST /api/votes/:uid/summary (#3662) */
+export interface SendVoteSummaryResponse {
+  /** Number of distinct recipients the summary was sent to */
+  recipient_count: number;
+  /** Number of recipients the send failed for (e.g. a rejected address) — a partial send is not an error */
+  failed_count: number;
+}
+
+/** Data the on-demand vote-close summary email (#3662) is rendered from. */
+export interface VoteSummaryEmailContext {
+  /** Vote title */
+  vote_title: string;
+  /** Number of eligible recipients */
+  num_recipients: number;
+  /** Number of votes cast */
+  num_votes_cast: number;
+  /** Number of voters who abstained */
+  num_abstained: number;
+  /** Per-question results, pre-formatted for the email body */
+  questions: VoteSummaryEmailQuestion[];
+}
+
+/** One question's results as rendered in the summary email body. */
+export interface VoteSummaryEmailQuestion {
+  /** Question prompt */
+  prompt: string;
+  /** Per-choice results, pre-formatted for display (e.g. "62%") */
+  choices: { text: string; vote_count: number; percentage: string }[];
 }
 
 /**
@@ -610,10 +806,10 @@ export interface PollResultQuestion {
 export interface PollQuestionResult {
   /** Question definition */
   question: PollResultQuestion;
-  /** Generic/plurality vote counts per choice */
-  generic_choice_votes: VoteResultChoiceCount[];
-  /** Ranked-choice vote results per choice */
-  ranked_choice_votes: RankedChoiceVoteResult[];
+  /** Generic/plurality vote counts per choice — upstream omits this with `omitempty` for a ranked-choice question */
+  generic_choice_votes?: VoteResultChoiceCount[];
+  /** Ranked-choice vote results per choice — upstream omits this with `omitempty` for a generic-choice question */
+  ranked_choice_votes?: RankedChoiceVoteResult[];
   /** Winner information for ranked-choice voting */
   ranked_choice_winner_info?: RankedChoiceWinnerInfo;
   /** IRV round-by-round elimination summary */
@@ -665,10 +861,10 @@ export interface PollCommentResult {
 }
 
 /**
- * Drawer-side view model for a single comment response
+ * Results view model for a single comment response
  * @description PollCommentResponse with `comment_text` pre-split into paragraphs (blank-line
  * separated, single line breaks preserved within a paragraph) so the template can render
- * comment paragraphs directly. Assembled by VoteResultsDrawerComponent.
+ * comment paragraphs directly. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
@@ -676,10 +872,10 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Drawer-side view model for one comment prompt's results page
+ * Results view model for one comment prompt's results page
  * @description PollCommentResult with `responses` decorated for display and sliced to the
  * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteResultsDrawerComponent.
+ * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
   /** Page-sliced responses with display-ready paragraph splits */
@@ -882,14 +1078,27 @@ export interface UpdateVoteRequest {
   winning_threshold_percentage?: number;
 }
 
-/** Per-rank distribution row for a ranked-choice question (drawer-side projection of RankedChoiceVoteResult.rank_counts). */
+/**
+ * Request body for extending a vote/poll's deadline
+ * @description Proxies to the dedicated extend_vote upstream endpoint (POST /votes/{uid}/extend),
+ * which — unlike updateVote — is permitted on an active vote. Both fields are required upstream.
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface ExtendVoteRequest {
+  /** New poll end/deadline timestamp in RFC3339/ISO format. Must be later than the vote's current end_time. */
+  end_time: string;
+  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") — ITX honors end_time exactly as sent in this timezone. */
+  end_time_timezone: string;
+}
+
+/** Per-rank distribution row for a ranked-choice question (projection of RankedChoiceVoteResult.rank_counts, built by `buildRankedQuestionViews`). */
 export interface RankCountDistribution {
   rank: number;
   count: number;
   percentage: number;
 }
 
-/** Per-choice rank distribution for a ranked-choice question (drawer-side projection of PollQuestionResult.ranked_choice_votes). */
+/** Per-choice rank distribution for a ranked-choice question (projection of PollQuestionResult.ranked_choice_votes, built by `buildRankedQuestionViews`). */
 export interface RankedChoiceDistribution {
   choiceId: string;
   choiceText: string;
@@ -897,7 +1106,7 @@ export interface RankedChoiceDistribution {
   rankCounts: RankCountDistribution[];
 }
 
-/** Drawer-side view model for a ranked-choice question — projection of PollQuestionResult assembled by VoteResultsDrawerComponent.initRankedQuestions. */
+/** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
   prompt: string;
@@ -939,4 +1148,24 @@ export interface VotePermalinkState {
   /** Transient failure — retry card, HTTP 200 */
   error: boolean;
   target: VotePermalinkTarget | null;
+}
+
+/** Data passed to the mailing-list picker opened from a votes-table row when the committee has several lists (#3658). */
+export interface VoteMailingListReminderDialogData {
+  vote: VoteTableRow;
+  /** The committee's mailto-safe lists — already filtered by the caller. */
+  lists: GroupsIOMailingList[];
+}
+
+/** Subject and plain-text body of a mailing-list reminder draft, before `mailto:` encoding. */
+export interface VoteMailingListReminderDraft {
+  subject: string;
+  body: string;
+}
+
+/** One radio choice in the mailing-list picker when the committee has several lists. */
+export interface VoteMailingListReminderListOption {
+  uid: string;
+  /** `{group_name} ({address})` — the radio wrapper's label is a plain string. */
+  label: string;
 }

@@ -8,11 +8,42 @@
 
 import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interface';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from './mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
 
-/** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
+/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
+
+/** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
+export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
+/** Only automatic timer reads skip older entries; not a discovery or retention limit. */
+export const MKTG_STARTED_RUN_POLL_WINDOW_MS = 6 * MKTG_RUN_POLL.timeoutMs;
+/** Bounded HEAD/GET workers; filter by agent after the body read, before Guild. */
+export const MKTG_STARTED_RUN_READ_CONCURRENCY = 4;
+export const MKTG_STARTED_RUN_DISCOVERY_LIMIT = 128;
+export const MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT = 256;
+/** Do not memoize S3's still-current write second; all local writes invalidate the cache too. */
+export const MKTG_STARTED_RUN_CACHE_STABLE_MS = 2000;
+/** Base64 encoding this UTF-8 snapshot stays below the total object-metadata budget. */
+export const MKTG_STARTED_RUN_FAILURE_BYTES = 768;
+/** ASCII turn-id ledger; never evict accepted ACKs to make room for another turn. */
+export const MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES = 384;
+/** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
+export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
+/** Automatic progress reads back off on availability failures, not on human questions pauses. */
+export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: 8 * MKTG_RUN_POLL.intervalMs } as const;
+export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
+export const MKTG_STARTED_RUN_ATTEMPT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+/** Metadata within one attempt advances only; explicit retries have a newer retry-at. */
+export const MKTG_STARTED_RUN_STATE_ORDER: Record<MktgStoredDocumentRunState, number> = {
+  writing: 0,
+  questions: 1,
+  storing: 2,
+  failed: 3,
+  superseded: 4,
+  completed: 5,
+};
 
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
 export const MKTG_DOCUMENT_STORE_KEY_PREFIX = 'documents';
@@ -42,7 +73,12 @@ export const MKTG_DOCUMENT_ID_REGEX = /^(living|run-[0-9a-f]{24})$/;
 export const MKTG_LEGACY_REVISION_ID_PREFIX = 'legacy-';
 
 /** Shape of a revision id: `{sequence}-{sha256}` for a stored revision, `legacy-{sha256}` for a not-yet-migrated one. */
-export const MKTG_REVISION_ID_REGEX = /^([0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
+export const MKTG_REVISION_ID_REGEX = /^((?!000000)[0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
+
+/** Bounded metadata fan-out and optimistic write attempts. */
+export const MKTG_DOCUMENT_READ_CONCURRENCY = 4;
+export const MKTG_DOCUMENT_WRITE_ATTEMPTS = 8;
+export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {
@@ -71,6 +107,7 @@ function intakeDocumentName(catalogAgentId: string): string {
 export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   {
     agentKey: 'brand-kit',
+    structuredView: 'brand-kit',
     kind: 'living',
     catalogAgentId: 'brand-kit',
     agentName: catalogAgentName('brand-kit'),
@@ -96,6 +133,24 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     itemLabel: intakeDocumentName('icp'),
     legacyArtifactKey: 'icp',
   },
+  // Stored as JSON revisions from its first run: there is no pre-revision copy to read.
+  {
+    agentKey: 'boilerplates',
+    kind: 'living',
+    catalogAgentId: 'boilerplates',
+    agentName: catalogAgentName('boilerplates'),
+    label: intakeDocumentName('boilerplates'),
+    itemLabel: intakeDocumentName('boilerplates'),
+  },
+  // The FAQ was stored as revisions from its first run: it has no pre-revision partition.
+  {
+    agentKey: 'faq',
+    kind: 'living',
+    catalogAgentId: 'faq',
+    agentName: catalogAgentName('faq'),
+    label: intakeDocumentName('faq'),
+    itemLabel: intakeDocumentName('faq'),
+  },
   {
     agentKey: 'aeo-geo',
     kind: 'run',
@@ -115,16 +170,28 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   {
     agentKey: 'member-360',
     kind: 'run',
-    // Member 360 has no catalog entry yet, so its name is spelled out here.
-    agentName: 'Member 360 Agent',
+    catalogAgentId: 'member-360',
+    agentName: catalogAgentName('member-360'),
     label: 'Member 360',
     itemLabel: 'Member 360 run',
   },
 ];
 
+/** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
+export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
+
+/** Maximum status characters stored in S3 metadata, including the truncation ellipsis. */
+export const MKTG_REVISION_STATUS_METADATA_MAX_CHARS = 200;
+
+/** Historical attribution placeholder when no author record was stored. */
+export const MKTG_REVISION_UNKNOWN_AUTHOR_LABEL = 'no name (stored before names were recorded)';
+
+/** Neutral attribution placeholder when a stored author's display name is unavailable. */
+export const MKTG_REVISION_NAME_UNAVAILABLE_LABEL = 'name unavailable';
+
 /** "How it was made" for a generated revision, by intake mode. */
 export const MKTG_REVISION_GENERATED_LABEL: Record<MktgArtifactIntakeMode, string> = {
-  form: 'Generated from the form',
-  conversational: 'Generated in a conversation with the agent',
-  prefill: 'Generated from the form with your existing documents (pre-fill)',
+  form: 'generated from the form',
+  conversational: 'generated in a conversation with the agent',
+  prefill: 'generated from the form with your existing documents (pre-fill)',
 };

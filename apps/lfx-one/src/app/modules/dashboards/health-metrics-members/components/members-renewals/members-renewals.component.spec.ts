@@ -105,6 +105,8 @@ describe('MembersRenewalsComponent', () => {
     expect(getMembersRenewals).toHaveBeenCalledWith({ foundationSlug: 'acme', window: '90_days', offset: 0, pageSize: 10 });
     expect(text('members-renewals-window')).toBe('Next 90 days Next 180 days This year');
     expect(text('members-renewals-value')).toBe('$185K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-renewals-hero')?.classList).not.toContain('border');
     expect(text('members-renewals-due')).toBe('3');
     expect(text('members-renewals-count')).toBe('3 renewals');
     expect(query('members-renewals-coverage')).toBeNull();
@@ -112,27 +114,31 @@ describe('MembersRenewalsComponent', () => {
     expect(counts).toEqual([null, 3]);
   });
 
-  it('renders a renewal row the way the design draws it, without a status column', async () => {
+  it('renders a renewal row the way the design draws it, without a status or due-in column', async () => {
     await render();
 
     expect(text(`members-renewals-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
     expect(text(`members-renewals-row-${ACCOUNT_ID}-tier`)).toBe('Gold Membership');
     expect(text(`members-renewals-row-${ACCOUNT_ID}-date`)).toBe('Nov 18, 2026');
-    expect(text(`members-renewals-row-${ACCOUNT_ID}-days`)).toBe('In 40 days');
+    expect(query(`members-renewals-row-${ACCOUNT_ID}-days`)).toBeNull();
     expect(text(`members-renewals-row-${ACCOUNT_ID}-dues`)).toBe('$20K');
     expect(query(`members-renewals-row-${ACCOUNT_ID}-balance`)).toBeNull();
     expect(query(`members-renewals-row-${ACCOUNT_ID}-renewed`)).toBeNull();
-    expect(fixture.nativeElement.querySelectorAll('th')).toHaveLength(5);
+    expect([...fixture.nativeElement.querySelectorAll('th')].map((th: HTMLElement) => th.textContent?.trim())).toEqual([
+      'Organization',
+      'Tier',
+      'Renewal date',
+      'Dues',
+    ]);
   });
 
-  it('marks a renewed membership and drops its countdown', async () => {
+  it('marks a renewed membership', async () => {
     await render(response({ rows: [renewal({ hasRenewed: true, daysUntilRenewal: 12 })] }));
 
     const marker = query(`members-renewals-row-${ACCOUNT_ID}-renewed`);
     expect(marker?.textContent?.trim()).toBe('Renewed');
     expect(marker?.classList).toContain('text-emerald-700');
     expect(marker?.querySelector('i')?.classList).toContain('fa-circle-check');
-    expect(text(`members-renewals-row-${ACCOUNT_ID}-days`)).toBe('—');
   });
 
   it('marks a renewing member that carries an outstanding balance', async () => {

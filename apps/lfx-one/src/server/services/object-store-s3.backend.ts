@@ -4,6 +4,7 @@
 import {
   BucketLocationConstraint,
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -13,7 +14,9 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import { ErasableObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+
+import { PreconditionFailedError } from '../errors';
 
 /**
  * The S3 backend of the object store — one instance per purpose-keyed bucket,
@@ -22,7 +25,7 @@ import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectSt
  * the service orchestrates and logs the same way whichever backend serves a
  * purpose. Deployed environments always run on this backend.
  */
-export class S3ObjectStoreBackend implements ObjectStoreBackend {
+export class S3ObjectStoreBackend implements ErasableObjectStoreBackend {
   public readonly kind = 's3' as const;
 
   public constructor(
@@ -92,23 +95,44 @@ export class S3ObjectStoreBackend implements ObjectStoreBackend {
   }
 
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: input.body,
-        ContentType: input.contentType,
-        CacheControl: input.cacheControl,
-        ...(input.metadata && { Metadata: input.metadata }),
-      })
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: input.body,
+          ContentType: input.contentType,
+          CacheControl: input.cacheControl,
+          ...(input.metadata && { Metadata: input.metadata }),
+          ...(input.ifMatch && { IfMatch: input.ifMatch }),
+          ...(input.ifNoneMatch && { IfNoneMatch: input.ifNoneMatch }),
+        })
+      );
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+      if (status === 412 || status === 409) {
+        throw new PreconditionFailedError();
+      }
+      throw error;
+    }
+  }
+
+  public async deleteObject(key: string): Promise<void> {
+    try {
+      // Uses the deployed DeleteObject grant, never version-specific operations.
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (error) {
+      // A fresh/missing bucket or key contains no current profile to delete.
+      if (isConfirmedNotFound(error)) return;
+      throw error;
+    }
   }
 
   public async getObject(key: string): Promise<ObjectStoreReadResult | null> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       const body = (await response.Body?.transformToString('utf-8')) ?? '';
-      return { body, metadata: response.Metadata ?? {} };
+      return { body, metadata: response.Metadata ?? {}, etag: response.ETag };
     } catch (error) {
       if (error instanceof NoSuchKey || isConfirmedNotFound(error)) {
         return null;

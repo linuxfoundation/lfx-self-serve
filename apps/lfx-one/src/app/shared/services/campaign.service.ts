@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -30,6 +30,7 @@ import {
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -59,6 +60,8 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  CreativeAssetPlan,
+  CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
@@ -84,9 +87,11 @@ import type {
   CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovals,
+  CampaignServiceMetaAds,
   CampaignServiceMetaAdSets,
   CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
@@ -99,13 +104,15 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
+import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
 
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
+  /** The latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
+  private creativeAssetUpload: { briefId: string; upload$: Observable<CreativeAssetUploadResult>; cancel: Subject<void> } | null = null;
   private readonly sse = inject(SseService);
 
   public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
@@ -174,6 +181,33 @@ export class CampaignService {
       }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
+  }
+
+  /**
+   * Approve a brief that is already stored in campaign-service, without re-saving it.
+   *
+   * The companion `persistBrief` could not be: a save APPROVES as its last step, but a save also
+   * rewrites the row, and the restore path exists precisely to avoid that — re-saving a restored
+   * brief would PUT the client's reconstruction over the stored event details, copy, keywords and
+   * targeting. So a restored brief that upstream holds as `draft` had no route to `approved`, and
+   * campaign creation refuses anything else.
+   *
+   * Takes NO body. The brief is the path, the foundation is `?project=` as on every other brief
+   * call, and the validator rides as `If-Match`, where a validator belongs — there is no body for
+   * it to travel in, and `approve-brief` upstream requires one.
+   *
+   * `knownEtag` must be the validator from the read that put the displayed brief on screen, and
+   * is REQUIRED rather than defaulted. A null one is accepted by the type and then refused by the
+   * BFF with `conflict: 'unverified-validator'` — `approveStoredBrief` reads nothing and approves
+   * nothing, because approving a row this page cannot prove is the one it restored is exactly the
+   * defect this path was built to close (#3801). The default argument this parameter used to
+   * carry made that refusal reachable by omission, so it is gone: a caller with no validator has
+   * to say so, and the honest answer for it is a fresh read, not an approval.
+   */
+  public approveBrief(projectSlug: string, briefId: string, knownEtag: string | null): Observable<CampaignBriefApproveResult> {
+    const params = new HttpParams().set('project', projectSlug);
+    const headers = knownEtag !== null && knownEtag !== '' ? new HttpHeaders({ 'If-Match': knownEtag }) : undefined;
+    return this.http.post<CampaignBriefApproveResult>(`/api/campaigns/brief/${encodeURIComponent(briefId)}/approve`, null, { params, headers });
   }
 
   /**
@@ -276,6 +310,87 @@ export class CampaignService {
     return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }>('/api/campaigns/create', request, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
+  }
+
+  /**
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit create names as
+   * `imageAssetId`. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
+   * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
+   * `createCampaign`, because they are path segments upstream.
+   */
+  public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
+    // A new upload replaces any other outright, and aborts it: two concurrent uploads compete for
+    // campaign-service's upload budget, which sheds with a 503, so a discarded one could fail the pick.
+    this.cancelCreativeAssetUpload();
+    const cancel = new Subject<void>();
+    // Shared and replayed, never reset: the Implementation tab is destroyed on a tab switch, and
+    // unsubscribing must not abort the upload or lose its answer. A remount resumes it by brief
+    // (`resumeCreativeAssetUpload`) and gets the id, or the refusal, it would have seen. Only
+    // `cancel` (a new pick, or Remove) aborts the request.
+    const upload$ = this.http
+      .post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
+        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        headers: { 'Content-Type': file.type },
+      })
+      .pipe(
+        takeUntil(cancel),
+        share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
+      );
+    // Only the latest upload is kept. The tab resumes the brief it is showing, so an older one (an
+    // abandoned brief, a left page) has no one to resume it and would otherwise hold its image, up
+    // to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
+    this.creativeAssetUpload = { briefId, upload$, cancel };
+    return upload$;
+  }
+
+  /** The brief's latest upload, in flight or answered but not yet taken up, or null. */
+  public resumeCreativeAssetUpload(briefId: string): Observable<CreativeAssetUploadResult> | null {
+    return this.creativeAssetUpload?.briefId === briefId ? this.creativeAssetUpload.upload$ : null;
+  }
+
+  /** Drop `upload$` once its answer is taken up, if it is still the latest. The request has finished. */
+  public forgetCreativeAssetUpload(upload$: Observable<CreativeAssetUploadResult>): void {
+    if (this.creativeAssetUpload?.upload$ === upload$) {
+      this.creativeAssetUpload = null;
+    }
+  }
+
+  /** Abort the latest upload and drop it: replaced by a new pick, or removed. */
+  public cancelCreativeAssetUpload(): void {
+    this.creativeAssetUpload?.cancel.next();
+    this.creativeAssetUpload = null;
+  }
+
+  /**
+   * Which of a brief's stored images fill which platform image slots, and what is still missing.
+   *
+   * A pure read — nothing is attached to anything, so it is safe to re-run whenever the library or
+   * the platform selection changes.
+   *
+   * `platforms` is APPENDED once per entry (`?platforms=a&platforms=b`), which is the repeatable
+   * form campaign-service reads; `HttpParams.set` with a joined string would be read as one
+   * platform named "a,b" and silently match nothing. An empty array appends nothing, and absent
+   * means every platform the service publishes slot rules for.
+   *
+   * The response's `platforms` is what the service actually planned for, NOT an echo of the
+   * request: a platform with no published slot rules is dropped rather than refused, so a caller
+   * must compare the two before telling an operator their library is ready.
+   */
+  public getCreativeAssetPlan(projectSlug: string, briefId: string, platforms: string[] = []): Observable<CreativeAssetPlan> {
+    const params = platforms.reduce(
+      (carry, platform) => carry.append('platforms', platform),
+      new HttpParams().set('project', projectSlug).set('brief_id', briefId)
+    );
+    // Logged and rethrown, never defaulted: a plan with no gaps is exactly how a launch-ready
+    // library reads, so a defaulted empty plan would state the opposite of what happened. The
+    // caller renders the failure as such (frontend-checklist §13).
+    return this.http.get<CreativeAssetPlan>('/api/campaigns/brief/creative-assets/plan', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the creative asset plan:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {
@@ -519,12 +634,12 @@ export class CampaignService {
   }
 
   /**
-   * Add negative keywords to one Microsoft Advertising, Reddit or X campaign.
+   * Add negative keywords to one Google Ads, Microsoft Advertising, Reddit or X campaign.
    *
    * NOT atomic and POSITIONAL: `results[i]` answers `negativeKeywords[i]`, each with its own outcome,
    * so the caller zips them onto the list it sent. No etag: nothing is persisted on the row.
    * `revision` is Reddit's, from the keyword-targeting read; it is put in the body only when given,
-   * because Microsoft Advertising and X refuse the field whenever it is present.
+   * because Google Ads, Microsoft Advertising and X refuse the field whenever it is present.
    */
   public addNegativeKeywords(
     projectSlug: string,
@@ -574,6 +689,35 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
+  }
+
+  /**
+   * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
+   * micro-units: USD on LinkedIn, the ad account's own currency elsewhere; the response names neither) and CTR.
+   *
+   * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
+   * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the
+   * brief-wide read could not measure. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: campaign-service's 400
+   * means the platform has no metrics read, 409 that the campaign cannot be measured yet (its
+   * sentence says why). The error is logged and rethrown; the caller decides what the row shows.
+   */
+  public getCampaignMetrics(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceCampaignMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to read campaign live metrics', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
@@ -784,6 +928,30 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<CampaignServiceMetaAdSets>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets`, { params });
+  }
+
+  /** The ads under one Meta ad set and their delivery over `window`. Read-only: there is no per-ad lever. */
+  public listMetaAds(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    adSetId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceMetaAds> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window) {
+      params = params.set('window', window);
+    }
+    // Logged and rethrown, never defaulted: an empty list would read as "no ads", and the section
+    // states a failed read as such.
+    return this.http
+      .get<CampaignServiceMetaAds>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/ads`, { params })
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to list Meta ads', error);
+          return throwError(() => error);
+        })
+      );
   }
 
   /**

@@ -191,6 +191,16 @@ describe('CommitteeService — mailing_lists enrichment', () => {
     service = new CommitteeService();
   });
 
+  it.each([undefined, false, true])('keeps best-effort committee paging unless requireComplete=%j opts into failure', async (requireComplete) => {
+    const failure = new MicroserviceError('Later committee page failed', 400, 'BAD_REQUEST');
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'c1', name: 'Synthetic TOC' }], 'next')).mockRejectedValue(failure);
+    const result = service.getCommittees(req, { tags: 'project_uid:project-1' }, { skipMailingListEnrichment: true, requireComplete });
+    if (requireComplete) await expect(result).rejects.toBe(failure);
+    else await expect(result).resolves.toMatchObject([{ uid: 'c1' }]);
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'committee', tags: 'project_uid:project-1' });
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
+  });
+
   it('getMyCommittees attaches a deduplicated list of refs per committee, and an empty array when there are none', async () => {
     routeUpstream([
       // Same committee referenced twice on one list, and the list also shared with c2.
@@ -1308,6 +1318,66 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
     const rows = await service.getMyPendingInvitations(req, 'invitee@example.com');
 
     expect(rows.map((r) => r.uid).sort()).toEqual(['legacy-no-expiry', 'unparseable-expiry']);
+  });
+});
+
+describe.each(['getCommitteeMembers', 'getCommitteeInvites'] as const)('CommitteeService.%s — complete import snapshots', (method) => {
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+  });
+
+  it('fetches every page and consumes the import-only flag without mutating caller filters', async () => {
+    const first = { uid: 'record-1' };
+    const second = { uid: 'record-2' };
+    const query = { require_complete: 'true', name: 'Example', page_size: '1', page_token: 'ignored' };
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: first }], page_token: 'next-page' }).mockResolvedValueOnce({ resources: [{ data: second }] });
+
+    expect(await new CommitteeService()[method](req, 'committee-1', query)).toEqual([first, second]);
+    expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([
+      { type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite', tags: 'committee_uid:committee-1', name: 'Example' },
+      {
+        type: method === 'getCommitteeMembers' ? 'committee_member' : 'committee_invite',
+        tags: 'committee_uid:committee-1',
+        name: 'Example',
+        page_token: 'next-page',
+      },
+    ]);
+    expect(query).toEqual({ require_complete: 'true', name: 'Example', page_size: '1', page_token: 'ignored' });
+  });
+
+  it('rejects the whole import snapshot when a later page exhausts server-error retries', async () => {
+    const failure = Object.assign(new Error('later page unavailable'), { status: 503 });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { uid: 'record-1' } }], page_token: 'next-page' }).mockRejectedValue(failure);
+
+    await expect(new CommitteeService()[method](req, 'committee-1', { require_complete: 'true' })).rejects.toBe(failure);
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    for (const call of proxyRequest.mock.calls.slice(1)) {
+      expect(call[4]).toMatchObject({ page_token: 'next-page' });
+      expect(call[4]).not.toHaveProperty('require_complete');
+    }
+  });
+
+  it.each([undefined, 'false', ['true']])('preserves ordinary partial-result behavior for require_complete=%j', async (flag) => {
+    const first = { uid: 'record-1' };
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: first }], page_token: 'next-page' }).mockRejectedValueOnce(new Error('later page unavailable'));
+
+    expect(await new CommitteeService()[method](req, 'committee-1', { require_complete: flag })).toEqual([first]);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[0][4]).not.toHaveProperty('require_complete');
+  });
+});
+
+describe('CommitteeService.getCommitteeMembers — internal strict pagination', () => {
+  it('does not let the HTTP flag disable an internal strict caller', async () => {
+    proxyRequest.mockReset();
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    const failure = new Error('later page unavailable');
+    proxyRequest.mockResolvedValueOnce({ resources: [], page_token: 'next-page' }).mockRejectedValueOnce(failure);
+
+    await expect(new CommitteeService().getCommitteeMembers(req, 'committee-1', { require_complete: 'false' }, { failOnPartial: true })).rejects.toBe(failure);
   });
 });
 

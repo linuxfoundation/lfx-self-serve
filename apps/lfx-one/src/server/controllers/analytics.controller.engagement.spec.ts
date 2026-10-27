@@ -4,13 +4,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation, getRepresentatives } = vi.hoisted(() => ({
-  getGroupAttendance: vi.fn(),
-  getMeetingParticipation: vi.fn(),
-  getNonMemberParticipation: vi.fn(),
-  getOrgParticipation: vi.fn(),
-  getRepresentatives: vi.fn(),
-}));
+const { getAttendanceTrend, getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation, getRepresentatives } = vi.hoisted(
+  () => ({
+    getAttendanceTrend: vi.fn(),
+    getGroupAttendance: vi.fn(),
+    getMeetingParticipation: vi.fn(),
+    getNonMemberParticipation: vi.fn(),
+    getOrgParticipation: vi.fn(),
+    getRepresentatives: vi.fn(),
+  })
+);
 
 vi.mock('../services/health-metrics-engagement.service', async () => {
   // The range guard is real — a rename of the view's period columns must fail this suite too.
@@ -18,6 +21,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
   return {
     isSupportedEngagementRange: actual.isSupportedEngagementRange,
     HealthMetricsEngagementService: class {
+      public getAttendanceTrend = getAttendanceTrend;
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
       public getNonMemberParticipation = getNonMemberParticipation;
@@ -26,11 +30,12 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
     },
   };
 });
-// The controller constructs eight unrelated domain services; none of them are exercised here.
+// The controller constructs nine unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {} }));
 vi.mock('../services/health-metrics-members.service', () => ({ HealthMetricsMembersService: class {} }));
 vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
 vi.mock('../services/health-metrics-training.service', () => ({ HealthMetricsTrainingService: class {} }));
+vi.mock('../services/health-metrics-overview.service', () => ({ HealthMetricsOverviewService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -47,6 +52,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
@@ -225,6 +231,64 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     getMeetingParticipation.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callParticipation({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callTrend(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementAttendanceTrend(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementAttendanceTrend', () => {
+  beforeEach(() => {
+    getAttendanceTrend.mockReset();
+    getAttendanceTrend.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
+  });
+
+  // The trend always covers the last twelve months, so a range on the wire would be a param the service ignores.
+  it('takes the foundation and project only, and answers with the service response', async () => {
+    const { res, next, promise } = callTrend({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAttendanceTrend).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: null });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
+
+    await callTrend({ foundationSlug: 'acme', projectSlug: 'acme-core' }).promise;
+    expect(getAttendanceTrend).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: 'acme-core' });
+  });
+
+  it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
+    const { next, promise } = callTrend({});
+    await promise;
+
+    expect(getAttendanceTrend).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it.each([
+    ['foundationSlug', { foundationSlug: "acme' OR 1=1" }],
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+  ])('rejects a %s that is not a slug', async (field, queryParams) => {
+    const { next, promise } = callTrend(queryParams);
+    await promise;
+
+    expect(getAttendanceTrend).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe(field);
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getAttendanceTrend.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callTrend({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();

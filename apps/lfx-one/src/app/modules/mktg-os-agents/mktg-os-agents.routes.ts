@@ -2,23 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import type { MktgKitTabPath } from '@lfx-one/shared/interfaces';
 import { authGuard } from '@shared/guards/auth.guard';
 
 export const MKTG_OS_AGENTS_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./mktg-os-agents/mktg-os-agents.component').then((m) => m.MktgOsAgentsComponent),
+    pathMatch: 'full',
+    title: 'Marketing kit',
+    loadComponent: () => import('./mktg-kit/mktg-kit.component').then((m) => m.MktgKitComponent),
     canActivate: [authGuard],
   },
   {
-    // Standalone one-page Brand Kit intake form (dec-brand-kit-intake-form)
-    // with the BFF persistence-receipt retry flow (dec-brand-kit-storage-v2).
-    // Kept routable alongside the generic form-first run shell below; whether
-    // the two surfaces converge is a product decision, not resolved here.
-    // Static path — must precede the `:agentId` matcher.
-    path: 'brand-kit-form',
-    title: 'Brand Kit',
-    loadComponent: () => import('./brand-kit-form/brand-kit-form.component').then((m) => m.BrandKitFormComponent),
+    // The Agents tab is gone: agents are reached from their Kit family. Old links land on the Kit.
+    path: 'agents',
+    redirectTo: '',
+    pathMatch: 'full',
+  },
+  {
+    path: 'requests',
+    title: 'Marketing requests',
+    data: { title: 'Requests', tab: 'requests' satisfies MktgKitTabPath },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'access',
+    title: 'Marketing access',
+    data: { title: 'Access', tab: 'access' satisfies MktgKitTabPath },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
     canActivate: [authGuard],
   },
   {
@@ -34,6 +46,18 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     path: 'documents/:agentKey/:documentId',
     title: 'Document',
     loadComponent: () => import('./mktg-document-view/mktg-document-view.component').then((m) => m.MktgDocumentViewComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'families/:familyId',
+    title: 'Marketing family',
+    loadComponent: () => import('./mktg-family/mktg-family.component').then((m) => m.MktgFamilyComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'member-360',
+    title: 'Member 360',
+    loadComponent: () => import('./member-360-run/member-360-run.component').then((m) => m.Member360RunComponent),
     canActivate: [authGuard],
   },
   {

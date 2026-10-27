@@ -16,6 +16,7 @@ import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { OrgRoiAnnualTrendComponent } from './components/org-roi-annual-trend/org-roi-annual-trend.component';
 import { OrgRoiAssumptionsDrawerComponent } from './components/org-roi-assumptions-drawer/org-roi-assumptions-drawer.component';
@@ -47,6 +48,7 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
 @Component({
   selector: 'lfx-org-roi',
   imports: [
+    PageHeaderComponent,
     OrgRoiKpiCardsComponent,
     OrgRoiAnnualTrendComponent,
     OrgRoiCategoryDonutComponent,

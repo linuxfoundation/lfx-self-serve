@@ -69,7 +69,7 @@ export function negativeKeywordUnconfirmedAdvice(platform: NegativeKeywordCampai
 
 /**
  * Why a FAILED negative keyword was not added. Microsoft names its own machine-readable code.
- * Reddit and X answer only NOT_SENT or REJECTED (campaign-service never returns their text), so
+ * Google Ads, Reddit and X answer only NOT_SENT or REJECTED (campaign-service never returns their text), so
  * those are worded here; any other code is not shown, since it is wire data with no meaning here.
  */
 function negativeKeywordFailedDetail(platform: NegativeKeywordCampaignPlatform, errorCode: unknown): string {

@@ -139,6 +139,8 @@ describe('EventsRevenueComponent', () => {
 
     expect(text('events-revenue-pending')).toBe('All figures pending validation');
     expect(text('events-revenue-headline-value')).toBe('$258K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-revenue-hero')?.classList).not.toContain('border');
     expect(text('events-revenue-headline-delta')).toBe('+6%');
     expect(text('events-revenue-side-registration-value')).toBe('$180K');
     expect(query('events-revenue-side-registration-delta')).not.toBeNull();
@@ -147,14 +149,20 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-side-split-delta')).toBeNull();
   });
 
-  it('lists the events in the period with their goals, leaving an unset goal out', async () => {
+  it('lists the events in the period, each value bold over its goal or a "no goal set" line', async () => {
     await render();
 
     expect(query('events-revenue-row-rev-1')).not.toBeNull();
     expect(query('events-revenue-row-rev-2')).toBeNull();
+    expect(query('events-revenue-registration-value-rev-1')?.tagName).toBe('B');
     expect(text('events-revenue-registration-value-rev-1')).toBe('$180K');
     expect(text('events-revenue-registration-goal-rev-1')).toBe('/ $200K');
+    expect(query('events-revenue-registration-goal-rev-1')?.classList).toContain('text-[12px]');
+    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
     expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
+    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
+    expect(query('events-revenue-sponsorship-no-goal-rev-1')?.classList).toContain('text-[12px]');
+    expect(query('events-revenue-row-rev-1')?.textContent).not.toContain('Set goal');
     expect(query('events-revenue-unconverted-rev-1')).toBeNull();
     expect(query('events-revenue-unconverted-note')).toBeNull();
     expect(query('events-revenue-headline-unconverted')).toBeNull();
@@ -179,20 +187,26 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
   });
 
-  it('chips a past event against its goal and lists upcoming events apart, unchipped, on the current-year view', async () => {
+  it('lists upcoming events first in the one table on the current-year view, with no goal chip', async () => {
     const upcoming = revenueEvent({ eventId: 'rev-3', eventName: 'Winter Summit', eventStartDate: '2026-12-01', isPastEvent: false, ranges: [] });
     await render(revenue({ events: [revenueEvent({ goalMet: true }), upcoming] }));
 
-    expect(text('events-revenue-goal-status-rev-1')).toBe('Hit goal');
-    expect(query('events-revenue-past-heading')).not.toBeNull();
-    expect(query('events-revenue-upcoming-table')?.querySelector('[data-testid="events-revenue-row-rev-3"]')).not.toBeNull();
-    expect(query('events-revenue-table')?.querySelector('[data-testid="events-revenue-row-rev-3"]')).toBeNull();
-    expect(query('events-revenue-goal-status-rev-3')).toBeNull();
+    const rowIds = Array.from(query('events-revenue-table')?.querySelectorAll('[data-testid^="events-revenue-row-"]') ?? []).map((row) =>
+      row.getAttribute('data-testid')
+    );
+    expect(rowIds).toEqual(['events-revenue-row-rev-3', 'events-revenue-row-rev-1']);
+    expect(query('events-revenue-table')?.textContent).not.toContain('Hit goal');
 
     await pickRange('COMPLETED_YEAR');
 
-    expect(query('events-revenue-upcoming-table')).toBeNull();
-    expect(query('events-revenue-past-heading')).toBeNull();
+    expect(query('events-revenue-row-rev-3')).toBeNull();
+  });
+
+  it('says a goal is unset only when none is set, not when it is withheld', async () => {
+    await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true })] }));
+
+    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
+    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
   });
 
   it('says a goal is withheld for its currency without marking the revenue', async () => {

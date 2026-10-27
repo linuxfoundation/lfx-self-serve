@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
+  HealthMetricsEngagementAttendanceTrend,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
@@ -12,17 +14,16 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /** Health Metrics tab bar, in render order; every tab routes to its Level 2 page. */
 export const HEALTH_METRICS_TABS = [
-  { key: 'overview', label: 'Overview', route: '', projectScoped: false },
-  { key: 'engagement', label: 'Engagement', route: 'engagement', projectScoped: true },
-  { key: 'events', label: 'Events', route: 'events', projectScoped: false },
-  { key: 'members', label: 'Members', route: 'members', projectScoped: false },
-  { key: 'non-members', label: 'Non-Members', route: 'non-members', projectScoped: false },
-  { key: 'training', label: 'Training', route: 'training', projectScoped: false },
+  { key: 'overview', label: 'Overview', route: '' },
+  { key: 'engagement', label: 'Engagement', route: 'engagement' },
+  { key: 'events', label: 'Events', route: 'events' },
+  { key: 'members', label: 'Members', route: 'members' },
+  { key: 'non-members', label: 'Non-Members', route: 'non-members' },
+  { key: 'training', label: 'Training', route: 'training' },
 ] as const;
 
 /** The query-param keys the sections and the Overview deep links share, tied to the typed param shape. */
@@ -46,8 +47,13 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Meeting participation',
     description:
       'The complete picture of who shows up — every meeting type this foundation runs, board and groups included. This is the foundation-wide whole; the Members section adds the governance-accurate cut (board & voting, voting reps only, per member).',
-    footnote:
-      'Board & voting are included in this foundation-wide view. The Members section adds the governance-accurate cut — voting reps only, per member, next to dues and renewals — using the same board number, not a different one.',
+    footnote: [
+      { text: 'Board & voting are included in this foundation-wide view. The ' },
+      { text: 'Members', route: 'members' },
+      {
+        text: ' section adds the governance-accurate cut — voting reps only, per member, next to dues and renewals — using the same board number, not a different one.',
+      },
+    ],
     footnoteCaution: false,
   },
   {
@@ -56,7 +62,9 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Group attendance',
     description:
       'Every group — governance bodies, working groups, SIGs and TAGs — lowest attendance first. Dormant groups rank above every percentage: a group that has not met at all is worse than one attending badly.',
-    footnote: 'Ranked by default rather than filtered — the ED sees the failing group without configuring anything. Filters narrow, they are not required.',
+    footnote: [
+      { text: 'Ranked by default rather than filtered — the ED sees the failing group without configuring anything. Filters narrow, they are not required.' },
+    ],
     footnoteCaution: false,
   },
   {
@@ -65,8 +73,11 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Attendance trend',
     description:
       'All-meeting attendance over time. Level and direction are separate signals — attendance can be improving and still sit below where it needs to be.',
-    footnote:
-      'Empty and low-confidence states matter here — a foundation with two periods of history gets the numbers without a trend line implying a pattern.',
+    footnote: [
+      {
+        text: 'Empty and low-confidence states matter here — a foundation with two periods of history gets the numbers without a trend line implying a pattern.',
+      },
+    ],
     footnoteCaution: false,
   },
   {
@@ -75,8 +86,14 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Organization participation',
     description:
       'Which member organizations actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
-    footnote:
-      'Avg reps per meeting and % of meetings attended are surfaced from PCC Level 4, where they sit behind an org-by-org drilldown. Here the ED scans every org at once. Row opens the meeting record.',
+    footnote: [
+      { text: 'Avg reps per meeting', bold: true },
+      { text: ' and ' },
+      { text: '% of meetings attended', bold: true },
+      {
+        text: ' are surfaced from PCC Level 4, where they sit behind an org-by-org drilldown. Here the ED scans every org at once. Row opens the meeting record.',
+      },
+    ],
     footnoteCaution: false,
   },
   {
@@ -84,7 +101,9 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     label: 'Representatives',
     heading: 'Representatives',
     description: 'The people behind the organizations. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
-    footnote: 'Duplicate-identity records are a known data issue — the same person appears twice under different titles in both PCC and Self Serve today.',
+    footnote: [
+      { text: 'Duplicate-identity records are a known data issue — the same person appears twice under different titles in both PCC and Self Serve today.' },
+    ],
     footnoteCaution: false,
   },
   {
@@ -93,19 +112,14 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Non-member participation',
     description:
       'Organizations turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
-    footnote:
-      'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
+    footnote: [
+      {
+        text: 'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
+      },
+    ],
     footnoteCaution: true,
   },
 ] as const;
-
-/** Note under the sub-nav items, linking to the Members board section. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Board & voting-member attendance is reported per member in',
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'board',
-};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a
@@ -125,8 +139,22 @@ export const HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE = 3;
 /** Days without activity before an organization is lapsed. Group dormancy is the view's own flag. */
 export const HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS = 180;
 
-/** Attendance below this share (0-1) is the one threshold worth colouring amber. */
+/** Attendance below this share (0-1) is Needs attention for a group (ENG-03), and colours amber. */
 export const HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD = 0.5;
+
+/** A board must sit near full attendance (ENG-01): below 90% is Needs action, and colours red. */
+export const HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_THRESHOLD = 0.9;
+
+/** The rule every group without a level of its own follows. */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE: HealthMetricsEngagementAttendanceRule = {
+  threshold: HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
+  tone: 'low',
+};
+
+export const HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE: HealthMetricsEngagementAttendanceRule = {
+  threshold: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_THRESHOLD,
+  tone: 'critical',
+};
 
 /** Fewer points than this cannot express a direction, so the trend chart is suppressed entirely. */
 export const HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS = 2;
@@ -174,25 +202,35 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetric
   typeCounts: [],
 };
 
-/** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
-export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_WIDTH_PX = 60;
-export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_HEIGHT_PX = 18;
+/** The design's `spark2` bar heights, in px: the series minimum sits at the floor, its maximum at floor + range. */
+export const HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX = 3;
+export const HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX = 19;
 
-/** Attendance-bar fill per tone — grey at zero, amber below the threshold, blue otherwise. */
+/**
+ * Tiers drawn as the blue pill in the org table, matched case-insensitively; every other tier is grey.
+ * The blue is the Members tier pill's (`HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS`), duplicated
+ * because the Members constants import this file.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS: readonly string[] = ['platinum', 'premier', 'founding'];
+export const HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS = { top: 'bg-blue-50 text-blue-700', other: 'bg-gray-100 text-gray-600' } as const;
+
+/** Attendance-bar fill per tone — grey at zero, amber or red below the rule's threshold, blue otherwise. */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetricsEngagementAttendanceTone, string> = {
   empty: 'bg-gray-300',
   low: 'bg-amber-500',
+  critical: 'bg-red-500',
   ok: 'bg-blue-500',
 };
 
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
- * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
- * component emits `reading`/`settled` and the container binds both.
+ * every one of them has settled. A section joins this list only once its component emits
+ * `reading`/`settled` and the container binds both.
  */
 export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'participation',
   'committees',
+  'trend',
   'orgs',
   'reps',
   'nonmem',
@@ -237,6 +275,11 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER: readonly strin
  */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS: readonly string[] = ['Board'];
 
+/** Meeting-type rows with a rule of their own; the rest follow `HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE`. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES: Readonly<Record<string, HealthMetricsEngagementAttendanceRule>> = {
+  Board: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
+};
+
 /** The view's own level values. The finer `committee_type` level is not read by this section. */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] = ['all', 'group'];
 
@@ -249,6 +292,17 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED: HealthM
   total: null,
   rows: [],
 };
+
+/**
+ * The Attendance trend's empty shape: the server's answer for a scope the view has no months for,
+ * and the client's no-read state (pre-hydration, no foundation selected, or a failed read).
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED: HealthMetricsEngagementAttendanceTrend = {
+  months: [],
+};
+
+/** Fewer rated months than this draws the line under a low-confidence banner; one month draws none. */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS = 6;
 
 /**
  * Debounce shared by the org and representatives search boxes. Either filter runs over the whole

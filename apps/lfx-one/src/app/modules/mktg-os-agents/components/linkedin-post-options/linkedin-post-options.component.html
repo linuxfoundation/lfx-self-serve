@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel spacing preserves the approved LinkedIn option-card board. -->
+<div class="flex flex-col gap-3" data-testid="mktg-linkedin-option-cards">
+  <div class="grid grid-cols-1 gap-[14px] lg:grid-cols-3">
+    @for (option of presented(); track option.number) {
+      <article class="flex min-w-0 flex-col gap-[10px] rounded-xl border border-gray-200 bg-white px-5 py-[18px]" data-testid="mktg-linkedin-option">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 class="font-bold">Option {{ option.number }}: {{ option.label }}</h3>
+          <span class="text-xs text-gray-500">{{ option.word_count }} words</span>
+        </div>
+        <p class="whitespace-pre-wrap break-words text-gray-700" data-testid="mktg-linkedin-post-text">
+          @for (part of option.parts; track $index) {
+            @if (part.needsLink) {
+              <button
+                type="button"
+                aria-label="Add your link"
+                [disabled]="addLinkDisabled()"
+                (click)="addLink.emit()"
+                class="whitespace-nowrap rounded-full border border-dashed border-blue-600 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50"
+                data-testid="mktg-linkedin-add-link">
+                {{ part.text }}
+              </button>
+            } @else if (part.href) {
+              <a
+                [href]="part.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-blue-600 underline"
+                [attr.data-testid]="'mktg-linkedin-share-link-' + option.number"
+                >{{ part.text }}</a
+              >
+            } @else {
+              <span>{{ part.text }}</span>
+            }
+          }
+        </p>
+        <div class="flex flex-wrap gap-1.5">
+          @for (tag of option.hashtags; track $index) {
+            <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{{ tag }}</span>
+          }
+        </div>
+        <p class="break-words text-sm text-gray-500">
+          Consider tagging:
+          {{ option.tagging_suggestions.join('; ') }}
+        </p>
+        <lfx-button
+          [label]="copied() === option.number ? 'Copied' : 'Copy post'"
+          severity="secondary"
+          (onClick)="onCopy(option)"
+          [attr.data-testid]="'mktg-linkedin-copy-' + option.number" />
+        @if (notice() && copied() === option.number) {
+          <p role="status" class="text-sm text-gray-500" data-testid="mktg-linkedin-copy-notice">{{ notice() }}</p>
+        }
+      </article>
+    }
+  </div>
+  @if (error()) {
+    <p role="alert" class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" data-testid="mktg-linkedin-copy-error">{{ error() }}</p>
+  }
+  @if (notes().length) {
+    <section aria-label="Agent notes" class="rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700" data-testid="mktg-linkedin-notes">
+      <h3 class="font-semibold">Notes from the agent · never part of a post</h3>
+      <ul class="list-disc pl-5">
+        @for (note of notes(); track $index) {
+          <li>{{ note }}</li>
+        }
+      </ul>
+    </section>
+  }
+</div>

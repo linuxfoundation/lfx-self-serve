@@ -1,0 +1,558 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="lfxn-float" [class.lfxn-float--mobile]="mobile()" data-testid="navbar">
+  <nav class="lfxn" aria-label="LFX navigation" data-testid="sidebar">
+    <div class="lfxn__top">
+      <div class="lfxn__head">
+        <!-- Brand row: LF symbol + LF apps menu, Create -->
+        <div class="lfxn__brand-row">
+          <button
+            type="button"
+            class="lfxn__brand"
+            [class.is-open]="brandMenuOpen()"
+            (click)="toggleBrandMenu($event)"
+            aria-label="Linux Foundation apps"
+            aria-haspopup="menu"
+            [attr.aria-expanded]="brandMenuOpen()"
+            data-testid="navbar-brand">
+            <svg class="lfxn__brand-symbol" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M 20 0 L 0 0 L 0 6.005 L 3.995 6.005 L 3.995 4.021 L 16.005 4.021 L 16.005 16.005 L 14.021 16.005 L 14.021 20 L 20 20 L 20 0 Z" />
+              <path transform="translate(0 8.016)" d="M 4.021 7.99 L 4.021 0 L 0 0 L 0 11.984 L 12.01 11.984 L 12.01 7.99 L 4.021 7.99 Z" />
+            </svg>
+            <span class="lfxn__brand-menu"><i class="fa-light fa-ellipsis-vertical" aria-hidden="true"></i></span>
+          </button>
+          <div class="lfxn__head-actions">
+            @if (createPermissionService.canShowCreateButton()) {
+              <button
+                type="button"
+                class="lfxn__icon-btn lfxn__icon-btn--accent"
+                (click)="toggleCreateMenu($event)"
+                aria-label="Create new artifact"
+                aria-haspopup="menu"
+                [attr.aria-expanded]="createMenuOpen()"
+                lfxNavTooltip="Create"
+                lfxNavTooltipPlacement="bottom"
+                [attr.data-testid]="mobile() ? 'create-rail-button-mobile' : 'create-rail-button'">
+                <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-plus" aria-hidden="true"></i></span>
+              </button>
+            }
+            <!-- The mobile drawer is headless, so the navbar carries its labelled close control. -->
+            @if (mobile()) {
+              <button type="button" class="lfxn__icon-btn" (click)="closeMobileDrawer()" aria-label="Close navigation" data-testid="navbar-mobile-close">
+                <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-xmark" aria-hidden="true"></i></span>
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Lens tabs — role="group" + aria-pressed: these navigate to a lens, there is no tabpanel. -->
+        @if (showLensTabs()) {
+          <div #lensTabGroup class="lfxn__tabs" [class.has-indicator]="!!tabIndicator()" role="group" aria-label="Switch lens" data-testid="lens-tabs">
+            <!-- One white pill that slides to the active tab; until it is measured the active tab paints its own. -->
+            @if (tabIndicator(); as indicator) {
+              <span
+                class="lfxn__tab-indicator"
+                [style.transform]="'translateX(' + indicator.left + 'px)'"
+                [style.width.px]="indicator.width"
+                aria-hidden="true"></span>
+            }
+            @for (lens of lensTabs(); track lens.id; let i = $index) {
+              @let isActive = activeLensId() === lens.id;
+              @if (i > 0 && !isActive && activeLensId() !== lensTabs()[i - 1].id) {
+                <span class="lfxn__tab-rule" aria-hidden="true"></span>
+              }
+              <button
+                type="button"
+                class="lfxn__tab"
+                [class.is-active]="isActive"
+                [attr.aria-pressed]="isActive"
+                [attr.aria-label]="mobile() ? 'Show the ' + lens.label + ' menu' : 'Switch to ' + lens.label + ' lens'"
+                [attr.data-testid]="lens.testId + '-tab'"
+                (click)="switchLens(lens.id)">
+                <i [ngClass]="isActive ? lens.activeIcon : lens.icon" aria-hidden="true"></i>
+                <span>{{ lens.label }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        <!-- Context card: project / foundation -->
+        @if (showProjectSelector() && navLens(); as lens) {
+          @if (!lensLoaded()) {
+            <div class="lfxn__context lfxn__context--loading" data-testid="sidebar-selector-loading">
+              <span class="lfxn__context-body">
+                <span class="lfxn__skeleton lfxn__skeleton--tile animate-pulse"></span>
+                <span class="lfxn__skeleton lfxn__skeleton--line animate-pulse"></span>
+              </span>
+            </div>
+          } @else {
+            <lfx-project-selector
+              variant="navbar"
+              [lens]="lens"
+              [hybridMode]="isHybridPersona()"
+              [selectedProject]="selectedProject()"
+              [searchPlaceholder]="selectorSearchPlaceholder()"
+              [emptyMessage]="selectorEmptyMessage()"
+              [(isPanelOpen)]="selectorPanelOpen"
+              (itemSelected)="onItemSelected($event)"></lfx-project-selector>
+          }
+        }
+
+        <!-- Context card: organization. [class.hidden] avoids SSR hydration mismatch. -->
+        <div
+          class="lfxn__context-slot"
+          [class.hidden]="!effectiveShowOrgSelector()"
+          data-testid="org-selector-slot"
+          [attr.data-visible]="effectiveShowOrgSelector()">
+          <!-- A switch can re-address the page with replaceUrl, which the layout leaves alone, so the pick closes the mobile drawer
+               itself; a pick while the drawer previews Org Lens lands on that organization's overview instead (#4208). -->
+          <lfx-org-selector
+            variant="navbar"
+            [(isPanelOpen)]="selectorPanelOpen"
+            [enabled]="effectiveShowOrgSelector()"
+            (itemSelected)="onOrgSelected()"></lfx-org-selector>
+        </div>
+
+        <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->
+        <div class="lfxn__context lfxn__context--me" [class.hidden]="!showMeSelector()" data-testid="me-selector">
+          <span class="lfxn__context-body">
+            <span class="lfxn__tile lfxn__tile--photo">
+              @if (photoUrl(); as photo) {
+                <img [src]="photo" alt="" referrerpolicy="no-referrer" (error)="onPhotoError(photo)" />
+              } @else {
+                <span class="lfxn__tile-initials">{{ userInitials() }}</span>
+              }
+            </span>
+            <span class="lfxn__context-text">
+              <span class="lfxn__context-name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
+            </span>
+          </span>
+
+          @if (roleMarks().length > 0) {
+            <span class="lfxn__me-roles">
+              @for (role of roleMarks(); track role.persona; let i = $index) {
+                <!-- A native button: Enter/Space toggle the project chips, ArrowDown moves into them. -->
+                <button
+                  type="button"
+                  class="lfxn__me-role"
+                  [attr.aria-label]="role.ariaLabel"
+                  [style.--lfxn-role-ink]="role.ink"
+                  [style.z-index]="roleMarks().length - i"
+                  [lfxNavTooltip]="role.title"
+                  [lfxNavTooltipIcon]="role.icon"
+                  [lfxNavTooltipIconColor]="role.ink"
+                  [lfxNavTooltipItems]="role.chips"
+                  (lfxNavTooltipItemSelected)="openRoleProject(role, $event)">
+                  <i [ngClass]="role.icon" aria-hidden="true"></i>
+                </button>
+              }
+            </span>
+          }
+
+          <span class="lfxn__me-actions">
+            <!-- Profile, account and settings live on one hub: active on every /profile/* page. -->
+            <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action" data-testid="me-card-link">
+              <i class="fa-light fa-square-user" aria-hidden="true"></i>
+              <span class="lfxn__me-action-label">Profile &amp; Account</span>
+              <i class="fa-light fa-arrow-up-right lfxn__me-action-trail" aria-hidden="true"></i>
+            </a>
+          </span>
+        </div>
+      </div>
+
+      <!--
+        Lens menu. Gated on hydrated() so the concrete menu is withheld until the browser commits its
+        first render — server + first client render both show the skeleton (see NavMenuBase).
+        Track by the inherited per-destination `trackKey`.
+      -->
+      <!-- lfxScrollShadow tracks the scroll edges; the fade classes mask items as they scroll under the header/footer. -->
+      <!-- Persistent live region: the no-access message is swapped in here rather than mounting a new status node. -->
+      <!-- Shares the visible panel's gate (menuStateReady), so screen readers never hear a state the panel hasn't shown yet. -->
+      <div class="sr-only" role="status" data-testid="navbar-no-access-status">
+        @if (announcedNoAccessState(); as kind) {
+          @if (retryingLookups()) {
+            Retrying…
+          } @else if (menuLookupFailed()) {
+            Couldn't load this {{ kind }}'s tools.
+          } @else {
+            No access to this {{ kind }}'s tools.
+          }
+        } @else if (announcedPartialLookupFailed()) {
+          @if (retryingLookups()) {
+            Retrying…
+          } @else {
+            Some tools couldn't load.
+          }
+        }
+      </div>
+      <div class="lfxn__menu" lfxScrollShadow [class.is-fade-top]="menuScroll()?.showTopShadow()" [class.is-fade-bottom]="menuScroll()?.showBottomShadow()">
+        @if (menuStateReady()) {
+          @if (showNoAccessState(); as kind) {
+            <!-- The message card overlaps a faded menu that emerges from beneath it. -->
+            <div class="lfxn__no-access">
+              @if (menuLookupFailed() || retryingLookups()) {
+                <!-- A lookup that shapes the menu failed: say so and offer a retry, never "no access". The card stays up while the retry runs. -->
+                <div class="lfxn__empty" data-testid="navbar-lookup-failed">
+                  <span class="lfxn__empty-icon"><i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i></span>
+                  <p class="lfxn__empty-title">Couldn't load this {{ kind }}'s tools</p>
+                  <p class="lfxn__empty-body">Something went wrong while checking your access. Try again in a moment.</p>
+                  <button
+                    type="button"
+                    class="lfxn__empty-action"
+                    [disabled]="retryingLookups()"
+                    [attr.aria-busy]="retryingLookups() || null"
+                    (click)="retryMenu()"
+                    data-testid="navbar-lookup-retry">
+                    <i class="fa-light fa-arrow-rotate-right" [class.fa-spin]="retryingLookups()" aria-hidden="true"></i>
+                    <span>{{ retryingLookups() ? 'Retrying…' : 'Retry' }}</span>
+                  </button>
+                </div>
+              } @else {
+                <!-- Foundation / project with no menu for this user (permissions): explain instead of an empty panel. -->
+                <div class="lfxn__empty" data-testid="navbar-no-access">
+                  <span class="lfxn__empty-icon"><i class="fa-light fa-lock" aria-hidden="true"></i></span>
+                  <p class="lfxn__empty-title">No access to this {{ kind }}'s tools</p>
+                  <p class="lfxn__empty-body">
+                    Your account doesn't have a role on {{ selectedProject()?.name || 'this ' + kind }} that unlocks its tools. Ask a {{ kind }} admin for
+                    access.
+                  </p>
+                </div>
+              }
+              <!-- A faded glimpse of the menu the user is missing — decorative only. -->
+              <div class="lfxn__items lfxn__ghost" aria-hidden="true">
+                @for (ghost of noAccessGhostItems; track ghost.label) {
+                  <span class="lfxn__item">
+                    <span class="lfxn__item-icon"><i [ngClass]="ghost.icon"></i></span>
+                    <span class="lfxn__item-label">{{ ghost.label }}</span>
+                  </span>
+                }
+              </div>
+            </div>
+          }
+          @for (block of menuBlocks(); track block.key) {
+            @if (block.ruleBefore) {
+              <span class="lfxn__rule" aria-hidden="true"></span>
+            }
+            <div class="lfxn__group" [attr.data-testid]="block.section?.testId">
+              @if (block.section; as section) {
+                <div class="lfxn__section">
+                  <span class="lfxn__section-label">{{ section.label }}</span>
+                  <span class="lfxn__section-rule" aria-hidden="true"></span>
+                </div>
+              }
+              <div class="lfxn__items">
+                @for (item of block.items; track item.trackKey) {
+                  @if (item.isGroup) {
+                    <ng-container *ngTemplateOutlet="groupItem; context: { $implicit: item }"></ng-container>
+                  } @else {
+                    <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+                  }
+                }
+              </div>
+            </div>
+          }
+
+          @if (showPartialLookupFailed()) {
+            <!-- Part of the menu is missing because a lookup failed (not denied): a non-blocking retry under the items that did load. -->
+            <div class="lfxn__lookup-notice" data-testid="navbar-partial-lookup-failed">
+              <i class="fa-light fa-triangle-exclamation lfxn__lookup-notice-icon" aria-hidden="true"></i>
+              <span class="lfxn__lookup-notice-text">Some tools couldn't load</span>
+              <button
+                type="button"
+                class="lfxn__empty-action lfxn__lookup-notice-action"
+                [disabled]="retryingLookups()"
+                [attr.aria-busy]="retryingLookups() || null"
+                (click)="retryMenu()"
+                data-testid="navbar-partial-lookup-retry">
+                <i class="fa-light fa-arrow-rotate-right" [class.fa-spin]="retryingLookups()" aria-hidden="true"></i>
+                <span>{{ retryingLookups() ? 'Retrying…' : 'Retry' }}</span>
+              </button>
+            </div>
+          }
+
+          @if (footerMenuItems().length > 0) {
+            <div class="lfxn__items lfxn__items--footer">
+              @for (item of footerMenuItems(); track item.trackKey) {
+                <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+              }
+            </div>
+          }
+        } @else {
+          <div class="lfxn__items" [attr.data-testid]="isOrgLens() ? 'sidebar-org-skeleton' : 'sidebar-menu-loading'">
+            @for (row of [1, 2, 3, 4, 5]; track row) {
+              <span class="lfxn__skeleton lfxn__skeleton--item animate-pulse"></span>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Footer: account menu + rail actions -->
+    <div class="lfxn__foot">
+      <button
+        type="button"
+        class="lfxn__user"
+        [class.is-open]="userMenuOpen()"
+        (click)="toggleUserMenu($event)"
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="userMenuOpen()"
+        data-testid="lens-user-avatar">
+        <span class="lfxn__avatar">
+          @if (photoUrl(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" (error)="onPhotoError(photo)" />
+          } @else {
+            <span class="lfxn__avatar-initials">{{ userInitials() }}</span>
+          }
+        </span>
+        <span class="lfxn__user-name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
+        <i class="fa-light fa-chevron-down" aria-hidden="true"></i>
+      </button>
+
+      <div class="lfxn__foot-actions">
+        @if (canImpersonate() && !isImpersonating()) {
+          <button
+            type="button"
+            class="lfxn__icon-btn"
+            (click)="openImpersonationDialog()"
+            aria-label="Impersonate user"
+            lfxNavTooltip="Impersonate user"
+            data-testid="lens-impersonate-button">
+            <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-user-secret" aria-hidden="true"></i></span>
+          </button>
+        }
+        <button
+          type="button"
+          class="lfxn__icon-btn"
+          (click)="openChangelogDrawer()"
+          [attr.aria-label]="changelogAriaLabel()"
+          lfxNavTooltip="What's new"
+          data-testid="lens-changelog-button">
+          <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-gift" aria-hidden="true"></i></span>
+          @if (unseenChangelogCount() > 0) {
+            <span class="lfxn__icon-btn-dot" aria-hidden="true" data-testid="lens-changelog-badge"></span>
+          }
+        </button>
+        <a
+          routerLink="/docs"
+          class="lfxn__icon-btn"
+          [attr.aria-current]="isDocsActive() ? 'page' : null"
+          aria-label="Documentation"
+          lfxNavTooltip="Documentation"
+          data-testid="lens-docs-button">
+          <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-book-open" aria-hidden="true"></i></span>
+        </a>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<ng-template #groupItem let-item>
+  <div class="lfxn__nav-group" [attr.data-testid]="item.testId">
+    <button
+      type="button"
+      class="lfxn__item"
+      (click)="toggleGroup(item.label)"
+      [attr.aria-expanded]="expandedGroupStates()[item.label]"
+      [attr.aria-label]="item.label">
+      <span class="lfxn__item-icon"><i [ngClass]="item.icon" aria-hidden="true"></i></span>
+      <span class="lfxn__item-label">{{ item.label }}</span>
+      <span class="lfxn__item-trail">
+        <i class="fa-light fa-chevron-down lfxn__item-chevron" [class.is-open]="expandedGroupStates()[item.label]" aria-hidden="true"></i>
+      </span>
+    </button>
+    @if (expandedGroupStates()[item.label] && item.items?.length) {
+      <div class="lfxn__items lfxn__items--nested">
+        @for (childItem of item.items; track childItem.trackKey) {
+          <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
+        }
+      </div>
+    }
+  </div>
+</ng-template>
+
+<ng-template #menuItem let-item>
+  @if (item.routerLink) {
+    <a
+      [routerLink]="item.routerLink"
+      [queryParams]="projectQueryParams()"
+      [routerLinkActive]="item.activeAliases?.length ? '' : 'is-active'"
+      [routerLinkActiveOptions]="item.activeMatchOptions"
+      #rla="routerLinkActive"
+      [attr.aria-current]="rla.isActive || aliasHighlightedKeys()[item.trackKey] ? 'page' : null"
+      class="lfxn__item"
+      [ngClass]="{ 'is-disabled': item.disabled, 'is-active': aliasHighlightedKeys()[item.trackKey] }"
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <span class="lfxn__item-icon"><i [ngClass]="item.icon" aria-hidden="true"></i></span>
+      <span class="lfxn__item-label">{{ item.label }}</span>
+      @if (item.badge) {
+        <span class="lfxn__item-trail">
+          <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small"></lfx-badge>
+        </span>
+      }
+    </a>
+  }
+
+  @if (item.url) {
+    <a
+      [href]="item.url"
+      [target]="item.target || '_blank'"
+      [rel]="item.rel || 'noopener noreferrer'"
+      class="lfxn__item"
+      [class.is-disabled]="item.disabled"
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <span class="lfxn__item-icon"><i [ngClass]="item.icon" aria-hidden="true"></i></span>
+      <span class="lfxn__item-label">{{ item.label }}</span>
+      @if (item.badge || item.external !== false) {
+        <span class="lfxn__item-trail">
+          @if (item.badge) {
+            <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small"></lfx-badge>
+          }
+          @if (item.external !== false) {
+            <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          }
+        </span>
+      }
+    </a>
+  }
+
+  @if (item.command && !item.routerLink && !item.url) {
+    <button
+      type="button"
+      (click)="item.command()"
+      class="lfxn__item"
+      [class.is-disabled]="item.disabled"
+      [disabled]="item.disabled"
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <span class="lfxn__item-icon"><i [ngClass]="item.icon" aria-hidden="true"></i></span>
+      <span class="lfxn__item-label">{{ item.label }}</span>
+      @if (item.badge) {
+        <span class="lfxn__item-trail">
+          <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small"></lfx-badge>
+        </span>
+      }
+    </button>
+  }
+</ng-template>
+
+<!-- Brand menu: LFX apps + linuxfoundation.org -->
+<p-popover
+  #brandMenu
+  appendTo="body"
+  [styleClass]="bannerOffset() ? 'lfxn-brand-popover lfxn-brand-popover--banner-offset' : 'lfxn-brand-popover'"
+  (onShow)="brandMenuOpen.set(true)"
+  (onHide)="brandMenuOpen.set(false)">
+  <ng-template #content>
+    <div class="lfxn-brand-menu" data-testid="navbar-brand-menu">
+      @for (app of brandApps; track app.name) {
+        <a [href]="app.url" target="_blank" rel="noopener noreferrer" class="lfxn-brand-menu__app" (click)="brandMenu.hide()" [attr.data-testid]="app.testId">
+          <span class="lfxn-brand-menu__icon"><i [ngClass]="app.icon" aria-hidden="true"></i></span>
+          <span class="lfxn-brand-menu__text">
+            <span class="lfxn-brand-menu__name">{{ app.name }}</span>
+            <span class="lfxn-brand-menu__blurb">{{ app.blurb }}</span>
+          </span>
+          <i class="fa-light fa-arrow-up-right-from-square lfxn-brand-menu__ext" aria-hidden="true"></i>
+        </a>
+      }
+      <div class="lfxn-brand-menu__rule" role="separator"></div>
+      <a
+        [href]="brandSite.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="lfxn-brand-menu__site"
+        (click)="brandMenu.hide()"
+        data-testid="navbar-brand-site">
+        <span class="lfxn-brand-menu__site-name">
+          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true">
+            <path
+              d="M 20 0 L 0 0 L 0 6.005 L 3.995 6.005 L 3.995 4.021 L 16.005 4.021 L 16.005 16.005 L 14.021 16.005 L 14.021 20 L 20 20 L 20 0 Z"
+              fill="rgb(0,52,123)" />
+            <path transform="translate(0 8.016)" d="M 4.021 7.99 L 4.021 0 L 0 0 L 0 11.984 L 12.01 11.984 L 12.01 7.99 L 4.021 7.99 Z" fill="rgb(0,149,255)" />
+          </svg>
+          <span>{{ brandSite.domain }}</span>
+        </span>
+        <i class="fa-light fa-arrow-up-right-from-square lfxn-brand-menu__ext" aria-hidden="true"></i>
+      </a>
+    </div>
+  </ng-template>
+</p-popover>
+
+<!-- Create menu — pick an artifact type, then a dialog resolves the project/foundation. -->
+<p-popover
+  #createMenu
+  appendTo="body"
+  styleClass="w-72 lfxn-menu-popover lfx-create-popover"
+  (onShow)="createMenuOpen.set(true)"
+  (onHide)="createMenuOpen.set(false)">
+  <ng-template #content>
+    @let creatables = creatableArtifacts();
+    <div class="py-1" [attr.data-testid]="mobile() ? 'create-menu-mobile' : 'create-menu'">
+      @for (artifact of creatables; track artifact.type; let i = $index) {
+        <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
+        @if (i > 0 && artifact.group !== creatables[i - 1].group) {
+          <div role="separator" class="my-1 border-t border-gray-100"></div>
+        }
+        <button
+          type="button"
+          (click)="openCreateDialog(artifact)"
+          [attr.data-testid]="(mobile() ? 'create-menu-mobile-option-' : 'create-menu-option-') + artifact.type"
+          class="group flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+          <i [class]="artifact.icon + ' fa-fw text-base text-gray-400 mt-0.5'"></i>
+          <span class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900">{{ artifact.label }}</span>
+            <span class="text-xs text-gray-500">{{ artifact.description }}</span>
+          </span>
+        </button>
+      }
+    </div>
+  </ng-template>
+</p-popover>
+
+<!-- Account menu — pinned just above the footer, styled like the brand menu. -->
+<p-popover #userMenu appendTo="body" styleClass="lfxn-menu-popover lfxn-account-popover" (onShow)="userMenuOpen.set(true)" (onHide)="userMenuOpen.set(false)">
+  <ng-template #content>
+    <div class="lfxn-account-menu" data-testid="navbar-account-menu">
+      <div class="lfxn-account-menu__head">
+        <span class="lfxn-account-menu__avatar">
+          @if (photoUrl(); as photo) {
+            <img [src]="photo" alt="" referrerpolicy="no-referrer" (error)="onPhotoError(photo)" />
+          } @else {
+            <span>{{ userInitials() }}</span>
+          }
+        </span>
+        <span class="lfxn-account-menu__identity">
+          <span class="lfxn-account-menu__name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
+          <span class="lfxn-account-menu__email" [lfxNavTooltip]="user()?.email ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.email }}</span>
+        </span>
+      </div>
+
+      <div class="lfxn-account-menu__rule" role="separator"></div>
+
+      <button type="button" class="lfxn-account-menu__row" data-testid="lens-profile" (click)="navigateToProfile()">
+        <i class="fa-light fa-circle-user" aria-hidden="true"></i>
+        <span>Profile &amp; Account</span>
+      </button>
+      <button type="button" class="lfxn-account-menu__row" data-testid="lens-settings" (click)="navigateToProfileSettings()">
+        <i class="fa-light fa-gear" aria-hidden="true"></i>
+        <span>Settings</span>
+      </button>
+      <button type="button" class="lfxn-account-menu__row" lfxOpenIntercom (click)="userMenu.hide()" data-testid="lens-support">
+        <i class="fa-light fa-circle-question" aria-hidden="true"></i>
+        <span>Support</span>
+      </button>
+
+      <div class="lfxn-account-menu__rule" role="separator"></div>
+
+      <a href="/logout" lfxLogoutLink class="lfxn-account-menu__row" data-testid="lens-logout">
+        <i class="fa-light fa-arrow-right-from-bracket" aria-hidden="true"></i>
+        <span>Sign out</span>
+      </a>
+    </div>
+  </ng-template>
+</p-popover>
+
+<lfx-changelog-drawer [(visible)]="changelogDrawerVisible" />

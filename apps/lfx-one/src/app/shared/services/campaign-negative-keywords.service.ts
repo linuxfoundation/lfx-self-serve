@@ -147,8 +147,8 @@ export class CampaignNegativeKeywordsService {
    * and only when every keyword was added or already present, so the caller may clear its input.
    *
    * `revision` is sent for a REDDIT campaign only, and the request is refused here without one:
-   * Reddit requires it, and Microsoft Advertising and X answer a present revision (even an empty
-   * one) with 400, so a stray one must never reach them.
+   * Reddit requires it, and Google Ads, Microsoft Advertising and X answer a present revision (even
+   * an empty one) with 400, so a stray one must never reach them.
    *
    * `take(1)`, never cancelled and never retried: aborting would lose the outcome of keywords that
    * may already have been added, and a resend could add them twice.

@@ -1,0 +1,8 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Keep long previews inside the dialog: the table scrolls horizontally on narrow screens
+// instead of widening the dialog past the viewport.
+:host ::ng-deep .p-datatable-table-container {
+  overflow-x: auto;
+}

@@ -38,6 +38,36 @@ export type GatewazeSessionResult<TSession> = GatewazeSessionOk<TSession> | Gate
 export interface GatewazeMeOk {
   outcome: 'ok';
   user: Record<string, unknown>;
+  /**
+   * The admin's profile and granted features, which the embed uses instead of reading them itself
+   * before its first render. Absent when `getAdminContext` could not produce them; the embed then
+   * reads them as before.
+   */
+  admin?: GatewazeAdminContext;
+}
+
+/**
+ * The optional `admin` field of a 200 from `/api/gatewaze/session/me` (`@gatewaze/host-session`
+ * 1.2.0, `AdminContext`). Mirrored here because this package is also built for the browser.
+ */
+export interface GatewazeAdminContext {
+  profile: GatewazeAdminProfile;
+  /** Exactly what `admin_get_features(user.id)` returns. */
+  features: string[];
+}
+
+/** The active `admin_profiles` row, in exactly the nine fields the embed checks for. */
+export interface GatewazeAdminProfile {
+  id: string;
+  /** Equals the `/me` answer's `user.id`. */
+  user_id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  avatar_url: string | null;
+  is_active: true;
+  created_at: string;
+  updated_at: string;
 }
 
 /** The session is good but the user has no active `admin_profiles` row. 403 `{ error: 'not_admin', email }`. */

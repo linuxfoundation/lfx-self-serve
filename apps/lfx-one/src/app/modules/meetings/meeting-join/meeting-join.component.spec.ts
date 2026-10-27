@@ -4,11 +4,13 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
+import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Meeting,
   MeetingJoinPageState,
@@ -27,12 +29,15 @@ import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ConfirmDialog } from 'primeng/confirmdialog';
 import { MeetingJoinComponent } from './meeting-join.component';
 
 // Regression coverage for GH-1731's guest-add orchestration: the join page maintains an optimistic
@@ -46,6 +51,7 @@ describe('MeetingJoinComponent', () => {
   const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
+  let meetingsV2Enabled: ReturnType<typeof signal<boolean>>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
   let getPastMeetingSummary: ReturnType<typeof vi.fn>;
@@ -55,6 +61,8 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
+  let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   let getMeetingRsvpForCurrentUser: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let toastAdd: ReturnType<typeof vi.fn>;
@@ -130,16 +138,20 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
+    getPublicMeetingJoinUrl = vi.fn().mockReturnValue(of({ link: undefined }));
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    resendMyMeetingInvitation = vi.fn().mockReturnValue(of({ message: 'Invitation resent successfully' }));
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
+    meetingsV2Enabled = signal(false);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -162,10 +174,13 @@ describe('MeetingJoinComponent', () => {
             getPublicMeeting,
             getPublicPastMeeting,
             getPublicMeetingOccurrences,
-            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
+            getPublicMeetingJoinUrl,
             getMyMeetingRegistrants,
             removeMyMeetingRegistration,
+            resendMyMeetingInvitation,
             removedRegistrationMeetingIds: removedIds,
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -196,6 +211,10 @@ describe('MeetingJoinComponent', () => {
           useValue: {
             authenticated,
             user: signal<User | null>({ email: 'me@example.com' } as unknown as User),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
             impersonating: signal(false),
             impersonator: signal(null),
             viewerUsername: signal<string | null>('me'),
@@ -571,6 +590,19 @@ describe('MeetingJoinComponent', () => {
       expect(component.canManageOccurrence()).toBe(false);
     });
 
+    it.each([
+      [false, MAX_CUSTOM_DURATION],
+      [true, MAX_MEETING_DURATION],
+    ])('caps the occurrence dialog by the meeting v2 flag (on: %s)', async (enabled, cap) => {
+      meetingsV2Enabled.set(enabled);
+      useRecurring();
+      const { component, open } = await mountWithDialog();
+
+      component.rescheduleCurrentOccurrence();
+
+      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ maxDuration: cap }));
+    });
+
     it('moves the page to the new start and re-reads the series after a reschedule', async () => {
       useRecurring();
       const { component, open, onClose } = await mountWithDialog();
@@ -645,6 +677,8 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -671,6 +705,8 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: true,
         pastMeetingFullAccess: true,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -708,6 +744,8 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...recurringMeeting, project: buildProject() },
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -861,6 +899,8 @@ describe('MeetingJoinComponent', () => {
         meeting: null,
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: true,
       });
 
@@ -910,6 +950,8 @@ describe('MeetingJoinComponent', () => {
         meeting: null,
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: true,
       });
 
@@ -1113,7 +1155,9 @@ describe('MeetingJoinComponent', () => {
     const REGISTER_BUTTON = '[data-testid="register-meeting-button"]';
 
     const createFixture = async (meeting: Meeting) => {
-      getPublicMeeting.mockReturnValue(of({ meeting, project: buildProject() }));
+      // This describe block is scoped to signed-in invitee/organizer viewers, who always get full_access per
+      // the controller — without it, the new liveMeetingCanJoin gate would (incorrectly) treat them as anonymous.
+      getPublicMeeting.mockReturnValue(of({ meeting, project: buildProject(), full_access: true }));
       await TestBed.compileComponents();
       const fixture = TestBed.createComponent(MeetingJoinComponent);
       await TestBed.inject(ApplicationRef).whenStable();
@@ -1243,11 +1287,293 @@ describe('MeetingJoinComponent', () => {
 
       await confirmAndAccept(fixture);
 
-      expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID);
+      expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'meeting-join');
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       // `getPublicMeeting` keeps answering `invited: true`, which is the indexing lag the page must outlast.
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
       expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
+    });
+
+    describe('resend invite', () => {
+      const RESEND_BUTTON = '[data-testid="resend-invite-button"]';
+      const RESEND_ORGANIZER_BUTTON = '[data-testid="resend-invite-organizer-button"]';
+
+      it('offers the action to a signed-in invitee and resends to their own registration when clicked', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const button = fixture.nativeElement.querySelector(RESEND_BUTTON);
+
+        expect(button).not.toBeNull();
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('resends for the occurrence the page is showing, so the matching registration is chosen', async () => {
+        const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const fixture = await createFixture(
+          buildMeeting({
+            organizer: false,
+            invited: true,
+            occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] as Meeting['occurrences'],
+          })
+        );
+
+        expect(fixture.componentInstance.currentOccurrence()?.occurrence_id).toBe('occ-next');
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, 'occ-next');
+      });
+
+      it('offers the action to an invited organizer in their own slot', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
+
+        expect(fixture.nativeElement.querySelector(RESEND_ORGANIZER_BUTTON)).not.toBeNull();
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+      });
+
+      it('does not offer the action to a viewer who is not registered', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+        expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      });
+
+      it('stops offering the action once the viewer has removed themselves', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        await confirmAndAccept(fixture);
+
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+      });
+
+      it('ignores a second click while a resend is in flight', async () => {
+        const pending$ = new Subject<{ message: string }>();
+        resendMyMeetingInvitation.mockReturnValue(pending$);
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+        expect(fixture.componentInstance.resendingInvite()).toBe(true);
+        pending$.next({ message: 'ok' });
+        pending$.complete();
+        expect(fixture.componentInstance.resendingInvite()).toBe(false);
+      });
+
+      it('shows the BFF message for a validation failure and generic copy for anything else', async () => {
+        resendMyMeetingInvitation
+          .mockReturnValueOnce(
+            throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Unable to determine your identity' } }))
+          )
+          .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN', error: 'upstream detail' } })));
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.resendInvite();
+
+        expect(toastAdd).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') })
+        );
+        expect(toastAdd).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' })
+        );
+        expect(fixture.componentInstance.resendingInvite()).toBe(false);
+      });
+    });
+
+    describe('opened from the remove-yourself link in an email or calendar event', () => {
+      // The link opens the page with `?action=leave`; the confirmation is handled before the fixture settles,
+      // so the dialog is taken over at the prototype instead of on the component's own service.
+      const confirmSpy = () =>
+        vi.spyOn(ConfirmationService.prototype, 'confirm').mockImplementation(function (this: ConfirmationService, options) {
+          options.accept?.();
+          return this;
+        });
+
+      afterEach(() => vi.restoreAllMocks());
+
+      it('asks the signed-in invitee to confirm, then removes them with the email-link source and drops the param', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'email-link');
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null }, replaceUrl: true }));
+      });
+
+      it('does not remove anyone before the confirmation is accepted', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = vi.spyOn(ConfirmationService.prototype, 'confirm').mockImplementation(function (this: ConfirmationService) {
+          return this;
+        });
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
+
+      it('tells a viewer who is not registered, without offering to remove them', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Not registered' }));
+      });
+
+      describe('while the meeting is joinable', () => {
+        const JOIN_LINK = 'https://zoom.us/j/1234567890';
+        const joinableMeeting = () => buildMeeting({ organizer: false, invited: true, start_time: new Date().toISOString() });
+
+        afterEach(() => vi.restoreAllMocks());
+
+        it('opens Zoom without the link (control for the tests below)', async () => {
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          getPublicMeetingJoinUrl.mockReturnValue(of({ link: JOIN_LINK }));
+
+          await createFixture(joinableMeeting());
+
+          expect(open).toHaveBeenCalledTimes(1);
+        });
+
+        it("joins as the impersonator — their email and display name, never the impersonation target's", async () => {
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          getPublicMeetingJoinUrl.mockReturnValue(of({ link: JOIN_LINK }));
+          const userService = TestBed.inject(UserService);
+          (userService.user as WritableSignal<User | null>).set({ name: 'Rashad Mohammed', email: 'rashad@acme-motors.example' } as User);
+          Object.defineProperty(userService, 'meetingJoinIdentity', {
+            value: signal({ name: 'Andres Tobon', email: 'andres@acme-motors.example' }),
+          });
+
+          await createFixture(joinableMeeting());
+
+          expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith(expect.any(String), null, { email: 'andres@acme-motors.example' });
+          expect(open).toHaveBeenCalledTimes(1);
+          const openedUrl = String(open.mock.calls[0][0]);
+          expect(openedUrl).toContain('uname=Andres%20Tobon');
+          expect(openedUrl).not.toContain('Rashad');
+        });
+
+        it('does not open Zoom behind the prompt, even when the join URL arrives after the param is dropped', async () => {
+          queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          const confirm = confirmSpy();
+          const joinUrl$ = new Subject<{ link: string }>();
+          getPublicMeetingJoinUrl.mockReturnValue(joinUrl$);
+
+          await createFixture(joinableMeeting());
+          expect(confirm).toHaveBeenCalledTimes(1);
+          expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null } }));
+
+          joinUrl$.next({ link: JOIN_LINK });
+          await TestBed.inject(ApplicationRef).whenStable();
+
+          expect(open).not.toHaveBeenCalled();
+        });
+      });
+
+      it('shows the real confirmation on an emailed page load and removes the viewer once they confirm', async () => {
+        // The real dialog is rendered, and PrimeNG's dialog template needs an animation renderer.
+        TestBed.configureTestingModule({ providers: [provideNoopAnimations()] });
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const invitedMeeting = buildMeeting({ organizer: false, invited: true });
+        // The live refetch behind the seed must agree with it, or the page would see an un-invited viewer.
+        getPublicMeeting.mockReturnValue(of({ meeting: invitedMeeting, project: buildProject() }));
+        TestBed.inject(TransferState).set(MEETING_JOIN_STATE_KEY, {
+          meeting: { ...invitedMeeting, project: buildProject() },
+          loadedViaPastMeetingId: false,
+          pastMeetingFullAccess: false,
+          liveMeetingFullAccess: false,
+          liveMeetingCanJoin: false,
+          meetingLoadFailed: false,
+        });
+
+        await TestBed.compileComponents();
+        const fixture = TestBed.createComponent(MeetingJoinComponent);
+        await TestBed.inject(ApplicationRef).whenStable();
+        fixture.detectChanges();
+        // PrimeNG renders the dialog body behind an open animation that never completes here, so its buttons can't be
+        // clicked; the real service and dialog component are still in play, which is what a lost prompt would break.
+        const dialog = () => fixture.debugElement.query(By.directive(ConfirmDialog)).componentInstance as ConfirmDialog;
+        await vi.waitFor(() => expect(dialog().visible).toBe(true));
+
+        expect(dialog().confirmation?.header).toBe('Remove Yourself');
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+
+        dialog().onAccept();
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'email-link');
+      });
+
+      describe('when the viewer is signed out', () => {
+        const stubLocation = () => {
+          const location = { href: '' } as Location;
+          vi.spyOn(window, 'location', 'get').mockReturnValue(location);
+          return location;
+        };
+
+        it('sends them to login with a return link built from the route, keeping the password', async () => {
+          authenticated.set(false);
+          paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+          queryParamMap$.next(convertToParamMap({ action: 'leave', password: 'synthetic-pass' }));
+          const location = stubLocation();
+
+          await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+          expect(location.href).toBe(`/login?returnTo=${encodeURIComponent(`/meetings/${MEETING_ID}?action=leave&password=synthetic-pass`)}`);
+        });
+
+        it('does not fetch the meeting during server rendering, so a private meeting is not bounced to not-found', async () => {
+          authenticated.set(false);
+          queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+          TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+          await TestBed.compileComponents();
+          TestBed.createComponent(MeetingJoinComponent);
+          await TestBed.inject(ApplicationRef).whenStable();
+
+          expect(getPublicMeeting).not.toHaveBeenCalled();
+          expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+        });
+      });
+
+      it('does not prompt for another meeting when the route changes before the linked one loads', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+        const first$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+        getPublicMeeting.mockReturnValue(first$);
+
+        await TestBed.compileComponents();
+        const fixture = TestBed.createComponent(MeetingJoinComponent);
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ id: 'meeting-2', organizer: false, invited: true }), project: buildProject() }));
+        paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+        await vi.waitFor(() => expect(fixture.componentInstance.meeting()?.id).toBe('meeting-2'));
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
+
+      it('does nothing without the action param', async () => {
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
     });
 
     it('keeps the action and shows the BFF message when it rejected the request itself', async () => {
@@ -1461,6 +1787,100 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
       expect(buttons.selectedResponse()).toBeNull();
       expect(fixture.componentInstance.currentUserRsvp()).toBeNull();
+    });
+  });
+
+  // GH bug: a private meeting reached without full access (no session at all, or a guest who only
+  // has the shared password) must show title + "Join as Guest" only — no agenda, docs, or date/time.
+  describe('private live meeting access gating', () => {
+    const renderLiveMeeting = async (overrides: Partial<Meeting> = {}, fullAccess: boolean): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details', ...overrides }),
+          project: buildProject(),
+          full_access: fullAccess,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the agenda from an unauthenticated viewer but still offers the guest join form', async () => {
+      authenticated.set(false);
+      const page = await renderLiveMeeting({}, false);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).toBeNull();
+      expect(page.querySelector('[data-testid="meeting-join-sign-in"]')).not.toBeNull();
+      expect(page.querySelector('lfx-guest-form')).not.toBeNull();
+    });
+
+    it('hides the agenda from an authenticated guest-only viewer (password access, no real membership)', async () => {
+      authenticated.set(true);
+      const page = await renderLiveMeeting({ organizer: false, invited: false }, false);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).toBeNull();
+      expect(page.textContent).toContain('This is a private meeting');
+    });
+
+    it('shows full meeting details to an authenticated viewer with real access', async () => {
+      authenticated.set(true);
+      const page = await renderLiveMeeting({ organizer: true }, true);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).not.toBeNull();
+      expect(page.textContent).not.toContain('This is a private meeting');
+    });
+
+    // Per @copilot-pull-request-reviewer on PR #4000: the guest-form-renders assertions above don't
+    // exercise can_join itself — a guest form can render while its Join button stays permanently
+    // disabled. These drive the actual gate the server's can_join (via liveMeetingCanJoin) controls.
+    it('fetches a join URL for a password-only guest when the server reports can_join: true (#3999 follow-up)', async () => {
+      const joinLink = 'https://zoom.us/j/1234567890';
+      authenticated.set(false);
+      getPublicMeetingJoinUrl.mockReturnValue(of({ link: joinLink }));
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details' }),
+          project: buildProject(),
+          full_access: false,
+          can_join: true,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.joinForm.patchValue({ name: 'Guest Visitor', email: 'guest@acme-motors.example' });
+      fixture.componentInstance.joinForm.updateValueAndValidity();
+      // The join-URL stream debounces joinForm.statusChanges by 300ms before fetching.
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      expect(getPublicMeetingJoinUrl).toHaveBeenCalled();
+      expect(fixture.componentInstance.fetchedJoinUrl()).toContain(joinLink);
+    });
+
+    it('never requests a join URL for a password-only guest when the server reports can_join: false (#3999 follow-up)', async () => {
+      authenticated.set(false);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details' }),
+          project: buildProject(),
+          full_access: false,
+          can_join: false,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.joinForm.patchValue({ email: 'guest@acme-motors.example' });
+      fixture.componentInstance.joinForm.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+      expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
     });
   });
 });

@@ -116,6 +116,8 @@ describe('MembersAtRiskComponent', () => {
 
     expect(getMembersAtRisk).toHaveBeenCalledWith({ foundationSlug: 'acme', bucket: 'all', offset: 0, pageSize: 10 });
     expect(text('members-at-risk-outstanding')).toBe('$120K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-at-risk-hero')?.classList).not.toContain('border');
     expect(text('members-at-risk-high')).toBe('$90K');
     expect(text('members-at-risk-medium')).toBe('$30K');
     expect(text('members-at-risk-members')).toBe('3');
@@ -137,18 +139,14 @@ describe('MembersAtRiskComponent', () => {
     expect(query(`members-at-risk-row-${ACCOUNT_ID}-last-engaged`)?.classList).toContain('text-amber-700');
   });
 
-  it('chips the churn risk and names the aging bucket, leaving both out when the model has none', async () => {
+  it('draws no churn-risk chip after the name and no aging bucket under the age, as the design does', async () => {
     await render();
 
-    expect(text(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)).toBe('High risk');
-    expect(query(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)?.className).toContain('bg-red-50');
-    expect(text(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBe('60–89 days');
-
-    TestBed.resetTestingModule();
-    await render(response({ rows: [member({ churnRisk: null, agingBucket: null })] }));
-
+    const row = query(`members-at-risk-row-${ACCOUNT_ID}`);
     expect(query(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)).toBeNull();
-    expect(text(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBe('—');
+    expect(query(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBeNull();
+    expect(row?.textContent).not.toContain('High risk');
+    expect(row?.querySelectorAll('td')[3]?.textContent?.trim()).toBe('71 days');
   });
 
   it('re-reads one bucket from page 1, keeping the note, and writes it to the URL with the fragment kept', async () => {

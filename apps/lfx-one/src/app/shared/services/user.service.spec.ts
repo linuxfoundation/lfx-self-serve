@@ -35,6 +35,41 @@ describe('UserService', () => {
     service = TestBed.inject(UserService);
   });
 
+  it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
+    const response$ = new Subject<{ message: string }>();
+    const put = vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);
+    const refreshed = vi.fn();
+    const subscription = service.identitiesRefresh$.subscribe(refreshed);
+    service.user.set({ email: 'old-primary@example.org' } as User);
+    const result = vi.fn();
+
+    service.setPrimaryEmail('new+primary@example.org').subscribe(result);
+    expect(put).toHaveBeenCalledWith('/api/profile/emails/new%2Bprimary%40example.org/primary', {});
+    expect(refreshed).not.toHaveBeenCalled();
+
+    response$.next({ message: 'ok' });
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(result).toHaveBeenCalledWith({ message: 'ok' });
+    expect(service.user()?.email).toBe('old-primary@example.org');
+    subscription.unsubscribe();
+  });
+
+  it('does not refresh identities when a primary-email change fails', () => {
+    const response$ = new Subject<{ message: string }>();
+    vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);
+    const refreshed = vi.fn();
+    const subscription = service.identitiesRefresh$.subscribe(refreshed);
+    const onError = vi.fn();
+
+    service.setPrimaryEmail('new-primary@example.org').subscribe({ error: onError });
+    const error = new Error('primary change failed');
+    response$.error(error);
+
+    expect(onError).toHaveBeenCalledWith(error);
+    expect(refreshed).not.toHaveBeenCalled();
+    subscription.unsubscribe();
+  });
+
   it.each([
     [{ 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],
     [{ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],
@@ -159,6 +194,75 @@ describe('UserService', () => {
     expect(pending.my_rsvp).toBeNull();
     other.unsubscribe();
     returning.unsubscribe();
+  });
+
+  describe('display name', () => {
+    it('overrides the SSR name with the given parts', () => {
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      service.applyDisplayName('Ada', 'Byron');
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('is a no-op when both parts are empty or there is no user', () => {
+      service.applyDisplayName('Ada', 'Byron');
+      expect(service.user()).toBeNull();
+
+      service.user.set({ name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('  ', null);
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('applies the stored name from the post-hydration profile fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a name saved in-session over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Lovelace' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('Ada', 'Byron', true);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a saved name that matches the displayed name over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      const before = service.user();
+      service.applyDisplayName('Ada', 'Lovelace', true);
+      expect(service.user()).toBe(before);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('ignores the post-hydration name when the stored profile metadata did not load', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Old', last_name: 'Login' }, profile: null }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Byron' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('does not apply the stored name while impersonating', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.impersonating.set(true);
+      service.user.set({ sub: 'auth0|target', name: 'Target User' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Target User');
+    });
   });
 
   describe('RSVP registration retention', () => {
@@ -641,5 +745,32 @@ describe('UserService', () => {
 
     expect(service.uploadedAvatarUrl()).toBeNull();
     expect(service.effectiveAvatarUrl()).toBe('https://cdn.auth0.com/bob.png');
+  });
+
+  describe('meetingJoinIdentity', () => {
+    const target = { name: 'Rashad Mohammed', email: 'rashad@acme-motors.example' } as User;
+    const operator = { sub: 'auth0|operator', name: 'Andres Tobon', email: 'andres@acme-motors.example' };
+
+    it('is the signed-in user when not impersonating', () => {
+      service.user.set(target);
+
+      expect(service.meetingJoinIdentity()).toBe(target);
+    });
+
+    it("is the operator's name and email — never the impersonation target's — while impersonating", () => {
+      service.user.set(target);
+      service.impersonating.set(true);
+      service.impersonator.set(operator);
+
+      expect(service.meetingJoinIdentity()).toEqual({ name: 'Andres Tobon', email: 'andres@acme-motors.example' });
+    });
+
+    it('is null while impersonating without a known operator, rather than falling back to the target', () => {
+      service.user.set(target);
+      service.impersonating.set(true);
+      service.impersonator.set(null);
+
+      expect(service.meetingJoinIdentity()).toBeNull();
+    });
   });
 });

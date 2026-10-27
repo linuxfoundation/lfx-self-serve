@@ -19,6 +19,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
 import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-my-donations',
@@ -30,6 +31,7 @@ import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
     DonationHistoryTableComponent,
     PaymentMethodsComponent,
     ConfirmDialogModule,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './my-donations.component.html',

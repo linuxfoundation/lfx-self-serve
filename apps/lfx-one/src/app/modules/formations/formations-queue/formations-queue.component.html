@@ -1,11 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6" data-testid="formations-queue-container">
-  <div class="flex flex-col gap-1">
-    <h1 class="font-display font-light text-2xl m-0">Formations</h1>
-    <p class="text-sm text-gray-500 m-0">{{ subtitle() }}</p>
-  </div>
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-6" data-testid="formations-queue-container">
+  <lfx-page-header title="Formations" [description]="subtitle()" />
 
   @if (showProposalsTab()) {
     <lfx-formation-page-tabs

@@ -1,118 +1,89 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import { MktgDependencyDocument } from '@lfx-one/shared/interfaces';
-import { catchError, forkJoin, map, Observable, of, Subject } from 'rxjs';
-
-import { MktgAgentRunService } from './mktg-agent-run.service';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { BrandKitRevision, MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
+import { readBrandKitRevision, readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
+import { catchError, forkJoin, map, Observable, of, Subject, throwError } from 'rxjs';
 import { MktgArtifactService } from './mktg-artifact.service';
 
 /**
- * Resolves the stored output documents of Marketing OS dependency agents for
- * one project (dec-agent-dependency-gating). Marketplace gating and intake
- * auto-attachments both consume this: an agent that `dependsOn` another stays
- * disabled until every dependency resolves, and its run submits the resolved
- * documents instead of asking for them.
- *
- * Source order per dependency: the BFF's server-persisted document first
- * (entitlement-gated read endpoint), then this browser's stored run for the
- * same agent as fallback. The server source is resolved GENERICALLY — from the
- * agent's own registered `endpoints.stored` — so every agent with a registered
- * stored read endpoint is reachable from any browser, not just the Brand Kit
- * (persisting alone is not enough: ICP persists today but registers no read
- * endpoint yet, so it resolves from this browser only). That
- * matters beyond tidiness: a dependency resolvable only from the browser that
- * generated it is not a dependency the project has, and the browser-stored run
- * is TTL-bounded.
+ * Dependencies come only from the server's approved-current read contract.
+ * Browser run history may display drafts, but never supplies downstream attachments.
+ * The server alone owns the permitted pre-revision legacy fallback.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgDependencyService {
   private readonly artifactService = inject(MktgArtifactService);
-  private readonly runService = inject(MktgAgentRunService);
-
-  /** Backs {@link documentsChanged$}; hot and replay-free by design (see below). */
   private readonly documentsChanged = new Subject<string>();
-
-  /**
-   * Emits the project uid whose stored agent documents just changed — today,
-   * whenever a run completes. Surfaces that resolve dependencies (the
-   * marketplace's gating) re-resolve on it, so finishing a Brand Kit unlocks
-   * its dependents without a page reload.
-   *
-   * Deliberately replay-free: a subscriber must never receive a notification
-   * that predates it, or the marketplace would re-resolve on first render on
-   * top of its own initial resolution and double-fetch every load.
-   */
   public readonly documentsChanged$: Observable<string> = this.documentsChanged.asObservable();
 
-  /**
-   * Announces that an agent run stored new output for a project, invalidating
-   * whatever dependency resolution its consumers are holding. Called when a
-   * run completes; no-op when nothing is listening.
-   */
+  /** Hot/replay-free invalidation after generation, approval or a pointer move. */
   public notifyDocumentsChanged(projectUid: string): void {
-    if (!projectUid) {
-      return;
-    }
-    this.documentsChanged.next(projectUid);
+    if (projectUid) this.documentsChanged.next(projectUid);
   }
 
-  /**
-   * Resolve one dependency agent's stored output for a project, or null when
-   * neither source has one. Any server error (404 nothing stored, 403 not
-   * entitled, transient failure) degrades to the browser-stored fallback.
-   */
-  public resolveDependency(projectUid: string, agentId: string): Observable<MktgDependencyDocument | null> {
-    const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
-    const storedEndpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
-    if (!storedEndpoint) {
-      // No stored read endpoint is registered for this agent — browser-stored
-      // run only. This is not the same as "persists nothing": an intake can
-      // set `persistsDocument` (ICP does) while its `/stored` read endpoint
-      // has not shipped yet. Registering `endpoints.stored` on the intake is
-      // what lights up the server source here, not a change to this service.
-      return browserFallback$;
-    }
-    return this.artifactService.getStored(storedEndpoint, projectUid).pipe(
-      map(
-        (stored): MktgDependencyDocument => ({
+  /** Any missing approved selection is null; auth/network/read failures remain failures. */
+  public resolveDependency(projectUid: string, agentId: string, withSidecar = false): Observable<MktgDependencyDocument | null> {
+    const endpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
+    if (!projectUid || !endpoint) return of(null);
+    const stored$ = withSidecar ? this.artifactService.getStored(endpoint, projectUid, true) : this.artifactService.getStored(endpoint, projectUid);
+    return stored$.pipe(
+      map((stored): MktgDependencyDocument => {
+        const document = this.markdownOf(stored.documentMarkdown, stored.format);
+        if (document === null && !withSidecar) throw new Error('The approved document has no supported attachment reading.');
+        return {
           agentId,
           source: 'server',
-          version: stored.receipt.version,
-          document: stored.documentMarkdown,
-        })
-      ),
-      catchError(() => browserFallback$)
+          version: stored.revisionNumber ?? stored.receipt.version,
+          document: document ?? '',
+          ...(stored.storedAt && { storedAt: stored.storedAt }),
+          ...(stored.sidecar && { sidecar: stored.sidecar }),
+        };
+      }),
+      catchError((error: unknown) => {
+        if (error instanceof HttpErrorResponse && error.status === HttpStatusCode.NotFound) return of(null);
+        console.error('[mktg-dependency] approved current read failed', { agentId, projectUid, error });
+        return throwError(() => error);
+      })
     );
   }
 
-  /**
-   * Resolve several dependency agents at once, keyed by agent id. Emits a
-   * single complete record (unresolved dependencies map to null); an empty
-   * dependency list resolves immediately to an empty record.
-   */
-  public resolveDependencies(projectUid: string, agentIds: string[]): Observable<Record<string, MktgDependencyDocument | null>> {
-    const uniqueIds = [...new Set(agentIds)];
-    if (uniqueIds.length === 0) {
-      return of({});
-    }
+  /** Approved branding only. Unavailable branding uses the owner's LF print/export look. */
+  public resolveBrandKit(projectUid: string): Observable<BrandKitRevision | null> {
+    if (!projectUid) return of(null);
+    return this.resolveDependency(projectUid, BRAND_KIT_INTAKE.agentId, true).pipe(
+      map((document) => readBrandKitRevision(document?.sidecar ?? null)),
+      catchError(() => of(null))
+    );
+  }
+
+  /** Attachments stay strict; marketplace gating may keep successful reads when a sibling fails. */
+  public resolveDependencies(
+    projectUid: string,
+    agentIds: string[],
+    sidecarIds: string[] = [],
+    allowPartial = false
+  ): Observable<Record<string, MktgDependencyDocument | null>> {
+    const ids = [...new Set(agentIds)];
+    if (!ids.length) return of({});
+    const sidecars = new Set(sidecarIds);
     return forkJoin(
-      Object.fromEntries(uniqueIds.map((agentId) => [agentId, this.resolveDependency(projectUid, agentId)])) as Record<
-        string,
-        Observable<MktgDependencyDocument | null>
-      >
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          this.resolveDependency(projectUid, id, sidecars.has(id)).pipe(catchError((error: unknown) => (allowPartial ? of(null) : throwError(() => error)))),
+        ])
+      ) as Record<string, Observable<MktgDependencyDocument | null>>
     );
   }
 
-  /** This browser's stored run for the agent, reduced to its latest version's document. */
-  private loadBrowserDocument(projectUid: string, agentId: string): MktgDependencyDocument | null {
-    const run = this.runService.loadRun(projectUid, agentId);
-    const latest = run?.versions.at(-1);
-    if (!latest?.document) {
-      return null;
-    }
-    return { agentId, source: 'browser', version: latest.version, document: latest.document };
+  /** Machine attachments remain in the consumer's contract, not raw JSON shown on screen. */
+  private markdownOf(text: string, format: MktgRevisionFormat | undefined): string | null {
+    if (format !== 'json') return text;
+    const content = readFoundationMessageContent(text);
+    return content ? renderFoundationMessageMarkdown(content) : null;
   }
 }

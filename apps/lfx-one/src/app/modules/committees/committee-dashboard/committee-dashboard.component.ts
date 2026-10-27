@@ -62,6 +62,7 @@ import { CommitteeInvitationsComponent } from '../components/committee-invitatio
 import { CommitteePendingApplicationsComponent } from '../components/committee-pending-applications/committee-pending-applications.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
@@ -77,6 +78,7 @@ import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-
     SkeletonModule,
     EmptyStateComponent,
     StatCardGridComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
@@ -366,7 +368,7 @@ export class CommitteeDashboardComponent {
     // any row that still resolves no tier.
     this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
       queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
-      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups', fromMeLens: this.isMeLens() },
+      state: { backLabel: 'Groups', fromMeLens: this.isMeLens() },
     });
   }
 

@@ -24,7 +24,7 @@ import type {
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
-  OrgCompanyEmailsStatus,
+  OrgPersonCompanyEmailRow,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
@@ -92,10 +92,10 @@ interface EmployeeActivityRaw {
 }
 
 /** No unique identity is available — distinct from a resolved empty lookup. */
-const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
-const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'failed' };
+const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
 /** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
@@ -135,30 +135,19 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
+  /**
+   * Chevron-expansion detail for one person within an account: four activity queries in parallel, served
+   * through the shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come
+   * from a live warehouse view that takes seconds, so callers render activity without waiting for it.
+   */
   public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
-    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every one of the five detail
-    // queries is a guaranteed-empty round trip for them. Short-circuit straight to the live-merged
-    // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
-    // connections just to resolve an email.
+    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
+    // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
-      // A synthetic key joins to nothing in the warehouse; read on the roster's LF username instead.
-      // No username → unavailable, never "no company address".
-      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
-      const live = username ? await this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
-      return {
-        personKey,
-        boardSeats: [],
-        committeeSeats: [],
-        code: [],
-        events: [],
-        training: [],
-        companyEmails: live.companyEmails,
-        companyEmailsStatus: live.companyEmailsStatus,
-      };
+      return { personKey, boardSeats: [], committeeSeats: [], code: [], events: [], training: [] };
     }
 
-    const { committeeRows, codeRows, eventRows, trainingRows, companyEmails, companyEmailsStatus } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeActivityRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -191,37 +180,95 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
-      companyEmails,
-      companyEmailsStatus,
     };
   }
 
   /**
+   * Company-affiliated emails for a person identified by warehouse person key.
+   *
+   * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF
+   * username instead. No username → unavailable, never "no company address".
+   */
+  public async getCompanyEmails(req: Request, accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
+    if (personKey.startsWith('live-')) {
+      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
+      return username ? this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
+    }
+    return this.getCompanyEmailsForPersonKey(accountId, personKey);
+  }
+
+  /**
    * Company-affiliated emails for a person identified by LF username (governance surfaces).
-   * Cache misses read only the materialized address table; failures are never cached.
+   *
+   * A username that resolves to one roster person (the same person `getEmployeeDetailByUsername` shows) reads that
+   * person's addresses by person key, so an empty result is "none on record" and a NULL username on the address rows
+   * cannot hide them. Any other username falls back to the address view's own username column, which also covers
+   * people the roster's engagement gate excludes (most key contacts). Failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    // Hashed so the raw identifier is never a `:`-delimited cache-key segment.
-    const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
     try {
+      const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
+      if (personKey) {
+        return await this.getCompanyEmailsForPersonKey(accountId, personKey);
+      }
       return await withOrgCache(
         accountId,
-        `people-username:${usernameDigest}:emails`,
+        `people-username:${usernameDigest(normalizedUsername)}:emails`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
         isCompanyEmailsResponse,
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
+      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed', {
         err: error,
       });
       return FAILED_COMPANY_EMAILS;
     }
+  }
+
+  /**
+   * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
+   * Resolves the username with a keyed read of the account's warehouse roster (ORG_PEOPLE_ALL, a table — not the
+   * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
+   * carries the username.
+   */
+  public async getEmployeeDetailByUsername(req: Request, accountId: string, username: string): Promise<OrgAllEmployeeDetail | null> {
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername) {
+      return null;
+    }
+    const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
+  }
+
+  /** The one roster person key carrying a normalized username at this account, cached per username digest; null when none or several do. */
+  private async resolvePersonKeyByUsername(accountId: string, normalizedUsername: string): Promise<string | null> {
+    const { personKey } = await withOrgCache(
+      accountId,
+      `people-username:${usernameDigest(normalizedUsername)}:person-key`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchPersonKeyByUsername(accountId, normalizedUsername),
+      isPersonKeyLookup
+    );
+    return personKey;
+  }
+
+  /** The one roster person key carrying the username; null when none or several do (the HAVING guard fails closed). */
+  private async fetchPersonKeyByUsername(accountId: string, username: string): Promise<{ personKey: string | null }> {
+    const query = `
+      SELECT MIN(PERSON_KEY) AS PERSON_KEY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+      GROUP BY ACCOUNT_ID
+      HAVING COUNT(DISTINCT PERSON_KEY) = 1
+    `;
+    const result = await this.snowflakeService.execute<{ PERSON_KEY: string | null }>(query, [accountId, username]);
+    return { personKey: result.rows[0]?.PERSON_KEY ?? null };
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -353,21 +400,6 @@ export class OrgLensPeopleService {
     };
   }
 
-  /**
-   * Activity rows and company addresses are cached separately: a failed address read is never stored,
-   * and must not cost the four activity queries their cache slot while the address table is unhealthy.
-   */
-  private async fetchEmployeeDetailRaw(
-    accountId: string,
-    personKey: string
-  ): Promise<EmployeeActivityRaw & { companyEmails: string[]; companyEmailsStatus: OrgCompanyEmailsStatus }> {
-    const [activity, emails] = await Promise.all([
-      this.fetchEmployeeActivityRaw(accountId, personKey),
-      this.getCompanyEmailsForPersonKey(accountId, personKey),
-    ]);
-    return { ...activity, companyEmails: emails.companyEmails, companyEmailsStatus: emails.companyEmailsStatus };
-  }
-
   /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     if (!isFilterSafeIdentifier(personKey)) {
@@ -393,7 +425,7 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A failure degrades this section only, never the whole detail response, and is never cached.
+   * A failure is answered as `failed` and is never cached.
    *
    * A `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
    * before the cache: no verified identity → not available, never "none on record".
@@ -403,7 +435,7 @@ export class OrgLensPeopleService {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
-      companyEmails: await this.fetchCompanyEmails(accountId, personKey),
+      ...toCompanyEmails(await this.fetchCompanyEmails(accountId, personKey)),
       companyEmailsStatus: 'resolved',
     });
     try {
@@ -419,7 +451,7 @@ export class OrgLensPeopleService {
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_detail', 'company email lookup failed; serving detail without addresses', {
+      logger.info(undefined, 'get_org_lens_people_company_emails', 'company email lookup failed', {
         person_key: personKey,
         err: error,
       });
@@ -434,15 +466,17 @@ export class OrgLensPeopleService {
    * Keyed on identity only. Resolving a person from an address is prohibited: that direction contains
    * false links and would attribute one person's addresses to another.
    */
-  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<string[]> {
+  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailRow[]> {
     const query = `
-      SELECT EMAIL
+      SELECT EMAIL, IS_PRIMARY
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-      ORDER BY IS_PRIMARY DESC, EMAIL ASC
+      -- NULLS LAST is explicit: Snowflake sorts NULL above non-NULL on DESC, which would put an
+      -- unflagged address ahead of the primary and break the primary-first contract.
+      ORDER BY IS_PRIMARY DESC NULLS LAST, EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string }>(query, [accountId, personKey]);
-    return result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, personKey]);
+    return result.rows;
   }
 
   /**
@@ -462,18 +496,18 @@ export class OrgLensPeopleService {
         GROUP BY ACCOUNT_ID
         HAVING COUNT(DISTINCT PERSON_KEY) = 1
       )
-      SELECT emails.EMAIL
+      SELECT emails.EMAIL, emails.IS_PRIMARY
       FROM resolved_person AS person
       INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS AS emails
         ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
-      ORDER BY emails.IS_PRIMARY DESC, emails.EMAIL ASC
+      ORDER BY emails.IS_PRIMARY DESC NULLS LAST, emails.EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, username]);
-    const companyEmails = result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
-    if (companyEmails.length === 0) {
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, username]);
+    const resolved = toCompanyEmails(result.rows);
+    if (resolved.companyEmails.length === 0) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    return { companyEmails, companyEmailsStatus: 'resolved' };
+    return { ...resolved, companyEmailsStatus: 'resolved' };
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -713,6 +747,29 @@ function isCacheableCompanyEmails(value: OrgPersonCompanyEmailsResponse): boolea
   return value.companyEmailsStatus !== 'failed';
 }
 
+/** Cached username → person-key lookups: a key, or a stable `null` when no single roster person carries the username. */
+function isPersonKeyLookup(value: unknown): boolean {
+  const lookup = value as { personKey?: unknown } | null;
+  return !!lookup && (lookup.personKey === null || typeof lookup.personKey === 'string');
+}
+
+/** Hashed so a raw username is never a `:`-delimited cache-key segment. */
+function usernameDigest(normalizedUsername: string): string {
+  return createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
+}
+
+/**
+ * Split the warehouse rows into the ordered address list plus the primary. `IS_PRIMARY` is advisory:
+ * the list order already comes from the query, and a person with no primary flagged simply has none.
+ */
+function toCompanyEmails(rows: OrgPersonCompanyEmailRow[]): { companyEmails: string[]; primaryEmail: string | null } {
+  const named = rows.filter((row): row is OrgPersonCompanyEmailRow & { EMAIL: string } => !!row.EMAIL);
+  return {
+    companyEmails: named.map((row) => row.EMAIL),
+    primaryEmail: named.find((row) => row.IS_PRIMARY === true || row.IS_PRIMARY === 1)?.EMAIL ?? null,
+  };
+}
+
 /** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */
 function isCompanyEmailsResponse(value: unknown): boolean {
   const response = value as Partial<OrgPersonCompanyEmailsResponse> | null;
@@ -720,6 +777,8 @@ function isCompanyEmailsResponse(value: unknown): boolean {
     !!response &&
     Array.isArray(response.companyEmails) &&
     response.companyEmails.every((email) => typeof email === 'string') &&
+    // Written before `primaryEmail` existed → undefined, and read as "no primary on record".
+    (response.primaryEmail === undefined || response.primaryEmail === null || typeof response.primaryEmail === 'string') &&
     (response.companyEmailsStatus === 'resolved' || (response.companyEmailsStatus === 'unavailable' && response.companyEmails.length === 0))
   );
 }

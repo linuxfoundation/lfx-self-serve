@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAMPAIGN_ACTION_RULE_LEVERS,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -232,6 +233,17 @@ describe('parseNegativeKeywordInput', () => {
     const astral = '𝔸'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH);
     expect(parseNegativeKeywordInput(astral).problems).toEqual([]);
     expect(parseNegativeKeywordInput('a'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH + 1)).problems[0].reason).toContain(`${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH}`);
+  });
+
+  // A caller that knows the platform passes its own, shorter cap — Google Ads' 80 against the
+  // shared 100 — and a text that clears the shared limit is then still refused.
+  it('applies a caller-supplied text limit instead of the shared one', () => {
+    const text = 'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1);
+    expect(parseNegativeKeywordInput(text).problems).toEqual([]);
+    const parsed = parseNegativeKeywordInput(text, MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+    expect(parsed.keywords).toEqual([]);
+    expect(parsed.problems[0].reason).toContain(`${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH}`);
+    expect(parseNegativeKeywordInput('a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH).problems).toEqual([]);
   });
 
   it.each([null, undefined, 42])('treats a non-string (%s) as empty', (value) => {

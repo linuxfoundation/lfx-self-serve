@@ -85,7 +85,7 @@
 </div>
 
 <!--
-  Google callouts and sitelinks withheld, announced. Top-level for the same reason as the three regions above:
+  Google callouts, sitelinks and structured snippets withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -94,6 +94,16 @@
 </div>
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-sitelinks-withheld-live">
   {{ googleSitelinksWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
+  {{ googleStructuredSnippetsWithheldWarning() }}
+</div>
+<!--
+  The other reason extensions are withheld — the capability, not the channel. Same region shape and
+  same politeness: the campaign is still created, it just carries no extensions.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-extensions-capability-live">
+  {{ googleExtensionsCapabilityMessage() }}
 </div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
@@ -441,7 +451,41 @@
         </p>
       }
 
-      <!-- Callouts and sitelinks typed under Search and withheld after a switch. Announced by the regions at the top. -->
+      <!--
+        Callouts and sitelinks withheld because the create capability is not an explicit yes — the
+        state in which the two channel warnings below cannot speak, because the channel they read is
+        itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
+        the only action and only where a read could succeed.
+      -->
+      @if (googleExtensionsCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-extensions-capability-' + block.kind">
+          <!-- Spinner on `pending` only, and no icon in the amber states: the same treatment the
+               bidding block gives these kinds, and the amber ground already carries the signal. -->
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (block.kind === 'failed') {
+            <lfx-button
+              label="Retry"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="retryCreateCapabilities.emit()"
+              data-testid="implementation-google-extensions-capability-retry" />
+          }
+        </div>
+      }
+
+      <!-- Extensions typed under Search and withheld after a switch. Announced by the regions at the top. -->
       @if (googleCalloutsWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-callouts-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
@@ -449,6 +493,11 @@
       }
       @if (googleSitelinksWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-sitelinks-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googleStructuredSnippetsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-structured-snippets-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
@@ -677,6 +726,121 @@
       }
 
       <!--
+        Google Ads: structured snippets.
+
+        Same gate and same reason as the two sections above. TYPED, not generated: there is no
+        generator event for snippets, so this section is the only way one reaches the campaign — and
+        the only way one survives a visit is the implementation draft.
+
+        The values box is a `<textarea>`, one value per line, the same shape the conversion-action
+        box uses. A header plus at least three distinct values is the smallest servable snippet, so
+        this is a sub-form with its own add button rather than an enter-to-add box.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-structured-snippets-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-snippet-header">
+            Google Structured Snippets ({{ googleStructuredSnippets().length }}/{{ googleMaxStructuredSnippets }})
+          </label>
+          @if (googleStructuredSnippets().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (snippet of googleStructuredSnippetRows(); track snippet.header; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ snippet.header }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ snippet.valuesLabel }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGoogleStructuredSnippet(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + snippet.header"
+                    [attr.data-testid]="'implementation-google-structured-snippet-remove-' + snippet.header">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-structured-snippets-empty">
+              No structured snippets added — this campaign is created without them.
+            </span>
+          }
+          @if (!googleStructuredSnippetsFull()) {
+            <!--
+              No maxlength, for the reason the sitelink boxes carry none: the add trims with Go's
+              rules before it counts runes, and a browser cap counts UTF-16 units. The message lines
+              below carry the feedback instead.
+
+              The section's `<label for>` names the header box; the textarea carries an `aria-label`,
+              since its placeholder is neither an accessible name nor durable once typing starts.
+            -->
+            <div class="flex flex-col gap-2">
+              <input
+                id="google-snippet-header"
+                type="text"
+                placeholder="Header (e.g. Courses, Brands, Types)"
+                [value]="googleStructuredSnippetDraft().header"
+                (input)="onGoogleStructuredSnippetDraftInput('header', $event)"
+                [attr.aria-invalid]="googleSnippetHeaderErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSnippetHeaderErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-snippet-header" />
+              <textarea
+                rows="4"
+                placeholder="One value per line"
+                aria-label="Structured snippet values, one per line"
+                [value]="googleStructuredSnippetDraft().values"
+                (input)="onGoogleStructuredSnippetDraftInput('values', $event)"
+                [attr.aria-invalid]="googleSnippetValuesErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSnippetValuesErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-snippet-values"></textarea>
+              <button
+                type="button"
+                (click)="onGoogleStructuredSnippetAdd()"
+                [disabled]="googleStructuredSnippetAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-snippet-add">
+                + Add structured snippet
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-structured-snippets-full">
+              Maximum of {{ googleMaxStructuredSnippets }} structured snippets reached — remove one to add another.
+            </span>
+          }
+          <!--
+            One line per upstream refusal this sub-form can still hit, named while it is editable.
+            Each is a whole-create refusal at the other end — `validateStructuredSnippets` runs
+            inside the same preflight — so each costs the operator the entire campaign.
+          -->
+          @if (googleSnippetHeaderTooLong()) {
+            <p id="google-snippet-header-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-header-too-long">
+              Header is {{ googleSnippetHeaderLength() }} characters — Google's limit is {{ googleMaxSnippetHeaderRunes }}.
+            </p>
+          } @else if (googleSnippetHeaderDuplicate()) {
+            <p id="google-snippet-header-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-header-duplicate">
+              That header is already on the list — Google refuses a campaign carrying the same snippet header twice.
+            </p>
+          }
+          @if (googleSnippetValueOverLength() > 0) {
+            <p id="google-snippet-value-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-value-too-long">
+              One value is {{ googleSnippetValueOverLength() }} characters — each value is limited to {{ googleMaxSnippetValueRunes }}.
+            </p>
+          } @else if (googleSnippetTooFewValues()) {
+            <p id="google-snippet-too-few-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-few-values">
+              Google needs at least {{ googleMinSnippetValues }} different values on a line, and repeats of the same value count once. This one has
+              {{ googleSnippetDistinctValueCount() }}.
+            </p>
+          } @else if (googleSnippetTooManyValues()) {
+            <p id="google-snippet-too-many-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-many-values">
+              Google takes at most {{ googleMaxSnippetValues }} values on a line — this one has {{ googleSnippetDistinctValueCount() }}.
+            </p>
+          }
+        </div>
+      }
+
+      <!--
         Google Ads: bidding and conversions.
 
         Rendered against ONE channel — `googleBiddingChannel()`, the same one the request will
@@ -773,7 +937,9 @@
           }
 
           @if (googleBiddingError()) {
-            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">{{ googleBiddingError() }}</p>
+            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
+              {{ googleBiddingError() }}
+            </p>
           }
         </div>
       }
@@ -1691,6 +1857,65 @@
                   <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
                 </div>
               </div>
+
+              <!-- Upload the image instead of pasting a URL (decision D3). Offered only on an explicit
+                   yes from `redditAssetUploadAvailable()`: the legacy creator never reads an uploaded
+                   image, and campaign-service refuses one until its URL signing is configured. The
+                   image URL above stays offered either way; the upload wins when both are present. -->
+              <!-- Always mounted, like the asset block's region below: a live region created with the
+                   control as upload support settles would miss its first announcement. -->
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-status-live">
+                {{ redditImageUploadLiveMessage() }}
+              </div>
+              @if (redditAssetUploadAvailable()) {
+                <div class="flex flex-col gap-1" data-testid="implementation-reddit-image-upload">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-image-file">Or upload an image</label>
+                  <input
+                    id="reddit-image-file"
+                    type="file"
+                    [attr.accept]="creativeAssetAccept"
+                    (change)="onRedditImageFileChange($event)"
+                    [attr.aria-describedby]="redditImageFileDescribedBy()"
+                    [attr.aria-invalid]="redditImageUploadStatus() === 'error' ? 'true' : null"
+                    class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                    data-testid="implementation-reddit-image-file" />
+                  <p id="reddit-image-file-hint" class="text-xs text-gray-500">
+                    PNG or JPEG, up to 10 MB. Used instead of the image URL; ignored when a post URL is set.
+                  </p>
+                  <!-- Progress and success are announced by the always-mounted live region above the
+                       control; this is the visible line the input is described by. The refusal is its
+                       own alert. -->
+                  <p id="reddit-image-file-status" class="text-xs text-gray-700" data-testid="implementation-reddit-image-status">
+                    {{ redditImageUploadStatusMessage() }}
+                  </p>
+                  @if (redditImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (redditImageAssetId()) {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-remove">
+                        Remove uploaded image
+                      </button>
+                    </div>
+                  }
+                  @if (redditImageUploadStatus() === 'error') {
+                    <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-image-error">
+                      {{ redditImageUploadError() }}
+                    </p>
+                  }
+                </div>
+              }
             }
 
             <!-- Said BEFORE the create, beside the controls that answer it. The same product
@@ -1703,6 +1928,48 @@
                  the contrast reason the Google warning records. -->
             @if (redditNoAdWarning()) {
               <p class="text-xs text-amber-700" data-testid="implementation-reddit-no-ad-warning">{{ redditNoAdWarning() }}</p>
+            }
+
+            <!-- A retained uploaded image the request cannot carry yet (the upload control above is
+                 hidden while the capability is not an explicit yes). Outside that control so its
+                 actions stay reachable; the live region is always mounted and only its text changes. -->
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-asset-block-live">
+              {{ redditImageAssetBlockMessage() }}
+            </div>
+            @if (redditImageAssetBlock(); as block) {
+              <div
+                class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+                [class.bg-gray-50]="block.kind === 'pending'"
+                [class.text-gray-700]="block.kind === 'pending'"
+                [class.bg-amber-50]="block.kind !== 'pending'"
+                [class.text-amber-800]="block.kind !== 'pending'"
+                [attr.data-testid]="'implementation-reddit-image-asset-block-' + block.kind">
+                <p class="flex items-center gap-2">
+                  @if (block.kind === 'pending') {
+                    <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  }
+                  {{ block.message }}
+                </p>
+                <!-- Remove is offered in EVERY state, pending included: a read can stall. -->
+                <div class="flex items-center gap-2">
+                  @if (block.kind === 'failed') {
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="retryCreateCapabilities.emit()"
+                      data-testid="implementation-reddit-image-asset-block-retry" />
+                  }
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onRedditImageAssetRemove()"
+                    data-testid="implementation-reddit-image-asset-block-remove" />
+                </div>
+              </div>
             }
           </div>
 
@@ -1783,6 +2050,21 @@
       }
 
       <!--
+        Which stored images cover each platform's image slots. Only rendered once the brief is
+        saved: campaign-service plans against a stored brief, and an unsaved one has no library to
+        plan against. The revision token re-reads the plan after an upload in the section above.
+      -->
+      @if (briefPersistence().briefId) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-slot-grid
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [platforms]="selectedPlatforms()"
+            [reloadToken]="creativeLibraryRevision()" />
+        </div>
+      }
+
+      <!--
         A retained Manual bidding choice the deployment has not confirmed it can send (#3299). The
         live region is always mounted and only its text changes, like the brief-status region at
         the top of this template; the visible block below carries the actions.
@@ -1813,7 +2095,7 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                (onClick)="retryBiddingCapability.emit()"
+                (onClick)="retryCreateCapabilities.emit()"
                 data-testid="implementation-bidding-capability-retry" />
             }
             <lfx-button

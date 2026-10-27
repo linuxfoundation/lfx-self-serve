@@ -3,6 +3,7 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -17,6 +18,7 @@ import { OrgOverviewInvolvementComponent } from '../components/org-overview-invo
 @Component({
   selector: 'lfx-org-overview',
   imports: [
+    PageHeaderComponent,
     TagComponent,
     SkeletonModule,
     OpenIntercomDirective,

@@ -32,6 +32,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MailingListTableComponent } from '../components/mailing-list-table/mailing-list-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
@@ -44,6 +45,7 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
     StatCardGridComponent,
     SkeletonModule,
     OpenIntercomDirective,
+    PageHeaderComponent,
   ],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
@@ -144,7 +146,7 @@ export class MailingListDashboardComponent {
     // Canonical tier-prefixed view link comes pre-computed on the row VM, flat fallback included (GH-1567).
     this.router.navigate(mailingList.viewCommands, {
       queryParams: mailingList.linkQueryParams,
-      state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural, fromMeLens: this.isMeLens() },
+      state: { backLabel: this.mailingListLabelPlural, fromMeLens: this.isMeLens() },
     });
   }
 

@@ -417,7 +417,14 @@ export interface FilterPillOption {
   label: string;
   /** Full untruncated label shown as tooltip */
   fullLabel?: string;
+  /** Accessible name override; takes precedence over `fullLabel`/`label` and never shows a tooltip */
+  ariaLabel?: string;
+  /** Optional accent for the default `pill` variant; omitted pills keep the blue selected style */
+  color?: FilterPillColor;
 }
+
+/** Accent colors a filter pill can take */
+export type FilterPillColor = 'green' | 'red' | 'purple' | 'blue';
 
 /**
  * A single signal row within a dual-signal metric card

@@ -8,6 +8,8 @@ import {
   NEWSLETTER_INVITE_COUNTED_LOCALS_KEY,
   NEWSLETTER_INVITE_RATE_LIMIT_MAX,
   NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
+  SELF_RESEND_INVITE_RATE_LIMIT_MAX,
+  SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
 } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
@@ -75,7 +77,9 @@ export const aiRateLimiter = rateLimit({
 /**
  * Rate limiter for vote write endpoints (GH-2729 review m-10).
  *
- * Applied per-route to `POST /api/votes` (create) and `PUT /api/votes/:uid/enable`. A vote open
+ * Applied per-route to `POST /api/votes` (create), `PUT /api/votes/:uid/enable`, and
+ * `POST /api/votes/:uid/reminders` (#3769 — each send emails every selected voter, and this cap is
+ * the only guard against repeat sends). A vote open
  * fans out to as many as 22 upstream calls while convergence lags (1 POST, then on the enable
  * route up to 21 PUTs on the 600 ms grid under the 13 s deadline — see VoteService's budget
  * constants), so the global 500/min/IP `apiRateLimiter` would still allow ~22 such actions per
@@ -119,6 +123,26 @@ export const newsletterInviteRateLimiter = rateLimit({
   // unmetered oracle. The controller marks those refusals on `res.locals`.
   skipFailedRequests: true,
   requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] === true,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Rate limiter for a registrant resending their own meeting invitation.
+ *
+ * Applied per-route to `POST /api/meetings/:uid/registrants/self/resend`, which makes the meeting service
+ * email the caller's own invitation again on every call, and mints an M2M token plus runs a registrant
+ * lookup first. Keyed on the authenticated user, with the /56-masked IP key as the anonymous fallback.
+ * Per-pod MemoryStore like the limiters above, so the effective ceiling is `limit × pods`. A failed
+ * request does not spend budget, so a user whose resend errored can retry.
+ */
+export const selfResendInviteRateLimiter = rateLimit({
+  windowMs: SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS,
+  max: SELF_RESEND_INVITE_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'You have resent your invitation too many times. Please try again later.', code: 'RATE_LIMITED' },
+  skipFailedRequests: true,
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

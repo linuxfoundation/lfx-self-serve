@@ -12,7 +12,13 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, INSIGHTS_PUBLIC_API_FLAG, MEETING_INVITE_PRIMARY_SENTINEL, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_SETTINGS_SECTIONS,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  INSIGHTS_PUBLIC_API_FLAG,
+  PROFILE_EMAILS_PATH,
+} from '@lfx-one/shared/constants';
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
@@ -31,6 +37,7 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -49,6 +56,7 @@ import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observabl
     TooltipModule,
     DynamicDialogModule,
     InsightsTokensComponent,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
@@ -353,7 +361,9 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.cancelOtpStep();
             this.emailRefresh.next();
-            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+            // An address already connected to this account was not added — don't claim it was.
+            const detail = response.status === EMAIL_ALREADY_CONNECTED_STATUS ? EMAIL_ALREADY_CONNECTED_MESSAGE : 'Email address added successfully';
+            this.messageService.add({ severity: 'success', summary: 'Success', detail });
           } else {
             this.messageService.add({
               severity: 'error',
@@ -395,19 +405,20 @@ export class AccountSettingsComponent {
           this.redirectToProfileAuth(err.error.authorize_url);
           return;
         }
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update primary email' });
+        // A blocked change (invite email couldn't be pinned) is a 503 advisory; extractErrorMessage reads it.
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update primary email') });
       },
     });
   }
 
   public setMeetingInvite(email: UserEmail): void {
-    // Picking the primary row sends the sentinel, which clears the override so invitations keep
-    // following the primary email; its literal address would pin it past a later primary change.
+    // Always saves the literal address, the primary's included, so invitations stay on it when the
+    // primary later changes (#3983).
     const inviteEmail = this.meetingInviteEmail();
-    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
-    // No-op when the row already receives invitations — the primary also does when it is pinned.
+    const isPrimary = emailsEqual(email.email, this.emailData()?.primary_email);
+    // No-op when the row already receives invitations — the primary also does when nothing is pinned.
     // After a failed lookup that is unknown, so the write goes through and restores a known state.
-    const isNoop = !this.meetingInviteLoadFailed() && (emailsEqual(email.email, inviteEmail) || (isReset && inviteEmail === null));
+    const isNoop = !this.meetingInviteLoadFailed() && (emailsEqual(email.email, inviteEmail) || (isPrimary && inviteEmail === null));
 
     if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
       return;
@@ -416,19 +427,13 @@ export class AccountSettingsComponent {
     this.meetingInviteError.set(null);
     this.savingMeetingInvite.set(true);
 
-    const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
-
     this.userService
-      .setMeetingInviteEmail(selection)
+      .setMeetingInviteEmail(email.email)
       .pipe(finalize(() => this.savingMeetingInvite.set(false)))
       .subscribe({
         next: () => {
           this.emailRefresh.next();
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
-          });
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
         },
         error: (err: HttpErrorResponse) => {
           // A 400 means the address exists but isn't an active, verified record upstream — retrying

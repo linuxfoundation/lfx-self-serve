@@ -92,6 +92,7 @@ export interface ProjectSettings {
   announcement_date: string;
   writers: UserInfo[];
   auditors: UserInfo[];
+  meeting_coordinators?: UserInfo[];
   executive_director?: UserInfo | null;
   program_manager?: UserInfo | null;
   opportunity_owner?: UserInfo | null;

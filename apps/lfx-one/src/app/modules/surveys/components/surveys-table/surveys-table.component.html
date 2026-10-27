@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="surveys-table-card">
-  <lfx-card-tabs-bar [options]="statusTabOptions" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="surveys-status-tabs">
+  <lfx-card-tabs-bar [options]="statusTabOptions()" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="surveys-status-tabs">
   </lfx-card-tabs-bar>
 
   @if (loading() || surveys().length > 0) {

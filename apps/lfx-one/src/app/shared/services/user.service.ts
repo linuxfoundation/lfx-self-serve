@@ -36,7 +36,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -84,6 +84,19 @@ export class UserService {
    */
   public readonly effectiveAvatarUrl: Signal<string> = computed(() => this.uploadedAvatarUrl() || this.user()?.picture || '');
   /**
+   * The identity a meeting join is performed as — the real viewer, never the impersonation target.
+   * While impersonating, `user` is the target (SSR overrides it), so the join link's display name
+   * (`uname`/`un`) and email must come from the operator instead. Null while impersonating without
+   * a known operator, so a join fails closed rather than falling back to the target.
+   */
+  public readonly meetingJoinIdentity: Signal<Pick<User, 'name' | 'email'> | null> = computed(() => {
+    if (!this.impersonating()) {
+      return this.user();
+    }
+    const impersonator = this.impersonator();
+    return impersonator ? { name: impersonator.name, email: impersonator.email } : null;
+  });
+  /**
    * The viewer's LFID as it appears on meeting `created_by` / host records — null when unresolved.
    * Single source for viewer-identity comparisons (e.g. the "Organized by you" chip and the
    * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.
@@ -98,6 +111,7 @@ export class UserService {
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
+  private profileNameSaved = false;
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
   private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
@@ -176,8 +190,32 @@ export class UserService {
           if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
             this.uploadedAvatarUrl.set(profile.profile.picture);
           }
+          // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
+          // a saved name change reverts on reload. The profile body carries the stored name — but only
+          // trust it when the stored metadata loaded: on a failed read `/api/profile` still returns 200
+          // with `profile: null` and OIDC-derived names, which would replace the correct SSR name.
+          if (profile.profile && !this.impersonating() && !this.profileNameSaved) {
+            this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
+          }
         });
     });
+  }
+
+  /**
+   * Override the display name (navbar, account menu, initials) that SSR seeded from the OIDC `name`
+   * claim, which is stale after a profile save until the next login. No-op when both parts are empty.
+   */
+  public applyDisplayName(firstName: string | null | undefined, lastName: string | null | undefined, saved = false): void {
+    const name = buildDisplayName(firstName, lastName);
+    const current = this.user();
+    if (!name || !current) {
+      return;
+    }
+    // A name just saved in-session must win over the (eventually consistent) post-hydration fetch.
+    this.profileNameSaved = this.profileNameSaved || saved;
+    if (name !== current.name) {
+      this.user.set({ ...current, name });
+    }
   }
 
   // Create a new user with permissions
@@ -241,7 +279,11 @@ export class UserService {
    * @param email - The email address to make primary
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(
+      take(1),
+      // The Identities tab and profile sidebar both read the current primary from this feed.
+      tap(() => this.refreshUserIdentities())
+    );
   }
 
   /**

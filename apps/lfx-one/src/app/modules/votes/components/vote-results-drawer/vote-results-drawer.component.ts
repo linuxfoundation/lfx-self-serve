@@ -1,64 +1,67 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
-  CommentResultPageView,
   MyVoteResponse,
   PollCommentResult,
   RankedQuestionView,
   Vote,
   VoteParticipationStats,
-  VoteResultsOption,
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import {
+  buildRankedQuestionViews,
+  buildVoteResultsQuestions,
   computeVoteParticipationStats,
   daysUntilInTimezone,
   formatVoteDeadline,
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
+  isRankedPollType,
   isVoteEndedEarly,
-  sortCommentResponsesByRecency,
-  splitIntoParagraphs,
+  mergeCommentResults,
 } from '@lfx-one/shared/utils';
-import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
-import { PaginatorModule, PaginatorState } from 'primeng/paginator';
+import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
+
+import { VoteAbstainResultComponent } from '../vote-abstain-result/vote-abstain-result.component';
+import { VoteCommentResultsComponent } from '../vote-comment-results/vote-comment-results.component';
+import { VoteOptionResultsComponent } from '../vote-option-results/vote-option-results.component';
+import { VoteParticipationCardComponent } from '../vote-participation-card/vote-participation-card.component';
+import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-results/vote-ranked-question-results.component';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
   imports: [
     DrawerModule,
     TagComponent,
-    DatePipe,
-    NgTemplateOutlet,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     SkeletonModule,
-    PaginatorModule,
     ButtonComponent,
     TooltipModule,
-    ExpandableTextComponent,
-    LinkifyPipe,
     VoteDeadlinePipe,
     LongTimezonePipe,
+    VoteParticipationCardComponent,
+    VoteOptionResultsComponent,
+    VoteAbstainResultComponent,
+    VoteRankedQuestionResultsComponent,
+    VoteCommentResultsComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -84,9 +87,6 @@ export class VoteResultsDrawerComponent {
   // === Outputs ===
   public readonly castVoteRequested = output<string>();
 
-  // === Constants ===
-  protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;
-
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -99,9 +99,10 @@ export class VoteResultsDrawerComponent {
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
-  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
+  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. Owned here (bound two-way into
+   *  lfx-vote-comment-results) so the comment page survives the results branch being torn down — e.g. a voter reopen swaps in the
+   *  loading skeleton while my-response reloads, which destroys and recreates lfx-vote-comment-results. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
-
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
 
@@ -126,7 +127,6 @@ export class VoteResultsDrawerComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
-  protected readonly paginatedCommentResults: Signal<CommentResultPageView[]> = this.initPaginatedCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
@@ -154,27 +154,86 @@ export class VoteResultsDrawerComponent {
     this.visible.set(false);
   }
 
-  protected onCommentPageChange(promptId: string, event: PaginatorState): void {
-    this.commentPaginatorState.update((prev) => new Map(prev).set(promptId, { first: event.first ?? 0, rows: event.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE }));
-  }
-
   // === Private Initializers ===
   private initVote(): Signal<Vote | null> {
+    // Keys off visible() (not just voteId$) the way initMyResponse() does (per @cursor) — reopening the same
+    // voteId after an extend-triggered cache eviction otherwise never re-fetches, since toObservable only
+    // emits on value changes, and visible() flips on every open/close cycle.
+    // Also keys off listVote()'s own deadline fields (per @cursor): a manager can extend a vote's deadline
+    // from the underlying table row while this drawer stays open on the same vote, and neither voteId nor
+    // visible() flips in that case — only the caller's listVote input changes once it re-fetches.
+    // Reads id/visible/listVote through one computed() snapshot — not three independently-emitting
+    // toObservable() streams combined with combineLatest — so a single update (e.g. reopening the mounted
+    // drawer on a different vote) can never pair the new id with the previous vote's stale listVote before
+    // its own change propagates (per @copilot-pull-request-reviewer).
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+    // Last vote payload actually served to the template, keyed by id — used as the fallback/startWith
+    // value when listVote drops to null while the same vote stays open (per @cursor): the parent's list
+    // temporarily losing the row (a pagination reset, a failed refetch) must not flash the drawer blank.
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
+
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      toObservable(selection).pipe(
+        distinctUntilChanged(
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
+        ),
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
+          if (!visible) {
+            // Closing — keep the already-loaded vote instead of firing a redundant fetch during the close animation (per @copilot-pull-request-reviewer / @greptile-apps).
+            this.loadingVoteDetails.set(false);
+            return EMPTY;
+          }
 
-          this.loadingVoteDetails.set(true);
-          const listVote = this.listVote();
+          // getVoteDetail caches responses for a short TTL — without this, re-fetching the same open
+          // vote right after its deadline changed could still echo back the pre-extension cached
+          // response instead of the fresh one (per @copilot-pull-request-reviewer). Re-selecting a
+          // different vote also bypasses the cache: switching A -> B -> A within the TTL must not let
+          // A's cached pre-extension entry (populated while B was being viewed) win over a deadline
+          // change that happened while A was off-screen — only an unchanged same-vote reopen still
+          // reuses the cache (per @copilot-pull-request-reviewer).
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
 
-          return this.voteService.getVote(id).pipe(
-            catchError(() => of(listVote)),
+          // Falls back to the last vote we actually loaded for this same id when listVote is null,
+          // rather than wiping the drawer with startWith(null) (per @cursor).
+          const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+
+          // Skip the loading flag when fresh-enough data is already available via the fallback (e.g. an
+          // extend while this drawer stayed open) — otherwise the drawer flashes to its skeleton state for
+          // the fetch's duration even though startWith(fallback) below renders the current vote immediately
+          // (per @cursor).
+          if (!fallback) {
+            this.loadingVoteDetails.set(true);
+          }
+
+          return this.voteService.getVote(id, { skipCache }).pipe(
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(fallback)),
             finalize(() => this.loadingVoteDetails.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),
@@ -238,8 +297,8 @@ export class VoteResultsDrawerComponent {
     return computed(() => {
       const v = this.vote();
       if (!v) return false;
-      // Missing poll_type defaults to GENERIC (matches initVotingMethodText) so the plurality branch renders.
-      return (v.poll_type ?? PollType.GENERIC) === PollType.GENERIC;
+      // Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality branch — see isRankedPollType.
+      return !isRankedPollType(v.poll_type);
     });
   }
 
@@ -259,153 +318,22 @@ export class VoteResultsDrawerComponent {
   }
 
   private initQuestionsWithResults(): Signal<VoteResultsQuestion[]> {
-    return computed(() => {
-      const results = this.voteResults();
-      const isClosed = this.isVoteClosed();
-
-      if (!results?.poll_results?.length) {
-        return [];
-      }
-
-      return results.poll_results.map((pollResult) => {
-        const choiceVotes = pollResult.generic_choice_votes || [];
-
-        // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
-        const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
-
-        // Build options with vote counts from the results API
-        const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
-          choiceId: cv.choice_id,
-          text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
-          voteCount: cv.vote_count,
-          percentage: this.computePercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
-          isWinner: false,
-          isTied: false,
-          isLeading: false,
-        }));
-
-        // Determine winner/ties based on max votes
-        const maxVotes = Math.max(...optionsWithCounts.map((o) => o.voteCount), 0);
-        const optionsWithMaxVotes = optionsWithCounts.filter((o) => o.voteCount === maxVotes);
-        const isTied = optionsWithMaxVotes.length > 1 && maxVotes > 0;
-
-        const processedOptions = optionsWithCounts.map((option) => ({
-          ...option,
-          isWinner: isClosed && !isTied && option.voteCount === maxVotes && maxVotes > 0,
-          isTied: isClosed && isTied && option.voteCount === maxVotes,
-          isLeading: option.voteCount === maxVotes && maxVotes > 0,
-        }));
-
-        return {
-          questionId: pollResult.question.question_id,
-          question: pollResult.question.prompt,
-          options: processedOptions,
-          totalVotes,
-        };
-      });
-    });
+    return computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   }
 
   /** Derives the ranked-choice per-question view model — round-summary payload is untyped upstream so detailed visualization is deferred to a placeholder banner. */
   private initRankedQuestions(): Signal<RankedQuestionView[]> {
-    return computed(() => {
-      const results = this.voteResults();
-      if (!results?.poll_results?.length) return [];
-
-      return results.poll_results.map((pr) => {
-        // Choice text: prefer winner_info.poll_choices, fall back to question.choices.
-        const choiceTextById = new Map((pr.ranked_choice_winner_info?.poll_choices ?? pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
-
-        const choiceDistributions = (pr.ranked_choice_votes ?? []).map((rcv) => {
-          const totalRanked = rcv.rank_counts.reduce((sum, rc) => sum + rc.count, 0);
-          const rankCounts = rcv.rank_counts.map((rc) => ({
-            rank: rc.rank,
-            count: rc.count,
-            percentage: totalRanked > 0 ? Math.round((rc.count / totalRanked) * 100) : 0,
-          }));
-          return {
-            choiceId: rcv.choice_id,
-            choiceText: choiceTextById.get(rcv.choice_id) ?? rcv.choice_id,
-            totalRanked,
-            rankCounts,
-          };
-        });
-
-        return {
-          questionId: pr.question.question_id,
-          prompt: pr.question.prompt,
-          choiceDistributions,
-          hasRoundSummary: !!pr.irv_round_summary || !!pr.meek_stv_round_summary,
-        };
-      });
-    });
+    return computed(() => buildRankedQuestionViews(this.voteResults()));
   }
 
-  /** Prompts come from the vote detail (poll_comment_prompts), not the results payload — the
-   *  results endpoint only reports prompts that have responses, which hid the Comments section
-   *  entirely on zero-response votes. Responses left-join in by prompt_id when present, sorted
-   *  newest-first (pagination slices the already-sorted list, so page 1 always shows the most
-   *  recent comments). If the detail fetch supplied no prompts (e.g. it failed and the list-vote
-   *  fallback lacks them), degrade to the results payload's prompts that have responses. A failed
-   *  results fetch suppresses the section entirely — otherwise each prompt would render "No
-   *  responses yet" and a load failure would masquerade as a genuine zero-response vote. */
+  /** Prompts come from the vote detail and responses left-join in newest-first (see mergeCommentResults). A failed
+   *  results fetch suppresses the section entirely — otherwise each prompt would render "No responses yet" and a
+   *  load failure would masquerade as a genuine zero-response vote. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
       if (this.voteResultsError()) return [];
-
-      const commentResults = this.voteResults()?.comment_results ?? [];
-      const detailPrompts = this.vote()?.poll_comment_prompts;
-
-      if (!detailPrompts?.length) {
-        return commentResults.flatMap((cr) => (cr.responses.length > 0 ? [{ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }] : []));
-      }
-
-      const resultsByPromptId = new Map(commentResults.map((cr) => [cr.prompt.prompt_id, cr]));
-
-      return detailPrompts.map((prompt) => {
-        const result = resultsByPromptId.get(prompt.prompt_id);
-        return {
-          prompt,
-          responses: sortCommentResponsesByRecency(result?.responses ?? []),
-          total_responses: result?.total_responses,
-        };
-      });
+      return mergeCommentResults(this.voteResults()?.comment_results ?? [], this.vote()?.poll_comment_prompts);
     });
-  }
-
-  /** Slices each prompt's responses to its current page. The offset is clamped to the last valid
-   *  page so a stale Map entry (e.g. from a previously opened vote with more comments, or after a
-   *  rows-per-page change) can never render an empty page. */
-  private initPaginatedCommentResults(): Signal<CommentResultPageView[]> {
-    return computed(() => {
-      const stateByPrompt = this.commentPaginatorState();
-
-      return this.commentResults().map((cr) => {
-        const totalResponses = cr.responses.length;
-        const state = stateByPrompt.get(cr.prompt.prompt_id);
-        const rows = state?.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE;
-        const lastPageFirst = Math.max(0, Math.ceil(totalResponses / rows) - 1) * rows;
-        const first = Math.min(state?.first ?? 0, lastPageFirst);
-
-        return {
-          ...cr,
-          responses: cr.responses.slice(first, first + rows).map((response) => ({
-            ...response,
-            paragraphs: splitIntoParagraphs(response.comment_text),
-          })),
-          totalResponses,
-          first,
-          rows,
-        };
-      });
-    });
-  }
-
-  /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
-  private computePercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
-    if (apiPercentage > 0) return apiPercentage;
-    if (totalResponses <= 0) return 0;
-    return Math.round((voteCount / totalResponses) * 100);
   }
 
   private initVotingMethodText(): Signal<string> {
@@ -415,6 +343,7 @@ export class VoteResultsDrawerComponent {
 
       const methodLabels: Record<PollType, string> = {
         [PollType.GENERIC]: 'Plurality Vote',
+        [PollType.MAJORITY]: 'Majority Vote',
         [PollType.CONDORCET_IRV]: 'Ranked Choice (Condorcet IRV)',
         [PollType.INSTANT_RUNOFF_VOTE]: 'Instant Runoff Vote',
         [PollType.MEEK_STV]: 'Meek STV',
@@ -531,6 +460,7 @@ export class VoteResultsDrawerComponent {
       const pollType = this.vote()?.poll_type ?? PollType.GENERIC;
       switch (pollType) {
         case PollType.GENERIC:
+        case PollType.MAJORITY:
           return 'Each voter picks one option; the option with the most votes wins.';
         case PollType.CONDORCET_IRV:
           return 'Voters rank options; a candidate that beats all others head-to-head wins, else IRV elimination decides.';

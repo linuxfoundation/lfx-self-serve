@@ -1,39 +1,53 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<nav class="flex flex-col gap-1 lg:sticky" [style.top.px]="topPx()" [attr.aria-label]="ariaLabel()" [attr.data-testid]="testIdPrefix() + '-sub-nav'">
+<!-- The design's `.hmn`. Pixel sizes follow it; the 14px root makes the rem scale undershoot them. The rail and the
+     panel's pop-over behaviour only apply while the page is narrow — see the stylesheet. -->
+<div class="hmn-rail" aria-hidden="true" [attr.data-testid]="testIdPrefix() + '-sub-nav-rail'">
   @for (item of items(); track item.key) {
-    <button
-      type="button"
-      class="flex flex-col gap-0.5 rounded-lg px-2 py-2 text-left"
-      [ngClass]="item.key === activeKey() ? 'text-blue-600' : 'text-gray-600 hover:text-gray-900'"
-      [attr.aria-current]="item.key === activeKey() ? 'true' : null"
-      [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key"
-      (click)="sectionPicked.emit(item.key)">
-      <span class="flex items-baseline justify-between gap-2">
-        <span class="text-[13px] font-medium">{{ item.label }}</span>
-        @if (item.count !== null) {
-          <span class="text-[12px] tabular-nums text-gray-400">{{ item.count }}</span>
-        }
-      </span>
-      @if (item.note) {
-        <span class="text-[11px] text-gray-400">{{ item.note }}</span>
-      }
-    </button>
+    <span class="hmn-tick" [class.hmn-tick-active]="item.key === activeKey()"></span>
   }
+</div>
 
-  @if (crossReference(); as crossReference) {
-    <!-- Preserves query params, matching the tab bar's links. -->
-    <p class="mt-2 border-t border-gray-100 px-2 pt-3 text-[11px] text-gray-400" [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-note'">
-      {{ crossReference.text }}
-      <a
-        class="font-medium text-blue-600 hover:underline"
-        [routerLink]="[basePath, crossReference.route]"
-        [fragment]="crossReference.fragment"
-        queryParamsHandling="preserve"
-        [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-link'"
-        >{{ crossReference.linkLabel }}</a
-      >
-    </p>
-  }
-</nav>
+<div class="hmn-panel">
+  <div class="flex flex-col gap-[4px] border-l border-gray-200">
+    @for (item of items(); track item.key; let index = $index) {
+      @let active = item.key === activeKey();
+      <button
+        type="button"
+        class="hmn-item -ml-px flex items-center justify-between gap-[10px] border-0 border-l-2 bg-transparent py-[6px] pl-[16px] pr-0 text-left"
+        [ngClass]="active ? 'border-blue-500' : 'border-transparent'"
+        [style.--hmn-index]="index"
+        [attr.aria-current]="active ? 'true' : null"
+        [attr.aria-describedby]="item.note ? testIdPrefix() + '-sub-nav-' + item.key + '-note-text' : null"
+        [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key"
+        (click)="pick(item.key, $event)">
+        <span class="flex min-w-0 items-center gap-[6px]">
+          <!-- A hidden medium-weight copy reserves the label's width, so the active weight never shifts the row. -->
+          <span class="hmn-label inline-grid text-[13px] leading-[20px]" [ngClass]="active ? 'text-gray-900' : 'text-gray-500'">
+            <span class="[grid-area:1/1]" [ngClass]="active ? 'font-medium' : 'font-normal'">{{ item.label }}</span>
+            <span class="invisible font-medium [grid-area:1/1]" aria-hidden="true">{{ item.label }}</span>
+          </span>
+          @if (item.note) {
+            <span class="hmn-tip relative inline-flex items-center" [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-note'">
+              <i class="fa-light fa-circle-exclamation text-[13px] text-red-400" aria-hidden="true"></i>
+              <span
+                [id]="testIdPrefix() + '-sub-nav-' + item.key + '-note-text'"
+                role="tooltip"
+                class="hmn-tipbox pointer-events-none absolute bottom-[calc(100%_+_8px)] left-1/2 z-50 w-max max-w-[260px] rounded-[8px] bg-gray-900 px-[10px] py-[8px] text-left text-[12px] font-normal leading-[16px] text-white"
+                >{{ item.note }}</span
+              >
+            </span>
+          }
+        </span>
+        @if (item.count !== null) {
+          <span
+            class="shrink-0 rounded-full border border-gray-200 px-[7px] text-[11px] font-medium tabular-nums text-gray-600"
+            [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
+            >{{ item.count }}</span
+          >
+        }
+      </button>
+    }
+  </div>
+</div>

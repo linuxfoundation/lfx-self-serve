@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
-import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail } from '@lfx-one/shared/interfaces';
+import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES } from '@lfx-one/shared/constants';
+import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -188,7 +188,7 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
 
 /**
  * Guards the client-side meeting-invite selection and delete-guard invariants (Copilot review,
- * PR #1073): the primary row sends the reset sentinel, a write-in-flight blocks a second
+ * PR #1073): the primary row pins its literal address (#3983), a write-in-flight blocks a second
  * selection, both error paths surface to the right UI element, and delete stays blocked whenever
  * the target is (or might be, on a failed lookup) the current meeting-invite address.
  */
@@ -240,13 +240,13 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     return fixture;
   }
 
-  it('sends the reset sentinel when the primary row is selected while an override is active', async () => {
+  it('pins the literal primary address, not the sentinel, when the primary row is selected (#3983)', async () => {
     const userServiceMock = makeUserServiceMock({ invite: { email_id: 'id-1', email: ALT_EMAIL.email } });
     const fixture = await setup(userServiceMock);
 
     fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
 
-    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
   });
 
   it('sends the literal address when a non-primary row is selected', async () => {
@@ -309,14 +309,14 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
       expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
     });
 
-    it('lets the primary row restore the default after a failed lookup instead of silently no-oping', async () => {
+    it('lets the primary row pin itself after a failed lookup instead of silently no-oping', async () => {
       const userServiceMock = makeUserServiceMock({ invite: 'error' });
       const fixture = await setup(userServiceMock);
 
       expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
       fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
 
-      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
     });
 
     it('surfaces an override that matches none of the listed addresses', async () => {
@@ -437,6 +437,31 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
   });
 
+  // A primary change is blocked when the invite email couldn't be pinned first (#3983); the reason
+  // must reach the user rather than a generic failure, for both the retryable and the rejected case.
+  it.each([
+    ['a retryable 503 advisory', 503, ERROR_CODES.SERVICE_ADVISORY, "Your primary email wasn't changed. Please try again in a few minutes."],
+    [
+      'a rejected-pin 400',
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Your primary email wasn't changed. Choose a different address for meeting invitations in Settings.",
+    ],
+  ])('shows why a primary change was blocked by %s', async (_label, status, code, guidance) => {
+    const userServiceMock = makeUserServiceMock();
+    userServiceMock['setPrimaryEmail'] = vi.fn(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({ status, error: { error: guidance, code, errors: [{ field: 'email', message: guidance, code: 'FIELD_VALIDATION_ERROR' }] } })
+      )
+    );
+    const fixture = await setup(userServiceMock);
+
+    fixture.componentInstance.setPrimary(ALT_EMAIL);
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
+  });
+
   it('fails closed and skips the delete flow entirely when the invite lookup itself failed', async () => {
     const rejectIdentity = vi.fn(() => of({ success: true }));
     const userServiceMock = makeUserServiceMock({ invite: 'error', rejectIdentity });
@@ -549,5 +574,122 @@ describe('AccountSettingsComponent — email verification support', () => {
     const supportButton = otpStep.querySelector<HTMLButtonElement>('[data-testid="otp-support-hint"] [data-testid="otp-support-button"]');
     expect(supportButton?.disabled).toBe(false);
     expect(root.querySelector('[data-testid="add-email-form"]')).toBeNull();
+  });
+});
+
+/**
+ * Guards #4253: auth-service reports an address already connected to the caller as a token-free
+ * success, which the BFF returns as `status: 'already_connected'`. The settings form must say so
+ * instead of claiming a new address was added, while keeping its reset/refresh sequence.
+ */
+describe('AccountSettingsComponent — verify and link outcome (#4253)', () => {
+  async function setup(verify: () => Observable<VerifyAndLinkEmailResponse>) {
+    const add = vi.fn();
+    const userServiceMock = {
+      impersonating: signal(true), // skips the developer-token fetch — irrelevant to this suite
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      verifyAndLinkEmail: vi.fn(verify),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        // Server platform: the authorization redirect is a no-op, so the 403 branch can be observed.
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: MessageService, useValue: { add } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    // providers: [] — see the note in the first suite.
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [], providers: [] } });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const component = fixture.componentInstance;
+    component.otpStep.set(true);
+    component.pendingEmail.set('owned@example.test');
+    component.otpForm.setValue({ otp: '123456' });
+
+    return { component, add, userServiceMock };
+  }
+
+  it('confirms an already-connected address without claiming it was added, then resets and refreshes', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      of<VerifyAndLinkEmailResponse>({ success: true, status: 'already_connected', message: EMAIL_ALREADY_CONNECTED_MESSAGE })
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(userServiceMock.verifyAndLinkEmail).toHaveBeenCalledExactlyOnceWith('owned@example.test', '123456');
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(component.otpStep()).toBe(false);
+    expect(component.pendingEmail()).toBe('');
+    expect(component.otpForm.value.otp).toBeNull();
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore + 1);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  it('keeps the new-address copy for an ordinary link', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      of<VerifyAndLinkEmailResponse>({ success: true, message: 'Email identity verified and linked successfully' })
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+    expect(component.otpStep()).toBe(false);
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore + 1);
+  });
+
+  it('hands off to authorization without a toast or reset when the management token is missing', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 403,
+            error: { success: false, error: 'management_token_required', authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile%2Femails' },
+          })
+      )
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).not.toHaveBeenCalled();
+    expect(component.otpStep()).toBe(true);
+    expect(component.pendingEmail()).toBe('owned@example.test');
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  it('keeps the OTP step open with the server message on a failed verification so the user can retry', async () => {
+    const { component, add } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again or request a new code.' },
+          })
+      )
+    );
+
+    component.verifyAndLink();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Verification failed. Please try again or request a new code.',
+    });
+    expect(component.otpStep()).toBe(true);
+    expect(component.verifyingOtp()).toBe(false);
   });
 });

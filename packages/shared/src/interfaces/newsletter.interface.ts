@@ -530,6 +530,22 @@ export interface NewsletterListParams {
 }
 
 /**
+ * Per-tab counts for the project newsletter list (GET .../newsletters/status-counts).
+ * The upstream list returns no totals, so Express pages through it and buckets rows
+ * the way the list tabs do: `sending` rows with `scheduled_at` are arms in progress
+ * (Scheduled), other `sending` rows belong to Sent.
+ */
+export interface NewsletterStatusCounts {
+  draft: number;
+  scheduled: number;
+  sent: number;
+  /** Null when the opt-out list could not be read (e.g. the caller lacks the upstream auditor relation). */
+  optout: number | null;
+  /** True when paging stopped at the page cap, so draft/scheduled/sent are lower bounds. */
+  truncated: boolean;
+}
+
+/**
  * Reason a newsletter's schedule form can't be armed. `'past'` | `'tooSoon'` |
  * `'tooFar'` come from `newsletterScheduleWindowValidator` — `'past'` is the
  * only case that should clear the picker (the value can no longer save);

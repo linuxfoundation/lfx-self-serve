@@ -9,6 +9,7 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
@@ -98,6 +99,212 @@ export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[nu
 
 /** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
 export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
+
+/** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
+export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
+
+/** Where an image upload in the create form stands; a finished upload is its asset id being set. */
+export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
+
+/**
+ * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
+ * returns it to the browser.
+ *
+ * `created` is false when an identical image had already been uploaded to the same brief:
+ * campaign-service dedupes on the content checksum and returns the existing row (200 rather than
+ * 201), so the `id` is equally usable either way.
+ */
+export interface CreativeAssetUploadResult {
+  id: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  created: boolean;
+}
+
+/**
+ * campaign-service's `CreativeAsset` as the upload answers it (`design/brief.go`). `created` is
+ * the string `"true"`/`"false"` upstream, mirroring its 201/200 split.
+ */
+export interface CampaignServiceCreativeAsset {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  mime_type: string;
+  byte_size: number;
+  checksum: string;
+  /**
+   * Pixel dimensions as read from the image header at upload. OPTIONAL upstream, and absent means
+   * UNKNOWN rather than 0: the service began recording them in migration 000047, so an asset stored
+   * before it has none and never will until a backfill runs. Carrying a fabricated 0 would read to a
+   * slot matcher as "fails every minimum", which is a different and wrong answer.
+   */
+  width?: number;
+  height?: number;
+  created?: 'true' | 'false';
+}
+
+/** campaign-service's `creative-asset-list` — the brief's library plus the quota an upload is judged against. */
+export interface CampaignServiceCreativeAssetList {
+  assets: CampaignServiceCreativeAsset[];
+  count: number;
+  count_limit: number;
+  bytes_used: number;
+  bytes_limit: number;
+}
+
+/** campaign-service's `creative-slot-assignment` — one platform image slot and the assets that fill it. */
+export interface CampaignServiceCreativeSlotAssignment {
+  slot_key: string;
+  platform: string;
+  /** Absent where the platform has a single ad shape. */
+  channel?: string;
+  slot: string;
+  label: string;
+  requirement: string;
+  asset_ids: string[];
+  min_count: number;
+  max_count: number;
+}
+
+/** campaign-service's `creative-slot-gap` — one required rule the library cannot meet. */
+export interface CampaignServiceCreativeSlotGap {
+  platform: string;
+  channel?: string;
+  /** Absent when the requirement spans several slots and no single one is required on its own. */
+  slot_key?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** campaign-service's `creative-asset-plan` — which stored assets fit which slots, and what is missing. */
+export interface CampaignServiceCreativeAssetPlan {
+  platforms: string[];
+  assignments: CampaignServiceCreativeSlotAssignment[];
+  gaps: CampaignServiceCreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One stored creative asset as the browser sees it.
+ *
+ * `width`/`height` stay optional here for the same reason they are optional upstream — absent means
+ * the dimensions were never recorded, which a slot grid must render as "unknown", not as "0".
+ */
+export interface StoredCreativeAsset {
+  id: string;
+  projectId: string;
+  briefId: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * A brief's creative-asset library plus its quota.
+ *
+ * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
+ * knows before it starts how many assets and bytes it may still add — instead of discovering the
+ * brief is full by sending file 51 and being refused.
+ */
+export interface CreativeAssetLibrary {
+  assets: StoredCreativeAsset[];
+  count: number;
+  countLimit: number;
+  bytesUsed: number;
+  bytesLimit: number;
+}
+
+/** One platform image slot and the stored assets that fill it, best fit first. */
+export interface CreativeSlotAssignment {
+  slotKey: string;
+  platform: string;
+  channel?: string;
+  slot: string;
+  label: string;
+  /** The slot's rule as an operator-readable sentence, carried even on a full slot. */
+  requirement: string;
+  assetIds: string[];
+  minCount: number;
+  maxCount: number;
+}
+
+/** One required slot or cross-slot rule the library leaves short. */
+export interface CreativeSlotGap {
+  platform: string;
+  channel?: string;
+  slotKey?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** The computed slot grid for a brief's library. A pure read — nothing is attached to anything. */
+export interface CreativeAssetPlan {
+  platforms: string[];
+  assignments: CreativeSlotAssignment[];
+  gaps: CreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One row of the slot-coverage grid: a slot the plan filled, a slot it left short, or a
+ * cross-slot requirement that names no single slot.
+ *
+ * Assembled from a plan's `assignments` and `gaps` TOGETHER, because the two describe the same
+ * slot from opposite sides — a slot holding one of the two images it needs appears in both, and
+ * rendering them as separate rows would show an operator the same slot twice with contradictory
+ * answers.
+ */
+export interface CreativeSlotCoverageRow {
+  key: string;
+  label: string;
+  /** The slot's rule as a sentence, when the plan carried an assignment for it. */
+  requirement: string;
+  /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
+  filled: number;
+  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  need: number;
+  /** The plan's own words for why it is short. Empty when nothing is missing. */
+  reason: string;
+  status: 'filled' | 'short' | 'missing';
+  statusLabel: string;
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in.
+   */
+  countText: string;
+}
+
+/** The coverage rows for one platform, or for one channel within a platform. */
+export interface CreativeSlotCoverageGroup {
+  key: string;
+  /** The platform's display label, with its channel appended when the plan named one. */
+  label: string;
+  rows: CreativeSlotCoverageRow[];
+  /** Rows still short or missing — what an operator has to act on in this group. */
+  openCount: number;
+}
+
+/**
+ * The slot grid's own read of `get-asset-plan`.
+ *
+ * `idle` is NOT `ready` with an empty plan: before a brief is saved there is nothing to plan
+ * against, and an empty plan rendered as a result would read as "no gaps — this library can
+ * launch", which is the one thing it does not mean.
+ */
+export interface CreativeSlotCoverageState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  plan: CreativeAssetPlan | null;
+  message: string;
+}
 
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
@@ -220,6 +427,9 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
+  | 'callouts'
+  | 'sitelinks'
   | 'linkedin_strategy'
   | 'error'
   | 'done'
@@ -322,6 +532,33 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, for the Optimize tab's
+   * negative-keyword editor to open pre-filled with once the campaign is live.
+   *
+   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
+   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
+   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
+   * So this list is never sent by anything; it fills the editor's text, the operator edits it
+   * there, and nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
+   * never opens holding a line it would refuse the operator for typing.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;
@@ -368,6 +605,51 @@ export interface CampaignBriefOutput {
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
   metaCopy?: MetaBriefCopy;
+  /**
+   * Google callout extensions the brief generated, for the Implementation tab's editor to open on.
+   *
+   * A SEED, not a decision: the operator adds, edits and removes entries there exactly as before,
+   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave.
+   *
+   * Absent and empty do NOT agree, and the difference is load-bearing. `undefined` means the brief
+   * carries no list at all — a brief generated before this feature shipped, or restored from a row
+   * written then — and the Implementation tab leaves its editor untouched for it, so entries the
+   * operator typed by hand survive. `[]` is a list, and assigning it CLEARS that editor. The brief
+   * restore path is written to the same rule: it returns `undefined`, never `[]`, for a stored row
+   * that carries no list.
+   *
+   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} by the generator, which also DROPS an entry
+   * past {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} rather than shortening it — so the editor never
+   * opens holding a list it would refuse the operator for typing, and never holding a phrase cut
+   * mid-word that nobody wrote. (The restore path bounds instead, because there the alternative is
+   * losing an entry the operator typed.)
+   */
+  googleCallouts?: string[];
+  /**
+   * Google sitelink extensions the brief derived from the event page's own links.
+   *
+   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, with
+   * absent and empty meaning different things.
+   *
+   * Three producers, and they guarantee different things about `finalUrl`. The GENERATOR builds
+   * each one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
+   * sitelink cannot point at a destination the model composed. The brief RESTORE path rebuilds the
+   * list from campaign-service's opaque `copy` blob, which carries no page provenance to check; it
+   * guarantees only what it can enforce on the value itself — an absolute http(s) URL within
+   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. The CARRY
+   * (the Implementation tab's `briefWithCarriedExtensions`) re-attaches the operator's own edited
+   * list, which the editor's add-guards vetted on the same value-only terms — a destination the
+   * operator typed or pasted there was never fetched and is not known to resolve. Do not treat a
+   * value read off this field as page-verified.
+   *
+   * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
+   * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
+   * final URL goes through), so a click on one attributes to google/cpc under this campaign's
+   * `utm_campaign` with no help from this app. Tagging here as well would hand that builder a
+   * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
+   * would end up attributed to a campaign other than the one that bought the click.
+   */
+  googleSitelinks?: CampaignSitelink[];
 }
 
 /**
@@ -444,6 +726,63 @@ export interface CampaignBriefPersistResult {
 }
 
 /**
+ * What `POST /api/campaigns/brief/:briefId/approve` reports back.
+ *
+ * Approval used to exist only as the tail of a save: `saveBrief` writes the row, then calls
+ * campaign-service's `approve-brief` with the write's own ETag. That left one state with no way
+ * out — a stored brief sitting in `draft`, because the write's approval failed or because a later
+ * replace reset it (campaign-service resets `status` to `draft` on every PUT). RESTORING such a
+ * brief deliberately suppresses the save, since re-saving would PUT a lossy reconstruction over
+ * the stored bytes, so the only path back to `approved` was also the one path the restore must
+ * not take. Campaign creation and audience building both refuse an unapproved brief, so the brief
+ * was durable and unusable at once. This endpoint approves the STORED row and writes nothing.
+ *
+ * Deliberately NOT `CampaignBriefPersistResult`: `created` is meaningless here (nothing is
+ * written), and the conflicts a save can hit are not the ones an approve can.
+ */
+export interface CampaignBriefApproveResult {
+  /** `false` when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off — see `CampaignBriefPersistResult.enabled`. */
+  enabled: boolean;
+  /** The brief that was approved, echoed back so a caller holding several can match the answer to one. */
+  briefId: string;
+  /**
+   * The approved row's new validator, or `null` when the outcome left it unknowable.
+   *
+   * Approval bumps the row's `version` upstream, and the ETag mirrors the version — so the
+   * validator the caller approved WITH is stale the moment this succeeds, and a caller that
+   * keeps it would have its next save refused with a 412. Re-record this one.
+   */
+  etag: string | null;
+  /** Whether the stored brief is now `approved`. `false` with no `conflict` means the outcome is unknown. */
+  approved: boolean;
+  /**
+   * Why approval did not happen, when it did not. Absent means it did.
+   *
+   * `stale-brief`: the `If-Match` validator was rejected with a 412 — the row moved since the
+   * caller read it. The remedy is to reload the brief and approve the version that is actually
+   * stored, never to retry with the same validator.
+   *
+   * `brief-not-found`: the row is gone — a typed 404 on the approve itself.
+   *
+   * `rejected`: campaign-service refused the approval outright (a 4xx that is neither of the
+   * above) — the brief is stored but campaign-service will not approve it as it stands.
+   *
+   * `unverified-validator`: the caller held no validator, so nothing was sent. The same name and
+   * the same meaning as `CampaignBriefPersistResult`'s: an approval the server would accept is
+   * not the same as an approval that is about the row the user was SHOWN, and without a
+   * validator from the read that filled the screen, nothing can tell the two apart. Reading one
+   * here rather than refusing is what made this path able to approve an intervening writer's
+   * content — the restore approves automatically, one round trip after its own read, and
+   * campaign creation then builds from the approved row. The remedy is a fresh read: reload and
+   * re-enter the event URL.
+   *
+   * An indeterminate outcome (5xx, timeout) carries NO conflict and `approved: false`: the
+   * approval may or may not have landed, and claiming either way would be a guess.
+   */
+  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected' | 'unverified-validator';
+}
+
+/**
  * The Implementation tab's view of whether the brief behind it is durable.
  *
  * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
@@ -469,7 +808,7 @@ export interface CampaignBriefPersistenceState {
    * Is the stored brief APPROVED, and therefore usable for campaign creation?
    *
    * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
-   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * from an unapproved brief outright — `BriefService.CreateCampaigns` returns 400 "brief must be
    * approved before creating campaigns" — so the Implementation tab has to know, and matching on
    * banner prose to find out would break the first time the copy is edited.
    *
@@ -706,6 +1045,31 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
+   * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
+   * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
+   * brief being created from is still that brief. Round-trips regardless of
+   * `redditAssetUploadEnabled`, for the reason the three above do.
+   */
+  redditImageAssetId?: string;
+  redditImageAssetName?: string;
+  redditImageAssetBriefId?: string;
+  /**
+   * The file name of a Reddit image upload still in flight when the draft was taken. The request
+   * outlives the tab (`CampaignService.uploadCreativeAsset`), so a remount resumes it by brief
+   * instead of losing the image the operator picked; empty when nothing is uploading.
+   */
+  redditImageUploadPendingName?: string;
+  /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
+  redditImageUploadPendingBriefId?: string;
+  /**
+   * A failed upload's reason and the brief it was for, kept until the operator removes or replaces
+   * the image, so a tab switch cannot lift the block it raises (`uploadFailed`) and let Create send
+   * the campaign without the image they chose. Empty when no upload has failed.
+   */
+  redditImageUploadFailedMessage?: string;
+  redditImageUploadFailedBriefId?: string;
+  /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
@@ -800,6 +1164,25 @@ export interface CampaignImplementationDraft {
    * and a list saved under a non-Search channel is kept rather than discarded.
    */
   googleSitelinks?: CampaignSitelink[];
+  /**
+   * Google's structured snippets, as the operator typed them.
+   *
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
+   */
+  googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
@@ -1162,6 +1545,17 @@ export interface RedditCampaignCreateRequest {
    * create. Both arms refuse a bad one before anything upstream is created.
    */
   imageUrl?: string;
+  /**
+   * The alternative to `imageUrl`: the id of an image uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`. campaign-service serves it to Reddit at a
+   * short-lived signed URL (LFXV2-2665). Exactly one of `imageUrl` / `imageAssetId`, and never with
+   * `postUrl` — upstream refuses any such combination with a 400.
+   *
+   * campaign-service only: the legacy creator does not read it, and campaign-service refuses it
+   * unless its URL signing is configured. Hence `CampaignListResult.redditAssetUploadEnabled`, and
+   * the create route refuses this field while that capability is off rather than dropping it.
+   */
+  imageAssetId?: string;
   /**
    * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
    * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
@@ -1809,6 +2203,42 @@ export interface CampaignSitelink {
 }
 
 /**
+ * One Google structured snippet: a header and the list of things it enumerates, rendered under the
+ * text ad as a single "Header: value, value, value" line.
+ *
+ * Both fields are REQUIRED. A snippet carries no link of its own, so unlike {@link CampaignSitelink}
+ * there is no destination; what makes it servable is having a header and enough values, and upstream
+ * (`assets.go`'s `validateStructuredSnippets`) refuses the whole create when either is missing.
+ *
+ * `values` is bounded at BOTH ends — see {@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, which is counted
+ * after blanks and case-folded repeats are removed, so the length of this array is not the number
+ * upstream judges.
+ *
+ * `header` must be one of Google's predefined headers FOR THE CAMPAIGN'S LANGUAGE, a list Google
+ * publishes per locale; neither upstream nor this app checks membership. See
+ * {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}.
+ */
+export interface CampaignStructuredSnippet {
+  header: string;
+  values: string[];
+}
+
+/**
+ * The structured-snippet sub-form as the operator is filling it in, before it becomes a
+ * {@link CampaignStructuredSnippet}.
+ *
+ * `values` is ONE STRING here, not a list: the box is a textarea taking one value per line, the
+ * same shape the Google conversion-action textarea uses. Keeping the raw text rather than a parsed
+ * list is what lets a refused snippet stay on screen exactly as it was typed — trailing blank
+ * lines, repeats and all — so the warning the operator is being asked to act on still describes
+ * what they can see.
+ */
+export interface CampaignStructuredSnippetDraft {
+  header: string;
+  values: string;
+}
+
+/**
  * The radius unit a {@link CampaignProximityTarget} is measured in.
  *
  * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
@@ -2076,6 +2506,13 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   sitelinks?: CampaignSitelink[];
+  /**
+   * The Google campaign's structured snippets — one "Header: value, value, value" line each,
+   * enumerating what the campaign offers rather than claiming anything about it.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  structuredSnippets?: CampaignStructuredSnippet[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -2831,8 +3268,12 @@ export type MonitorTabPlatform = 'google' | MonitorPanelKey;
 /** The Monitor tab's trailing-days choices; a member of `MONITOR_DATE_RANGE_OPTIONS`. */
 export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number];
 
-/** Why a Monitor panel shows an empty state instead of data: a connection state, or the platform's metrics switched off upstream. */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled';
+/**
+ * Why a Monitor panel shows an empty state instead of data: a connection state, the platform's metrics
+ * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
+ * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
+ */
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {
@@ -3763,7 +4204,7 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
@@ -3919,13 +4360,14 @@ export interface CampaignNegativeKeywordsSubmission {
   matchType: CampaignNegativeKeywordMatchType;
   /**
    * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
-   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    */
   revision?: string;
 }
 
 /** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
-export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
 
 /** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
 export interface CampaignNegativeKeywordPlatformRules {
@@ -3937,6 +4379,13 @@ export interface CampaignNegativeKeywordPlatformRules {
   defaultMatchType: CampaignNegativeKeywordMatchType;
   /** Most keywords one request may carry on this platform. */
   maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
   /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
   requiresRevision: boolean;
   /** Where the negatives land, for the field hint. */
@@ -4147,6 +4596,39 @@ export interface CampaignListResult {
    */
   redditCreativeEnabled: boolean;
   /**
+   * Whether the Reddit section may offer an image UPLOAD, sent as `redditConfig.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` flag, which says the deployed campaign-service has
+   * its creative-asset URL signing configured (signing key + public base URL). Neither alone is
+   * enough: the legacy creator never reads `imageAssetId`, and a campaign-service without signing
+   * refuses it ("stored creative assets are not enabled for Reddit"). Modelled on the client like
+   * the capabilities above (`boolean | null`, `null` for unanswered), which withholds the control;
+   * the pasted image URL stays offered either way.
+   */
+  redditAssetUploadEnabled: boolean;
+  /**
+   * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
+   * brief and naming them by asset id in the Google creative fields.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` flag. The claim the flag makes is deliberately NOT
+   * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
+   * `assets:mutate`, so no URL signing is involved and none is asserted
+   * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
+   * that the deployed campaign-service resolves Google creative asset ids at all — an older one
+   * ignores them and dispatches a campaign with no images, reporting success. The legacy creator
+   * never reads them either, hence the cutover half.
+   *
+   * NOTHING IN THE CLIENT READS THIS YET. It is served ahead of the Google creative asset-id field:
+   * at this commit `GoogleDemandGenCreative`, `GooglePerformanceMaxCreative` and
+   * `GoogleDisplayCreative` carry image URLs only, with no asset-id key for a stored image to go
+   * in, so the library control it gates does not exist. The Reddit sibling's client model — `boolean | null` on the component, `null` for
+   * unanswered, withholding the control — is the shape to mirror when that field lands; until then
+   * the Google section offers the pasted image URL and nothing else, flag on or off.
+   */
+  googleAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -4321,6 +4803,33 @@ export interface CampaignBiddingCapabilityBlock {
    * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
    */
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why generated Google callouts and sitelinks are being WITHHELD from the create because the
+ * create-capability answer is not an explicit yes. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ *
+ * Unlike that one this does not block Create, and the difference is deliberate. A withheld manual
+ * bid changes what the campaign DOES — it would be created automatic, spending differently from
+ * what was chosen — so the create waits for the answer. Withheld extensions cost only the
+ * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
+ * capability read for that is worse than creating and saying so.
+ */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
+ * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
+ * was made for a different brief than the one now open, so it is never sent whatever the capability.
+ */
+export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
 
@@ -4591,7 +5100,7 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
   errorCode?: string;
 }
 
@@ -4693,8 +5202,10 @@ export interface CampaignServiceCampaignMetrics {
   impressions: number;
   clicks: number;
   /**
-   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
-   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * Cost in MICRO-UNITS. ALWAYS USD on LinkedIn (its Ad Analytics `costInUsd`, whatever the ad
+   * account bills in); the ad ACCOUNT's own currency everywhere else — Google Ads, Meta, Microsoft,
+   * Reddit (its report's "microcurrency") and X (`billed_charge_local_micro`), none of which the
+   * read names. campaign-service performs no FX conversion, so these must never be
    * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
    * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
    */

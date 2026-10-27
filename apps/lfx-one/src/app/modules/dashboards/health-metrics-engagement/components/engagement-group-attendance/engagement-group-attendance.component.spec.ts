@@ -40,7 +40,7 @@ function response(overrides: Partial<HealthMetricsEngagementGroupAttendance> = {
   return {
     rows: [groupRow()],
     totalRecords: 1,
-    counts: { groups: 1, dormantGroups: 0 },
+    counts: { groups: 1, dormantGroups: 0, lowAttendanceGroups: 0 },
     typeCounts: [
       { groupType: 'all', groups: 1, dormantGroups: 0 },
       { groupType: 'gov', groups: 1, dormantGroups: 0 },
@@ -107,7 +107,6 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith({
       foundationSlug: 'acme',
-      projectSlug: null,
       groupType: 'all',
       range: 'YTD',
       page: 1,
@@ -120,9 +119,9 @@ describe('EngagementGroupAttendanceComponent', () => {
   // The counts cover the whole filtered set, so they must come from the response, not the page rows.
   it('emits the whole-set counts for the sub-nav badges, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
-    await render(response({ counts: { groups: 34, dormantGroups: 3 } }), (counts) => emitted.push(counts));
+    await render(response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }), (counts) => emitted.push(counts));
 
-    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3 }]);
+    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
 
     emitted.length = 0;
     fixture.componentInstance['onFilterChange']('wg');
@@ -131,7 +130,7 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     // The in-flight null clears the badge rather than leaving the previous cut's number under a
     // table that is being replaced.
-    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3 }]);
+    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
   });
 
   it('re-reads from page 1 when the type filter changes, because the rank is per-cut', async () => {
@@ -161,22 +160,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
   });
 
-  it('re-reads the selected project from page 1, since its page came from the wider scope', async () => {
-    await render(response({ totalRecords: 80 }));
-    fixture.componentInstance['page'].set(3);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    getEngagementGroupAttendance.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ projectSlug: 'acme-core', page: 1 }));
-  });
-
-  // Each chip's count is its own, so it does not move when another chip is selected.
-  it('labels each chip with its own count and keeps the header count scope-wide under a chip', async () => {
+  // The chips carry labels only, as the design draws them; the caption follows the selected chip.
+  it('labels each chip without a count, and captions the chip-filtered total', async () => {
     const typeCounts = [
       { groupType: 'all' as const, groups: 34, dormantGroups: 3 },
       { groupType: 'gov' as const, groups: 12, dormantGroups: 1 },
@@ -184,10 +169,10 @@ describe('EngagementGroupAttendanceComponent', () => {
       { groupType: 'wg' as const, groups: 17, dormantGroups: 2 },
     ];
     await render(
-      response({ counts: { groups: 34, dormantGroups: 3 }, typeCounts }),
+      response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }, typeCounts }),
       undefined,
       {},
-      response({ totalRecords: 17, counts: { groups: 34, dormantGroups: 3 }, typeCounts })
+      response({ totalRecords: 17, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }, typeCounts })
     );
 
     fixture.componentInstance['onFilterChange']('wg');
@@ -195,17 +180,25 @@ describe('EngagementGroupAttendanceComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const labels = fixture.componentInstance['typeFilters']().map((option: { label: string }) => option.label);
-    expect(labels).toEqual(['All types · 34', 'Governance · 12', 'SIG / TAG · 5', 'Working groups · 17']);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('34 groups');
+    const labels = fixture.componentInstance['typeFilters'].map((option: { label: string }) => option.label);
+    expect(labels).toEqual(['All types', 'Governance', 'SIG / TAG', 'Working groups']);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('17 groups');
   });
 
-  it('says the project has no groups, rather than blaming the type chip', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }));
+  it('captions the scope-wide total before a chip narrows it, while the sub-nav counts stay scope-wide', async () => {
+    const emitted: unknown[] = [];
+    const counts = { groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 };
+    await render(response({ totalRecords: 34, counts }), (emittedCounts) => emitted.push(emittedCounts), {}, response({ totalRecords: 1, counts }));
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('34 groups');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
-      'No groups recorded for this project'
-    );
+    fixture.componentInstance['onFilterChange']('gov');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Singular at one, and the badge counts never followed the chip.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
+    expect(emitted.at(-1)).toEqual(counts);
   });
 
   // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is
@@ -222,12 +215,32 @@ describe('EngagementGroupAttendanceComponent', () => {
       committeeId: 'c-2',
       periods: [{ range: 'YTD', meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null, dormant: true }],
     });
-    await render(response({ rows: [dormant], counts: { groups: 1, dormantGroups: 1 } }));
+    await render(response({ rows: [dormant], counts: { groups: 1, dormantGroups: 1, lowAttendanceGroups: 0 } }));
 
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-2"]');
-    expect(row.textContent).toContain('No meetings this period');
-    expect(row.textContent).toContain('Dormant');
+    const noMeetings = row.querySelector('[data-testid="engagement-group-attendance-no-meetings"]');
+    expect(noMeetings.textContent.trim()).toBe('No meetings this period');
+    expect(noMeetings.className).toContain('text-gray-400');
+    expect(noMeetings.className).toContain('font-medium');
+    expect(noMeetings.className).toContain('text-[12px]');
+    // The design's `.badge.b-act`: red, not the amber of a low rate.
+    const badge = row.querySelector('[data-testid="engagement-group-attendance-dormant"]');
+    expect(badge.textContent.trim()).toBe('Dormant');
+    expect(badge.className).toContain('bg-red-50');
+    expect(badge.className).toContain('text-red-600');
+    expect(badge.className).toContain('text-[11px]');
+    expect(badge.className).toContain('rounded-full');
     expect(row.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
+    expect(row.textContent).not.toContain('Acme Core');
+  });
+
+  // The drawer carries the project; the table's only sub-line is the dormant note.
+  it('shows no project sub-line under an active group', async () => {
+    await render();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
+    expect(row.textContent).not.toContain('Acme Core');
+    expect(row.querySelector('[data-testid="engagement-group-attendance-no-meetings"]')).toBeNull();
   });
 
   // lfx-table resolves the clicked row through `data-row-index`; without it the drawer is unreachable.
@@ -352,7 +365,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   // The totals join still reports the real count for a page past the end, so leaving the page alone
   // would render an empty table under "34 groups".
   it('lands on the last page holding rows when the URL page is past the end', async () => {
-    await render(response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }), undefined, { groupPage: '9' });
+    await render(response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }), undefined, { groupPage: '9' });
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(1, expect.objectContaining({ page: 9 }));
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
@@ -365,15 +378,15 @@ describe('EngagementGroupAttendanceComponent', () => {
   it('reports no counts until the clamped page arrives', async () => {
     const emissions: unknown[] = [];
     await render(
-      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }),
       (counts) => emissions.push(counts),
       { groupPage: '9' },
-      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } })
+      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } })
     );
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
     // One null per read; the counts arrive only with the page that has rows.
-    expect(emissions).toEqual([null, null, { groups: 34, dormantGroups: 3 }]);
+    expect(emissions).toEqual([null, null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
     // The clamped page is the first settled render, so "34 groups" never sits over an empty table.
     expect(fixture.componentInstance['loading']()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
@@ -400,10 +413,10 @@ describe('EngagementGroupAttendanceComponent', () => {
   it('settles once across a clamp, on the page that has rows', async () => {
     const lifecycle: string[] = [];
     await render(
-      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }),
       undefined,
       { groupPage: '9' },
-      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }),
       lifecycle
     );
 
@@ -434,7 +447,7 @@ describe('EngagementGroupAttendanceComponent', () => {
 
   // Clamping here would re-read page 1 for a set that has no rows on any page.
   it('settles on an out-of-range page when the filtered set is empty, without re-reading', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }), undefined, { groupPage: '9' });
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }), undefined, { groupPage: '9' });
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).not.toBeNull();
@@ -447,7 +460,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   ])('rewrites the URL page when it clamps a set of %i to page %s', async (totalRecords, groupPage) => {
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     await render(
-      response({ rows: [], totalRecords, counts: { groups: totalRecords, dormantGroups: 0 } }),
+      response({ rows: [], totalRecords, counts: { groups: totalRecords, dormantGroups: 0, lowAttendanceGroups: 0 } }),
       undefined,
       { groupPage: '9' },
       response({ totalRecords })
@@ -458,7 +471,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }));
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).toBeNull();

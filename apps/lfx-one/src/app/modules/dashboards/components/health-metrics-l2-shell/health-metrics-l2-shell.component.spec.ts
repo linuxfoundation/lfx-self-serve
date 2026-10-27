@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ViewportScroller } from '@angular/common';
 import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, NavigationSkipped, provideRouter, Router, Scroll } from '@angular/router';
 import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, filter, firstValueFrom, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
@@ -19,13 +20,19 @@ import type { HealthMetricsL2Section, HealthMetricsL2SubNavItem } from '@lfx-one
 // Two data sections and a trailing one the host projects no body for — the shape a tab has while
 // one section's data is still blocked.
 const SECTIONS: HealthMetricsL2Section[] = [
-  { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: '', footnoteCaution: false },
-  { key: 'beta', label: 'Beta', heading: 'Beta heading', description: 'Beta copy', footnote: 'Beta note', footnoteCaution: false, headingBadge: 'Provisional' },
-  { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: 'Gamma caution', footnoteCaution: true },
+  { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: [{ text: 'Alpha caution' }], footnoteCaution: true },
+  {
+    key: 'beta',
+    label: 'Beta',
+    heading: 'Beta heading',
+    description: 'Beta copy',
+    footnote: [{ text: 'Beta note' }],
+    footnoteCaution: false,
+    headingBadge: 'Provisional',
+  },
+  { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: [{ text: 'Gamma note' }], footnoteCaution: false },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
-// Stubbed offset for the pane's own top edge in the pane-height tests below.
-const PANE_TOP_PX = 40;
 const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
 
 // Stands in for a tab's section body: the shell only reacts to what the tab relays from these.
@@ -132,21 +139,33 @@ class FakeResizeObserver implements ResizeObserver {
 describe('HealthMetricsL2ShellComponent', () => {
   // Both are patched onto objects this suite does not own, so they are restored after every test.
   const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const originalInnerHeight = window.innerHeight;
   let fixture: ComponentFixture<TestHostComponent>;
   let chrome: HealthMetricsChromeService;
   let fragment: BehaviorSubject<string | null>;
+  let scroller: { getScrollPosition: ReturnType<typeof vi.fn>; scrollToPosition: ReturnType<typeof vi.fn> };
 
   function headingOf(key: string): Element {
     return fixture.nativeElement.querySelector(`#sec-test-${key}-heading`);
   }
 
-  /** The heading observer — the end sentinel's is always constructed second. */
+  // Each observer is found by what it watches: the headings, or one of the two hidden sentinels.
+  function latestObserver(watches: (target: Element) => boolean): FakeIntersectionObserver {
+    const observer = [...FakeIntersectionObserver.instances].reverse().find((candidate) => candidate.observed.some(watches));
+    if (!observer) throw new Error('no observer watches that target');
+    return observer;
+  }
+
   function spyObserver(): FakeIntersectionObserver {
-    return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 2];
+    return latestObserver((target) => !target.hasAttribute('aria-hidden'));
   }
 
   function endObserver(): FakeIntersectionObserver {
-    return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
+    return latestObserver((target) => target.matches('[data-testid="test-scroll-end-sentinel"]'));
+  }
+
+  function startObserver(): FakeIntersectionObserver {
+    return latestObserver((target) => target.hasAttribute('aria-hidden') && !target.matches('[data-testid="test-scroll-end-sentinel"]'));
   }
 
   function child(key: 'alpha' | 'beta'): TestSectionComponent {
@@ -184,6 +203,8 @@ describe('HealthMetricsL2ShellComponent', () => {
       imports: [TestHostComponent],
       providers: [
         HealthMetricsChromeService,
+        provideRouter([{ path: '**', component: TestSectionComponent }]),
+        { provide: ViewportScroller, useValue: scroller },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
         ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
@@ -212,34 +233,29 @@ describe('HealthMetricsL2ShellComponent', () => {
     await setup(initialFragment, platformId, dataSections);
   }
 
-  /** Stubs the pane's own top edge, which is all `measurePanesHeight()` reads a rect for. */
-  function stubPaneTop(): void {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]')?.lastElementChild;
-      return this === panes ? ({ top: PANE_TOP_PX, bottom: 0 } as unknown as DOMRect) : ({ top: 0, bottom: 0 } as unknown as DOMRect);
-    });
+  // jsdom lays out nothing, so the end sentinel's page-relative top is stubbed: below the fold, only
+  // scrolling can reach it and both sentinels are observed; above it, neither is.
+  let endSentinelTop = 0;
+  function stubEndSentinelTop(px: number): void {
+    endSentinelTop = px;
   }
 
-  /**
-   * Stubs both document-height properties to the same value: `offsetHeight` (what
-   * `measurePanesHeight()` reads for the chrome below the pane) and `scrollHeight` (what
-   * `areaScrolls()` reads to decide whether the page itself needs to scroll). A real document's two
-   * properties would move together for these tests' purposes, so both are kept in sync here.
-   */
-  function stubDocumentHeight(px: number): void {
-    Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: px });
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: px });
+  /** The heading band's bottom margin: everything below the top 30% of the viewport left under the header. */
+  function bandBottomPx(offset: number): number {
+    return Math.round(Math.max(window.innerHeight - offset, 0) * 0.7);
   }
 
   beforeEach(async () => {
+    scroller = { getScrollPosition: vi.fn(() => [0, 640] as [number, number]), scrollToPosition: vi.fn() };
     FakeIntersectionObserver.instances = [];
     FakeResizeObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
-    // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
-    // skip the end sentinel entirely. `measurePanesHeight()` also reads this (see its own doc
-    // comment), so the pane-height tests below get 50px of "chrome below" for free from this default.
-    stubDocumentHeight(window.innerHeight + 50);
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const top = this.matches('[data-testid$="-scroll-end-sentinel"]') ? endSentinelTop : 0;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    stubEndSentinelTop(window.innerHeight + 50);
     // Not implemented in jsdom, and the deep-link path calls it on a real section element.
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -250,8 +266,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.unstubAllGlobals();
     // The getElementById spies below would otherwise survive into the next TestBed render.
     vi.restoreAllMocks();
-    delete (document.documentElement as unknown as { offsetHeight?: number }).offsetHeight;
-    delete (document.documentElement as unknown as { scrollHeight?: number }).scrollHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
@@ -274,13 +289,23 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('renders footnotes, marking only the cautioned one', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="test-section-beta"]').textContent).toContain('Beta note');
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-beta"]').textContent).toContain('Beta note');
     expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
-    expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"] .fa-triangle-exclamation')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-alpha"] .fa-triangle-exclamation')).not.toBeNull();
   });
 
+  // A footnote explains a body, so a section still awaiting data shows neither.
+  it('hides the footnote of a section awaiting data', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-gamma"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"]').textContent).not.toContain('Gamma note');
+  });
+
+  // The design's amber pill beside a card title.
   it('badges only the heading that carries one', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.textContent?.trim()).toBe('Provisional');
+    for (const cls of ['rounded-full', 'bg-amber-50', 'text-amber-800', 'uppercase']) {
+      expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.className).toContain(cls);
+    }
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-alpha"]')).toBeNull();
   });
 
@@ -289,98 +314,83 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('alpha');
   });
 
-  it('bounds the scrolling pane to what is left of the viewport, measuring the chrome below it', async () => {
-    // jsdom lays out nothing, so the pane's own top edge is stubbed; the stubbed document is 50px
-    // taller than the viewport, which measurePanesHeight() reads as 50px of chrome (gate padding,
-    // layout padding, the footer) below the pane.
-    stubPaneTop();
-    await resetup();
+  // The design scrolls the page beside the sticky sub-nav; an inner scroller would nest a scrollbar and pin the footer.
+  it('lets the page scroll the sections rather than an inner pane', () => {
+    const column = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
 
-    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
-
-    expect(panes.className).toContain('lg:overflow-y-auto');
-    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - PANE_TOP_PX - 50}px`);
+    expect(column.className).not.toMatch(/overflow-y-auto|lg:h-/);
+    expect(column.style.getPropertyValue('--l2-panes-height')).toBe('');
   });
 
-  it('clamps the pane to the minimum height when the chrome below it exceeds the viewport', async () => {
-    // Same rect stub as the test above, so the clamp is driven by the oversized offsetHeight below
-    // rather than by jsdom's default zero rects (which would clamp regardless of that value).
-    stubPaneTop();
-    stubDocumentHeight(window.innerHeight * 10);
-    await resetup();
+  it('lands a picked section just below the sticky header, and pins the nav 8px lower', () => {
+    const alpha = fixture.nativeElement.querySelector('[data-testid="test-section-alpha"]') as HTMLElement;
 
-    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+    const column = alpha.parentElement as HTMLElement;
 
-    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe('320px');
-  });
-
-  it('fills the pane to the viewport bottom before reading the chrome below it, so a short page is not misread as having none', async () => {
-    // The bug this guards: reading the document/viewport gap without first filling the pane would
-    // count the layout's `min-h-screen` flex-grow slack from a short page as real chrome, and once the
-    // pane is sized to fit, its own output keeps feeding that same slack back on every re-measure.
-    // Filling first forces the document to be at least viewport-tall, so the slack cannot appear.
-    stubPaneTop();
-    await resetup();
-
-    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
-    const setProperty = vi.spyOn(panes.style, 'setProperty');
+    // The header only sticks at `lg`, so the margin is a `lg:` utility reading the offset the column carries.
+    expect(alpha.className).toContain('lg:scroll-mt-[var(--l2-sticky-top)]');
+    expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
+    expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.getPropertyValue('--hmn-top')).toBe(`${chrome.stickyTopPx() + 8}px`);
 
     chrome.headerHeightPx.set(120);
     fixture.detectChanges();
 
-    const heights = setProperty.mock.calls.filter(([name]) => name === '--l2-panes-height').map(([, value]) => value);
-    // The first write fills to the viewport bottom with no chrome subtracted yet; only the second,
-    // final write accounts for the 50px the stubbed document reports below that.
-    expect(heights[0]).toBe(`${window.innerHeight - PANE_TOP_PX}px`);
-    expect(heights[1]).toBe(`${window.innerHeight - PANE_TOP_PX - 50}px`);
+    expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
   });
 
-  it('re-measures the pane when the document resizes after first paint', async () => {
-    stubPaneTop();
-    await resetup();
-
-    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+  it('leaves the scroll spy alone when a document resize keeps the sections below the fold', async () => {
     const spyBefore = spyObserver();
 
-    // Simulates the footer settling asynchronously, after the pane's first measurement. Still well
-    // past the innerHeight+1 threshold areaScrolls() checks, so the spy's root doesn't change either.
-    stubDocumentHeight(window.innerHeight + 90);
+    // Sections settling after first paint; the end sentinel still starts below the first screen.
+    stubEndSentinelTop(window.innerHeight + 90);
     FakeResizeObserver.instances[0].trigger();
     // The debounced subscriber runs on a real timer; 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
     await flush();
 
-    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - PANE_TOP_PX - 90}px`);
-    // The scroll root didn't change, so the spy is left alone rather than rebuilt for nothing.
     expect(spyObserver()).toBe(spyBefore);
   });
 
-  it('rebuilds the scroll spy when a document resize makes the area newly scrollable', async () => {
-    // Starts with nothing to scroll, so areaScrolls() is false and only the heading observer exists.
-    stubDocumentHeight(0);
-    stubPaneTop();
+  it('rebuilds the scroll spy when a document resize pushes the sections past the fold', async () => {
+    // Starts with the sections ending above the fold, so only the heading observer exists.
+    stubEndSentinelTop(0);
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
     const spyBefore = spyObserver();
 
-    stubDocumentHeight(window.innerHeight * 3);
+    stubEndSentinelTop(window.innerHeight * 3);
     FakeResizeObserver.instances[0].trigger();
     // 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
     await flush();
 
-    // The rebuild tears down the heading observer and creates a new heading observer plus an end
-    // observer, now that the area genuinely overflows.
+    // The rebuild tears down the heading observer and creates a new heading observer plus the start
+    // and end sentinel observers, now that only scrolling can reach the end.
     expect(spyObserver()).not.toBe(spyBefore);
-    expect(FakeIntersectionObserver.instances).toHaveLength(3);
+    expect(FakeIntersectionObserver.instances).toHaveLength(4);
   });
 
   it('observes each section heading below the measured sticky header', () => {
     const observer = spyObserver();
 
     expect(observer.observed).toHaveLength(SECTIONS.length);
-    expect(observer.rootMargin).toBe(`-${chrome.stickyTopPx()}px 0px -70% 0px`);
+    expect(observer.rootMargin).toBe(`-${chrome.stickyTopPx()}px 0px -${bandBottomPx(chrome.stickyTopPx())}px 0px`);
+  });
+
+  // A percentage bottom margin is of the whole viewport, so on a short window it would close the band
+  // below the header entirely; a pixel band keeps the top 30% of what is left open.
+  it('keeps the band open on a short window, and resizes it with the viewport', async () => {
+    const offset = chrome.stickyTopPx();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    const before = spyObserver();
+
+    window.dispatchEvent(new Event('resize'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flush();
+
+    expect(before.disconnected).toBe(true);
+    expect(spyObserver().rootMargin).toBe(`-${offset}px 0px -${Math.round((400 - offset) * 0.7)}px 0px`);
   });
 
   it('rebuilds the observer when the gate re-measures the sticky header', () => {
@@ -390,7 +400,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     fixture.detectChanges();
 
     expect(before.disconnected).toBe(true);
-    expect(spyObserver().rootMargin).toBe('-136px 0px -70% 0px');
+    expect(spyObserver().rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
   });
 
   it('lights exactly one item, the topmost intersecting heading', () => {
@@ -471,11 +481,26 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('gamma');
   });
 
-  it('skips the end sentinel when there is nothing to scroll', async () => {
-    stubDocumentHeight(0);
+  // A jump straight back to the top (Home, or an instant scroll) never sweeps the first heading through the band.
+  it('lights the first section when the start sentinel comes back into view below the header', () => {
+    endObserver().fire(fixture.nativeElement.querySelector('[data-testid="test-scroll-end-sentinel"]'), true);
+    fixture.detectChanges();
+    expect(activeKey()).toBe('gamma');
+
+    const start = startObserver();
+    expect(start.rootMargin).toBe(`-${chrome.stickyTopPx()}px 0px 0px 0px`);
+    start.fire(start.observed[0], true);
+    fixture.detectChanges();
+
+    expect(activeKey()).toBe('alpha');
+  });
+
+  // The page can still scroll here, on the footer alone; the sentinels are skipped all the same.
+  it('skips the sentinels while the sections end above the fold', async () => {
+    stubEndSentinelTop(window.innerHeight - 100);
     await resetup();
 
-    // Otherwise the sentinel intersects from first paint and pins the rail to the last section.
+    // Otherwise the end sentinel intersects from first paint and pins the rail to the last section.
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
   });
 
@@ -492,14 +517,14 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(scrollIntoView()).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
-  it('observes the end sentinel once a settled section makes the area scroll', async () => {
-    // Short placeholder sections can leave the first pass with nothing to scroll.
-    stubDocumentHeight(0);
+  it('observes the end sentinel once a settled section pushes it past the fold', async () => {
+    // Short placeholder sections can leave the first pass ending above the fold.
+    stubEndSentinelTop(0);
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
-    stubDocumentHeight(window.innerHeight * 3);
+    stubEndSentinelTop(window.innerHeight * 3);
     child('beta').settled.emit();
     await flush();
 
@@ -515,13 +540,13 @@ describe('HealthMetricsL2ShellComponent', () => {
     child('beta').settled.emit();
     await flush();
 
-    // The deep link resolving late would otherwise drag the pane back off the section just picked.
+    // The deep link resolving late would otherwise drag the page back off the section just picked.
     expect(activeKey()).toBe('beta');
   });
 
-  // Bound on the window, so each one must still land when it is dispatched deep inside the pane —
+  // Bound on the window, so each one must still land when it is dispatched deep inside a section —
   // which is where a reader's wheel, touch or keypress actually originates.
-  it.each(['wheel', 'touchmove', 'keydown'])('drops a pending deep link on a reader %s inside the pane', async (type) => {
+  it.each(['wheel', 'touchmove', 'keydown'])('drops a pending deep link on a reader %s inside a section', async (type) => {
     await resetup('gamma');
 
     scrollIntoView().mockClear();
@@ -531,7 +556,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     child('beta').settled.emit();
     await flush();
 
-    // A read that fails and later succeeds would otherwise drag the pane back to the linked anchor.
+    // A read that fails and later succeeds would otherwise drag the page back to the linked anchor.
     expect(scrollIntoView()).not.toHaveBeenCalled();
   });
 
@@ -550,7 +575,7 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   // A row binds `keydown.space` and calls `preventDefault()` on it — that key opened a drawer, it
-  // did not move the pane, so the deep link must survive it.
+  // did not move the page, so the deep link must survive it.
   it('keeps a pending deep link through a space that a row has already handled', async () => {
     await resetup('gamma');
 
@@ -821,13 +846,103 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
   });
 
-  it('disconnects both observers on destroy', () => {
+  it('keeps a reloading section at its height until the result has painted', async () => {
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    child('alpha').reading.emit();
+    expect(section.style.minHeight).toBe('480px');
+
+    child('alpha').settled.emit();
+    await flush();
+    expect(section.style.minHeight).toBe('');
+  });
+
+  it('keeps the height a newer read re-held before the settled result painted', async () => {
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    child('alpha').reading.emit();
+    child('alpha').settled.emit();
+    child('alpha').reading.emit();
+    await flush();
+
+    expect(section.style.minHeight).toBe('480px');
+  });
+
+  it('keeps a section at its height until every read rendering in it has painted', async () => {
+    const shell = fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    shell.sectionReading('alpha');
+    shell.sectionReading('alpha-bridge', 'alpha');
+    shell.sectionSettled('alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('480px');
+
+    shell.sectionSettled('alpha-bridge', 'alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('');
+  });
+
+  describe('scroll position across query-only navigations', () => {
+    // TestBed never starts the router's scroller, so this emits the `Scroll` it sends once a navigation ends.
+    async function navigateThenRouterScroll(url: string, beforeScroll?: () => void): Promise<void> {
+      const router = TestBed.inject(Router);
+      const done = firstValueFrom(router.events.pipe(filter((event) => event instanceof NavigationEnd || event instanceof NavigationSkipped)));
+      await router.navigateByUrl(url);
+      beforeScroll?.();
+      (router.events as unknown as Subject<Scroll>).next(new Scroll(await done, null, null));
+      await Promise.resolve();
+    }
+
+    beforeEach(async () => {
+      await TestBed.inject(Router).navigateByUrl('/health?tab=1');
+      scroller.scrollToPosition.mockClear();
+    });
+
+    it('puts the page back where it was when only the query string changes', async () => {
+      await navigateThenRouterScroll('/health?tab=1&filter=lapsed');
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+    });
+
+    it('puts the page back when a write restates the current URL', async () => {
+      await navigateThenRouterScroll('/health?tab=1');
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+    });
+
+    it('leaves the router to scroll a path change to the top', async () => {
+      await navigateThenRouterScroll('/other');
+
+      expect(scroller.scrollToPosition).not.toHaveBeenCalled();
+    });
+
+    it('replays a section jump the router scroll cut short, after putting the page back', async () => {
+      // As the "Never attended" drill-down does once its filter write resolves.
+      await navigateThenRouterScroll('/health?tab=1&filter=never', () => {
+        child('alpha').sectionPicked.emit('beta');
+        scrollIntoView().mockClear();
+      });
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+      expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView().mock.contexts[0]).toBe(fixture.nativeElement.querySelector('#sec-test-beta'));
+      expect(scroller.scrollToPosition.mock.invocationCallOrder[0]).toBeLessThan(scrollIntoView().mock.invocationCallOrder[0]);
+    });
+  });
+
+  it('disconnects every observer on destroy', () => {
     const heading = spyObserver();
+    const start = startObserver();
     const end = endObserver();
 
     fixture.destroy();
 
     expect(heading.disconnected).toBe(true);
+    expect(start.disconnected).toBe(true);
     expect(end.disconnected).toBe(true);
   });
 });

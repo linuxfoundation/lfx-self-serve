@@ -7,10 +7,12 @@ import { FormGroup } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import {
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgram,
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileUpdateRequest,
   MentorshipMentorProfileUpdateResponse,
+  MentorshipMentorProgramInvitation,
   MentorshipMentorProgramRequest,
   MentorshipMentorProgramRequestsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -25,6 +27,7 @@ import { RichEditorComponent } from '../../../../../../shared/components/rich-ed
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { MentorProfileSaveService } from '../../../../services/mentor-profile-save.service';
 import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
+import { MentorInvitationRespondService } from '../../../../services/mentor-invitation-respond.service';
 import { MentorRequestWithdrawService } from '../../../../services/mentor-request-withdraw.service';
 import { MentorProgramsSectionComponent } from '../../../mentor-register/components/mentor-programs-section/mentor-programs-section.component';
 import { DrawerModule } from 'primeng/drawer';
@@ -69,12 +72,16 @@ class StubProgramsSectionComponent {
   readonly requests = input<MentorshipMentorProgramRequest[]>([]);
   readonly requesting = input(false);
   readonly withdrawingId = input<string | null>(null);
-  readonly invitedProgramIds = input<string[]>([]);
+  readonly invitations = input<MentorshipMentorProgramInvitation[]>([]);
+  readonly respondingInvitationId = input<string | null>(null);
+  readonly respondingDecision = input<MentorshipMentorInviteDecision | null>(null);
   readonly requestsLoading = input(false);
   readonly requestsFailed = input(false);
   readonly add = output<MentorshipMentorOpenProgram>();
   readonly withdraw = output<string>();
   readonly retry = output<void>();
+  readonly acceptInvitation = output<string>();
+  readonly declineInvitation = output<string>();
 }
 
 @Component({ selector: 'lfx-rich-editor', template: '' })
@@ -119,6 +126,11 @@ describe('MentorProfileEditDrawerComponent', () => {
   let confirmWithdraw: ReturnType<typeof vi.fn>;
   let clearMentorCaches: ReturnType<typeof vi.fn>;
   let withdrawingId: ReturnType<typeof signal<string | null>>;
+  let acceptInvitation: ReturnType<typeof vi.fn>;
+  let confirmDecline: ReturnType<typeof vi.fn>;
+  let respondingId: ReturnType<typeof signal<string | null>>;
+  let respondingDecision: ReturnType<typeof signal<MentorshipMentorInviteDecision | null>>;
+  let accepted$: Subject<string>;
   let saving: ReturnType<typeof signal<boolean>>;
   let save: ReturnType<typeof vi.fn<(body: MentorshipMentorProfileUpdateRequest) => Observable<MentorshipMentorProfileUpdateResponse>>>;
   let saveErrorMessage: ReturnType<typeof vi.fn<(err: unknown) => string>>;
@@ -143,11 +155,16 @@ describe('MentorProfileEditDrawerComponent', () => {
     messageAdd = vi.fn();
     drawer = new MentorProfileEditDrawerService();
     revision = signal(0);
-    getMentorRequests = vi.fn(() => of({ data: REQUESTS, invitedProgramIds: [] }));
+    getMentorRequests = vi.fn(() => of({ data: REQUESTS, invitations: [] }));
     request = vi.fn(() => of(true));
     confirmWithdraw = vi.fn();
     clearMentorCaches = vi.fn();
     withdrawingId = signal<string | null>(null);
+    acceptInvitation = vi.fn();
+    confirmDecline = vi.fn();
+    respondingId = signal<string | null>(null);
+    respondingDecision = signal<MentorshipMentorInviteDecision | null>(null);
+    accepted$ = new Subject<string>();
     saving = signal(false);
     save = vi.fn(() => of(SAVED));
     saveErrorMessage = vi.fn(() => 'Could not save.');
@@ -183,6 +200,15 @@ describe('MentorProfileEditDrawerComponent', () => {
       })
       // The withdraw service is provided by the drawer itself; its confirm and toasts have their own spec.
       .overrideProvider(MentorRequestWithdrawService, { useValue: { confirmWithdraw, withdrawingId: withdrawingId.asReadonly() } })
+      .overrideProvider(MentorInvitationRespondService, {
+        useValue: {
+          accept: acceptInvitation,
+          confirmDecline,
+          respondingId: respondingId.asReadonly(),
+          respondingDecision: respondingDecision.asReadonly(),
+          accepted$: accepted$.asObservable(),
+        },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(MentorProfileEditDrawerComponent);
@@ -363,19 +389,20 @@ describe('MentorProfileEditDrawerComponent', () => {
 
     expect(section().requestsLoading()).toBe(true);
 
-    pending.next({ data: REQUESTS, invitedProgramIds: [] });
+    pending.next({ data: REQUESTS, invitations: [] });
     pending.complete();
     await settle();
 
     expect(section().requestsLoading()).toBe(false);
   });
 
-  it('passes the invited programs to the section so the picker can leave them out', async () => {
-    getMentorRequests.mockReturnValue(of({ data: REQUESTS, invitedProgramIds: ['p2'] }));
+  it('passes the invitations to the section, to list them and leave their programs out of the picker', async () => {
+    const invitations = [{ id: 'member-2', programId: 'p2', programName: 'Program 2' }];
+    getMentorRequests.mockReturnValue(of({ data: REQUESTS, invitations }));
     drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
     await settle();
 
-    expect(section().invitedProgramIds()).toEqual(['p2']);
+    expect(section().invitations()).toEqual(invitations);
   });
 
   it('marks the requests failed, not empty, when they cannot be read', async () => {
@@ -407,7 +434,7 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(section().requestsLoading()).toBe(false);
 
     const updated: MentorshipMentorProgramRequest[] = [{ ...REQUESTS[0], status: 'withdrawn' }];
-    pending.next({ data: updated, invitedProgramIds: [] });
+    pending.next({ data: updated, invitations: [] });
     pending.complete();
     await settle();
 
@@ -444,5 +471,29 @@ describe('MentorProfileEditDrawerComponent', () => {
     await settle();
 
     expect(section().withdrawingId()).toBe('app-1');
+  });
+
+  it('hands Accept and Decline to the invitation service and passes its busy invitation to the section', async () => {
+    section().acceptInvitation.emit('member-2');
+    expect(acceptInvitation).toHaveBeenCalledWith('member-2');
+
+    section().declineInvitation.emit('member-3');
+    expect(confirmDecline).toHaveBeenCalledWith('member-3');
+
+    respondingId.set('member-2');
+    respondingDecision.set('accept');
+    await settle();
+
+    expect(section().respondingInvitationId()).toBe('member-2');
+    expect(section().respondingDecision()).toBe('accept');
+  });
+
+  it('emits invitationAccepted for each accepted invitation, so the page can refresh its history', () => {
+    const accepted: string[] = [];
+    comp.invitationAccepted.subscribe((id) => accepted.push(id));
+
+    accepted$.next('member-2');
+
+    expect(accepted).toEqual(['member-2']);
   });
 });

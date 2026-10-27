@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { LensService } from '@services/lens.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -34,6 +35,9 @@ describe('OrgSelectorComponent.selectItem', () => {
   let fixture: ComponentFixture<OrgSelectorComponent>;
   let retrying: WritableSignal<boolean>;
   let retry: ReturnType<typeof vi.fn>;
+  let resetAndReload: ReturnType<typeof vi.fn>;
+  let refreshList: ReturnType<typeof vi.fn>;
+  let previewingMenuLens: WritableSignal<boolean>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -45,6 +49,9 @@ describe('OrgSelectorComponent.selectItem', () => {
     isOnNotFound = vi.fn(() => false);
     retrying = signal(false);
     retry = vi.fn();
+    resetAndReload = vi.fn();
+    refreshList = vi.fn();
+    previewingMenuLens = signal(false);
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -61,10 +68,12 @@ describe('OrgSelectorComponent.selectItem', () => {
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
             setSearchTerm: vi.fn(),
-            resetAndReload: vi.fn(),
+            resetAndReload,
+            refreshList,
             loadNextPage: vi.fn(),
           },
         },
+        { provide: LensService, useValue: { previewingMenuLens } },
         {
           provide: OrgRoleGrantsService,
           useValue: {
@@ -88,20 +97,29 @@ describe('OrgSelectorComponent.selectItem', () => {
   });
 
   it('selects another organization and re-addresses the page as a switch', () => {
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
+
     pick(rowB);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta-llc' }));
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    expect(selected).toHaveBeenCalledWith(rowB);
   });
 
-  // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.
-  it('does nothing for the organization already selected', () => {
+  // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on. The pick is still
+  // reported: one made while the mobile drawer previews Org Lens lands on that organization's overview (#4208).
+  it('changes nothing for the organization already selected, but still reports the pick', () => {
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
+
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    expect(selected).toHaveBeenCalledWith(rowA);
   });
 
   // On the dead end the selection is the cookie's or a bootstrap default that never made it into the
@@ -109,12 +127,34 @@ describe('OrgSelectorComponent.selectItem', () => {
   // way out. Still no re-selection: the address moves, the account does not.
   it('leaves the not-found dead end for the already selected organization, without re-selecting it', () => {
     isOnNotFound.mockReturnValue(true);
+    const selected = vi.fn();
+    fixture.componentInstance.itemSelected.subscribe(selected);
 
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    expect(selected).toHaveBeenCalledWith(rowA);
+  });
+
+  // Shown only because the mobile drawer previews Org Lens (#4208), the selector must not default-select, clear or
+  // navigate: that is the bootstrap's job once Org Lens is really active, not a preview's.
+  it('bootstraps its list without default-selection semantics while the drawer previews Org Lens', async () => {
+    previewingMenuLens.set(true);
+    fixture.componentRef.setInput('enabled', true);
+    await fixture.whenStable();
+
+    expect(refreshList).toHaveBeenCalledTimes(1);
+    expect(resetAndReload).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps its list with default selection when Org Lens is really active', async () => {
+    fixture.componentRef.setInput('enabled', true);
+    await fixture.whenStable();
+
+    expect(resetAndReload).toHaveBeenCalledTimes(1);
+    expect(refreshList).not.toHaveBeenCalled();
   });
 
   // FR-010 switcher Retry: the control stays focusable while busy (aria-disabled), so the guard in
@@ -136,5 +176,98 @@ describe('OrgSelectorComponent.selectItem', () => {
     retrying.set(false);
     retryList();
     expect(retry).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** The navbar variant's single-organization static card and its plain-language role description. */
+describe('OrgSelectorComponent navbar card', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const UID_B = '0014100000MgbBBBBB';
+  const UID_PARENT = '0014100000MgpPPPPP';
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
+  const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
+
+  interface NavbarCardView {
+    isSingleOrg(): boolean;
+    navbarRoleTooltip(): string;
+  }
+
+  interface CardSetup {
+    items?: OrgItem[];
+    isStaff?: boolean;
+    hasMore?: boolean;
+    writers?: string[];
+    inheritedWriters?: string[];
+  }
+
+  const createCard = async ({ items = [rowA], isStaff = false, hasMore = false, writers = [], inheritedWriters = [] }: CardSetup): Promise<NavbarCardView> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgSelectorComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal(acme), setAccount: vi.fn(), refreshCanonicalRecord: vi.fn(), getStoredUid: () => null },
+        },
+        {
+          provide: OrgNavigationService,
+          useValue: {
+            items: signal(items),
+            loading: signal(false),
+            hasMore: signal(hasMore),
+            upstreamFailed: signal(false),
+            searchTerm: () => signal(''),
+            setSearchTerm: vi.fn(),
+            resetAndReload: vi.fn(),
+            loadNextPage: vi.fn(),
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(isStaff),
+            writerSet: signal(new Set(writers)),
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set(inheritedWriters)),
+            inheritedAuditorSet: signal(new Set<string>()),
+            parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
+          },
+        },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
+        { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
+      ],
+    })
+      // Signal logic only — the template's viewport-deferred list needs an IntersectionObserver jsdom lacks.
+      .overrideComponent(OrgSelectorComponent, { set: { template: '' } })
+      .compileComponents();
+    const fixture = TestBed.createComponent(OrgSelectorComponent);
+    fixture.componentRef.setInput('enabled', false);
+    await fixture.whenStable();
+    return fixture.componentInstance as unknown as NavbarCardView;
+  };
+
+  it('is a static card only for a non-staff viewer whose complete list holds just the selected organization', async () => {
+    expect((await createCard({})).isSingleOrg()).toBe(true);
+    expect((await createCard({ items: [rowA, rowB] })).isSingleOrg()).toBe(false);
+    expect((await createCard({ hasMore: true })).isSingleOrg()).toBe(false);
+    expect((await createCard({ isStaff: true })).isSingleOrg()).toBe(false);
+  });
+
+  it('keeps the panel when the one listed organization is not the selected one', async () => {
+    expect((await createCard({ items: [rowB] })).isSingleOrg()).toBe(false);
+  });
+
+  it('describes an inherited role through the organization it comes from', async () => {
+    const card = await createCard({ inheritedWriters: [UID_A] });
+
+    expect(card.navbarRoleTooltip()).toContain('Parent Holdings');
+  });
+
+  it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
+    expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
+    expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
   });
 });

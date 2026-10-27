@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsNonMembersConversion,
   HealthMetricsNonMembersOrgs,
@@ -23,7 +22,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     heading: 'Company participation',
     description:
       'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -31,7 +30,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'People',
     heading: 'People',
     description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -39,7 +38,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
     description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
 ] as const;
@@ -49,17 +48,6 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX = 'sec-non-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
 export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = ['orgs', 'people', 'conversion'] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
-
-/** Note under the sub-nav items, linking to Engagement's non-member participation. */
-export const HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Non-members attending meetings also appear in',
-  linkLabel: 'Engagement',
-  route: 'engagement',
-  fragment: 'nonmem',
-};
-
-/** The project selector does not narrow Non-Members, so the page says so above its sections. */
-export const HEALTH_METRICS_NON_MEMBERS_SCOPE_NOTE = 'Non-Members figures are foundation-wide. The project selector does not narrow them.';
 
 /** Each section's filter, search and page state in the URL; each key is namespaced to the tab. */
 export const HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS = {
@@ -99,9 +87,19 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Under the table until the organization match is validated. */
+/** Under the table until the organization match is validated; the design's caution wording. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  "Organization matching is under validation. Treat this list as provisional and don't send it to sales unchecked.";
+  'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+
+/** Under the People table: each person's organization comes from the same unvalidated match. */
+export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
+  "People are matched to organizations by the same process, so treat each person's organization as provisional too.";
+
+/** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
+export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+
+/** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;
 
 /** Fit band dot fills, as the design colours them; an unknown band falls back to the Low gray. */
 export const HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS: Readonly<Record<string, string>> = {
@@ -128,7 +126,7 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS = 200;
 
-/** Read-failed / no-foundation value: nothing measured, so the section renders its empty state. */
+/** Read-failed / no-foundation value: nothing measured, so the hero shows a muted dash and no warmest list. */
 export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED: HealthMetricsNonMembersConversion = {
   measured: false,
   entryTierName: null,
@@ -145,6 +143,3 @@ export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
 
 /** A NULL count or estimate is not zero; the section says so in words. */
 export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
-
-/** Opportunity styling only: this section carries no risk colours. */
-export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS = 'bg-blue-600';

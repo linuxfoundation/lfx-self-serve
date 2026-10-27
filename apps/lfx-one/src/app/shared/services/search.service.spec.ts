@@ -52,6 +52,16 @@ describe('SearchService', () => {
     await expect(result).resolves.toHaveLength(1);
   });
 
+  it('searches through the admin-token route when asked to search as the impersonator', async () => {
+    const result = new Promise<UserSearchResult[]>((resolve) => service.searchUsers('Jane', 'committee_member', true).subscribe(resolve));
+
+    const req = http.expectOne((r) => r.url === '/api/search/users/impersonator');
+    expect(req.request.params.get('name')).toBe('Jane');
+    req.flush({ results: [user({})] });
+
+    await expect(result).resolves.toHaveLength(1);
+  });
+
   it('looks a complete address up as an exact tag, as typed and lowercased, and merges the two answers', async () => {
     const result = collect('Jane.Doe@Example.com');
 

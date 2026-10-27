@@ -17,6 +17,7 @@ import type {
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -34,6 +35,7 @@ import type {
   CampaignPlatform,
   CampaignProximityTarget,
   CampaignSitelink,
+  CampaignStructuredSnippet,
   CampaignSSEEventType,
   CampaignMonitorConnections,
   CampaignServiceAccountMonitor,
@@ -61,6 +63,9 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -86,8 +91,13 @@ import {
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUES,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_ADS_MIN_BID_MODIFIER,
+  GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -113,6 +123,8 @@ import {
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
+  MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -135,6 +147,8 @@ import {
   MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_MESSAGE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -148,12 +162,14 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isCreativeAssetMimeType,
   isGoSpaceCode,
   isMicrosoftMatchType,
+  sniffCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -175,11 +191,14 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateWithBidding,
+  canUseGoogleCreativeAssets,
+  canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
 } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
+import { personaDetectionService } from '../utils/persona-helper';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
@@ -665,6 +684,20 @@ export class CampaignController {
       if (unservedBiddingField !== null) {
         next(
           ServiceValidationError.forField(unservedBiddingField, 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Reddit image is refused, not dropped, when this deployment cannot use it — the
+      // same reasoning as `bidding` above. The form never sends it in that state
+      // (`redditAssetUploadEnabled` hides the upload control).
+      const unservedRedditAssetField = this.unservedRedditAssetField(body);
+      if (unservedRedditAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedRedditAssetField, 'uploaded Reddit images are not enabled on this deployment; supply an image URL instead', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -1242,6 +1275,49 @@ export class CampaignController {
         }
       }
 
+      // Structured snippets LAST of the three, as `validateAssetPlan` runs `validateStructuredSnippets`
+      // after `validateCallouts`: JSON decode, the Search-only fence, the cap, then each entry in
+      // `validateStructuredSnippets`' order, first bad one wins. Each would otherwise fail in Go as
+      // the opaque "platform campaign creation failed".
+      const rawSnippets = body?.structuredSnippets;
+      if (cutoverOn && platforms.includes('google-ads') && rawSnippets !== undefined && rawSnippets !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('structuredSnippets', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // The Go decode into `[]googleAdsStructuredSnippetConfig` refuses a non-list, a non-object
+        // entry, a non-string header or a `values` holding anything but text. A null entry, field
+        // or VALUE decodes to a blank instead — the entry checks refuse the first two by name, and
+        // upstream's value loop skips the third exactly as it skips a typed blank.
+        if (!Array.isArray(rawSnippets) || !rawSnippets.every((entry) => this.isStructuredSnippetShape(entry))) {
+          refuse('Google Ads structured snippets must be a list of objects with a header and a list of values.');
+          return;
+        }
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search, counting every entry. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts structured snippets on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search, then create again.`
+            );
+            return;
+          }
+          if (rawSnippets.length > GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS} structured snippets on one campaign, and this one has ${rawSnippets.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seenHeaders = new Set<string>();
+          for (const [index, snippet] of this.googleStructuredSnippetList(rawSnippets).entries()) {
+            const refusal = this.googleStructuredSnippetRefusal(snippet, index, seenHeaders);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
+          }
+        }
+      }
+
       // Meta refuses a non-positive budget before its first mutate ("invalid budget: must be a
       // positive number", `internal/platform/meta/client.go`), exactly as google-ads does above.
       // Microsoft's equivalent is already covered — `buildMicrosoftConfig` returns null for a
@@ -1793,6 +1869,79 @@ export class CampaignController {
   }
 
   /**
+   * Approve a brief that is already stored, without rewriting it.
+   *
+   * The missing third verb beside `persistBrief` and `loadBrief`. Until now approval existed only
+   * as the tail of a save, so a stored brief sitting in `draft` — the state every failed approval
+   * and every replace leaves behind — could be restored and read but never made usable, because
+   * campaign creation refuses an unapproved brief and the restore path deliberately does not
+   * re-save. The Restore offer led to a disabled Create Campaign button with no action that could
+   * enable it.
+   *
+   * `POST` with an EMPTY body, which is the honest shape: this sends no content at all, it moves a
+   * status. The brief is named by the path, the foundation by `?project=`, and the validator by
+   * the request's own `If-Match` header — a header rather than a query parameter because that is
+   * what it is, and because `approve-brief` upstream requires one.
+   *
+   * Flag-gated with `persistBrief` and `loadBrief`, on the same flag for the same reason: all
+   * three are the one cutover.
+   */
+  public async approveBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field present so the response satisfies `CampaignBriefApproveResult` on both arms —
+      // the client branches on `enabled` alone. No `conflict`: nothing was refused, the cutover
+      // is simply dark.
+      res.json({ enabled: false, briefId: '', etag: null, approved: false } satisfies CampaignBriefApproveResult);
+      return;
+    }
+
+    // Same rule as `persistBrief`: never defaulted. A brief is approved inside one foundation's
+    // project, and guessing which would approve a row in a foundation the user did not choose.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const briefId = typeof req.params['briefId'] === 'string' ? req.params['briefId'].trim() : '';
+    if (briefId.length === 0) {
+      next(
+        ServiceValidationError.forField('briefId', 'brief id is required', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_approve_brief', { briefId, projectSlug });
+
+    try {
+      // The validator the caller already holds, from the read that put this brief on their
+      // screen. Absent is a classified outcome, not an error: `approveStoredBrief` refuses to
+      // approve a brief it cannot verify and returns `conflict: 'unverified-validator'`, which
+      // the response below carries to the client like any other conflict.
+      const ifMatch = req.get('If-Match');
+      const knownEtag = typeof ifMatch === 'string' && ifMatch.trim() !== '' ? ifMatch : null;
+      const result = await this.campaignServiceClient.approveStoredBrief(req, projectSlug, briefId, knownEtag);
+      logger.success(req, 'campaign_approve_brief', startTime, {
+        briefId,
+        projectSlug,
+        approved: result.approved,
+        conflict: result.conflict ?? null,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Read back the brief saved for an event slug — the other half of `persistBrief`.
    *
    * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
@@ -1966,7 +2115,10 @@ export class CampaignController {
    *
    * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
    * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
-   * what an operator sees, which is why `brief` is required rather than defaulted.
+   * what an operator sees, which is why `brief` is required rather than defaulted. Because the
+   * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
+   * every foundation, those account monitors are root-only on every arm — see
+   * `requireSharedAccountMonitorAccess` (lfx-self-serve-ops#54).
    *
    * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
    * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
@@ -2010,41 +2162,10 @@ export class CampaignController {
       return;
     }
 
-    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
-    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
-    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
-    // given", so the enum check is skipped and the read proceeds on the per-platform default.
-    // That is the substitution this method refuses by design: the response's own `window` field
-    // would then report a period the caller never asked for, as though it had. `project` and
-    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
-    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
-    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
-    // already carry.
-    const windowParam = req.query['window'];
-    if (windowParam !== undefined && typeof windowParam !== 'string') {
-      next(
-        ServiceValidationError.forField('window', 'window must be given at most once', {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
+    const window = this.readMetricsWindow(req, 'campaign_brief_metrics', next);
+    if (window === null) {
       return;
     }
-    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
-    // and treating them as "no window given" would skip the enum check and serve the default —
-    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
-    // may default; every supplied value must be in the enum.
-    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
-    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
-      next(
-        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
-      return;
-    }
-    const window = rawWindow as CampaignMetricsWindow | undefined;
 
     const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
 
@@ -2066,9 +2187,311 @@ export class CampaignController {
     }
   }
 
+  /**
+   * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
+   * `image/png` or `image/jpeg`, stored against the brief by campaign-service's
+   * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
+   * the image was stored and 200 when an identical one already was (the id is usable either way).
+   *
+   * Refused before anything is sent upstream: BOTH capabilities off (`canUseRedditCreativeAssets`
+   * and `canUseGoogleCreativeAssets` — nothing could use the asset; either one alone admits the
+   * upload), a missing `project` or `brief_id`, a type outside
+   * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
+   * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
+   * the length is re-checked here so a direct caller of this method gets the same answer.
+   * Upstream 4xx/5xx pass through with campaign-service's own message. Only ids, type and size are
+   * logged, never the bytes.
+   */
+  public async uploadCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_upload_creative_asset';
+    const fail = (field: string, message: string): void => {
+      next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
+    };
+
+    // EITHER capability admits an upload: the stored library is one library, and a deployment that
+    // can use an image on either platform is reason enough to let it in. Refusing unless Reddit's
+    // flag were on would mean a Google-only deployment could read and delete the library it is not
+    // allowed to add to.
+    //
+    // The Google arm runs AHEAD of the field that will consume it: at this commit the Google
+    // creative interfaces carry image URLs only, so an asset uploaded on GOOGLE_ASSETS alone is
+    // stored, listed, planned and deletable but cannot yet be named in a Google create. That is
+    // the intended order — the library has to exist before the asset-id field can reference it —
+    // and it costs an operator nothing worse than a stored image they can prune.
+    if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets()) {
+      fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
+      return;
+    }
+
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (briefId.length === 0) {
+      fail('brief_id', 'save the brief before uploading an image for it');
+      return;
+    }
+    // Refused, not defaulted, for the reason `getBriefMetrics` refuses: a constant here would
+    // write into another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      fail('project', 'no foundation is selected; reload the campaigns page from the sidebar');
+      return;
+    }
+
+    // `express.raw` skips a body whose type is not on its list, so a wrong type arrives here with
+    // no Buffer — told apart from an empty file by the declared type, not by the body.
+    const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    const image: unknown = req.body;
+    if (!isCreativeAssetMimeType(declaredType) || !Buffer.isBuffer(image)) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+    if (image.byteLength === 0) {
+      fail('file', 'the image is empty');
+      return;
+    }
+    if (image.byteLength > CREATIVE_ASSET_MAX_BYTES) {
+      next(
+        new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // The declared type is the browser's claim; campaign-service re-sniffs and would refuse a
+    // mismatch with a 400. Checking the magic bytes here gives that the wrong-type answer without
+    // a base64 round trip.
+    if (sniffCreativeAssetMimeType(image) !== declaredType) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId, projectSlug, contentType: declaredType, byteSize: image.byteLength });
+    try {
+      const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
+      logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
+      res.status(asset.created ? 201 : 200).json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets?project=&brief_id=` — the brief's stored image
+   * library with the quota the next upload is judged against.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like `getCampaignMetrics`: the route is addressed
+   * by a campaign-service BRIEF, and with the flag off no such brief exists here, so it answers 404
+   * rather than reaching upstream. It is deliberately NOT behind either creative-asset capability
+   * flag — reading and pruning a library a deployment already holds must not depend on whether a
+   * platform may currently consume it, or images uploaded under one flag would become unreachable
+   * the moment it was turned off.
+   *
+   * Query parameters are `project` and `brief_id`, matching the upload sibling above rather than
+   * the camelCase the Optimize metrics reads use.
+   */
+  public async listCreativeAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_list_creative_assets';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug });
+    try {
+      const library = await this.campaignServiceClient.listCreativeAssets(req, scope.projectSlug, scope.briefId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, count: library.count, bytesUsed: library.bytesUsed });
+      res.json(library);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/plan?project=&brief_id=&platforms=` — which stored
+   * images fit which platform slots, and what is still missing.
+   *
+   * Registered BEFORE the `:assetId` route, and gated the same way as the list above.
+   *
+   * `platforms` is repeatable (`?platforms=google-ads&platforms=reddit`), which Express surfaces as
+   * a string for one value and an array for several; both are normalized to an array here. Absent
+   * or empty means every platform the service publishes slot rules for, which is what an operator
+   * asking "is my library ready" wants. An unknown platform is IGNORED upstream rather than
+   * refused, so it is passed through rather than validated against a list this tier would have to
+   * keep in step with the service.
+   */
+  public async getCreativeAssetPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_creative_asset_plan';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const raw = req.query['platforms'];
+    const platforms = (Array.isArray(raw) ? raw : [raw]).filter((value): value is string => typeof value === 'string').map((value) => value.trim());
+    const requested = [...new Set(platforms.filter((value) => value.length > 0))];
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, platforms: requested });
+    try {
+      const plan = await this.campaignServiceClient.getCreativeAssetPlan(req, scope.projectSlug, scope.briefId, requested);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assignments: plan.assignments.length, gaps: plan.gaps.length });
+      res.json(plan);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — one stored image's
+   * metadata. Gated like the list above.
+   *
+   * `assetId` is validated as a UUID here as well as being registered after the literal `plan`
+   * route: the ordering is what keeps `/plan` off this handler, and the shape check is what makes
+   * that safe to rely on, so a later reordering fails loudly rather than reading `plan` as an id.
+   */
+  public async getCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_get_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      const asset = await this.campaignServiceClient.getCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId: asset.id });
+      res.json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `DELETE /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — permanently remove
+   * a stored image and free its bytes against the brief's quota. Answers 204.
+   *
+   * Gated like the list above, and for the same reason: pruning a full library must stay possible
+   * on a deployment where no platform may currently consume it.
+   *
+   * Upstream refuses with 409 `reason=creative_asset_in_use` while a live campaign on the brief
+   * could still need the image, and that refusal carries its own remedy text; it passes through
+   * untouched rather than being restated here.
+   */
+  public async deleteCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_delete_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      await this.campaignServiceClient.deleteCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read campaign-service's live metrics for ONE campaign: impressions, clicks, cost and CTR, read
+   * from its platform on every request. The Optimize tab shows each row's counters from the
+   * brief-wide read (`getBriefMetrics`) it already makes on open, and calls this only when the
+   * operator refreshes one row, or clicks a row the brief-wide read could not measure, to get this
+   * read's precise reason. Each call reaches an ad platform whose rate budget is shared across
+   * foundations.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the adoptable-brief list: the route is
+   * addressed by a campaign-service brief, and with the flag off none exists here, so it answers
+   * 404 rather than reaching upstream.
+   *
+   * The query takes `project` and `briefId` (camelCase, like the sibling per-campaign Optimize reads)
+   * and an optional `window` refused rather than defaulted or dropped, as `getBriefMetrics` does.
+   * Both ids are checked as UUIDs, which upstream declares them.
+   * Upstream's refusals are relayed as they come: 400 for a platform with no metrics read, 409 for
+   * a campaign that cannot be measured yet or belongs to another account, 404 for a missing
+   * connection, 5xx for a connection or platform failure.
+   */
+  public async getCampaignMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_metrics_read';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const campaignId = req.params['campaignId'];
+    if (typeof campaignId !== 'string' || !isCampaignServiceJobId(campaignId)) {
+      next(ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const briefId = typeof req.query['briefId'] === 'string' ? req.query['briefId'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('briefId', "the brief UUID is required to read a campaign's metrics", {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for the reason `getBriefMetrics` gives.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const window = this.readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId, briefId, projectSlug, window });
+
+    try {
+      const result = await this.campaignServiceClient.getCampaignMetrics(req, projectSlug, briefId, campaignId, window);
+      // The window upstream SERVED, which can be narrower than the one asked for (X Ads), and the
+      // counters themselves are not logged: they are the response, not a diagnostic.
+      logger.success(req, operation, startTime, { campaignId, briefId, projectSlug, window: result.window });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Google Ads account monitor, read account-wide through the BFF's own credentials. That customer
+   * is shared by every foundation, so the read is root-only (lfx-self-serve-ops#54); the project is
+   * still required, so a request naming none is a 400 for every caller.
+   */
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_monitor', { days });
+    const projectSlug = this.requireMonitorProject(req, next, 'campaign_monitor');
+    if (projectSlug === null) {
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
+      return;
+    }
+    const startTime = logger.startOperation(req, 'campaign_monitor', { days, projectSlug });
 
     try {
       const data = await this.metricsService.getMonitorData(req, days);
@@ -2084,13 +2507,12 @@ export class CampaignController {
    *
    * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
    * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
-   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
-   * rows it drops belong to other foundations — see the flag's own docs.
+   * query, restricted to ROOT callers because it cannot isolate one foundation's data.
    *
    * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
    * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
    * so a fallback constant would report one foundation's keywords to another. The legacy arm
-   * ignores the project entirely, which is precisely the leak being closed.
+   * ignores the project entirely and therefore requires the shared-account ROOT gate.
    */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -2135,6 +2557,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_keywords', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getKeywords(req, days);
       logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2375,6 +2800,11 @@ export class CampaignController {
     if (this.refuseCutoverMismatch(req, next, 'linkedin_monitor')) {
       return;
     }
+    // The legacy allowlist account is LF's own, shared by every foundation; the connection arm above
+    // reads the project's own account and stays open.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'linkedin_monitor', 'LinkedIn Ads'))) {
+      return;
+    }
 
     const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
@@ -2404,7 +2834,7 @@ export class CampaignController {
   /**
    * Age/gender/device breakdowns for the campaigns table.
    *
-   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   * Same flag, project requirement and legacy shared-account ROOT gate as `getKeywords` above.
    *
    * Campaign-service fails the whole read if any one breakdown fails rather than returning
    * the two that loaded, so there is no partial-success arm to handle here: an error is an
@@ -2441,6 +2871,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_audience', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getAudience(req, days);
       logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2589,6 +3022,11 @@ export class CampaignController {
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
 
+    // Reddit's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'reddit_monitor', 'Reddit Ads'))) {
+      return;
+    }
+
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
@@ -2652,6 +3090,11 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
+
+    // Meta's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'meta_monitor', 'Meta Ads'))) {
+      return;
+    }
 
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
@@ -2768,9 +3211,13 @@ export class CampaignController {
   /**
    * X (Twitter) Ads account monitor, from campaign-service only (#2519). The Microsoft route's
    * sibling; additionally a 409 when the account cannot be monitored as it stands, with the
-   * upstream `reason` forwarded as `upstreamCode`.
+   * upstream `reason` forwarded as `upstreamCode`. Unlike Microsoft's, X's account is shared by
+   * every foundation, so the read is root-only — refused before the flag-off 404 too.
    */
   public async getTwitterMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'twitter_monitor', 'X Ads'))) {
+      return;
+    }
     await this.serveReportBackedMonitor(req, res, next, {
       operation: 'twitter_monitor',
       platformLabel: 'X Ads',
@@ -3596,6 +4043,49 @@ export class CampaignController {
   }
 
   /**
+   * The optional `?window=` of a campaign-service metrics read: the window, `undefined` when it was
+   * OMITTED, or `null` once a malformed value has been reported to `next`. Shared by the brief-wide
+   * and single-campaign reads, which accept the same seven values and refuse the same shapes.
+   */
+  private readMetricsWindow(req: Request, operation: string, next: NextFunction): CampaignMetricsWindow | undefined | null {
+    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
+    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
+    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
+    // given", so the enum check is skipped and the read proceeds on the per-platform default.
+    // That is the substitution this method refuses by design: the response's own `window` field
+    // would then report a period the caller never asked for, as though it had. `project` and
+    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
+    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
+    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
+    // already carry.
+    const windowParam = req.query['window'];
+    if (windowParam !== undefined && typeof windowParam !== 'string') {
+      next(
+        ServiceValidationError.forField('window', 'window must be given at most once', {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
+    // and treating them as "no window given" would skip the enum check and serve the default —
+    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
+    // may default; every supplied value must be in the enum.
+    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
+    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+      next(
+        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    return rawWindow as CampaignMetricsWindow | undefined;
+  }
+
+  /**
    * `?days=`, clamped to the account monitors' 7–90 range rather than refused — the behaviour the
    * Meta and Reddit routes already had. Upstream rejects an out-of-range value, so the clamp is
    * what keeps a stray `?days=365` a read instead of a 400.
@@ -3644,6 +4134,34 @@ export class CampaignController {
       return null;
     }
     return accountId;
+  }
+
+  /**
+   * Whether the caller may read shared-account monitor data or legacy Google insights, or `false`
+   * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
+   *
+   * `requireCampaignManager` authorises the caller for the ONE project it names, but an account
+   * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
+   * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
+   * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
+   * are request-cached and fail closed, and the refusal runs before any upstream call. A ROOT writer
+   * returns immediately without a second ROOT marketing lookup.
+   */
+  private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
+    if ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req))) {
+      return true;
+    }
+    // `apiErrorHandler` logs the 403 itself; this only names the platform for tracing.
+    logger.debug(req, operation, 'Refusing a shared-account monitor read for a non-root caller', { platform: platformLabel });
+    next(
+      new AuthorizationError(MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+      })
+    );
+    return false;
   }
 
   /**
@@ -3803,6 +4321,29 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /** 415 for an upload that is not a PNG or JPEG, or whose bytes are not the type declared. */
+  private unsupportedCreativeAsset(req: Request, operation: string): MicroserviceError {
+    return new MicroserviceError(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
+      operation,
+      service: 'campaign_controller',
+      path: req.path,
+    });
+  }
+
+  /**
+   * `redditConfig.imageAssetId` when this deployment cannot honour it, else `null`.
+   *
+   * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
+   * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
+   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses).
+   */
+  private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseRedditCreativeAssets()) return null;
+    const config: unknown = body?.redditConfig;
+    if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
+    return null;
   }
 
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
@@ -4260,6 +4801,8 @@ export class CampaignController {
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
     const sitelinks = this.googleSitelinks(body);
+    // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
+    const structuredSnippets = this.googleStructuredSnippets(body);
 
     return {
       budget,
@@ -4294,6 +4837,7 @@ export class CampaignController {
       ...searchLanguages,
       ...callouts,
       ...sitelinks,
+      ...structuredSnippets,
     };
   }
 
@@ -4357,6 +4901,106 @@ export class CampaignController {
   }
 
   /**
+   * The Search campaign's structured snippets, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses snippets on any other channel by
+   * name, and every per-entry refusal, before this is dispatched. Sent as trimmed — blanks and
+   * case-folded repeats among the values are left in place for upstream to collapse, as it would
+   * collapse them anyway and dropping them here would make the dispatched list disagree with the one
+   * this app judged.
+   */
+  private googleStructuredSnippets(body: CampaignCreateRequest): { structuredSnippets?: CampaignStructuredSnippet[] } {
+    const clean = this.googleStructuredSnippetList(body?.structuredSnippets);
+    return clean.length > 0 ? { structuredSnippets: clean } : {};
+  }
+
+  /**
+   * Whether one raw snippet entry survives the Go decode into `googleAdsStructuredSnippetConfig`: an
+   * object (or null, which decodes to a blank snippet) whose `header` is absent, null or text and
+   * whose `values` is absent, null or a list of text.
+   *
+   * A `null` ELEMENT of `values` is text as far as the decode is concerned: `Values` is a plain
+   * `[]string` (`internal/dispatch/googleads.go`), and Go's `encoding/json` leaves a null element
+   * at its zero value `""` — which `validateStructuredSnippets` then skips exactly as it skips a
+   * blank one. Refusing it here would refuse a create upstream accepts, so it is admitted and
+   * {@link googleStructuredSnippetList} drops it, which is what its `typeof v === 'string'` filter
+   * has always done.
+   */
+  private isStructuredSnippetShape(entry: unknown): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    const { header, values } = fields;
+    if (!(header === undefined || header === null || typeof header === 'string')) return false;
+    if (values === undefined || values === null) return true;
+    return Array.isArray(values) && values.every((v) => v === null || typeof v === 'string');
+  }
+
+  /**
+   * The snippet list as judged and dispatched: header and each value trimmed with Go's rules as
+   * `validateStructuredSnippets` trims them, an absent or null field read as blank or empty. Nothing
+   * but a null VALUE is dropped, so a blank header is still refused by name; upstream decodes that
+   * null to a blank and skips it where this drops it, which leaves both walks judging and
+   * dispatching the same values. Callers have checked the shape with
+   * {@link isStructuredSnippetShape}.
+   */
+  private googleStructuredSnippetList(raw: unknown): CampaignStructuredSnippet[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const header = typeof fields['header'] === 'string' ? googleAdsTrimSpace(fields['header']) : '';
+      const rawValues = Array.isArray(fields['values']) ? (fields['values'] as unknown[]) : [];
+      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsTrimSpace(v));
+      return { header, values };
+    });
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed snippet list, or `null` when it would not.
+   *
+   * `validateStructuredSnippets`' per-entry branches in order: header blank, header over 25 runes,
+   * then a header repeat keyed on Go's `strings.ToLower` (`seenHeaders` carries those keys across
+   * entries). Then the values, in ITS loop's order: a blank value is skipped, an over-long one is
+   * refused, a case-folded repeat is skipped — so an over-long value that merely repeats an earlier
+   * one is still refused, because the bound is checked before the repeat is collapsed. Only what
+   * survives that loop is counted against the minimum and the maximum. The echo is cut short: the
+   * header comes from an unvalidated body.
+   */
+  private googleStructuredSnippetRefusal(snippet: CampaignStructuredSnippet, index: number, seenHeaders: Set<string>): string | null {
+    const { header, values } = snippet;
+    if (header === '') {
+      return `Google Ads structured snippet ${index + 1} has no header. Fill it in or remove the snippet, then create again.`;
+    }
+    const shown = googleAdsEchoed(header);
+    const headerRunes = [...header].length;
+    if (headerRunes > GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES) {
+      return `Google Ads accepts structured snippet headers of at most ${GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES} characters, and ${shown} has ${headerRunes}. Shorten it and create again.`;
+    }
+    const headerKey = googleAdsToLower(header);
+    if (seenHeaders.has(headerKey)) {
+      return `Google Ads serves one line per structured snippet header and this campaign lists ${shown} twice, so the second would be dropped. Merge them into one snippet and create again.`;
+    }
+    seenHeaders.add(headerKey);
+
+    const distinct = new Set<string>();
+    for (const value of values) {
+      if (value === '') continue;
+      const valueRunes = [...value].length;
+      if (valueRunes > GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES) {
+        return `Google Ads accepts structured snippet values of at most ${GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES} characters, and one under ${shown} has ${valueRunes}. Shorten it and create again.`;
+      }
+      distinct.add(googleAdsToLower(value));
+    }
+    if (distinct.size < GOOGLE_ADS_MIN_SNIPPET_VALUES) {
+      return `Google Ads needs at least ${GOOGLE_ADS_MIN_SNIPPET_VALUES} different values under the structured snippet header ${shown}, and this one has ${distinct.size} — blanks and repeats do not count. Add more and create again.`;
+    }
+    if (distinct.size > GOOGLE_ADS_MAX_SNIPPET_VALUES) {
+      return `Google Ads accepts at most ${GOOGLE_ADS_MAX_SNIPPET_VALUES} values under one structured snippet header, and ${shown} has ${distinct.size}. Remove some and create again.`;
+    }
+    return null;
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
@@ -4365,7 +5009,7 @@ export class CampaignController {
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
    * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
-   * three lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * four lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
    * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
@@ -4411,7 +5055,7 @@ export class CampaignController {
       }
     }
 
-    // Three request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Four request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -4419,11 +5063,23 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks` is the only one of the three that is not already a `candidates` key, so its list
-    // length is checked here. For the other two the check above has already refused an over-long
-    // list with the same field and message, which is why this one re-states rather than contradicts.
+    // `sitelinks` and `structuredSnippets` are the two that are not already `candidates` keys, so
+    // their list lengths are checked here. For the other two the check above has already refused an
+    // over-long list with the same field and message, which is why this one re-states rather than
+    // contradicts.
+    //
+    // `structuredSnippets.values` is a nested list of STRINGS rather than a string, which is why a
+    // named field is measured either way below. Its own caps — ten snippets, ten values, 25 runes
+    // each — are the refusals an operator can act on, but they sit behind `cutoverOn`, the
+    // `google-ads` platform and a resolvable `googleAdsConfig.channel`, all of which are read out of
+    // `createConfigEnvelope`'s output and so are decided AFTER the normalisation this bounds. A body
+    // that resolves none of them still reaches `googleStructuredSnippetList`, which allocates a
+    // fresh object and a fresh trimmed string per value as it walks. That is the same reason the geo
+    // lists and schedules are listed above, and the same reason the `callouts` and `sitelinks`
+    // siblings are bounded here rather than left to their own caps.
     const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
       ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
+      ['structuredSnippets', ['header', 'values']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
     ];
@@ -4433,11 +5089,41 @@ export class CampaignController {
       if (list.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
         return { field: key, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
       }
+      let nestedTotal = 0;
       for (const entry of list) {
         if (!entry || typeof entry !== 'object') continue;
         for (const name of names) {
           const value = (entry as Record<string, unknown>)[name];
           const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          // A nested list is bounded on both axes, as the top-level loop bounds a list of strings:
+          // its length first, then each string in it. Measured with the same `max` as a plain field,
+          // so one named field cannot be bounded two different ways depending on how it is shaped.
+          //
+          // Only `values` is bounded at the nested ceiling, because it is the only name here that
+          // upstream decodes as a LIST, and it has no raw-count cap upstream at all: blanks and
+          // case-folded repeats are collapsed before the 3..10 bound is counted, so a duplicate-heavy
+          // paste is a valid three-value snippet at any raw length, and the 100 above would refuse
+          // it. Every other name decodes as a plain `string`, so an array under one of them is a body
+          // upstream refuses outright — no over-refusal to relax, and raising its ceiling would only
+          // widen what this walk admits. See MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
+          const listMax = name === 'values' ? MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES : MAX_GOOGLE_CREATIVE_LIST_ENTRIES;
+          if (Array.isArray(value)) {
+            if (value.length > listMax) {
+              return { field: `${key}.${name}`, message: `the list exceeds the maximum of ${listMax} entries` };
+            }
+            // Per-list ceilings multiply against the outer bound above, so the sum is bounded too —
+            // see MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL, which is derived from the raw snippet count
+            // upstream refuses past and so cannot refuse a body upstream accepts.
+            nestedTotal += value.length;
+            if (nestedTotal > MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL) {
+              return { field: key, message: `its nested lists exceed the maximum of ${MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL} entries in total` };
+            }
+            const long = value.find((nested) => typeof nested === 'string' && this.boundedLength(nested) > max);
+            if (long !== undefined) {
+              return { field: `${key}.${name}`, message: `an entry exceeds the maximum length of ${max}` };
+            }
+            continue;
+          }
           if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
           }
@@ -5658,5 +6344,67 @@ export class CampaignController {
         ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
         : {}),
     };
+  }
+
+  /**
+   * The flag gate and the `project` + `brief_id` pair every creative-asset READ shares.
+   *
+   * Returns `null` once it has handed the refusal to `next` — the caller returns immediately — so
+   * the four handlers above cannot drift apart on which refusal they give for the same input.
+   */
+  private creativeAssetScope(req: Request, operation: string, next: NextFunction): { projectSlug: string; briefId: string } | null {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return null;
+    }
+
+    // DELIBERATELY stricter than `uploadCreativeAsset`, which takes any non-empty `brief_id`. The
+    // upload is a write the operator just made a brief for, and a wrong id there is upstream's
+    // 404 to give; these four are reads whose only caller is the campaigns page, which always has
+    // the UUID campaign-service minted. Spending the shape check here keeps a malformed id out of
+    // a path segment without an upstream round trip, and the upload stays lenient rather than
+    // being tightened in a PR that does not own it.
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('brief_id', 'the brief UUID is required to read its stored images', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    // Refused, not defaulted, for the reason the upload refuses: a constant here would read
+    // another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+
+    return { projectSlug, briefId };
+  }
+
+  /** The `:assetId` path segment, refused unless it is the UUID campaign-service declares. */
+  private creativeAssetId(req: Request, operation: string, next: NextFunction): string | null {
+    const assetId = req.params['assetId'];
+    if (typeof assetId !== 'string' || !isCampaignServiceJobId(assetId)) {
+      next(
+        ServiceValidationError.forField('assetId', 'assetId must be a creative asset UUID', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return assetId;
   }
 }

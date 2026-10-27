@@ -42,7 +42,7 @@
       </div>
     </div>
   } @else {
-    <h1 class="font-display font-light text-2xl" data-testid="memberships-page-title">Membership — {{ companyName() }}</h1>
+    <lfx-page-header [title]="'Membership — ' + companyName()" titleTestId="memberships-page-title" />
 
     <div
       role="tablist"
@@ -256,7 +256,20 @@
                     <td class="text-sm text-gray-700">{{ membership.committeeMembers }}</td>
                     <td>
                       @if (membership.orgProjects > 0) {
-                        <span class="text-sm font-medium text-blue-600">{{ membership.orgProjects }}</span>
+                        <button
+                          type="button"
+                          class="text-sm font-medium text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none"
+                          [attr.aria-label]="
+                            'View the ' +
+                            membership.orgProjects +
+                            (membership.orgProjects === 1 ? ' project' : ' projects') +
+                            ' your organization is involved in for ' +
+                            membership.foundationName
+                          "
+                          [attr.data-testid]="'memberships-org-projects-' + membership.foundationId"
+                          (click)="openProjectsDrawer(membership)">
+                          {{ membership.orgProjects }}
+                        </button>
                       } @else {
                         <span class="text-sm text-gray-700">0</span>
                       }
@@ -267,6 +280,13 @@
             }
           </div>
         </lfx-card>
+
+        <lfx-membership-projects-drawer
+          [(visible)]="projectsDrawerVisible"
+          [orgUid]="orgUid()"
+          [foundationId]="activeProjectsRow()?.foundationId ?? ''"
+          [foundationName]="activeProjectsRow()?.foundationName ?? ''"
+          [count]="activeProjectsRow()?.orgProjects ?? 0" />
       </div>
     }
 

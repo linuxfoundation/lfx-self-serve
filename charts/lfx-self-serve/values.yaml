@@ -575,6 +575,57 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
     value:
 
+  # Offers an image UPLOAD in the Reddit section of the create flow (decision D3): the operator
+  # picks a PNG/JPEG (up to 10 MB), it is stored by campaign-service against the brief, and the
+  # create sends its id as `redditConfig.imageAssetId` instead of a pasted `imageUrl`. The pasted
+  # image URL stays offered either way.
+  #
+  # A CAPABILITY flag, like BIDDING: "does the DEPLOYED campaign-service have creative-asset URL
+  # signing configured?" — CREATIVE_ASSET_URL_SIGNING_KEY (secret) and
+  # CREATIVE_ASSET_PUBLIC_BASE_URL (https origin) on campaign-service (LFXV2-2665). Reddit can only
+  # fetch an image from a public URL, and that signed URL is how a stored asset becomes one; without
+  # both, campaign-service refuses every `imageAssetId` with a 400. It also needs the create
+  # pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator never reads `imageAssetId`.
+  #
+  # Off (the default), the Reddit upload control is hidden and a create request carrying
+  # `redditConfig.imageAssetId` is refused with a 400 rather than dropped. The shared upload ROUTE
+  # refuses only when GOOGLE_ASSETS below is also off — either flag admits an image into the
+  # brief's one library. Order: configure campaign-service's signing key and public base URL,
+  # confirm it, THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
+    value:
+
+  # Will offer a stored-image LIBRARY in the Google section of the create flow: images uploaded to
+  # the brief (the same PNG/JPEG upload REDDIT_ASSETS offers, into the same library) and named by
+  # asset id in the Google creative fields, instead of pasted image URLs.
+  #
+  # NOTHING READS IT YET — setting it changes nothing an operator can see. The Google creative
+  # fields carry image URLs only at this release, with no asset-id key for a stored image to go in,
+  # so the library control this gates does not exist; the flag is wired ahead of it. What it DOES
+  # already do is admit an upload into the brief's library on its own authority (the shared upload
+  # route accepts either asset flag), which is why it is worth setting on a deployment that is
+  # staging images before the control ships.
+  #
+  # A CAPABILITY flag like REDDIT_ASSETS, but it asserts something DIFFERENT. It does NOT say URL
+  # signing is configured: Google's dispatch path reads the stored bytes and POSTs them to the
+  # Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service and the signing
+  # settings are irrelevant to it. What it says is that the DEPLOYED campaign-service resolves
+  # Google creative asset ids at all — an older one ignores the unknown keys, dispatches a campaign
+  # with no images and reports success. It also needs the create pipeline (CREATE, BRIEFS, JOBS)
+  # on, because the legacy creator reads no creative key either.
+  #
+  # It is a SIBLING of REDDIT_ASSETS rather than a widening of it so the two can ship
+  # independently: one flag would mean Reddit asset upload could never be enabled without Google's,
+  # or the reverse.
+  #
+  # Off (the default), the Google library controls stay hidden; the pasted image URL stays offered.
+  # On, at this release, so does the pasted image URL — see the "nothing reads it yet" note above.
+  # It does NOT gate the brief's asset list, get, plan and delete routes — those are addressed by a
+  # campaign-service brief and gate on BRIEFS like every other brief route, so a deployment can
+  # always see and prune the library it already holds. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
@@ -720,6 +771,10 @@ environment:
   # foundations' spend. TELL PEOPLE BEFORE FLIPPING IT: a reader who is not warned files the
   # drop as a bug, and "the dashboard lost half its keywords" is a plausible-sounding report.
   #
+  # The legacy arm is ROOT-only (writer or global_marketing_ops, lfx-self-serve-ops#54),
+  # independently of the monitor cutover. Non-root callers receive a shared-account restriction
+  # while this flag is off; campaign-service's project-scoped reads remain available when it is on.
+  #
   # A project with no campaign-service campaigns reads EMPTY rather than falling back. That is
   # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
   # this flag exists to close.
@@ -864,7 +919,12 @@ environment:
   # Serves the account monitors from campaign-service's account-monitor endpoints (#2519):
   # /api/campaigns/linkedin/monitor, /meta/monitor and /reddit/monitor switch backend, and the
   # campaign-service-only /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all
-  # (404 while off). Google (/monitor) is not affected.
+  # (404 while off). Google (/monitor) has no campaign-service arm.
+  #
+  # This flag does NOT isolate shared accounts: Google Ads, Meta, Reddit and X run one ad account
+  # shared by every foundation, so their monitors -- and LinkedIn's legacy (flag-off) allowlist arm --
+  # are root-only whatever this flag says; other callers get a 403 MONITOR_SHARED_ACCOUNT_RESTRICTED
+  # (lfx-self-serve-ops#54). Only LinkedIn's campaign-service arm is project-isolated.
   #
   # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback, so with
   # this on the Monitor tab's account pickers offer each project's connection's account rather than
@@ -915,6 +975,12 @@ environment:
   # this value) once Guild delivers structured agent inputs verbatim.
   GUILD_STRUCTURED_AGENT_INPUT:
     value: "false"
+
+  # The Google Drive folder Export to Google Slides creates new decks in.
+  # Defaults in code to the Marketing OS folder; set it outside production to
+  # keep test decks out of the folder marketing works from.
+  MKTG_SLIDES_EXPORT_FOLDER_ID:
+    value:
 
   # Optional GitHub token for the server-side README fetch that grounds the
   # Message Foundation agent. Unauthenticated GitHub REST is capped at 60/hour

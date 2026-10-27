@@ -15,15 +15,17 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EngagementNonMemberParticipationComponent } from './engagement-non-member-participation.component';
 
-import type { HealthMetricsEngagementNonMemberParticipation, HealthMetricsEngagementNonMemberRow } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberPeriodCounts,
+  HealthMetricsEngagementNonMemberRow,
+} from '@lfx-one/shared/interfaces';
 
 function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = {}): HealthMetricsEngagementNonMemberRow {
   return {
     accountId: 'a-1',
     accountName: 'Acme Motors',
     membershipStatus: 'Non-member',
-    firstSeenDate: '2024-03-02',
-    lastAttendedDate: '2026-08-14',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsAttended: 3, distinctPeople: 1, sortRank: 4 },
       { range: 'COMPLETED_YEAR_2', meetingsAttended: 5, distinctPeople: 2, sortRank: 3 },
@@ -34,8 +36,18 @@ function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = 
   };
 }
 
+/** The view's per-period caption counts; the completed years default to the YTD count. */
+function periodCounts(ytd: number, completedYear = ytd): HealthMetricsEngagementNonMemberPeriodCounts[] {
+  return [
+    { range: 'COMPLETED_YEAR_3', orgs: ytd },
+    { range: 'COMPLETED_YEAR_2', orgs: ytd },
+    { range: 'COMPLETED_YEAR', orgs: completedYear },
+    { range: 'YTD', orgs: ytd },
+  ];
+}
+
 function response(overrides: Partial<HealthMetricsEngagementNonMemberParticipation> = {}): HealthMetricsEngagementNonMemberParticipation {
-  return { rows: [nonMemberRow()], counts: { orgs: 1 }, ...overrides };
+  return { rows: [nonMemberRow()], counts: periodCounts(1), ...overrides };
 }
 
 describe('EngagementNonMemberParticipationComponent', () => {
@@ -86,29 +98,26 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('12');
     expect(row.textContent).toContain('Non-member');
-    expect(row.textContent).toContain('Mar 2, 2024');
-    expect(row.textContent).toContain('Aug 14, 2026');
   });
 
-  it('renders a missing first-seen or last-attended date as an em dash', async () => {
-    await render(response({ rows: [nonMemberRow({ firstSeenDate: null, lastAttendedDate: null })] }));
-
-    expect(fixture.componentInstance['rowViews']()[0]).toEqual(expect.objectContaining({ firstSeenLabel: '\u2014', lastAttendedLabel: '\u2014' }));
-  });
-
-  // The view carries no project key, so the section stays on the foundation whatever project is picked.
-  it('does not re-read when a project is selected, and says the section stays foundation-wide', async () => {
+  // The design's columns: no First seen or Last attended.
+  it('renders the organization, meetings, people and membership columns only', async () => {
     await render();
-    getEngagementNonMemberParticipation.mockClear();
-    const scopeNote = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-scope-note"]');
-    expect(scopeNote()).toBeNull();
 
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Organization', 'Meetings attended', 'People', 'Membership']);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-row-a-1"] td')).toHaveLength(4);
+  });
 
-    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(scopeNote()?.textContent).toContain('Foundation-wide; not filtered by project');
+  it('shows membership as the small hollow-dot status, with the glyph hidden from assistive tech', async () => {
+    await render();
+
+    const status = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1-status"]') as HTMLElement;
+    expect(status.textContent?.replace(/\s+/g, ' ').trim()).toBe('○ Non-member');
+    expect(status.className).toContain('text-[12px]');
+    expect(status.className).toContain('text-gray-400');
+    expect(status.className).toContain('lg:whitespace-nowrap');
+    expect(status.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('○');
   });
 
   // The period pill re-projects the loaded rows, so switching it must not cost another request.
@@ -129,7 +138,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
       nonMemberRow({ accountId: 'a-1', accountName: 'Acme Motors', periods: [{ range: 'YTD', meetingsAttended: 2, distinctPeople: 1, sortRank: 2 }] }),
       nonMemberRow({ accountId: 'b-2', accountName: 'Vendor Corp', periods: [{ range: 'YTD', meetingsAttended: 9, distinctPeople: 4, sortRank: 1 }] }),
     ];
-    await render(response({ rows, counts: { orgs: 2 } }));
+    await render(response({ rows, counts: periodCounts(2) }));
 
     const names = Array.from(fixture.nativeElement.querySelectorAll('tbody tr')).map((row) => (row as HTMLElement).textContent?.trim() ?? '');
     expect(names[0]).toContain('Vendor Corp');
@@ -145,7 +154,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
         periods: [{ range: 'YTD', meetingsAttended: 1, distinctPeople: 1, sortRank: index }],
       })
     );
-    await render(response({ rows, counts: { orgs: 60 } }));
+    await render(response({ rows, counts: periodCounts(60) }));
     getEngagementNonMemberParticipation.mockClear();
 
     fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
@@ -158,12 +167,76 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
   });
 
-  it('emits the scope count for the sub-nav badge, and nothing while a read is in flight', async () => {
+  it('emits the selected period scope count for the sub-nav badge, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
-    await render(response({ counts: { orgs: 63 } }), (counts) => emitted.push(counts));
+    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
 
-    expect(emitted).toEqual([null, { orgs: 63 }]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('63 organizations');
+    expect(emitted).toEqual([null, { range: 'YTD', orgs: 19 }]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 organizations');
+  });
+
+  // The view counts its scope per period, so the caption and badge follow the pill without a re-read.
+  it('re-captions and re-reports the badge when the period changes', async () => {
+    const emitted: unknown[] = [];
+    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
+    getEngagementNonMemberParticipation.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
+    expect(emitted.at(-1)).toEqual({ range: 'COMPLETED_YEAR', orgs: 33 });
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 organizations');
+  });
+
+  // The caption counts organizations that attended in the period, so the table lists the same ones.
+  it('lists only organizations that attended a meeting in the selected period', async () => {
+    const rows = [
+      nonMemberRow({ accountId: 'a-1', accountName: 'Acme Motors' }),
+      nonMemberRow({
+        accountId: 'b-2',
+        accountName: 'Vendor Corp',
+        periods: [
+          { range: 'COMPLETED_YEAR', meetingsAttended: 4, distinctPeople: 2, sortRank: 1 },
+          { range: 'YTD', meetingsAttended: 0, distinctPeople: 0, sortRank: 2 },
+        ],
+      }),
+    ];
+    await render(response({ rows, counts: periodCounts(1, 2) }));
+    const rowIds = (): string[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('tbody tr')).map((row) => (row as HTMLElement).getAttribute('data-testid') ?? '');
+
+    expect(rowIds()).toEqual(['engagement-non-member-participation-row-a-1']);
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    fixture.detectChanges();
+
+    expect(rowIds()).toEqual(['engagement-non-member-participation-row-b-2', 'engagement-non-member-participation-row-a-1']);
+  });
+
+  // Organizations on record with none active in the period are a measured zero, not an empty foundation.
+  it('renders the period-empty state when no organization attended in the selected period', async () => {
+    const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: 0, distinctPeople: 0, sortRank: 1 }] })];
+    await render(response({ rows, counts: periodCounts(0) }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-empty"]')?.textContent).toContain(
+      'No non-member organizations attended a meeting in this period'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 organizations');
+  });
+
+  // Null attendance and a null count are unmeasured, so the section must not claim nobody attended.
+  it('renders the unmeasured state, not the period-empty state, when attendance was not measured', async () => {
+    const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: null, distinctPeople: null, sortRank: null }] })];
+    await render(response({ rows, counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-unmeasured"]')?.textContent).toContain(
+      'Non-member attendance is not available for this period'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
   });
 
   // A view that reports no scope count has not measured zero organizations, and the table says so.

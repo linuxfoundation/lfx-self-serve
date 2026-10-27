@@ -1,0 +1,200 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL) wraps inside its card instead of running across the next one. -->
+<section class="@container/asset flex min-w-0 w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-boilerplates-view">
+  <!-- Asset header: what this is, which version, how it was made -->
+  <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-boilerplates-view-header">
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-boilerplates-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-boilerplates-view" />
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-boilerplates-view-mode">{{ modeLabel() }}</span>
+      }
+    }
+    <div class="flex grow flex-wrap justify-end gap-2" data-testid="mktg-boilerplates-view-actions"><ng-content select="[asset-actions]" /></div>
+  </div>
+
+  <!-- Tabs: the four lengths, then the run's report -->
+  <div class="border-b border-gray-200" role="tablist" aria-label="Boilerplates" data-testid="mktg-boilerplates-view-tabs" (keydown)="onTabKeydown($event)">
+    <div class="flex flex-wrap gap-x-1">
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium [overflow-wrap:normal] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+          [ngClass]="tab.tabClass"
+          [id]="tab.tabId"
+          [attr.aria-selected]="tab.selected"
+          [attr.aria-controls]="tab.panelId"
+          [attr.tabindex]="tab.selected ? 0 : -1"
+          [attr.data-testid]="'mktg-boilerplates-view-tab-' + tab.id"
+          (click)="onSelectTab(tab.id)">
+          {{ tab.label }}
+          @if (tab.id === 'sources' && gapCount() > 0) {
+            <span class="ml-1 rounded-full bg-amber-100 px-1.5 text-2xs font-semibold text-amber-800" data-testid="mktg-boilerplates-view-gap-count">{{
+              gapCount()
+            }}</span>
+          }
+        </button>
+      }
+    </div>
+  </div>
+
+  @switch (selectedTab()) {
+    <!-- BOILERPLATES: the four lengths, each with its word count and a copy button -->
+    @case ('boilerplates') {
+      <div
+        class="flex flex-col gap-4"
+        role="tabpanel"
+        id="mktg-boilerplates-panel-boilerplates"
+        aria-labelledby="mktg-boilerplates-tab-boilerplates"
+        data-testid="mktg-boilerplates-view-panel-boilerplates">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
+          @for (row of rows(); track row.index) {
+            <article
+              class="group/commentfield flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4"
+              data-mktg-comment-group
+              [attr.data-testid]="'mktg-boilerplates-view-length-' + row.index">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-sm font-semibold text-gray-900">{{ row.label }}</h3>
+                  <span
+                    class="rounded-full border px-2 py-0.5 text-xs font-medium"
+                    [ngClass]="row.countClass"
+                    [attr.data-testid]="'mktg-boilerplates-view-count-' + row.index">
+                    {{ row.countLabel }}
+                    @if (row.over) {
+                      <span class="sr-only">— over the limit</span>
+                    }
+                  </span>
+                </div>
+                <lfx-button
+                  [label]="copiedIndex() === row.index ? 'Copied' : 'Copy'"
+                  [icon]="copiedIndex() === row.index ? 'fa-light fa-check' : 'fa-light fa-copy'"
+                  [text]="true"
+                  size="small"
+                  [ariaLabel]="'Copy the ' + row.label + ' boilerplate'"
+                  [attr.data-testid]="'mktg-boilerplates-view-copy-' + row.index"
+                  (onClick)="onCopy(row)" />
+              </div>
+              <p class="text-xs text-gray-500">{{ row.hint }}</p>
+              <p class="text-sm leading-relaxed text-gray-900" [attr.data-testid]="'mktg-boilerplates-view-text-' + row.index">{{ row.text }}</p>
+              @if (commentsEnabled()) {
+                <lfx-mktg-field-comments [field]="'bp[' + row.index + '].t'" />
+              }
+            </article>
+          }
+        </div>
+        <!-- aria-label swaps alone aren't announced — this live region tells screen-reader users the copy succeeded. -->
+        <span class="sr-only" role="status">{{ copiedAnnouncement() }}</span>
+
+        @if (findings().length > 0 || reportNotes().length > 0) {
+          <!-- What a person should check: the finalize tool's findings and the agent's notes. -->
+          <div class="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4" data-testid="mktg-boilerplates-view-reviewer">
+            <h3 class="text-sm font-semibold text-amber-800">For the reviewer</h3>
+            @if (findings().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-amber-900" data-testid="mktg-boilerplates-view-findings">
+                @for (finding of findings(); track $index) {
+                  <li class="flex items-start gap-2">
+                    <i class="fa-light fa-triangle-exclamation mt-1 shrink-0 text-xs" aria-hidden="true"></i><span class="min-w-0">{{ finding }}</span>
+                  </li>
+                }
+              </ul>
+            }
+            @if (reportNotes().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-amber-900" data-testid="mktg-boilerplates-view-notes">
+                @for (line of reportNotes(); track $index) {
+                  <li>{{ line }}</li>
+                }
+              </ul>
+            }
+            <button
+              type="button"
+              class="self-start text-xs font-medium text-amber-800 underline hover:text-amber-900"
+              data-testid="mktg-boilerplates-view-reviewer-sources"
+              (click)="onGoToTab('sources')">
+              Sources read, failed and gaps
+            </button>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
+    @case ('sources') {
+      <div
+        class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2"
+        role="tabpanel"
+        id="mktg-boilerplates-panel-sources"
+        aria-labelledby="mktg-boilerplates-tab-sources"
+        data-testid="mktg-boilerplates-view-panel-sources">
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Sources read</h3>
+          @if (report().sources_read.length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-boilerplates-view-sources-read">
+              @for (source of report().sources_read; track $index) {
+                <li class="flex items-start gap-2">
+                  <i class="fa-light fa-check mt-1 shrink-0 text-xs text-emerald-600" aria-hidden="true"></i><span class="min-w-0">{{ source }}</span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-read-empty">Nothing was read.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Could not be read</h3>
+          @if (report().sources_failed.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-boilerplates-view-sources-failed">
+              @for (failed of report().sources_failed; track $index) {
+                <li class="flex flex-col">
+                  <span class="text-gray-800">{{ failed.name }}</span>
+                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-failed-empty">Every source was read.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Gaps</h3>
+          @if (report().gaps.length > 0) {
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="mktg-boilerplates-view-gaps">
+              @for (gap of report().gaps; track $index) {
+                <li>{{ gap }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-gaps-empty">The sources left no gap.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Notes and checks</h3>
+          @if (reportNotes().length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-boilerplates-view-report-notes">
+              @for (line of reportNotes(); track $index) {
+                <li>{{ line }}</li>
+              }
+            </ul>
+          }
+          @if (findings().length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-amber-800" data-testid="mktg-boilerplates-view-report-findings">
+              @for (finding of findings(); track $index) {
+                <li class="flex items-start gap-2">
+                  <i class="fa-light fa-triangle-exclamation mt-1 shrink-0 text-xs" aria-hidden="true"></i><span class="min-w-0">{{ finding }}</span>
+                </li>
+              }
+            </ul>
+          }
+          @if (reportNotes().length === 0 && findings().length === 0) {
+            <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-checks-empty">Nothing to check.</p>
+          }
+        </div>
+      </div>
+    }
+  }
+</section>

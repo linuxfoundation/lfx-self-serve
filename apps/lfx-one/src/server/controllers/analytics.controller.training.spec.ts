@@ -14,11 +14,12 @@ vi.mock('../services/health-metrics-training.service', () => ({
   },
   isSupportedTrainingRange: (range: string) => range !== 'COMPLETED_YEAR_4',
 }));
-// The controller constructs eight unrelated domain services; none of them are exercised here.
+// The controller constructs nine unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {}, isSupportedEventsRange: () => true }));
 vi.mock('../services/health-metrics-members.service', () => ({ HealthMetricsMembersService: class {}, isSupportedMembersRange: () => true }));
 vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
+vi.mock('../services/health-metrics-overview.service', () => ({ HealthMetricsOverviewService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -89,7 +90,7 @@ describe('AnalyticsController.getTrainingEnrollment', () => {
   const period = {
     totals: { enrollments: 10, certifications: 2, revenueUsd: 500 },
     change: null,
-    byType: [{ deliveryType: 'E-Learning', enrollments: 10, revenueUsd: 500 }],
+    byType: [{ deliveryType: 'E-Learning', isListed: true, enrollments: 10, revenueUsd: 500 }],
   };
   const enrollment = {
     measured: true,

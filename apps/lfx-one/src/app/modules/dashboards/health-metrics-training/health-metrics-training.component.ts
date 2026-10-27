@@ -8,10 +8,8 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import {
   HEALTH_METRICS_TRAINING_DATA_SECTIONS,
   HEALTH_METRICS_TRAINING_NO_PROGRAMME,
-  HEALTH_METRICS_TRAINING_SCOPE_NOTE,
   HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX,
   HEALTH_METRICS_TRAINING_SECTIONS,
-  HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsTrainingSubNavItems } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -43,10 +41,8 @@ export class HealthMetricsTrainingComponent {
   protected readonly sections = HEALTH_METRICS_TRAINING_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_TRAINING_DATA_SECTIONS;
-  protected readonly crossReference = HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE;
-  protected readonly scopeNote = HEALTH_METRICS_TRAINING_SCOPE_NOTE;
   protected readonly noProgramme = HEALTH_METRICS_TRAINING_NO_PROGRAMME;
-  /** Courses with enrollments in the period, for the sub-nav badge; `null` until the section reports one. */
+  /** Courses ever enrolled in, for the sub-nav badge; `null` until the section reports one. */
   protected readonly coursesCount = signal<number | null>(null);
   protected readonly subNavItems = computed<HealthMetricsTrainingSubNavItem[]>(() => buildHealthMetricsTrainingSubNavItems({ courses: this.coursesCount() }));
 

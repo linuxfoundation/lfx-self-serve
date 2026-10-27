@@ -47,3 +47,6 @@ export const FOUNDATION_LOGO_SQUARE_PALETTE: readonly string[] = [
 
 /** 503 copy when the BFF could not verify the caller's access to an organization (grant roster or authorizer unavailable). */
 export const ORG_ACCESS_UNVERIFIABLE_MESSAGE = "Couldn't verify your access to this organization right now. Please try again.";
+
+/** How long a copy-to-clipboard confirmation stays on screen in the Org Lens person-detail drawer. */
+export const PERSON_DRAWER_COPIED_RESET_MS = 2000;

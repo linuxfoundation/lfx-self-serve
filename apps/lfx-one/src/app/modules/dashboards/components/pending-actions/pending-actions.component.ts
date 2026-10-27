@@ -22,13 +22,18 @@ import {
   PENDING_ACTION_SKELETON_HOLD_MS,
   VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS,
 } from '@lfx-one/shared/constants';
-import { PollType } from '@lfx-one/shared/enums';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization, isReviewableJoinApplication } from '@lfx-one/shared/utils';
+import {
+  buildFormationPendingActionView,
+  getEntityCommands,
+  invitationRequiresOrganization,
+  isRankedPollType,
+  isReviewableJoinApplication,
+} from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -460,7 +465,7 @@ export class PendingActionsComponent {
             key: 'pending-actions-toast',
             severity: 'error',
             summary: 'Could not load vote',
-            detail: 'Please try again or open it from the My Votes page.',
+            detail: 'Please try again or open it from the Votes page.',
             life: 4000,
           });
         },
@@ -477,7 +482,7 @@ export class PendingActionsComponent {
 
   private voteUsesDrawer(vote: Vote): boolean {
     const questions = vote.poll_questions ?? [];
-    const isRanked = (vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC;
+    const isRanked = isRankedPollType(vote.poll_type);
     // Inline ballot supports exactly one single/multiple-choice question; everything else
     // (zero questions, multiple questions, ranked/unsupported types) falls back to the drawer.
     if (questions.length !== 1) return true;

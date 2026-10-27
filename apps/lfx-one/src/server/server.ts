@@ -20,6 +20,7 @@ import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -86,7 +87,13 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
-import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import {
+  buildImpersonationIdentityOverride,
+  clearImpersonationSession,
+  decodeJwtPayload,
+  isImpersonating,
+  refreshExpiredSsrAccessToken,
+} from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -500,6 +507,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     organizations: [],
   };
 
+  // See refreshExpiredSsrAccessToken's docstring — this is what makes an idle-but-valid session
+  // render as authenticated on a full page load instead of tripping the GH-4179 LaunchDarkly stall.
+  await refreshExpiredSsrAccessToken(req);
+
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
@@ -520,7 +531,21 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   if (auth.authenticated) {
-    const personaResult = await resolvePersonaForSsr(req, res);
+    // The stored-name lookup is bounded and fail-open, and runs alongside persona resolution so a
+    // healthy NATS adds no serial round trip. Skipped while impersonating: that identity is
+    // overridden below.
+    const [personaResult, storedName] = await Promise.all([
+      resolvePersonaForSsr(req, res),
+      auth.user && !isImpersonating(req)
+        ? resolveStoredDisplayName(req, {
+            given_name: auth.user.given_name || auth.user.first_name,
+            family_name: auth.user.family_name || auth.user.last_name,
+          })
+        : Promise.resolve(null),
+    ]);
+    if (auth.user && storedName) {
+      auth.user = { ...auth.user, name: storedName };
+    }
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];

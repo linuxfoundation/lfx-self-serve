@@ -131,14 +131,24 @@ describe('NonMembersPeopleComponent', () => {
     expect(row?.textContent).not.toMatch(/@/);
   });
 
-  it('caps the search box at the length the read honours and marks Last attended as all time', async () => {
+  it('caps the search box at the length the read honours and keeps the all-time caveat out of the header', async () => {
     await render();
     const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
     const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
 
     expect(input.maxLength).toBe(100);
     expect(input.placeholder).toBe('Search person or organization…');
-    expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended (all time)']);
+    expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
+  });
+
+  it("gives People its own plain note on each person's organization, plus the all-time caveat", async () => {
+    await render();
+    const note = query('non-members-people-provisional');
+
+    expect(text('non-members-people-provisional')).toContain("treat each person's organization as provisional too");
+    expect(text('non-members-people-provisional')).not.toContain('never send it to sales');
+    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
+    expect(text('non-members-people-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
   });
 
   it('re-reads a debounced, trimmed search from page 1 and writes it to the URL with the fragment kept', async () => {

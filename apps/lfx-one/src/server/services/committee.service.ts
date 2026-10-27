@@ -133,9 +133,14 @@ export class CommitteeService {
    * batched `groupsio_mailing_list` lookup below for callers (e.g. the create picker's lazy
    * children fan-out) that only need identity/project/writer fields and never render
    * `has_mailing_list` — every such call otherwise paid for a query-service round trip whose
-   * result was immediately discarded.
+   * result was immediately discarded. `requireComplete` enables failOnPartial: a later-page failure
+   * throws instead of returning a truncated list when absence/uniqueness must be authoritative.
    */
-  public async getCommittees(req: Request, query: Record<string, any> = {}, options: { skipMailingListEnrichment?: boolean } = {}): Promise<Committee[]> {
+  public async getCommittees(
+    req: Request,
+    query: Record<string, any> = {},
+    options: { skipMailingListEnrichment?: boolean; requireComplete?: boolean } = {}
+  ): Promise<Committee[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -164,11 +169,14 @@ export class CommitteeService {
       is_scoped_listing: isScopedListing,
     });
 
-    let committees = await fetchAllQueryResources<Committee>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    let committees = await fetchAllQueryResources<Committee>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      options.requireComplete ? { failOnPartial: true } : undefined
     );
 
     // Enrich with mailing-list presence via batched queries (OR-tag semantics, chunked at 100 UIDs).
@@ -894,7 +902,8 @@ export class CommitteeService {
     fetchOptions: FetchAllQueryResourcesOptions = {},
     requestOptions?: ApiRequestOptions
   ): Promise<CommitteeMember[]> {
-    const queryFilters = { ...query };
+    // CSV previews need every page; consume this BFF-only flag rather than forwarding it upstream.
+    const { require_complete, ...queryFilters } = query;
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
 
@@ -920,7 +929,7 @@ export class CommitteeService {
           undefined,
           requestOptions
         ),
-      fetchOptions
+      { ...fetchOptions, ...(require_complete === 'true' && { failOnPartial: true }) }
     );
   }
 
@@ -1061,7 +1070,7 @@ export class CommitteeService {
    * status (e.g. pending) client-side; the roster only surfaces pending ones.
    */
   public async getCommitteeInvites(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeInvite[]> {
-    const queryFilters = { ...query };
+    const { require_complete, ...queryFilters } = query;
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
 
@@ -1071,11 +1080,14 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     };
 
-    return fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    return fetchAllQueryResources<CommitteeInvite>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: require_complete === 'true' }
     );
   }
 

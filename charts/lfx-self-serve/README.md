@@ -199,6 +199,8 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`         | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`   | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`   | WILL offer the brief's stored image library in the Google create section, named by asset id instead of pasted image URLs — NOTHING READS IT YET, the Google creative fields are URL-only at this release. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires the create pipeline on; see `values.yaml`                                                     | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
@@ -338,6 +340,31 @@ would be lost while the job reports success. It also needs the create pipeline o
 legacy creator never reads `bidding`. Off (the default), the Bidding control is hidden and a create
 request carrying `bidding` is refused with a 400. On, the form sends `bidding` on every LinkedIn,
 Meta, Microsoft Ads and Reddit config — `{"strategy":"automatic"}` unless the operator picks Manual.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` is a fourth (decision D3): does the deployed
+campaign-service have creative-asset URL signing configured — `CREATIVE_ASSET_URL_SIGNING_KEY` and
+an https `CREATIVE_ASSET_PUBLIC_BASE_URL` (LFXV2-2665)? Reddit only fetches a promoted-post image from
+a public URL, and a short-lived signed URL is how an uploaded asset becomes one; without signing,
+campaign-service refuses every `redditConfig.imageAssetId` with a 400. It also needs the create
+pipeline on, because the legacy creator never reads `imageAssetId`. Off (the default), the Reddit
+section offers only the pasted image URL and a create request carrying `imageAssetId` is refused
+with a 400. On, the section also offers a PNG/JPEG upload (up to 10 MB), stored against the brief
+and sent as `imageAssetId` in place of `imageUrl`.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` is a fifth, and asserts something different from its
+Reddit sibling: does the deployed campaign-service resolve **Google** creative asset ids at all? It
+is **not** about URL signing — Google's dispatch path reads the stored bytes and POSTs them to the
+Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service — it is about an older
+service ignoring the unknown keys, dispatching a campaign with no images and reporting success. It
+needs the create pipeline on for the same reason the Reddit flag does. **Nothing reads it yet**:
+the Google creative fields carry image URLs only at this release, with no asset-id key for a stored
+image to go in, so the Google section offers pasted image URLs whether the flag is on or off, and
+the library control the flag will gate does not exist. What setting it already does is admit an
+upload into the brief's library on its own authority. The two are siblings rather than one flag so
+either platform's asset support can ship without the other: the shared upload route accepts a request on **either** flag's
+authority, and the brief's asset list, get, plan and delete routes are gated on
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` alone, so a deployment can always read and prune the library
+it already holds.
 
 **Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
 creates a Video campaign, so campaign-service refuses one in the first statement of
@@ -701,6 +728,7 @@ Server-side credentials for the Marketing OS agents proxy. Consumed only by the 
 | `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                           | No       | `linux-foundation`     |
 | `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                       | No       | `marketing-os`         |
 | `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                     | No       | Marketing OS folder    |
 | `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration

@@ -80,6 +80,9 @@ export const VALKEY_CACHE = {
    * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica
    * coverage on top when enabled and reachable), so a hung request can't wedge the lock forever.
    *
+   * `setPrimaryEmail` also uses it (#3983): its region chains the invite GET, a user-emails read, the
+   * invite SET (20s) and the primary-email write — ~35s worst case, well inside this TTL.
+   *
    * `setMeetingInviteEmail`'s own worst case is much shorter (bounded by
    * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT`, 20s) — it uses the dedicated, shorter
    * `MEETING_INVITE_SET_LOCK_TTL_MS` below instead, so a lost release on that path doesn't force
@@ -125,8 +128,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
   SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
 
-  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). */
-  PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v1',
+  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). `v2`: a foundation's own project lists every current member, contributing or not, and the Members count is the full roster — no `v1` entry may be served under the new semantics. */
+  PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v2',
 
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,

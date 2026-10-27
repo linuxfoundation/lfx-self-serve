@@ -31,6 +31,7 @@ import type {
   MarketingImpactTab,
   MarketingImpactTabOption,
 } from '@lfx-one/shared/interfaces';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { EmailTabComponent } from './components/email-tab/email-tab.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
@@ -51,6 +52,7 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
     WebActivityTabComponent,
     SocialAccountsTabComponent,
     SocialListeningTabComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './marketing-impact.component.html',
   styleUrl: './marketing-impact.component.scss',

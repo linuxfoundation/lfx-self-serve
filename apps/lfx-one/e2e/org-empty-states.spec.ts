@@ -46,6 +46,7 @@ const CORRELATION_ID = '11111111-2222-3333-4444-555555555555';
 
 const RETIRED_NO_ORG_HEADLINE = 'No organization linked';
 const NO_ACCESS_COPY = ORG_LENS_EMPTY_STATE_COPY['no-access'];
+const AFFILIATED_NO_GRANT_COPY = ORG_LENS_EMPTY_STATE_COPY['affiliated-no-grant'];
 
 type RoleGrantsOverrides = Partial<{
   writers: string[];
@@ -56,6 +57,8 @@ type RoleGrantsOverrides = Partial<{
   lookupOutcome: 'ok' | 'partial' | 'failed';
   staffCheck: 'ok' | 'failed';
   correlationId: string;
+  /** #4225 — the server's verdict on the caller's own employer. */
+  affiliation: { hasEmployer: boolean; employerIsMember: boolean; lookup: 'ok' | 'failed' };
 }>;
 
 function roleGrantsBody(overrides: RoleGrantsOverrides = {}): Record<string, unknown> {
@@ -291,6 +294,55 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
+    // #4225 — the same "holds nothing" caller, but their own employer is an LF member: the affiliation
+    // CTA of S2a is the one action that cannot help them, so the reason has to change.
+    test('S2a-affiliated: an employee of a member org sees the no-access reason, never the affiliation CTA', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: true, lookup: 'ok' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'affiliated-no-grant');
+      await expect(state.title).toHaveText(AFFILIATED_NO_GRANT_COPY.headline);
+      await expect(state.description).toContainText('access is limited to a small set of admins');
+      // The whole point: it must not send them to add an affiliation they already have.
+      await expect(page.locator('body')).not.toContainText('Add an affiliation');
+      await expect(state.contactSupport).toBeVisible();
+      await expect(state.retry).toHaveCount(0);
+      // The employer is never named — the copy is about the caller, so it interpolates nothing.
+      await expect(state.description).not.toContainText('undefined');
+    });
+
+    // An employer the server could not place must not earn the new reason: unknown stays today's copy.
+    test('S2a-unresolved: an unestablished employer verdict keeps the no-organization copy', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'failed' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
+      await expect(state.primary).toContainText('Add an affiliation');
+    });
+
+    // A non-member employer is #4314's state, not this one; until it ships it falls through unchanged.
+    test('S2a-non-member: an affiliated employee at a non-member employer still sees no-organization', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'ok' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
+    });
+
     // The profile route declares the Me lens, so every way in switches — not only the in-app link:
     // a deep link, a refresh or back/forward while the Organization lens is the saved one.
     test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page, baseURL }) => {
@@ -515,7 +567,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
     // stubs `isStaff` on the wire, so it pins the UI contract only; what fails if `lf-contractor` is
     // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`). The switcher
     // sequence copies M4 in `org-multi-grant-switch.spec.ts` (non-LF-team: no catalogue search).
-    test('S5 (contractor): a contractor with an explicit org grant keeps the switcher but gets no catalogue search', async ({ page }) => {
+    test('S5 (contractor): a contractor with one explicit org grant gets a static org card and no catalogue search', async ({ page }) => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: false, auditors: [ORG_A_UID] }),
         orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
@@ -528,10 +580,12 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
       const trigger = page.getByTestId('org-selector');
       await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      await trigger.click();
-      const listbox = page.locator('#org-selector-listbox');
-      await expect(listbox).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      await expect(listbox).toContainText(ORG_A_NAME);
+      // One organization and no catalogue: the navbar card is static — it names the org and offers no switch.
+      await expect(trigger).toContainText(ORG_A_NAME);
+      await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+      // dispatchEvent, not click(): Playwright treats aria-disabled as disabled and would wait forever.
+      await trigger.dispatchEvent('click');
+      await expect(page.locator('#org-selector-listbox')).toHaveCount(0);
       // The removed affordance: no LF-team catalogue search input.
       await expect(page.getByTestId('org-search-input')).toHaveCount(0);
     });

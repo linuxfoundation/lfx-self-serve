@@ -210,6 +210,60 @@ export enum ServerFeatureFlag {
   CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
 
   /**
+   * Offers an image UPLOAD in the Reddit section of the create flow, sent as
+   * `redditConfig.imageAssetId` instead of a pasted `imageUrl` (decision D3).
+   *
+   * A CAPABILITY flag, like `CampaignServiceBidding`: it says the DEPLOYED campaign-service has
+   * creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` and
+   * `CREATIVE_ASSET_PUBLIC_BASE_URL`, LFXV2-2665). Without them campaign-service refuses every
+   * `imageAssetId` with a 400, because Reddit can only fetch an image from a public URL and the
+   * signed URL is how a stored asset becomes one. Turn it on only once both are set.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator never
+   * reads `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.redditAssetUploadEnabled`) needs both. With it off the upload control is
+   * hidden, the upload route refuses, and the create route refuses a request carrying
+   * `redditConfig.imageAssetId` rather than dropping it. The pasted image URL is unaffected either
+   * way. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
+
+  /**
+   * Offers a stored-image LIBRARY in the Google creative section — images uploaded to the brief and
+   * named by asset id in the Google creative fields, instead of pasted image URLs.
+   *
+   * A CAPABILITY flag like `CampaignServiceRedditAssets`, but it asserts something DIFFERENT, and
+   * the difference matters enough to state rather than inherit. It does NOT say URL signing is
+   * configured: Google's dispatch path reads the stored bytes and POSTs them base64-encoded to
+   * `assets:mutate`, so no URL ever leaves the service and the signing settings are irrelevant to
+   * it (`internal/dispatch/googleads_creative_assets.go` and `googleads_image_ref.go` hold no signer
+   * reference; the only signing gate in the repo is Reddit's `checkRedditAssetChoice`). What it says
+   * is that the DEPLOYED campaign-service resolves Google creative asset ids at all — an older one
+   * ignores the unknown keys, dispatches a campaign with no images and reports success.
+   *
+   * It is a SIBLING of the Reddit flag rather than a widening of it so the two can ship
+   * independently: they assert different upstream capabilities, and one flag would mean Reddit asset
+   * upload could never be enabled without Google's, or the reverse.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no creative key at all, so the capability the client sees
+   * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
+   * controls stay hidden, and the upload route accepts a request only on the Reddit flag's
+   * authority.
+   *
+   * NOTHING READS IT YET. At this commit the Google creative interfaces carry image URLs only,
+   * with no asset-id key for a stored image to go in, so the library controls this WILL gate do
+   * not exist and turning it on changes nothing an operator can see. What it already does is admit
+   * an upload into the brief's library on its own authority, which is why it is worth setting on a
+   * deployment staging images ahead of the control.
+   * It does NOT gate the brief's asset list, get, plan and delete routes: those are addressed by a
+   * campaign-service brief and gate on `CampaignServiceBriefs` like every other brief route, so a
+   * deployment running Reddit uploads alone can still read and prune the same library. The pasted
+   * image URL is unaffected either way. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceGoogleAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
@@ -277,6 +331,10 @@ export enum ServerFeatureFlag {
    * tables SMALLER, and that is the fix, not a regression: the larger figures were other
    * foundations' spend. Say so when enabling it, because a reader who is not told will file the
    * drop as a bug.
+   *
+   * The legacy arm is ROOT-only (writer or `global_marketing_ops`, lfx-self-serve-ops#54),
+   * independently of the monitor cutover. Non-root callers receive the shared-account restriction
+   * instead of keywords or demographics; enabling this flag retains their project-scoped reads.
    *
    * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
    * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
@@ -405,7 +463,17 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) is NOT gated by this flag.
+   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm.
+   *
+   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
+   * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either
+   * arm returns every foundation's campaigns. Those monitors (`/monitor`, `/meta/monitor`,
+   * `/reddit/monitor`, `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT
+   * writer or ROOT `global_marketing_ops` holder; everyone else gets a 403
+   * `MONITOR_SHARED_ACCOUNT_RESTRICTED` before any upstream call (lfx-self-serve-ops#54). LinkedIn
+   * runs one account per foundation, so only its campaign-service arm is project-isolated: its legacy
+   * (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and HubSpot
+   * are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
    * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S

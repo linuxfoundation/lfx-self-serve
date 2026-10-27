@@ -2,145 +2,95 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (overviewEnabled()) {
-  <div class="flex flex-col p-6" data-testid="health-metrics-page">
-    <!-- Stays pinned above the scrolling content at the wide layout, matching the design's `.stickyhead`
-         (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
-         tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
-         -mt-12/pt-12 cancel out the two ancestor top paddings above this element (main-layout's
-         router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
-         distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
-         first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
-         match the page surface; opaque so content scrolls under. Pinned below the fixed impersonation
-         banner while impersonating, so the banner doesn't cover it. -->
-    <header
+  <!-- The design's page column: 1440px wide with 40px sides, where main-layout already pads 28px (`md:px-8`)
+       and 21px on top (`py-6`); the 14px root makes the rem scale undershoot both, hence the pixel values.
+       `hmpage` is the container the section nav collapses against. -->
+  <div class="@container/hmpage mx-auto flex w-full max-w-[1384px] flex-col md:px-[12px]" data-testid="health-metrics-page">
+    <!-- The design's `.hm-head`: pinned above the scrolling content at the wide layout. -mt-6 cancels
+         main-layout's `py-6` so it has no distance to travel before it locks, and its own top padding
+         restores the design's 28px. Page-coloured and opaque so content scrolls under it; bled 40px either
+         side so a card's edge never shows past it; pinned below the impersonation banner. The sticky offset
+         of every tab's rail or sub-nav is measured from this element's rendered height, tab bar included. -->
+    <div
       #pageHeader
-      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12"
-      [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-col gap-1">
-          <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
-          <p class="text-sm text-gray-500">A snapshot of foundation health across engagement, events, members, non-members, training, and code.</p>
+      data-testid="health-metrics-sticky-header"
+      class="@container/hmhead relative mb-[32px] flex flex-col gap-[14px] pt-[7px] lg:sticky lg:z-10 lg:-mx-[40px] lg:-mt-6 lg:bg-gray-50 lg:px-[40px] lg:pt-[28px]"
+      [ngClass]="{ 'lg:top-[36px]': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
+      <!-- The fade content scrolls into under the pinned header. -->
+      <span
+        class="pointer-events-none absolute inset-x-0 top-full hidden h-[32px] bg-gradient-to-b from-gray-50 via-gray-50/85 via-35% to-gray-50/0 lg:block"
+        aria-hidden="true"></span>
+
+      <!-- The design's own title type replaces the shared page header's: Roboto Slab light at 24px. -->
+      <div class="flex items-start justify-between gap-[16px]">
+        <div class="flex min-w-0 flex-col gap-[6px]">
+          <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="health-metrics-title">Health Metrics</h1>
+          <p class="m-0 text-[13px] font-normal leading-normal text-gray-500" data-testid="health-metrics-subtitle">
+            Operational health across your foundation. Data updated every 24-48 hours.
+          </p>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Project drill-down pill (`.projsel`/`.pstrig`): live on tabs flagged `projectScoped`, inert
-               elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty
-               (unless a selection is kept); the menu checks the URL slug, not the list. After a failed load it keeps the selection and a click retries the list.
-               Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
-          @if (projectSelectorVisible()) {
-            <button
-              type="button"
-              [attr.aria-disabled]="projectSelectorEnabled() || projectSelectorRetry() ? null : 'true'"
-              [attr.title]="projectSelectorRetry() ? 'Projects failed to load. Select to retry.' : null"
-              [attr.aria-haspopup]="projectSelectorEnabled() ? 'listbox' : null"
-              [attr.aria-expanded]="projectSelectorEnabled() ? projectMenuOpen() : null"
-              class="flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
-              [ngClass]="projectSelectorEnabled() || projectSelectorRetry() ? 'cursor-pointer hover:border-gray-300' : 'cursor-default'"
-              (click)="toggleProjectMenu($event, projectMenu)"
-              data-testid="health-metrics-overview-project-selector">
-              @if (projectSelectorEnabled() && chrome.selectedProject(); as project) {
-                <span
-                  class="flex h-5 w-5 items-center justify-center rounded text-[9px] font-semibold text-white"
-                  [ngClass]="project.colorClass"
-                  aria-hidden="true"
-                  >{{ project.initials }}</span
-                >
-              } @else if (projectSelectorRetry()) {
-                <i class="fa-light fa-rotate-right text-gray-500" aria-hidden="true" data-testid="health-metrics-project-selector-retry"></i>
-              } @else {
-                <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
-              }
-              <span class="max-w-56 truncate" [title]="projectSelectorLabel()" data-testid="health-metrics-project-selector-label">{{
-                projectSelectorLabel()
-              }}</span>
-              <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
-            </button>
+        <div class="flex shrink-0 items-center gap-[10px]">
+          @if (chrome.selectedRange() === 'YTD') {
+            <span class="hidden whitespace-nowrap text-[12px] text-gray-500 @[1000px]/hmhead:inline" data-testid="health-metrics-period-range">{{
+              ytdRangeLabel
+            }}</span>
           }
-          <p-popover #projectMenu (onShow)="projectMenuOpen.set(true)" (onHide)="projectMenuOpen.set(false)">
-            <ul role="listbox" aria-label="Project" class="flex max-h-80 w-72 flex-col overflow-y-auto py-1" data-testid="health-metrics-project-menu">
-              <li role="none">
-                <button
-                  type="button"
-                  role="option"
-                  [attr.aria-selected]="!chrome.selectedProjectSlug()"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] text-gray-900 hover:bg-gray-50"
-                  (click)="selectProject(null); projectMenu.hide()"
-                  data-testid="health-metrics-project-option-all">
-                  <i class="fa-light fa-diagram-project w-5 text-center text-gray-500" aria-hidden="true"></i>
-                  <span class="flex-1 truncate font-medium">All projects</span>
-                  @if (!chrome.selectedProjectSlug()) {
-                    <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
-                  }
-                </button>
-              </li>
-              @for (project of chrome.projects() ?? []; track project.slug) {
-                <li role="none">
-                  <button
-                    type="button"
-                    role="option"
-                    [attr.aria-selected]="project.slug === chrome.selectedProjectSlug()"
-                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] text-gray-900 hover:bg-gray-50"
-                    (click)="selectProject(project); projectMenu.hide()"
-                    [attr.data-testid]="'health-metrics-project-option-' + project.slug">
-                    <span
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-semibold text-white"
-                      [ngClass]="project.colorClass"
-                      aria-hidden="true"
-                      >{{ project.initials }}</span
-                    >
-                    <span class="min-w-0 flex-1 truncate" [title]="project.name">{{ project.name }}</span>
-                    @if (project.slug === chrome.selectedProjectSlug()) {
-                      <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
-                    }
-                  </button>
-                </li>
-              }
-            </ul>
-          </p-popover>
-          <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
+          <div
+            role="group"
+            aria-label="Period"
+            class="hidden items-center gap-[2px] rounded-full bg-gray-100 p-[2px] @[820px]/hmhead:flex"
+            data-testid="health-metrics-overview-period-selector">
             @for (period of chrome.periods; track period.range) {
+              @let selected = period.range === chrome.selectedRange();
               <button
                 type="button"
-                [attr.aria-pressed]="period.range === chrome.selectedRange()"
+                [attr.aria-pressed]="selected"
                 [attr.data-testid]="'health-metrics-overview-period-' + period.label"
-                class="rounded-full px-3 py-1 text-[12px] font-medium"
-                [ngClass]="period.range === chrome.selectedRange() ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
+                class="inline-flex h-[26px] items-center rounded-full px-[12px] text-[12px]"
+                [ngClass]="selected ? 'bg-white font-medium text-gray-900 shadow-sm shadow-gray-900/[0.08]' : 'font-normal text-gray-500'"
                 (click)="setPeriod(period)">
                 {{ period.label }}
               </button>
             }
           </div>
-          <!-- Visual only for now — no export wired up yet. The design's one page-level export
-               replaces the per-card download icons. -->
-          <button
-            type="button"
-            aria-disabled="true"
-            class="flex cursor-default items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-semibold text-gray-900"
-            data-testid="health-metrics-overview-export">
-            <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
-            Export
-          </button>
+          <!-- Narrow headers trade the pill for a dropdown. -->
+          <div class="@[820px]/hmhead:hidden">
+            <lfx-select
+              [form]="periodForm"
+              control="range"
+              [options]="periodOptions"
+              optionLabel="label"
+              optionValue="range"
+              ariaLabel="Period"
+              styleClass="!h-[30px] items-center !rounded-full !border-gray-200 [&_.p-select-label]:!text-[12px] [&_.p-select-label]:font-medium [&_.p-select-label]:text-gray-700"
+              data-testid="health-metrics-period-select" />
+          </div>
         </div>
       </div>
 
-      <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
-           measured offset a tab's sub-nav pins below already accounts for the bar. -->
-      <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
+      <!-- Inside the sticky header on purpose, so the measured offset a tab's sub-nav pins below already
+           accounts for the bar. A hidden medium-weight copy reserves each label's width, so the active
+           weight never shifts its neighbours. -->
+      <nav class="flex flex-wrap gap-x-[24px] border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
         @for (tab of tabs; track tab.key) {
           <a
             [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
             queryParamsHandling="preserve"
-            routerLinkActive="!border-blue-600 !text-blue-700"
+            routerLinkActive="!border-blue-500 !text-gray-900 font-medium"
             [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
             #rla="routerLinkActive"
             [attr.aria-current]="rla.isActive ? 'page' : null"
-            class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
+            class="-mb-px inline-flex h-[40px] shrink-0 items-center whitespace-nowrap border-b-2 border-transparent text-[13px] font-normal text-gray-500 hover:text-gray-900"
             [attr.data-testid]="'health-metrics-tab-' + tab.key">
-            {{ tab.label }}
+            <span class="inline-grid">
+              <span class="[grid-area:1/1]">{{ tab.label }}</span>
+              <span class="invisible font-medium [grid-area:1/1]" aria-hidden="true">{{ tab.label }}</span>
+            </span>
           </a>
         }
       </nav>
-    </header>
+    </div>
 
     <router-outlet />
   </div>

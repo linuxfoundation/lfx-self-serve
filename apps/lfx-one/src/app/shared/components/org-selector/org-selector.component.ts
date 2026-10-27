@@ -2,32 +2,53 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  model,
+  output,
+  PLATFORM_ID,
+  Signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { NavigationEnd, Router } from '@angular/router';
+import {
+  NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
+  NAVBAR_ORG_ROLE_TOOLTIPS,
+  NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
   ORG_CATALOGUE_SEARCH_MIN_CHARS,
   ORG_LENS_LIST_INCOMPLETE_NOTICE,
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
 } from '@lfx-one/shared/constants';
-import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { ElementIdService } from '@services/element-id.service';
+import { LensService } from '@services/lens.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
+import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
-import { distinctUntilChanged, filter } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
-  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, TooltipModule, OnRenderDirective],
+  imports: [NavTooltipDirective, NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, TooltipModule, OnRenderDirective],
   templateUrl: './org-selector.component.html',
   styleUrl: './org-selector.component.scss',
 })
@@ -35,12 +56,15 @@ export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly lensService = inject(LensService);
+  private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly elementIds = inject(ElementIdService);
 
   private readonly popoverRef = viewChild<Popover>('popover');
   private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
@@ -65,10 +89,16 @@ export class OrgSelectorComponent {
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
   public readonly enabled = input<boolean>(true);
+  /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
+  public readonly variant = input<ContextSelectorVariant>('default');
+  /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
+  public readonly itemSelected = output<OrgItem>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
-  protected readonly panelStyleClass = 'org-selector-panel';
+  protected readonly panelStyleClass: Signal<string> = computed(() =>
+    this.variant() === 'navbar' ? 'org-selector-panel org-selector-panel-navbar' : 'org-selector-panel'
+  );
 
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
@@ -121,6 +151,45 @@ export class OrgSelectorComponent {
     if (!uid || !persona) return '';
     const parentName = this.orgRoleGrantsService.parentNameByUid().get(uid) ?? '';
     return this.personaToTooltip(persona, parentName);
+  });
+
+  /** Whether the router sits on the org-lens not-found dead end, re-read on every navigation. */
+  private readonly onNotFound: Signal<boolean> = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.orgLensNavigation.isOnNotFound())
+    ),
+    { initialValue: this.orgLensNavigation.isOnNotFound() }
+  );
+
+  /**
+   * Nothing to switch to: a non-staff caller (no catalogue search) whose fully loaded, complete list
+   * holds a single organization — the one already selected. The trigger then renders as a static card and never opens the panel.
+   */
+  protected readonly isSingleOrg: Signal<boolean> = computed(() => {
+    const items = this.items();
+    if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
+    // The one row must be the selection: a deep-linked selection outside the list still needs the
+    // panel to switch back, and the not-found dead end recovers through picking the selected row.
+    return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
+  });
+
+  /**
+   * Unique per instance — main-layout mounts the navbar twice (desktop column + mobile drawer) — so each
+   * card's `aria-describedby` resolves to its own description. Per render, not per process, so server and
+   * browser number it alike.
+   */
+  protected readonly roleDescriptionId = this.elementIds.next('org-selector-role-description');
+
+  /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
+  protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    const uid = this.selectedAccountUid();
+    const persona = this.selectedRolePersona();
+    if (!uid || !persona) return '';
+    const source = this.orgRoleGrantsService.parentNameByUid().get(uid) || NAVBAR_ORG_ROLE_UNKNOWN_SOURCE;
+    const description = NAVBAR_ORG_ROLE_TOOLTIPS[persona].replace('{source}', source);
+    const isDirect = persona === 'direct-writer' || persona === 'direct-auditor';
+    return isDirect && this.hasHierarchyAssociation() ? `${description} ${NAVBAR_ORG_ROLE_DIRECT_SUFFIX}` : description;
   });
 
   protected readonly displayedItems: Signal<DisplayOrgItem[]> = computed(() => {
@@ -249,6 +318,11 @@ export class OrgSelectorComponent {
     this.destroyRef.onDestroy(() => this.detachKeyboardHandler());
   }
 
+  /** Closes the selector panel without moving focus — for a host that is going away (e.g. a closing drawer), since the panel is appended to `body`. */
+  public closePanel(): void {
+    this.popoverRef()?.hide();
+  }
+
   protected selectItem(item: OrgItem): void {
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
@@ -261,6 +335,7 @@ export class OrgSelectorComponent {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
+      this.itemSelected.emit(item);
       this.popoverRef()?.hide();
       return;
     }
@@ -288,12 +363,14 @@ export class OrgSelectorComponent {
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
     // re-addressed to the new selection (no-op outside Org Lens).
     this.orgLensNavigation.navigateToSelectedOrg('switch');
+    this.itemSelected.emit(item);
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();
   }
 
   protected togglePanel(event: Event, popover: Popover): void {
+    if (this.isSingleOrg()) return;
     popover.toggle(event);
   }
 
@@ -524,6 +601,12 @@ export class OrgSelectorComponent {
 
   private bootstrapOrgList(): void {
     const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    // Shown only because the mobile drawer previews Org Lens (#4208): load the list without bootstrap semantics, so it
+    // can't default-select an organization, clear one or navigate away — the page underneath is another lens's.
+    if (this.lensService.previewingMenuLens()) {
+      this.orgNavigationService.refreshList(restoredUid);
+      return;
+    }
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 

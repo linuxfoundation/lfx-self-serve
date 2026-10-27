@@ -139,12 +139,64 @@ describe('MktgDocumentText.read — Word and text', () => {
     expect(read).toEqual({ text: 'Example Search positioning brief\n\nVision & mission\n\nPillar\tone', truncated: false });
   });
 
-  it('refuses a corrupt zip, and a zip that is not a Word document', async () => {
+  it('refuses a corrupt zip, and a zip that is neither a Word nor a PowerPoint document', async () => {
     const corrupt = Buffer.concat([Buffer.from('PK\u0003\u0004', 'latin1'), Buffer.from('garbage')]);
-    const notWord = await zip({ 'ppt/presentation.xml': '<p:presentation/>' });
+    const notOffice = await zip({ 'xl/workbook.xml': '<workbook/>' });
 
     expect((await MktgDocumentText.read(corrupt)).reason).toBe('unsupported');
-    expect((await MktgDocumentText.read(notWord)).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(notOffice)).reason).toBe('unsupported');
+  });
+
+  it('reads a .pptx slide by slide, in slide order, a line per paragraph, entities decoded; a deck with no text has none', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (paragraphs: string[][]): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody>${paragraphs
+        .map((runs) => `<a:p>${runs.map((run) => `<a:r><a:rPr lang="en-US"/><a:t>${run}</a:t></a:r>`).join('')}</a:p>`)
+        .join('')}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    const deck = await zip({
+      'ppt/presentation.xml': '<p:presentation/>',
+      'ppt/slides/slide10.xml': slide([['Ten']]),
+      'ppt/slides/slide2.xml': slide([['Members ', '&amp; partners'], ['']]),
+      'ppt/slides/slide1.xml': slide([['Example Search'], ['Open', ' search, &#8220;for all&#8221;']]),
+      'ppt/notesSlides/notesSlide1.xml': slide([['Speaker notes stay out']]),
+      'ppt/media/image1.png': Buffer.alloc(16),
+    });
+    const empty = await zip({ 'ppt/presentation.xml': '<p:presentation/>', 'ppt/slides/slide1.xml': slide([['  ']]) });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Example Search\nOpen search, “for all”\n\nMembers & partners\n\nTen', truncated: false });
+    expect((await MktgDocumentText.read(empty)).reason).toBe('no-text');
+  });
+
+  it('reads a .pptx in presentation order, not by slide file name, and leaves out slide parts the deck does not list', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (text: string): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    // Slide 3 was moved to the front: the slide list changed, the part names did not; slide 4 was dropped from the list.
+    const deck = await zip({
+      'ppt/presentation.xml':
+        '<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="258" r:id="rId9"/><p:sldId id="256" r:id="rId7"/><p:sldId r:id="rId8" id="257"/></p:sldIdLst></p:presentation>',
+      'ppt/_rels/presentation.xml.rels':
+        '<Relationships><Relationship Id="rId7" Type="slide" Target="slides/slide1.xml"/><Relationship Target="slides/slide2.xml" Id="rId8" Type="slide"/><Relationship Id="rId9" Type="slide" Target="/ppt/slides/slide3.xml"/><Relationship Id="rId1" Type="slideMaster" Target="slideMasters/slideMaster1.xml"/></Relationships>',
+      'ppt/slides/slide1.xml': slide('One'),
+      'ppt/slides/slide2.xml': slide('Two'),
+      'ppt/slides/slide3.xml': slide('Three, moved first'),
+      'ppt/slides/slide4.xml': slide('Hidden from the list'),
+    });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Three, moved first\n\nOne\n\nTwo', truncated: false });
+  });
+
+  it('reads a .pptx soft line break (<a:br/>) as a new line, not a join of the two lines', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const run = (text: string): string => `<a:r><a:rPr lang="en-US"/><a:t>${text}</a:t></a:r>`;
+    const deck = await zip({
+      'ppt/presentation.xml': '<p:presentation/>',
+      'ppt/slides/slide1.xml': `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:bodyPr/><a:p>${run('Revenue: ')}${run(
+        '$1m'
+      )}<a:br><a:rPr lang="en-US"/></a:br>${run('Pipeline: $2m')}<a:br/></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Revenue: $1m\nPipeline: $2m', truncated: false });
   });
 
   it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {

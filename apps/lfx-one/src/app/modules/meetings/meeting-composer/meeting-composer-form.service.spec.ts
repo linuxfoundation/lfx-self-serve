@@ -16,17 +16,21 @@ import type {
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  PendingAttachment,
+  PresignAttachmentResponse,
 } from '@lfx-one/shared/interfaces';
 import { detectBrowserTimezoneOption } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
+import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 
 /**
  * Covers the submit pipeline's generation guard — the composer host outlives every open, so a save
@@ -369,6 +373,140 @@ describe('MeetingComposerFormService — attachment deletion queue', () => {
     // Same id, different open: dropping it here would silently un-queue a removal the organizer
     // just asked for on a meeting the finished pass knows nothing about.
     expect(service.pendingAttachmentDeletions()).toEqual(['doc-1']);
+  });
+});
+
+/**
+ * Covers the path a picked document takes to the meeting: queued by the Agenda & resources section,
+ * held on the form, then uploaded only once the create has returned a meeting id. A file that never
+ * reaches `uploadMeetingFile` simply isn't on the saved meeting.
+ */
+describe('MeetingComposerFormService — selected file uploads', () => {
+  let service: MeetingComposerFormService;
+  let section: ComposerAgendaResourcesComponent;
+  let createMeeting: ReturnType<typeof vi.fn>;
+  let createMeetingAttachment: ReturnType<typeof vi.fn>;
+  let uploadMeetingFile: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let uploads: Map<string, Subject<PresignAttachmentResponse>>;
+
+  const pdf = (name: string, type = 'application/pdf'): File => new File(['%PDF-1.4'], name, { type });
+  const queued = (): PendingAttachment[] => service.form().get('attachments')?.value as PendingAttachment[];
+  const finishUpload = (fileName: string): void => {
+    uploads.get(fileName)?.next({ uid: `uid-${fileName}`, file_url: 'https://storage.example.test/signed' } as PresignAttachmentResponse);
+    uploads.get(fileName)?.complete();
+  };
+
+  beforeEach(async () => {
+    uploads = new Map();
+    createMeeting = vi.fn();
+    createMeetingAttachment = vi.fn();
+    uploadMeetingFile = vi.fn((_meetingId: string, file: File) => {
+      const upload = new Subject<PresignAttachmentResponse>();
+      uploads.set(file.name, upload);
+      return upload;
+    });
+    messageAdd = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createMeeting,
+            updateMeeting: vi.fn(),
+            addMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            updateMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            deleteMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            createMeetingAttachment,
+            deleteMeetingAttachment: vi.fn(),
+            uploadMeetingFile,
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(ComposerAgendaResourcesComponent, { set: { template: '', imports: [] } });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+
+    const fixture = TestBed.createComponent(ComposerAgendaResourcesComponent);
+    fixture.componentRef.setInput('form', service.form());
+    section = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uploads the selected files only after the meeting exists, and emits once they finish', () => {
+    const charter = pdf('charter.pdf');
+    const minutes = pdf('minutes.md', '');
+    section['onFileSelect']({ files: [charter, minutes] });
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(uploadMeetingFile).not.toHaveBeenCalled();
+
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    // The original File goes up as the body; the queued metadata — including the MIME type resolved for
+    // the blank-typed Markdown file — rides along for the presign.
+    expect(uploadMeetingFile).toHaveBeenCalledTimes(2);
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', charter, { name: 'charter.pdf', file_size: charter.size, file_type: 'application/pdf' });
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', minutes, { name: 'minutes.md', file_size: minutes.size, file_type: 'text/markdown' });
+    expect(emissions).toEqual([]);
+
+    finishUpload('charter.pdf');
+    expect(emissions).toEqual([]);
+
+    finishUpload('minutes.md');
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    // The presigned PUT is the whole upload: nothing else is written for a file.
+    expect(createMeetingAttachment).not.toHaveBeenCalled();
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('does not upload a file that was removed before saving', () => {
+    section['onFileSelect']({ files: [pdf('removed.pdf'), pdf('kept.pdf')] });
+    section['onRemoveAttachment'](queued()[0].id);
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    service.submit().subscribe();
+
+    expect(uploadMeetingFile).toHaveBeenCalledTimes(1);
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ name: 'kept.pdf' }), expect.objectContaining({ name: 'kept.pdf' }));
+  });
+
+  it('still emits the created meeting and warns about the one file that failed', () => {
+    section['onFileSelect']({ files: [pdf('good.pdf'), pdf('bad.pdf')] });
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    finishUpload('good.pdf');
+    uploads.get('bad.pdf')?.error(new HttpErrorResponse({ status: 502 }));
+
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'warn',
+      summary: 'Meeting Created',
+      detail: '1 resource(s) could not be saved. You can manage them later.',
+    });
   });
 });
 

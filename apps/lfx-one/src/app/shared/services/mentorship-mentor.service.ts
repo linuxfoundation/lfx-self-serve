@@ -138,6 +138,14 @@ export class MentorshipMentorService {
     );
   }
 
+  /** Accepts or declines one of the signed-in mentor's invitations by its id. Failures propagate raw; a success drops the cached requests. */
+  public respondToMentorInvitation(invitationId: string, decision: MentorshipMentorInviteDecision): Observable<void> {
+    return this.http.post<void>(`/api/mentorship/mentor/invitations/${encodeURIComponent(invitationId)}/${decision}`, null).pipe(
+      take(1),
+      tap(() => this.clearMentorCaches())
+    );
+  }
+
   public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
     return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
   }

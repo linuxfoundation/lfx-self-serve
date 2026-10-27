@@ -19,9 +19,11 @@ import {
   MeetingTypeBadge,
   PastMeetingRecording,
   resolveOccurrenceRecurrence,
+  resolveShownOccurrenceId,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -34,6 +36,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 })
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -84,6 +87,8 @@ export class DashboardMeetingCardComponent {
   public readonly meetingDetailHref: Signal<string> = this.initMeetingDetailHref();
   public readonly meetingDetailClipboardUrl: Signal<string> = this.initMeetingDetailClipboardUrl();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
+  public readonly canResendInvite: Signal<boolean> = this.initCanResendInvite();
+  public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // New signals for the Figma card design
   public readonly meetingDay: Signal<string> = this.initMeetingDay();
@@ -95,7 +100,8 @@ export class DashboardMeetingCardComponent {
 
   public constructor() {
     const meeting$ = toObservable(this.meeting);
-    const user$ = toObservable(this.userService.user);
+    // The join link is built for the real viewer, never the impersonation target.
+    const user$ = toObservable(this.userService.meetingJoinIdentity);
     const authenticated$ = toObservable(this.userService.authenticated);
 
     const joinUrl$ = combineLatest([meeting$, user$, authenticated$]).pipe(
@@ -115,6 +121,30 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
+  }
+
+  public resendInvite(): void {
+    // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
+    // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
+    this.inviteResend.resendOwn(this.meeting().id, resolveShownOccurrenceId(this.meeting(), this.occurrence()));
+  }
+
+  // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,
+  // invited and not since removed, and with an active registration. `my_registrant_ids` is authoritative for every
+  // viewer where the feed provides it, an empty list meaning no active registration (`invited` is derived from access
+  // grants and can be true without one); only when it is absent does `invited` stand in. Same rule as the meeting card's
+  // "Remove Myself". The removal marker is read because the cached meetings feed keeps answering `invited: true` for a
+  // while after the viewer removes themselves elsewhere (query-service indexing lag), which would offer a resend for a
+  // registration that no longer exists.
+  private initCanResendInvite(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!this.userService.authenticated() || this.pastMeeting() || !meeting.invited || this.meetingService.removedRegistrationMeetingIds().has(meeting.id)) {
+        return false;
+      }
+      const registrantIds = meeting.my_registrant_ids;
+      return registrantIds ? registrantIds.length > 0 : true;
+    });
   }
 
   private initMeetingTypeInfo(): Signal<MeetingTypeBadge | null> {

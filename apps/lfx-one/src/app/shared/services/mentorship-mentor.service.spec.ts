@@ -194,7 +194,7 @@ describe('MentorshipMentorService — read error mapping', () => {
 
   describe('mentor requests', () => {
     const programId = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
-    const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
+    const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }], invitations: [] };
 
     it('reads the first page of open programs, sending no empty params', () => {
       let loaded: unknown;
@@ -285,6 +285,16 @@ describe('MentorshipMentorService — read error mapping', () => {
       const req = http.expectOne(`/api/mentorship/mentor/invites/${decision}`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(service.mentorRequestsRevision()).toBe(revision + 1);
+    });
+
+    it.each(['accept', 'decline'] as const)('answers an invitation by its encoded id with %s, and clears the cache', (decision) => {
+      const revision = service.mentorRequestsRevision();
+      service.respondToMentorInvitation('member/1', decision).subscribe();
+
+      const req = http.expectOne(`/api/mentorship/mentor/invitations/member%2F1/${decision}`);
+      expect(req.request.method).toBe('POST');
       req.flush(null, { status: 204, statusText: 'No Content' });
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });

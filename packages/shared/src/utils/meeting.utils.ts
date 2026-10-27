@@ -587,6 +587,43 @@ export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: Meeti
 }
 
 /**
+ * Occurrence id of the date an upcoming card displays, for acting on exactly that date.
+ *
+ * A card that shows the next occurrence without being handed one (Groups Overview passes only the meeting)
+ * still has a date on screen, and anything done "to this meeting" has to name that date, or a registration
+ * scoped to a different date can be picked instead. The date is the one {@link getUpcomingMeetingStartTime}
+ * resolves; this finds its id:
+ * 1. an explicit `occurrence` wins;
+ * 2. otherwise the meeting's own occurrence that starts at that instant;
+ * 3. otherwise the start's Unix seconds, which is what an occurrence id is. The list payload's `occurrences`
+ *    array is not always usable (LFXV2-2054), so the id cannot be required to be in it. Consumers compare ids
+ *    with `isSameOccurrenceId`, so seconds against milliseconds is not a mismatch.
+ *
+ * A one-time meeting has no occurrences to tell apart, so it resolves to null.
+ *
+ * @param meeting The meeting the card shows
+ * @param occurrence Optional already-resolved occurrence (explicit or current/next)
+ * @returns The displayed occurrence's id, or null when the meeting is not recurring or has no usable start
+ */
+export function resolveShownOccurrenceId(meeting: Meeting, occurrence?: MeetingOccurrence | null): string | null {
+  if (occurrence?.occurrence_id) {
+    return occurrence.occurrence_id;
+  }
+  if (!meeting?.recurrence && !meeting?.occurrences?.length) {
+    return null;
+  }
+
+  const start = getUpcomingMeetingStartTime(meeting);
+  const startMs = start ? Date.parse(start) : Number.NaN;
+  if (Number.isNaN(startMs)) {
+    return null;
+  }
+
+  const matched = meeting.occurrences?.find((item) => Date.parse(item.start_time) === startMs);
+  return matched?.occurrence_id || String(Math.floor(startMs / 1000));
+}
+
+/**
  * Duration (minutes) for the start {@link getUpcomingMeetingStartTime} resolves.
  *
  * An explicit occurrence's duration wins. Otherwise the occurrence whose start instant matches
@@ -861,7 +898,7 @@ export interface BuildJoinUrlOptions {
  * The display name is built from: options.name > user.name > user.email
  * If organization is provided, it's appended as "Name (Organization)"
  */
-export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, options?: BuildJoinUrlOptions): string {
+export function buildJoinUrlWithParams(joinUrl: string, user?: Pick<User, 'name' | 'email'> | null, options?: BuildJoinUrlOptions): string {
   if (!joinUrl) {
     return joinUrl;
   }

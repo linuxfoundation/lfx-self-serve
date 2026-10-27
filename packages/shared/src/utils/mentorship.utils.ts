@@ -32,6 +32,8 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
+  MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_COUNTRY_CODES,
   MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
@@ -49,6 +51,7 @@ import {
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
   MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES,
@@ -96,6 +99,7 @@ import type {
   MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
+  MentorshipPublicPage,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
@@ -129,6 +133,8 @@ import type {
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
   MentorshipMenteeApplicationView,
   MentorshipMenteeDemographicGroupName,
   MentorshipMenteeDemographics,
@@ -215,15 +221,20 @@ export function isMentorshipHttpUrl(value: string): boolean {
 }
 
 /**
- * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
-export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPage, id?: string): string {
   // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
   let end = base.length;
   while (end > 0 && base[end - 1] === '/') end--;
-  const programs = `${base.slice(0, end)}/programs`;
-  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+  const listing = `${base.slice(0, end)}/${page}`;
+  return id ? `${listing}/${encodeURIComponent(id)}` : listing;
+}
+
+/** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  return buildMentorshipPublicUrl(base, 'programs', programId);
 }
 
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
@@ -903,6 +914,20 @@ export function mentorshipMenteeApplyIds(params: { get(name: string): string | n
 }
 
 /**
+ * The state the apply page shows for a refused application: the entry of
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` whose fragment the upstream message contains, or the
+ * status's own state when there is no message or none matches.
+ */
+export function mentorshipMenteeApplyBlockedState(
+  reason: MentorshipMenteeApplyBlockedReason,
+  upstreamMessage?: string | null
+): MentorshipMenteeApplyBlockedState {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  const match = message ? MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES.find((entry) => message.includes(entry.match)) : undefined;
+  return match?.state ?? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason];
+}
+
+/**
  * Copies whichever apply-link ids are present. The register redirect uses this
  * so a refresh of the register page keeps `programId` and `programTermId` in
  * the address bar even when only one of them arrived.
@@ -1532,9 +1557,10 @@ export function isMentorshipMentorTaskReviewDecision(value: unknown): value is M
 }
 
 /**
- * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
- * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
- * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
+ * Status dropdown state for one task row. A mentee can only move `pending → in_progress`,
+ * `in_progress → submitted` and `submitted → in_progress`, so the current option stays enabled, the
+ * legal moves are enabled and every other option is disabled. A complete task is locked, and so is a
+ * submitted one once it is past due, since reopening it could never be undone. `submitted` is also
  * disabled while the task requires a file that is not uploaded yet, since upstream refuses that move,
  * and once the task is past due, when a pending task can still be started. The hint explains a
  * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
@@ -1545,8 +1571,15 @@ export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskV
   const withDisabled = (isDisabled: (value: MentorshipMenteeTaskStatus) => boolean): MentorshipMenteeTaskStatusOptionsState['options'] =>
     MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS.map((option) => ({ ...option, disabled: isDisabled(option.value) }));
 
-  if (status === 'submitted') {
+  // `fileLocked` is set from the stored status, so it tells a reviewer-completed task from a submitted one.
+  if (task.fileLocked) {
     return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (status === 'submitted') {
+    if (task.pastDue) {
+      return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE, hintVisible: false };
+    }
+    return { options: withDisabled((value) => value === 'pending'), locked: false, hint: null, hintVisible: false };
   }
   if (task.pastDue) {
     const blocked = (value: MentorshipMenteeTaskStatus): boolean => value === 'submitted' || (status === 'in_progress' && value === 'pending');
@@ -1603,6 +1636,7 @@ export function buildMentorshipMenteeApplicationView(
   const totalCount = tasks.length;
   return {
     id: app.id,
+    programId: app.programId,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
@@ -1616,7 +1650,6 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
     tasks: tasks
       .map((task) =>
         buildMentorshipMenteeTaskView(
@@ -1656,6 +1689,7 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     if (outcome) {
       past.push({
         id: app.id,
+        programId: app.programId,
         programName: app.programName,
         projectName: app.projectName,
         termName: app.term.name,

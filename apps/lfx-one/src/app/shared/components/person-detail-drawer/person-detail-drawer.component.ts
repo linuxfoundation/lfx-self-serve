@@ -2,10 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, OnDestroy, PLATFORM_ID, type Signal } from '@angular/core';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeCommitteeMembership, PersonDrawerTab } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
+import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
+import { PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
+import type {
+  OrgAllEmployeeCommitteeMembership,
+  PersonDrawerContext,
+  PersonDrawerCopiedAddress,
+  PersonDrawerEmail,
+  PersonDrawerTab,
+} from '@lfx-one/shared/interfaces';
+import { isMailtoSafeEmail } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -17,7 +23,6 @@ import { DrawerModule } from 'primeng/drawer';
 })
 export class PersonDetailDrawerComponent implements OnDestroy {
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly featureFlagService = inject(FeatureFlagService);
   protected readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly tabs: readonly { id: PersonDrawerTab; label: string }[] = [
@@ -27,10 +32,16 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'governance', label: 'Governance' },
   ];
 
-  protected readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
-  protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
+  protected readonly companyEmails: Signal<PersonDrawerEmail[]> = computed(() => this.initCompanyEmails());
+  private readonly copied = signal<PersonDrawerCopiedAddress | null>(null);
+  /**
+   * The address just copied, so only its own button shows the confirmation. Cleared on a timer, and
+   * scoped to the person and org it was copied under: switching either drops the confirmation at once
+   * rather than leaving it to announce the previous person's address under the new one.
+   */
+  protected readonly copiedEmail: Signal<string | null> = computed(() => this.initCopiedEmail());
 
   // Failed, not-available and none-on-record are distinct states: "no company address" is a claim
   // about a named person and must never be shown when there was no identity to look them up with.
@@ -74,6 +85,37 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     }
   }
 
+  protected async onCopyEmail(email: string): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const copied: PersonDrawerCopiedAddress = { context: this.drawer.activeContext() as PersonDrawerContext, orgUid: this.drawer.orgUid(), email };
+    try {
+      await navigator.clipboard.writeText(email);
+    } catch (error) {
+      // A denied or unavailable clipboard is not worth an error state — the address is selectable in the link.
+      console.error('Failed to copy email:', error);
+      return;
+    }
+    // `copiedEmail` already hides a confirmation whose person or org no longer matches, so this is not
+    // what makes the stale case correct — it just avoids storing a superseded context and arming a timer
+    // for it when the write settles after the drawer has moved on.
+    if (!this.isCurrent(copied)) return;
+    this.copied.set(copied);
+    window.setTimeout(() => {
+      if (this.copied() === copied) {
+        this.copied.set(null);
+      }
+    }, PERSON_DRAWER_COPIED_RESET_MS);
+  }
+
+  private initCopiedEmail(): string | null {
+    const copied = this.copied();
+    return copied && this.isCurrent(copied) ? copied.email : null;
+  }
+
+  private isCurrent(copied: PersonDrawerCopiedAddress): boolean {
+    return copied.context === this.drawer.activeContext() && copied.orgUid === this.drawer.orgUid();
+  }
+
   private initGovernanceSeats(): OrgAllEmployeeCommitteeMembership[] {
     const supplied = this.drawer.activeContext()?.governanceSeats;
     if (supplied) {
@@ -97,10 +139,13 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     };
   }
 
-  private initCompanyEmails(): string[] {
-    if (!this.companyEmailFeatureEnabled() || this.drawer.loading() || this.drawer.error()) {
-      return [];
-    }
-    return this.drawer.companyEmails();
+  // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.
+  private initCompanyEmails(): PersonDrawerEmail[] {
+    const primary = this.drawer.primaryCompanyEmail();
+    return this.drawer.companyEmails().map((email) => ({
+      email,
+      isPrimary: email === primary,
+      href: isMailtoSafeEmail(email) ? `mailto:${email}` : null,
+    }));
   }
 }

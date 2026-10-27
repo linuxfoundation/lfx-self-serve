@@ -14,7 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, getUserTimezone, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { buildCommentResponses, getCommentPromptsData, getUserTimezone, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -26,7 +26,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -82,7 +82,6 @@ export class VoteCastDrawerComponent {
   private lastBuiltPollType: PollType | null = null;
 
   // === Shared Observables ===
-  private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
   private readonly cancelSubmit$ = new Subject<void>();
 
@@ -91,16 +90,12 @@ export class VoteCastDrawerComponent {
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
-  // Missing poll_type defaults to GENERIC (parity with vote-results-drawer.initIsGenericPoll) so the plurality branch renders when upstream omits the field.
-  protected readonly isGenericPoll: Signal<boolean> = computed(() => {
-    const v = this.vote();
-    if (!v) return false;
-    return (v.poll_type ?? PollType.GENERIC) === PollType.GENERIC;
-  });
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
+  protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
@@ -234,20 +229,90 @@ export class VoteCastDrawerComponent {
   }
 
   // === Private Initializers ===
+  /** Mirrors vote-results-drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
+   *  off voteId alone meant a manager who extended a vote's deadline while this drawer was closed, then
+   *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
+   *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
+   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
+   *  the results drawer.
+   *  Also mirrors the results drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
+   *  GH-3823 review): a deadline change on the open vote re-runs this stream, and startWith(listVote) alone
+   *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
+   *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
+   *  the ballot the voter was filling in. Falling back to the last fetched detail for the same vote (instead
+   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact. */
   private initVote(): Signal<Vote | null> {
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
+
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      toObservable(selection).pipe(
+        distinctUntilChanged(
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
+        ),
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVote.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
-          this.loadingVote.set(true);
-          const listVote = this.listVote();
-          return this.voteService.getVote(id).pipe(
-            catchError(() => of(listVote)),
+          if (!visible) {
+            this.loadingVote.set(false);
+            return EMPTY;
+          }
+
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
+
+          // Prefer the last fetched full detail over listVote (per @cursor, GH-3823 review): a deadline
+          // change re-runs this stream with the caller's list row already carrying the new end_time, but
+          // that row can be a partial summary missing poll_questions. Falling back to listVote only when no
+          // full detail has been fetched yet for this vote keeps rebuildForm() from wiping the ballot.
+          // When both exist, overlay listVote's deadline fields onto the cached detail (per @greptile-apps
+          // and @copilot-pull-request-reviewer, GH-3823 review): listVote is the caller's source of truth for
+          // an in-flight deadline extension, so keeping lastVote wholesale would show the voter the
+          // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
+          // same value.
+          const lastDetail = lastVoteId === id ? lastVote : null;
+          // #4075: never trust an unconfirmed list-row poll_type for the ranked/single-choice decision
+          // while the first detail fetch for this vote is in flight — wait for a confirmed fetch. A
+          // missing poll_type already defaults to non-ranked everywhere it's read, so this transient
+          // startWith emission can only bias toward the safe single-choice shape. If the fetch then
+          // fails outright with no cached detail to fall back to, degrade to the list row's own
+          // poll_type (per @dealako, #4076 review) rather than a doubly-unconfirmed guess — matching
+          // how every other field (poll_questions, etc.) already behaves in that terminal-failure state.
+          const listFallback = listVote ?? null;
+          let fallback = lastDetail ?? (listVote ? { ...listVote, poll_type: undefined } : null);
+          if (lastDetail && listVote) {
+            fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
+          }
+          if (!fallback) {
+            this.loadingVote.set(true);
+          }
+
+          return this.voteService.getVote(id, { skipCache }).pipe(
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(lastDetail ? fallback : listFallback)),
             finalize(() => this.loadingVote.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),
@@ -255,11 +320,15 @@ export class VoteCastDrawerComponent {
     );
   }
 
-  private initIsRankedPoll(): Signal<boolean> {
+  private initDrawerPt(): Signal<Record<string, unknown>> {
     return computed(() => {
-      const t = this.vote()?.poll_type;
-      return !!t && t !== PollType.GENERIC;
+      const hasBallot = !this.loadingVote() && this.questions().length > 0;
+      return { footer: { class: hasBallot ? 'border-t border-slate-200' : 'hidden' } };
     });
+  }
+
+  private initIsRankedPoll(): Signal<boolean> {
+    return computed(() => isRankedPollType(this.vote()?.poll_type));
   }
 
   private initSubmitDisabled(): Signal<boolean> {

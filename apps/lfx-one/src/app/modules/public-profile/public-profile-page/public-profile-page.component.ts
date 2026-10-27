@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
+import { Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
-import { OsanoService } from '@services/osano.service';
+import { TranscendService } from '@services/transcend.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -38,7 +38,7 @@ import { PublicProfileService } from '../services/public-profile.service';
 export class PublicProfilePageComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly publicProfileService = inject(PublicProfileService);
-  private readonly osanoService = inject(OsanoService);
+  private readonly transcendService = inject(TranscendService);
   private readonly title = inject(Title);
   private readonly meta = inject(Meta);
   private readonly transferState = inject(TransferState);
@@ -74,9 +74,6 @@ export class PublicProfilePageComponent {
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
 
   public constructor() {
-    // Load the Osano CMP in the browser so the footer's cookie-preferences link works on this public page.
-    afterNextRender(() => this.osanoService.load());
-
     // SEO sync — re-apply head tags when `profile()` resolves; `toObservable` + `takeUntilDestroyed`
     // instead of `effect()` per `docs/reviews/frontend-checklist.md` §5 (effect reserved for logging).
     toObservable(this.profile)
@@ -84,9 +81,9 @@ export class PublicProfilePageComponent {
       .subscribe(() => this.applyMetadata());
   }
 
-  // Opens the Osano cookie-preferences drawer (LFX's cookie manager).
+  // Opens the Transcend consent manager (LFX's cookie manager).
   protected manageCookies(): void {
-    this.osanoService.showPreferences();
+    this.transcendService.showPreferences();
   }
 
   private initProfile(): Signal<PublicProfilePageState> {

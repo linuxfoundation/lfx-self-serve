@@ -44,7 +44,10 @@ export function isSupportedTrainingRange(range: string): range is HealthMetricsL
 }
 
 /** Upper-cased Snowflake keys; each period's columns carry the range as a suffix (e.g. `ENROLLMENTS_YTD`). */
-type SummaryRow = { DELIVERY_TYPE: string } & Record<string, unknown>;
+type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null; IS_LISTED_REVENUE_DELIVERY_TYPE?: boolean | null } & Record<
+  string,
+  unknown
+>;
 
 interface YearRow {
   ENROLLMENT_YEAR: number;
@@ -53,7 +56,7 @@ interface YearRow {
 
 /** Totals ride on every row; a page past the end leaves one totals-only row whose course columns are NULL. */
 interface CourseRow {
-  SCOPE_TOTAL: number;
+  SCOPE_TOTAL: number | null;
   TOTAL_RECORDS: number;
   IS_PAGE_ROW: boolean | null;
   COURSE_KEY: string | null;
@@ -109,10 +112,16 @@ export class HealthMetricsTrainingService {
     const summarySql = `
       SELECT
         delivery_type,
+        is_listed_delivery_type,
+        is_listed_revenue_delivery_type,
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
-        revenue_change_pct
+        revenue_change_pct,
+        enrollment_goal,
+        enrollment_goal_progress_ytd,
+        revenue_goal_usd,
+        revenue_goal_progress_ytd
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
@@ -142,10 +151,17 @@ export class HealthMetricsTrainingService {
       measured: true,
       periods,
       trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
+      // Goals ride on the `All` row only; a goal of zero or less is no goal.
+      goals: {
+        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
+        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
+        enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
+        revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
+      },
     };
   }
 
-  /** One page of the courses with enrollments in the period, ranked by the view, with the totals beside it. */
+  /** One page of every course ever enrolled in, ranked by the view for the period, with the totals beside it. */
   public async getCourses(req: Request, query: HealthMetricsTrainingCoursesQuery): Promise<HealthMetricsTrainingCourses> {
     // The suffix comes from a fixed map keyed by the validated range, never from the request.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -176,10 +192,12 @@ export class HealthMetricsTrainingService {
           has_purchase_coverage,
           enrollment_count_${suffix} AS enrollment_count,
           revenue_usd_${suffix} AS revenue_usd,
-          sort_rank_${suffix} AS sort_rank
+          sort_rank_${suffix} AS sort_rank,
+          scope_courses_count
         FROM ${TRAINING_COURSES_VIEW}
         WHERE foundation_slug = ?
-          AND enrollment_count_${suffix} > 0
+          -- PCC's list: every course ever enrolled in, so one quiet in the period shows 0 rather than dropping out.
+          AND has_enrollment_all_time
           AND _key IS NOT NULL
           AND NULLIF(TRIM(course_name), '') IS NOT NULL
       ),
@@ -187,10 +205,12 @@ export class HealthMetricsTrainingService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
+        -- The badge is the view's own count, repeated on every row and the same in every period.
+        SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- Named columns, so the badge's scope_courses_count rides only on the totals, not every page row.
+        SELECT course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, sort_rank, TRUE AS is_page_row
         FROM matched
         -- course_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.
         ORDER BY sort_rank ASC NULLS LAST, course_key ASC
@@ -239,6 +259,8 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
     .sort((a, b) => rank(a) - rank(b) || a.DELIVERY_TYPE.localeCompare(b.DELIVERY_TYPE))
     .map((row) => ({
       deliveryType: row.DELIVERY_TYPE,
+      isListed: row.IS_LISTED_DELIVERY_TYPE === true,
+      isListedRevenue: row.IS_LISTED_REVENUE_DELIVERY_TYPE === true,
       enrollments: toNullableNumber(row[`ENROLLMENTS_${range}`]),
       revenueUsd: toNullableNumber(row[`REVENUE_USD_${range}`]),
     }));
@@ -258,6 +280,11 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toPositiveOrNull(value: unknown): number | null {
+  const number = toNullableNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function toNullableNumber(value: unknown): number | null {

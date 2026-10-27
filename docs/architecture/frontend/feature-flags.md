@@ -699,7 +699,7 @@ export class MainLayoutComponent {
 
 ```html
 <!-- Sidebar with filtered items -->
-<lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+<lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 ```
 
 **Pattern Benefits:**
@@ -1482,12 +1482,12 @@ export class MainLayoutComponent {
 ```html
 <!-- Desktop Sidebar -->
 <div class="hidden lg:block w-64 flex-shrink-0 fixed top-0 left-0">
-  <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+  <lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 </div>
 
 <!-- Mobile Sidebar -->
 <div class="overflow-y-auto h-[calc(100vh-4rem)]">
-  <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+  <lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 </div>
 ```
 

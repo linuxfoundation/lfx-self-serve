@@ -19,6 +19,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MyResponseDrawerComponent } from '../components/my-response-drawer/my-response-drawer.component';
 import { SurveyResultsDrawerComponent } from '../components/survey-results-drawer/survey-results-drawer.component';
 import { SurveysTableComponent } from '../components/surveys-table/surveys-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-surveys-dashboard',
@@ -31,6 +32,7 @@ import { SurveysTableComponent } from '../components/surveys-table/surveys-table
     MyResponseDrawerComponent,
     EmptyStateComponent,
     SkeletonModule,
+    PageHeaderComponent,
   ],
   templateUrl: './surveys-dashboard.component.html',
   styleUrl: './surveys-dashboard.component.scss',

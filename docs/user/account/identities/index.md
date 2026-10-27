@@ -4,7 +4,7 @@ description: Link, verify, and remove the GitHub, social, and email identities u
 audience: [all]
 product_area: Account
 tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-10-14
+last_updated: 2026-10-25
 intercom_collection: Account
 ---
 
@@ -30,6 +30,10 @@ Identities are grouped into two sections:
 - **Verified identities** — accounts you have confirmed. A verified identity that is your primary shows a **Primary** badge.
 - **Unverified identities** — accounts connected to your profile that still need confirmation. You will see a reminder to verify them so your project affiliations and work history stay accurate.
 
+Your primary email is always listed, with a **Primary** badge. If you also sign in with Google or an email login that uses the same address, that account stays listed and can still be removed to unlink it. If your sign-in hasn't confirmed it as verified, it shows under **Unverified identities** with the badge but without **Verify** or **This is not me** — it can't be verified or removed from this page. If it should show as verified, contact support.
+
+The profile sidebar and the **Primary** badge use your current primary email. Changing it in **Edit profile** refreshes both displays without signing out and back in.
+
 > **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the code-entry step whether or not the address is already linked elsewhere. If no code arrives, the address may belong to another LFX account — use **contact support** in the code step for help. Social-account conflicts still show a conflict message after provider sign-in.
 
 ## Add an identity
@@ -38,13 +42,14 @@ Identities are grouped into two sections:
 2. Choose a provider:
    - For a social account (for example GitHub, Google, or LinkedIn), select **Continue with _[provider]_** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. If the address can be added, a 6-digit code is sent to it; enter that code and select **Verify email**. Use **Resend Code** if needed. If no code arrives, the address may already be linked to another LFX account — select **contact support** in the code step.
+   - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If verification instead reports that the address is already linked to an LFX account, select **contact support**.
 
 ## Verify an unverified identity
 
 1. Find the account under **Unverified identities**.
 2. Select **Verify**.
    - For a social account, select **Continue with _[provider]_** to confirm through the provider.
-   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**.
+   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**. If the address is already connected to your account, LFX confirms **This email is already connected to your account.** and refreshes your identities.
 
 If an unverified identity is not yours, select **This is not me** to reject it.
 
@@ -53,7 +58,7 @@ If an unverified identity is not yours, select **This is not me** to reject it.
 1. Open the actions menu on a verified identity and select **Remove**.
 2. In **Remove verified identity**, acknowledge that removing it may affect your contribution attribution, then select **Remove identity**.
 
-To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your **Primary** identity cannot be removed.
+To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your primary email itself can't be removed. If a Google or email login uses your primary address, you can remove that login to unlink it. The primary email stays listed.
 
 > **Note:** Removing an identity can't be undone. As the removal dialog notes, identity information may be retained to help improve our services and support project insights — see the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for what data is kept and why.
 >

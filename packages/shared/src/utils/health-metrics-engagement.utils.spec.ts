@@ -8,13 +8,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
 import {
+  HealthMetricsEngagementAttendanceMonth,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
@@ -24,31 +27,36 @@ import {
   HealthMetricsEngagementSubNavCounts,
 } from '../interfaces/health-metrics-engagement.interface';
 import {
+  buildHealthMetricsEngagementAttendanceTrendPoints,
+  buildHealthMetricsEngagementAttendanceTrendSummary,
   buildHealthMetricsEngagementGroupTrend,
   buildHealthMetricsEngagementRepLabels,
+  buildHealthMetricsEngagementSparkBars,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
   filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
   formatHealthMetricsEngagementCount,
-  formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
+  resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementGroupPeriod,
+  selectHealthMetricsEngagementNonMemberCounts,
   selectHealthMetricsEngagementNonMemberPeriod,
   selectHealthMetricsEngagementParticipationPeriod,
   selectHealthMetricsEngagementRepCounts,
   selectHealthMetricsEngagementRepPeriod,
-  sortHealthMetricsEngagementNonMemberRows,
+  filterHealthMetricsEngagementNonMemberRows,
 } from './health-metrics-engagement.utils';
 
 function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): HealthMetricsEngagementSubNavCounts {
   return {
     groups: 12,
     dormantGroups: 0,
+    lowAttendanceGroups: 0,
     orgs: 40,
     lapsedOrgs: 0,
     reps: 88,
@@ -119,6 +127,19 @@ describe('resolveHealthMetricsEngagementAttendanceTone', () => {
     expect(resolveHealthMetricsEngagementAttendanceTone(0.5)).toBe('ok');
     expect(resolveHealthMetricsEngagementAttendanceTone(0.92)).toBe('ok');
   });
+
+  it('holds a board to its own rule: red below 90%', () => {
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.89, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('critical');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.9, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('empty');
+  });
+
+  // 26 of 29 reads "90%", so it must not be red under a 90% rule; 0.494 reads "49%" and stays amber.
+  it('judges the whole percent the label shows, not the raw share', () => {
+    expect(resolveHealthMetricsEngagementAttendanceTone(26 / 29, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.496)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.494)).toBe('low');
+  });
 });
 
 describe('buildHealthMetricsEngagementSubNavItems', () => {
@@ -135,12 +156,14 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
     expect(items.find((item) => item.key === 'trend')?.count).toBeNull();
   });
 
-  it('spells the dormant-group note, and drops it at zero', () => {
-    const dormant = buildHealthMetricsEngagementSubNavItems(counts({ dormantGroups: 2 }));
-    expect(dormant.find((item) => item.key === 'committees')?.note).toBe('2 dormant');
+  it('spells the dormant and below-50% group notes together, dropping each at zero', () => {
+    const note = (overrides: Partial<HealthMetricsEngagementSubNavCounts>) =>
+      buildHealthMetricsEngagementSubNavItems(counts(overrides)).find((item) => item.key === 'committees')?.note;
 
-    const neither = buildHealthMetricsEngagementSubNavItems(counts());
-    expect(neither.find((item) => item.key === 'committees')?.note).toBe('');
+    expect(note({ dormantGroups: 2, lowAttendanceGroups: 3 })).toBe('2 dormant · 3 below 50%');
+    expect(note({ dormantGroups: 2 })).toBe('2 dormant');
+    expect(note({ lowAttendanceGroups: 3 })).toBe('3 below 50%');
+    expect(note({})).toBe('');
   });
 
   it('spells the lapsed-org and never-attended notes from the counts', () => {
@@ -151,7 +174,7 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
   });
 
   it('suppresses the note for a section whose total has not resolved yet', () => {
-    const items = buildHealthMetricsEngagementSubNavItems(counts({ groups: null, dormantGroups: 2 }));
+    const items = buildHealthMetricsEngagementSubNavItems(counts({ groups: null, dormantGroups: 2, lowAttendanceGroups: 1 }));
     const committees = items.find((item) => item.key === 'committees');
 
     expect(committees?.count).toBeNull();
@@ -213,6 +236,42 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
     periods[3] = { ...periods[3], meetingsHeld: null };
 
     expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  });
+});
+
+describe('buildHealthMetricsEngagementSparkBars', () => {
+  // The design's spark2: 3px floor plus up to 19px, scaled to the series' own range.
+  it('scales to the series own min-max, so a tight run still shows its movement', () => {
+    expect(buildHealthMetricsEngagementSparkBars([0.54, 0.58, 0.59, 0.62])).toEqual([
+      { heightPx: 3, last: false },
+      { heightPx: 12.5, last: false },
+      { heightPx: 14.9, last: false },
+      { heightPx: 22, last: true },
+    ]);
+  });
+
+  it('keeps an unrated period as an empty slot, so later periods do not slide left', () => {
+    expect(buildHealthMetricsEngagementSparkBars([0.4, null, 0.8])).toEqual([
+      { heightPx: 3, last: false },
+      { heightPx: null, last: false },
+      { heightPx: 22, last: true },
+    ]);
+  });
+
+  it('highlights nothing when the current period is unrated', () => {
+    const bars = buildHealthMetricsEngagementSparkBars([0.4, 0.8, null]);
+
+    expect(bars.map((bar) => bar.last)).toEqual([false, false, false]);
+    expect(bars[2]?.heightPx).toBeNull();
+  });
+
+  it('draws a flat series at the floor rather than dividing by a zero range', () => {
+    expect(buildHealthMetricsEngagementSparkBars([0.5, 0.5]).map((bar) => bar.heightPx)).toEqual([3, 3]);
+  });
+
+  it('returns no bars below two rated values, which cannot express a direction', () => {
+    expect(buildHealthMetricsEngagementSparkBars([0.5, null, null])).toEqual([]);
+    expect(buildHealthMetricsEngagementSparkBars([])).toEqual([]);
   });
 });
 
@@ -315,17 +374,10 @@ describe('participation period selection and delta formatting', () => {
     expect(formatHealthMetricsEngagementPpDelta(null)).toBe('—');
   });
 
-  it('renders a fractional change in a count as a percent', () => {
-    expect(formatHealthMetricsEngagementPctDelta(0.12)).toBe('+12.0%');
-    expect(formatHealthMetricsEngagementPctDelta(-0.12)).toBe('−12.0%');
-    expect(formatHealthMetricsEngagementPctDelta(null)).toBe('—');
-  });
-
   // A decline too small to show at one decimal must not print as a signed zero or paint the
   // label red — the label and its colour read the same rounded value.
   it('treats a change that rounds away as no movement, in both the label and the direction', () => {
     expect(formatHealthMetricsEngagementPpDelta(-0.0004)).toBe('+0.0pp');
-    expect(formatHealthMetricsEngagementPctDelta(-0.0004)).toBe('+0.0%');
     expect(resolveHealthMetricsEngagementDeltaDirection(-0.0004)).toBe('neutral');
     // One decimal is still movement.
     expect(resolveHealthMetricsEngagementDeltaDirection(-0.0006)).toBe('down');
@@ -359,6 +411,14 @@ describe('organization participation rules', () => {
       ...overrides,
     };
   }
+
+  it('pills the top tiers blue in any case, and every other tier grey', () => {
+    expect(resolveHealthMetricsEngagementOrgTierPillClass('Platinum')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
+    expect(resolveHealthMetricsEngagementOrgTierPillClass('PREMIER')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
+    expect(resolveHealthMetricsEngagementOrgTierPillClass(' founding ')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
+    expect(resolveHealthMetricsEngagementOrgTierPillClass('Silver')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other);
+    expect(resolveHealthMetricsEngagementOrgTierPillClass('Non-Member')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other);
+  });
 
   // `null` is "attended nothing this period", which is not the same as averaging zero reps.
   it('renders mean representatives at one decimal, and an em dash when the org attended nothing', () => {
@@ -403,8 +463,6 @@ describe('non-member participation rules', () => {
       accountId: name.toLowerCase().replace(/\s+/g, '-'),
       accountName: name,
       membershipStatus: 'Non-member',
-      firstSeenDate: '2024-02-01',
-      lastAttendedDate: '2026-08-14',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         { range: 'COMPLETED_YEAR', meetingsAttended: 8, distinctPeople: 3, sortRank: sortRank === null ? null : 10 - sortRank },
@@ -422,25 +480,52 @@ describe('non-member participation rules', () => {
     expect(selectHealthMetricsEngagementNonMemberPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
   });
 
-  it('ranks by the selected period, so the period pill re-sorts rather than re-reads', () => {
+  it('filters and ranks by the selected period, so the period pill re-cuts rather than re-reads', () => {
     const rows = [nonMemberRow('Acme Motors', 4), nonMemberRow('Vendor Corp', 1)];
 
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
   });
 
   // An unranked row is not the best row — sorting it first would put a blank at the top of the table.
-  it('sorts an unranked organization last, and breaks a rank tie by name', () => {
+  it('filters and ranks an unranked organization last, breaking a rank tie by name', () => {
     const rows = [nonMemberRow('Unranked Co', null), nonMemberRow('Zeta Labs', 2), nonMemberRow('Alpha Works', 2)];
 
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
   });
 
   it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
     const rows = [nonMemberRow('Zeta Labs', 5), nonMemberRow('Alpha Works', 1)];
-    sortHealthMetricsEngagementNonMemberRows(rows, 'YTD');
+    filterHealthMetricsEngagementNonMemberRows(rows, 'YTD');
 
     expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
+  });
+
+  // The period caption counts organizations that attended in it, so the table lists only those.
+  it('drops an organization with no meetings attended in the selected period, or none measured', () => {
+    const quiet = nonMemberRow('Quiet Co', 3);
+    quiet.periods[1] = { ...quiet.periods[1], meetingsAttended: 0 };
+    const unmeasured = nonMemberRow('Unmeasured Co', 2);
+    unmeasured.periods[1] = { ...unmeasured.periods[1], meetingsAttended: null };
+    const rows = [quiet, unmeasured, nonMemberRow('Acme Motors', 1)];
+
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Acme Motors']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual([
+      'Quiet Co',
+      'Unmeasured Co',
+      'Acme Motors',
+    ]);
+  });
+
+  it('selects the caption count for the selected period, and none when the view reported none', () => {
+    const counts = [
+      { range: 'COMPLETED_YEAR' as const, orgs: 33 },
+      { range: 'YTD' as const, orgs: 19 },
+    ];
+
+    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'YTD')).toEqual({ range: 'YTD', orgs: 19 });
+    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'COMPLETED_YEAR')?.orgs).toBe(33);
+    expect(selectHealthMetricsEngagementNonMemberCounts(null, 'YTD')).toBeNull();
   });
 });
 
@@ -450,14 +535,10 @@ describe('representatives rules', () => {
       key: `${personName}|${accountName}`.toLowerCase(),
       personName,
       identityUnresolved: false,
-      personRole: null,
-      jobTitle: null,
       accountName,
       membershipTier: null,
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
-      daysSinceLastAttended: 54,
-      lapsed180d: false,
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: null },
@@ -585,40 +666,129 @@ describe('buildHealthMetricsEngagementRepLabels', () => {
     key: 'rep-1',
     personName: 'Dana Fields',
     identityUnresolved: false,
-    personRole: 'Voting Rep',
-    jobTitle: 'Engineer',
     accountName: 'Acme Motors',
     membershipTier: 'Gold',
     committeeName: 'Governing Board',
     lastAttendedDate: '2026-08-14',
-    daysSinceLastAttended: 12,
-    lapsed180d: false,
     periods: [],
   };
 
-  it('joins role with title and organization with tier', () => {
+  it('joins the organization with its tier', () => {
     expect(buildHealthMetricsEngagementRepLabels(base)).toEqual({
       displayName: 'Dana Fields',
-      roleLabel: 'Voting Rep · Engineer',
       orgLabel: 'Acme Motors · Gold',
-      daysAgoLabel: '12 days ago',
       lastAttendedLabel: 'Aug 14, 2026',
     });
+    expect(buildHealthMetricsEngagementRepLabels({ ...base, membershipTier: null }).orgLabel).toBe('Acme Motors');
   });
 
   it('drops the missing pieces rather than printing them, and renders an unresolved identity as such', () => {
     const labels = buildHealthMetricsEngagementRepLabels({
       ...base,
       identityUnresolved: true,
-      personRole: null,
-      jobTitle: ' ',
       accountName: '',
-      membershipTier: null,
+      membershipTier: ' ',
       lastAttendedDate: null,
-      daysSinceLastAttended: 1,
     });
 
-    expect(labels).toEqual({ displayName: 'Unresolved identity', roleLabel: null, orgLabel: '—', daysAgoLabel: '1 day ago', lastAttendedLabel: '—' });
-    expect(buildHealthMetricsEngagementRepLabels({ ...base, daysSinceLastAttended: null }).daysAgoLabel).toBeNull();
+    expect(labels).toEqual({ displayName: 'Unresolved identity', orgLabel: '—', lastAttendedLabel: '—' });
+  });
+});
+
+describe('attendance trend rules', () => {
+  // The view's window ends with the current month, so "today" decides which month is still collecting meetings.
+  const today = new Date('2026-10-20T12:00:00Z');
+
+  function month(
+    monthStartDate: string,
+    attendancePct: number | null,
+    overrides: Partial<HealthMetricsEngagementAttendanceMonth> = {}
+  ): HealthMetricsEngagementAttendanceMonth {
+    return { monthStartDate, meetingsHeld: 10, invited: 100, attended: 50, attendancePct, attendanceChangePp: null, ...overrides };
+  }
+
+  /** Twelve months ending October 2026, every one rated at 40% + 1pp per month. */
+  function fullYear(): HealthMetricsEngagementAttendanceMonth[] {
+    return Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(Date.UTC(2025, 10 + index, 1)).toISOString().slice(0, 10);
+      return month(date, 0.4 + index * 0.01, { attendanceChangePp: index === 0 ? null : 0.01 });
+    });
+  }
+
+  it('labels each point and marks the current month as to date', () => {
+    const points = buildHealthMetricsEngagementAttendanceTrendPoints(fullYear(), today);
+
+    expect(points[0]).toMatchObject({ label: 'Nov 25', monthLabel: 'November 2025', rateLabel: '40%', meetingsLabel: '10 meetings', isInProgress: false });
+    expect(points[0]?.rate).toBeCloseTo(40);
+    expect(points[11]).toMatchObject({ label: 'Oct 26', monthLabel: 'October 2026 (to date)', isInProgress: true });
+  });
+
+  // A gap, not a collapse to 0%: no invited population and a thin month both leave the line.
+  it('gaps a month with no invited population, and one with too few meetings to report a rate', () => {
+    const months = [
+      month('2026-08-01', null, { meetingsHeld: 0 }),
+      month('2026-09-01', 0.8, { meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 }),
+    ];
+    const points = buildHealthMetricsEngagementAttendanceTrendPoints(months, today);
+
+    expect(points.map((point) => point.rate)).toEqual([null, null]);
+    expect(points.map((point) => point.rateLabel)).toEqual(['—', 'No data']);
+    expect(points[0]?.meetingsLabel).toBe('0 meetings');
+  });
+
+  it('reads the headline off the latest full month, with its change from the view', () => {
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(fullYear(), today);
+
+    // October is in progress, so September (50%) leads and the range runs November to September.
+    expect(summary).toMatchObject({
+      state: 'trend',
+      ratedMonths: 12,
+      latestLabel: '50%',
+      latestCaption: 'September 2026',
+      deltaLabel: '+1.0pp',
+      deltaDirection: 'up',
+      rangeChangeLabel: '+10.0pp',
+      rangeHighLabel: '50%',
+      rangeLowLabel: '40%',
+      isLowConfidence: false,
+    });
+  });
+
+  // The view's change is measured against a rate the hero hides, so it must not headline.
+  it('drops the change when the previous month has no reportable rate', () => {
+    const months = fullYear();
+    months[9] = month('2026-08-01', 0.9, { meetingsHeld: 1 });
+
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(months, today)).toMatchObject({ deltaLabel: '—', deltaDirection: 'neutral' });
+  });
+
+  it('reports no rated month as empty, and one as too little to chart', () => {
+    const quiet = fullYear().map((entry) => ({ ...entry, attendancePct: null, meetingsHeld: 0 }));
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(quiet, today)).toMatchObject({
+      state: 'empty',
+      ratedMonths: 0,
+      latestLabel: '—',
+      rangeHighLabel: '—',
+    });
+
+    const single = quiet.map((entry, index) => (index === 6 ? month(entry.monthStartDate, 0.5) : entry));
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(single, today)).toMatchObject({ state: 'insufficient', ratedMonths: 1 });
+  });
+
+  // Short history still draws the line, under a banner, so two points do not read as a pattern.
+  it('flags fewer than six rated months as low confidence, with the count in the note', () => {
+    const months = fullYear().map((entry, index) => (index < 8 ? { ...entry, attendancePct: null, meetingsHeld: 0 } : entry));
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
+
+    expect(summary).toMatchObject({ state: 'trend', ratedMonths: 4, isLowConfidence: true });
+    expect(summary.lowConfidenceNote).toBe('Only 4 of the last 12 months have attendance from 3 or more meetings, so the trend is indicative, not reliable.');
+  });
+
+  // The month in progress counts toward having a trend, but never toward the full-month headline.
+  it('leaves the headline unset when the only rated full month is missing', () => {
+    const months = [month('2026-09-01', null, { meetingsHeld: 0 }), month('2026-10-01', 0.6)];
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
+
+    expect(summary).toMatchObject({ state: 'insufficient', latestLabel: '—', latestCaption: 'No full month with attendance yet', rangeChangeLabel: '—' });
   });
 });
