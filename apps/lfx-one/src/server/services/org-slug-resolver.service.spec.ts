@@ -4,18 +4,20 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { OrgSlugResolverService } from './org-slug-resolver.service';
 
 // The resolver is access-sensitive (spec 050, DR-002/DR-003/DR-007): these specs pin the outcome
 // decisions — which rows count, when a slug is a tie, what the cache may store — against a stubbed
 // query-service. `valkey.service` is mocked whole: it reaches the Angular-tainted shared utils barrel.
-const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg } = vi.hoisted(() => ({
+const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg, assertOrgLensRead } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getEffectiveUsername: vi.fn(),
   withCache: vi.fn(),
   buildPerUserOrgKey: vi.fn(),
   resolveClaOnlyOrg: vi.fn(),
+  assertOrgLensRead: vi.fn(),
 }));
 
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
@@ -26,6 +28,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./valkey.service', () => ({ buildPerUserOrgKey, valkeyService: { withCache } }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
 vi.mock('./org-cla-only-orgs.service', () => ({
   OrgClaOnlyOrgsService: class {
     public resolveOrg = resolveClaOnlyOrg;
@@ -61,6 +64,8 @@ beforeEach(() => {
   buildPerUserOrgKey.mockImplementation((namespace: string, username: string, segment: string) => `${namespace}:${username}:${segment}`);
   // Pass-through cache: the fetcher decides, the predicates are captured for assertion.
   withCache.mockImplementation((_key: string | null, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
+  // Every row query-service returns is also admitted by the read gate, which is how it is today.
+  assertOrgLensRead.mockResolvedValue('org-grant');
 });
 
 describe('OrgSlugResolverService — input', () => {
@@ -295,5 +300,64 @@ describe('OrgSlugResolverService — `prefer` tie-break (DR-007 §4)', () => {
   it('does not let `prefer` widen access: an unreadable preferred organization leaves the tie unbroken', async () => {
     proxyRequest.mockResolvedValueOnce(page([]));
     expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toMatchObject({ outcome: 'ambiguous' });
+  });
+});
+
+describe('OrgSlugResolverService — a returned row is not proof of the full lens', () => {
+  const refused = (): MicroserviceError => new MicroserviceError('no', 403, 'FORBIDDEN', { operation: 'x', service: 'y' });
+  const unverifiable = (): MicroserviceError => new MicroserviceError('down', 503, 'ROLE_GRANTS_UNAVAILABLE', { operation: 'x', service: 'y' });
+
+  it('resolves an SFID row the read gate refuses as CLA-only when the caller qualifies', async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(refused());
+    resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Org A', claOnly: true });
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'Org A', claOnly: true }, cache: 'bypass' });
+    expect(assertOrgLensRead).toHaveBeenCalledWith(req, UID_A, expect.any(String));
+  });
+
+  it('answers an SFID row the read gate refuses as not found when the caller does not qualify', async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(refused());
+    resolveClaOnlyOrg.mockResolvedValue(null);
+
+    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({ outcome: 'miss', cache: 'bypass' });
+  });
+
+  it('keeps an SFID row whose caller passes the read gate as a full organization, never asking the CLA-only path', async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result.outcome).toBe('hit');
+    expect(result.outcome === 'hit' && result.org.claOnly).toBeFalsy();
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it("keeps query-service's answer when the read gate cannot answer", async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(unverifiable());
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result.outcome === 'hit' && result.org.claOnly).toBeFalsy();
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it('answers a slug row the read gate refuses as not found', async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(refused());
+
+    expect((await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).outcome).toBe('miss');
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it('does not let a refused preferred row break a slug tie', async () => {
+    proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }, { uid: UID_B }])).mockResolvedValueOnce(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(refused());
+
+    expect((await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_A)).outcome).toBe('ambiguous');
   });
 });
