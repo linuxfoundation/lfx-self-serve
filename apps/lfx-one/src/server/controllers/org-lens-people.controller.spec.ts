@@ -4,13 +4,16 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getCompanyEmails, getCompanyEmailsByUsername, getEmployeeDetailByUsername, getKeyContactsForPerson, logger } = vi.hoisted(() => ({
-  getCompanyEmails: vi.fn(),
-  getCompanyEmailsByUsername: vi.fn(),
-  getEmployeeDetailByUsername: vi.fn(),
-  getKeyContactsForPerson: vi.fn(),
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { getCompanyEmails, getCompanyEmailsByUsername, getEmployeeDetailByUsername, getKeyContactsForPerson, resolveUsernameByPersonKey, logger } = vi.hoisted(
+  () => ({
+    getCompanyEmails: vi.fn(),
+    getCompanyEmailsByUsername: vi.fn(),
+    getEmployeeDetailByUsername: vi.fn(),
+    getKeyContactsForPerson: vi.fn(),
+    resolveUsernameByPersonKey: vi.fn(),
+    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  })
+);
 
 // The utils barrel pulls Angular into this plain-Node run; the real username allowlist is what runs here.
 // vi.mock factories are hoisted above static imports, so the real module can only load via import().
@@ -21,6 +24,7 @@ vi.mock('../services/org-lens-people.service', () => ({
     public getCompanyEmails = getCompanyEmails;
     public getCompanyEmailsByUsername = getCompanyEmailsByUsername;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
+    public resolveUsernameByPersonKey = resolveUsernameByPersonKey;
   },
 }));
 vi.mock('../services/org-people-board-members.service', () => ({ OrgPeopleBoardMembersService: class {} }));
@@ -115,21 +119,33 @@ describe('OrgLensPeopleController per-person key contacts', () => {
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
-  it('rejects an unsafe username before any lookup, in the path or the query', async () => {
+  it('rejects an unsafe username before any lookup', async () => {
     for (const username of ['a/b', "x' OR '1'='1", 'u'.repeat(257)]) {
-      const pathNext = vi.fn();
-      await controller.getPersonKeyContactsByUsername(buildReq(username), buildRes(), pathNext);
-      expect(pathNext).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-
-      const queryNext = vi.fn();
-      await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username }), buildRes(), queryNext);
-      expect(queryNext).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      const next = vi.fn();
+      await controller.getPersonKeyContactsByUsername(buildReq(username), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     }
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
-  it('identifies a person key by its resolved addresses, with no username when the opener carries none', async () => {
+  // An identity in the URL is an identity in the request log, so the client sends none.
+  it('ignores a client-supplied username and uses the roster one instead', async () => {
+    getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'resolved' });
+    resolveUsernameByPersonKey.mockResolvedValue('roster-name');
+    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
+
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username: 'client-supplied' }), buildRes(), vi.fn());
+
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+      username: 'roster-name',
+      emails: [],
+      emailsStatus: 'resolved',
+    });
+  });
+
+  it('identifies a person key by its resolved addresses, with no username when the roster carries none', async () => {
     getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
+    resolveUsernameByPersonKey.mockResolvedValue(null);
     getKeyContactsForPerson.mockResolvedValue({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
     const res = buildRes();
     const next = vi.fn();
@@ -145,11 +161,12 @@ describe('OrgLensPeopleController per-person key contacts', () => {
     expect(res.json).toHaveBeenCalledWith({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
   });
 
-  it('passes an opener-supplied username through as the stronger key', async () => {
+  it("passes the roster's username through as the stronger key", async () => {
     getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
+    resolveUsernameByPersonKey.mockResolvedValue('jdoe');
     getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
 
-    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username: 'jdoe' }), buildRes(), vi.fn());
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), buildRes(), vi.fn());
 
     expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
       username: 'jdoe',
@@ -162,6 +179,7 @@ describe('OrgLensPeopleController per-person key contacts', () => {
   // rather than being flattened into an empty address list.
   it.each(['unavailable', 'failed'])('forwards a %s address status instead of passing addresses it does not have', async (companyEmailsStatus) => {
     getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus });
+    resolveUsernameByPersonKey.mockResolvedValue(null);
     getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: companyEmailsStatus === 'failed' ? 'failed' : 'unidentified' });
 
     await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), buildRes(), vi.fn());

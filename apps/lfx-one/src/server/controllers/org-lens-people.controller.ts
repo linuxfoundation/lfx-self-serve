@@ -199,11 +199,11 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/:personKey/key-contacts[?username=] — the key contact roles one
-   * person holds, for the drawer's Key Contacts tab. A person key is not a key-contact key, so identity
-   * comes from the same company-address lookup the header uses. The optional `username` is the stronger
-   * key when the opener happens to hold one (Contributions rows do); it is validated like any other
-   * username before it reaches the matcher.
+   * GET /api/orgs/:orgUid/lens/people/:personKey/key-contacts — the key contact roles one person holds,
+   * for the drawer's Key Contacts tab. A person key is not a key-contact key, so identity is assembled
+   * here: the roster's username for that key, which is the stronger match, plus the same company-address
+   * lookup the header uses. Both are resolved server-side — a username passed in by the client would
+   * travel in the URL, which the request logger records.
    */
   public async getPersonKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -213,10 +213,12 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, operation);
       this.assertPersonKey(personKey, operation);
-      const username = this.parseOptionalUsername(req, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
 
-      const identity = await this.service.getCompanyEmails(req, orgUid, personKey);
+      const [identity, username] = await Promise.all([
+        this.service.getCompanyEmails(req, orgUid, personKey),
+        this.service.resolveUsernameByPersonKey(req, orgUid, personKey),
+      ]);
       const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
         username,
         emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
@@ -512,16 +514,6 @@ export class OrgLensPeopleController {
     if (!username || !isFilterSafeUsername(username)) {
       throw ServiceValidationError.forField('username', 'username path parameter is required and must be a valid username', { operation });
     }
-  }
-
-  /** The optional `?username=` identity hint: absent is fine, present must clear the same allowlist as the path param. */
-  private parseOptionalUsername(req: Request, operation: string): string | null {
-    const username = getStringQueryParam(req, 'username');
-    if (!username) {
-      return null;
-    }
-    this.assertUsername(username, operation);
-    return username;
   }
 
   /** Validate the seat id before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). Mirrors OrgLensBoardCommitteeController.assertSeatId. */

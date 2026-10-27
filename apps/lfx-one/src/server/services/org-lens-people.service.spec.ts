@@ -491,6 +491,52 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 });
 
+describe('OrgLensPeopleService person-key username resolution (#4402)', () => {
+  // The Key Contacts tab matches on the LF username when there is one, and the drawer only ever holds a
+  // person key — resolving it here keeps the username out of the request URL, and so out of the logs.
+  it("returns the roster row's username, normalized", async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' MixedUser ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBe('mixeduser');
+  });
+
+  it('returns null for a person key the roster gives no username for', async () => {
+    addRosterRow(ACCOUNT, 'person-one', '');
+    addRosterRow(ACCOUNT, 'person-two', '   ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-two')).toBeNull();
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'nobody')).toBeNull();
+  });
+
+  // Fails closed rather than picking one: a key whose rows disagree is not an identity.
+  it('returns null when a person key carries more than one username', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'first-name');
+    addRosterRow(ACCOUNT, 'person-one', 'second-name');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+  });
+
+  it('treats rows differing only by case or padding as one username', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'MixedUser');
+    addRosterRow(ACCOUNT, 'person-one', ' mixeduser ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBe('mixeduser');
+  });
+
+  it("never reads another account's roster for the same key", async () => {
+    addRosterRow('other-account', 'person-one', 'elsewhere');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+  });
+
+  it('resolves a live-only key through the live directory instead of the warehouse', async () => {
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, LIVE_PERSON)).toBe('mixeduser');
+    const rosterReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_ALL/.test(query));
+    expect(rosterReads).toEqual([]);
+  });
+});
+
 describe('OrgLensPeopleService roster wire shape (#2179)', () => {
   it('strips merge-only fields from the wire roster while the internal roster retains them', async () => {
     execute

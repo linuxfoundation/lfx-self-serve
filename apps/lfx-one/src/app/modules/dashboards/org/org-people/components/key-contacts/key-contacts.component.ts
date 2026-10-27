@@ -16,7 +16,7 @@ import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
-import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
+import { agreedUsername, avatarInitials, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -46,7 +46,6 @@ import { TooltipModule } from 'primeng/tooltip';
 import { EditKeyContactModalComponent } from '../../../org-membership-detail/components/edit-key-contact-modal.component';
 import { KeyContactsService } from '../../services/key-contacts.service';
 import { ReassignKeyContactRolesModalComponent } from './components/reassign-key-contact-roles-modal.component';
-import { rolePillClass } from './helpers/key-contacts.helper';
 
 /** Org Lens — People → Key Contacts tab; LFXV2-2067 adds the per-role and bulk-reassign edit affordances. */
 @Component({
@@ -169,17 +168,18 @@ export class KeyContactsComponent {
   // Key Contacts has no personKey — group.email is the grouping key so it's always present.
   protected onPersonClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
     event.stopPropagation();
+    // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
+    const username = agreedUsername(group.assignments.map((a) => a.username));
     this.drawer.open({
       name: group.displayName,
       title: group.title,
       initials: group.initials,
       avatarUrl: group.avatarUrl,
-      // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
-      username: agreedUsername(group.assignments.map((a) => a.username)),
+      username,
       // This tab already holds the person's roles, so the drawer renders them straight away instead of
       // re-deriving them from an identity lookup — and opens on the one tab guaranteed to have content,
       // since a key contact often has no roster person behind them for the activity tabs.
-      keyContactAssignments: group.assignments,
+      keyContactAssignments: this.drawerAssignments(group, username),
       defaultTab: 'key-contacts',
     });
   }
@@ -267,7 +267,7 @@ export class KeyContactsComponent {
         contactUid: a.contactUid,
         contactType,
         role: a.role,
-        pillClass: rolePillClass(a.role),
+        pillClass: orgKeyContactRolePillClass(a.role),
         foundationSlug: a.foundationSlug,
         foundationName: a.foundationName ?? a.foundationSlug,
       });
@@ -460,7 +460,7 @@ export class KeyContactsComponent {
       });
       const sortedAssignments: OrgKeyContactAssignmentVm[] = sortedRaw.map((a, idx) => ({
         ...a,
-        pillClass: rolePillClass(a.role),
+        pillClass: orgKeyContactRolePillClass(a.role),
         showFoundationLabel: idx === 0 || sortedRaw[idx - 1].foundationSlug !== a.foundationSlug,
         foundationLabel: a.foundationName ?? a.foundationSlug,
       }));
@@ -473,7 +473,7 @@ export class KeyContactsComponent {
         foundationCount: foundationSlugs.size,
         assignments,
         avatarUrl: first.avatarUrl ?? null,
-        rolePills: roles.map((role) => ({ role, pillClass: rolePillClass(role) })),
+        rolePills: roles.map((role) => ({ role, pillClass: orgKeyContactRolePillClass(role) })),
         sortedAssignments,
       };
     });
@@ -538,6 +538,21 @@ export class KeyContactsComponent {
       roles: active === 'roles' ? direction : 'none',
       foundations: active === 'foundations' ? direction : 'none',
     };
+  }
+
+  /**
+   * The roles to hand the drawer. Rows are grouped by address, so one person holding roles under two
+   * addresses is two rows; when the clicked row agrees on a username, gather every assignment that
+   * username holds so the drawer shows the person's roles rather than the clicked address's. Without an
+   * agreed username there is no identity to gather on, and the row's own assignments are all we can
+   * honestly attribute.
+   */
+  private drawerAssignments(group: OrgKeyContactPersonGroupVm, username: string | null): OrgKeyContactAssignment[] {
+    if (!username) {
+      return group.assignments;
+    }
+    const held = this.response().assignments.filter((a) => a.username?.trim().toLowerCase() === username);
+    return held.length ? held : group.assignments;
   }
 
   private initResponse(): Signal<OrgKeyContactsResponse> {

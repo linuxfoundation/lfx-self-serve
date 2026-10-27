@@ -114,10 +114,8 @@ export class PersonDetailDrawerService {
         if (!path || !request.keyContactsRequested || request.context?.keyContactAssignments) {
           return of({ request, ...NO_KEY_CONTACTS });
         }
-        // The username is the stronger match when the opener carries one alongside a person key.
-        const username = request.context?.personKey && request.context.username ? request.context.username : null;
-        const query = username ? `?username=${encodeURIComponent(username)}` : '';
-        return this.http.get<OrgPersonKeyContactsResponse>(`${path}/key-contacts${query}`).pipe(
+        // The person-key route resolves the roster username itself; nothing identity-bearing goes in the URL.
+        return this.http.get<OrgPersonKeyContactsResponse>(`${path}/key-contacts`).pipe(
           // A missing status is a failure, never a verified empty — same rule as the address read.
           map((response) => ({ request, ...response, status: response.status ?? 'failed', error: false })),
           // A failed roles read is its own state; it never turns into a detail error.

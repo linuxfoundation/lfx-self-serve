@@ -452,4 +452,41 @@ test.describe('Org People → Key Contacts — person-detail drawer Key Contacts
 
     expect(roleCalls).toBe(0);
   });
+
+  // Rows are grouped by address, so one person holding roles under two addresses is two rows. The drawer
+  // is about the person, so it shows every role their username holds, whichever row was clicked.
+  test('gathers every role an agreed username holds, across both of their address rows', async ({ page }) => {
+    const SECOND_EMAIL = 'ada.tester+ops@example.com';
+    const USERNAME = 'atester';
+    const withUsername = (assignment: Record<string, unknown>) => ({ ...assignment, username: USERNAME });
+    await stubAccountContext(page);
+    await stubKeyContactsList(page, {
+      ...MOCK_KEY_CONTACTS_RESPONSE,
+      assignments: [
+        ...MOCK_KEY_CONTACTS_RESPONSE.assignments.map(withUsername),
+        withUsername({
+          contactUid: 'kc-pr-ebpf',
+          membershipUid: 'msp-ebpf',
+          email: SECOND_EMAIL,
+          firstName: 'Ada',
+          lastName: 'Tester',
+          displayName: 'Ada Tester',
+          title: 'Director, Open Source',
+          role: 'PR Contact',
+          foundationSlug: 'ebpf',
+          foundationName: 'eBPF Foundation',
+        }),
+      ],
+    });
+    await stubEmployees(page);
+
+    await gotoKeyContactsTab(page);
+    // Click the row for the FIRST address; the fourth role sits on the second one.
+    await page.getByTestId(`org-people-key-contacts-name-${MOCK_PERSON_EMAIL}`).click();
+
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const list = page.getByTestId('person-detail-drawer-key-contacts-list');
+    await expect(list.locator('li')).toHaveCount(4);
+    await expect(list).toContainText('PR Contact');
+  });
 });

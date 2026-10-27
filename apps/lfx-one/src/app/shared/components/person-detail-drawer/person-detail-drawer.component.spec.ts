@@ -322,11 +322,12 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(requested()).toContain(`${BY_USERNAME}/key-contacts`);
   });
 
-  // The person key identifies by address alone; a username the opener holds is the stronger key.
-  it('passes an opener-supplied username alongside a person key', async () => {
+  // The server resolves the roster username for a person key, so no identity rides in the URL.
+  it('never puts a username in the roles request for a person key', async () => {
     drawer.open({ name: 'First person', personKey: 'first-person', username: 'first-person', defaultTab: 'key-contacts' });
     await render();
-    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts?username=first-person`);
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+    expect(requested().some((url) => url.includes('username='))).toBe(false);
   });
 
   it('renders roles supplied by the opener without requesting them', async () => {
