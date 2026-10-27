@@ -230,26 +230,70 @@ describe('OrgLensEventsService company-email scoping', () => {
   /**
    * SQLite accepts a correlated `EXISTS` under `OR`; Snowflake does not —
    * https://docs.snowflake.com/en/sql-reference/operators-subquery: "Correlated EXISTS subqueries
-   * cannot appear as an argument to an OR operator." Every behavioural test above therefore passed
-   * against a build that could not compile on Snowflake at all, where both paths catch and degrade
-   * to empty results: a silently blank page on each cache miss, not an error. This asserts the
-   * dialect rule directly, since no fixture can.
+   * cannot appear as an argument to an OR operator." Every behavioural test above passed against a
+   * build that could not compile on Snowflake at all, where both paths catch and degrade to empty
+   * results: a silently blank page on each cache miss, not an error. This asserts the dialect rule
+   * directly, since no fixture can.
+   *
+   * Both arms tolerate the operand being parenthesised (`OR (EXISTS (…))`), which is how the same
+   * mistake is most naturally rewritten. The left-arm pattern is bounded rather than exact; it can
+   * in principle flag an unrelated `OR` that trails a subquery closely enough. That direction is
+   * the right one to err in — a false positive is a failing test somebody reads, a false negative
+   * is the blank page again.
    */
+  function findsSubqueryUnderOr(sql: string): boolean {
+    const normalized = sql.replace(/\s+/g, ' ');
+    return (
+      // `EXISTS` is prefix, so it sits flush against the OR (modulo parens and NOT).
+      /\bOR\s*\(?\s*(NOT\s+)?EXISTS\s*\(\s*SELECT\b/i.test(normalized) ||
+      // `IN` / `ANY` / `ALL` are infix: an operand stands between the OR and the keyword. Requiring
+      // SELECT after the paren is what keeps a legal value list (`x IN (1, 2)`) from being flagged.
+      /\bOR\s*\(?\s*[^()]{0,80}?\b(NOT\s+)?(IN|ANY|ALL)\s*\(\s*SELECT\b/i.test(normalized) ||
+      // The same two shapes with the subquery as the LEFT operand.
+      /\b(EXISTS|IN|ANY|ALL)\s*\(\s*SELECT\b[\s\S]{0,400}?\)\s*\)?\s*OR\b/i.test(normalized)
+    );
+  }
+
+  it('detects a subquery on either side of an OR, however it is spelled', () => {
+    // The guard below is only as good as this matcher, so the matcher is itself pinned. The
+    // parenthesised spellings are the ones the first version of this test missed.
+    for (const bad of [
+      'WHERE a OR EXISTS (SELECT 1 FROM t)',
+      'WHERE a OR (EXISTS (SELECT 1 FROM t))',
+      'WHERE a OR NOT EXISTS (SELECT 1 FROM t)',
+      'WHERE a OR (NOT EXISTS (SELECT 1 FROM t))',
+      'WHERE a OR x IN (SELECT 1 FROM t)',
+      'WHERE EXISTS (SELECT 1 FROM t) OR a',
+      'WHERE (EXISTS (SELECT 1 FROM t)) OR a',
+    ]) {
+      expect(findsSubqueryUnderOr(bad), bad).toBe(true);
+    }
+
+    for (const good of [
+      'WHERE a OR b',
+      'WHERE EXISTS (SELECT 1 FROM t) AND a',
+      'WHERE ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0',
+      'WHERE (UPPER(x) LIKE UPPER(?) OR UPPER(y) LIKE UPPER(?))',
+      // A value list is not a subquery and carries no such restriction.
+      'WHERE a OR x IN (1, 2, 3)',
+    ]) {
+      expect(findsSubqueryUnderOr(good), good).toBe(false);
+    }
+  });
+
   it('builds no query that puts a subquery on either side of an OR', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
     addRegistration('ada@company.example', 'Ada Lovelace');
 
-    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    // The search filter adds the only other `OR` these queries carry, so it is exercised here too.
+    await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, searchQuery: 'kube' });
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada');
 
     const queries = execute.mock.calls.map(([query]) => query as string);
     expect(queries.length).toBeGreaterThan(0);
     for (const query of queries) {
-      // Any OR whose left or right operand opens a subquery, with EXISTS / NOT EXISTS / IN / ANY / ALL
-      // between them — all of which carry the same Snowflake restriction.
-      expect(query).not.toMatch(/\bOR\s+(NOT\s+)?(EXISTS|IN|ANY|ALL)\s*\(/i);
-      expect(query).not.toMatch(/\)\s*(EXISTS|IN|ANY|ALL)?\s*OR\s*\(?\s*SELECT\b/i);
+      expect(findsSubqueryUnderOr(query), query).toBe(false);
     }
   });
 
