@@ -608,6 +608,50 @@ describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
     expect(fixture.componentInstance.form.disabled).toBe(true);
   });
 
+  it('clears retained generic answers when reopening the same drawer on a recorded abstention', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const getMyVoteBallot = vi
+      .fn()
+      .mockReturnValueOnce(of(BALLOT))
+      .mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [], vote_creation_time: '2026-10-27T09:00:00Z' }));
+    await openChanging(CHANGE_VOTE, getMyVoteBallot, { submitMyResponse });
+    const component = fixture.componentInstance;
+    component.form.patchValue({ q1: 'c1', q2: ['m2'] });
+
+    component.visible.set(false);
+    await fixture.whenStable();
+    component.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getMyVoteBallot).toHaveBeenCalledTimes(2);
+    expect(component.abstainControl.value).toBe(true);
+    expect(component.form.get('q1')?.value).toBeNull();
+    expect(component.form.get('q2')?.value).toEqual([]);
+
+    component.abstainControl.setValue(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.form.invalid).toBe(true);
+    expect(submitButton()?.disabled).toBe(true);
+    submitButton()?.click();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+
+  it('keeps ongoing generic edits when the same ballot prefill is applied again', async () => {
+    await openChanging(CHANGE_VOTE, vi.fn().mockReturnValue(of(BALLOT)));
+    const component = fixture.componentInstance;
+    component.form.patchValue({ q1: 'c1', q2: ['m2'] });
+    component.commentForm.patchValue({ p1: 'An unsent comment edit' });
+
+    component['applyBallotPrefill']();
+
+    expect(component.form.get('q1')?.value).toBe('c1');
+    expect(component.form.get('q2')?.value).toEqual(['m2']);
+    expect(component.commentForm.get('p1')?.value).toBe('An unsent comment edit');
+  });
+
   it('keeps submit disabled while the current ballot loads', async () => {
     const pending = new Subject<MyVoteBallot | null>();
     await openChanging(CHANGE_VOTE, vi.fn().mockReturnValue(pending.asObservable()));

@@ -518,11 +518,10 @@ export class VoteCastDrawerComponent {
     this.appliedPrefillKey = key;
 
     const prefill = mapMyBallotToCastForm(vote, ballot);
-    // An abstention can carry no answers. Never retain or seed preferences it did not record.
-    if (this.isRankedPoll()) {
-      for (const question of vote.poll_questions) {
-        this.form.get(question.question_id)?.setValue([], { emitEvent: false });
-      }
+    // An abstention can carry no answers. Never retain choices from an earlier ballot or draft.
+    for (const question of vote.poll_questions) {
+      const emptyValue = this.isRankedPoll() || question.type === 'multiple_choice' ? [] : null;
+      this.form.get(question.question_id)?.setValue(emptyValue, { emitEvent: false });
     }
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });

@@ -1081,6 +1081,14 @@ export class VoteService {
       'GET'
     );
 
+    if (!detail) {
+      throw new MicroserviceError('Vote ballot response body was empty', 502, 'VOTE_BALLOT_EMPTY', {
+        operation: 'get_my_vote_ballot',
+        service: 'vote_service',
+        path: `/vote_responses/${encodeURIComponent(row.uid)}`,
+      });
+    }
+
     if (detail?.vote_uid && detail.vote_uid !== voteUid) {
       logger.warning(req, 'get_my_vote_ballot', 'Vote response belongs to a different vote, returning no ballot', {
         vote_uid: voteUid,

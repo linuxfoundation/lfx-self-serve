@@ -2292,6 +2292,16 @@ describe('VoteService', () => {
       });
     });
 
+    it.each([null, undefined])('rejects an empty upstream ballot body (%s) instead of fabricating a blank ballot', async (body) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(body);
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'VOTE_BALLOT_EMPTY',
+      });
+    });
+
     it('returns null and warns when upstream returns a response for a different vote', async () => {
       vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
       proxyRequest.mockResolvedValue({ ...detail, vote_uid: 'v0000000-0000-0000-0000-00000000d499' });
