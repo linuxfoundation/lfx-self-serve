@@ -3,8 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { computed, DestroyRef, effect, inject, Injectable, PLATFORM_ID, Signal, signal, untracked, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import {
   ACCOUNT_COOKIE_KEY,
@@ -13,6 +13,8 @@ import {
   ORG_LENS_ROLLUP_ENABLED_FLAG,
   ORG_NOT_FOUND_PATH,
   ORG_ROLLUP_SEGMENT,
+  ROLLUP_ACCOUNT_NAME,
+  ROLLUP_MIN_ORGANIZATIONS,
 } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
@@ -30,12 +32,6 @@ const PLACEHOLDER_ACCOUNT: Account = {
   accountName: '',
   membershipTier: '',
 };
-
-/** Display name of the All Organizations roll-up, shown wherever a concrete organization's name would be. */
-export const ROLLUP_ACCOUNT_NAME = 'All Organizations';
-
-/** Fewest organizations a roll-up is worth offering over: with one, it is the organization. */
-export const ROLLUP_MIN_ORGANIZATIONS = 2;
 
 /**
  * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
@@ -224,6 +220,21 @@ export class AccountContextService {
    */
   private readonly rollUpFlagResolved: Signal<boolean> = computed(() => this.featureFlagService.providerReady() || this.rollUpFlagWaitElapsed());
 
+  /**
+   * True when the roll-up is the selection and has stopped being available or right for this
+   * caller — the one condition that demotes.
+   *
+   * `isRollUp()` is read first and short-circuits: there is no eligibility question while a concrete
+   * organization is selected, and asking anyway would pull the flag provider and the grant sets into
+   * every consumer that merely holds this service.
+   *
+   * `demotionUndecidable()` is part of the same question, so admission and reconciliation cannot
+   * answer it differently — the defect of #4415 review 12.
+   */
+  private readonly rollUpShouldDemote: Signal<boolean> = computed(
+    () => this.isRollUp() && !this.rollUpEligibilityPending() && !this.canSelectRollUp() && !this.demotionUndecidable()
+  );
+
   /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
   public readonly canSelectRollUp: Signal<boolean> = computed(
     () => this.rollUpFlagResolved() && this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS
@@ -354,26 +365,15 @@ export class AccountContextService {
     // a lower bound until then, and demoting on it would drop a genuine conglomerate admin into one
     // company. Nothing else re-runs afterwards: `applyRollUpSelection` pins the selection, so every
     // later `initializeUserOrganizations` returns through its `isAddressedSelection()` branch, and
-    // the path guard does not re-run on a page it already activated. Without this effect a caller
-    // whose access has since shrunk to one organization would stay in roll-up mode for the session.
-    effect(() => {
-      // `isRollUp()` first, and it reads nothing but the selection. There is no eligibility question
-      // to answer while a concrete organization is selected, and asking anyway would pull the flag
-      // provider and the grant sets into every consumer that merely holds this service.
-      if (!this.isRollUp()) {
-        return;
-      }
-      const pending = this.rollUpEligibilityPending();
-      const eligible = this.canSelectRollUp();
-      // Read in tracked scope so the effect re-runs when the grants finally answer.
-      const undecidable = this.demotionUndecidable();
-      untracked(() => {
-        if (pending || eligible || undecidable) {
-          return;
-        }
-        this.demoteFromRollUp();
-      });
-    });
+    // the path guard does not re-run on a page it already activated. Without this a caller whose
+    // access has since shrunk to one organization would stay in roll-up mode for the session.
+    //
+    // `toObservable` rather than `effect()`: this writes state, which the frontend checklist
+    // reserves effects out of (§5, "No effect()"), and a lifecycle-managed subscription is the
+    // pattern `OrgNavigationService.whenGrantsSettled` already uses for a deferred decision.
+    toObservable(this.rollUpShouldDemote)
+      .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.demoteFromRollUp());
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
