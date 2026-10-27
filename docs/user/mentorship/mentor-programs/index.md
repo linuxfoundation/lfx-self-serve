@@ -34,7 +34,7 @@ A program you have already requested, already mentor, or were declined for is no
 
 ## Withdraw a request
 
-In the same section, the table lists your programs with their status. A request still pending shows a **Withdraw** action on its row — this is the only way to undo a request, including one sent by mistake. Approved and declined rows have none.
+In the same section, the table lists your programs with their status. A request still pending shows a **Withdraw** action on its row — this is the only way to undo a request, including one sent by mistake. Approved and declined rows have none. To leave a program you already mentor, ask one of its Program Admins to remove you.
 
 ## Request status
 

@@ -246,6 +246,39 @@ export class OrgLensPeopleService {
     return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
   }
 
+  /**
+   * The LF username a person key carries, for callers that need the stronger identity key but only hold a
+   * key — which is every person-key drawer opener. Resolved here rather than taken from the client so the
+   * username never travels in a URL, where the request logger would record it (`reqSerializer` logs the
+   * path, and `redactLoggedUrl` redacts credentials, not identities).
+   */
+  public async resolveUsernameByPersonKey(req: Request, accountId: string, personKey: string): Promise<string | null> {
+    if (personKey.startsWith('live-')) {
+      return this.resolveLiveOnlyUsername(req, accountId, personKey);
+    }
+    const { username } = await withOrgCache(
+      accountId,
+      `people-detail:${personKey}:username`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchUsernameByPersonKey(accountId, personKey),
+      isUsernameLookup
+    );
+    return username;
+  }
+
+  /** The username on this account's roster row for a person key; null when the row carries none. */
+  private async fetchUsernameByPersonKey(accountId: string, personKey: string): Promise<{ username: string | null }> {
+    const query = `
+      SELECT MAX(LOWER(TRIM(LF_USERNAME))) AS LF_USERNAME
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND LF_USERNAME IS NOT NULL AND TRIM(LF_USERNAME) <> ''
+      GROUP BY ACCOUNT_ID, PERSON_KEY
+      HAVING COUNT(DISTINCT LOWER(TRIM(LF_USERNAME))) = 1
+    `;
+    const result = await this.snowflakeService.execute<{ LF_USERNAME: string | null }>(query, [accountId, personKey]);
+    return { username: result.rows[0]?.LF_USERNAME ?? null };
+  }
+
   /** The one roster person key carrying a normalized username at this account, cached per username digest; null when none or several do. */
   private async resolvePersonKeyByUsername(accountId: string, normalizedUsername: string): Promise<string | null> {
     const { personKey } = await withOrgCache(
@@ -753,6 +786,12 @@ function isCacheableCompanyEmails(value: OrgPersonCompanyEmailsResponse): boolea
 function isPersonKeyLookup(value: unknown): boolean {
   const lookup = value as { personKey?: unknown } | null;
   return !!lookup && (lookup.personKey === null || typeof lookup.personKey === 'string');
+}
+
+/** Cached person-key → username lookups: a username, or a stable `null` when the roster row carries none. */
+function isUsernameLookup(value: unknown): boolean {
+  const lookup = value as { username?: unknown } | null;
+  return !!lookup && (lookup.username === null || typeof lookup.username === 'string');
 }
 
 /** Hashed so a raw username is never a `:`-delimited cache-key segment. */

@@ -36,6 +36,7 @@ export * from './compact-cache.utils';
 export * from './weekly-brief.utils';
 export * from './number.utils';
 export * from './object.utils';
+export * from './org-key-contact.utils';
 export * from './platform.utils';
 export * from './project.utils';
 export * from './project-health.utils';

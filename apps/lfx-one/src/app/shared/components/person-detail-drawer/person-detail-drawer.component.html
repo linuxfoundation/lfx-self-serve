@@ -180,6 +180,35 @@
             }
           </ul>
         }
+      } @else if (drawer.activeTab() === 'key-contacts') {
+        <!-- Roles supplied by the opener (the People Key Contacts tab groups them per person) render without
+             waiting on the roles fetch; only its own loading/error show, never the activity fetch's. -->
+        @if (drawer.keyContactsLoading()) {
+          <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-key-contacts-loading">
+            <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+          </div>
+        } @else if (drawer.keyContactsError()) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-error">
+            Couldn't load this person's key contact roles. Please try again.
+          </p>
+        } @else if (!drawer.keyContactsIdentified()) {
+          <!-- Never say "no roles" about someone the lookup could not identify in the first place. -->
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-unavailable">
+            Key contact roles aren't available for this person.
+          </p>
+        } @else if (keyContactRoles().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-empty">No key contact roles recorded.</p>
+        } @else {
+          <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200" data-testid="person-detail-drawer-key-contacts-list">
+            @for (row of keyContactRoles(); track row.contactUid) {
+              <li class="flex items-center justify-between gap-3 px-4 py-3">
+                <span class="whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium" [class]="row.pillClass">{{ row.role }}</span>
+                <span class="min-w-0 truncate text-xs text-gray-500" [title]="row.foundationLabel">{{ row.foundationLabel }}</span>
+              </li>
+            }
+          </ul>
+        }
       } @else if (drawer.loading()) {
         <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-loading">
           <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>

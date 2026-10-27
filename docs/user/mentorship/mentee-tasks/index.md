@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The **My Tasks** tab holds everything a program has assigned you — the prerequisites attached to an application, and the term's work once you are accepted.
 
+![My Tasks, listing prerequisite tasks with their status and upload buttons](/images/docs/mentorship/mentee-tasks.png)
+
 ## Before you begin
 
 - Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee → My Tasks**.
@@ -74,13 +76,13 @@ Contact your mentor or the Program Admin if you need a task reopened.
 
 Each of these appears as a short message on screen, and your task list reloads so it matches what the program sees.
 
-| What you see                                                                                                                                 | What it means                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| "This task no longer exists. Your tasks have been refreshed."                                                                                | A mentor or Program Admin removed the task.                |
-| "This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed."                                      | The move was refused — most often a missing required file. |
-| "This task has already moved on, so your change was not applied. Your tasks have been refreshed."                                            | Someone else changed the task first.                       |
-| "You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed." | A permissions check failed; try again shortly.             |
-| "The due date for this task has passed, so it can no longer be submitted or reopened."                                                       | You tried to submit or reopen a task after its due date.   |
+| What you see                                                                                                                                 | What it means                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| "This task no longer exists. Your tasks have been refreshed."                                                                                | The Program Admin removed this prerequisite from the program. |
+| "This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed."                                      | The move was refused — most often a missing required file.    |
+| "This task has already moved on, so your change was not applied. Your tasks have been refreshed."                                            | Someone else changed the task first.                          |
+| "You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed." | A permissions check failed; try again shortly.                |
+| "The due date for this task has passed, so it can no longer be submitted or reopened."                                                       | You tried to submit or reopen a task after its due date.      |
 
 ## Related
 

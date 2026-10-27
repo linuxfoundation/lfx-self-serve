@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The **Overview** tab of **My Mentorship** is where every application you have made is listed, along with its status and your progress through its tasks.
 
+![The mentee overview, with an application under review and its prerequisite tasks](/images/docs/mentorship/mentee-overview.png)
+
 ## Before you begin
 
 Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee → Overview**.
@@ -45,9 +47,8 @@ Applications that did not lead to a place are not shown as cards. They appear un
 | ---------------- | --------------------------------------------- |
 | **Not selected** | The program did not take you on for this term |
 | **Withdrawn**    | You pulled the application                    |
-| **On Hold**      | The program has parked the application        |
 
-**Application History** on [Mentee Profile](../mentee-profile/) is a separate, fuller list, and labels the same applications differently: **In Review**, **Accepted**, **Not Selected**, **Withdrawn**, **Graduated** and **On Hold**.
+**Application History** on [Mentee Profile](../mentee-profile/) is a separate, fuller list, and labels the same applications differently: **In Review**, **Accepted**, **Not Selected**, **Withdrawn** and **Graduated**.
 
 If you have not applied to anything yet, the tab says so and points you at **Find a Program**.
 

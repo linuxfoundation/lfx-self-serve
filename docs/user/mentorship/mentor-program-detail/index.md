@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 A program's detail page is where a mentor does their day-to-day work: reading applicants, setting and reviewing tasks, and recording notes for the other reviewers.
 
+![A mentor’s Applicants tab for a program, with status filters](/images/docs/mentorship/mentor-program-detail.png)
+
 ## Before you begin
 
 - You must be an approved mentor on the program. See [Your Mentor Programs](../mentor-programs/).
@@ -47,6 +49,8 @@ To change a task, expand the mentee's row with **View Tasks** and use **Edit Tas
 On the **Tasks** tab, each submitted task offers **Approve** or **Request Changes**. This tab is for reviewing only — you cannot create or edit a task here.
 
 Approving a task locks it for the mentee: from then on only a mentor can change it.
+
+**Request Changes** sends the task back to the mentee as **To Do**. The mentee is not emailed and sees no reason, so tell them directly what to change.
 
 ## Applicant task status
 
