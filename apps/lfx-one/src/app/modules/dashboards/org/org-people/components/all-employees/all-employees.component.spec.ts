@@ -334,4 +334,24 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
     });
   });
+  // A rolling deploy serves this bundle against pods that predate the field, and requests are not
+  // sticky (charts/lfx-self-serve/values.yaml) — so a row can arrive without keyContactRoles at all.
+  // Reading `.length` off that would take the whole table down, not just the cell, for every rollout.
+  describe('in the browser, against a server that does not send keyContactRoles yet', () => {
+    beforeEach(async () => {
+      await mount('browser');
+    });
+
+    it('still renders the roster, with the cell empty', async () => {
+      const legacy = row('p-legacy', 'Ada Lovelace');
+      delete (legacy as Partial<OrgAllEmployeeRow>).keyContactRoles;
+
+      snowflake$.next(response([legacy], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys()).toContain('org-people-all-employees-row-p-legacy');
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-legacy"]')?.textContent?.trim()).toBe('\u2014');
+    });
+  });
 });

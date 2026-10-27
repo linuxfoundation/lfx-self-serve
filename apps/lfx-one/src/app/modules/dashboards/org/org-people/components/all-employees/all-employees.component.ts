@@ -42,10 +42,11 @@ import type {
   OrgAllEmployeeDetail,
   OrgAllEmployeeRow,
   OrgAllEmployeeRowVm,
-  OrgAllEmployeesResponse,
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
+  OrgAllEmployeesResponse,
   OrgDropdownOption,
+  OrgKeyContactRolePillVm,
 } from '@lfx-one/shared/interfaces';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
@@ -273,6 +274,19 @@ export class AllEmployeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...this.response().foundations.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
   }
 
+  /**
+   * Key-contact roles as a guaranteed array.
+   *
+   * The field is required on the wire, but a rolling deploy serves this bundle against pods that
+   * predate it, and requests are not sticky (charts/lfx-self-serve/values.yaml). A row from an older
+   * pod arrives without the field, and every reader here goes straight for `.length` — so the whole
+   * All Employees table would fail to render for the length of each rollout. Normalising once, here,
+   * means the view model's own field is safe and nothing downstream has to remember this.
+   */
+  private static keyContactRolesOf(row: OrgAllEmployeeRow): string[] {
+    return (row.keyContactRoles as string[] | undefined) ?? [];
+  }
+
   private initViewRows(): OrgAllEmployeeRowVm[] {
     // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
     // on each one, so there is neither a client-side synthetic UNION nor an address join here.
@@ -286,12 +300,17 @@ export class AllEmployeesComponent {
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
       isSynthetic: !row.sources.includes('snowflake'),
+      keyContactRoles: AllEmployeesComponent.keyContactRolesOf(row),
       // Only a single role gets a pill — several collapse to a count chip, so building pills for them would be dead work.
-      keyContactRolePills:
-        row.keyContactRoles.length === 1 ? [{ role: row.keyContactRoles[0], pillClass: orgKeyContactRolePillClass(row.keyContactRoles[0]) }] : [],
-      keyContactRolesTooltip: row.keyContactRoles.length > 1 ? row.keyContactRoles.join(', ') : '',
+      keyContactRolePills: AllEmployeesComponent.keyContactRolePillsOf(row),
+      keyContactRolesTooltip: AllEmployeesComponent.keyContactRolesOf(row).length > 1 ? AllEmployeesComponent.keyContactRolesOf(row).join(', ') : '',
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
+  }
+
+  private static keyContactRolePillsOf(row: OrgAllEmployeeRow): OrgKeyContactRolePillVm[] {
+    const roles = AllEmployeesComponent.keyContactRolesOf(row);
+    return roles.length === 1 ? [{ role: roles[0], pillClass: orgKeyContactRolePillClass(roles[0]) }] : [];
   }
 
   private initFilteredRows(): OrgAllEmployeeRowVm[] {
