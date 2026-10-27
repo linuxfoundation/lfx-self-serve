@@ -8,7 +8,6 @@ import {
   MEMBER_360_COMPARISON_UNAVAILABLE,
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
-  MEMBER_360_INPUT_TIMEOUT_MESSAGE,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
@@ -62,7 +61,7 @@ export class Member360Service {
       status: result.status === 'needs_input' ? 'questions' : result.status,
       activity: result.activity,
       persistence: result.persistence,
-      failureText: result.status === 'needs_input' ? MEMBER_360_INPUT_TIMEOUT_MESSAGE : result.message,
+      failureText: result.status === 'needs_input' ? undefined : result.message,
       failureReason: result.reason,
     };
   }

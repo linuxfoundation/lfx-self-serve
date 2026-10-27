@@ -326,11 +326,11 @@ LinkedIn's immutable private start also retains validated link answers, source w
 whether profile initialization was allowed at Generate. Reconciliation initializes only the
 original creator's profile, never a visitor's; impersonation still disables initialization.
 No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
-tracked session. Member 360 maps `needs_input` to a bounded questions pause: its question text is
-never exposed and it has no answers endpoint. Unlike answerable pauses, its original writing
-deadline keeps running. Refresh/reopen rechecks it until that deadline; after expiry it becomes
-terminal failed with the server-authored message “Member 360 needs more input than this version
-can give it; run it again.” Subsequent normal reads do not query Guild for that failed record.
+tracked session. Member 360 maps `needs_input` to questions without failure text: its question text is
+never exposed and it has no answers endpoint. A Member 360 pause never expires by the clock;
+writing also stays open until Guild reports a session end. Only that session end fails the run,
+not the local writing deadline. The automatic poll window still stops checks without marking
+failure; a plain refresh/reopen read checks Guild again, so the run remains readable.
 Its ready result carries the shared exact persistence receipt as well as the existing `stored`
 flag; existing clients remain compatible.
 

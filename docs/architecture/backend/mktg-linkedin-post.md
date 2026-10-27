@@ -97,8 +97,9 @@ That hint grants neither Generate provenance nor result-poll authority. Server f
 wins over a still-writing private cache. An owner's valid capability also reconnects a
 server questions pause after reload, when private question text was not retained; the
 intake action waits for those private details rather than opening an empty form. The dedicated intake consumes the
-hint for source/setup re-entry; unsupported Member questions retain their separate
-bounded-pause policy and no intake link.
+hint for source/setup re-entry; unsupported Member questions have no intake link and never expire
+by the clock: only a Guild session end fails the run. The automatic poll window stops checks
+without marking failure; a plain refresh/reopen read checks Guild again.
 
 ### Adopting the one-off hook
 

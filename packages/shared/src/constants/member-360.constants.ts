@@ -67,8 +67,10 @@ export const MEMBER_360_CONTRACT_ID = 'member-360-output/v1';
 export const MEMBER_360_FINALIZE_TOOL = 'finalize_member_360';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';
 export const MEMBER_360_API = '/api/mktg-agents/member-360';
-/** This intake has no answer endpoint; its human pause cannot keep a run alive indefinitely. */
-export const MEMBER_360_INPUT_TIMEOUT_MESSAGE = 'Member 360 needs more input than this version can give it; run it again.';
+/** A Member 360 pause never expires by the clock; only a Guild session end fails it. */
+export const MEMBER_360_PAUSED_MESSAGE = 'Member 360 is waiting for input; the run stays open.';
+/** @deprecated A pause is not a timeout or failure. Kept for existing consumers; use MEMBER_360_PAUSED_MESSAGE. */
+export const MEMBER_360_INPUT_TIMEOUT_MESSAGE = MEMBER_360_PAUSED_MESSAGE;
 export const MEMBER_360_MAX_BYTES = 5 * 1024 * 1024;
 export const MEMBER_360_MAX_TRACKERS = 10;
 export const MEMBER_360_MAX_TRACKER_ROWS = 2000;
