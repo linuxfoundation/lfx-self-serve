@@ -551,7 +551,10 @@ export class KeyContactsComponent {
     if (!username) {
       return group.assignments;
     }
-    const held = this.response().assignments.filter((a) => a.username?.trim().toLowerCase() === username);
+    // `agreedUsername` returns the source's spelling, so normalize both sides — comparing a stored
+    // `MixedUser` against it would match nothing and silently fall back to the clicked row.
+    const key = username.trim().toLowerCase();
+    const held = this.response().assignments.filter((a) => a.username?.trim().toLowerCase() === key);
     return held.length ? held : group.assignments;
   }
 

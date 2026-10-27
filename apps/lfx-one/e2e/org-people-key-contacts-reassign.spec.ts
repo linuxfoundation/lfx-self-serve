@@ -457,7 +457,9 @@ test.describe('Org People → Key Contacts — person-detail drawer Key Contacts
   // is about the person, so it shows every role their username holds, whichever row was clicked.
   test('gathers every role an agreed username holds, across both of their address rows', async ({ page }) => {
     const SECOND_EMAIL = 'ada.tester+ops@example.com';
-    const USERNAME = 'atester';
+    // Deliberately mixed case: `agreedUsername` hands back the source spelling, so an all-lowercase
+    // fixture would pass even when the gather compares against a lowercased key.
+    const USERNAME = 'ATester';
     const withUsername = (assignment: Record<string, unknown>) => ({ ...assignment, username: USERNAME });
     await stubAccountContext(page);
     await stubKeyContactsList(page, {
