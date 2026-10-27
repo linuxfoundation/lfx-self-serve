@@ -7,11 +7,11 @@ import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 
 test.describe('AEO/GEO audit content', () => {
   test('empty intake history, normalized domain, and blank or 2–5 key pages', async ({ page }, testInfo) => {
-    const app = await setupAudit(page);
+    const app = await setupAudit(page); // Includes suppressCookieBanner(page) and synthetic API/writer stubs.
     await app.go('/aeo-geo');
     await expect(page.getByTestId('mktg-aeo-run-empty')).toBeVisible();
     await expect(page.getByText('Audited as project.example;', { exact: false })).toBeVisible();
-    const submit = page.getByTestId('mktg-aeo-run-submit');
+    const submit = page.getByTestId('mktg-aeo-run-submit').getByRole('button', { name: 'Start the audit', exact: true });
     await expect(submit).toBeEnabled();
     await expect(page.getByTestId('mktg-aeo-run-page').getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Synthetic Audit Project kit');
     await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveText('Website & web');
@@ -25,7 +25,9 @@ test.describe('AEO/GEO audit content', () => {
       await expect(page.getByTestId('mktg-aeo-run-form')).toBeVisible();
     }
     await page.getByLabel('Key page 1', { exact: true }).fill('https://project.example/about');
-    await expect(submit).toBeDisabled();
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    expect(app.sessions.size).toBe(0);
     await expect(page.getByTestId('mktg-aeo-run-pages-error')).toContainText('Add at least one more');
     await page.getByLabel('Key page 2', { exact: true }).fill('https://project.example/about');
     await expect(page.getByTestId('mktg-aeo-run-pages-error')).toContainText('repeats');
@@ -185,7 +187,7 @@ test.describe('AEO/GEO audit content', () => {
     await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('document-refusal.png'), fullPage: true });
     await page.getByTestId('mktg-document-view-run-again').click();
-    await expect(page.getByTestId('mktg-aeo-run-submit')).toBeEnabled();
+    await expect(page.getByTestId('mktg-aeo-run-submit').getByRole('button')).toBeEnabled();
     await expect(page).toHaveURL(/\/aeo-geo\?project=/);
     expect(app.sessions.size).toBe(1);
     await page.screenshot({ path: testInfo.outputPath('fresh-audit-after-refusal.png'), fullPage: true });

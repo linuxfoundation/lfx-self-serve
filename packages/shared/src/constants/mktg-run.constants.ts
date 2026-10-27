@@ -708,7 +708,7 @@ export const AEO_GEO_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Run',
   documentName: 'AEO/GEO report',
   intro:
-    'Scores how a website shows up in AI search and answer engines, with prioritized recommendations. One input: the site. Each run is its own report; nothing is revised, run again instead.',
+    'Scores how a website shows up in AI search and answer engines, with prioritised recommendations. One input: the site. Each audit is its own report; to update it, audit again.',
   batchPreamble: [],
   fields: [
     { key: 'domain', question: 'The website to audit', kind: 'text' },
