@@ -138,7 +138,8 @@ export class EventAttendeesComponent {
 
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
 
-    // A range change can drop the picked event from the dropdown; once loaded, clear it so the table does not go empty.
+    // A range change can drop the picked event from the dropdown; once loaded, clear the control too so the dropdown
+    // shows All Events (the detail filter already ignores an event the options no longer offer).
     combineLatest([toObservable(this.eventOptions), toObservable(this.isLoading)])
       .pipe(takeUntilDestroyed())
       .subscribe(([options, loading]) => {
@@ -212,7 +213,10 @@ export class EventAttendeesComponent {
     const values = this.filterValues();
     const q = (values.search ?? '').trim().toLowerCase();
     const foundationId = values.foundation ?? '';
-    const eventId = values.event ?? '';
+    // An event the range no longer offers filters nothing, from the same snapshot as the options: the control's own clear
+    // lands a debounce later, and filtering on the dropped id until then would empty the table.
+    const picked = values.event ?? '';
+    const eventId = picked && this.eventOptions().some((option) => option.value === picked) ? picked : '';
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings (R1.1 — no email, no event-name).
     const personIndex = new Map<string, { name: string; title: string | null }>();

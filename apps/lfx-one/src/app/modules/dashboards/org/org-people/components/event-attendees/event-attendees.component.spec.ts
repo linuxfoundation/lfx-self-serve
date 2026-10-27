@@ -106,4 +106,22 @@ describe('EventAttendeesComponent — event dropdown follows the range (lfx-self
 
     expect(form().controls['event'].value).toBe('');
   });
+
+  // The control's clear goes through the 150ms filter debounce after the range has applied; the table must not filter on
+  // the dropped event in between (it would render the empty state for one debounce cycle).
+  it('never renders the table empty while a dropped event is being cleared', async () => {
+    const row = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-people-event-attendees-row-p-1"]');
+    await mount('/?tab=events&range=all');
+    form().patchValue({ event: 'old' });
+    await settle();
+    expect(row()).not.toBeNull();
+
+    form().controls['timeRange'].setValue('30d');
+    for (let elapsed = 0; elapsed < 400; elapsed += 25) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      fixture.detectChanges();
+      expect(row()).not.toBeNull();
+    }
+    expect(form().controls['event'].value).toBe('');
+  });
 });
