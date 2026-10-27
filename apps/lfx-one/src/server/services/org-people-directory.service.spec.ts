@@ -8,6 +8,7 @@ import type {
   OrgAllEmployeeRowInternal,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
+  OrgCommitFilters,
   OrgPeopleTimeRange,
   KeyContactEmployee,
 } from '@lfx-one/shared/interfaces';
@@ -99,13 +100,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   VALKEY_CACHE: {
-    ORG_PEOPLE_DIRECTORY_NAMESPACES: {
-      roster: 'org-people-dir:v4:roster',
-      '30d': 'org-people-dir:v4:30d',
-      '90d': 'org-people-dir:v4:90d',
-      '12mo': 'org-people-dir:v4:12mo',
-      all: 'org-people-dir:v4:all',
-    },
+    ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
@@ -149,6 +144,7 @@ import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directo
 
 const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const req = {} as never;
+const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
 
 function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmployeeRowInternal {
   return {
@@ -213,8 +209,8 @@ function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
   };
 }
 
-async function run(range: OrgPeopleTimeRange | null = '12mo'): Promise<OrgAllEmployeesResponse> {
-  return new OrgPeopleDirectoryService().getLive(req, ACCOUNT, range);
+async function run(range: OrgPeopleTimeRange | null = '12mo', filters: OrgCommitFilters = FILTERS): Promise<OrgAllEmployeesResponse> {
+  return new OrgPeopleDirectoryService().getLive(req, ACCOUNT, range, filters);
 }
 
 beforeEach(() => {
@@ -945,7 +941,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v4:12mo', 'tester', ACCOUNT);
+    evictPerUserOrgFetch('org-people-dir:v5:12mo:all:all:commits', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
@@ -971,10 +967,25 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await recent).rows[0].name).toBe('Last 30 Days');
     expect(allTime.rows[0].name).toBe('All Time');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, '30d'],
-      [ACCOUNT, 'all'],
+      [ACCOUNT, '30d', FILTERS],
+      [ACCOUNT, 'all', FILTERS],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v4:30d', 'org-people-dir:v4:all']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:30d:all:all:commits', 'org-people-dir:v5:all:all:all:commits']);
+  });
+
+  it('keeps each commit-filter combination apart: its own stored read and cache namespace', async () => {
+    getAllEmployeesInternal
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'LF Commits' })]))
+      .mockResolvedValueOnce(baseResponse([storedRow({ name: 'LF Code' })]));
+    const lfCode: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+
+    expect((await run('12mo', { ...FILTERS, projectScope: 'lf' })).rows[0].name).toBe('LF Commits');
+    expect((await run('12mo', lfCode)).rows[0].name).toBe('LF Code');
+    expect(getAllEmployeesInternal.mock.calls).toEqual([
+      [ACCOUNT, '12mo', { ...FILTERS, projectScope: 'lf' }],
+      [ACCOUNT, '12mo', lfCode],
+    ]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:12mo:lf:all:commits', 'org-people-dir:v5:12mo:lf:all:code']);
   });
 
   it('serves the unranged roster (no range) from its own cache namespace and stored read', async () => {
@@ -985,9 +996,9 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await run(null)).rows[0].name).toBe('Roster');
     expect((await run('12mo')).rows[0].name).toBe('Ranged');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, null],
-      [ACCOUNT, '12mo'],
+      [ACCOUNT, null, FILTERS],
+      [ACCOUNT, '12mo', FILTERS],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v4:roster', 'org-people-dir:v4:12mo']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:12mo:all:all:commits']);
   });
 });

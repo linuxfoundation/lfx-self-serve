@@ -89,17 +89,14 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // the writer's actual contract rather than a copy that could silently drift from it.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
+  // Real: the directory namespaces a reassign clears are enumerated from these option lists.
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-commit-filters.constants')),
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-people.constants')),
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
   isVotingStatus: () => true,
   VALKEY_CACHE: {
     ORG_SEATS_NAMESPACE: 'org-seats:v2',
-    ORG_PEOPLE_DIRECTORY_NAMESPACES: {
-      roster: 'org-people-dir:v4:roster',
-      '30d': 'org-people-dir:v4:30d',
-      '90d': 'org-people-dir:v4:90d',
-      '12mo': 'org-people-dir:v4:12mo',
-      all: 'org-people-dir:v4:all',
-    },
+    ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
 }));
@@ -475,10 +472,19 @@ describe('seat reassign — caller cache invalidation', () => {
 
     expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
-    // The People directory is cached per time range and for the unranged picker roster; every one shows the reassigned seat.
-    for (const scope of ['roster', '30d', '90d', '12mo', 'all']) {
-      expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v4:${scope}`, 'tester', ORG);
+    // The People directory is cached per time range and commit filters, and for the unranged picker roster; every one shows the reassigned seat.
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v5:roster', 'tester', ORG);
+    for (const range of ['30d', '90d', '12mo', 'all']) {
+      for (const projectScope of ['all', 'lf', 'non_lf']) {
+        for (const commitScope of ['all', 'merged']) {
+          for (const metric of ['commits', 'code']) {
+            expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v5:${range}:${projectScope}:${commitScope}:${metric}`, 'tester', ORG);
+          }
+        }
+      }
     }
+    // Plus the seat roster itself: nothing else is cleared.
+    expect(invalidatePerUserCache).toHaveBeenCalledTimes(1 + 1 + 4 * 3 * 2 * 2);
   });
 
   it.each(paths)('%s: an upstream failure leaves the caller’s caches alone', async (_label, reassign) => {

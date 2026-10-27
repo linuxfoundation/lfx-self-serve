@@ -28,13 +28,15 @@ export interface OrgContributorRow {
   cdpMemberId: string;
   /** Item 4 R4.2 badge — the per-person derivative of `is_declared_maintainer_for_org`. Maintainer if true, Contributor otherwise. */
   role: OrgContributorRole;
-  /** SUM of `daily_commits` over the window — main-branch merged commits only. Expected to be 0 on ~39% of rows (review/PR-only contributors). */
+  /** Authored commits over the window (distinct SHAs, any branch; merged to the main branch only under `commitScope=merged`). Zero for review/PR-only contributors. */
   commits: number;
+  /** Code-contribution activities over the window (commits, PRs, reviews, comments) — the count shown under `metric=code`. */
+  codeActivities: number;
   /** ISO date `YYYY-MM-DD`. `MAX(activity_date)` over the person's code-contribution activity in the window. */
   lastActiveTs: string | null;
   /** Distinct project count in the window. Drives the expanded sub-table header (`Projects Involved (N)`). */
   projectsCount: number;
-  /** Argmax(commits) project name — tiebreak by `last_active DESC NULLS LAST`, then `project_name ASC`. NULL only if the person has zero rows in the window. */
+  /** Argmax project by the selected metric — tiebreak by `last_active DESC NULLS LAST`, then `project_name ASC`. NULL only if the person has zero rows in the window. */
   mostActiveProjectName: string | null;
   /** Foundation name of the argmax project — drives the column's subtext. NULL when the project is outside the foundation spine. */
   mostActiveProjectFoundationName: string | null;
@@ -52,8 +54,10 @@ export interface OrgContributorProjectRow {
   foundationSlug: string | null;
   /** Per-project derivative of `is_declared_maintainer_for_project`. A person with the Maintainer badge on the parent row can (and often does) show Contributor pills on most of their project sub-rows (Item 5 Simon-Deziel pattern). */
   role: OrgContributorRole;
-  /** Per-project `SUM(daily_commits)` over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
+  /** Per-project authored commits over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
   commits: number;
+  /** Per-project code-contribution activities over the window; sums to the parent row's `codeActivities`. */
+  codeActivities: number;
   /** Per-project `MAX(activity_date)` over the window. Drives the "Last Active" column in the expanded sub-table. */
   lastActiveTs: string | null;
 }
@@ -106,7 +110,8 @@ export interface OrgContributorRowVm {
   initials: string;
   avatarColorClass: string;
   role: OrgContributorRole;
-  commits: number;
+  /** The count for the selected metric — `commits` or `codeActivities` of the wire row. */
+  count: number;
   lastActiveTs: string | null;
   /** Pre-formatted `MMM dd, yyyy` of `lastActiveTs`, or em-dash when missing. */
   lastActiveLabel: string;
@@ -121,7 +126,8 @@ export interface OrgContributorExpandedRowVm {
   projectName: string;
   foundationName: string | null;
   role: OrgContributorRole;
-  commits: number;
+  /** The count for the selected metric. */
+  count: number;
   lastActiveTs: string | null;
   /** Pre-formatted `MMM dd, yyyy` of `lastActiveTs`, or em-dash. */
   lastActiveLabel: string;

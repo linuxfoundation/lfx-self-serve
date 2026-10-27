@@ -4,10 +4,11 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getAllEmployees, getFormerEmployees, getLive, getCompanyEmails, getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
+const { getAllEmployees, getFormerEmployees, getLive, getContributors, getCompanyEmails, getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
   getAllEmployees: vi.fn(),
   getFormerEmployees: vi.fn(),
   getLive: vi.fn(),
+  getContributors: vi.fn(),
   getCompanyEmails: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -15,7 +16,10 @@ const { getAllEmployees, getFormerEmployees, getLive, getCompanyEmails, getEmplo
 
 // The utils barrel pulls Angular into this plain-Node run; the real username allowlist is what runs here.
 // vi.mock factories are hoisted above static imports, so the real module can only load via import().
-vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')) }));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+}));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
   OrgLensPeopleService: class {
@@ -27,7 +31,11 @@ vi.mock('../services/org-lens-people.service', () => ({
 }));
 vi.mock('../services/org-people-board-members.service', () => ({ OrgPeopleBoardMembersService: class {} }));
 vi.mock('../services/org-people-committee-members.service', () => ({ OrgPeopleCommitteeMembersService: class {} }));
-vi.mock('../services/org-people-contributors.service', () => ({ OrgPeopleContributorsService: class {} }));
+vi.mock('../services/org-people-contributors.service', () => ({
+  OrgPeopleContributorsService: class {
+    public getContributors = getContributors;
+  },
+}));
 vi.mock('../services/org-people-directory.service', () => ({
   OrgPeopleDirectoryService: class {
     public getLive = getLive;
@@ -55,6 +63,7 @@ function buildRosterReq(query: Record<string, string>): Request {
 }
 
 const EMPTY_ROSTER = { accountId: ORG_UID, rows: [], stats: { activeInOss: 0 }, foundations: [] };
+const DEFAULT_FILTERS = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
 
 describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)', () => {
   const controller = new OrgLensPeopleController();
@@ -71,9 +80,9 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     await controller.getAllEmployees(buildRosterReq({ live: 'true' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({}), buildRes(), vi.fn());
 
-    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null);
-    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null);
-    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo');
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null, DEFAULT_FILTERS);
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null, DEFAULT_FILTERS);
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo', DEFAULT_FILTERS);
   });
 
   it('passes a valid range through to the stored, live and former reads', async () => {
@@ -81,9 +90,9 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     await controller.getAllEmployees(buildRosterReq({ live: 'true', range: 'all' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({ range: '90d' }), buildRes(), vi.fn());
 
-    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d');
-    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all');
-    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '90d');
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS);
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all', DEFAULT_FILTERS);
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '90d', DEFAULT_FILTERS);
   });
 
   it('rejects an unknown range with a 400 before any read', async () => {
@@ -99,6 +108,60 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     expect(getAllEmployees).not.toHaveBeenCalled();
     expect(getLive).not.toHaveBeenCalled();
     expect(getFormerEmployees).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
+  const controller = new OrgLensPeopleController();
+  const picked = { projectScope: 'non_lf', commitScope: 'merged', metric: 'code' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAllEmployees.mockResolvedValue(EMPTY_ROSTER);
+    getFormerEmployees.mockResolvedValue(EMPTY_ROSTER);
+    getLive.mockResolvedValue(EMPTY_ROSTER);
+    getContributors.mockResolvedValue({ contributors: [], projects: [], foundationOptions: [], stats: { maintainers: 0 } });
+  });
+
+  it('passes the projectScope, commitScope and metric params to every People read', async () => {
+    await controller.getAllEmployees(buildRosterReq({ range: '30d', ...picked }), buildRes(), vi.fn());
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: '30d', ...picked }), buildRes(), vi.fn());
+    await controller.getFormerEmployees(buildRosterReq({ ...picked }), buildRes(), vi.fn());
+    await controller.getContributors(buildRosterReq({ timeRange: '90d', ...picked }), buildRes(), vi.fn());
+
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', picked);
+    expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', picked);
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '12mo', picked);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked);
+  });
+
+  it('defaults missing params on the Contributors read', async () => {
+    await controller.getContributors(buildRosterReq({}), buildRes(), vi.fn());
+
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '12mo', DEFAULT_FILTERS);
+  });
+
+  it.each([
+    ['projectScope', 'LF'],
+    ['projectScope', 'nonlf'],
+    ['commitScope', 'main'],
+    ['metric', 'activities'],
+  ])('rejects %s=%s with a 400 naming the field before any read', async (field, value) => {
+    for (const [read, query] of [
+      [controller.getAllEmployees, { range: '30d', [field]: value }],
+      [controller.getAllEmployees, { live: 'true', range: '30d', [field]: value }],
+      [controller.getFormerEmployees, { [field]: value }],
+      [controller.getContributors, { [field]: value }],
+    ] as const) {
+      const next = vi.fn();
+      await read.call(controller, buildRosterReq(query), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    }
+    expect(getAllEmployees).not.toHaveBeenCalled();
+    expect(getLive).not.toHaveBeenCalled();
+    expect(getFormerEmployees).not.toHaveBeenCalled();
+    expect(getContributors).not.toHaveBeenCalled();
   });
 });
 

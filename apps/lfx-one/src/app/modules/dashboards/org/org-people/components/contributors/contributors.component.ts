@@ -5,13 +5,25 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_OPTIONS,
+  ORG_COMMIT_SCOPE_OPTIONS,
+  ORG_COMMITS_DEFINITION,
   ORG_CONTRIBUTORS_INITIAL_LIMIT,
   ORG_PEOPLE_DEFAULT_TIME_RANGE,
   ORG_PEOPLE_TIME_RANGE_OPTIONS,
+  ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgCodeMetric,
+  OrgCodeMetricOption,
+  OrgCommitFilters,
+  OrgCommitScope,
+  OrgCommitScopeOption,
   OrgContributorExpandedRowVm,
   OrgContributorProjectRow,
   OrgContributorRow,
@@ -22,7 +34,10 @@ import type {
   OrgDropdownOption,
   OrgPeopleTimeRange,
   OrgPeopleTimeRangeOption,
+  OrgProjectScope,
+  OrgProjectScopeOption,
 } from '@lfx-one/shared/interfaces';
+import { TooltipModule } from 'primeng/tooltip';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
@@ -31,33 +46,44 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { avatarColorClass } from '@lfx-one/shared/utils';
+import { avatarColorClass, orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { ContributorsService } from '../../services/contributors.service';
 
-/** Contributors tab body — search + foundation + project + time-range filter trio, four stat cards (Maintainers / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
+/** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainers / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
 @Component({
   selector: 'lfx-org-people-contributors',
-  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
+  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
   templateUrl: './contributors.component.html',
 })
 export class ContributorsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(ContributorsService);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
+  protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
+  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
+
+  // The commit filters start from `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and are written back on change.
+  private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     project: new FormControl<string>('', { nonNullable: true }),
     timeRange: new FormControl<OrgPeopleTimeRange>(ORG_PEOPLE_DEFAULT_TIME_RANGE, { nonNullable: true }),
+    projectScope: new FormControl<OrgProjectScope>(this.initialFilters.projectScope, { nonNullable: true }),
+    commitScope: new FormControl<OrgCommitScope>(this.initialFilters.commitScope, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMetric>(this.initialFilters.metric, { nonNullable: true }),
   });
 
   // Default sort per Item 4 R4.4 lock: Role asc then Commits desc — encoded as the active column 'role' with secondary tiebreak in initSortedRows.
@@ -84,6 +110,12 @@ export class ContributorsComponent {
 
   // Time range observable feeds the BFF refetch (A1 architecture: one slice per timeRange). distinctUntilChanged guards against duplicate emits when the form is reset to its current value.
   private readonly timeRange$ = toObservable(this.timeRangeControl()).pipe(distinctUntilChanged());
+
+  // The commit filters also refetch (they change the read and the most-active project), undebounced like the time range.
+  protected readonly commitFilters: Signal<OrgCommitFilters> = this.initCommitFilters();
+  private readonly commitFilters$ = toObservable(this.commitFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
+  protected readonly countLabel = computed(() => ORG_CODE_METRIC_LABEL[this.commitFilters().metric]);
+  protected readonly countTooltip = computed(() => (this.commitFilters().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION));
 
   protected readonly response: Signal<OrgContributorsResponse> = this.initResponse();
 
@@ -122,6 +154,22 @@ export class ContributorsComponent {
     this.filterForm.valueChanges.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);
       this.expansion.set({});
+    });
+
+    // The commit scope does not apply to code contributions, so its picker is disabled under that metric.
+    this.commitFilters$.pipe(takeUntilDestroyed()).subscribe(({ metric }) => {
+      const commitScope = this.filterForm.controls.commitScope;
+      if (metric === 'code') commitScope.disable({ emitEvent: false });
+      else commitScope.enable({ emitEvent: false });
+    });
+
+    this.commitFilters$.pipe(skip(1), takeUntilDestroyed()).subscribe((filters) => {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: orgCommitFiltersUrlParams(filters),
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
     });
   }
 
@@ -208,6 +256,7 @@ export class ContributorsComponent {
   }
 
   private initViewRows(): OrgContributorRowVm[] {
+    const metric = this.commitFilters().metric;
     return this.filteredContributors().map((c) => ({
       personKey: c.personKey,
       displayName: c.displayName,
@@ -215,7 +264,7 @@ export class ContributorsComponent {
       initials: computePersonInitials(c.displayName),
       avatarColorClass: avatarColorClass(c.personKey),
       role: c.role,
-      commits: c.commits,
+      count: metric === 'code' ? c.codeActivities : c.commits,
       lastActiveTs: c.lastActiveTs,
       lastActiveLabel: c.lastActiveTs ? formatLongDateUtc(c.lastActiveTs) : '—',
       projectsCount: c.projectsCount,
@@ -234,15 +283,15 @@ export class ContributorsComponent {
         case 'name':
           return a.displayName.localeCompare(b.displayName) * dir;
         case 'role': {
-          // Maintainer < Contributor in alpha order. ASC default puts Maintainers first; tiebreak commits desc (Item 4 R4.4 lock).
+          // Maintainer < Contributor in alpha order. ASC default puts Maintainers first; tiebreak count desc (Item 4 R4.4 lock).
           const va = a.role === 'Maintainer' ? 0 : 1;
           const vb = b.role === 'Maintainer' ? 0 : 1;
           if (va !== vb) return (va - vb) * dir;
-          if (a.commits !== b.commits) return b.commits - a.commits;
+          if (a.count !== b.count) return b.count - a.count;
           return a.displayName.localeCompare(b.displayName);
         }
         case 'commits': {
-          if (a.commits !== b.commits) return (a.commits - b.commits) * dir;
+          if (a.count !== b.count) return (a.count - b.count) * dir;
           return a.displayName.localeCompare(b.displayName);
         }
         case 'lastActive': {
@@ -306,6 +355,7 @@ export class ContributorsComponent {
     const values = this.filterValues();
     const foundationId = values.foundation ?? '';
     const projectId = values.project ?? '';
+    const metric = this.commitFilters().metric;
 
     const grouped = new Map<string, OrgContributorProjectRow[]>();
     for (const p of this.response().projects) {
@@ -318,24 +368,24 @@ export class ContributorsComponent {
 
     const out: Record<string, OrgContributorExpandedRowVm[]> = {};
     for (const [personKey, projects] of grouped) {
-      out[personKey] = collapseExpandedRows(projects);
+      out[personKey] = collapseExpandedRows(projects, metric);
     }
     return out;
   }
 
   private initResponse(): Signal<OrgContributorsResponse> {
     return toSignal(
-      combineLatest([this.orgUid$, this.timeRange$, toObservable(this.retryTrigger)]).pipe(
+      combineLatest([this.orgUid$, this.timeRange$, this.commitFilters$, toObservable(this.retryTrigger)]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, timeRange]) => {
+        switchMap(([orgUid, timeRange, filters]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange });
           }
-          return this.dataService.getContributors(orgUid, timeRange).pipe(
+          return this.dataService.getContributors(orgUid, timeRange, filters).pipe(
             tap(() => this.loadingState.set(false)),
             catchError(() => {
               this.fetchErrorState.set(true);
@@ -356,8 +406,18 @@ export class ContributorsComponent {
     });
   }
 
+  /** The three commit filters off the form, raw so the disabled commit-scope control still reports its value. */
+  private initCommitFilters(): Signal<OrgCommitFilters> {
+    const read = (): OrgCommitFilters => {
+      const { projectScope, commitScope, metric } = this.filterForm.getRawValue();
+      return { projectScope, commitScope, metric };
+    };
+    return toSignal(this.filterForm.valueChanges.pipe(map(read)), { initialValue: read() });
+  }
+
   private resetAllState(): void {
-    this.filterForm.reset({ search: '', foundation: '', project: '', timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE });
+    // The commit filters are page-level URL state, not per-org, so an org switch keeps them.
+    this.filterForm.patchValue({ search: '', foundation: '', project: '', timeRange: ORG_PEOPLE_DEFAULT_TIME_RANGE });
     this.sortColumn.set('role');
     this.sortDirection.set(1);
     this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);
@@ -365,20 +425,20 @@ export class ContributorsComponent {
   }
 }
 
-/** Collapse per-(person, project) rows; pre-sorted Commits DESC → last_active DESC → name (Item 5 R5 — sub-table non-interactive). */
-function collapseExpandedRows(rows: OrgContributorProjectRow[]): OrgContributorExpandedRowVm[] {
+/** Collapse per-(person, project) rows; pre-sorted by the metric's count DESC → last_active DESC → name (Item 5 R5 — sub-table non-interactive). */
+function collapseExpandedRows(rows: OrgContributorProjectRow[], metric: OrgCodeMetric): OrgContributorExpandedRowVm[] {
   const out: OrgContributorExpandedRowVm[] = rows.map((r) => ({
     projectId: r.projectId,
     projectName: r.projectName,
     foundationName: r.foundationName,
     role: r.role,
-    commits: r.commits,
+    count: metric === 'code' ? r.codeActivities : r.commits,
     lastActiveTs: r.lastActiveTs,
     lastActiveLabel: r.lastActiveTs ? formatLongDateUtc(r.lastActiveTs) : '—',
   }));
 
   return out.sort((a, b) => {
-    if (a.commits !== b.commits) return b.commits - a.commits;
+    if (a.count !== b.count) return b.count - a.count;
     const ta = a.lastActiveTs ?? '';
     const tb = b.lastActiveTs ?? '';
     if (ta !== tb) return ta > tb ? -1 : 1;

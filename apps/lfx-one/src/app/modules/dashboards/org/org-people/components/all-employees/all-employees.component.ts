@@ -36,12 +36,21 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 
 import {
   DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+  DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
+  ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
+  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_OPTIONS,
+  ORG_CODE_METRIC_UNIT,
+  ORG_COMMIT_SCOPE_OPTIONS,
+  ORG_COMMITS_DEFINITION,
   ORG_PEOPLE_DEFAULT_TIME_RANGE,
   ORG_PEOPLE_TIME_RANGE_OPTIONS,
+  ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
@@ -56,11 +65,16 @@ import type {
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
   OrgAllEmployeeStats,
+  OrgCodeMetricOption,
+  OrgCommitFilters,
+  OrgCommitScopeOption,
+  OrgCountUnit,
   OrgDropdownOption,
   OrgPeopleTimeRange,
   OrgPeopleTimeRangeOption,
+  OrgProjectScopeOption,
 } from '@lfx-one/shared/interfaces';
-import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
+import { computeOrgAllEmployeeStats, orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
 
@@ -88,17 +102,11 @@ export class AllEmployeesComponent {
   protected readonly initialLimit = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
 
   // Spread to a mutable array so PrimeNG's mutable [options] input type accepts it without an unsafe cast.
-  protected readonly activityOptions: OrgAllEmployeeActivityOption[] = [...ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS];
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
   protected readonly rangeOptions: OrgPeopleTimeRangeOption[] = [...ORG_PEOPLE_TIME_RANGE_OPTIONS];
-
-  protected readonly statSkeletonLabels: readonly string[] = [
-    'Employees Active in Open Source',
-    'In Governance',
-    'Code Contributors',
-    'Event Attendees',
-    'Trainees',
-  ];
+  protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
+  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
@@ -114,8 +122,29 @@ export class AllEmployeesComponent {
   // Follows `?range=` the same way; the roster, its tiles and the former employees are all read for this range.
   protected readonly selectedRange = signal<OrgPeopleTimeRange>(AllEmployeesComponent.parseRange(this.route.snapshot.queryParamMap.get('range')));
   private readonly selectedRange$ = toObservable(this.selectedRange);
+  // Follows `?projectScope=` / `?commitScope=` / `?metric=` (shared with the Contributors tab): the project scope picks who is
+  // listed, the commit scope and metric pick the code count. All three are read by the BFF with the range.
+  protected readonly selectedFilters = signal<OrgCommitFilters>(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
+  private readonly selectedFilters$ = toObservable(this.selectedFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
+  protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
+  protected readonly codeColumnTooltip = computed(() =>
+    this.selectedFilters().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION
+  );
+  protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
+  protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
+  // The code activity option is named after the metric it filters on.
+  protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
+    ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
+  );
+  protected readonly statSkeletonLabels: Signal<string[]> = computed(() => [
+    'Employees Active in Open Source',
+    'In Governance',
+    this.codeStatLabel(),
+    'Event Attendees',
+    'Trainees',
+  ]);
 
-  // Default sort: Code Contributions (commits) descending.
+  // Default sort: the code count (commits or code contributions, per the metric) descending.
   protected readonly sortColumn = signal<OrgAllEmployeeSortColumn>('commits');
   protected readonly sortDirection = signal<OrgAllEmployeeSortDirection>(-1);
   protected readonly limit = signal<number>(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
@@ -157,17 +186,17 @@ export class AllEmployeesComponent {
   );
 
   protected readonly response: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, this.selectedRange$, toObservable(this.retryTrigger)]).pipe(
+    combineLatest([this.orgUid$, this.selectedRange$, this.selectedFilters$, toObservable(this.retryTrigger)]).pipe(
       tap(() => {
         this.loadingState.set(true);
         this.fetchErrorState.set(false);
       }),
-      switchMap(([orgUid, range]) => {
+      switchMap(([orgUid, range, filters]) => {
         if (!orgUid) {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.loadRoster(orgUid, range);
+        return this.loadRoster(orgUid, range, filters);
       })
     ),
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
@@ -175,8 +204,8 @@ export class AllEmployeesComponent {
 
   // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
   protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = toSignal(
-    combineLatest([this.orgUid$, toObservable(this.showFormer), this.selectedRange$, toObservable(this.retryTrigger)]).pipe(
-      switchMap(([orgUid, showFormer, range]) => {
+    combineLatest([this.orgUid$, toObservable(this.showFormer), this.selectedRange$, this.selectedFilters$, toObservable(this.retryTrigger)]).pipe(
+      switchMap(([orgUid, showFormer, range, filters]) => {
         if (!orgUid || !showFormer) {
           this.formerLoadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
@@ -187,7 +216,7 @@ export class AllEmployeesComponent {
         }
         this.formerLoadingState.set(true);
         this.formerErrorState.set(false);
-        return this.dataService.getFormerEmployees(orgUid, range).pipe(
+        return this.dataService.getFormerEmployees(orgUid, range, filters).pipe(
           take(1),
           catchError((error: unknown) => {
             console.error('Failed to load former employees:', error);
@@ -247,6 +276,7 @@ export class AllEmployeesComponent {
       toObservable(this.selectedActivity),
       toObservable(this.selectedEmployment),
       this.selectedRange$,
+      this.selectedFilters$,
       toObservable(this.sortColumn),
       toObservable(this.sortDirection),
     ])
@@ -268,6 +298,14 @@ export class AllEmployeesComponent {
         takeUntilDestroyed()
       )
       .subscribe((range) => this.selectedRange.set(range));
+
+    this.route.queryParamMap
+      .pipe(
+        map((params) => readOrgCommitFilters((name) => params.get(name))),
+        distinctUntilChanged(sameOrgCommitFilters),
+        takeUntilDestroyed()
+      )
+      .subscribe((filters) => this.selectedFilters.set(filters));
 
     // The foundation list is rebuilt per view, so a foundation picked in one view may not exist in the next.
     toObservable(this.selectedEmployment)
@@ -352,6 +390,17 @@ export class AllEmployeesComponent {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { range: value === ORG_PEOPLE_DEFAULT_TIME_RANGE ? null : value },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  protected onFiltersChange(change: Partial<OrgCommitFilters>): void {
+    const filters = { ...this.selectedFilters(), ...change };
+    this.selectedFilters.set(filters);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: orgCommitFiltersUrlParams(filters),
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -538,7 +587,8 @@ export class AllEmployeesComponent {
       !!this.selectedFoundationId() ||
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
-      this.selectedRange() !== ORG_PEOPLE_DEFAULT_TIME_RANGE
+      this.selectedRange() !== ORG_PEOPLE_DEFAULT_TIME_RANGE ||
+      this.selectedFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope
     );
   }
 
@@ -591,7 +641,7 @@ export class AllEmployeesComponent {
    * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
    * established, so this is guarded like org-groups (#2063).
    */
-  private loadRoster(orgUid: string, range: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
+  private loadRoster(orgUid: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeesResponse> {
     if (!isPlatformBrowser(this.platformId)) {
       return EMPTY;
     }
@@ -615,7 +665,7 @@ export class AllEmployeesComponent {
     };
     const missingStoredRoster = (): Error => new Error('Live directory is missing the stored roster');
 
-    const snowflake$ = this.dataService.getAllEmployees(orgUid, range).pipe(
+    const snowflake$ = this.dataService.getAllEmployees(orgUid, range, filters).pipe(
       take(1),
       mergeMap((res) => {
         if (state.liveLanded) return EMPTY;
@@ -636,7 +686,7 @@ export class AllEmployeesComponent {
         return state.liveFailed ? bothFailed() : EMPTY;
       })
     );
-    const live$ = this.directory.getDirectory(orgUid, range).pipe(
+    const live$ = this.directory.getDirectory(orgUid, range, filters).pipe(
       take(1),
       mergeMap((res) => {
         if (!res.rows.some((row) => row.sources.includes('snowflake'))) {

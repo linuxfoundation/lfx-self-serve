@@ -12,8 +12,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
 
-const URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=12mo`;
-const urlFor = (range: string): string => `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}`;
+const urlFor = (range: string, projectScope = 'all', commitScope = 'all', metric = 'commits'): string =>
+  `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}&projectScope=${projectScope}&commitScope=${commitScope}&metric=${metric}`;
+const URL = urlFor('12mo');
 const ROSTER_URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
 
 function roster(name: string): OrgAllEmployeesResponse {
@@ -135,6 +136,26 @@ describe('OrgPeopleDirectoryStateService', () => {
     await expect(recent).resolves.toEqual(roster('After'));
     await expect(allTime).resolves.toEqual(roster('After'));
     await expect(unranged).resolves.toEqual(roster('After'));
+  });
+
+  // lfx-self-serve#4164 — one cached roster per commit-filter combination too, all dropped by invalidate().
+  it('keeps each commit-filter combination apart, and invalidate() drops every one', async () => {
+    const lf = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
+    const code = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+    http.expectOne(urlFor('12mo', 'lf')).flush(roster('LF Commits'));
+    http.expectOne(urlFor('12mo', 'lf', 'all', 'code')).flush(roster('LF Code'));
+    await expect(lf).resolves.toEqual(roster('LF Commits'));
+    await expect(code).resolves.toEqual(roster('LF Code'));
+    await expect(
+      firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }))
+    ).resolves.toEqual(roster('LF Code'));
+    http.expectNone(urlFor('12mo', 'lf', 'all', 'code'));
+
+    service.invalidate(SYNTHETIC_ORG_ACCOUNT_ID);
+
+    const refetched = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '12mo', { projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+    http.expectOne(urlFor('12mo', 'lf', 'all', 'code')).flush(roster('After'));
+    await expect(refetched).resolves.toEqual(roster('After'));
   });
 
   // The reassign pickers keep the pre-#4163 directory: the unranged roster, never a time range.

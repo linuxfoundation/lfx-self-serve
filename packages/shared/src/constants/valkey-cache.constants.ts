@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgPeopleTimeRange } from '../interfaces';
-
 /** Configuration for the shared Valkey cache (cross-instance, TTL read-through; fail-soft, fail-closed on missing identity). */
 export const VALKEY_CACHE = {
   /** App-level key prefix so entries never collide with other consumers of the shared backend. */
@@ -49,22 +47,15 @@ export const VALKEY_CACHE = {
   ORG_ACCESS_LIST_NAMESPACE: 'org-access-list:v1',
 
   /**
-   * Domain + schema-version segment for the per-user org People directory cache, one per time range
-   * plus one for the unranged roster (`{domain}:v{N}:{scope}`; the scope sits before the principal,
-   * so the redacted key and the cache family stay `org-people-dir:v4`). `v2`: merge-only fields are
-   * stripped before the write and the validator asserts their absence. `v3` (GH-1906): `rows` are
-   * stored columnar (`CompactOrgPeopleDirectoryEntry`) rather than as wire objects. `v4`
-   * (lfx-self-serve#4163): All Employees reads the roster windowed by its time range; `roster` is the
-   * unranged ORG_PEOPLE_ALL roster the reassign pickers read (no `range` requested). A write that
-   * invalidates the directory clears every entry.
+   * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
+   * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
+   * `{range}:{projectScope}:{commitScope}:{metric}` — placed before the principal, so the redacted key and the
+   * cache family stay `org-people-dir:v5`. `v2`: merge-only fields are stripped before the write and the
+   * validator asserts their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163):
+   * keyed by time range. `v5` (lfx-self-serve#4164): keyed by the commit filters too, which scope the stored
+   * roster and pick its code count. A write that invalidates the directory clears every scope.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACES: {
-    roster: 'org-people-dir:v4:roster',
-    '30d': 'org-people-dir:v4:30d',
-    '90d': 'org-people-dir:v4:90d',
-    '12mo': 'org-people-dir:v4:12mo',
-    all: 'org-people-dir:v4:all',
-  } satisfies Readonly<Record<OrgPeopleTimeRange | 'roster', string>>,
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -247,8 +238,9 @@ export const VALKEY_CACHE = {
     // This roster compacts least of the five (×2.2) because its rows are mostly long values —
     // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
     // `v3` (lfx-self-serve#4163) is read per time range and for the unranged roster, and drops the
-    // stats table; `all` is the widest range and has not been measured yet, so the `v2` cap carries over.
-    'org-lens-sf:v1:people-all:v3': 3 * 1_048_576,
+    // stats table; `v4` (lfx-self-serve#4164) is also read per commit-filter combination. `all` is the
+    // widest range and has not been measured yet, so the `v2` cap carries over.
+    'org-lens-sf:v1:people-all:v4': 3 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
@@ -283,8 +275,8 @@ export const VALKEY_CACHE = {
     // merge. 1.63 MiB × 1.25 rounds up to 3 MiB; 2 MiB would leave under 25% headroom. A reassign
     // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
     // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
-    // `v4` (lfx-self-serve#4163) keys the roster by time range (plus the unranged picker roster); the
-    // `v3` cap carries over until the widest (`all`) range is measured.
-    'org-people-dir:v4': 3 * 1_048_576,
+    // `v4` (lfx-self-serve#4163) keys the roster by time range (plus the unranged picker roster), `v5`
+    // (lfx-self-serve#4164) by the commit filters too; the `v3` cap carries over until the widest (`all`) range is measured.
+    'org-people-dir:v5': 3 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

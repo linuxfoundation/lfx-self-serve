@@ -3,18 +3,19 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ORG_PEOPLE_TIME_RANGE_OPTIONS } from '@lfx-one/shared/constants';
-import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
+import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgCommitFilters, OrgPeopleTimeRange } from '@lfx-one/shared/interfaces';
+import { orgCommitFiltersKey } from '@lfx-one/shared/utils';
 import { map, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
- * Root-singleton cache for the unified live people directory (`/lens/people/all?live[&range=]`).
+ * Root-singleton cache for the unified live people directory (`/lens/people/all?live[&range=&projectScope=&commitScope=&metric=]`).
  *
- * The All Employees tab reads one directory per time range; the "Assign to Email" pickers in the
- * Board/Committee/Key-Contacts modals read the unranged roster (no `range` sent). Concurrent callers
- * are deduped via `shareReplay`; resolved responses are memoized for a short TTL (or until
- * `invalidate`, e.g. on retry), and every map below is keyed by `${orgUid}:${range}`, or
- * `${orgUid}:roster` for the unranged roster.
+ * The All Employees tab reads one directory per time range and commit filters; the "Assign to Email"
+ * pickers in the Board/Committee/Key-Contacts modals read the unranged roster (no `range` sent, and the
+ * filters do not apply). Concurrent callers are deduped via `shareReplay`; resolved responses are
+ * memoized for a short TTL (or until `invalidate`, e.g. on retry), keyed by
+ * `${orgUid}:${range}:${projectScope}:${commitScope}:${metric}`, or `${orgUid}:roster` for the unranged roster.
  */
 // Client-side TTL so a long-lived SPA session re-hits the merged endpoint and picks up newly added live
 // people, rather than replaying the first response forever (which would bypass the server's short TTL).
@@ -26,14 +27,14 @@ export class OrgPeopleDirectoryStateService {
 
   private readonly byKey = new Map<string, { value: OrgAllEmployeesResponse; expiresAt: number }>();
   private readonly inFlight = new Map<string, Observable<OrgAllEmployeesResponse>>();
-  // Bumped by `invalidate`. A request remembers the generation it started under and only writes its
+  // Per org, bumped by `invalidate`. A request remembers the generation it started under and only writes its
   // response into `byKey` if that is still current, so a request already in flight when the cache was
   // invalidated (e.g. started before a seat reassign) can't put the pre-invalidate roster back for the TTL.
   private readonly generation = new Map<string, number>();
 
-  /** Cached merged directory for the org and time range (none: the unranged roster); fetches once and replays until the TTL lapses. */
-  public getDirectory(orgUid: string, range?: OrgPeopleTimeRange): Observable<OrgAllEmployeesResponse> {
-    const key = `${orgUid}:${range ?? 'roster'}`;
+  /** Cached merged directory for the org, time range and commit filters (no range: the unranged roster); fetches once and replays until the TTL lapses. */
+  public getDirectory(orgUid: string, range?: OrgPeopleTimeRange, filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS): Observable<OrgAllEmployeesResponse> {
+    const key = range ? `${orgUid}:${range}:${orgCommitFiltersKey(filters)}` : `${orgUid}:roster`;
     const cached = this.byKey.get(key);
     if (cached && cached.expiresAt > Date.now()) return of(cached.value);
     if (cached) this.byKey.delete(key);
@@ -41,13 +42,15 @@ export class OrgPeopleDirectoryStateService {
     const existing = this.inFlight.get(key);
     if (existing) return existing;
 
-    const startedGeneration = this.generation.get(key) ?? 0;
+    const startedGeneration = this.generation.get(orgUid) ?? 0;
     const request$: Observable<OrgAllEmployeesResponse> = this.http
-      .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: range ? { live: 'true', range } : { live: 'true' } })
+      .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, {
+        params: range ? { live: 'true', range, ...filters } : { live: 'true' },
+      })
       .pipe(
         tap({
           next: (res) => {
-            if ((this.generation.get(key) ?? 0) !== startedGeneration) return;
+            if ((this.generation.get(orgUid) ?? 0) !== startedGeneration) return;
             this.byKey.set(key, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
           },
           finalize: () => {
@@ -72,13 +75,14 @@ export class OrgPeopleDirectoryStateService {
     );
   }
 
-  /** Drop the cached directory for an org, the unranged roster and every range, so the next `getDirectory` refetches (the tab's retry CTA, and after a seat reassign). A request still in flight keeps serving its own subscribers but no longer fills the cache. */
+  /** Drop the cached directory for an org — the unranged roster and every range and filter combination — so the next `getDirectory` refetches (the tab's retry CTA, and after a seat reassign). A request still in flight keeps serving its own subscribers but no longer fills the cache. */
   public invalidate(orgUid: string): void {
-    for (const scope of ['roster', ...ORG_PEOPLE_TIME_RANGE_OPTIONS.map((option) => option.value)]) {
-      const key = `${orgUid}:${scope}`;
-      this.generation.set(key, (this.generation.get(key) ?? 0) + 1);
-      this.byKey.delete(key);
-      this.inFlight.delete(key);
+    this.generation.set(orgUid, (this.generation.get(orgUid) ?? 0) + 1);
+    const prefix = `${orgUid}:`;
+    for (const cache of [this.byKey, this.inFlight]) {
+      for (const key of [...cache.keys()]) {
+        if (key.startsWith(prefix)) cache.delete(key);
+      }
     }
   }
 }

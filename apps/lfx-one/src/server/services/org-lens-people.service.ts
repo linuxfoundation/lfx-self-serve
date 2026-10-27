@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_PEOPLE_ALL_ROW_COLUMNS, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_COMMIT_FILTERS, ORG_PEOPLE_ALL_ROW_COLUMNS, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   CompactOrgAllEmployeesRawCache,
+  OrgCommitFilters,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
   OrgAllEmployeeCodeContribution,
@@ -27,6 +28,7 @@ import {
   isColumnarAbsent,
   isColumnarTable,
   isFilterSafeIdentifier,
+  orgCommitFiltersKey,
   splitDisplayName,
   toColumnar,
 } from '@lfx-one/shared/utils';
@@ -34,6 +36,7 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
+import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
@@ -121,25 +124,30 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range (`null`: the unranged roster); the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
-    return toWireResponse(await this.getAllEmployeesInternal(accountId, range));
+  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not apply to); the wire projection of the internal roster. */
+  public async getAllEmployees(accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters));
   }
 
   /**
    * Internal roster with merge-only fields retained — the live directory's stored seed. A time range
-   * reads that range's current employees; `null` reads the unranged ORG_PEOPLE_ALL roster the
-   * reassign pickers use. The cache holds raw warehouse rows and both accessors map after every read,
-   * so this split changes no cached shape. Stats are counted over the rows, so the tiles match the table.
+   * reads that range's current employees in the project scope, with `commitsCount` carrying the code
+   * count the filters pick (authored commits, merged commits, or code activities); `null` reads the
+   * unranged ORG_PEOPLE_ALL roster the reassign pickers use. The cache holds raw warehouse rows and both
+   * accessors map after every read. Stats are counted over the rows, so the tiles match the table.
    */
-  public async getAllEmployeesInternal(accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v3:{range|roster}` (lfx-self-serve#4163): one entry per time range plus the unranged
-    // roster, none carrying a stats table, so a `v2` (with stats) entry must miss rather than decode.
+  public async getAllEmployeesInternal(
+    accountId: string,
+    range: OrgPeopleTimeRange | null,
+    filters: OrgCommitFilters
+  ): Promise<OrgAllEmployeesInternalResponse> {
+    // `people-all:v4:{range}:{projectScope}:{commitScope}:{metric}` | `people-all:v4:roster` (lfx-self-serve#4164):
+    // a ranged read is scoped by project and its count column follows the filters, so a `v3` entry must miss.
     const raw = await withOrgCompactCache(
       accountId,
-      `people-all:v3:${range ?? 'roster'}`,
+      `people-all:v4:${range ? `${range}:${orgCommitFiltersKey(filters)}` : 'roster'}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId, range),
+      () => this.fetchAllEmployeesRaw(accountId, range, filters),
       {
         encode: encodeAllEmployeesRaw,
         decode: decodeAllEmployeesRaw,
@@ -157,14 +165,14 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Former employees at the account active in the time range (lfx-self-serve#4311), the
+   * Former employees at the account active in the time range and project scope (lfx-self-serve#4311), the
    * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
    * directory — and the reassign pickers that read it — never sees a former employee. Stats are
    * computed over these rows, so the tiles match the rows the "Former employees" view shows. No
    * address is sent for someone who left, and none stands in for a blank name.
    */
-  public async getFormerEmployees(accountId: string, range: OrgPeopleTimeRange): Promise<OrgAllEmployeesResponse> {
-    const raw = await this.getFormerEmployeesRaw(accountId, range);
+  public async getFormerEmployees(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+    const raw = await this.getFormerEmployeesRaw(accountId, range, filters);
     const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, EMAIL: null }), isFormer: true }));
     return toWireResponse({
       accountId,
@@ -317,15 +325,23 @@ export class OrgLensPeopleService {
    * Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact
    * sources). Read on the narrowest (`30d`) range: the ranges are nested, so someone live-only in any range is
    * live-only in `30d` too (a stored row in `30d` would be in every wider range), and their `live-` key comes
-   * from the merge key, not the range. A wider range would miss someone who is live-only in the range on
-   * screen but has a stored row in the wider one.
+   * from the merge key, not the range. Project scopes are not nested the same way: the `lf` roster is inside
+   * `all` but not inside `non_lf`. So someone live-only under `all` or `lf` is live-only in `30d`/`lf`, and someone
+   * live-only under `non_lf` is live-only in `30d`/`non_lf`; those two are read in turn (the metric and commit
+   * scope do not change who is listed).
    */
   private async resolveLiveOnlyUsername(req: Request, accountId: string, personKey: string): Promise<string | null> {
     if (!personKey.startsWith('live-')) {
       return null;
     }
-    const { rows } = await this.getDirectoryService().getLive(req, accountId, '30d');
-    return rows.find((row) => row.personKey === personKey)?.lfUsername ?? null;
+    for (const projectScope of ['lf', 'non_lf'] as const) {
+      const { rows } = await this.getDirectoryService().getLive(req, accountId, '30d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
+      const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
+      if (username) {
+        return username;
+      }
+    }
+    return null;
   }
 
   private getDirectoryService(): OrgPeopleDirectoryService {
@@ -335,19 +351,20 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
-  private getFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange): Promise<AllEmployeesRaw> {
-    // `people-former:v2:{range}` (lfx-self-serve#4163): read per time range from ORG_PEOPLE_ALL_RANGES.
+  private getFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
+    // `people-former:v3:{range}:{projectScope}:{commitScope}:{metric}` (lfx-self-serve#4164): scoped by project,
+    // count column per the filters, so a `v2` entry must miss.
     return withOrgCache(
       accountId,
-      `people-former:v2:${range}`,
+      `people-former:v3:${range}:${orgCommitFiltersKey(filters)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFormerEmployeesRaw(accountId, range),
+      () => this.fetchFormerEmployeesRaw(accountId, range, filters),
       isFormerEmployeesRaw
     );
   }
 
-  /** Former employees' rows for the range (the EMAIL column is never selected) and the foundations of their code rows. */
-  private async fetchFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange): Promise<AllEmployeesRaw> {
+  /** Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations of their code rows in that scope. */
+  private async fetchFormerEmployeesRaw(accountId: string, range: OrgPeopleTimeRange, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -362,12 +379,12 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        COMMITS_COUNT,
+        ${rosterCountColumn(filters)} AS COMMITS_COUNT,
         EVENTS_COUNT,
         COURSES_COUNT,
         ENGAGED_FOUNDATION_IDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND IS_FORMER = TRUE
+      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = TRUE
       ORDER BY NAME ASC NULLS LAST
     `;
 
@@ -376,14 +393,15 @@ export class OrgLensPeopleService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS c
       INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES f
         ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
-      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.IS_FORMER = TRUE
+      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
         AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
+        ${orgProjectScopePredicate(filters.projectScope, 'c.IS_LF_PROJECT')}
       ORDER BY c.FOUNDATION_NAME ASC
     `;
 
     const [rowsResult, foundationResult] = await Promise.all([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range]),
-      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range]),
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, filters.projectScope]),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, filters.projectScope]),
     ]);
 
     return { rowsRaw: rowsResult.rows, foundationRaw: foundationResult.rows };
@@ -391,8 +409,9 @@ export class OrgLensPeopleService {
 
   /**
    * A former employee's company addresses are never read: they left, and the address model covers the
-   * account's current people only. Checked against the widest former population (`TIME_RANGE = 'all'`),
-   * whatever range the caller is viewing. One keyed read per person, cached per person. A failed read
+   * account's current people only. Checked against the widest former population (`TIME_RANGE = 'all'`,
+   * `PROJECT_SCOPE = 'all'`), whatever range and scope the caller is viewing. One keyed read per person,
+   * cached per person. A failed read
    * answers `false` so it never blocks the address read, and is not cached, so a warehouse blip cannot
    * drop the guard for the whole TTL.
    */
@@ -404,7 +423,7 @@ export class OrgLensPeopleService {
           `
             SELECT 1 AS IS_FORMER
             FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-            WHERE ACCOUNT_ID = ? AND TIME_RANGE = 'all' AND IS_FORMER = TRUE
+            WHERE ACCOUNT_ID = ? AND TIME_RANGE = 'all' AND PROJECT_SCOPE = 'all' AND IS_FORMER = TRUE
               AND ${byPersonKey ? 'PERSON_KEY = ?' : 'LOWER(TRIM(LF_USERNAME)) = ?'}
             LIMIT 1
           `,
@@ -419,9 +438,8 @@ export class OrgLensPeopleService {
     if (byPersonKey && !isFilterSafeIdentifier(identity.personKey)) {
       return (await fetcher()).isFormer;
     }
-    // `v2` (lfx-self-serve#4163): the former population is now the all-time former rows of
-    // ORG_PEOPLE_ALL_RANGES, so an answer cached against the retired former-employees model must miss.
-    const key = byPersonKey ? `people-former-check:v2:${identity.personKey}` : `people-former-check:v2:username:${usernameDigest(identity.username)}`;
+    // `v3` (lfx-self-serve#4164): ORG_PEOPLE_ALL_RANGES gained a PROJECT_SCOPE grain; the check reads the `all` scope.
+    const key = byPersonKey ? `people-former-check:v3:${identity.personKey}` : `people-former-check:v3:username:${usernameDigest(identity.username)}`;
     const { isFormer } = await withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck, (check) => !check.failed);
     return isFormer;
   }
@@ -429,12 +447,18 @@ export class OrgLensPeopleService {
   /**
    * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
    * mapping happens after the cache read. A range reads that range's current rows of
-   * ORG_PEOPLE_ALL_RANGES; `null` reads the unranged ORG_PEOPLE_ALL roster.
+   * ORG_PEOPLE_ALL_RANGES in the project scope, `COMMITS_COUNT` carrying the count the filters pick;
+   * `null` reads the unranged ORG_PEOPLE_ALL roster.
    */
-  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null): Promise<AllEmployeesRaw> {
+  private async fetchAllEmployeesRaw(accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<AllEmployeesRaw> {
     const source = range
-      ? { from: 'ORG_PEOPLE_ALL_RANGES', where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND IS_FORMER = FALSE', binds: [accountId, range] }
-      : { from: 'ORG_PEOPLE_ALL', where: 'ACCOUNT_ID = ?', binds: [accountId] };
+      ? {
+          from: 'ORG_PEOPLE_ALL_RANGES',
+          count: rosterCountColumn(filters),
+          where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE',
+          binds: [accountId, range, filters.projectScope],
+        }
+      : { from: 'ORG_PEOPLE_ALL', count: 'COMMITS_COUNT', where: 'ACCOUNT_ID = ?', binds: [accountId] };
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -449,7 +473,7 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        COMMITS_COUNT,
+        ${source.count} AS COMMITS_COUNT,
         EVENTS_COUNT,
         COURSES_COUNT,
         ENGAGED_FOUNDATION_IDS
@@ -764,6 +788,14 @@ export class OrgLensPeopleService {
     }
     return typeof raw === 'string' && raw.length > 0 ? [raw] : [];
   }
+}
+
+/** ORG_PEOPLE_ALL_RANGES column a row's displayed code count reads for the filters (aliased to COMMITS_COUNT, so the cached raw shape is one column whatever the filters). */
+function rosterCountColumn(filters: OrgCommitFilters): string {
+  if (filters.metric === 'code') {
+    return 'CODE_ACTIVITIES_COUNT';
+  }
+  return filters.commitScope === 'merged' ? 'MERGED_COMMITS_COUNT' : 'COMMITS_COUNT';
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */

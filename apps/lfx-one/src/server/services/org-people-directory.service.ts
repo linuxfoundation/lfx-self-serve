@@ -16,6 +16,7 @@ import type {
   OrgAllEmployeeStats,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
+  OrgCommitFilters,
   OrgPeopleTimeRange,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
@@ -31,6 +32,7 @@ import {
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
+import { orgPeopleDirectoryNamespace } from '../helpers/org-people-directory-cache.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
@@ -226,11 +228,12 @@ export class OrgPeopleDirectoryService {
   }
 
   /**
-   * Merged stored + live roster for one time range (`null`: the unranged roster), served through the
-   * per-caller shared cache: the merge folds in request-scoped permission-filtered reads (committee
-   * seats, FGA-filtered key contacts, the caller's access view), so keying by caller + org stops one
-   * caller's roster from being replayed to another within the TTL. Each range, and the unranged
-   * roster, has its own namespace, so the key and the in-process flight below both carry it.
+   * Merged stored + live roster for one time range and its commit filters (`null` range: the unranged
+   * roster), served through the per-caller shared cache: the merge folds in request-scoped
+   * permission-filtered reads (committee seats, FGA-filtered key contacts, the caller's access view), so
+   * keying by caller + org stops one caller's roster from being replayed to another within the TTL. Each
+   * scope — range plus filters, or the unranged roster — has its own namespace, so the key and the
+   * in-process flight below both carry it.
    *
    * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
    * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
@@ -246,9 +249,9 @@ export class OrgPeopleDirectoryService {
    * response is read-only downstream — it is serialized to the client or searched by
    * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
    */
-  public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
+  public async getLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    const namespace = VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACES[range ?? 'roster'];
+    const namespace = orgPeopleDirectoryNamespace(range, filters);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
@@ -259,7 +262,7 @@ export class OrgPeopleDirectoryService {
         username,
         accountId,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactDirectory(await this.computeLive(req, accountId, range)),
+        async () => toCompactDirectory(await this.computeLive(req, accountId, range, filters)),
         isCompactDirectoryEntry,
         isCurrent
       )
@@ -267,12 +270,12 @@ export class OrgPeopleDirectoryService {
     return fromCompactDirectory(entry);
   }
 
-  private async computeLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null): Promise<OrgAllEmployeesResponse> {
+  private async computeLive(req: Request, accountId: string, range: OrgPeopleTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
     const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
-      this.peopleService.getAllEmployeesInternal(accountId, range),
+      this.peopleService.getAllEmployeesInternal(accountId, range, filters),
       this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
