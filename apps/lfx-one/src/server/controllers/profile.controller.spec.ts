@@ -20,6 +20,8 @@ import {
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
 } from '../../../../../packages/shared/src/constants/profile.constants';
+// The real classifier — `@lfx-one/shared/utils` is mocked below, so link-failure specs opt into it.
+import { isIdentityAlreadyLinkedError } from '../../../../../packages/shared/src/utils/identity.utils';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -1341,6 +1343,47 @@ describe('ProfileController social connect — returnTo', () => {
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=social_auth_failed');
   });
+
+  // #4124: the Identities conflict banner keys off error=already_linked. Driven through the real
+  // classifier with auth-service's own wording, so a rephrased marker can't silently drop the banner.
+  describe('link failures', () => {
+    const socialIdToken = `synthetic-header.${Buffer.from(JSON.stringify({ sub: 'linkedin|synthetic-member' })).toString('base64url')}.synthetic-sig`;
+
+    async function callbackWithLinkResult(linkResult: Record<string, unknown>): Promise<any> {
+      socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+      socialVerificationSvc.validateState.mockReturnValue(true);
+      profileAuthSvc.getManagementToken.mockReturnValue('synthetic-mgmt-token');
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: socialIdToken });
+      emailVerificationSvc.linkIdentity.mockResolvedValue(linkResult);
+      isIdentityAlreadyLinkedErrorMock.mockImplementationOnce(isIdentityAlreadyLinkedError);
+      const res = buildRes();
+
+      await controller.handleSocialCallback(
+        buildReq({ path: '/social/callback', query: { code: 'c', state: 's' }, oidc: { user: { sub: 'auth0|synthetic-user' } } }),
+        res
+      );
+
+      return res;
+    }
+
+    it('redirects a social link conflict to error=already_linked without the owning account', async () => {
+      const res = await callbackWithLinkResult({
+        success: false,
+        error: 'validation',
+        message: 'the provided identity token belongs to an existing LFID account and cannot be linked',
+      });
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=already_linked');
+      expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    });
+
+    it('redirects any other social link failure to error=link_failed', async () => {
+      const res = await callbackWithLinkResult({ success: false, error: 'internal', message: 'upstream unavailable' });
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+      expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // The root callbacks (/passwordless/callback, /social/callback in server.ts) are redirect-only and
@@ -2170,6 +2213,28 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     expect(linkedin.isPrimary).toBeUndefined();
     expect(linkedin.displayState).toBe('unverified');
     expect(byId(rows, 'primary-email')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
+  });
+
+  // #4124: a linked LinkedIn login proves the LinkedIn identity only — it must never verify an email
+  // row that happens to carry the same address, either on display or by an auto-verify write to CDP.
+  it('keeps a non-primary email row unverified next to a verified LinkedIn identity with the same address', async () => {
+    const shared = 'shared@person.example';
+    auth0Svc.getUserIdentities.mockResolvedValue([
+      rootIdentity,
+      { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: shared } },
+    ]);
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+      ownLfidRow,
+      cdpRow({ id: 'cdp-shared-email', platform: 'email', type: 'email', value: shared }),
+      cdpRow({ id: 'cdp-shared-linkedin', platform: 'linkedin', type: 'email', value: shared }),
+    ]);
+
+    const rows = await fetchIdentities();
+
+    expect(byId(rows, 'cdp-shared-email')).toEqual(expect.objectContaining({ displayState: 'unverified', inAuth0: false }));
+    expect(byId(rows, 'cdp-shared-email').isPrimary).toBeUndefined();
+    expect(byId(rows, 'cdp-shared-linkedin')).toEqual(expect.objectContaining({ displayState: 'verified', inAuth0: true }));
+    expect(cdpSvc.verifyIdentityForUser.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
   });
 
   it('matches an auth-service email identity against CDP case-insensitively', async () => {
