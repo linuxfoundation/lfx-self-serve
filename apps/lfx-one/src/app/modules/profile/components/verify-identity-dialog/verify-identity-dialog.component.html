@@ -53,7 +53,7 @@
 
     @if (!codeSent()) {
       @if (verificationError()) {
-        <p class="text-sm text-red-600" data-testid="verify-email-error">{{ verificationError() }}</p>
+        <p class="text-sm text-red-600" role="alert" data-testid="verify-email-error">{{ verificationError() }}</p>
       }
     } @else {
       <div class="flex flex-col gap-2">
@@ -84,11 +84,12 @@
           styleClass="w-full gap-3 [&_.p-inputtext]:flex-1"
           data-testid="verify-otp" />
         @if (verificationError()) {
-          <p class="text-center text-sm text-red-600" data-testid="verify-email-error">
-            {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
+          <p class="text-center text-sm text-red-600" role="alert" data-testid="verify-email-error">
             @if (showSupportLink()) {
-              If you believe this is an error,
+              This email is already linked to an LFX account. If you believe this is an error,
               <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+            } @else {
+              {{ verificationError() }}
             }
           </p>
         }
