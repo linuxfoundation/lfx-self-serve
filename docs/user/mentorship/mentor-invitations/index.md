@@ -13,7 +13,7 @@ A Program Admin can invite you to mentor their program. The invitation arrives b
 
 ## Before you begin
 
-- Use the link in the invitation email. It carries a token that identifies the invitation.
+- Use the link in the invitation email. The link identifies your invitation.
 - If you do not have a mentor profile yet, you are asked to create one first.
 
 ## Steps

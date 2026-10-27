@@ -61,7 +61,7 @@ No, mentors cannot accept or decline applications. Mentors review applicants, se
 
 ### How do I contact my mentees?
 
-Mentorship does not show mentees' email addresses yet. Ask a Program Admin: they can download them with **Download By Status** (see [Export Mentees](../export-mentees/)).
+Mentorship does not show mentees' contact details to mentors. Use the channels your program has set up with its mentees. Program Admins can find mentees' email addresses with **Download By Status** (see [Export Mentees](../export-mentees/)).
 
 ### Who can see my reviewer note?
 
