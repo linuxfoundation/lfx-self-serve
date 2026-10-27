@@ -56,9 +56,12 @@ export class OrgLensEventsService {
      * degraded path in the catch below. `status=registered` has to follow the same expression, or the
      * filter offers rows whose displayed count is 0.
      */
-    const buildListQuery = (scoped: boolean): { sql: string; binds: string[] } => {
-      // Both spellings read the recomputed count; only the scoping differs. See registrationCountsCte.
-      const countExpression = 'COALESCE(cr.REGISTRATION_COUNT, 0)';
+    const buildListQuery = (mode: ListQueryMode): { sql: string; binds: string[] } => {
+      const scoped = mode === 'scoped';
+      // `platinum` is the pre-PR query: ORG_EVENTS alone, no registrations, no address table. It is
+      // the only spelling that survives EVENT_REGISTRATIONS being unavailable — which this PR made
+      // load-bearing for the list when it started recomputing counts.
+      const countExpression = mode === 'platinum' ? 'oe.ORG_REGISTRATION_COUNT' : 'COALESCE(cr.REGISTRATION_COUNT, 0)';
       let statusFilter = '';
       if (status === 'registered') {
         statusFilter = `AND ${countExpression} > 0`;
@@ -73,7 +76,7 @@ export class OrgLensEventsService {
       const pastCondition = isPast ? 'oe.IS_PAST_EVENT = TRUE' : 'oe.IS_PAST_EVENT = FALSE';
 
       const sql = `
-      ${registrationCountsCte(scoped)}
+      ${mode === 'platinum' ? '' : registrationCountsCte(scoped)}
       SELECT
         oe.EVENT_ID,
         oe.EVENT_NAME,
@@ -93,8 +96,7 @@ export class OrgLensEventsService {
         oe.IS_ORG_SPONSOR,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
-      LEFT JOIN event_registration_counts cr
-        ON cr.EVENT_ID = oe.EVENT_ID
+      ${mode === 'platinum' ? '' : 'LEFT JOIN event_registration_counts cr ON cr.EVENT_ID = oe.EVENT_ID'}
       ${scoped ? 'CROSS JOIN company_email_coverage cov' : ''}
       WHERE oe.ACCOUNT_ID = ?
         AND ${pastCondition}
@@ -104,13 +106,15 @@ export class OrgLensEventsService {
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
-      // Positional binds, in statement order: coverage CTE (scoped only), counts CTE, outer WHERE.
-      const binds: string[] = scoped ? [accountId, accountId, accountId] : [accountId, accountId];
+      // Positional binds, in statement order: coverage CTE (scoped only), counts CTE (not platinum),
+      // then the outer WHERE.
+      const bindCountByMode: Record<ListQueryMode, number> = { scoped: 3, unscoped: 2, platinum: 1 };
+      const binds: string[] = Array.from({ length: bindCountByMode[mode] }, () => accountId);
       if (searchQuery) binds.push(`%${searchQuery}%`);
       return { sql, binds };
     };
 
-    const scopedQuery = buildListQuery(true);
+    const scopedQuery = buildListQuery('scoped');
 
     let rows: OrgEventRow[];
     try {
@@ -151,15 +155,40 @@ export class OrgLensEventsService {
         err: scopedError,
         account_id: accountId,
       });
-      const fallbackQuery = buildListQuery(false);
+      const fallbackQuery = buildListQuery('unscoped');
       try {
-        rows = await this.fetchEventListRows(fallbackQuery.sql, fallbackQuery.binds);
-      } catch (error) {
-        logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-          err: error,
+        rows = await this.fetchEventListRows(fallbackQuery.sql, fallbackQuery.binds, true);
+      } catch (unscopedError) {
+        /**
+         * Last resort. Recomputing the count made EVENT_REGISTRATIONS load-bearing for a list that
+         * never needed it before this PR, so its being unavailable would now blank the page the same
+         * way the address table once did. ORG_EVENTS alone still answers "what events does this org
+         * have", with the precomputed count. The drawer cannot degrade this far — it has nothing to
+         * list without registrations — so a row count here may stand beside an empty drawer. Showing
+         * the org's events with a stale count beats telling it that it has none.
+         */
+        if (!SnowflakeService.isMissingObjectError(unscopedError)) {
+          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
+            err: unscopedError,
+            account_id: accountId,
+          });
+          return { data: [], total: 0, pageSize, offset };
+        }
+
+        logger.warning(req, 'get_org_lens_events', 'Registrations unavailable, falling back to the platinum count', {
+          err: unscopedError,
           account_id: accountId,
         });
-        return { data: [], total: 0, pageSize, offset };
+        const platinumQuery = buildListQuery('platinum');
+        try {
+          rows = await this.fetchEventListRows(platinumQuery.sql, platinumQuery.binds);
+        } catch (error) {
+          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
+            err: error,
+            account_id: accountId,
+          });
+          return { data: [], total: 0, pageSize, offset };
+        }
       }
     }
 
@@ -595,6 +624,9 @@ function registrationCountsCte(scoped: boolean): string {
 function hasCompanyEmailCoverage(rows: readonly { COVERAGE_ROWS?: unknown }[]): boolean {
   return !rows.some((row) => row.COVERAGE_ROWS === 0);
 }
+
+/** scoped → company-email filtered; unscoped → same grain, no filter; platinum → ORG_EVENTS alone. */
+type ListQueryMode = 'scoped' | 'unscoped' | 'platinum';
 
 /** Deterministic, key-safe sub-resource suffix for the result-changing query params (base64url → only `[A-Za-z0-9_-]`). */
 function paramSignature(parts: readonly (string | number | boolean | null)[]): string {

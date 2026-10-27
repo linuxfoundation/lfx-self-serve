@@ -403,6 +403,24 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
   });
 
+  it('still lists events when registrations are unavailable', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    // Recomputing the count made this table load-bearing for the list, which it never was before.
+    database.exec('DROP TABLE EVENT_REGISTRATIONS');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // ORG_EVENTS still answers "what events does this org have"; the count falls back to the
+    // precomputed column. The drawer cannot degrade this far and is empty — a row count beside an
+    // empty drawer, which still beats telling the org it has no events.
+    expect(list.data).toHaveLength(1);
+    expect(list.data[0].orgAttendeeCount).toBe(99);
+    expect(drawer.data).toEqual([]);
+  });
+
   it('does not drop the company-email filter when the scoped query fails for another reason', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
