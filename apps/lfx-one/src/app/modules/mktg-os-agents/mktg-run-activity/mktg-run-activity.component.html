@@ -12,7 +12,7 @@
     </span>
     <div class="flex flex-col min-w-0">
       <h2 class="font-display font-light text-xl text-gray-900" data-testid="mktg-run-activity-title">{{ title() }}</h2>
-      <span class="text-xs text-gray-400" data-testid="mktg-run-activity-elapsed">{{ elapsed() }} · a run usually takes a few minutes</span>
+      <span class="text-xs text-gray-400" data-testid="mktg-run-activity-elapsed">{{ elapsed() }} · this usually takes a few minutes</span>
     </div>
   </div>
 
@@ -55,7 +55,7 @@
             <i class="fa-light fa-spinner-third motion-safe:animate-spin text-sm" aria-hidden="true"></i>
           </span>
           <div class="flex min-w-0 flex-col">
-            <span class="text-sm font-medium text-gray-900">Starting the agent</span>
+            <span class="text-sm font-medium text-gray-900">Getting started</span>
             @for (line of [startingLine()]; track line) {
               <span class="text-xs text-gray-500 motion-safe:animate-step-in" data-testid="mktg-run-activity-starting-line">{{ line }}…</span>
             }

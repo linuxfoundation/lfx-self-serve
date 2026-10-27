@@ -83,7 +83,7 @@ export class MktgRunQuestionsComponent {
 
   // Literal class names so Tailwind's content scan generates them.
   protected readonly chipClass: Record<MktgRunQuestionChip['state'], string> = {
-    current: 'border-blue-300 bg-blue-50 text-blue-700',
+    current: 'border-gray-300 bg-white font-semibold text-gray-900',
     answered: 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
     open: 'border-gray-100 bg-white text-gray-400 hover:bg-gray-50',
   };
