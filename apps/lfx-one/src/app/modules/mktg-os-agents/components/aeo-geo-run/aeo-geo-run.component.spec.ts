@@ -308,7 +308,7 @@ describe('AeoGeoRunComponent', () => {
     query('mktg-aeo-run-submit').click();
     fixture.detectChanges();
     await fixture.whenStable();
-    query('mktg-run-questions-next').querySelector<HTMLButtonElement>('button')?.click();
+    query('mktg-run-questions-next').click();
     fixture.detectChanges();
     await fill('mktg-run-questions-answer-aeo-comparison-targets', 'Another synthetic comparison target.');
     stored.saveQuestionDraft({ ...run(), sessionId: 'another-synthetic-session' }, { index: 0, answers: {} });
@@ -318,7 +318,7 @@ describe('AeoGeoRunComponent', () => {
     expect((query('mktg-run-questions-answer-aeo-comparison-targets') as HTMLTextAreaElement).value).toBe('Another synthetic comparison target.');
     query('mktg-run-questions-chip-aeo-project-identity').click();
     fixture.detectChanges();
-    query('mktg-run-questions-send').querySelector<HTMLButtonElement>('button')?.click();
+    query('mktg-run-questions-send').click();
     await fixture.whenStable();
     const sent = pollPost.mock.calls.find(([url]) => url === AEO_GEO_INTAKE.endpoints.answers)?.[1];
     expect(sent.answers[1]).toEqual({ id: 'comparison-targets', text: 'Another synthetic comparison target.', origin: 'edited' });
