@@ -33,6 +33,7 @@ function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> =
     seatsCount: 0,
     boardSeatsCount: 0,
     committeeSeatsCount: 0,
+    keyContactRoles: [],
     commitsCount: 0,
     eventsCount: 0,
     coursesCount: 0,
@@ -277,6 +278,50 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2']);
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+  });
+  // The Key Contact column borrows the Key Contacts tab's role pills for a single role, and collapses
+  // several onto one count chip so a person holding five roles can't stretch the row.
+  describe('in the browser, with key-contact roles on the roster', () => {
+    const keyContactCell = (personKey: string): HTMLElement | null =>
+      el().querySelector<HTMLElement>(`[data-testid="org-people-all-employees-key-contact-${personKey}"]`);
+
+    beforeEach(async () => {
+      await mount('browser');
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-one', 'Alan Turing', { keyContactRoles: ['Technical Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Authorized Signatory', 'Representative/Voting Contact'] }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    });
+
+    it('renders an em dash when the employee holds no key-contact role', () => {
+      expect(keyContactCell('p-none')?.textContent?.trim()).toBe('\u2014');
+    });
+
+    it('renders the role pill, in the Key Contacts tab colour, for a single role', () => {
+      const cell = keyContactCell('p-one');
+      expect(cell?.textContent?.trim()).toBe('Technical Contact');
+      expect(cell?.querySelector('span')?.className).toContain('text-sky-700');
+    });
+
+    it('collapses several roles onto a single count chip', () => {
+      expect(keyContactCell('p-many')?.textContent?.trim()).toBe('2 roles');
+    });
+
+    it('sorts by role count, most roles first, on the first click of the column header', async () => {
+      const header = [...el().querySelectorAll<HTMLButtonElement>('thead button')].find((b) => b.textContent?.includes('Key Contact'));
+      header?.click();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
     });
   });
 });

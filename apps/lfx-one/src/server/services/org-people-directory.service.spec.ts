@@ -153,6 +153,7 @@ function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmploye
     seatsCount: 22,
     boardSeatsCount: 2,
     committeeSeatsCount: 20,
+    keyContactRoles: [],
     commitsCount: 0,
     eventsCount: 13,
     coursesCount: 0,
@@ -195,6 +196,21 @@ function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
     role: 'admin',
     inviteStatus: 'accepted',
     isPending: false,
+    ...over,
+  };
+}
+
+function keyContactEmployee(over: Partial<KeyContactEmployee> = {}): KeyContactEmployee {
+  return {
+    email: 'dclarke@lfx-partner.example',
+    firstName: 'Devon',
+    lastName: 'Clarke',
+    fullName: 'Devon Clarke',
+    jobTitle: null,
+    initials: 'DC',
+    avatarUrl: null,
+    lfUsername: null,
+    roles: [],
     ...over,
   };
 }
@@ -904,5 +920,48 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await stale).rows[0].name).toBe('Before Reassign');
     expect((await run()).rows[0].name).toBe('After Reassign');
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('OrgPeopleDirectoryService.merge — key-contact roles reach the row (Key Contact column)', () => {
+  it('stamps the roles onto the stored row the key contact merges into', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow({ lfUsername: null, keyContactRoles: [] })]));
+    getKeyContactEmployees.mockResolvedValue([keyContactEmployee({ roles: ['Technical Contact', 'Billing Contact'] })]);
+
+    const result = await run();
+
+    expect(result.rows).toHaveLength(1);
+    // Sorted, so the column renders the same order on every refetch.
+    expect(result.rows[0].keyContactRoles).toEqual(['Billing Contact', 'Technical Contact']);
+  });
+
+  it('carries the roles on a live-only row the key-contact source created', async () => {
+    getKeyContactEmployees.mockResolvedValue([keyContactEmployee({ email: 'new@lfx-partner.example', roles: ['PR Contact'] })]);
+
+    const result = await run();
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].keyContactRoles).toEqual(['PR Contact']);
+  });
+
+  it('leaves the roles empty for a person no key-contact record covers', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+
+    const result = await run();
+
+    expect(result.rows[0].keyContactRoles).toEqual([]);
+  });
+
+  it('unions the roles of an address-keyed orphan into the identity that absorbs it', async () => {
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([storedRow({ personKey: 'p-identity', lfUsername: 'dclarke', keyContactRoles: ['Legal Contact'] })])
+    );
+    // No username on the key-contact document, so it keys on the address and is folded in afterwards.
+    getKeyContactEmployees.mockResolvedValue([keyContactEmployee({ lfUsername: null, roles: ['Marketing Contact'] })]);
+
+    const result = await run();
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].keyContactRoles).toEqual(['Legal Contact', 'Marketing Contact']);
   });
 });

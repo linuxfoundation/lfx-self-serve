@@ -225,6 +225,8 @@ export class OrgLensKeyContactsService {
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
         lfUsername: agreedUsername(group.map((doc) => doc.username)),
+        // One doc per (membership, role), so the same role on two foundation memberships appears twice — dedupe to the person-level set the Key Contact column renders.
+        roles: [...new Set(group.map((doc) => doc.role?.trim()).filter((role): role is string => !!role))].sort((a, b) => a.localeCompare(b)),
       });
     }
     return employees.sort((a, b) => a.fullName.localeCompare(b.fullName));

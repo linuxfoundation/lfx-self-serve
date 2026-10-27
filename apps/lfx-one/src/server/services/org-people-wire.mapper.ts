@@ -30,6 +30,7 @@ export function toWireRow(row: OrgAllEmployeeRowInternal): OrgAllEmployeeRow {
     seatsCount: row.seatsCount,
     boardSeatsCount: row.boardSeatsCount,
     committeeSeatsCount: row.committeeSeatsCount,
+    keyContactRoles: row.keyContactRoles,
     commitsCount: row.commitsCount,
     eventsCount: row.eventsCount,
     coursesCount: row.coursesCount,

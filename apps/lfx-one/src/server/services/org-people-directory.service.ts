@@ -68,6 +68,7 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boo
       return value === null || isStoredString(value);
     case 'sources':
     case 'engagedFoundationIds':
+    case 'keyContactRoles':
       return isStringArray(value);
     case 'seatsCount':
     case 'boardSeatsCount':
@@ -338,6 +339,7 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+          this.addKeyContactRoles(existing, emp.roles);
           // No username backfill onto an email-merged row: the username is member-service's resolution of
           // this address, and resolving identity from an address is prohibited.
         } else {
@@ -439,6 +441,7 @@ export class OrgPeopleDirectoryService {
       }
       for (const source of orphan.sources) this.addSource(owner, source);
       for (const email of orphan.emails) this.addEmail(owner, email);
+      this.addKeyContactRoles(owner, orphan.keyContactRoles);
       this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
       // Reachable only for an accepted principal whose settings record carries no username: it keys on
       // the address like any orphan, but `isPending` is false so its badge is a real role rather than
@@ -453,6 +456,12 @@ export class OrgPeopleDirectoryService {
     if (!row.sources.includes(source)) {
       row.sources.push(source);
     }
+  }
+
+  /** Union the person's key-contact roles, kept sorted so the Key Contact column renders in a stable order across refetches. */
+  private addKeyContactRoles(row: OrgAllEmployeeRowInternal, roles: readonly string[]): void {
+    if (roles.length === 0) return;
+    row.keyContactRoles = [...new Set([...row.keyContactRoles, ...roles])].sort((a, b) => a.localeCompare(b));
   }
 
   /** Record a contributing address. A merged person legitimately holds several; `email` stays the preferred display one. */
@@ -496,7 +505,18 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRowInternal {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
+    const row = this.liveRow(
+      email,
+      emp.firstName || null,
+      emp.lastName || null,
+      emp.jobTitle,
+      emp.avatarUrl ?? null,
+      'keyContact',
+      key,
+      emp.lfUsername ?? null
+    );
+    this.addKeyContactRoles(row, emp.roles);
+    return row;
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRowInternal {
@@ -544,6 +564,7 @@ export class OrgPeopleDirectoryService {
       seatsCount: 0,
       boardSeatsCount: 0,
       committeeSeatsCount: 0,
+      keyContactRoles: [],
       commitsCount: 0,
       eventsCount: 0,
       coursesCount: 0,

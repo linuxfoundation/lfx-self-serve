@@ -92,6 +92,7 @@ function toEmployee(row: OrgAllEmployeeRow & { email: string }): KeyContactEmplo
     initials: deriveInitials(firstName, lastName, fullName),
     avatarUrl: row.avatarUrl,
     lfUsername: row.lfUsername,
+    roles: row.keyContactRoles,
   };
 }
 

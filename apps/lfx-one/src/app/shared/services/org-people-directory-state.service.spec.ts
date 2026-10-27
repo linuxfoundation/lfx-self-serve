@@ -30,6 +30,7 @@ function roster(name: string): OrgAllEmployeesResponse {
     seatsCount: 1,
     boardSeatsCount: 0,
     committeeSeatsCount: 1,
+    keyContactRoles: [],
     commitsCount: 0,
     eventsCount: 0,
     coursesCount: 0,

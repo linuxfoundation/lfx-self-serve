@@ -47,6 +47,8 @@ import type {
   OrgDropdownOption,
 } from '@lfx-one/shared/interfaces';
 
+import { rolePillClass } from '../key-contacts/helpers/key-contacts.helper';
+
 import { AllEmployeesService } from '../../services/all-employees.service';
 
 import { AllEmployeesDetailComponent } from './all-employees-detail.component';
@@ -285,6 +287,9 @@ export class AllEmployeesComponent {
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
       isSynthetic: !row.sources.includes('snowflake'),
+      // Only a single role gets a pill — several collapse to a count chip, so building pills for them would be dead work.
+      keyContactRolePills: row.keyContactRoles.length === 1 ? [{ role: row.keyContactRoles[0], pillClass: rolePillClass(row.keyContactRoles[0]) }] : [],
+      keyContactRolesTooltip: row.keyContactRoles.length > 1 ? row.keyContactRoles.join(', ') : '',
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
   }
@@ -347,6 +352,7 @@ export class AllEmployeesComponent {
     return {
       name: active === 'name' ? direction : 'none',
       seats: active === 'seats' ? direction : 'none',
+      keyContact: active === 'keyContact' ? direction : 'none',
       commits: active === 'commits' ? direction : 'none',
       events: active === 'events' ? direction : 'none',
       courses: active === 'courses' ? direction : 'none',
@@ -361,6 +367,7 @@ export class AllEmployeesComponent {
     return {
       name: iconFor('name'),
       seats: iconFor('seats'),
+      keyContact: iconFor('keyContact'),
       commits: iconFor('commits'),
       events: iconFor('events'),
       courses: iconFor('courses'),
@@ -520,6 +527,8 @@ export class AllEmployeesComponent {
     switch (column) {
       case 'seats':
         return row.seatsCount;
+      case 'keyContact':
+        return row.keyContactRoles.length;
       case 'commits':
         return row.commitsCount;
       case 'events':
