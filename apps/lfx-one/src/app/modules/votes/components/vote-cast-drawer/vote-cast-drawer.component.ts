@@ -8,13 +8,21 @@ import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, getUserTimezone, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import {
+  buildCommentResponses,
+  getCommentPromptsData,
+  getUserTimezone,
+  isRankedPollType,
+  mapMyBallotToCastForm,
+  reconcileCommentFormControls,
+} from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -26,7 +34,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -38,6 +46,7 @@ import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWit
     TooltipModule,
     ReactiveFormsModule,
     ButtonComponent,
+    MessageComponent,
     RadioButtonComponent,
     TagComponent,
     TextareaComponent,
@@ -60,6 +69,8 @@ export class VoteCastDrawerComponent {
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
+  /** Change-ballot mode (#4331): pre-fills the voter's current ballot and submits a replacement. */
+  public readonly changingBallot = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -76,10 +87,14 @@ export class VoteCastDrawerComponent {
   // === Writable Signals ===
   protected readonly loadingVote = signal<boolean>(false);
   protected readonly submitting = signal<boolean>(false);
+  protected readonly loadingBallot = signal<boolean>(false);
+  protected readonly ballotError = signal<boolean>(false);
   // Reactive dependency for submitDisabled — rebuildForm uses { emitEvent: false }, so statusChanges is silent.
   private readonly formVersion = signal<number>(0);
   // Tracks the poll_type the form was last built for; if it changes (e.g., list vote omitted poll_type and detail fetch supplied a ranked one), rebuildForm wipes controls so they get the right shape.
   private lastBuiltPollType: PollType | null = null;
+  // Key of the ballot pre-fill last applied in change mode; cleared on close so a reopen re-applies it.
+  private appliedPrefillKey: string | null = null;
 
   // === Shared Observables ===
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
@@ -87,6 +102,7 @@ export class VoteCastDrawerComponent {
 
   // === Derived Signals (from API) ===
   protected readonly vote: Signal<Vote | null> = this.initVote();
+  protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
@@ -94,6 +110,9 @@ export class VoteCastDrawerComponent {
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  protected readonly submitLabel: Signal<string> = computed(() => (this.changingBallot() ? 'Submit changes' : 'Submit Vote'));
+  protected readonly replaceNotice = "You've already voted. Your current choices are filled in below. Submitting replaces your current ballot.";
+  protected readonly ballotLoadError = "Couldn't load your current ballot. Close this panel and try again.";
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
@@ -108,7 +127,10 @@ export class VoteCastDrawerComponent {
     // Rebuild the form when the loaded vote's questions change.
     toObservable(this.questions)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((questions) => this.rebuildForm(questions));
+      .subscribe((questions) => {
+        this.rebuildForm(questions);
+        this.applyBallotPrefill();
+      });
 
     // Rebuild the comment form when the loaded vote's comment prompts change.
     toObservable(this.commentPrompts)
@@ -116,7 +138,13 @@ export class VoteCastDrawerComponent {
       .subscribe((prompts) => {
         reconcileCommentFormControls(this.commentForm, prompts);
         this.bumpFormVersion();
+        this.applyBallotPrefill();
       });
+
+    // Change mode: pre-fill the form once the voter's current ballot loads.
+    toObservable(this.myBallot)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.applyBallotPrefill());
 
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
@@ -140,6 +168,7 @@ export class VoteCastDrawerComponent {
       .subscribe(() => {
         if (this.submitting()) this.cancelSubmit$.next();
         this.submitting.set(false);
+        this.appliedPrefillKey = null;
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
         // Clear comment text so reopening the same vote doesn't show stale drafts.
@@ -180,6 +209,7 @@ export class VoteCastDrawerComponent {
     if (!vote || this.submitting()) return;
 
     const isAbstain = this.abstain();
+    const changing = this.changingBallot();
     if (!isAbstain && this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -205,8 +235,8 @@ export class VoteCastDrawerComponent {
         next: () => {
           this.messageService.add({
             severity: 'success',
-            summary: 'Vote submitted',
-            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
+            summary: changing ? 'Ballot updated' : 'Vote submitted',
+            detail: changing ? 'Your changes have been recorded.' : `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
             life: 3000,
           });
           this.voteSubmitted.emit(vote.uid);
@@ -318,6 +348,39 @@ export class VoteCastDrawerComponent {
     );
   }
 
+  /** Loads the voter's current ballot while the drawer is open in change mode (#4331); a missing ballot is a load error, never an empty form. */
+  private initMyBallot(): Signal<MyVoteBallot | null> {
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), changing: this.changingBallot() }));
+
+    return toSignal(
+      toObservable(selection).pipe(
+        distinctUntilChanged((prev, curr) => prev.id === curr.id && prev.visible === curr.visible && prev.changing === curr.changing),
+        switchMap(({ id, visible, changing }) => {
+          this.ballotError.set(false);
+          if (!id || !visible || !changing) {
+            this.loadingBallot.set(false);
+            return of(null);
+          }
+
+          this.loadingBallot.set(true);
+          return this.voteService.getMyVoteBallot(id).pipe(
+            map((ballot) => {
+              if (!ballot) this.ballotError.set(true);
+              return ballot;
+            }),
+            catchError(() => {
+              this.ballotError.set(true);
+              return of(null);
+            }),
+            finalize(() => this.loadingBallot.set(false)),
+            startWith(null)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initIsRankedPoll(): Signal<boolean> {
     return computed(() => isRankedPollType(this.vote()?.poll_type));
   }
@@ -326,6 +389,8 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
+      // Change mode never submits before the current ballot loads, so a blank form can't overwrite it (#4331).
+      if (this.changingBallot() && !this.myBallot()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
@@ -392,6 +457,37 @@ export class VoteCastDrawerComponent {
       } else {
         this.form.addControl(question.question_id, new FormControl<string | null>(null, Validators.required), { emitEvent: false });
       }
+    }
+    this.bumpFormVersion();
+  }
+
+  /**
+   * Applies the loaded ballot to the form in change mode (#4331). Called after every form/comment rebuild and ballot
+   * load; the key re-applies only when the ballot or the controls' shape changes, so the voter's edits are kept.
+   */
+  private applyBallotPrefill(): void {
+    const vote = this.vote();
+    const ballot = this.myBallot();
+    if (!this.changingBallot() || !vote?.poll_questions?.length || !ballot) return;
+
+    const key = [
+      vote.uid,
+      ballot.vote_creation_time ?? '',
+      this.lastBuiltPollType ?? '',
+      Object.keys(this.form.controls).join(','),
+      Object.keys(this.commentForm.controls).join(','),
+    ].join('|');
+    if (key === this.appliedPrefillKey) return;
+    this.appliedPrefillKey = key;
+
+    const prefill = mapMyBallotToCastForm(vote, ballot);
+    for (const [questionId, value] of Object.entries(prefill.answers)) {
+      this.form.get(questionId)?.setValue(value, { emitEvent: false });
+    }
+    // Emitting keeps the answer controls' disabled state in sync with abstain.
+    this.abstainControl.setValue(prefill.abstain);
+    for (const [promptId, text] of Object.entries(prefill.comments)) {
+      this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
     }
     this.bumpFormVersion();
   }

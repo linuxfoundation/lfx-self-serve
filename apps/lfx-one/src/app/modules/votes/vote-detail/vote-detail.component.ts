@@ -12,6 +12,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { VOTE_DETAIL_DEFAULT_TAB, VOTE_DETAIL_TABS, VOTE_DETAIL_VALID_TABS, VOTE_VOTERS_ABSTAINED_CHOICE_KEY } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
+  MyVoteBallot,
   MyVoteResponse,
   PollCommentPrompt,
   PollCommentResponse,
@@ -56,6 +57,7 @@ import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cas
 import { VoteCommentResultsComponent } from '../components/vote-comment-results/vote-comment-results.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
+import { VoteMyBallotComponent } from '../components/vote-my-ballot/vote-my-ballot.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
@@ -102,6 +104,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteCommentResultsComponent,
     VoteDetailFactsComponent,
     VoteDetailHeaderComponent,
+    VoteMyBallotComponent,
     VoteOptionResultsComponent,
     VoteParticipationCardComponent,
     VoteRankedQuestionResultsComponent,
@@ -132,6 +135,7 @@ export class VoteDetailComponent {
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
+  protected readonly myBallotError = signal<boolean>(false);
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
   /** Results status belongs to its request's vote, just like the retained payload. */
@@ -194,6 +198,8 @@ export class VoteDetailComponent {
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
   protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
+  /** The viewer's own current ballot, read only for a voter whose ballot is recorded on an active vote (#4331). */
+  protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   /** A settled voter view for someone never invited or removed from the vote (#4330) — the page trims to the voter-state panel. */
   protected readonly isOutsider: Signal<boolean> = computed(
     () => !this.accessLoading() && this.audience() === 'voter' && (this.voterState() === 'not_participant' || this.voterState() === 'access_denied')
@@ -412,6 +418,37 @@ export class VoteDetailComponent {
     );
     // toObservable effects settle later than vote changes; never expose another vote's retained response.
     return computed(() => (response()?.vote_uid === this.vote()?.uid ? response() : null));
+  }
+
+  /**
+   * Keyed on the vote uid, the refresh tick and whether a voter's ballot is recorded, so a ballot cast from this page
+   * loads once it lands. The BFF returns only the caller's own ballot, on pseudo-anonymous votes too (#4331).
+   */
+  private initMyBallot(): Signal<MyVoteBallot | null> {
+    const key = computed(() => ({
+      uid: this.vote()?.uid ?? null,
+      tick: this.refreshTick(),
+      // canManage() is null while access resolves, and audience() reads 'voter' then — wait so a manager never fetches.
+      submitted: this.voterState() === 'submitted' && this.canManage() !== null && this.audience() === 'voter',
+    }));
+    const ballot = toSignal(
+      toObservable(key).pipe(
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.tick === b.tick && a.submitted === b.submitted),
+        switchMap(({ uid, submitted }) => {
+          this.myBallotError.set(false);
+          if (!uid || !submitted) return of(null);
+          return this.voteService.getMyVoteBallot(uid).pipe(
+            catchError(() => {
+              this.myBallotError.set(true);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+    // Never expose another vote's retained ballot while the key settles.
+    return computed(() => (ballot()?.vote_uid === this.vote()?.uid ? ballot() : null));
   }
 
   private initCanManage(): Signal<boolean | null> {

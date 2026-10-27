@@ -338,6 +338,11 @@
                   <span class="text-sm font-semibold text-emerald-900">Your vote has been recorded</span>
                 }
               </div>
+              @if (myBallot(); as ballot) {
+                <lfx-vote-my-ballot [vote]="voteData" [ballot]="ballot" data-testid="vote-detail-my-ballot" class="w-full text-left" />
+              } @else if (myBallotError()) {
+                <p class="text-sm text-red-600" data-testid="vote-detail-my-ballot-error">Couldn't load your ballot.</p>
+              }
             } @else {
               <p class="text-sm text-gray-600 max-w-sm" data-testid="vote-detail-voter-not-voted">
                 You haven't responded to this vote yet. Totals and comments stay hidden until the vote closes.

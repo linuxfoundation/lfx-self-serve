@@ -30,8 +30,14 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
 router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
 
+// PUT /votes/responses/:responseUid - replace the caller's own submitted ballot (#4331)
+router.put('/responses/:responseUid', (req, res, next) => voteController.updateVoteResponse(req, res, next));
+
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
+
+// GET /votes/:uid/my-ballot - current user's own submitted ballot (change-ballot pre-fill and "Your ballot", #4331)
+router.get('/:uid/my-ballot', (req, res, next) => voteController.getMyVoteBallot(req, res, next));
 
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));

@@ -11,7 +11,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
@@ -19,6 +19,7 @@ import {
   EnableVoteRequest,
   EnableVoteResponse,
   ExtendVoteRequest,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesApiResponse,
   MyVotesResponse,
@@ -28,6 +29,7 @@ import {
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
+  UpdateVoteResponseRequest,
   Vote,
   VoteAnswerInput,
   VoteParticipationVoter,
@@ -568,7 +570,15 @@ export class VoteService {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
 
-  /** Wraps getMyVoteResponse + createVoteResponse; throws INVITATION_NOT_FOUND if no row exists. */
+  /** Replaces the caller's own submitted ballot (#4331). */
+  public updateVoteResponse(voteResponseUid: string, payload: UpdateVoteResponseRequest): Observable<void> {
+    return this.http.put<void>(`/api/votes/responses/${encodeURIComponent(voteResponseUid)}`, payload).pipe(take(1));
+  }
+
+  /**
+   * Wraps getMyVoteResponse + createVoteResponse/updateVoteResponse; throws INVITATION_NOT_FOUND if no row exists.
+   * A row that already responded is updated in place (#4331) — upstream rejects a second POST for it.
+   */
   public submitMyResponse(
     voteUid: string,
     params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
@@ -577,6 +587,14 @@ export class VoteService {
       take(1),
       switchMap((myResponse) => {
         if (!myResponse?.uid) return throwError(() => new Error(INVITATION_NOT_FOUND));
+        if (myResponse.vote_status === IndexedVoteResponseStatus.RESPONDED) {
+          // Always send comment_responses on an update: upstream keeps the old comments when it is omitted.
+          return this.updateVoteResponse(myResponse.uid, {
+            abstain: params.abstain,
+            user_vote_content: params.userVoteContent,
+            comment_responses: params.commentResponses ?? [],
+          });
+        }
         const payload: CreateVoteResponseRequest = {
           vote_response_uid: myResponse.uid,
           vote_uid: voteUid,
@@ -598,6 +616,17 @@ export class VoteService {
         // instead of misreporting it as "Unable to find your invitation".
         if (err?.status === 404) return of(null);
         console.error(`Failed to load my-response for vote ${voteUid}:`, err);
+        return throwError(() => err);
+      })
+    );
+  }
+
+  /** The caller's own submitted ballot (#4331); null when they have none (404). Other errors are rethrown. */
+  public getMyVoteBallot(voteUid: string): Observable<MyVoteBallot | null> {
+    return this.http.get<MyVoteBallot>(`/api/votes/${encodeURIComponent(voteUid)}/my-ballot`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err?.status === 404) return of(null);
+        console.error(`Failed to load my-ballot for vote ${voteUid}:`, err);
         return throwError(() => err);
       })
     );

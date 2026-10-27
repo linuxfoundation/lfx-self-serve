@@ -20,6 +20,7 @@ import {
   ExtendVoteRequest,
   IndexedVote,
   IndexedVoteResponse,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesResponse,
   PaginatedResponse,
@@ -28,9 +29,11 @@ import {
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
+  UpdateVoteResponseRequest,
   Vote,
   VoteListResponse,
   VoteReminderRecipient,
+  VoteResponseDetail,
   VoteStatusCounts,
   VoteSummary,
   VoteParticipationVoter,
@@ -632,6 +635,59 @@ export class VoteService {
     }
   }
 
+  /**
+   * Replaces the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4331),
+   * then polls until the query service indexes the new ballot. Upstream rewrites `vote_creation_time` on every
+   * update, so the poll waits for it to differ from the pre-update row — an already-responded row would pass
+   * the create path's `responded` check at once.
+   */
+  public async updateVoteResponse(req: Request, voteResponseUid: string, payload: UpdateVoteResponseRequest): Promise<void> {
+    const findOwnRow = async (): Promise<IndexedVoteResponse | undefined> => {
+      const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`uid:${voteResponseUid}`] });
+      return responses.find((row) => row.uid === voteResponseUid);
+    };
+
+    // The identity-scoped lookup only returns the caller's rows, so a uid that isn't theirs reads as missing.
+    const baseline = await findOwnRow();
+    if (!baseline) {
+      throw new ResourceNotFoundError('Vote response', voteResponseUid, {
+        operation: 'update_vote_response',
+        service: 'vote_service',
+        path: `/vote_responses/${encodeURIComponent(voteResponseUid)}`,
+      });
+    }
+
+    const voteUid = getParentVoteId(baseline);
+    logger.debug(req, 'update_vote_response', 'Updating vote response', {
+      vote_uid: voteUid,
+      vote_response_uid: voteResponseUid,
+      abstain: payload.abstain,
+      answer_count: payload.user_vote_content?.length ?? 0,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/vote_responses/${encodeURIComponent(voteResponseUid)}`, 'PUT', undefined, payload);
+
+    const baselineTime = baseline.vote_creation_time ?? '';
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'update_vote_response_poll',
+      pollFn: async () => {
+        const row = await findOwnRow();
+        return !!row?.vote_creation_time && row.vote_creation_time !== baselineTime;
+      },
+      maxRetries: 5,
+      retryDelayMs: 1000,
+      metadata: { vote_uid: voteUid, vote_response_uid: voteResponseUid },
+    });
+
+    if (!resolved) {
+      logger.warning(req, 'update_vote_response', 'Updated vote response not yet indexed, client may see stale state', {
+        vote_uid: voteUid,
+        vote_response_uid: voteResponseUid,
+      });
+    }
+  }
+
   // ============================================
   // Reminders (#3769)
   // ============================================
@@ -1006,6 +1062,47 @@ export class VoteService {
       response.uid = match.vote_id;
     }
     return response;
+  }
+
+  /**
+   * Reads the caller's own current ballot for a vote (#4331), or null when they have no submitted ballot.
+   * @description The response uid comes only from the identity-matched row (`getMyVoteResponse`), never from the
+   * client, so on a pseudo-anonymous vote the caller still sees only their own ballot. The ballot is read from the
+   * voting service rather than the query-service index, which omits ballot content on pseudo-anonymous votes.
+   */
+  public async getMyVoteBallot(req: Request, voteUid: string): Promise<MyVoteBallot | null> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) return null;
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_vote_ballot', 'Vote response belongs to a different vote, returning no ballot', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return null;
+    }
+
+    return {
+      vote_response_uid: row.uid,
+      vote_uid: voteUid,
+      abstained: detail?.abstained === true,
+      poll_answers: (detail?.poll_answers ?? []).map((answer) => ({
+        question_id: answer.question_id,
+        prompt: answer.prompt,
+        type: answer.type,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
+      vote_creation_time: detail?.vote_creation_time || undefined,
+    };
   }
 
   // ============================================

@@ -29,6 +29,7 @@ import { VotesDashboardComponent } from './votes-dashboard.component';
 class StubVoteCastDrawerComponent {
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
+  public readonly changingBallot = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
 }
@@ -1050,14 +1051,28 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('soon');
       expect(drawer()?.listVote()?.uid).toBe('soon');
+      expect(drawer()?.changingBallot()).toBe(false);
     });
 
-    it('opens the vote page for an active vote the viewer already voted on', async () => {
+    it('opens the cast drawer in change mode for an active vote the viewer already voted on (#4331)', async () => {
       table.viewVote.emit('responded');
       await settle();
 
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'responded']);
-      expect(drawer()?.visible()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.changingBallot()).toBe(true);
+    });
+
+    it('keeps a changed ballot voted after it is submitted (#4331)', async () => {
+      table.viewVote.emit('responded');
+      await settle();
+
+      drawer()!.voteSubmitted.emit('responded');
+      await settle();
+
+      expect(element('votes-your-vote-responded')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-responded')?.textContent).toContain('Review');
     });
 
     it('opens the vote page for an ended vote from a row, and its Results on the results tab', async () => {
@@ -1086,8 +1101,15 @@ describe('VotesDashboardComponent personal summary', () => {
       await selectSummary('needs-vote');
       expect(rows()).not.toContain('soon');
       await selectSummary('needs-vote');
+      // The real drawer closes itself on submit; the stub doesn't, so close it before Review.
+      drawer()!.visible.set(false);
+      await settle();
       element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon']);
+      await settle();
+      // Review on the just-voted row reopens the drawer to change the ballot (#4331), rather than navigating.
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.changingBallot()).toBe(true);
       expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
     });
 

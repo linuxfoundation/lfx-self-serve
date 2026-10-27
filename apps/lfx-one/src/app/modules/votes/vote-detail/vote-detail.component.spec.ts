@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
+  MyVoteBallot,
   MyVoteResponse,
   PollCommentResult,
   PollQuestionResult,
@@ -86,6 +87,7 @@ describe('VoteDetailComponent', () => {
   let voteService: {
     fetchVote: ReturnType<typeof vi.fn>;
     getMyVoteResponse: ReturnType<typeof vi.fn>;
+    getMyVoteBallot: ReturnType<typeof vi.fn>;
     getVoteResults: ReturnType<typeof vi.fn>;
   };
   let projectService: { getProjectStrict: ReturnType<typeof vi.fn> };
@@ -137,6 +139,7 @@ describe('VoteDetailComponent', () => {
     voteService = {
       fetchVote: vi.fn().mockReturnValue(of(makeVote())),
       getMyVoteResponse: vi.fn().mockReturnValue(of(null)),
+      getMyVoteBallot: vi.fn().mockReturnValue(of(null)),
       getVoteResults: vi.fn().mockReturnValue(of(makeResults())),
     };
     projectService = { getProjectStrict: vi.fn().mockReturnValue(of({ writer: false } as Project)) };
@@ -350,6 +353,52 @@ describe('VoteDetailComponent', () => {
       results.next(makeResults());
       TestBed.tick();
       expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent?.trim()).toBe('1 invited voter has not responded yet');
+    });
+  });
+
+  describe('your ballot (#4331)', () => {
+    const ballot: MyVoteBallot = { vote_response_uid: 'resp-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+
+    it.each([
+      ['a named', false],
+      ['a pseudo-anonymous', true],
+    ])('shows a submitted voter their own ballot on %s vote', async (_label, pseudoAnonymity) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: pseudoAnonymity })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(of(ballot));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+      expect(read(fixture, 'myBallot')).toEqual(ballot);
+      expect(testId(fixture, 'vote-detail-my-ballot')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+    });
+
+    it('does not read a ballot for a voter who has not voted', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it('does not read a ballot for a manager', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(read(fixture, 'audience')).toBe('creator');
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it('says the ballot could not load when the read fails', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(httpError(500));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')?.textContent).toContain("Couldn't load your ballot.");
     });
   });
 

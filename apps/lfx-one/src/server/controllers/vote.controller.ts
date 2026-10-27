@@ -10,6 +10,7 @@ import {
   ExtendVoteRequest,
   SendVoteReminderRequest,
   UpdateVoteRequest,
+  UpdateVoteResponseRequest,
 } from '@lfx-one/shared/interfaces';
 import {
   VOTE_COMMENT_PROMPT_MAX_COUNT,
@@ -440,106 +441,91 @@ export class VoteController {
         return;
       }
 
-      if (typeof payload.abstain !== 'boolean') {
-        throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
-      }
-
-      if (payload.comment_responses !== undefined) {
-        if (!Array.isArray(payload.comment_responses)) {
-          throw ServiceValidationError.forField('comment_responses', 'comment_responses must be an array', validationContext);
-        }
-
-        for (const [index, response] of payload.comment_responses.entries()) {
-          if (!response || typeof response !== 'object') {
-            throw ServiceValidationError.forField(`comment_responses[${index}]`, 'Each comment response must be a non-null object', validationContext);
-          }
-
-          if (!response.prompt_id || typeof response.prompt_id !== 'string') {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].prompt_id`,
-              'prompt_id is required for each comment response',
-              validationContext
-            );
-          }
-
-          if (typeof response.comment_text !== 'string' || response.comment_text.trim().length === 0) {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].comment_text`,
-              'comment_text is required for each comment response',
-              validationContext
-            );
-          }
-
-          // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
-          if (codePointLength(response.comment_text) > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].comment_text`,
-              `comment_text must be ${VOTE_COMMENT_RESPONSE_MAX_LENGTH} characters or fewer`,
-              validationContext
-            );
-          }
-        }
-      }
-
-      // Rebuild comment_responses from the validated fields only, so unexpected extra
-      // properties on the client payload never cross the BFF boundary.
-      const validatedCommentResponses: CommentResponseInput[] | undefined = payload.comment_responses?.map((response) => ({
-        prompt_id: response.prompt_id,
-        comment_text: response.comment_text,
-      }));
-
-      // Build the upstream payload immutably: when abstaining we drop user_vote_content entirely;
-      // when not abstaining we validate each answer and forward the original content. comment_responses
-      // is independent of abstain — a voter can abstain and still leave comments — so it's forwarded on both branches.
-      let upstreamPayload: CreateVoteResponseRequest;
-
-      if (payload.abstain) {
-        upstreamPayload = {
-          vote_uid: payload.vote_uid,
-          vote_response_uid: payload.vote_response_uid,
-          abstain: true,
-          comment_responses: validatedCommentResponses,
-        };
-      } else {
-        if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
-          throw ServiceValidationError.forField('user_vote_content', 'user_vote_content is required when not abstaining', validationContext);
-        }
-
-        for (const [index, answer] of payload.user_vote_content.entries()) {
-          if (!answer || typeof answer !== 'object') {
-            throw ServiceValidationError.forField(`user_vote_content[${index}]`, 'Each answer must be a non-null object', validationContext);
-          }
-
-          if (!answer.question_id || typeof answer.question_id !== 'string') {
-            throw ServiceValidationError.forField(`user_vote_content[${index}].question_id`, 'question_id is required for each answer', validationContext);
-          }
-
-          const hasChoiceIds = Array.isArray(answer.choice_ids) && answer.choice_ids.length > 0;
-          const hasRankedChoices = Array.isArray(answer.ranked_choices) && answer.ranked_choices.length > 0;
-
-          if (!hasChoiceIds && !hasRankedChoices) {
-            throw ServiceValidationError.forField(
-              `user_vote_content[${index}]`,
-              'Each answer must include either choice_ids or ranked_choices',
-              validationContext
-            );
-          }
-        }
-
-        upstreamPayload = {
-          vote_uid: payload.vote_uid,
-          vote_response_uid: payload.vote_response_uid,
-          abstain: false,
-          user_vote_content: payload.user_vote_content,
-          comment_responses: validatedCommentResponses,
-        };
-      }
+      const upstreamPayload: CreateVoteResponseRequest = {
+        vote_uid: payload.vote_uid,
+        vote_response_uid: payload.vote_response_uid,
+        ...this.buildValidatedVoteResponsePayload(payload, validationContext),
+      };
 
       await this.voteService.createVoteResponse(req, upstreamPayload);
 
       logger.success(req, 'create_vote_response', startTime, {
         vote_uid: upstreamPayload.vote_uid,
         vote_response_uid: upstreamPayload.vote_response_uid,
+        abstain: upstreamPayload.abstain,
+        status_code: 204,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-ballot — the caller's own current ballot, used to pre-fill a ballot change and show "Your ballot" (#4331). */
+  public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_vote_ballot',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const ballot = await this.voteService.getMyVoteBallot(req, uid);
+
+      if (!ballot) {
+        return next(
+          new ResourceNotFoundError('Vote ballot', uid, {
+            operation: 'get_my_vote_ballot',
+            service: 'vote_controller',
+            path: `/votes/${uid}/my-ballot`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
+      res.json(ballot);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /votes/responses/:responseUid — replaces the caller's own submitted ballot (#4331)
+   */
+  public async updateVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { responseUid } = req.params;
+    const payload: Partial<UpdateVoteResponseRequest> = req.body;
+    const startTime = logger.startOperation(req, 'update_vote_response', {
+      vote_response_uid: responseUid,
+      abstain: payload?.abstain,
+    });
+
+    try {
+      const validationContext = { operation: 'update_vote_response', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(responseUid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      const validated = this.buildValidatedVoteResponsePayload(payload, validationContext);
+      // Always send comment_responses: upstream keeps the old comments when it is omitted, so a cleared comment must arrive as [].
+      const upstreamPayload: UpdateVoteResponseRequest = { ...validated, comment_responses: validated.comment_responses ?? [] };
+
+      await this.voteService.updateVoteResponse(req, responseUid, upstreamPayload);
+
+      logger.success(req, 'update_vote_response', startTime, {
+        vote_response_uid: responseUid,
         abstain: upstreamPayload.abstain,
         status_code: 204,
       });
@@ -739,6 +725,87 @@ export class VoteController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Validates a ballot body shared by create (POST) and update (PUT) and rebuilds it from the validated fields only.
+   * @description When abstaining, `user_vote_content` is dropped entirely; otherwise every answer must carry choices.
+   * `comment_responses` is independent of abstain — a voter can abstain and still leave comments.
+   */
+  private buildValidatedVoteResponsePayload(
+    payload: Partial<Pick<CreateVoteResponseRequest, 'abstain' | 'user_vote_content' | 'comment_responses'>>,
+    validationContext: { operation: string; service: string }
+  ): Omit<CreateVoteResponseRequest, 'vote_uid' | 'vote_response_uid'> {
+    if (typeof payload.abstain !== 'boolean') {
+      throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
+    }
+
+    if (payload.comment_responses !== undefined) {
+      if (!Array.isArray(payload.comment_responses)) {
+        throw ServiceValidationError.forField('comment_responses', 'comment_responses must be an array', validationContext);
+      }
+
+      for (const [index, response] of payload.comment_responses.entries()) {
+        if (!response || typeof response !== 'object') {
+          throw ServiceValidationError.forField(`comment_responses[${index}]`, 'Each comment response must be a non-null object', validationContext);
+        }
+
+        if (!response.prompt_id || typeof response.prompt_id !== 'string') {
+          throw ServiceValidationError.forField(`comment_responses[${index}].prompt_id`, 'prompt_id is required for each comment response', validationContext);
+        }
+
+        if (typeof response.comment_text !== 'string' || response.comment_text.trim().length === 0) {
+          throw ServiceValidationError.forField(
+            `comment_responses[${index}].comment_text`,
+            'comment_text is required for each comment response',
+            validationContext
+          );
+        }
+
+        // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
+        if (codePointLength(response.comment_text) > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
+          throw ServiceValidationError.forField(
+            `comment_responses[${index}].comment_text`,
+            `comment_text must be ${VOTE_COMMENT_RESPONSE_MAX_LENGTH} characters or fewer`,
+            validationContext
+          );
+        }
+      }
+    }
+
+    // Rebuild comment_responses from the validated fields only, so unexpected extra
+    // properties on the client payload never cross the BFF boundary.
+    const validatedCommentResponses: CommentResponseInput[] | undefined = payload.comment_responses?.map((response) => ({
+      prompt_id: response.prompt_id,
+      comment_text: response.comment_text,
+    }));
+
+    if (payload.abstain) {
+      return { abstain: true, comment_responses: validatedCommentResponses };
+    }
+
+    if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
+      throw ServiceValidationError.forField('user_vote_content', 'user_vote_content is required when not abstaining', validationContext);
+    }
+
+    for (const [index, answer] of payload.user_vote_content.entries()) {
+      if (!answer || typeof answer !== 'object') {
+        throw ServiceValidationError.forField(`user_vote_content[${index}]`, 'Each answer must be a non-null object', validationContext);
+      }
+
+      if (!answer.question_id || typeof answer.question_id !== 'string') {
+        throw ServiceValidationError.forField(`user_vote_content[${index}].question_id`, 'question_id is required for each answer', validationContext);
+      }
+
+      const hasChoiceIds = Array.isArray(answer.choice_ids) && answer.choice_ids.length > 0;
+      const hasRankedChoices = Array.isArray(answer.ranked_choices) && answer.ranked_choices.length > 0;
+
+      if (!hasChoiceIds && !hasRankedChoices) {
+        throw ServiceValidationError.forField(`user_vote_content[${index}]`, 'Each answer must include either choice_ids or ranked_choices', validationContext);
+      }
+    }
+
+    return { abstain: false, user_vote_content: payload.user_vote_content, comment_responses: validatedCommentResponses };
   }
 
   /** Validates poll_comment_prompts shape and caps, then rebuilds each entry from validated fields only.

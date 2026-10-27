@@ -4,7 +4,7 @@ description: Frequently asked questions about votes and polls in LFX Self Serve.
 audience: [all]
 product_area: Votes
 tags: [votes, faq, polls, governance, elections]
-last_updated: 2026-08-17
+last_updated: 2026-10-27
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ Voter eligibility and anonymity settings are configured when the poll is created
 
 ## Can I change my vote after submitting?
 
-Vote change availability depends on the poll configuration. Check the poll detail view for options after submitting.
+Yes, until the poll closes. From **Votes**, select **Review** on the poll. Your current choices are filled in, and **Submit changes** replaces your earlier ballot. The **Your ballot** section on the poll's page shows what is recorded.
 
 ## Are votes anonymous?
 

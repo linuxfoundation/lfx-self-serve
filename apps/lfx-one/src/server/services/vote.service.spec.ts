@@ -27,7 +27,9 @@ import type {
   CreateVoteResponseRequest,
   IndexedVote,
   IndexedVoteResponse,
+  MyVoteResponse,
   QueryServiceResponse,
+  UpdateVoteResponseRequest,
   VoteResultsResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
@@ -142,7 +144,7 @@ vi.mock('../utils/auth-helper', () => ({
   },
 }));
 
-import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { logger } from './logger.service';
 import { VoteService } from './vote.service';
@@ -2229,6 +2231,198 @@ describe('VoteService', () => {
       await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
       expect(fetchAllQueryResources).not.toHaveBeenCalled();
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyVoteBallot (#4331)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d401';
+    const OWN_ROW_UID = 'vr000000-0000-0000-0000-00000000d401';
+    const ownRow = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+      uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      voter_removed: false,
+      ...overrides,
+    });
+    const detail = {
+      vote_response_uid: OWN_ROW_UID,
+      vote_uid: VOTE_UID,
+      project_uid: 'p0000000-0000-0000-0000-00000000d401',
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      abstained: false,
+      user_email: 'spec-voter@example.org',
+      user_name: 'Spec Voter',
+      ses_message_id: 'ses-1',
+      vote_creation_time: '2026-10-20T10:00:00Z',
+      poll_answers: [
+        { question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', user_choice: [{ choice_id: 'c-yes', choice_text: 'Yes' }], total_voters: 4 },
+      ],
+      comment_responses: [{ prompt_id: 'p-1', comment_text: 'Looks good', created_at: '2026-10-20T10:00:00Z' }],
+    };
+
+    it.each([
+      ['no row', null],
+      ['a removed row', ownRow({ voter_removed: true })],
+      ['an awaiting row', ownRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })],
+    ])('returns null without reading upstream for %s', async (_label, row) => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(row);
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toBeNull();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('reads only the identity-matched row with the user token and allowlists the ballot', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue(detail);
+
+      const ballot = await service.getMyVoteBallot(req, VOTE_UID);
+
+      expect(service.getMyVoteResponse).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${OWN_ROW_UID}`, 'GET');
+      expect(ballot).toEqual({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        abstained: false,
+        poll_answers: [
+          { question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', user_choice: [{ choice_id: 'c-yes', choice_text: 'Yes' }], ranked_user_choice: [] },
+        ],
+        comment_responses: [{ prompt_id: 'p-1', comment_text: 'Looks good' }],
+        vote_creation_time: '2026-10-20T10:00:00Z',
+      });
+    });
+
+    it('returns null and warns when upstream returns a response for a different vote', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({ ...detail, vote_uid: 'v0000000-0000-0000-0000-00000000d499' });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toBeNull();
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_my_vote_ballot', expect.any(String), expect.objectContaining({ vote_uid: VOTE_UID }));
+    });
+
+    it('normalizes missing choice arrays, comments and abstention', async () => {
+      vi.spyOn(service, 'getMyVoteResponse').mockResolvedValue(ownRow());
+      proxyRequest.mockResolvedValue({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        poll_answers: [{ question_id: 'q-1', prompt: 'Rank', type: 'single_choice' }],
+      });
+
+      await expect(service.getMyVoteBallot(req, VOTE_UID)).resolves.toEqual({
+        vote_response_uid: OWN_ROW_UID,
+        vote_uid: VOTE_UID,
+        abstained: false,
+        poll_answers: [{ question_id: 'q-1', prompt: 'Rank', type: 'single_choice', user_choice: [], ranked_user_choice: [] }],
+        comment_responses: [],
+        vote_creation_time: undefined,
+      });
+    });
+  });
+
+  describe('updateVoteResponse (#4331)', () => {
+    const RESPONSE_UID = 'vr000000-0000-0000-0000-00000000d501';
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d501';
+    const BASELINE_TIME = '2026-10-20T10:00:00Z';
+    const payload: UpdateVoteResponseRequest = {
+      abstain: false,
+      user_vote_content: [{ question_id: 'q-1', choice_ids: ['c-no'] }],
+      comment_responses: [],
+    };
+    let rowTimes: (string | undefined)[];
+    let ownRows: boolean;
+
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      const realPoll = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
+      pollEndpoint.mockImplementation(realPoll.pollEndpoint);
+      getUsernameFromAuth.mockResolvedValue('spec-voter');
+      getEffectiveEmail.mockReturnValue('spec-voter@example.org');
+      fetchAllQueryResources.mockImplementation(
+        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<unknown>>): Promise<unknown[]> => {
+          const page = await fetchPage();
+          return page.resources.map((r) => r.data);
+        }
+      );
+      rowTimes = [BASELINE_TIME];
+      ownRows = true;
+      proxyRequest.mockImplementation(async (_req: Request, _service: string, path: string, method: string) => {
+        if (path === `/vote_responses/${RESPONSE_UID}` && method === 'PUT') return undefined;
+        if (path !== '/query/resources' || method !== 'GET') throw new Error(`Unexpected transport call: ${method} ${path}`);
+        if (!ownRows) return { resources: [] };
+        // Each read consumes the next indexed time; the last one repeats.
+        const time = rowTimes.length > 1 ? rowTimes.shift() : rowTimes[0];
+        return {
+          resources: [
+            {
+              data: {
+                uid: RESPONSE_UID,
+                vote_uid: VOTE_UID,
+                user_email: 'spec-voter@example.org',
+                vote_status: IndexedVoteResponseStatus.RESPONDED,
+                vote_creation_time: time,
+              },
+            },
+          ],
+        };
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      pollEndpoint.mockImplementation(() => Promise.resolve(true));
+      fetchAllQueryResources.mockReset();
+      getEffectiveEmail.mockReset();
+      getUsernameFromAuth.mockReset();
+      proxyRequest.mockReset();
+    });
+
+    const settle = async (): Promise<void> => {
+      const update = service.updateVoteResponse(req, RESPONSE_UID, payload);
+      await vi.runAllTimersAsync();
+      await update;
+    };
+
+    it("rejects a response uid that is not one of the caller's rows without writing", async () => {
+      ownRows = false;
+
+      await expect(service.updateVoteResponse(req, RESPONSE_UID, payload)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      expect(proxyRequest).not.toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', expect.stringContaining('/vote_responses/'), 'PUT', undefined, expect.anything());
+    });
+
+    it('scopes the baseline read to the uid and PUTs the payload upstream', async () => {
+      rowTimes = [BASELINE_TIME, '2026-10-27T09:00:00Z'];
+
+      await settle();
+
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`uid:${RESPONSE_UID}`] })
+      );
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/vote_responses/${RESPONSE_UID}`, 'PUT', undefined, payload);
+    });
+
+    it('resolves once the indexed vote_creation_time changes', async () => {
+      rowTimes = [BASELINE_TIME, BASELINE_TIME, '2026-10-27T09:00:00Z'];
+
+      await settle();
+
+      // Baseline, one unchanged poll read, then the changed one.
+      expect(proxyRequest.mock.calls.filter(([, , path]) => path === '/query/resources')).toHaveLength(3);
+      expect(logger.warning).not.toHaveBeenCalledWith(req, 'update_vote_response', expect.any(String), expect.anything());
+    });
+
+    it('warns when the updated ballot is not indexed before the poll gives up', async () => {
+      await settle();
+
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'update_vote_response',
+        expect.any(String),
+        expect.objectContaining({ vote_response_uid: RESPONSE_UID })
+      );
     });
   });
 

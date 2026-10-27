@@ -6,7 +6,7 @@ import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
-import { Vote } from '@lfx-one/shared/interfaces';
+import { MyVoteBallot, Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -340,5 +340,167 @@ describe('VoteCastDrawerComponent — ranked listVote survives a failed first-op
     expect(fixture.componentInstance['isRankedPoll']()).toBe(true);
     expect(el('vote-cast-rank-c1')).toBeTruthy();
     expect(el('vote-cast-choice-c1')).toBeNull();
+  });
+});
+
+describe('VoteCastDrawerComponent — change ballot mode (#4331)', () => {
+  const CHANGE_VOTE: Vote = {
+    ...VOTE,
+    allow_abstain: true,
+    poll_questions: [
+      VOTE.poll_questions![0],
+      {
+        question_id: 'q2',
+        prompt: 'Which committees should review it?',
+        type: 'multiple_choice',
+        choices: [
+          { choice_id: 'm1', choice_text: 'Legal' },
+          { choice_id: 'm2', choice_text: 'Finance' },
+          { choice_id: 'm3', choice_text: 'Security' },
+        ],
+      },
+    ],
+    poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Anything else?' }],
+  } as Vote;
+  const BALLOT: MyVoteBallot = {
+    vote_response_uid: 'vr-1',
+    vote_uid: VOTE.uid,
+    abstained: false,
+    poll_answers: [
+      { question_id: 'q1', prompt: '', type: 'single_choice', user_choice: [{ choice_id: 'c2', choice_text: 'Reject' }], ranked_user_choice: [] },
+      {
+        question_id: 'q2',
+        prompt: '',
+        type: 'multiple_choice',
+        user_choice: [
+          { choice_id: 'm1', choice_text: 'Legal' },
+          { choice_id: 'm3', choice_text: 'Security' },
+        ],
+        ranked_user_choice: [],
+      },
+    ],
+    comment_responses: [{ prompt_id: 'p1', comment_text: 'Needs a second reading' }],
+    vote_creation_time: '2026-10-20T10:00:00Z',
+  };
+
+  async function openChanging(vote: Vote, getMyVoteBallot: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}): Promise<void> {
+    await setup(vi.fn().mockReturnValue(of(vote)), { getMyVoteBallot, ...overrides });
+    fixture.componentRef.setInput('changingBallot', true);
+    await openWithoutListVote();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  function submitButton(): HTMLButtonElement | null {
+    return el('vote-cast-submit-button')?.querySelector('button') ?? null;
+  }
+
+  it('pre-fills the single choice, multiple choices and comments, with the replace notice and "Submit changes"', async () => {
+    const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
+    await openChanging(CHANGE_VOTE, getMyVoteBallot);
+
+    const component = fixture.componentInstance;
+    expect(getMyVoteBallot).toHaveBeenCalledWith(VOTE.uid);
+    expect(component.form.get('q1')?.value).toBe('c2');
+    expect(component.form.get('q2')?.value).toEqual(['m1', 'm3']);
+    expect(component.commentForm.get('p1')?.value).toBe('Needs a second reading');
+    expect(component.abstainControl.value).toBe(false);
+    expect(el('vote-cast-replace-notice')?.textContent).toContain('Submitting replaces your current ballot.');
+    expect(submitButton()?.textContent?.trim()).toBe('Submit changes');
+    expect(component['submitDisabled']()).toBe(false);
+  });
+
+  it('pre-fills a ranked order, appending unranked choices', async () => {
+    const rankedVote = {
+      ...VOTE,
+      poll_type: PollType.INSTANT_RUNOFF_VOTE,
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank the candidates',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'r1', choice_text: 'Avery' },
+            { choice_id: 'r2', choice_text: 'Blake' },
+            { choice_id: 'r3', choice_text: 'Casey' },
+          ],
+        },
+      ],
+    } as Vote;
+    const ballot: MyVoteBallot = {
+      ...BALLOT,
+      poll_answers: [
+        {
+          question_id: 'q1',
+          prompt: '',
+          type: 'single_choice',
+          user_choice: [],
+          ranked_user_choice: [
+            { choice_id: 'r3', choice_text: 'Casey', choice_rank: 1 },
+            { choice_id: 'r1', choice_text: 'Avery', choice_rank: 2 },
+          ],
+        },
+      ],
+      comment_responses: [],
+    };
+    await openChanging(rankedVote, vi.fn().mockReturnValue(of(ballot)));
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3', 'r1', 'r2']);
+  });
+
+  it('pre-fills an abstention', async () => {
+    await openChanging(CHANGE_VOTE, vi.fn().mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [] })));
+
+    expect(fixture.componentInstance.abstainControl.value).toBe(true);
+    expect(fixture.componentInstance.form.disabled).toBe(true);
+  });
+
+  it('keeps submit disabled while the current ballot loads', async () => {
+    const pending = new Subject<MyVoteBallot | null>();
+    await openChanging(CHANGE_VOTE, vi.fn().mockReturnValue(pending.asObservable()));
+
+    expect(el('vote-cast-ballot-loading')).toBeTruthy();
+    expect(fixture.componentInstance['submitDisabled']()).toBe(true);
+  });
+
+  it.each([
+    ['fails', () => throwError(() => new Error('500'))],
+    ['finds no ballot', () => of(null)],
+  ])('shows the load error and keeps submit disabled when the ballot load %s', async (_label, load) => {
+    await openChanging(CHANGE_VOTE, vi.fn().mockImplementation(load));
+
+    expect(el('vote-cast-ballot-error')?.textContent).toContain("Couldn't load your current ballot.");
+    expect(el('vote-cast-replace-notice')).toBeNull();
+    expect(fixture.componentInstance.form.get('q1')?.value).toBeNull();
+    expect(fixture.componentInstance['submitDisabled']()).toBe(true);
+  });
+
+  it('shows the update toast after submitting changes', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openChanging(CHANGE_VOTE, vi.fn().mockReturnValue(of(BALLOT)), { submitMyResponse });
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledWith(
+      VOTE.uid,
+      expect.objectContaining({ commentResponses: [{ prompt_id: 'p1', comment_text: 'Needs a second reading' }] })
+    );
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Ballot updated', detail: 'Your changes have been recorded.' })
+    );
+  });
+
+  it('leaves first-vote mode unchanged', async () => {
+    const getMyVoteBallot = vi.fn();
+    await setup(vi.fn().mockReturnValue(of(CHANGE_VOTE)), { getMyVoteBallot });
+
+    await openWithoutListVote();
+
+    expect(getMyVoteBallot).not.toHaveBeenCalled();
+    expect(el('vote-cast-replace-notice')).toBeNull();
+    expect(submitButton()?.textContent?.trim()).toBe('Submit Vote');
+    expect(fixture.componentInstance.form.get('q1')?.value).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -686,6 +686,76 @@ describe('VoteService', () => {
 
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
       expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
+  });
+
+  describe('own ballot (#4331)', () => {
+    const answers = [{ question_id: 'q-1', choice_ids: ['c-yes'] }];
+
+    it('getMyVoteBallot GETs the encoded my-ballot URL', () => {
+      const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote/1', abstained: false, poll_answers: [], comment_responses: [] };
+      http.get.mockReturnValue(of(ballot));
+      const next = vi.fn();
+
+      service.getMyVoteBallot('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/my-ballot');
+      expect(next).toHaveBeenCalledWith(ballot);
+    });
+
+    it('getMyVoteBallot maps a 404 to null', () => {
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      const next = vi.fn();
+
+      service.getMyVoteBallot('vote-1').subscribe(next);
+
+      expect(next).toHaveBeenCalledWith(null);
+    });
+
+    it('getMyVoteBallot rethrows other errors', () => {
+      const failure = new HttpErrorResponse({ status: 500 });
+      http.get.mockReturnValue(throwError(() => failure));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const error = vi.fn();
+
+      service.getMyVoteBallot('vote-1').subscribe({ error });
+
+      expect(error).toHaveBeenCalledWith(failure);
+    });
+
+    it('updateVoteResponse PUTs the payload to the encoded response URL', () => {
+      http.put.mockReturnValue(of(undefined));
+      const payload = { abstain: false, user_vote_content: answers, comment_responses: [] };
+
+      service.updateVoteResponse('vr/1', payload).subscribe();
+
+      expect(http.put).toHaveBeenCalledWith('/api/votes/responses/vr%2F1', payload);
+    });
+
+    it('submitMyResponse updates a row that already responded and always sends comment_responses', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.put.mockReturnValue(of(undefined));
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+
+      expect(http.put).toHaveBeenCalledWith('/api/votes/responses/vr-1', { abstain: false, user_vote_content: answers, comment_responses: [] });
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('submitMyResponse creates the ballot for a row still awaiting a response', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }));
+      http.post.mockReturnValue(of(undefined));
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', {
+        vote_response_uid: 'vr-1',
+        vote_uid: 'vote-1',
+        abstain: false,
+        user_vote_content: answers,
+        comment_responses: undefined,
+      });
+      expect(http.put).not.toHaveBeenCalled();
     });
   });
 

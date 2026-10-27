@@ -14,6 +14,7 @@ import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums';
 import type {
+  MyVoteBallot,
   MyVoteResponse,
   PollAnswer,
   PollCommentResponse,
@@ -49,8 +50,10 @@ import {
   getVoteVoterStatus,
   isRankedPollType,
   isVoteAwaitingMyBallot,
+  isVoteBallotChangeable,
   isVoteClosingSoon,
   mapFiltersToEligibility,
+  mapMyBallotToCastForm,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
@@ -153,6 +156,30 @@ describe('isVoteAwaitingMyBallot', () => {
 
   it.each([PollStatus.ENDED, PollStatus.DISABLED])('is false for status %s', (status) => {
     expect(isVoteAwaitingMyBallot(vote({ status }))).toBe(false);
+  });
+});
+
+describe('isVoteBallotChangeable (#4331)', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    response_status: VoteResponseStatus.RESPONDED,
+    ...overrides,
+  });
+
+  it('is true for an active vote the viewer already responded to', () => {
+    expect(isVoteBallotChangeable(vote())).toBe(true);
+  });
+
+  it('is false while the response is still awaited', () => {
+    expect(isVoteBallotChangeable(vote({ response_status: VoteResponseStatus.AWAITING_RESPONSE }))).toBe(false);
+  });
+
+  it('is false once the vote has ended', () => {
+    expect(isVoteBallotChangeable(vote({ status: PollStatus.ENDED }))).toBe(false);
   });
 });
 
@@ -1542,6 +1569,77 @@ describe('voter list helpers (#3914)', () => {
     it('keeps a selected choice that is no longer on the question', () => {
       const [question] = buildVoteBallotQuestions(singleVote, voter({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }])] }));
       expect(question.choices.at(-1)).toEqual({ choiceId: 'c-gone', text: 'Removed', selected: true });
+    });
+  });
+
+  describe('buildVoteBallotQuestions with an own ballot (#4331)', () => {
+    it('accepts a MyVoteBallot as the voter', () => {
+      const ballot: MyVoteBallot = {
+        vote_response_uid: 'b-1',
+        vote_uid: 'vote-1',
+        abstained: false,
+        poll_answers: [answer('q-1', [yes])],
+        comment_responses: [],
+      };
+      const [question] = buildVoteBallotQuestions(singleVote, ballot);
+      expect(question.choices.find((choice) => choice.selected)?.text).toBe('Yes');
+    });
+  });
+
+  describe('mapMyBallotToCastForm', () => {
+    function ballot(overrides: Partial<MyVoteBallot> = {}): MyVoteBallot {
+      return { vote_response_uid: 'b-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [], ...overrides };
+    }
+
+    it('maps a single-choice answer to its choice id', () => {
+      expect(mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [no])] })).answers).toEqual({ 'q-1': 'c-no' });
+    });
+
+    it('maps a multiple-choice answer to every selected choice id', () => {
+      const prefill = mapMyBallotToCastForm(multipleVote, ballot({ poll_answers: [{ ...answer('q-1', [yes, alice]), type: 'multiple_choice' }] }));
+      expect(prefill.answers).toEqual({ 'q-1': ['c-yes', 'c-alice'] });
+    });
+
+    it('keeps a partial ranked order and appends the unranked choices in declared order', () => {
+      const prefill = mapMyBallotToCastForm(
+        rankedVote,
+        ballot({
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...cara, choice_rank: 2 },
+                { ...dev, choice_rank: 1 },
+              ]
+            ),
+          ],
+        })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-dev', 'c-cara', 'c-alice', 'c-bob'] });
+    });
+
+    it('drops a choice id the vote no longer declares', () => {
+      const prefill = mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }, maybe])] }));
+      expect(prefill.answers).toEqual({ 'q-1': 'c-maybe' });
+    });
+
+    it('omits unanswered questions and carries the abstention', () => {
+      const prefill = mapMyBallotToCastForm(multiQuestionVote, ballot({ abstained: true }));
+      expect(prefill).toEqual({ answers: {}, abstain: true, comments: {} });
+    });
+
+    it('maps comments by prompt id', () => {
+      const prefill = mapMyBallotToCastForm(
+        singleVote,
+        ballot({
+          comment_responses: [
+            { prompt_id: 'p-1', comment_text: 'Looks good' },
+            { prompt_id: 'p-2', comment_text: 'More detail please' },
+          ],
+        })
+      );
+      expect(prefill.comments).toEqual({ 'p-1': 'Looks good', 'p-2': 'More detail please' });
     });
   });
 });

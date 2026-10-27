@@ -77,6 +77,16 @@
           <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
         </div>
       } @else {
+        @if (changingBallot()) {
+          @if (loadingBallot()) {
+            <p-skeleton width="100%" height="48px" data-testid="vote-cast-ballot-loading"></p-skeleton>
+          } @else if (ballotError()) {
+            <p class="text-sm text-red-600" role="alert" data-testid="vote-cast-ballot-error">{{ ballotLoadError }}</p>
+          } @else if (myBallot()) {
+            <lfx-message severity="info" [text]="replaceNotice" data-testid="vote-cast-replace-notice"></lfx-message>
+          }
+        }
+
         @if (voteData.description) {
           <div class="flex flex-col gap-4" data-testid="vote-cast-drawer-details">
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
@@ -218,7 +228,7 @@
         <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
           <lfx-button label="Cancel" severity="secondary" (onClick)="onClose()" [disabled]="submitting()" data-testid="vote-cast-cancel-button"></lfx-button>
           <lfx-button
-            label="Submit Vote"
+            [label]="submitLabel()"
             icon="fa-light fa-check"
             severity="primary"
             [disabled]="submitDisabled()"

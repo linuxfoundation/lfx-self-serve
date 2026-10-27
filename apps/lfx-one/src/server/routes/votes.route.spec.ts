@@ -6,15 +6,20 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, voteWriteRateLimiter } = vi.hoisted(() => ({
-  summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
-  statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
-  byId: vi.fn(),
-  reminderRecipients: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'r-1' }])),
-  voters: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'b-1', status: 'voted' }])),
-  sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
-  voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
-}));
+const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, myBallot, updateResponse, updateVote, voteWriteRateLimiter } = vi.hoisted(
+  () => ({
+    summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
+    statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
+    byId: vi.fn(),
+    reminderRecipients: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'r-1' }])),
+    voters: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'b-1', status: 'voted' }])),
+    sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
+    myBallot: vi.fn((_req: unknown, res: Response) => res.json({ vote_response_uid: 'vr-1' })),
+    updateResponse: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
+    updateVote: vi.fn(),
+    voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
+  })
+);
 vi.mock('../controllers/vote.controller', () => ({
   VoteController: class {
     public getVotesSummary = summary;
@@ -23,6 +28,9 @@ vi.mock('../controllers/vote.controller', () => ({
     public getVoteReminderRecipients = reminderRecipients;
     public getVoteVoters = voters;
     public sendVoteReminders = sendReminders;
+    public getMyVoteBallot = myBallot;
+    public updateVoteResponse = updateResponse;
+    public updateVote = updateVote;
   },
 }));
 vi.mock('../middleware/rate-limit.middleware', () => ({ voteWriteRateLimiter }));
@@ -91,5 +99,23 @@ describe('vote voters route dispatch (#3911)', () => {
     expect(voters).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
     expect(voteWriteRateLimiter).not.toHaveBeenCalled();
+  });
+});
+
+describe('own ballot route dispatch (#4331)', () => {
+  it('dispatches GET /:uid/my-ballot to its handler, not the vote UID handler', async () => {
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/my-ballot`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ vote_response_uid: 'vr-1' });
+    expect(myBallot).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
+  });
+
+  it('dispatches PUT /responses/:responseUid to the ballot update handler, not the vote update handler', async () => {
+    const response = await fetch(`${baseUrl}/api/votes/responses/vr-1`, { method: 'PUT' });
+    expect(response.status).toBe(204);
+    expect(updateResponse).toHaveBeenCalledOnce();
+    expect(updateResponse.mock.calls[0][0]).toMatchObject({ params: { responseUid: 'vr-1' } });
+    expect(updateVote).not.toHaveBeenCalled();
   });
 });

@@ -27,6 +27,7 @@ import {
   findCursorWalkStartIndex,
   getUserTimezone,
   isVoteAwaitingMyBallot,
+  isVoteBallotChangeable,
   matchesMyVotesQuickFilter,
   recordPageToken,
   resolveCursorWalkOutcome,
@@ -162,6 +163,11 @@ export class VotesDashboardComponent {
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
   // List row for the open cast drawer — seeds the ballot so it renders before the vote fetch returns.
   protected readonly castDrawerVote: Signal<Vote | null> = computed(() => this.myVotes().find((v) => v.uid === this.castDrawerVoteId()) ?? null);
+  // Change-ballot mode (#4331): the drawer pre-fills and replaces the ballot of an active vote the viewer already voted on.
+  protected readonly castDrawerChangingBallot: Signal<boolean> = computed(() => {
+    const vote = this.castDrawerVote();
+    return !!vote && isVoteBallotChangeable(vote);
+  });
   protected readonly totalCount: Signal<number> = this.initTotalCount();
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
@@ -247,15 +253,16 @@ export class VotesDashboardComponent {
   }
 
   /**
-   * The table's Vote button, title and row click all land here. In the Me lens, an active vote still awaiting the
-   * viewer's ballot opens the cast drawer on the list (#4330) — looked up synchronously in myVotes(), since
-   * castDrawerVote() hasn't re-derived yet. Every other vote, and every vote in the Project/Foundation lens, navigates
-   * to its page, which opens the cast drawer itself for a voter awaiting a ballot.
+   * The table's Vote/Review button, title and row click all land here. In the Me lens, an active vote opens the cast
+   * drawer on the list — empty while it still awaits the viewer's ballot (#4330), pre-filled with their current ballot
+   * once they have voted (#4331). It is looked up synchronously in myVotes(), since castDrawerVote() hasn't re-derived
+   * yet. Ended votes, and every vote in the Project/Foundation lens, navigate to the vote page, which opens the cast
+   * drawer itself for a voter awaiting a ballot.
    */
   protected onViewVote(voteId: string): void {
     if (this.isMeLens()) {
       const vote = this.myVotes().find((v) => v.uid === voteId);
-      if (vote && isVoteAwaitingMyBallot(vote)) {
+      if (vote && (isVoteAwaitingMyBallot(vote) || isVoteBallotChangeable(vote))) {
         this.castDrawerVoteId.set(voteId);
         this.castDrawerVisible.set(true);
         return;
