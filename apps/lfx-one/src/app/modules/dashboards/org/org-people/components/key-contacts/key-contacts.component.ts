@@ -371,6 +371,10 @@ export class KeyContactsComponent {
         this.retry();
       })
       .catch((err) => {
+        // Replace is a create-then-delete upstream, so a failure can still have landed the create (the
+        // 409 "added but not removed" case). Drop the roster on the error path too — unlike add and
+        // remove, which are single operations and change nothing when they fail.
+        this.directory.invalidate(orgUid);
         throw new Error(this.cleanErrorMessage(err));
       });
   }

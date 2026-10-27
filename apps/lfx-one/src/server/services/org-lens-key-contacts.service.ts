@@ -119,6 +119,10 @@ export class OrgLensKeyContactsService {
           new_contact_uid: authoritative.personId,
           err: error instanceof Error ? error.message : String(error),
         });
+        // The create landed, so the role row changed even though this call is about to fail. The 409
+        // below tells the user to reload and review, which is precisely the moment a stale roster
+        // would mislead them — the new holder's pill would be missing from a contact that exists.
+        await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
         throw new MicroserviceError(
           'The new contact was added, but the previous one could not be removed — reload to review the current contacts before retrying.',
           409,
