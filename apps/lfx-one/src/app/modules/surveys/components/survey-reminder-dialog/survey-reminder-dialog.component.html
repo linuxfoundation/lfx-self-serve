@@ -57,6 +57,9 @@
 <div class="flex items-center justify-between gap-2 mt-4">
   <span class="text-[11.5px] text-gray-500" aria-live="polite" data-testid="survey-reminder-dialog-count">
     {{ selectedCount() }} of {{ recipients.length }} selected
+    @if (overCap()) {
+      <span class="text-red-700" data-testid="survey-reminder-dialog-over-cap"> · Select at most {{ maxRecipients }} recipients per send.</span>
+    }
   </span>
   <div class="flex gap-2">
     <lfx-button
@@ -72,7 +75,7 @@
       icon="fa-light fa-paper-plane"
       severity="info"
       size="small"
-      [disabled]="selectedCount() === 0 || sending()"
+      [disabled]="selectedCount() === 0 || overCap() || sending()"
       [loading]="sending()"
       (onClick)="send()"
       data-testid="survey-reminder-dialog-send"></lfx-button>

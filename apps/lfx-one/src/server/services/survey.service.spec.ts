@@ -515,4 +515,25 @@ describe('SurveyService follow-up actions (#4340)', () => {
     expect(proxyRequestMock).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/surveys/s-1/preview_send', 'GET', undefined);
     expect(preview).toEqual({ affected_recipients: [], affected_committees: [] });
   });
+
+  it('refuses a whole-survey resync when any committee has no resolvable project', async () => {
+    const mixed = { committees: [{ committee_uid: 'c-1', project_uid: 'p-1' }, { committee_uid: 'c-3' }] };
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) =>
+      method === 'GET' && path === '/surveys/s-1' ? mixed : undefined
+    );
+
+    await expect(service.resyncRecipients(req, 's-1')).rejects.toMatchObject({ statusCode: 403 });
+    expect(writes()).toEqual([]);
+  });
+
+  it('reports a too-large survey instead of a permission error when the row fetch hits the page cap', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) => {
+      if (method !== 'GET') return undefined;
+      if (path === '/surveys/s-1') return survey;
+      return { data: responses, meta: { page_token: 'more' } };
+    });
+
+    await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 422, code: 'SURVEY_TOO_MANY_RESPONSES' });
+    expect(writes()).toEqual([]);
+  });
 });

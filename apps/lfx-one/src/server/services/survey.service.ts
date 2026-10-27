@@ -23,7 +23,7 @@ import {
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthenticationError, AuthorizationError, ResourceNotFoundError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -631,10 +631,13 @@ export class SurveyService {
   /** The survey's committee UIDs and the subset whose project the caller writes. Fails closed. */
   private async getCommitteeAccess(req: Request, surveyUid: string): Promise<{ committeeUids: string[]; managed: Set<string> }> {
     const survey = await this.microserviceProxy.proxyRequest<Pick<Survey, 'committees'>>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
-    const committees = (survey?.committees ?? []).filter((c) => c.committee_uid && c.project_uid);
+    // Keep the full inventory: a committee with no resolvable UID or project can never be managed,
+    // so it blocks a whole-survey resync instead of silently dropping out of the check.
+    const allCommittees = survey?.committees ?? [];
+    const committees = allCommittees.filter((c) => c.committee_uid && c.project_uid);
     const projectUids = [...new Set(committees.map((c) => c.project_uid))];
     if (projectUids.length === 0) {
-      return { committeeUids: [], managed: new Set() };
+      return { committeeUids: allCommittees.map((c) => c.committee_uid ?? ''), managed: new Set() };
     }
 
     const grants = await this.accessCheckService.checkAccess(
@@ -642,7 +645,7 @@ export class SurveyService {
       projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
     );
     return {
-      committeeUids: committees.map((c) => c.committee_uid),
+      committeeUids: allCommittees.map((c) => c.committee_uid ?? ''),
       managed: new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid)),
     };
   }
@@ -676,8 +679,13 @@ export class SurveyService {
       });
       rows.push(...(Array.isArray(result?.data) ? result.data : []));
       pageToken = result?.meta?.page_token?.trim() || undefined;
-      if (!pageToken) break;
+      if (!pageToken) return rows;
     }
-    return rows;
+    // Past the cap a recipient can't be verified; say so rather than reporting a permission error.
+    throw new MicroserviceError('This survey has too many responses to verify reminder recipients.', 422, 'SURVEY_TOO_MANY_RESPONSES', {
+      operation: 'send_survey_reminders',
+      service: 'survey_service',
+      path: req.path,
+    });
   }
 }

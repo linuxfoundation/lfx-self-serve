@@ -57,8 +57,7 @@ export class SurveyResyncDialogComponent {
   }
 
   protected send(): void {
-    const count = this.recipients().length;
-    if (count === 0 || this.sending()) return;
+    if (this.recipients().length === 0 || this.sending()) return;
 
     this.sending.set(true);
     this.surveyService
@@ -73,7 +72,8 @@ export class SurveyResyncDialogComponent {
           this.messageService.add({
             severity: 'success',
             summary: 'Recipients resynced',
-            detail: `Survey sent to ${count} new ${count === 1 ? 'recipient' : 'recipients'}.`,
+            // Upstream recomputes who is missing at send time and returns no count, so don't claim one.
+            detail: 'Survey sent to the committee members who were missing it.',
           });
           if (!this.destroyRef.destroyed) this.ref.close(true);
         },

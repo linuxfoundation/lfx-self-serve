@@ -18,7 +18,10 @@ const SURVEY = {
   survey_title: 'Board NPS',
   survey_status: 'sent',
   survey_cutoff_date: '2099-01-01T00:00:00Z',
-  committees: [{ committee_uid: 'c-1', committee_name: 'Governing Board', project_name: 'CNCF' }],
+  committees: [
+    { committee_uid: 'c-1', committee_name: 'Governing Board', project_name: 'CNCF', project_uid: 'p-1' },
+    { committee_uid: 'c-2', committee_name: 'Other Board', project_name: 'Other Foundation', project_uid: 'p-2' },
+  ],
   email_body: '<p>Hi {{.FirstName}}</p>',
 } as unknown as Survey;
 
@@ -48,6 +51,7 @@ async function mount(survey: Survey = SURVEY, rows: SurveyResponseItem[] = ROWS)
   const fixture = TestBed.createComponent(SurveyResponsesListComponent);
   fixture.componentRef.setInput('survey', survey);
   fixture.componentRef.setInput('responses', rows);
+  fixture.componentRef.setInput('projectUid', 'p-1');
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, copyLink, open };
@@ -117,5 +121,14 @@ describe('SurveyResponsesListComponent', () => {
 
     expect(open).toHaveBeenCalledWith(SurveyReminderDialogComponent, expect.objectContaining({ data: { survey: SURVEY, recipients: ROWS } }));
     expect(sent).toHaveBeenCalledOnce();
+  });
+
+  it("offers reminders only for the active project's committees", async () => {
+    const otherBoard = { ...ROWS[1], id: 'r-other', committee_uid: 'c-2' } as SurveyResponseItem;
+    const { fixture, component } = await mount(SURVEY, [ROWS[1], otherBoard]);
+    current = fixture;
+
+    expect(component['nonRespondents']().map((r) => r.id)).toEqual([ROWS[1].id]);
+    expect(openMenu(component, otherBoard).map((i) => i.label)).not.toContain('Send reminder');
   });
 });

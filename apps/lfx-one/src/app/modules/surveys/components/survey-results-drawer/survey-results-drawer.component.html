@@ -130,6 +130,7 @@
           [responses]="responses()"
           [loading]="responsesLoading()"
           [loadError]="responsesLoadError()"
+          [projectUid]="projectUid()"
           (remindersSent)="refresh()"
           data-testid="survey-results-drawer-responses" />
       } @else {
