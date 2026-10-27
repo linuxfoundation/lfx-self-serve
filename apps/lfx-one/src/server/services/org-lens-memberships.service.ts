@@ -11,6 +11,9 @@ import type {
   OrgExpiredMembershipsResponse,
   OrgMembershipDetailResponse,
   OrgMembershipFoundationHeader,
+  OrgMembershipProject,
+  OrgMembershipProjectsResponse,
+  ProjectInfluenceBucket,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -62,6 +65,18 @@ interface RawDiscoverRow {
   CONTRIBUTORS_COUNT: number;
   CONTRIBUTION_COUNT: number;
   RELEVANT_PROJECTS: number;
+}
+
+interface RawFoundationProjectRow {
+  PROJECT_ID: string;
+  PROJECT_SLUG: string | null;
+  PROJECT_NAME: string | null;
+  IS_LF_PROJECT: boolean;
+  INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket;
+  MAINTAINERS_COUNT: number;
+  CONTRIBUTORS_COUNT: number;
+  COLLABORATORS_COUNT: number;
+  COMMITS_COUNT: number;
 }
 
 export class OrgLensMembershipsService {
@@ -179,6 +194,40 @@ export class OrgLensMembershipsService {
     }));
 
     return { accountId, opportunities };
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/memberships/:foundationId/projects
+   *
+   * Drill-down behind the Org Projects count in the active-memberships table. The count is
+   * COUNT(DISTINCT project_id) over ORG_LENS_FOUNDATION_PROJECTS_DETAIL grouped by
+   * (account_id, foundation_id), so listing that same detail table for the same pair is
+   * guaranteed to return exactly as many rows as the number the user clicked.
+   *
+   * Unknown org/foundation pairs return an empty envelope, never a 404.
+   */
+  public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
+    const rows = await withOrgCache(
+      accountId,
+      `memberships-projects:${paramSignature([foundationId])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchFoundationProjectRows(accountId, foundationId),
+      OrgLensMembershipsService.isRawProjectRowArray
+    );
+
+    const projects: OrgMembershipProject[] = rows.map((raw) => ({
+      projectId: raw.PROJECT_ID,
+      projectSlug: raw.PROJECT_SLUG ?? raw.PROJECT_ID,
+      projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
+      isLfProject: raw.IS_LF_PROJECT === true,
+      influence: raw.INFLUENCE_MAX_BUCKET,
+      maintainers: raw.MAINTAINERS_COUNT ?? 0,
+      contributors: raw.CONTRIBUTORS_COUNT ?? 0,
+      collaborators: raw.COLLABORATORS_COUNT ?? 0,
+      commits: raw.COMMITS_COUNT ?? 0,
+    }));
+
+    return { accountId, foundationId, projects };
   }
 
   // GET /api/orgs/:orgUid/lens/memberships/:foundationSlug
@@ -322,6 +371,36 @@ export class OrgLensMembershipsService {
     return result.rows;
   }
 
+  // Same degrade-to-a-miss guard as isRawRowArray, keyed on the column every project row carries.
+  private static isRawProjectRowArray(value: unknown): boolean {
+    return (
+      Array.isArray(value) &&
+      value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el) && typeof (el as { PROJECT_ID?: unknown }).PROJECT_ID === 'string')
+    );
+  }
+
+  private async fetchFoundationProjectRows(accountId: string, foundationId: string): Promise<RawFoundationProjectRow[]> {
+    const query = `
+      SELECT
+        PROJECT_ID,
+        PROJECT_SLUG,
+        PROJECT_NAME,
+        IS_LF_PROJECT,
+        INFLUENCE_MAX_BUCKET,
+        MAINTAINERS_COUNT,
+        CONTRIBUTORS_COUNT,
+        COLLABORATORS_COUNT,
+        COMMITS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL
+      WHERE ACCOUNT_ID = ?
+        AND FOUNDATION_ID = ?
+      ORDER BY COMMITS_COUNT DESC NULLS LAST, PROJECT_NAME ASC
+    `;
+
+    const result = await this.snowflakeService.execute<RawFoundationProjectRow>(query, [accountId, foundationId]);
+    return result.rows;
+  }
+
   private shapeRow(raw: RawMembershipRow): OrgActiveMembership {
     return {
       foundationId: raw.FOUNDATION_ID,
@@ -345,4 +424,9 @@ export class OrgLensMembershipsService {
     const d = new Date(dateValue);
     return d.toISOString().split('T')[0];
   }
+}
+
+/** Deterministic, key-safe sub-resource suffix — keeps the foundation id itself out of the cache key (base64url → only `[A-Za-z0-9_-]`). */
+function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
+  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
 }

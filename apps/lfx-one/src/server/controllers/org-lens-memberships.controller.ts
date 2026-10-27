@@ -126,8 +126,45 @@ export class OrgLensMembershipsController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/memberships/:foundationId/projects */
+  public async getFoundationProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const foundationId = req.params['foundationId'];
+    const startTime = logger.startOperation(req, 'get_org_lens_membership_projects', {
+      org_uid: orgUid,
+      foundation_id: foundationId,
+    });
+
+    try {
+      assertOrgUid(orgUid, 'get_org_lens_membership_projects');
+      this.assertFoundationId(foundationId, 'get_org_lens_membership_projects');
+
+      const response = await this.service.getFoundationProjects(orgUid, foundationId);
+
+      logger.success(req, 'get_org_lens_membership_projects', startTime, {
+        org_uid: orgUid,
+        foundation_id: foundationId,
+        project_count: response.projects.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also
   // covers the foundation slug shape, so it is reused here for the slug-keyed detail route.
+  private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
+    if (!foundationId || typeof foundationId !== 'string') {
+      throw ServiceValidationError.forField('foundationId', 'foundationId path parameter is required', { operation });
+    }
+    if (!FOUNDATION_ID_PATTERN.test(foundationId)) {
+      throw ServiceValidationError.forField('foundationId', 'Invalid foundationId format', { operation });
+    }
+  }
+
   private assertFoundationSlug(foundationSlug: string | undefined, operation: string): asserts foundationSlug is string {
     if (!foundationSlug || typeof foundationSlug !== 'string') {
       throw ServiceValidationError.forField('foundationSlug', 'foundationSlug path parameter is required', { operation });
