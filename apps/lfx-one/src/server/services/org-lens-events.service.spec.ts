@@ -153,6 +153,9 @@ describe('OrgLensEventsService company-email scoping', () => {
   });
 
   it('does not treat an address held for another account as this org company address', async () => {
+    // This org has coverage of its own, so the no-coverage fallback is not in play and the
+    // assertion is about cross-account isolation alone.
+    addCompanyEmail('ada@company.example');
     addCompanyEmail('grace@other.example', 'other-account');
     addRegistration('grace@other.example', 'Grace Hopper');
 
@@ -176,17 +179,47 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data[0].orgAttendeeCount).toBe(drawer.total);
   });
 
-  it('reports zero rather than the unfiltered count when the org holds no company addresses', async () => {
+  it('falls back to the unfiltered set when the org has no company-address coverage at all', async () => {
     addEvent(EVENT, 99);
     addRegistration('someone@gmail.example', 'Someone Else');
+    addRegistration('another@gmail.example', 'Another Person');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // Not 0: zero coverage is no basis for asserting nobody attended. The row and the drawer still agree.
+    expect(list.data[0].orgAttendeeCount).toBe(2);
+    expect(drawer.total).toBe(2);
+  });
+
+  it('does not fall back once the org has any coverage, even if nobody on this event qualifies', async () => {
+    addEvent(EVENT, 99);
+    // Coverage exists for the account, but matches no registrant on this event.
+    addCompanyEmail('someone.else@company.example');
+    addRegistration('personal@gmail.example', 'Someone Else');
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(list.data[0].orgAttendeeCount).toBe(0);
+    expect(drawer.total).toBe(0);
+  });
+
+  it('keeps another account coverage from suppressing this org fallback', async () => {
+    addEvent(EVENT, 99);
+    // Coverage belongs to a different account, so this org still has none of its own.
+    addCompanyEmail('someone@other.example', 'other-account');
+    addRegistration('personal@gmail.example', 'Someone Else');
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
-    expect(list.data[0].orgAttendeeCount).toBe(0);
+    expect(list.data[0].orgAttendeeCount).toBe(1);
   });
 
   it('excludes an event from status=registered when no registrant used a company address', async () => {
     addEvent(EVENT, 99);
+    // Coverage exists, so the filter applies rather than falling back.
+    addCompanyEmail('someone.else@company.example');
     addRegistration('someone@gmail.example', 'Someone Else');
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, status: 'registered' });

@@ -333,12 +333,29 @@ export class OrgLensEventsService {
  * reads. Upstream `ACCOUNT_ID` attribution does not require a company address (a personal address on a
  * profile that links to the org still lands there), which is exactly what this excludes. Correlates on
  * `er.ACCOUNT_ID` so the fragment needs no bind of its own.
+ *
+ * The second arm is a no-regression guard, not a loosening of the rule. An account with NO rows in the
+ * address table has no coverage to filter by, and filtering on it anyway would turn every count on the
+ * page to 0 — indistinguishable, to the viewer, from an org that attended nothing. `org-lens-people`
+ * reads the same table and refuses the same inference, reporting absent address data as `unavailable`
+ * rather than as "none on record". So zero coverage falls back to the unfiltered set, which is exactly
+ * what shipped before this rule existed. Partial coverage is not detectable here and is not guarded.
+ *
+ * Both the per-event count and the drawer embed this one fragment, so the two can never disagree about
+ * who qualifies — including on the fallback path.
  */
-const COMPANY_EMAIL_EXISTS = `EXISTS (
-          SELECT 1
-          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
-          WHERE ce.ACCOUNT_ID = er.ACCOUNT_ID
-            AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))
+const COMPANY_EMAIL_EXISTS = `(
+          EXISTS (
+            SELECT 1
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce
+            WHERE ce.ACCOUNT_ID = er.ACCOUNT_ID
+              AND LOWER(TRIM(ce.EMAIL)) = LOWER(TRIM(er.EMAIL))
+          )
+          OR NOT EXISTS (
+            SELECT 1
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS ce_any
+            WHERE ce_any.ACCOUNT_ID = er.ACCOUNT_ID
+          )
         )`;
 
 /**
