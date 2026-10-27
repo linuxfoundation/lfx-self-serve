@@ -163,7 +163,7 @@
                   }
                 } @else if (question.type === 'multiple_choice') {
                   @for (choice of question.choices; track choice.choice_id) {
-                    <div class="flex items-center gap-2 min-h-[44px]" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
+                    <div class="relative flex items-center gap-2 min-h-[44px]" [attr.data-testid]="'vote-cast-choice-' + choice.choice_id">
                       <p-checkbox
                         [formControlName]="question.question_id"
                         [value]="choice.choice_id"
@@ -171,7 +171,7 @@
                         [inputId]="'vote-cast-choice-' + choice.choice_id" />
                       <label
                         [for]="'vote-cast-choice-' + choice.choice_id"
-                        class="flex flex-1 items-center min-w-0 min-h-[44px] text-sm font-medium text-gray-700 cursor-pointer break-words">
+                        class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-sm font-medium text-gray-700 cursor-pointer break-words">
                         {{ choice.choice_text }}
                       </label>
                     </div>
@@ -218,9 +218,11 @@
 
         @if (allowAbstain()) {
           <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
-            <div class="flex items-center gap-2 min-h-[44px]" data-testid="vote-cast-abstain-toggle">
+            <div class="relative flex items-center gap-2 min-h-[44px]" data-testid="vote-cast-abstain-toggle">
               <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
-              <label for="vote-cast-abstain" class="flex flex-1 items-center min-w-0 min-h-[44px] text-sm font-medium text-gray-700 cursor-pointer"
+              <label
+                for="vote-cast-abstain"
+                class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-sm font-medium text-gray-700 cursor-pointer"
                 >Abstain from this vote</label
               >
             </div>
