@@ -30,7 +30,10 @@
   overflow: hidden;
 
   // Applications disappear on save without a completion fade; wrapped identity and controls must not be clipped.
-  &.is-application {
+  // An expanded inline vote ballot (stacked 44px choices plus Submit/Cancel on phones) is taller than the 12rem cap
+  // and would be clipped to its first lines, so it lifts the cap too; .is-completing below still wins to collapse it.
+  &.is-application,
+  &.is-vote-expanded {
     max-height: none;
     overflow: visible;
   }
