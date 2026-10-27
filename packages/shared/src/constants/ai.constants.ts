@@ -188,15 +188,20 @@ Respond with a JSON object matching the provided schema exactly. Do not include 
  * and later "Setting `temperature`, `top_p`, or `top_k` returns a `400` error" (Anthropic's model
  * reference, e.g. platform.claude.com/docs/en/models/sonnet-5-5/overview). The proxy does not
  * shield us from that: `lfit-litellm.yaml`'s `litellm_settings` sets no `drop_params`, so the
- * value reaches Bedrock as sent. So a `claude-sonnet-5*` / `claude-opus-5*` name here trades
- * #4333's `429` for a `400` on every AI feature. Moving to one means dropping `temperature` from
- * all six send sites first — see `ai.constants.spec.ts`, which pins the two constants together.
+ * value reaches Bedrock as sent. So any 5-series-or-later Claude name here — `claude-sonnet-5*`,
+ * `claude-opus-5*`, `claude-haiku-5*`, the set `ai.constants.spec.ts` rejects — trades #4333's
+ * `429` for a `400` on every AI feature. Moving to one means dropping `temperature` from all six
+ * send sites first — see `ai.constants.spec.ts`, which pins the two constants together.
  *
  * The host and the name have to move together, and neither can be checked from this repo alone:
  * `AI_PROXY_URL` and the proxy's model list both live in argocd. See #4333, where the name was a
  * routing destination rather than a published name, and #4087 before it, where the host moved
- * alone. `lfx-v2-campaign-service` sends the same value from its own `AI_MODEL` env var and its
- * own unconditional `temperature` (`internal/platform/llm/client.go`); keep the two in step.
+ * alone. `lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var and builds its own
+ * request body with an unconditional `temperature` (`internal/platform/llm/client.go`, no
+ * `omitempty`). The two are not currently in step: argocd pins that service to `claude-sonnet-5-5`
+ * (`values/global/lfx-v2-campaign-service.yaml`), which is the 5-series-plus-`temperature` pairing
+ * this comment warns about. Closing that gap means moving that service off a 5-series name or
+ * dropping `temperature` there, neither of which this repo can do.
  */
 export const AI_MODEL = 'claude-sonnet-4-5';
 
