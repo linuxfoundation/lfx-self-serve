@@ -3,14 +3,21 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { computed, effect, inject, Injectable, PLATFORM_ID, Signal, signal, untracked, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ROLLUP_ENABLED_FLAG, ORG_NOT_FOUND_PATH, ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
+import { computed, DestroyRef, effect, inject, Injectable, PLATFORM_ID, Signal, signal, untracked, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
+import {
+  ACCOUNT_COOKIE_KEY,
+  FEATURE_FLAG_READY_TIMEOUT_MS,
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_LENS_ROLLUP_ENABLED_FLAG,
+  ORG_NOT_FOUND_PATH,
+  ORG_ROLLUP_SEGMENT,
+} from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
-import { isOrgRollUpSegment, orgUrlSegment } from '@lfx-one/shared/utils';
-import { Router } from '@angular/router';
+import { isOrgRollUpSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { firstValueFrom } from 'rxjs';
-import { take } from 'rxjs/operators';
+import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
@@ -59,6 +66,10 @@ export class AccountContextService {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** At most one deferred address re-point; a later demotion supersedes an earlier pending one. */
+  private pendingRepoint: Subscription | null = null;
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -156,9 +167,35 @@ export class AccountContextService {
   /** Dark-launch gate — off until the BFF accepts the sentinel (#4127). See `ORG_LENS_ROLLUP_ENABLED_FLAG`. */
   private readonly rollUpFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ROLLUP_ENABLED_FLAG);
 
+  /** Set once the wait for the flag provider has run out — see `rollUpFlagResolved`. */
+  private readonly rollUpFlagWaitElapsed: WritableSignal<boolean> = signal(false);
+
+  /**
+   * Whether `rollUpFlag()` is worth believing yet.
+   *
+   * `getBooleanFlag` answers its default (false) until the provider streams real values, so an
+   * unresolved flag must not read as a disabled one — `AppComponent` seeds organizations before it
+   * initializes the flag service, and treating that window as "off" overwrote a restored `all`
+   * cookie (#4415 review 3).
+   *
+   * Bounded, though. `providerReady` stays false for the whole session if LaunchDarkly is
+   * unreachable or the authenticated `identify()` fails and recovery fails too, and an unbounded
+   * wait would admit `/org/all` indefinitely — for a single-organization caller, and even with the
+   * flag genuinely off (#4415 review 4). So the window closes on the first of: the provider
+   * reaching READY, the service reporting `initialized`, or `FEATURE_FLAG_READY_TIMEOUT_MS`
+   * elapsing (the same budget `waitForReady` gives every flag-gated guard).
+   *
+   * Closing it without a READY provider means the flag reads its default, false — the feature stays
+   * dark through an outage, which is what a dark-launch gate is for, and the safer direction given
+   * the BFF does not accept the sentinel yet.
+   */
+  private readonly rollUpFlagResolved: Signal<boolean> = computed(
+    () => this.featureFlagService.providerReady() || this.featureFlagService.initialized() || this.rollUpFlagWaitElapsed()
+  );
+
   /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
   public readonly canSelectRollUp: Signal<boolean> = computed(
-    () => this.featureFlagService.providerReady() && this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS
+    () => this.rollUpFlagResolved() && this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS
   );
 
   /**
@@ -184,7 +221,7 @@ export class AccountContextService {
     // and `getBooleanFlag` answers false until the provider streams real values — so a restored
     // `{ uid: 'all' }` cookie read as "feature off" and was overwritten with the first seed before
     // anyone had asked LaunchDarkly. `providerReady` is the distinction between "off" and "not yet".
-    if (!this.featureFlagService.providerReady()) {
+    if (!this.rollUpFlagResolved()) {
       return true;
     }
     // A settled "off" is a real answer: nothing to wait for, and a stale roll-up should be demoted.
@@ -253,6 +290,13 @@ export class AccountContextService {
   public constructor() {
     // Bootstrap on the placeholder; cookie only contributes accountId for later seed reconciliation — display fields never come from the cookie.
     this.selectedAccount = signal<Account>(PLACEHOLDER_ACCOUNT);
+
+    // Bound the unresolved-flag window (see `rollUpFlagResolved`). Browser-only: SSR renders once
+    // and never sits in this window waiting.
+    if (isPlatformBrowser(this.platformId)) {
+      const timer = setTimeout(() => this.rollUpFlagWaitElapsed.set(true), FEATURE_FLAG_READY_TIMEOUT_MS);
+      this.destroyRef.onDestroy(() => clearTimeout(timer));
+    }
 
     // Settle an optimistically admitted roll-up once the grant sets land. A cookie restore or a
     // `/org/all` deep link is admitted while `OrgRoleGrantsService` is still loading — the count is
@@ -616,9 +660,14 @@ export class AccountContextService {
   /**
    * Leave roll-up mode for the one organization the caller still holds (or the placeholder when
    * they hold none), releasing the pin the roll-up took so the ordinary selection paths own the
-   * choice again. The address is not rewritten from here — `orgPathParamGuard` re-points
-   * `/org/all/…` on the next navigation, and rewriting it from a service effect would fight the
-   * router mid-navigation.
+   * choice again.
+   *
+   * The address is re-pointed off `/org/all/…` in place by `repointAddressAfterDemotion`
+   * (`replaceUrl`, keeping page, query and fragment). An earlier revision deliberately left that to
+   * `orgPathParamGuard`'s next run, on the grounds that navigating from a service effect would
+   * fight the router — but that left the page showing one organization's data under a combined-view
+   * address until the viewer happened to navigate. The re-point handles the concern instead of
+   * avoiding it: it waits for the router to be idle before correcting.
    */
   private demoteFromRollUp(): void {
     this.addressedUid.set(null);
@@ -680,10 +729,49 @@ export class AccountContextService {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
+    // One pending re-point at most, and never while a navigation is in flight. Reading `router.url`
+    // mid-navigation sees the address being *left*, not the one being entered — so arriving at
+    // `/org/all/people` would miss the correction, and leaving a roll-up page would cancel the
+    // viewer's own navigation to a concrete organization. Mirrors `OrgNavigationService`'s
+    // `writeDefaultAddress`, including its re-check once the router settles.
+    this.pendingRepoint?.unsubscribe();
+    this.pendingRepoint = null;
+
+    if (!this.router.getCurrentNavigation()) {
+      this.repointNow(next);
+      return;
+    }
+    this.pendingRepoint = this.router.events
+      .pipe(
+        filter(
+          (event) =>
+            event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped
+        ),
+        switchMap(() => from(Promise.resolve())),
+        filter(() => !this.router.getCurrentNavigation()),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.pendingRepoint = null;
+        // Re-read the selection: the settled navigation may have adopted an organization of its own
+        // (the path guard on a concrete address), in which case there is nothing to correct.
+        if (this.isRollUp()) {
+          return;
+        }
+        this.repointNow(this.selectedAccount());
+      });
+  }
+
+  /** The re-point itself, once the router is idle. A no-op off `/org/all/…`. */
+  private repointNow(next: Account | null): void {
     const tree = this.router.parseUrl(this.router.url);
     const primary = tree.root.children['primary'];
     const segments = primary?.segments ?? [];
-    if (segments.length < 2 || segments[0].path !== 'org' || !isOrgRollUpSegment(segments[1].path)) {
+    // `normalizeOrgSegment`, because the guards admit `/org/All/people` — the match guard lowercases
+    // before testing and the roll-up branch returns without canonicalizing — so a mixed-case address
+    // would otherwise keep its combined-view URL after demotion.
+    if (segments.length < 2 || segments[0].path !== 'org' || !isOrgRollUpSegment(normalizeOrgSegment(segments[1].path))) {
       return;
     }
     const segment = next ? orgUrlSegment(next) : null;

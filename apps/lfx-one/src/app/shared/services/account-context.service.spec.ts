@@ -526,6 +526,10 @@ describe('AccountContextService — All Organizations roll-up', () => {
   let providerReady: WritableSignal<boolean>;
   let routerUrl: string;
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let navigateSpy: ReturnType<typeof vi.fn>;
+  let currentNavigation: unknown;
+  let routerEvents: Subject<unknown>;
+  let flagInitialized: WritableSignal<boolean>;
   /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
   let liveRows: OrgLensAccountContextResponse[];
   let grants: {
@@ -545,6 +549,10 @@ describe('AccountContextService — All Organizations roll-up', () => {
     providerReady = signal(true);
     routerUrl = '/org/all/people';
     navigateByUrl = vi.fn();
+    navigateSpy = vi.fn();
+    currentNavigation = null;
+    routerEvents = new Subject<unknown>();
+    flagInitialized = signal(true);
     liveRows = [];
     httpGet = vi.fn().mockReturnValue(of(null));
     grants = {
@@ -570,7 +578,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag, providerReady } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag, providerReady, initialized: flagInitialized } },
         { provide: UrlSerializer, useClass: DefaultUrlSerializer },
         {
           provide: Router,
@@ -580,7 +588,9 @@ describe('AccountContextService — All Organizations roll-up', () => {
             },
             parseUrl: (url: string) => TestBed.inject(UrlSerializer).parse(url),
             navigateByUrl,
-            navigate: vi.fn(),
+            navigate: navigateSpy,
+            getCurrentNavigation: () => currentNavigation,
+            events: routerEvents.asObservable(),
           },
         },
         { provide: HttpClient, useValue: { get: httpGet } },
@@ -779,6 +789,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
    */
   it('does not treat an unresolved feature flag as a disabled one', () => {
     providerReady.set(false);
+    flagInitialized.set(false);
     rollUpFlag.set(false); // what getBooleanFlag answers before the provider is ready
     cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
 
@@ -790,6 +801,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
 
   it('demotes once the provider confirms the flag is genuinely off', () => {
     providerReady.set(false);
+    flagInitialized.set(false);
     rollUpFlag.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
     service.initializeUserOrganizations([seedA, seedB]);
@@ -848,6 +860,61 @@ describe('AccountContextService — All Organizations roll-up', () => {
     grants.loaded.set(true);
     TestBed.tick();
 
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression, PR #4415 review 4. `providerReady` stays false for the whole session when
+   * LaunchDarkly is unreachable, so an unbounded pending window admitted `/org/all` indefinitely —
+   * for a single-organization caller, and even with the flag genuinely off.
+   */
+  it('stops waiting on the flag provider once the service reports initialized', () => {
+    providerReady.set(false);
+    flagInitialized.set(false);
+    rollUpFlag.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA, seedB]);
+    expect(service.isRollUp()).toBe(true);
+
+    // The provider never reaches READY, but initialization finishes.
+    flagInitialized.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+  });
+
+  // Regression, PR #4415 review 4 (cursor). The guards admit `/org/All/people` — the match guard
+  // lowercases before testing and the roll-up branch returns without canonicalizing — so an
+  // un-normalized check left a mixed-case address on its combined-view URL after demotion.
+  it('re-points a mixed-case roll-up address', () => {
+    routerUrl = '/org/All/people';
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+  });
+
+  /**
+   * Regression, PR #4415 review 4 (Copilot). `router.url` mid-navigation is the address being
+   * *left*, not the one being entered, so correcting then would miss an arrival at `/org/all/…` and
+   * could cancel the viewer's own navigation away from one.
+   */
+  it('waits for the router to be idle before re-pointing', () => {
+    currentNavigation = { id: 1 };
+    routerUrl = '/';
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    // Nothing yet: a navigation is in flight.
     expect(navigateByUrl).not.toHaveBeenCalled();
   });
 });
