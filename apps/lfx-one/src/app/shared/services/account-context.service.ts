@@ -181,17 +181,21 @@ export class AccountContextService {
    * Bounded, though. `providerReady` stays false for the whole session if LaunchDarkly is
    * unreachable or the authenticated `identify()` fails and recovery fails too, and an unbounded
    * wait would admit `/org/all` indefinitely — for a single-organization caller, and even with the
-   * flag genuinely off (#4415 review 4). So the window closes on the first of: the provider
-   * reaching READY, the service reporting `initialized`, or `FEATURE_FLAG_READY_TIMEOUT_MS`
-   * elapsing (the same budget `waitForReady` gives every flag-gated guard).
+   * flag genuinely off (#4415 review 4). So the window closes on READY, or on
+   * `FEATURE_FLAG_READY_TIMEOUT_MS` elapsing — the same budget `waitForReady` gives every
+   * flag-gated guard.
    *
-   * Closing it without a READY provider means the flag reads its default, false — the feature stays
-   * dark through an outage, which is what a dark-launch gate is for, and the safer direction given
-   * the BFF does not accept the sentinel yet.
+   * Deliberately NOT `initialized`. That signal is set once `OpenFeature.setContext()` resolves,
+   * which happens even when the raw provider status is ERROR — `initialize()` then arms error
+   * recovery and leaves `providerReady` false. Treating it as readiness ended the wait while every
+   * flag still read its default, so a slow LaunchDarkly was indistinguishable from a disabled
+   * feature (#4415 review 6).
+   *
+   * Closing the window without a READY provider still means the flag reads its default, false — the
+   * feature stays dark through an outage, which is what a dark-launch gate is for. What must not
+   * follow from it is destroying the caller's saved choice: see `demoteFromRollUp`.
    */
-  private readonly rollUpFlagResolved: Signal<boolean> = computed(
-    () => this.featureFlagService.providerReady() || this.featureFlagService.initialized() || this.rollUpFlagWaitElapsed()
-  );
+  private readonly rollUpFlagResolved: Signal<boolean> = computed(() => this.featureFlagService.providerReady() || this.rollUpFlagWaitElapsed());
 
   /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
   public readonly canSelectRollUp: Signal<boolean> = computed(
@@ -402,7 +406,7 @@ export class AccountContextService {
     this.persistToStorage(next);
   }
 
-  public setAccount(account: Account): void {
+  public setAccount(account: Account, options?: { persist?: boolean }): void {
     const live = this.liveAccounts().get(account.accountId);
     const next = live
       ? {
@@ -421,7 +425,11 @@ export class AccountContextService {
       this.pinSource.set(null);
     }
     this.selectedAccount.set(next);
-    this.persistToStorage(next);
+    // `persist: false` keeps the stored selection as it is while still changing the live one — used
+    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`).
+    if (options?.persist !== false) {
+      this.persistToStorage(next);
+    }
   }
 
   /**
@@ -673,15 +681,30 @@ export class AccountContextService {
     this.addressedUid.set(null);
     this.pinSource.set(null);
 
+    // Two different reasons to leave the roll-up, and only one of them is about the caller.
+    //
+    // The flag being off (or unresolved past the wait) makes the roll-up *unavailable*; it says
+    // nothing about whether this caller still wants it. Erasing `{ uid: 'all' }` in that case
+    // destroys a choice the feature will honour again the moment the flag is back — and a slow
+    // LaunchDarkly looks exactly like a disabled flag from here, so the outage window would quietly
+    // take the preference with it (#4415 review 6). The live selection still changes, so nothing
+    // renders under a roll-up it cannot serve; only the stored choice is left alone.
+    //
+    // Grants settling on fewer than two organizations is the other reason, and that IS about the
+    // caller: the roll-up is now *wrong* for them, so the cookie is updated like any other switch.
+    const preserveStoredChoice = !this.rollUpFlag();
+
     const fallback = this.demotionFallback();
     if (!fallback) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
-      this.clearStorage();
+      if (!preserveStoredChoice) {
+        this.clearStorage();
+      }
       this.repointAddressAfterDemotion(null);
       return;
     }
 
-    this.setAccount(fallback);
+    this.setAccount(fallback, { persist: !preserveStoredChoice });
     // A uid-only stub (a grant with no seed behind it) has no display fields yet.
     if (!fallback.accountName) {
       void this.refreshCanonicalRecord(fallback);

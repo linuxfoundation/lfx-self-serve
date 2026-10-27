@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { DefaultUrlSerializer, Router, UrlSerializer } from '@angular/router';
+import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -868,19 +868,54 @@ describe('AccountContextService — All Organizations roll-up', () => {
    * LaunchDarkly is unreachable, so an unbounded pending window admitted `/org/all` indefinitely —
    * for a single-organization caller, and even with the flag genuinely off.
    */
-  it('stops waiting on the flag provider once the service reports initialized', () => {
+  /**
+   * Regression, PR #4415 review 6. `initialized` is set once `OpenFeature.setContext()` resolves —
+   * which happens even when the raw provider status is ERROR, with `providerReady` left false and
+   * error recovery armed. Ending the wait on it meant a slow LaunchDarkly read exactly like a
+   * disabled flag, and the demotion that followed took the caller's cookie with it.
+   */
+  it('keeps waiting when initialization finished but the provider never became ready', () => {
     providerReady.set(false);
-    flagInitialized.set(false);
-    rollUpFlag.set(false);
+    flagInitialized.set(true);
+    rollUpFlag.set(false); // every flag reads its default while the provider is not READY
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+
+    service.initializeUserOrganizations([seedA, seedB]);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(true);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  /**
+   * The flag being off makes the roll-up unavailable, not wrong for this caller. The live selection
+   * must change so nothing renders under a roll-up the BFF cannot serve, but the saved choice is
+   * theirs and is honoured again when the flag returns.
+   */
+  it('changes the live selection but keeps the saved choice when the flag is off', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
     service.initializeUserOrganizations([seedA, seedB]);
     expect(service.isRollUp()).toBe(true);
 
-    // The provider never reaches READY, but initialization finishes.
-    flagInitialized.set(true);
+    rollUpFlag.set(false);
     TestBed.tick();
 
     expect(service.isRollUp()).toBe(false);
+    expect(service.selectedAccount().uid).toBe(UID_A);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
+  });
+
+  // Losing organizations IS about the caller, so that demotion updates the cookie like any switch.
+  it('updates the saved choice when the caller no longer holds two organizations', () => {
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(service.isRollUp()).toBe(false);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_A });
   });
 
   // Regression, PR #4415 review 4 (cursor). The guards admit `/org/All/people` — the match guard
@@ -904,7 +939,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
    * *left*, not the one being entered, so correcting then would miss an arrival at `/org/all/…` and
    * could cancel the viewer's own navigation away from one.
    */
-  it('waits for the router to be idle before re-pointing', () => {
+  it('waits for the router to be idle before re-pointing', async () => {
     currentNavigation = { id: 1 };
     routerUrl = '/';
     grants.loaded.set(false);
@@ -914,7 +949,41 @@ describe('AccountContextService — All Organizations roll-up', () => {
     grants.loaded.set(true);
     TestBed.tick();
 
-    // Nothing yet: a navigation is in flight.
+    // Nothing yet: a navigation is in flight, and `router.url` is still the address being left.
+    expect(navigateByUrl).not.toHaveBeenCalled();
+
+    // The navigation settles on the roll-up page.
+    currentNavigation = null;
+    routerUrl = '/org/all/people';
+    routerEvents.next(new NavigationEnd(1, '/org/all/people', '/org/all/people'));
+    await Promise.resolve();
+
+    expect(navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+  });
+
+  // The settled navigation may have re-selected the roll-up (a `/org/all` address the guard adopted
+  // while this demotion was queued), in which case there is nothing left to correct.
+  it('abandons the deferred re-point when the settled navigation is back in roll-up mode', async () => {
+    currentNavigation = { id: 1 };
+    routerUrl = '/';
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    // Eligibility returns (a late inherited grant) and something re-selects the roll-up — the
+    // `/org/all` address the guard adopted while this demotion sat queued.
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+    expect(service.selectRollUp()).toBe(true);
+
+    currentNavigation = null;
+    routerUrl = '/org/all/people';
+    routerEvents.next(new NavigationEnd(2, '/org/all/people', '/org/all/people'));
+    await Promise.resolve();
+
     expect(navigateByUrl).not.toHaveBeenCalled();
   });
 });
