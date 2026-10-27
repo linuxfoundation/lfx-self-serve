@@ -380,6 +380,8 @@ export class AllEmployeesComponent {
       avatarUrl: row.avatarUrl,
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
+      // Live-only rows come from this range and project scope's live directory; the address lookup reads that one first.
+      directoryView: { range: this.selectedRange(), projectScope: this.selectedFilters().projectScope },
       isFormer: row.isFormer === true,
     });
   }
@@ -527,7 +529,8 @@ export class AllEmployeesComponent {
         accessBadge: role.accessBadge ?? accessBadge,
       });
     }
-    const currentRows = this.showCurrent() ? [...current.rows.filter((row) => !folded.has(row)), ...rejoinedRows] : [];
+    // `liveRows` is the account-checked current list: after an org switch the previous org's rows must not show (or feed the foundation dropdown) until the new fetch lands.
+    const currentRows = this.showCurrent() ? [...liveRows.filter((row) => !folded.has(row)), ...rejoinedRows] : [];
     return [...currentRows, ...shownFormerRows];
   }
 

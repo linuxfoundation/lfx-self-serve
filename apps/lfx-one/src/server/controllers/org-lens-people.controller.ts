@@ -3,7 +3,7 @@
 
 import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
 import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -146,9 +146,10 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/:personKey/company-emails — company-affiliated addresses for a
-   * person key, served apart from `/detail` so the drawer renders activity without waiting on the
-   * slower address read.
+   * GET /api/orgs/:orgUid/lens/people/:personKey/company-emails[?range=&projectScope=] — company-affiliated addresses
+   * for a person key, served apart from `/detail` so the drawer renders activity without waiting on the slower address
+   * read. `range` and `projectScope` name the live directory the drawer was opened from; a live-only person resolves
+   * against it first. They only steer a cache read, so an invalid or partial pair is ignored rather than rejected.
    */
   public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -160,7 +161,10 @@ export class OrgLensPeopleController {
       this.assertPersonKey(personKey, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
 
-      const result = await this.service.getCompanyEmails(req, orgUid, personKey);
+      const range = getStringQueryParam(req, 'range');
+      const projectScope = parseOrgProjectScope(getStringQueryParam(req, 'projectScope'));
+      const directoryView = isOrgLensTimeRange(range) && projectScope ? { range, projectScope } : null;
+      const result = await this.service.getCompanyEmails(req, orgUid, personKey, directoryView);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

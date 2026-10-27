@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -13,6 +15,12 @@ export interface PeopleTabConfig {
   readonly icon: string;
   /** Empty-state noun used to complete "...to view {noun}." */
   readonly noun: string;
+}
+
+/** The live People directory a page is showing: its range and project scope (the commit scope and metric do not change who is listed). */
+export interface OrgPeopleDirectoryView {
+  range: OrgLensTimeRange;
+  projectScope: OrgProjectScope;
 }
 
 // All Employees tab ----------------------------------------------------------

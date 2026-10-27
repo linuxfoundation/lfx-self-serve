@@ -618,6 +618,41 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(formerTags().sort()).toEqual(['org-people-all-employees-row-p-8-former', 'org-people-all-employees-row-p-9-former']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-8"]')?.textContent).not.toContain('Admin');
     });
+
+    it('drops the previous account\'s current employees from the roster and foundation dropdown during a switch, under "All"', async () => {
+      const foundationValues = (): string[] =>
+        (fixture.componentInstance as unknown as { foundationOptions: () => { value: string }[] }).foundationOptions().map((option) => option.value);
+      await mount('browser', '/?employment=all');
+      const previous = {
+        ...response([row('p-1', 'Ada Lovelace', { commitsCount: 1, engagedFoundationIds: ['cncf'] })], 1),
+        foundations: [{ foundationId: 'cncf', foundationName: 'CNCF' }],
+      };
+      snowflake$.next(previous);
+      snowflake$.complete();
+      live$.next(previous);
+      live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+      expect(foundationValues()).toEqual(['', 'cncf']);
+
+      // The next account's former roster lands while its current reads are still pending.
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      former$ = new Subject();
+      selectedAccount.set({ uid: OTHER_ORG, accountName: 'Other Org' });
+      await settle();
+      former$.next({
+        ...response([row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4, engagedFoundationIds: ['lf'] })], 1, OTHER_ORG),
+        foundations: [{ foundationId: 'lf', foundationName: 'LF' }],
+      });
+      former$.complete();
+      await settle();
+
+      expect(foundationValues()).toEqual(['', 'lf']);
+      const rosterKeys = (fixture.componentInstance as unknown as { rosterRows: () => { personKey: string }[] }).rosterRows().map((r) => r.personKey);
+      expect(rosterKeys).toEqual(['p-9']);
+    });
   });
 
   // lfx-self-serve#4163 — every roster read follows the selected time range, which lives in `?range=`.

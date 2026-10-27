@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_CODE_METRIC_LABEL,
@@ -349,7 +350,9 @@ export class ContributorsComponent {
     const hasProject = !!(values.project ?? '');
     const timeRange: OrgLensTimeRange = values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE;
     const hasTimeFilter = timeRange !== ORG_LENS_DEFAULT_TIME_RANGE;
-    return hasSearch || hasFoundation || hasProject || hasTimeFilter;
+    // A project scope changes who the BFF returns, so an empty LF or non-LF result is a filtered result, not an empty org.
+    const hasProjectScope = this.commitFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope;
+    return hasSearch || hasFoundation || hasProject || hasTimeFilter || hasProjectScope;
   }
 
   private initAriaSortMap(): Record<OrgContributorSortColumn, 'ascending' | 'descending' | 'none'> {

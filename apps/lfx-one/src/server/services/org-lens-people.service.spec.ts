@@ -251,6 +251,35 @@ describe('OrgLensPeopleService username company emails', () => {
     ]);
   });
 
+  // The page has just filled the directory it shows; reading that one is a cache hit, while the 30d probes would each be
+  // a cold full merge of the live sources.
+  it('resolves a live-only key on the directory the drawer was opened from, without the 30d probes', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON, { range: '365d', projectScope: 'all' })).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([['365d', 'all']]);
+  });
+
+  it('falls back to the 30d probes when the directory the drawer was opened from no longer lists the key', async () => {
+    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    getLive.mockImplementation(async (_req: unknown, _account: string, range: string) => ({
+      rows: range === '30d' ? [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] : [],
+    }));
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON, { range: '90d', projectScope: 'non_lf' })).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([
+      ['90d', 'non_lf'],
+      ['30d', 'lf'],
+    ]);
+  });
+
   it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser');
 

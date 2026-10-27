@@ -24,6 +24,7 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgLensTimeRange,
+  OrgPeopleDirectoryView,
   OrgProjectScope,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
@@ -234,9 +235,14 @@ export class OrgLensPeopleService {
    * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF
    * username instead. No username → unavailable, never "no company address".
    */
-  public async getCompanyEmails(req: Request, accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
+  public async getCompanyEmails(
+    req: Request,
+    accountId: string,
+    personKey: string,
+    directoryView: OrgPeopleDirectoryView | null = null
+  ): Promise<OrgPersonCompanyEmailsResponse> {
     if (personKey.startsWith('live-')) {
-      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
+      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey, directoryView);
       return username ? this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
     }
     return this.getCompanyEmailsForPersonKey(accountId, personKey);
@@ -320,20 +326,31 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact
-   * sources). Read on the narrowest (`30d`) range: the ranges are nested, so someone live-only in any range is
-   * live-only in `30d` too (a stored row in `30d` would be in every wider range), and their `live-` key comes
-   * from the merge key, not the range. Project scopes are not nested the same way: the `lf` roster is inside
-   * `all` but not inside `non_lf`. So someone live-only under `all` or `lf` is live-only in `30d`/`lf`, and someone
-   * live-only under `non_lf` is live-only in `30d`/`non_lf`; those two are read in turn (the metric and commit
-   * scope do not change who is listed).
+   * Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). First
+   * from the directory the drawer was opened from, which the page has just filled, so the lookup is a cache hit.
+   * Without one, or when it does not list the key, it falls back to the narrowest (`30d`) range: the ranges are nested,
+   * so someone live-only in any range is live-only in `30d` too (a stored row in `30d` would be in every wider range),
+   * and their `live-` key comes from the merge key, not the range. Project scopes are not nested the same way: the `lf`
+   * roster is inside `all` but not inside `non_lf`. So someone live-only under `all` or `lf` is live-only in `30d`/`lf`,
+   * and someone live-only under `non_lf` is live-only in `30d`/`non_lf`; those two are read in turn (the metric and
+   * commit scope do not change who is listed).
    */
-  private async resolveLiveOnlyUsername(req: Request, accountId: string, personKey: string): Promise<string | null> {
+  private async resolveLiveOnlyUsername(
+    req: Request,
+    accountId: string,
+    personKey: string,
+    directoryView: OrgPeopleDirectoryView | null
+  ): Promise<string | null> {
     if (!personKey.startsWith('live-')) {
       return null;
     }
-    for (const projectScope of ['lf', 'non_lf'] as const) {
-      const { rows } = await this.getDirectoryService().getLive(req, accountId, '30d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
+    const views: OrgPeopleDirectoryView[] = [
+      ...(directoryView ? [directoryView] : []),
+      { range: '30d', projectScope: 'lf' },
+      { range: '30d', projectScope: 'non_lf' },
+    ];
+    for (const { range, projectScope } of views) {
+      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
       const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
       if (username) {
         return username;

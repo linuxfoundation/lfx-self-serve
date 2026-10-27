@@ -93,6 +93,11 @@ export class EventAttendeesComponent {
   protected readonly response: Signal<OrgEventAttendeesResponse> = this.initResponse();
 
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
+
+  // Registrations the selected range counts (ended events, ended in the range); the detail filters and the event dropdown both start here.
+  private readonly rangeDetails: Signal<OrgEventAttendeeDetailRow[]> = computed(() =>
+    filterEndedEventsInRange(this.response().details, this.filterValues().timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE)
+  );
   protected readonly eventOptions: Signal<OrgDropdownOption[]> = computed(() => this.initEventOptions());
 
   // Detail set is the canonical source — every filter-aware derivation (stats, rows, expanded section) reads it.
@@ -132,6 +137,14 @@ export class EventAttendeesComponent {
     });
 
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
+
+    // A range change can drop the picked event from the dropdown; once loaded, clear it so the table does not go empty.
+    combineLatest([toObservable(this.eventOptions), toObservable(this.isLoading)])
+      .pipe(takeUntilDestroyed())
+      .subscribe(([options, loading]) => {
+        const selected = this.filterForm.controls.event.value;
+        if (!loading && selected && !options.some((option) => option.value === selected)) this.filterForm.patchValue({ event: '' });
+      });
   }
 
   protected onSort(column: OrgEventAttendeeSortColumn): void {
@@ -184,8 +197,15 @@ export class EventAttendeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
   }
 
+  /** Only events the range counts (at least one registration passing the ended-in-range rule), in the BFF's order. */
   private initEventOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Events', value: '' }, ...this.response().eventOptions.map((e) => ({ label: e.eventName, value: e.eventId }))];
+    const inRange = new Set(this.rangeDetails().map((row) => row.eventId));
+    return [
+      { label: 'All Events', value: '' },
+      ...this.response()
+        .eventOptions.filter((e) => inRange.has(e.eventId))
+        .map((e) => ({ label: e.eventName, value: e.eventId })),
+    ];
   }
 
   private initFilteredDetails(): OrgEventAttendeeDetailRow[] {
@@ -200,7 +220,7 @@ export class EventAttendeesComponent {
       personIndex.set(a.personKey, { name: a.name, title: a.title });
     }
 
-    return filterEndedEventsInRange(this.response().details, values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE).filter((row) => {
+    return this.rangeDetails().filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
       if (q) {

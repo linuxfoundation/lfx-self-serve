@@ -35,9 +35,9 @@ export class OrgPeopleDirectoryStateService {
   /** Cached merged directory for the org, time range and commit filters (no range: the unranged roster); fetches once and replays until the TTL lapses. */
   public getDirectory(orgUid: string, range?: OrgLensTimeRange, filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS): Observable<OrgAllEmployeesResponse> {
     const key = range ? `${orgUid}:${range}:${orgCommitFiltersKey(filters)}` : `${orgUid}:roster`;
+    this.pruneExpired(Date.now());
     const cached = this.byKey.get(key);
-    if (cached && cached.expiresAt > Date.now()) return of(cached.value);
-    if (cached) this.byKey.delete(key);
+    if (cached) return of(cached.value);
 
     const existing = this.inFlight.get(key);
     if (existing) return existing;
@@ -83,6 +83,17 @@ export class OrgPeopleDirectoryStateService {
       for (const key of [...cache.keys()]) {
         if (key.startsWith(prefix)) cache.delete(key);
       }
+    }
+  }
+
+  /**
+   * Drop every expired roster, not only the one requested: each range and filter combination is its own multi-megabyte
+   * entry, so a session that moves between them would otherwise keep them all. In-flight requests are separate and
+   * remove themselves when they settle.
+   */
+  private pruneExpired(now: number): void {
+    for (const [key, entry] of this.byKey) {
+      if (entry.expiresAt <= now) this.byKey.delete(key);
     }
   }
 }

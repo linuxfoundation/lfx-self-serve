@@ -239,6 +239,15 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
     expect(form().getRawValue()).toMatchObject({ project: 'k8s' });
   });
+
+  it('reads an empty LF-only result as filtered, not as an org with no contributors', async () => {
+    getContributors = vi.fn((_orgUid: string, _timeRange: OrgLensTimeRange, filters: OrgCommitFilters) =>
+      of(filters.projectScope === 'lf' ? { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG } : contributorsResponse())
+    );
+    await mount('/?projectScope=lf');
+
+    expect(text('org-people-contributors-empty')).toContain('No contributors match the current filters.');
+  });
 });
 
 describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {

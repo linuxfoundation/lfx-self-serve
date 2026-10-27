@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgAllEmployeeCommitteeMembership } from './org-people.interface';
+import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
 
 /** The four content tabs of the shared person-detail drawer (LFXV2-2195). */
 export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance';
@@ -24,4 +24,6 @@ export interface PersonDrawerContext {
   defaultTab?: PersonDrawerTab;
   /** `true` when the opener lists the person as a former employee of the account; the header shows a "Former employee" badge. */
   isFormer?: boolean;
+  /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
+  directoryView?: OrgPeopleDirectoryView;
 }

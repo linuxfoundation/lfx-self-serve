@@ -19,6 +19,7 @@ const { getAllEmployees, getFormerEmployees, getLive, getContributors, getCompan
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
@@ -209,5 +210,27 @@ describe('OrgLensPeopleController getCompanyEmails', () => {
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     }
     expect(getCompanyEmails).not.toHaveBeenCalled();
+  });
+
+  // The range and project scope only steer which cached directory a live-only lookup reads first, so a bad value is
+  // ignored (the 30d probes still run) rather than failing the address request.
+  it.each([
+    [
+      { range: '90d', projectScope: 'lf' },
+      { range: '90d', projectScope: 'lf' },
+    ],
+    [{ range: '12mo', projectScope: 'lf' }, null],
+    [{ range: '90d', projectScope: 'everything' }, null],
+    [{ range: '90d' }, null],
+    [{}, null],
+  ])('passes the directory view %o as %o', async (query, expected) => {
+    getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'unavailable' });
+    const next = vi.fn();
+    const req = { params: { orgUid: ORG_UID, personKey: 'live-0123456789abcdef' }, query, path: '/test' } as unknown as Request;
+
+    await controller.getCompanyEmails(req, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getCompanyEmails).toHaveBeenCalledWith(req, ORG_UID, 'live-0123456789abcdef', expected);
   });
 });

@@ -81,7 +81,10 @@ export class PersonDetailDrawerService {
         if (!path || !request.companyEmailFeatureEnabled) {
           return of({ request, ...NO_COMPANY_EMAILS });
         }
-        return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`).pipe(
+        // A live-only person resolves against the directory the opener showed, which the page has already warmed.
+        const view = request.context?.directoryView;
+        const params = view ? { range: view.range, projectScope: view.projectScope } : undefined;
+        return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`, { params }).pipe(
           // Only a resolved lookup may expose addresses; a missing status surfaces as an email error.
           map((response) => ({
             request,

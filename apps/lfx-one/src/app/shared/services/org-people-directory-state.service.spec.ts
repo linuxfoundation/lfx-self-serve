@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
 import { firstValueFrom } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
@@ -96,6 +96,31 @@ describe('OrgPeopleDirectoryStateService', () => {
     freshRequest.flush(roster('After Reassign'));
     await expect(fresh).resolves.toEqual(roster('After Reassign'));
     await expect(joined).resolves.toEqual(roster('After Reassign'));
+  });
+
+  // Each range and filter combination is its own multi-megabyte roster; a lookup for one must drop every expired one.
+  it('prunes every expired roster on a lookup, not only the one requested, and refetches after the TTL', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const recent = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
+    http.expectOne(urlFor('30d')).flush(roster('Recent'));
+    await recent;
+    const allTime = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, 'all'));
+    http.expectOne(urlFor('all')).flush(roster('All'));
+    await allTime;
+    const cache = (service as unknown as { byKey: Map<string, unknown> }).byKey;
+    expect(cache.size).toBe(2);
+
+    now.mockReturnValue(1_000_000 + 60_001);
+    const next = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
+    expect(cache.size).toBe(0);
+    http.expectOne(URL).flush(roster('Default'));
+    await next;
+    expect([...cache.keys()]).toEqual([`${SYNTHETIC_ORG_ACCOUNT_ID}:365d:all:all:commits`]);
+
+    const again = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
+    http.expectOne(urlFor('30d')).flush(roster('Recent Again'));
+    await expect(again).resolves.toEqual(roster('Recent Again'));
+    now.mockRestore();
   });
 
   // lfx-self-serve#4163 — one cached roster per time range.
