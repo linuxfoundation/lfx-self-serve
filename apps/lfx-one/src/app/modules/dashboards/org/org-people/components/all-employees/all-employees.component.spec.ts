@@ -383,6 +383,48 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
     });
 
+    it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
+      await mount('browser');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['access'], accessBadge: 'viewer', isFormer: true }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      await settle();
+
+      expect(getFormerEmployees).not.toHaveBeenCalled();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(formerTags()).toEqual([]);
+    });
+
+    it('shows a server-tagged former access principal once, as the former row with the access badge, under "All"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-grace', 'Grace Hopper', { lfUsername: 'grace', sources: ['access'], accessBadge: 'viewer', isFormer: true }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+
     it('shows someone with a live seat as one current row that keeps their code and takes their access badge, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();

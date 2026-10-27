@@ -46,7 +46,7 @@ export interface CompactOrgSeatsEntry {
 
 /**
  * Stored form of the per-caller merged people directory cache (GH-1906, namespace
- * `org-people-dir:v5:{range}:{projectScope}` or `:roster`). `foundations` is small and kept verbatim; only
+ * `org-people-dir:v6:{range}:{projectScope}` or `:roster`). `foundations` is small and kept verbatim; only
  * `rows` — where the same ~21 field names repeat on every person — is compacted. The rows carry every code
  * count and no tiles: the request's commit filters pick the count and the tiles are counted after the read.
  */

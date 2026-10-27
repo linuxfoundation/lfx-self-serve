@@ -82,6 +82,8 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknow
     case 'eventsCount':
     case 'coursesCount':
       return typeof value === 'number';
+    case 'isFormer':
+      return value === true || isColumnarAbsent(value);
     default:
       return true;
   }
@@ -267,11 +269,14 @@ export class OrgPeopleDirectoryService {
     // Board/committee seats are LF engagement, so `non_lf` reads none, and there the live sources only enrich
     // stored rows: no row exists only because of a live seat, key contact or access.
     const lfEngagement = projectScope !== 'non_lf';
-    const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
+    // Only a ranged view with live-only rows can list a former employee through their Org Lens access; the
+    // unranged picker roster never reads former employees.
+    const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
       this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
+      range && lfEngagement ? this.peopleService.getFormerEmployees(accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }) : Promise.resolve(null),
     ]);
 
     const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
@@ -282,10 +287,23 @@ export class OrgPeopleDirectoryService {
       });
     }
 
-    return this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement);
+    const formerUsernames = new Set<string>();
+    if (former.status === 'fulfilled') {
+      for (const row of former.value?.rows ?? []) {
+        const formerUsername = (row.lfUsername ?? '').trim().toLowerCase();
+        if (formerUsername) formerUsernames.add(formerUsername);
+      }
+    } else {
+      this.logSourceFailure(req, accountId, 'former employees', former.reason);
+    }
+
+    return this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
   }
 
-  /** Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows. */
+  /**
+   * Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows.
+   * `formerUsernames` are the range's former employees, whose access-only live rows are tagged former.
+   */
   private merge(
     req: Request,
     accountId: string,
@@ -293,7 +311,8 @@ export class OrgPeopleDirectoryService {
     seats: PromiseSettledResult<CommitteeServiceOrgSeat[]>,
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
     access: PromiseSettledResult<OrgAccessUser[]>,
-    addLiveOnlyRows: boolean
+    addLiveOnlyRows: boolean,
+    formerUsernames: ReadonlySet<string>
   ): OrgAllEmployeesCountedResponse {
     const byKey = new Map<string, OrgAllEmployeeRowInternal>();
     const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
@@ -380,6 +399,7 @@ export class OrgPeopleDirectoryService {
     }
 
     this.absorbIdentitylessRows(byKey);
+    this.tagFormerAccessPrincipals(byKey, formerUsernames);
 
     const merged = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
@@ -454,6 +474,22 @@ export class OrgPeopleDirectoryService {
       // merely declines to emit an FGA tuple for that combination, it does not prevent the record.
       if (!owner.accessBadge && orphan.accessBadge) owner.accessBadge = orphan.accessBadge;
       byKey.delete(key);
+    }
+  }
+
+  /**
+   * Org Lens access alone does not make a former employee current again — only a live seat or key-contact
+   * role does — so a live row held up by access alone, whose username is one of the range's former
+   * employees, is tagged `isFormer` and the current view does not list it. It stays in the directory so the
+   * former row shown under "All" and "Former employees" can take its access badge. A stored current row is
+   * never tagged, and a pending invite has no username to match.
+   */
+  private tagFormerAccessPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>, formerUsernames: ReadonlySet<string>): void {
+    if (formerUsernames.size === 0) return;
+    for (const row of byKey.values()) {
+      if (row.lfUsername && row.sources.every((source) => source === 'access') && formerUsernames.has(row.lfUsername)) {
+        row.isFormer = true;
+      }
     }
   }
 

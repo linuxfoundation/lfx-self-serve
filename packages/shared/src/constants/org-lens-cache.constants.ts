@@ -71,4 +71,5 @@ export const ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS = [
   'eventsCount',
   'coursesCount',
   'engagedFoundationIds',
+  'isFormer',
 ] as const satisfies readonly (keyof OrgAllEmployeeCountedRow)[];

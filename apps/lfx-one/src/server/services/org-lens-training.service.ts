@@ -20,16 +20,13 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
-/**
- * The Certifications tab counts enrollments from the last 12 months only (today excluded): ORG_PEOPLE_TRAINING keeps
- * enrollments of any age for the People › Trainees ranges, so this reproduces the window the table used to apply
- * upstream. `ACTIVITY_TS` is the enrollment time on enrolled rows. Certified rows were never windowed.
- */
-const CERT_TAB_ENROLLED_WINDOW = `t.ACTIVITY_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND t.ACTIVITY_TS::date < CURRENT_DATE()`;
+/** Certifications tab: enrolled rows limited to the last 12 months (today excluded); certified rows are never windowed. */
+const CERT_TAB_ENROLLED_WINDOW = orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS');
 
 interface OrgTrainingStatsRow {
   CERTIFIED_EMPLOYEES: number;
@@ -171,7 +168,7 @@ export class OrgLensTrainingService {
 
     const raw = await withOrgCache(
       accountId,
-      `certifications:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      `certifications:v2:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () =>
         this.fetchPagedCourseRows<OrgCertificationRow>(req, 'get_org_certifications', filteredCte, {
@@ -297,7 +294,7 @@ export class OrgLensTrainingService {
 
     const rows = await withOrgCache(
       accountId,
-      `certification-employees:${paramSignature([courseId, status, searchQuery ?? null])}`,
+      `certification-employees:v2:${paramSignature([courseId, status, searchQuery ?? null])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchRosterRows(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, { courseId }),
       isRosterRowArray

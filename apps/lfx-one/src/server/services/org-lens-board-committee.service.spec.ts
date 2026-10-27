@@ -97,7 +97,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   isVotingStatus: () => true,
   VALKEY_CACHE: {
     ORG_SEATS_NAMESPACE: 'org-seats:v2',
-    ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
+    ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
 }));
@@ -474,10 +474,10 @@ describe('seat reassign — caller cache invalidation', () => {
     expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
     // The People directory is cached per time range and project scope, and for the unranged picker roster; every one shows the reassigned seat.
-    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v5:roster', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v6:roster', 'tester', ORG);
     for (const range of ['30d', '90d', '365d', 'all']) {
       for (const projectScope of ['all', 'lf', 'non_lf']) {
-        expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v5:${range}:${projectScope}`, 'tester', ORG);
+        expect(invalidatePerUserCache).toHaveBeenCalledWith(`org-people-dir:v6:${range}:${projectScope}`, 'tester', ORG);
       }
     }
     // Plus the seat roster itself: nothing else is cleared.

@@ -76,6 +76,7 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
@@ -96,6 +97,9 @@ const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', met
 const LIVE_PERSON = 'live-access-mixeduser';
 const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
 const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
+const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
+/** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
+const SQLITE_ENROLLED_WINDOW = `date(ACTIVITY_TS) >= date('now', '-12 months') AND date(ACTIVITY_TS) < date('now')`;
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
@@ -104,6 +108,17 @@ function addPerson(account: string, personKey: string, username: string | null, 
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
   }
+}
+
+/** `YYYY-MM-DD`, `days` before today (UTC, as SQLite's `date('now')`). */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function addDailyCode(account: string, key: string, activityDate: string, foundationId: string, foundationName: string, isLfProject = 1): void {
+  database
+    .prepare('INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(account, key, `project-${foundationId}`, activityDate, foundationId, foundationName, isLfProject);
 }
 
 function addRosterRow(account: string, key: string, username: string): void {
@@ -184,7 +199,9 @@ beforeEach(() => {
   `);
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
-    const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
+    const rows = database
+      .prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '').replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW))
+      .all(...binds);
     for (const row of rows) {
       for (const column of ['IS_BOARD', 'IS_MAINTAINER', 'IS_SPEAKER']) {
         if (column in row) row[column] = row[column] === 1;
@@ -286,7 +303,7 @@ describe('OrgLensPeopleService username company emails', () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
 
-    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' });
+    await expectBothPaths(FAILED);
   });
 
   it('fails closed for case-folded collisions between people with addresses', async () => {
@@ -401,7 +418,7 @@ describe('OrgLensPeopleService username company emails', () => {
   it('reports warehouse failures without claiming there are no addresses', async () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
-    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' });
+    await expectBothPaths(FAILED);
   });
 
   it("reads a roster person's addresses by person key, even when the address rows carry no username", async () => {
@@ -496,7 +513,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
         IS_SPEAKER INTEGER, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT
       );
       CREATE TABLE ORG_PEOPLE_TRAINING (
-        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
+      );
+      CREATE TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER
       );
     `);
     database
@@ -512,8 +532,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
     database
-      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals');
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals', '2026-04-01');
   });
 
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
@@ -528,6 +548,24 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({ personKey, ...activity });
     const addressReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
     expect(addressReads).toEqual([]);
+  });
+
+  it('lists certificates of any age but enrollments from the last 12 months only, today excluded', async () => {
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'cert-old', 'Certified', 'course-old-cert', 'Old Certificate', daysAgo(1500));
+    insert.run(ACCOUNT, personKey, 'enroll-recent', 'Enrolled', 'course-recent', 'Recent Enrollment', daysAgo(30));
+    insert.run(ACCOUNT, personKey, 'enroll-old', 'Enrolled', 'course-old', 'Old Enrollment', daysAgo(500));
+    insert.run(ACCOUNT, personKey, 'enroll-today', 'Enrolled', 'course-today', 'Today Enrollment', daysAgo(0));
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.training.map((row) => [row.courseId, row.status]).sort()).toEqual([
+      ['course-old-cert', 'Certified'],
+      ['course-one', 'Certified'],
+      ['course-recent', 'Enrolled'],
+    ]);
+    expect(detail.training[0]?.coursesCount).toBe(3);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v3:${personKey}`)!)).toBe(true);
   });
 
   it("counts a mirrored commit in every project's row and once in the total", async () => {
@@ -614,9 +652,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     beforeEach(() => {
       addRangeRow(ACCOUNT, formerKey, '365d', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
       addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
-      database
-        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(ACCOUNT, formerKey, 'project-two', 'Project Two', 'foundation-two', 'Foundation Two', 4, 4, 0, '2026-05-01');
+      addDailyCode(ACCOUNT, formerKey, '2026-05-01', 'foundation-two', 'Foundation Two');
     });
 
     it('returns former employees flagged as former, with tiles counted over them and the foundations of their code', async () => {
@@ -625,6 +661,18 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(response.rows).toEqual([expect.objectContaining({ personKey: formerKey, commitsCount: 4, isFormer: true })]);
       expect(response.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
       expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+    });
+
+    it('labels the All Time foundations of code older than a year', async () => {
+      addRangeRow(ACCOUNT, 'person-long-gone', 'all', true, 'longgone', 'Long Gone', null, 2);
+      addDailyCode(ACCOUNT, 'person-long-gone', '2023-03-01', 'foundation-old', 'Foundation Old');
+
+      const response = await service.getFormerEmployees(ACCOUNT, 'all', FILTERS);
+
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-old', foundationName: 'Foundation Old' },
+        { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+      ]);
     });
 
     it('reads only the former rows of the requested range, foundations included', async () => {
@@ -668,11 +716,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
 
     it('reads the former rows of the requested project scope, with the foundations of code in that scope', async () => {
-      database.exec('ALTER TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS ADD COLUMN IS_LF_PROJECT INTEGER DEFAULT 1');
       addRangeRow(ACCOUNT, 'person-non-lf', '365d', true, 'nonlf', 'Non Lf', null, 7, { projectScope: 'non_lf' });
-      database
-        .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(ACCOUNT, 'person-non-lf', 'project-x', 'Project X', 'foundation-x', 'Foundation X', 7, 7, 0, '2026-05-01', 0);
+      addDailyCode(ACCOUNT, 'person-non-lf', '2026-05-01', 'foundation-x', 'Foundation X', 0);
 
       const response = await service.getFormerEmployees(ACCOUNT, '365d', { ...FILTERS, projectScope: 'non_lf' });
 
@@ -681,13 +726,28 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:non_lf')!)).toBe(true);
     });
 
-    it('does not remember a failed former check, so the next read applies the guard', async () => {
+    it('fails closed on a failed former check, even over addresses cached while the person was current, and does not remember it', async () => {
       addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
+      database.exec(`DELETE FROM ORG_PEOPLE_ALL_RANGES WHERE PERSON_KEY = '${formerKey}'`);
+      // While current, both address reads resolve and are cached.
+      expect((await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).companyEmailsStatus).toBe('resolved');
+      expect((await service.getCompanyEmailsByUsername(ACCOUNT, 'leftuser')).companyEmailsStatus).toBe('resolved');
+      // They leave; the cached "current" answers expire and the next check fails.
+      addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', null, 4);
+      for (const key of [...cacheValues.keys()].filter((cacheKey) => cacheKey.includes('people-former-check'))) {
+        cacheValues.delete(key);
+      }
       database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES RENAME TO SAVED_RANGES');
-      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).not.toEqual(UNAVAILABLE);
+      const readsBefore = execute.mock.calls.length;
+
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(FAILED);
+      expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'LeftUser')).toEqual(FAILED);
+      const addressReads = (execute.mock.calls.slice(readsBefore) as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
+      expect(addressReads).toEqual([]);
 
       database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
       expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
+      expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'LeftUser')).toEqual(UNAVAILABLE);
     });
   });
 
@@ -759,6 +819,18 @@ describe('OrgLensPeopleService person-key company emails', () => {
           .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
           .sort()
       );
+    });
+
+    it('labels the All Time foundations of code older than a year', async () => {
+      addRangeRow(ACCOUNT, personKey, 'all', false, 'veteran', 'Veteran', 'veteran@company.example', 2);
+      addDailyCode(ACCOUNT, personKey, '2023-03-01', 'foundation-old', 'Foundation Old');
+
+      const response = await service.getAllEmployees(ACCOUNT, 'all', FILTERS);
+
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-old', foundationName: 'Foundation Old' },
+        { foundationId: 'foundation-one', foundationName: 'Foundation One' },
+      ]);
     });
 
     // The reassign pickers ask for no range: they keep the pre-#4163 roster.

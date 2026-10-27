@@ -50,13 +50,14 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
    * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
-   * `org-people-dir:v5`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * `org-people-dir:v6`. `v2`: merge-only fields are stripped before the write and the validator asserts
    * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
    * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
    * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
-   * directory clears every scope.
+   * directory clears every scope. `v6` (lfx-self-serve#4378): a ranged row carries `isFormer` for an
+   * access-only principal who is a former employee in that range, so the current view never lists them.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v5',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -295,7 +296,8 @@ export const VALKEY_CACHE = {
     // the dev build (lf-dbt#3118) with the same SQL size estimate and × 1.06 calibration as
     // `people-all:v4` (this value holds the same stored rows plus the live-only rows): largest `all`-range
     // value ≈ 4.1 MiB estimated (≈ 4.3 MiB compact), ≈ 1.9 MiB on the default 12-month all-projects
-    // view. 4.3 MiB × 1.25 rounds up to 6 MiB.
-    'org-people-dir:v5': 6 * 1_048_576,
+    // view. 4.3 MiB × 1.25 rounds up to 6 MiB. `v6` adds one mostly-absent `isFormer` cell per row (~7 bytes), well
+    // inside the headroom.
+    'org-people-dir:v6': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

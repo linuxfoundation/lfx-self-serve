@@ -107,7 +107,11 @@ export interface OrgAllEmployeeRow {
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];
-  /** `true` on rows from the former-employees roster: every employment record at this account has ended. Absent on current rows. */
+  /**
+   * `true` on rows from the former-employees roster: every employment record at this account has ended. On a
+   * ranged live directory row, a former employee listed only through their Org Lens access: not current, kept so
+   * the former row can take their access badge. Absent on current rows.
+   */
   isFormer?: boolean;
 }
 

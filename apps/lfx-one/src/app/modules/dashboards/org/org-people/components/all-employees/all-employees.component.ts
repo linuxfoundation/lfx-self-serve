@@ -549,7 +549,8 @@ export class AllEmployeesComponent {
    * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
    *   activity plus the live sources, seats and access badge, untagged. A former name the warehouse could not
    *   supply (blank or the placeholder) and a missing title or photo are taken from the live row; an address never is.
-   * - With only Org Lens access, they are still former: the former row, carrying the access badge.
+   * - With only Org Lens access, they are still former: the former row, carrying the access badge. The server tags
+   *   such a live row `isFormer`, so it is never listed as current, whichever view is selected.
    * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
    * be stale. Someone on both is treated as current (matched on person key or the stored username): under "All"
    * they are shown once, as the stored current row, and the Former view leaves them out.
@@ -604,7 +605,7 @@ export class AllEmployeesComponent {
       });
     }
     // `liveRows` is the account-checked current list: after an org switch the previous org's rows must not show (or feed the foundation dropdown) until the new fetch lands.
-    const currentRows = this.showCurrent() ? [...liveRows.filter((row) => !folded.has(row)), ...rejoinedRows] : [];
+    const currentRows = this.showCurrent() ? [...liveRows.filter((row) => !row.isFormer && !folded.has(row)), ...rejoinedRows] : [];
     return [...currentRows, ...shownFormerRows];
   }
 

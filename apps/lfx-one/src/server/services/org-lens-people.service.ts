@@ -36,6 +36,7 @@ import { createHash } from 'crypto';
 import { Request } from 'express';
 
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
@@ -267,7 +268,11 @@ export class OrgLensPeopleService {
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(accountId, personKey);
       }
-      if (await this.isFormerEmployee(accountId, { username: normalizedUsername })) {
+      const formerCheck = await this.checkFormerEmployee(accountId, { username: normalizedUsername });
+      if (formerCheck.failed) {
+        return FAILED_COMPANY_EMAILS;
+      }
+      if (formerCheck.isFormer) {
         return UNAVAILABLE_COMPANY_EMAILS;
       }
       return await withOrgCache(
@@ -374,7 +379,11 @@ export class OrgLensPeopleService {
     );
   }
 
-  /** Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations of their code rows in that scope. */
+  /**
+   * Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations
+   * of their code in that scope. The labels read the full-history daily code rows, the source of the rows'
+   * ENGAGED_FOUNDATION_IDS, so a foundation they only contributed to years ago still has one for `all`.
+   */
   private async fetchFormerEmployeesRaw(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<AllEmployeesRaw> {
     const rowsQuery = `
       SELECT
@@ -403,7 +412,7 @@ export class OrgLensPeopleService {
 
     const foundationQuery = `
       SELECT DISTINCT c.FOUNDATION_ID, c.FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS c
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY c
       INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES f
         ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
       WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
@@ -424,11 +433,10 @@ export class OrgLensPeopleService {
    * A former employee's company addresses are never read: they left, and the address model covers the
    * account's current people only. Checked against the widest former population (`TIME_RANGE = 'all'`,
    * `PROJECT_SCOPE = 'all'`), whatever range and scope the caller is viewing. One keyed read per person,
-   * cached per person. A failed read
-   * answers `false` so it never blocks the address read, and is not cached, so a warehouse blip cannot
-   * drop the guard for the whole TTL.
+   * cached per person. A failed read answers `failed` so callers fail closed without reading any address,
+   * and is not cached, so a warehouse blip does not outlive the request.
    */
-  private async isFormerEmployee(accountId: string, identity: { personKey: string } | { username: string }): Promise<boolean> {
+  private async checkFormerEmployee(accountId: string, identity: { personKey: string } | { username: string }): Promise<FormerCheck> {
     const byPersonKey = 'personKey' in identity;
     const fetcher = async (): Promise<FormerCheck> => {
       try {
@@ -449,12 +457,11 @@ export class OrgLensPeopleService {
       }
     };
     if (byPersonKey && !isFilterSafeIdentifier(identity.personKey)) {
-      return (await fetcher()).isFormer;
+      return fetcher();
     }
     // `v3` (lfx-self-serve#4164): ORG_PEOPLE_ALL_RANGES gained a PROJECT_SCOPE grain; the check reads the `all` scope.
     const key = byPersonKey ? `people-former-check:v3:${identity.personKey}` : `people-former-check:v3:username:${usernameDigest(identity.username)}`;
-    const { isFormer } = await withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck, (check) => !check.failed);
-    return isFormer;
+    return withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, isFormerCheck, (check) => !check.failed);
   }
 
   /**
@@ -500,7 +507,9 @@ export class OrgLensPeopleService {
       ORDER BY NAME ASC NULLS LAST
     `;
 
-    // Distinct (foundation_id, foundation_name) pairs across the four detail tables; keeps the BFF confined to PLATINUM_LFX_ONE.
+    // Distinct (foundation_id, foundation_name) pairs across the four detail sources; keeps the BFF confined to PLATINUM_LFX_ONE.
+    // Code labels read the full-history daily code rows (ENGAGED_FOUNDATION_IDS' code source), not the 12-month
+    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year.
     const foundationQuery = `
       WITH pairs AS (
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
@@ -508,7 +517,7 @@ export class OrgLensPeopleService {
         WHERE ACCOUNT_ID = ? AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
         WHERE ACCOUNT_ID = ? AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
@@ -561,8 +570,8 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v2`: the code rows carry
-   * PROJECT_COMMITS, so an entry stored without it must miss.
+   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v3`: the training rows
+   * keep enrollments from the last 12 months only, so an entry stored with older enrollments must miss.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     if (!isFilterSafeIdentifier(personKey)) {
@@ -570,7 +579,7 @@ export class OrgLensPeopleService {
     }
     return withOrgCache(
       accountId,
-      `people-detail:v2:${personKey}`,
+      `people-detail:v3:${personKey}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
@@ -591,10 +600,18 @@ export class OrgLensPeopleService {
    * A failure is answered as `failed` and is never cached.
    *
    * A `cdp:` person key (no Salesforce identity to join on) and a former employee of the account
-   * short-circuit to `unavailable` before the cache: not available, never "none on record".
+   * short-circuit to `unavailable` before the cache: not available, never "none on record". A failed
+   * former check answers `failed` before the cache too: no address is read for someone who may have left.
    */
   private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (personKey.startsWith('cdp:') || (await this.isFormerEmployee(accountId, { personKey }))) {
+    if (personKey.startsWith('cdp:')) {
+      return UNAVAILABLE_COMPANY_EMAILS;
+    }
+    const formerCheck = await this.checkFormerEmployee(accountId, { personKey });
+    if (formerCheck.failed) {
+      return FAILED_COMPANY_EMAILS;
+    }
+    if (formerCheck.isFormer) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
@@ -734,6 +751,7 @@ export class OrgLensPeopleService {
     return result.rows;
   }
 
+  /** Certificates of any age, enrollments from the last 12 months only (the window the drawer has always shown). */
   private async fetchTrainingRows(accountId: string, personKey: string): Promise<TrainingRow[]> {
     const query = `
       SELECT
@@ -745,6 +763,7 @@ export class OrgLensPeopleService {
         COURSE_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate()}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<TrainingRow>(query, [accountId, personKey]);
