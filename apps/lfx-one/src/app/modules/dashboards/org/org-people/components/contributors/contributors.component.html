@@ -62,23 +62,22 @@
     <div class="w-full md:w-52">
       <lfx-select
         [form]="filterForm"
-        control="commitScope"
-        size="small"
-        [options]="commitScopeOptions"
-        styleClass="w-full"
-        ariaLabel="Filter by commits"
-        dataTest="org-people-contributors-commit-scope-filter" />
-    </div>
-    <div class="w-full md:w-52">
-      <lfx-select
-        [form]="filterForm"
         control="metric"
         size="small"
         [options]="metricOptions"
         styleClass="w-full"
-        ariaLabel="Code metric"
+        ariaLabel="Count all commits, only main branch commits or all code contributions"
         dataTest="org-people-contributors-metric-filter" />
     </div>
+    @if (canClearFilters()) {
+      <button
+        type="button"
+        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+        data-testid="org-people-contributors-clear-filters"
+        (click)="clearFilters()">
+        Clear filters
+      </button>
+    }
   </div>
 
   @if (fetchError()) {

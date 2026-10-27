@@ -37,9 +37,9 @@ describe('describeContributionsCaption', () => {
     );
   });
 
-  it('describes merged commits in LF projects', () => {
+  it('describes only main branch commits in LF projects', () => {
     expect(caption({ commitScope: 'merged', projectScope: 'lf' })).toBe(
-      'Commits authored by contributors affiliated with Acme, merged to the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
+      'Commits authored by contributors affiliated with Acme, only commits on the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
     );
   });
 

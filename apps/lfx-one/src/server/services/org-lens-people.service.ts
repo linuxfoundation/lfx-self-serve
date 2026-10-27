@@ -330,10 +330,9 @@ export class OrgLensPeopleService {
    * from the directory the drawer was opened from, which the page has just filled, so the lookup is a cache hit.
    * Without one, or when it does not list the key, it falls back to the narrowest (`30d`) range: the ranges are nested,
    * so someone live-only in any range is live-only in `30d` too (a stored row in `30d` would be in every wider range),
-   * and their `live-` key comes from the merge key, not the range. Project scopes are not nested the same way: the `lf`
-   * roster is inside `all` but not inside `non_lf`. So someone live-only under `all` or `lf` is live-only in `30d`/`lf`,
-   * and someone live-only under `non_lf` is live-only in `30d`/`non_lf`; those two are read in turn (the metric and
-   * commit scope do not change who is listed).
+   * and their `live-` key comes from the merge key, not the range. Live-only rows are listed under `all` and `lf` only
+   * (`non_lf` lists stored people alone), and the `lf` roster is inside `all`, so someone live-only anywhere is
+   * live-only in `30d`/`lf` (the metric and commit scope do not change who is listed).
    */
   private async resolveLiveOnlyUsername(
     req: Request,
@@ -344,11 +343,7 @@ export class OrgLensPeopleService {
     if (!personKey.startsWith('live-')) {
       return null;
     }
-    const views: OrgPeopleDirectoryView[] = [
-      ...(directoryView ? [directoryView] : []),
-      { range: '30d', projectScope: 'lf' },
-      { range: '30d', projectScope: 'non_lf' },
-    ];
+    const views: OrgPeopleDirectoryView[] = [...(directoryView ? [directoryView] : []), { range: '30d', projectScope: 'lf' }];
     for (const { range, projectScope } of views) {
       const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
       const username = rows.find((row) => row.personKey === personKey)?.lfUsername;

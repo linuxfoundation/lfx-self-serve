@@ -3,7 +3,7 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, type Signal } from '@angular/core';
-import { ORG_COMMITS_DEFINITION, ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
+import { ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION, ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeCommitteeMembership, PersonDrawerTab } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -29,6 +29,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   ];
 
   protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
+  protected readonly commitUnit = ORG_CODE_METRIC_UNIT.commits;
 
   protected readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());

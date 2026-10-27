@@ -233,22 +233,14 @@ describe('OrgLensPeopleService username company emails', () => {
     });
   });
 
-  // Project scopes are not nested: someone live-only under Non-LF projects (a seat holder with no non-LF code) can be
-  // stored under LF projects, so the LF read misses them and the Non-LF one has to be tried too.
-  it('resolves a live-only key that only the 30d Non-LF directory holds, after the 30d LF one misses it', async () => {
+  // Live-only rows are listed under All and LF projects only (Non-LF lists stored people alone), and the LF roster is
+  // inside All, so the 30d LF directory is the one probe.
+  it('probes only the 30d LF directory, since the Non-LF one lists no live-only row', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    getLive.mockImplementation(async (_req: unknown, _account: string, _range: string, filters: OrgCommitFilters) => ({
-      rows: [filters.projectScope === 'non_lf' ? { personKey: LIVE_PERSON, lfUsername: 'mixeduser' } : { personKey: 'person-one', lfUsername: 'mixeduser' }],
-    }));
+    getLive.mockResolvedValue({ rows: [{ personKey: 'person-one', lfUsername: 'mixeduser' }] });
 
-    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual({
-      companyEmails: ['first@company.example'],
-      companyEmailsStatus: 'resolved',
-    });
-    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([
-      ['30d', 'lf'],
-      ['30d', 'non_lf'],
-    ]);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(UNAVAILABLE);
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([['30d', 'lf']]);
   });
 
   // The page has just filled the directory it shows; reading that one is a cache hit, while the 30d probes would each be

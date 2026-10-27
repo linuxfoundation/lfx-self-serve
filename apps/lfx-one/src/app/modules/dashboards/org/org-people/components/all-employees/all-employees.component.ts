@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -36,18 +36,17 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 
 import {
   DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+  DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
   ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
-  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_METRIC_LABEL,
-  ORG_CODE_METRIC_OPTIONS,
+  ORG_CODE_MEASURE_OPTIONS,
   ORG_CODE_METRIC_UNIT,
-  ORG_COMMIT_SCOPE_OPTIONS,
-  ORG_COMMITS_DEFINITION,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
@@ -66,9 +65,9 @@ import type {
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
   OrgAllEmployeeStats,
-  OrgCodeMetricOption,
+  OrgCodeFilterValues,
+  OrgCodeMeasureOption,
   OrgCommitFilters,
-  OrgCommitScopeOption,
   OrgCountUnit,
   OrgDropdownOption,
   OrgLensTimeRange,
@@ -77,6 +76,9 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   computeOrgAllEmployeeStats,
+  orgCodeFilterValues,
+  orgCommitFiltersFor,
+  orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
   parseOrgLensTimeRange,
@@ -113,8 +115,7 @@ export class AllEmployeesComponent {
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
   protected readonly rangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
-  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
-  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
+  protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
@@ -131,14 +132,13 @@ export class AllEmployeesComponent {
   // former employees are all read for this range.
   protected readonly selectedRange = signal<OrgLensTimeRange>(parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range')));
   private readonly selectedRange$ = toObservable(this.selectedRange);
-  // Follows `?projectScope=` / `?commitScope=` / `?metric=` (shared with the Contributors tab): the project scope picks who is
-  // listed, the commit scope and metric pick the code count. All three are read by the BFF with the range.
+  // Follows `?projectScope=` / `?metric=` (shared with the Contributors tab): the project scope picks who is listed, the
+  // code-count option (commits, merged commits or all code contributions) picks the code count. Read by the BFF with the range.
   protected readonly selectedFilters = signal<OrgCommitFilters>(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
   private readonly selectedFilters$ = toObservable(this.selectedFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
+  protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
-  protected readonly codeColumnTooltip = computed(() =>
-    this.selectedFilters().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION
-  );
+  protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
   protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
   // The code activity option is named after the metric it filters on.
@@ -261,6 +261,8 @@ export class AllEmployeesComponent {
   protected readonly footerCountLabel: Signal<string> = computed(() => this.initFooterCountLabel());
 
   protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
+  // The filter bar's "Clear filters" also covers the code-count option, which changes the count but not who is listed.
+  protected readonly canClearFilters: Signal<boolean> = computed(() => this.isFiltering() || this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE);
 
   // Precomputed aria-sort per column — keeps the template free of method calls in [attr.aria-sort] bindings.
   protected readonly ariaSortMap: Signal<Record<OrgAllEmployeeSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
@@ -315,6 +317,11 @@ export class AllEmployeesComponent {
         takeUntilDestroyed()
       )
       .subscribe((filters) => this.selectedFilters.set(filters));
+
+    // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten once the page has rendered.
+    if (!orgCommitFiltersUrlMatches(this.selectedFilters(), (name) => this.route.snapshot.queryParamMap.get(name))) {
+      afterNextRender(() => this.writeFiltersToUrl(this.selectedFilters()));
+    }
 
     // The foundation list is rebuilt per view, so a foundation picked in one view may not exist in the next.
     toObservable(this.selectedEmployment)
@@ -406,12 +413,23 @@ export class AllEmployeesComponent {
     });
   }
 
-  protected onFiltersChange(change: Partial<OrgCommitFilters>): void {
-    const filters = { ...this.selectedFilters(), ...change };
+  protected onFiltersChange(change: Partial<OrgCodeFilterValues>): void {
+    const filters = orgCommitFiltersFor({ ...this.selectedCodeFilters(), ...change });
     this.selectedFilters.set(filters);
+    this.writeFiltersToUrl(filters);
+  }
+
+  /** Every filter back to its default in one URL write (`tab` and other params kept). */
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.selectedFoundationId.set('');
+    this.selectedActivity.set('all');
+    this.selectedEmployment.set(DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT);
+    this.selectedRange.set(ORG_LENS_DEFAULT_TIME_RANGE);
+    this.selectedFilters.set(DEFAULT_ORG_COMMIT_FILTERS);
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: orgCommitFiltersUrlParams(filters),
+      queryParams: { employment: null, range: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE), ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -442,6 +460,15 @@ export class AllEmployeesComponent {
       return next;
     });
     this.loadDetailIfNeeded(row);
+  }
+
+  private writeFiltersToUrl(filters: OrgCommitFilters): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: orgCommitFiltersUrlParams(filters),
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   /**

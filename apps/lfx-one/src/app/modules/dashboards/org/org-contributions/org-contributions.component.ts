@@ -24,12 +24,11 @@ import {
   CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_METRIC_LABELS,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
+  DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
-  ORG_CODE_CONTRIBUTIONS_DEFINITION,
-  ORG_CODE_METRIC_OPTIONS,
-  ORG_COMMIT_SCOPE_OPTIONS,
-  ORG_COMMITS_DEFINITION,
+  ORG_CODE_MEASURE_DEFINITION,
+  ORG_CODE_MEASURE_OPTIONS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
@@ -41,11 +40,8 @@ import type {
   ContributionsSortColumn,
   ContributionsSortDirection,
   FilterPillOption,
-  OrgCodeMetric,
-  OrgCodeMetricOption,
-  OrgCommitFilters,
-  OrgCommitScope,
-  OrgCommitScopeOption,
+  OrgCodeMeasure,
+  OrgCodeMeasureOption,
   OrgContributionCommitRowVm,
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
@@ -56,7 +52,16 @@ import type {
   OrgProjectScopeOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { orgCommitFiltersUrlParams, orgLensTimeRangeUrlParam, parseOrgLensTimeRange, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
+import {
+  orgCodeFilterValues,
+  orgCommitFiltersFor,
+  orgCommitFiltersUrlMatches,
+  orgCommitFiltersUrlParams,
+  orgLensTimeRangeUrlParam,
+  parseOrgLensTimeRange,
+  readOrgCommitFilters,
+  sameOrgCommitFilters,
+} from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -101,20 +106,18 @@ export class OrgContributionsComponent {
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
   protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
-  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
-  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
+  protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
-  private readonly initialCommitFilters = readOrgCommitFilters((name) => this.initialParams.get(name));
+  private readonly initialCodeFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.initialParams.get(name)));
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     dateRange: new FormControl<OrgLensTimeRange>(parseOrgLensTimeRange(this.initialParams.get('range')), { nonNullable: true }),
     projects: new FormControl<string[]>(this.parseInitialCsv('projects'), { nonNullable: true }),
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
-    projectScope: new FormControl<OrgProjectScope>(this.initialCommitFilters.projectScope, { nonNullable: true }),
-    commitScope: new FormControl<OrgCommitScope>(this.initialCommitFilters.commitScope, { nonNullable: true }),
-    metric: new FormControl<OrgCodeMetric>(this.initialCommitFilters.metric, { nonNullable: true }),
+    projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -147,6 +150,8 @@ export class OrgContributionsComponent {
 
   // Composed filter + pagination state — the single source of truth fed to both the URL and the BFF.
   protected readonly query: Signal<OrgContributionsQuery> = computed(() => this.initQuery());
+  // Shows the filter bar's "Clear filters" while any filter differs from its default.
+  protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
@@ -162,9 +167,7 @@ export class OrgContributionsComponent {
     describeContributionsCaption(this.query(), this.companyName(), describeContributionsWindow(this.query().dateRange))
   );
   protected readonly metricLabels: Signal<ContributionsMetricLabels> = computed(() => CONTRIBUTIONS_METRIC_LABELS[this.query().metric]);
-  protected readonly metricDefinition: Signal<string> = computed(() =>
-    this.query().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION
-  );
+  protected readonly metricDefinition: Signal<string> = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.query()).metric]);
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
   protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());
@@ -216,7 +219,7 @@ export class OrgContributionsComponent {
       .subscribe(() => this.page.set(1));
 
     // A query-only navigation (back/forward, a link from another Org Lens page) keeps this component, so the commit
-    // filters follow `?projectScope=` / `?commitScope=` / `?metric=`. The guard skips the echo of the page's own URL writes.
+    // filters follow `?projectScope=` / `?metric=`. The guard skips the echo of the page's own URL writes.
     this.route.queryParamMap
       .pipe(
         map((params) => readOrgCommitFilters((name) => params.get(name))),
@@ -224,8 +227,8 @@ export class OrgContributionsComponent {
         takeUntilDestroyed()
       )
       .subscribe((filters) => {
-        const { projectScope, commitScope, metric } = this.filterForm.getRawValue();
-        if (!sameOrgCommitFilters(filters, { projectScope, commitScope, metric })) this.filterForm.patchValue(filters);
+        const { projectScope, metric } = this.filterForm.getRawValue();
+        if (!sameOrgCommitFilters(filters, orgCommitFiltersFor({ projectScope, metric }))) this.filterForm.patchValue(orgCodeFilterValues(filters));
       });
 
     // `?range=` is shared with the People tabs and carried by the nav links between them, so a query-only navigation
@@ -292,7 +295,14 @@ export class OrgContributionsComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.reset({ search: '', dateRange: ORG_LENS_DEFAULT_TIME_RANGE, projects: [], employees: [], ...DEFAULT_ORG_COMMIT_FILTERS });
+    this.filterForm.reset({
+      search: '',
+      dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
+      projects: [],
+      employees: [],
+      projectScope: DEFAULT_ORG_COMMIT_FILTERS.projectScope,
+      metric: DEFAULT_ORG_CODE_MEASURE,
+    });
   }
 
   protected retry(): void {
@@ -302,9 +312,10 @@ export class OrgContributionsComponent {
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
     return {
-      projectScope: values.projectScope ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope,
-      commitScope: values.commitScope ?? DEFAULT_ORG_COMMIT_FILTERS.commitScope,
-      metric: values.metric ?? DEFAULT_ORG_COMMIT_FILTERS.metric,
+      ...orgCommitFiltersFor({
+        projectScope: values.projectScope ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope,
+        metric: values.metric ?? DEFAULT_ORG_CODE_MEASURE,
+      }),
       view: this.mainTab(),
       dateRange: values.dateRange ?? ORG_LENS_DEFAULT_TIME_RANGE,
       search: (values.search ?? '').trim(),
@@ -318,6 +329,17 @@ export class OrgContributionsComponent {
       page: this.page(),
       size: this.size(),
     };
+  }
+
+  private initIsFiltering(): boolean {
+    const query = this.query();
+    return (
+      query.search.length > 0 ||
+      query.dateRange !== ORG_LENS_DEFAULT_TIME_RANGE ||
+      query.projects.length > 0 ||
+      query.employees.length > 0 ||
+      !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
+    );
   }
 
   private initResponse(): Signal<OrgContributionsResponse> {
@@ -494,10 +516,9 @@ export class OrgContributionsComponent {
     return raw !== null && raw !== this.filterForm.controls[param].value.join(',');
   }
 
-  // A default or unknown commit-filter value in the URL reads as the default, so drop it from the URL.
+  // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten to its canonical form.
   private isCommitFilterParamNormalized(): boolean {
-    const canonical = orgCommitFiltersUrlParams(this.initialCommitFilters);
-    return (Object.keys(canonical) as (keyof OrgCommitFilters)[]).some((name) => this.initialParams.get(name) !== canonical[name]);
+    return !orgCommitFiltersUrlMatches(orgCommitFiltersFor(this.initialCodeFilters), (name) => this.initialParams.get(name));
   }
 
   private parseInitialPage(): number {

@@ -836,11 +836,11 @@ describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-190
     expect(miss.rows.length).toBeGreaterThan(1);
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
     expect(wire).not.toBeNull();
-    // The stored rows carry every code count; the wire carries the one the filters pick.
+    // The stored rows carry every code count; the wire carries the one the filters pick, plus the code activities the active tile reads.
     const expected = JSON.stringify((JSON.parse(wire!) as OrgAllEmployeeCountedRow[]).map((row) => toWireRow(row, FILTERS)));
     expect(JSON.stringify(miss.rows)).toBe(expected);
     expect(JSON.stringify(hit.rows)).toBe(expected);
-    expect(miss.rows.every((row) => !('mergedCommitsCount' in row) && !('codeActivitiesCount' in row))).toBe(true);
+    expect(miss.rows.every((row) => !('mergedCommitsCount' in row) && 'codeActivitiesCount' in row)).toBe(true);
     // One row carries a badge and the rest never had the key at all — both must survive.
     const hitJson = JSON.parse(JSON.stringify(hit.rows)) as Record<string, unknown>[];
     expect(hitJson.some((row) => row['accessBadge'] === 'admin')).toBe(true);
@@ -1008,5 +1008,93 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       [ACCOUNT, '365d', 'all'],
     ]);
     expect(cache.namespaces).toEqual(['org-people-dir:v5:roster', 'org-people-dir:v5:365d:all']);
+  });
+});
+
+describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF project scope', () => {
+  const keyContact: KeyContactEmployee = {
+    email: 'kay@lfx-partner.example',
+    firstName: 'Kay',
+    lastName: 'Cee',
+    fullName: 'Kay Cee',
+    jobTitle: null,
+    initials: 'KC',
+  };
+
+  beforeEach(() => {
+    // The stored non-LF roster carries no seats: seats, events and courses are LF constructs.
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([storedRow({ seatsCount: 0, boardSeatsCount: 0, committeeSeatsCount: 0, eventsCount: 0, commitsCount: 5, codeActivitiesCount: 5 })])
+    );
+    fetchAllOrgSeats.mockResolvedValue([
+      seat(),
+      seat({ uid: 'seat-2', username: 'seatonly', email: 'seatonly@lfx-partner.example', first_name: 'Sam', last_name: 'Seat' }),
+    ]);
+    getKeyContactEmployees.mockResolvedValue([keyContact]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' }), accessUser()]);
+  });
+
+  it('adds no seat and no live-only row under non_lf, still stamping the access badge on the stored row', async () => {
+    const response = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
+
+    expect(fetchAllOrgSeats).not.toHaveBeenCalled();
+    expect(response.rows).toHaveLength(1);
+    expect(response.rows[0]).toMatchObject({ personKey: 'lfnEMOUiFenugGty80', seatsCount: 0, sources: ['snowflake', 'access'], accessBadge: 'admin' });
+    expect(response.stats.inGovernance).toBe(0);
+    expect(response.stats.activeInOss).toBe(1);
+  });
+
+  it.each(['all', 'lf'] as const)('keeps the live seats and live-only rows under %s', async (projectScope) => {
+    const response = await run('365d', { ...FILTERS, projectScope });
+
+    expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
+    expect(response.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Sam Seat']);
+    expect(response.rows.find((row) => row.name === 'Sam Seat')?.seatsCount).toBe(1);
+    expect(response.stats.inGovernance).toBe(2);
+  });
+});
+
+describe('OrgPeopleDirectoryService.getLive — the active tile does not follow the code-count option', () => {
+  it('counts code activity for the active tile while the code tile counts the picked count', async () => {
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([
+        storedRow({
+          eventsCount: 0,
+          seatsCount: 0,
+          boardSeatsCount: 0,
+          committeeSeatsCount: 0,
+          commitsCount: 2,
+          mergedCommitsCount: 1,
+          codeActivitiesCount: 6,
+        }),
+        // Reviews only: no commit, but code activities.
+        storedRow({
+          personKey: 'reviewer',
+          lfid: 'reviewer',
+          lfUsername: 'reviewer',
+          name: 'Rae Viewer',
+          email: 'rae@lfx-partner.example',
+          emails: ['rae@lfx-partner.example'],
+          eventsCount: 0,
+          seatsCount: 0,
+          boardSeatsCount: 0,
+          committeeSeatsCount: 0,
+          codeActivitiesCount: 3,
+        }),
+      ])
+    );
+
+    const tiles = await Promise.all(
+      [FILTERS, { ...FILTERS, commitScope: 'merged' as const }, { ...FILTERS, metric: 'code' as const }].map(async (filters) => {
+        const { stats } = await run('365d', filters);
+        return [stats.activeInOss, stats.codeContributors];
+      })
+    );
+
+    expect(tiles).toEqual([
+      [2, 1],
+      [2, 1],
+      [2, 2],
+    ]);
   });
 });

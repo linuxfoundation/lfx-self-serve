@@ -34,6 +34,7 @@ function roster(name: string): OrgAllEmployeesResponse {
     boardSeatsCount: 0,
     committeeSeatsCount: 1,
     commitsCount: 0,
+    codeActivitiesCount: 0,
     eventsCount: 0,
     coursesCount: 0,
     engagedFoundationIds: [],

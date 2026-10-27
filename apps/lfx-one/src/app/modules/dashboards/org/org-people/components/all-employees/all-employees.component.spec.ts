@@ -5,11 +5,18 @@ import { PLATFORM_ID, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { DEFAULT_ORG_COMMIT_FILTERS, EMPTY_ORG_ALL_EMPLOYEE_STATS, ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_COMMIT_FILTERS,
+  EMPTY_ORG_ALL_EMPLOYEE_STATS,
+  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_COMMITS_DEFINITION,
+  ORG_MAIN_BRANCH_COMMITS_DEFINITION,
+} from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeEmploymentFilter,
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
+  OrgCodeFilterValues,
   OrgCommitFilters,
   OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
@@ -45,6 +52,8 @@ function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> =
     boardSeatsCount: 0,
     committeeSeatsCount: 0,
     commitsCount: 0,
+    // Any picked code count is also a code activity unless a test says otherwise.
+    codeActivitiesCount: over.commitsCount ?? 0,
     eventsCount: 0,
     coursesCount: 0,
     engagedFoundationIds: [],
@@ -801,15 +810,23 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
-  // lfx-self-serve#4164 — the commit filters live in `?projectScope=` / `?commitScope=` / `?metric=` and reach every roster read.
+  // lfx-self-serve#4164 — the commit filters live in `?projectScope=` / `?metric=` (one code-count dropdown) and reach every roster read.
   describe('in the browser, with the commit filters', () => {
-    const component = (): { onFiltersChange(change: Partial<OrgCommitFilters>): void } =>
-      fixture.componentInstance as unknown as { onFiltersChange(change: Partial<OrgCommitFilters>): void };
+    const component = (): { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] } =>
+      fixture.componentInstance as unknown as { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] };
     const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
-    const picked: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'code' };
+    const picked: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+
+    it('offers one code-count dropdown, Commits by default', async () => {
+      await mount('browser');
+
+      expect(component().metricOptions.map((option) => option.label)).toEqual(['All commits', 'Only main branch commits', 'All code contributions']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-commit-scope-filter"]')).toBeNull();
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+    });
 
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
-      await mount('browser', '/?employment=all&projectScope=lf&commitScope=merged&metric=code');
+      await mount('browser', '/?employment=all&projectScope=lf&metric=code');
 
       expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
       expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', picked);
@@ -820,6 +837,33 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await mount('browser', '/?projectScope=LF&commitScope=main&metric=prs');
 
       expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+    });
+
+    it('opens a legacy commitScope=merged link as Only main branch commits and rewrites it to metric=merged', async () => {
+      await mount('browser', '/?employment=all&commitScope=merged');
+
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { ...FILTERS, commitScope: 'merged' });
+      const url = TestBed.inject(Router).url;
+      expect(url).toContain('metric=merged');
+      expect(url).not.toContain('commitScope=');
+      expect(url).toContain('employment=all');
+    });
+
+    it.each([
+      ['merged', { commitScope: 'merged', metric: 'commits' }],
+      ['code', { commitScope: 'all', metric: 'code' }],
+    ] as const)('sends metric=%s to every roster read as %o and writes it to the URL', async (metric, params) => {
+      await mount('browser', '/?employment=all');
+
+      component().onFiltersChange({ metric });
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params });
+      const url = TestBed.inject(Router).url;
+      expect(url).toContain(`metric=${metric}`);
+      expect(url).not.toContain('commitScope=');
     });
 
     it('refetches on a change and writes the params, dropping defaults', async () => {
@@ -846,10 +890,56 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('follows the params when the URL changes after load', async () => {
       await mount('browser');
 
+      await TestBed.inject(Router).navigateByUrl('/?metric=merged');
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, commitScope: 'merged' });
+
       await TestBed.inject(Router).navigateByUrl('/?metric=code');
       await settle();
 
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'code' });
+    });
+
+    it('shows Clear filters only while a filter is non-default, the code-count option included', async () => {
+      const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+      await mount('browser', '/?tab=employees');
+
+      expect(clear()).toBeNull();
+
+      await TestBed.inject(Router).navigateByUrl('/?tab=employees&metric=merged');
+      await settle();
+
+      expect(clear()?.textContent?.trim()).toBe('Clear filters');
+    });
+
+    it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
+      const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=lf&metric=code');
+      const state = fixture.componentInstance as unknown as {
+        searchTerm: WritableSignal<string>;
+        selectedActivity: WritableSignal<string>;
+        selectedFoundationId: WritableSignal<string>;
+        selectedEmployment(): string;
+        selectedRange(): string;
+      };
+      state.searchTerm.set('ada');
+      state.selectedActivity.set('code');
+      await settle();
+
+      clear()?.click();
+      await settle();
+
+      expect([state.searchTerm(), state.selectedFoundationId(), state.selectedActivity(), state.selectedEmployment(), state.selectedRange()]).toEqual([
+        '',
+        '',
+        'all',
+        'current',
+        '365d',
+      ]);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+      expect(clear()).toBeNull();
     });
 
     it('labels the count column, its badges, the code tile and the activity option after the metric', async () => {
@@ -861,8 +951,20 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(text('org-people-all-employees-code-header')).toBe('Commits');
       expect(text('org-people-all-employees-stat-code-label')).toBe('Committers');
       expect(el().querySelector('[data-testid="org-people-all-employees-rows"]')?.textContent).toContain('3 commits');
-      const info = fixture.debugElement.query(By.css('[data-testid="org-people-all-employees-code-header-info"]'));
-      expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+      const tooltip = (): unknown =>
+        fixture.debugElement.query(By.css('[data-testid="org-people-all-employees-code-header-info"]')).injector.get(Tooltip).content;
+      expect(tooltip()).toBe(ORG_COMMITS_DEFINITION);
+
+      snowflake$ = new Subject();
+      live$ = new Subject();
+      component().onFiltersChange({ metric: 'merged' });
+      await settle();
+      snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 2 })], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(text('org-people-all-employees-code-header')).toBe('Commits');
+      expect(tooltip()).toBe(ORG_MAIN_BRANCH_COMMITS_DEFINITION);
 
       snowflake$ = new Subject();
       live$ = new Subject();
@@ -875,8 +977,47 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(text('org-people-all-employees-code-header')).toBe('Code contributions');
       expect(text('org-people-all-employees-stat-code-label')).toBe('Code Contributors');
       expect(el().querySelector('[data-testid="org-people-all-employees-rows"]')?.textContent).toContain('1 contribution');
+      expect(tooltip()).toBe(ORG_CODE_CONTRIBUTIONS_DEFINITION);
       const activityOptions = (fixture.componentInstance as unknown as { activityOptions(): { label: string; value: string }[] }).activityOptions();
       expect(activityOptions.find((option) => option.value === 'code')?.label).toBe('Code contributions');
+    });
+
+    it('keeps the active tile across every code-count option while the code tile follows the option', async () => {
+      const tile = (name: string): string => el().querySelector(`[data-testid="org-people-all-employees-stat-${name}"] div`)?.textContent?.trim() ?? '';
+      // Each option's picked count; the code activities stay the same whatever is picked.
+      const picked = { commits: [2, 0, 1], merged: [1, 0, 0], code: [6, 3, 2] } as const;
+      const answer = async ([ada, grace, alan]: readonly number[]): Promise<void> => {
+        const current = [
+          row('p-1', 'Ada Lovelace', { commitsCount: ada, codeActivitiesCount: 6 }),
+          // Reviews only: no commit, but code activities.
+          row('p-2', 'Grace Hopper', { commitsCount: grace, codeActivitiesCount: 3 }),
+        ];
+        snowflake$.next(response(current, 2));
+        snowflake$.complete();
+        live$.next(response(current, 2));
+        live$.complete();
+        former$.next(response([row('p-9', 'Alan Turing', { isFormer: true, commitsCount: alan, codeActivitiesCount: 2 })], 1));
+        former$.complete();
+        await settle();
+      };
+
+      await mount('browser', '/?employment=all');
+      await answer(picked.commits);
+      expect([tile('active'), tile('code')]).toEqual(['3', '2']);
+
+      for (const [metric, expectedCode] of [
+        ['merged', '1'],
+        ['code', '3'],
+      ] as const) {
+        snowflake$ = new Subject();
+        live$ = new Subject();
+        former$ = new Subject();
+        component().onFiltersChange({ metric });
+        await settle();
+        await answer(picked[metric]);
+
+        expect([tile('active'), tile('code')]).toEqual(['3', expectedCode]);
+      }
     });
   });
 

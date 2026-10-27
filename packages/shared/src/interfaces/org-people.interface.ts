@@ -97,7 +97,13 @@ export interface OrgAllEmployeeRow {
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
+  /** The count the request's commit filters pick: authored commits, commits merged to the main branch, or code-contribution activities. */
   commitsCount: number;
+  /**
+   * Code-contribution activities (commits, pull requests, reviews, comments), whatever the commit filters pick. The
+   * "Employees Active in Open Source" tile counts a person with any, so the tile does not move with the code-count option.
+   */
+  codeActivitiesCount: number;
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];

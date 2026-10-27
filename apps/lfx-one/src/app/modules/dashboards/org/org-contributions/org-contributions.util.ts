@@ -107,6 +107,6 @@ export function describeContributionsCaption(filters: OrgCommitFilters, companyN
   if (filters.metric === 'code') {
     return `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with ${companyName}${scope}, ${window}. Bots excluded.`;
   }
-  const branch = filters.commitScope === 'merged' ? 'merged to the main branch' : 'on any branch (including pull-request commits not yet merged)';
+  const branch = filters.commitScope === 'merged' ? 'only commits on the main branch' : 'on any branch (including pull-request commits not yet merged)';
   return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
 }

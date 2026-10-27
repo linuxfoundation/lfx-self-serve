@@ -50,7 +50,8 @@ export function toStoredRow(row: OrgAllEmployeeRowInternal): OrgAllEmployeeCount
 
 /**
  * Project a counted row onto the wire shape: `commitsCount` becomes the count the commit filters pick
- * (lfx-self-serve#4164) and the other counts stay server-side. Same allowlist rule as {@link toStoredRow}.
+ * (lfx-self-serve#4164), `codeActivitiesCount` rides along for the measure-independent active tile, and the
+ * merged count stays server-side. Same allowlist rule as {@link toStoredRow}.
  */
 export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilters): OrgAllEmployeeRow {
   return {
@@ -70,6 +71,7 @@ export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilte
     boardSeatsCount: row.boardSeatsCount,
     committeeSeatsCount: row.committeeSeatsCount,
     commitsCount: selectedCodeCount(row, filters),
+    codeActivitiesCount: row.codeActivitiesCount,
     eventsCount: row.eventsCount,
     coursesCount: row.coursesCount,
     engagedFoundationIds: row.engagedFoundationIds,

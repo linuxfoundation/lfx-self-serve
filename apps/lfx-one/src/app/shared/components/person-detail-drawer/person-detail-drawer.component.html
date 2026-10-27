@@ -243,7 +243,11 @@
                           <span class="text-xs text-gray-500">Last activity {{ project.lastActivityDate | date: 'mediumDate' }}</span>
                         }
                       </div>
-                      <span class="whitespace-nowrap text-sm text-gray-700">{{ project.commits | number }} commits</span>
+                      <span
+                        class="whitespace-nowrap text-sm text-gray-700"
+                        [attr.data-testid]="'person-detail-drawer-code-project-' + project.projectId + '-commits'"
+                        >{{ project.commits | number }} {{ project.commits === 1 ? commitUnit.one : commitUnit.other }}</span
+                      >
                     </li>
                   }
                 </ul>

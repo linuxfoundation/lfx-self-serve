@@ -79,16 +79,6 @@
             ariaLabel="Filter by project scope"
             dataTest="org-contributions-project-scope-filter" />
         </div>
-        <div class="w-full sm:w-48">
-          <lfx-select
-            [form]="filterForm"
-            control="commitScope"
-            size="small"
-            [options]="commitScopeOptions"
-            styleClass="w-full"
-            ariaLabel="Filter by commit scope"
-            dataTest="org-contributions-commit-scope-filter" />
-        </div>
         <div class="w-full sm:w-52">
           <lfx-select
             [form]="filterForm"
@@ -96,7 +86,7 @@
             size="small"
             [options]="metricOptions"
             styleClass="w-full"
-            ariaLabel="Count commits or all code contributions"
+            ariaLabel="Count all commits, only main branch commits or all code contributions"
             dataTest="org-contributions-metric-filter" />
         </div>
         <div class="w-full sm:w-52">
@@ -127,6 +117,15 @@
             size="small"
             styleClass="w-full" />
         </div>
+        @if (isFiltering()) {
+          <button
+            type="button"
+            class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 sm:self-auto"
+            data-testid="org-contributions-filter-bar-clear-filters"
+            (click)="clearFilters()">
+            Clear filters
+          </button>
+        }
       </div>
 
       @if (fetchError()) {

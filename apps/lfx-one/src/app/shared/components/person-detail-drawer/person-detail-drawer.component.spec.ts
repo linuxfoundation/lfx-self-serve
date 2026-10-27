@@ -350,6 +350,26 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-code-project-project-2')?.textContent).toContain('4 commits');
   });
 
+  it('says "1 commit" for a project with one commit and "N commits" otherwise', async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 1), project('project-2', 2)], totalCommits: 3 });
+    drawer.setTab('code');
+    await render();
+
+    const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+    expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
+  });
+
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {
     drawer.open(person);
     await render();

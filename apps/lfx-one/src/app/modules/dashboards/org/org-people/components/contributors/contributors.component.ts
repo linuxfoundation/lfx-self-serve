@@ -9,22 +9,20 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
-  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_METRIC_LABEL,
-  ORG_CODE_METRIC_OPTIONS,
-  ORG_COMMIT_SCOPE_OPTIONS,
-  ORG_COMMITS_DEFINITION,
+  ORG_CODE_MEASURE_OPTIONS,
   ORG_CONTRIBUTORS_INITIAL_LIMIT,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgCodeMeasure,
+  OrgCodeMeasureOption,
   OrgCodeMetric,
-  OrgCodeMetricOption,
   OrgCommitFilters,
-  OrgCommitScope,
-  OrgCommitScopeOption,
   OrgContributorExpandedRowVm,
   OrgContributorProjectRow,
   OrgContributorRow,
@@ -47,7 +45,16 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { avatarColorClass, orgCommitFiltersUrlParams, readOrgCommitFilters, sameOrgCommitFilters } from '@lfx-one/shared/utils';
+import {
+  avatarColorClass,
+  orgCodeFilterValues,
+  orgCommitFiltersFor,
+  orgCommitFiltersUrlMatches,
+  orgCommitFiltersUrlParams,
+  orgLensTimeRangeUrlParam,
+  readOrgCommitFilters,
+  sameOrgCommitFilters,
+} from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
@@ -70,14 +77,13 @@ export class ContributorsComponent {
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
-  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
-  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
+  protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
 
-  // The commit filters follow `?projectScope=` / `?commitScope=` / `?metric=` (shared with All Employees) and the range follows
+  // The commit filters follow `?projectScope=` / `?metric=` (shared with All Employees) and the range follows
   // `?range=` (shared with every People tab and Code Contributions); all are written back on change.
-  private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
+  private readonly initialFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -85,8 +91,7 @@ export class ContributorsComponent {
     project: new FormControl<string>('', { nonNullable: true }),
     timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialFilters.projectScope, { nonNullable: true }),
-    commitScope: new FormControl<OrgCommitScope>(this.initialFilters.commitScope, { nonNullable: true }),
-    metric: new FormControl<OrgCodeMetric>(this.initialFilters.metric, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMeasure>(this.initialFilters.metric, { nonNullable: true }),
   });
 
   // Default sort per Item 4 R4.4 lock: Role asc then Commits desc — encoded as the active column 'role' with secondary tiebreak in initSortedRows.
@@ -121,7 +126,7 @@ export class ContributorsComponent {
   protected readonly commitFilters: Signal<OrgCommitFilters> = this.initCommitFilters();
   private readonly commitFilters$ = toObservable(this.commitFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
   protected readonly countLabel = computed(() => ORG_CODE_METRIC_LABEL[this.commitFilters().metric]);
-  protected readonly countTooltip = computed(() => (this.commitFilters().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION));
+  protected readonly countTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.commitFilters()).metric]);
 
   protected readonly response: Signal<OrgContributorsResponse> = this.initResponse();
 
@@ -142,6 +147,10 @@ export class ContributorsComponent {
   protected readonly footerCountLabel: Signal<string> = computed(() => this.initFooterCountLabel());
 
   protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
+  // The filter bar's "Clear filters" also covers the code-count option, which changes the count but not who is listed.
+  protected readonly canClearFilters: Signal<boolean> = computed(
+    () => this.isFiltering() || !sameOrgCommitFilters(this.commitFilters(), DEFAULT_ORG_COMMIT_FILTERS)
+  );
 
   protected readonly ariaSortMap: Signal<Record<OrgContributorSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
 
@@ -162,22 +171,10 @@ export class ContributorsComponent {
       this.expansion.set({});
     });
 
-    // The commit scope does not apply to code contributions, so its picker is disabled under that metric.
-    this.commitFilters$.pipe(takeUntilDestroyed()).subscribe(({ metric }) => {
-      const commitScope = this.filterForm.controls.commitScope;
-      if (metric === 'code') commitScope.disable({ emitEvent: false });
-      else commitScope.enable({ emitEvent: false });
-    });
-
-    // Written back only when they differ from the URL, so following a URL change does not navigate again.
+    // Written back only when the URL does not already spell them, so following a URL change does not navigate again;
+    // a default, unknown or legacy (`commitScope=merged`) value in the URL is rewritten.
     this.commitFilters$.pipe(takeUntilDestroyed()).subscribe((filters) => {
-      if (
-        sameOrgCommitFilters(
-          filters,
-          readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name))
-        )
-      )
-        return;
+      if (orgCommitFiltersUrlMatches(filters, (name) => this.route.snapshot.queryParamMap.get(name))) return;
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: orgCommitFiltersUrlParams(filters),
@@ -194,7 +191,7 @@ export class ContributorsComponent {
         takeUntilDestroyed()
       )
       .subscribe((filters) => {
-        if (!sameOrgCommitFilters(filters, this.commitFilters())) this.filterForm.patchValue(filters);
+        if (!sameOrgCommitFilters(filters, this.commitFilters())) this.filterForm.patchValue(orgCodeFilterValues(filters));
       });
 
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
@@ -216,6 +213,23 @@ export class ContributorsComponent {
       if (next[personKey]) delete next[personKey];
       else next[personKey] = true;
       return next;
+    });
+  }
+
+  /**
+   * Every filter back to its default. The range and commit filters are URL state, so one URL write resets them and the
+   * URL sync sets their pickers; `tab` and other params are kept.
+   */
+  protected clearFilters(): void {
+    this.filterForm.patchValue({ search: '', foundation: '', project: '' });
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        [ORG_LENS_TIME_RANGE_QUERY_PARAM]: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE),
+        ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS),
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
@@ -438,11 +452,11 @@ export class ContributorsComponent {
     });
   }
 
-  /** The three commit filters off the form, raw so the disabled commit-scope control still reports its value. */
+  /** The BFF commit filters for the project scope and code-count option on the form. */
   private initCommitFilters(): Signal<OrgCommitFilters> {
     const read = (): OrgCommitFilters => {
-      const { projectScope, commitScope, metric } = this.filterForm.getRawValue();
-      return { projectScope, commitScope, metric };
+      const { projectScope, metric } = this.filterForm.getRawValue();
+      return orgCommitFiltersFor({ projectScope, metric });
     };
     return toSignal(this.filterForm.valueChanges.pipe(map(read)), { initialValue: read() });
   }

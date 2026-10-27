@@ -261,9 +261,12 @@ export class OrgPeopleDirectoryService {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
+    // Board/committee seats are LF engagement, so `non_lf` reads none, and there the live sources only enrich
+    // stored rows: no row exists only because of a live seat, key contact or access.
+    const lfEngagement = projectScope !== 'non_lf';
     const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
       this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
-      this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
+      lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
     ]);
@@ -276,17 +279,18 @@ export class OrgPeopleDirectoryService {
       });
     }
 
-    return this.merge(req, accountId, base, seats, keyContacts, access);
+    return this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement);
   }
 
-  /** Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in. */
+  /** Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows. */
   private merge(
     req: Request,
     accountId: string,
     base: OrgAllEmployeesInternalResponse,
     seats: PromiseSettledResult<CommitteeServiceOrgSeat[]>,
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
-    access: PromiseSettledResult<OrgAccessUser[]>
+    access: PromiseSettledResult<OrgAccessUser[]>,
+    addLiveOnlyRows: boolean
   ): OrgAllEmployeesCountedResponse {
     const byKey = new Map<string, OrgAllEmployeeRowInternal>();
     const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
@@ -342,7 +346,7 @@ export class OrgPeopleDirectoryService {
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
           // No username backfill onto an email-merged row: the username is member-service's resolution of
           // this address, and resolving identity from an address is prohibited.
-        } else {
+        } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }
       }
@@ -364,7 +368,7 @@ export class OrgPeopleDirectoryService {
           existing.accessBadge = badgeOf(user);
           const [firstName, lastName] = splitDisplayName(user.name);
           this.fill(existing, { firstName, lastName, title: user.jobTitle, avatarUrl: user.avatarUrl });
-        } else {
+        } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromAccess(user, email, key));
         }
       }

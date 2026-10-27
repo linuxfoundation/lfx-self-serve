@@ -18,8 +18,6 @@ import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow } from './org-pe
 export interface OrgAllEmployeeCountedRow extends OrgAllEmployeeRow {
   /** Authored commits merged to the main branch. */
   mergedCommitsCount: number;
-  /** Code-contribution activities (commits, pull requests, reviews, comments). */
-  codeActivitiesCount: number;
 }
 
 /** In-memory merge row — the counted shape plus the field the identity merge accumulates. Never cached, never sent. */
