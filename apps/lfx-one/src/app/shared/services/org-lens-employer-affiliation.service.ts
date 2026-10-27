@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { computed, effect, inject, Injectable, signal, Signal, untracked, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -53,23 +53,35 @@ export class OrgLensEmployerAffiliationService {
   private readonly needed: Signal<boolean> = computed(() => this.inPopulation() && !this.roleGrants.affiliatedToMember());
 
   /**
+   * Opens on the first tick where the caller is in the population, so an edit made before the grants
+   * lookup has answered waits for it instead of being dropped. Re-subscribed per edit; it never emits
+   * for staff or for anyone holding an organization, who have no verdict worth re-asking.
+   */
+  private readonly inPopulationReached: Observable<boolean> = toObservable(this.inPopulation).pipe(
+    filter((inPopulation) => inPopulation),
+    take(1)
+  );
+
+  /**
    * #4225's verdict is derived from the same work history as this probe, but it rides the role-grants
    * response and is cached server-side. The classifier reads it before anything here, so an edit that
    * replaces a member employer with a non-member one would otherwise keep answering `affiliated-no-grant`
    * from the stale verdict and never reach the state this service exists to render. Re-ask it — cache
    * bypassed — on the same revision the probe keys off.
    *
-   * Only the revision is tracked: reading the population predicate here would re-run this effect on the
-   * very signals `refresh` writes, which is a loop.
+   * A subscription rather than an `effect()`: this is state-changing work, which the frontend checklist
+   * reserves `effect()` against (`docs/architecture/frontend/state-management.md`, "Signal-to-RxJS State
+   * Bridges"). `switchMap` also means a second edit supersedes one still waiting on the population.
    */
-  private readonly memberVerdictInvalidation = effect(() => {
-    const revision = this.userService.workExperienceRevision();
-    // 0 is the seed, not an edit: the initial grants load has already asked.
-    if (revision === 0 || !untracked(() => this.inPopulation())) {
-      return;
-    }
-    this.roleGrants.refresh(true).subscribe();
-  });
+  private readonly memberVerdictInvalidation = toObservable(this.userService.workExperienceRevision)
+    .pipe(
+      // 0 is the seed, not an edit: the initial grants load has already asked.
+      filter((revision) => revision > 0),
+      switchMap(() => this.inPopulationReached),
+      switchMap(() => this.roleGrants.refresh(true)),
+      takeUntilDestroyed()
+    )
+    .subscribe();
 
   /**
    * What the probe is asking about: `null` when nothing should be asked, otherwise a key that changes

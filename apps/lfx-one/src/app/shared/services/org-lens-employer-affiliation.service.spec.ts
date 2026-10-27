@@ -139,6 +139,22 @@ describe('OrgLensEmployerAffiliationService', () => {
     expect(h.service.affiliatedToNonMember()).toBe(true);
   });
 
+  // An edit can land before the grants lookup answers — the profile page does not wait for it. The
+  // refresh must wait for the population rather than be dropped, or the server's cached verdict
+  // freezes the old employer and the probe never runs.
+  it('holds an edit made before the grants lookup answers, then re-asks once it lands', () => {
+    h = setup({ grantsLoaded: false, memberEmployer: true });
+
+    h.workExperienceRevision.set(1);
+    flush();
+    expect(h.refreshGrants).not.toHaveBeenCalled();
+
+    h.loaded.set(true);
+    flush();
+
+    expect(h.refreshGrants).toHaveBeenCalledWith(true);
+  });
+
   // Nobody outside the population has a verdict worth re-asking, so an edit must not spend a
   // cache-bypassing round trip on them.
   it('leaves the member-employer verdict alone for a caller who holds an organization', () => {
