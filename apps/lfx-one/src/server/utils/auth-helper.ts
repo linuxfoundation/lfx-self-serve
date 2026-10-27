@@ -5,6 +5,8 @@ import { Request } from 'express';
 
 import { LfxAccessTokenClaims, AuditUserProfile, ImpersonationUser, User } from '@lfx-one/shared/interfaces';
 
+import { logger } from '../services/logger.service';
+
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
  * Returns the raw username if no prefix is present.
@@ -320,9 +322,11 @@ export async function resolveRealAccessToken(req: Request): Promise<string | nul
  * `/login` round-trip re-minted tokens — the root cause behind GH-4179.
  *
  * No-ops (and never throws) when there is nothing to refresh: no session, no access token, or an
- * access token that isn't expired. A failed refresh is swallowed — the caller's existing
- * `isExpired()` check then correctly falls through to the signed-out path for a genuinely dead
- * session.
+ * access token that isn't expired. A failed refresh falls through to the caller's existing
+ * `isExpired()` check, which correctly treats a genuinely dead session as signed-out — but the
+ * failure itself is still logged (mirroring `auth.middleware.ts`'s `extractBearerToken`), so a
+ * dead refresh token shows up in logs instead of silently reading as "page just rendered signed
+ * out".
  */
 export async function refreshExpiredSsrAccessToken(req: Request): Promise<void> {
   if (!req.oidc?.isAuthenticated() || !req.oidc.accessToken?.isExpired()) {
@@ -330,9 +334,12 @@ export async function refreshExpiredSsrAccessToken(req: Request): Promise<void> 
   }
   try {
     await req.oidc.accessToken.refresh();
-  } catch {
-    // Swallowed: the caller re-checks `accessToken.isExpired()` afterward, and a session that
-    // can't refresh must fall through to the existing signed-out behavior, not throw mid-render.
+  } catch (error) {
+    logger.warning(req, 'ssr_token_refresh', 'SSR token refresh failed - rendering as signed out', {
+      path: req.path,
+      failure_reason: 'token_refresh_failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
 
