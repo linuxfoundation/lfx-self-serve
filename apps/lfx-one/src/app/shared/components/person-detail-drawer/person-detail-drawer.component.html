@@ -61,13 +61,13 @@
                     }}</span>
                   }
                   @if (companyEmail.isPrimary) {
-                    <span class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-500" data-testid="person-detail-drawer-email-primary">
+                    <span class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-600" data-testid="person-detail-drawer-email-primary">
                       Primary
                     </span>
                   }
                   <button
                     type="button"
-                    class="shrink-0 text-gray-400 hover:text-gray-600"
+                    class="shrink-0 text-gray-500 hover:text-gray-700"
                     [attr.aria-label]="'Copy ' + companyEmail.email"
                     [attr.data-testid]="'person-detail-drawer-email-copy-' + i"
                     (click)="onCopyEmail(companyEmail.email)">
@@ -88,13 +88,13 @@
           } @else if (drawer.emailsLoading()) {
             <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
           } @else if (companyEmailsFailed()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
           } @else if (companyEmailsNotAvailable()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-not-available">
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-not-available">
               Company emails aren't available from this view
             </span>
           } @else if (companyEmailsNoneOnRecord()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-none"> No company email on record </span>
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-none"> No company email on record </span>
           }
         </span>
       </div>
