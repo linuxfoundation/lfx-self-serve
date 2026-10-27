@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CONTRIBUTIONS_PROJECT_SCOPE_PHRASE } from '@lfx-one/shared/constants';
 import type {
   ContributionsDateRange,
   ContributionSource,
+  OrgCommitFilters,
   OrgContributionCommitRow,
   OrgContributionCommitRowVm,
   OrgContributionRepoRow,
@@ -105,4 +107,17 @@ export function describeContributionsWindow(range: ContributionsDateRange, now: 
     start.setUTCDate(start.getUTCDate() - (range === '90d' ? 90 : 30));
   }
   return `from ${formatLongDateUtc(start.toISOString())} to ${formatLongDateUtc(now.toISOString())} (UTC)`;
+}
+
+/**
+ * Counting rule under the KPI strip for the active filters, ending with the exact window from
+ * {@link describeContributionsWindow}, so the figures can be matched to source data.
+ */
+export function describeContributionsCaption(filters: OrgCommitFilters, companyName: string, window: string): string {
+  const scope = CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[filters.projectScope];
+  if (filters.metric === 'code') {
+    return `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with ${companyName}${scope}, ${window}. Bots excluded.`;
+  }
+  const branch = filters.commitScope === 'merged' ? 'merged to the main branch' : 'on any branch (including pull-request commits not yet merged)';
+  return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
 }

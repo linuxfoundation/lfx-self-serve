@@ -4,10 +4,14 @@
 import type {
   ContributionsDateRange,
   ContributionsDateRangeOption,
+  ContributionsMetricLabels,
+  OrgCodeMetric,
   OrgContributionsKpis,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgProjectScope,
 } from '../interfaces';
+import { DEFAULT_ORG_COMMIT_FILTERS, ORG_CODE_METRIC_LABEL } from './org-commit-filters.constants';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Date-range vocab 30d/90d/12mo/all
 // mirrors the People → Contributors tab; default = Past 12 Months per the prototype.
@@ -29,6 +33,19 @@ export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
 /** Page-size selector options on the Repositories pagination footer. */
 export const CONTRIBUTIONS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] as const;
 
+/** Repositories-table headers and option-count unit per metric. */
+export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, ContributionsMetricLabels>> = {
+  commits: { count: ORG_CODE_METRIC_LABEL.commits, firstDate: 'First Commit', lastDate: 'Last Commit', unit: 'commits' },
+  code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution', unit: 'code contributions' },
+};
+
+/** Project-scope phrase in the KPI caption (empty for every project). */
+export const CONTRIBUTIONS_PROJECT_SCOPE_PHRASE: Readonly<Record<OrgProjectScope, string>> = {
+  all: '',
+  lf: ' in LF projects',
+  non_lf: ' outside LF projects',
+};
+
 /** Server-accepted page-size ceiling (clamps the `size` query param; not exposed in the table footer). */
 export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
 
@@ -39,8 +56,9 @@ export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
  */
 export const CONTRIBUTIONS_MAX_FILTER_VALUES = 50;
 
-/** Default empty filter/pagination state — Repositories tab, Commits desc, page 1. */
+/** Default empty filter/pagination state — Repositories tab, Commits desc, page 1, default commit filters. */
 export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
+  ...DEFAULT_ORG_COMMIT_FILTERS,
   view: 'repositories',
   dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   search: '',

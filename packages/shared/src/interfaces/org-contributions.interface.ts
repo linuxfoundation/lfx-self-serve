@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgCommitFilters } from './org-commit-filters.interface';
+
 // Org Lens → Code Contributions page (LFXV2-1894). Source of truth is LFX Insights
 // (CrowdSource pipeline ingesting GitHub / GitLab / Gerrit). All shapes here are
 // derived/read-only — the page never mutates contribution data.
@@ -106,8 +108,8 @@ export interface OrgContributionsResponse {
   commitsTotalRecords: number;
 }
 
-/** Composed filter/pagination state — serialized to URL query params and to the BFF request. */
-export interface OrgContributionsQuery {
+/** Composed filter/pagination state — serialized to URL query params and to the BFF request. `metric` switches the KPI, Repositories and option counts; the Commits feed always lists commits. */
+export interface OrgContributionsQuery extends OrgCommitFilters {
   /** Active tab — KPI search follows this tab's semantics; `page`/`size` paginate the active table. */
   view: ContributionsView;
   dateRange: ContributionsDateRange;
@@ -165,6 +167,16 @@ export interface ContributionsFilterOption {
   label: string;
   value: string;
   sublabel: string;
+}
+
+/** Repositories-table headers and count unit for one {@link OrgCommitFilters.metric}. */
+export interface ContributionsMetricLabels {
+  /** Count column header, e.g. `Commits`. */
+  count: string;
+  firstDate: string;
+  lastDate: string;
+  /** Plural unit in filter-option sublabels, e.g. `12 commits`. */
+  unit: string;
 }
 
 /** Active content tab — drives tab-aware KPI search semantics and which table `page`/`size` paginate. */

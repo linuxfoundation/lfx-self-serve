@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -23,23 +24,39 @@ import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
   CONTRIBUTIONS_MAX_FILTER_VALUES,
+  CONTRIBUTIONS_METRIC_LABELS,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
+  DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+  ORG_CODE_CONTRIBUTIONS_DEFINITION,
+  ORG_CODE_METRIC_OPTIONS,
+  ORG_COMMIT_SCOPE_OPTIONS,
+  ORG_COMMITS_DEFINITION,
+  ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
   ContributionsDateRange,
   ContributionsDateRangeOption,
   ContributionsFilterOption,
+  ContributionsMetricLabels,
   ContributionsSortColumn,
   ContributionsSortDirection,
   FilterPillOption,
+  OrgCodeMetric,
+  OrgCodeMetricOption,
+  OrgCommitFilters,
+  OrgCommitScope,
+  OrgCommitScopeOption,
   OrgContributionCommitRowVm,
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgProjectScope,
+  OrgProjectScopeOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
+import { orgCommitFiltersUrlParams, readOrgCommitFilters } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -47,7 +64,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
-import { decorateCommitFeedRow, decorateRepoRow, describeContributionsWindow } from './org-contributions.util';
+import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, describeContributionsWindow } from './org-contributions.util';
 
 /** Code Contributions list page (LFXV2-1894) — KPI strip, composing filter bar, server-paginated Repositories table, per-repo drill-in. */
 @Component({
@@ -56,6 +73,7 @@ import { decorateCommitFeedRow, decorateRepoRow, describeContributionsWindow } f
     PageHeaderComponent,
     DecimalPipe,
     SkeletonModule,
+    TooltipModule,
     ReactiveFormsModule,
     CardComponent,
     CardTabsBarComponent,
@@ -82,14 +100,21 @@ export class OrgContributionsComponent {
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
   protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
+  protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly commitScopeOptions: OrgCommitScopeOption[] = [...ORG_COMMIT_SCOPE_OPTIONS];
+  protected readonly metricOptions: OrgCodeMetricOption[] = [...ORG_CODE_METRIC_OPTIONS];
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
+  private readonly initialCommitFilters = readOrgCommitFilters((name) => this.initialParams.get(name));
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     dateRange: new FormControl<ContributionsDateRange>(this.parseInitialDateRange(), { nonNullable: true }),
     projects: new FormControl<string[]>(this.parseInitialCsv('projects'), { nonNullable: true }),
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
+    projectScope: new FormControl<OrgProjectScope>(this.initialCommitFilters.projectScope, { nonNullable: true }),
+    commitScope: new FormControl<OrgCommitScope>(this.initialCommitFilters.commitScope, { nonNullable: true }),
+    metric: new FormControl<OrgCodeMetric>(this.initialCommitFilters.metric, { nonNullable: true }),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -133,7 +158,13 @@ export class OrgContributionsComponent {
   protected readonly kpis = computed(() => this.response().kpis);
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
   /** States the counting rule and exact window under the KPI strip, so displayed figures can be matched to source data. */
-  protected readonly windowCaption: Signal<string> = computed(() => describeContributionsWindow(this.query().dateRange));
+  protected readonly windowCaption: Signal<string> = computed(() =>
+    describeContributionsCaption(this.query(), this.companyName(), describeContributionsWindow(this.query().dateRange))
+  );
+  protected readonly metricLabels: Signal<ContributionsMetricLabels> = computed(() => CONTRIBUTIONS_METRIC_LABELS[this.query().metric]);
+  protected readonly metricDefinition: Signal<string> = computed(() =>
+    this.query().metric === 'code' ? ORG_CODE_CONTRIBUTIONS_DEFINITION : ORG_COMMITS_DEFINITION
+  );
   protected readonly repoRows: Signal<OrgContributionRepoRowVm[]> = computed(() => this.response().repositories.map(decorateRepoRow));
   protected readonly commitRows: Signal<OrgContributionCommitRowVm[]> = computed(() => this.response().commits.map(decorateCommitFeedRow));
   protected readonly commitSortIconMap: Signal<Record<ContributionsCommitSortColumn, string>> = computed(() => this.initCommitSortIconMap());
@@ -171,7 +202,7 @@ export class OrgContributionsComponent {
 
     // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link once the initial
     // navigation has settled (browser-only; normal loads are untouched).
-    if (this.isCsvParamNormalized('projects') || this.isCsvParamNormalized('employees')) {
+    if (this.isCsvParamNormalized('projects') || this.isCsvParamNormalized('employees') || this.isCommitFilterParamNormalized()) {
       afterNextRender(() => this.syncUrl(this.query()));
     }
 
@@ -236,7 +267,7 @@ export class OrgContributionsComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.reset({ search: '', dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE, projects: [], employees: [] });
+    this.filterForm.reset({ search: '', dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE, projects: [], employees: [], ...DEFAULT_ORG_COMMIT_FILTERS });
   }
 
   protected retry(): void {
@@ -246,6 +277,9 @@ export class OrgContributionsComponent {
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
     return {
+      projectScope: values.projectScope ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope,
+      commitScope: values.commitScope ?? DEFAULT_ORG_COMMIT_FILTERS.commitScope,
+      metric: values.metric ?? DEFAULT_ORG_COMMIT_FILTERS.metric,
       view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
@@ -301,7 +335,12 @@ export class OrgContributionsComponent {
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       { value: k.repositories.toLocaleString(), label: 'Repositories', icon: 'fa-light fa-folder', iconContainerClass: 'bg-violet-100 text-violet-600' },
-      { value: k.commits.toLocaleString(), label: 'Commits', icon: 'fa-light fa-code-commit', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
+      {
+        value: k.commits.toLocaleString(),
+        label: this.metricLabels().count,
+        icon: 'fa-light fa-code-commit',
+        iconContainerClass: 'bg-emerald-100 text-emerald-600',
+      },
     ];
   }
 
@@ -333,7 +372,7 @@ export class OrgContributionsComponent {
     return this.response().projectOptions.map((p) => ({
       label: p.name,
       value: p.slug,
-      sublabel: `${p.commits.toLocaleString()} commits`,
+      sublabel: `${p.commits.toLocaleString()} ${this.metricLabels().unit}`,
     }));
   }
 
@@ -341,7 +380,7 @@ export class OrgContributionsComponent {
     return this.response().employeeOptions.map((e) => ({
       label: e.displayName,
       value: e.id,
-      sublabel: `${e.commits.toLocaleString()} commits`,
+      sublabel: `${e.commits.toLocaleString()} ${this.metricLabels().unit}`,
     }));
   }
 
@@ -373,6 +412,7 @@ export class OrgContributionsComponent {
         view: query.view === 'repositories' ? null : query.view,
         q: query.search || null,
         range: query.dateRange === CONTRIBUTIONS_DEFAULT_DATE_RANGE ? null : query.dateRange,
+        ...orgCommitFiltersUrlParams(query),
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
@@ -432,6 +472,12 @@ export class OrgContributionsComponent {
   private isCsvParamNormalized(param: 'projects' | 'employees'): boolean {
     const raw = this.initialParams.get(param);
     return raw !== null && raw !== this.filterForm.controls[param].value.join(',');
+  }
+
+  // A default or unknown commit-filter value in the URL reads as the default, so drop it from the URL.
+  private isCommitFilterParamNormalized(): boolean {
+    const canonical = orgCommitFiltersUrlParams(this.initialCommitFilters);
+    return (Object.keys(canonical) as (keyof OrgCommitFilters)[]).some((name) => this.initialParams.get(name) !== canonical[name]);
   }
 
   private parseInitialPage(): number {

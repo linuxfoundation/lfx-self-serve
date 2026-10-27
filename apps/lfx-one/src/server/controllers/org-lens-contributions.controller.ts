@@ -19,6 +19,7 @@ import type {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseOrgCommitFilters } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -49,6 +50,9 @@ export class OrgLensContributionsController {
         org_uid: orgUid,
         view: query.view,
         date_range: query.dateRange,
+        project_scope: query.projectScope,
+        commit_scope: query.commitScope,
+        metric: query.metric,
         project_count: query.projects.length,
         employee_count: query.employees.length,
         page: query.page,
@@ -72,7 +76,7 @@ export class OrgLensContributionsController {
   }
 }
 
-/** Parse + validate the composed filter/pagination query: invalid range/sort or oversized filter lists → 400; missing values fall back to defaults. */
+/** Parse + validate the composed filter/pagination query: invalid range/sort/commit filters or oversized filter lists → 400; missing values fall back to defaults. */
 function parseContributionsQuery(req: Request, operation: string): OrgContributionsQuery {
   const rawRange = getStringQueryParam(req, 'range');
   const dateRange = parseDateRange(rawRange, operation);
@@ -87,6 +91,7 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
   const commitDir = getStringQueryParam(req, 'commitDir') === 'asc' ? 1 : -1;
 
   return {
+    ...parseOrgCommitFilters(req, operation),
     view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',

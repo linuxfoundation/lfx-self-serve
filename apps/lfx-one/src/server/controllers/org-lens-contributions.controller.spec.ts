@@ -11,8 +11,8 @@ const { getContributions, logger } = vi.hoisted(() => ({
 }));
 
 // validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
-// The real page parsing is what runs here.
-vi.mock('@lfx-one/shared/utils', () => ({}));
+// The real commit-filter parsers stand in for the barrel (vi.mock factories are hoisted, so the module loads dynamically).
+vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')) }));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
     public getContributions = getContributions;
@@ -93,5 +93,47 @@ describe('OrgLensContributionsController filter lists', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getContributions.mock.calls[0][1]).toMatchObject({ projects: ['same-project', 'other'] });
+  });
+});
+
+describe('OrgLensContributionsController commit filters', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('passes the defaults to the service when the params are missing', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'all', commitScope: 'all', metric: 'commits' });
+  });
+
+  it('passes valid values through', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' });
+  });
+
+  it.each([
+    ['projectScope', 'foundation'],
+    ['commitScope', 'main'],
+    ['metric', 'activities'],
+  ])('rejects %s=%s with a 400 before the service', async (field, value) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ [field]: value }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
   });
 });

@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-contributions-page">
   <lfx-page-header
     title="Code Contributions"
-    description="Commits, contributors, maintainers, and collaborators across your active projects."
+    description="Commits, contributors, maintainers, and collaborators across your projects."
     titleTestId="org-contributions-title"
     descriptionTestId="org-contributions-subtitle"
     data-testid="org-contributions-header" />
@@ -33,8 +33,14 @@
   } @else {
     <!-- KPI strip -->
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-contributions-kpis" />
-    <p class="-mt-2 text-xs text-gray-500" data-testid="org-contributions-window-caption">
-      Distinct commits authored by contributors affiliated with {{ companyName() }}, {{ windowCaption() }}.
+    <p class="-mt-2 flex items-start gap-1 text-xs text-gray-500">
+      <span data-testid="org-contributions-window-caption">{{ windowCaption() }}</span>
+      <i
+        class="fa-light fa-circle-info mt-0.5 text-gray-400"
+        [pTooltip]="metricDefinition()"
+        tooltipPosition="top"
+        aria-hidden="true"
+        data-testid="org-contributions-metric-definition"></i>
     </p>
 
     <!-- Content card: tabs + shared filter bar + active table -->
@@ -42,8 +48,8 @@
       <lfx-card-tabs-bar [options]="mainTabs()" [selectedFilter]="mainTab()" (filterChange)="onMainTabChange($event)" data-testid="org-contributions-tabs" />
 
       <!-- Filter bar (shared across both tabs) -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
-        <div class="relative flex-1">
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
+        <div class="relative flex-1 sm:min-w-56">
           <lfx-input-text
             [form]="filterForm"
             control="search"
@@ -62,6 +68,36 @@
             styleClass="w-full"
             ariaLabel="Filter by date range"
             dataTest="org-contributions-date-range-filter" />
+        </div>
+        <div class="w-full sm:w-44">
+          <lfx-select
+            [form]="filterForm"
+            control="projectScope"
+            size="small"
+            [options]="projectScopeOptions"
+            styleClass="w-full"
+            ariaLabel="Filter by project scope"
+            dataTest="org-contributions-project-scope-filter" />
+        </div>
+        <div class="w-full sm:w-48">
+          <lfx-select
+            [form]="filterForm"
+            control="commitScope"
+            size="small"
+            [options]="commitScopeOptions"
+            styleClass="w-full"
+            ariaLabel="Filter by commit scope"
+            dataTest="org-contributions-commit-scope-filter" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
+            control="metric"
+            size="small"
+            [options]="metricOptions"
+            styleClass="w-full"
+            ariaLabel="Count commits or all code contributions"
+            dataTest="org-contributions-metric-filter" />
         </div>
         <div class="w-full sm:w-52">
           <lfx-multi-select
@@ -124,12 +160,13 @@
             <tr>
               @let icons = sortIconMap();
               @let aria = ariaSortMap();
+              @let labels = metricLabels();
               <th scope="col"><span class="text-xs font-medium text-gray-500">Project</span></th>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Repository</span></th>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Source</span></th>
               <th scope="col" [attr.aria-sort]="aria.commits">
                 <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500" (click)="onSort('commits')">
-                  Commits <i [class]="icons.commits" aria-hidden="true"></i>
+                  {{ labels.count }} <i [class]="icons.commits" aria-hidden="true"></i>
                 </button>
               </th>
               <th scope="col" [attr.aria-sort]="aria.firstCommit">
@@ -137,7 +174,7 @@
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
                   (click)="onSort('firstCommit')">
-                  First Commit <i [class]="icons.firstCommit" aria-hidden="true"></i>
+                  {{ labels.firstDate }} <i [class]="icons.firstCommit" aria-hidden="true"></i>
                 </button>
               </th>
               <th scope="col" [attr.aria-sort]="aria.lastCommit">
@@ -145,7 +182,7 @@
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
                   (click)="onSort('lastCommit')">
-                  Last Commit <i [class]="icons.lastCommit" aria-hidden="true"></i>
+                  {{ labels.lastDate }} <i [class]="icons.lastCommit" aria-hidden="true"></i>
                 </button>
               </th>
             </tr>
