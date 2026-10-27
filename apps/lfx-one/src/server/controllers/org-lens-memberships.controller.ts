@@ -83,7 +83,7 @@ export class OrgLensMembershipsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_membership_detail');
-      this.assertFoundationSlug(foundationSlug, 'get_org_membership_detail');
+      this.assertFoundationPathParam(foundationSlug, 'foundationSlug', 'get_org_membership_detail');
 
       // Spec 002: orgUid is the SFID; the service's uid (query-service tag) and sfid (Snowflake) args are now the same value.
       const response = await this.service.getMembershipDetail(req, orgUid, orgUid, foundationSlug);
@@ -137,7 +137,7 @@ export class OrgLensMembershipsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_membership_projects');
-      this.assertFoundationId(foundationId, 'get_org_lens_membership_projects');
+      this.assertFoundationPathParam(foundationId, 'foundationId', 'get_org_lens_membership_projects');
 
       const response = await this.service.getFoundationProjects(orgUid, foundationId);
 
@@ -155,22 +155,18 @@ export class OrgLensMembershipsController {
   }
 
   // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also
-  // covers the foundation slug shape, so it is reused here for the slug-keyed detail route.
-  private assertFoundationId(foundationId: string | undefined, operation: string): asserts foundationId is string {
-    if (!foundationId || typeof foundationId !== 'string') {
-      throw ServiceValidationError.forField('foundationId', 'foundationId path parameter is required', { operation });
+  // covers the foundation slug shape, so both the id-keyed and the slug-keyed route validate
+  // through it. One helper for both so the two can't drift apart.
+  private assertFoundationPathParam<F extends 'foundationId' | 'foundationSlug'>(
+    value: string | undefined,
+    field: F,
+    operation: string
+  ): asserts value is string {
+    if (!value || typeof value !== 'string') {
+      throw ServiceValidationError.forField(field, `${field} path parameter is required`, { operation });
     }
-    if (!FOUNDATION_ID_PATTERN.test(foundationId)) {
-      throw ServiceValidationError.forField('foundationId', 'Invalid foundationId format', { operation });
-    }
-  }
-
-  private assertFoundationSlug(foundationSlug: string | undefined, operation: string): asserts foundationSlug is string {
-    if (!foundationSlug || typeof foundationSlug !== 'string') {
-      throw ServiceValidationError.forField('foundationSlug', 'foundationSlug path parameter is required', { operation });
-    }
-    if (!FOUNDATION_ID_PATTERN.test(foundationSlug)) {
-      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
+    if (!FOUNDATION_ID_PATTERN.test(value)) {
+      throw ServiceValidationError.forField(field, `Invalid ${field} format`, { operation });
     }
   }
 }

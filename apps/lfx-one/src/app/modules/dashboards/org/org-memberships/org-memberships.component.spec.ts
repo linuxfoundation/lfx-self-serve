@@ -86,7 +86,7 @@ async function render(memberships: OrgActiveMembership[] = []) {
   const fixture = TestBed.createComponent(OrgMembershipsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, pageState, settled };
+  return { fixture, pageState, settled, selectedAccount };
 }
 
 function has(fixture: ComponentFixture<OrgMembershipsComponent>, testid: string): boolean {
@@ -149,6 +149,22 @@ describe('OrgMembershipsComponent', () => {
 
     expect(hasInDocument('membership-projects-drawer-title')).toBe(true);
     expect(document.querySelector('[data-testid="membership-projects-drawer-subtitle"]')?.textContent).toContain('Cloud Native Computing Foundation (CNCF)');
+  });
+
+  it('closes the projects side panel when the selected organization changes', async () => {
+    const { fixture, selectedAccount } = await render([membershipRow(3)]);
+    await settleActiveFetch(fixture);
+
+    (fixture.nativeElement.querySelector('[data-testid="memberships-org-projects-cncf"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(hasInDocument('membership-projects-drawer-title')).toBe(true);
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Co', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
+    await settleActiveFetch(fixture);
+
+    expect(hasInDocument('membership-projects-drawer-title')).toBe(false);
   });
 
   it('leaves a zero Org Projects count non-interactive', async () => {

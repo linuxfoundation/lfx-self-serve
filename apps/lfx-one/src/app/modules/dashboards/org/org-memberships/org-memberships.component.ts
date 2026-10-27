@@ -177,6 +177,11 @@ export class OrgMembershipsComponent {
         if (this.lastOrgUid && this.lastOrgUid !== orgUid) {
           this.expiredData.set(null);
           this.discoverData.set(null);
+          // The Org Projects panel holds a row captured on click, while its orgUid input tracks the
+          // live selection — leaving it open across a switch would refetch the new org's projects
+          // under the previous org's foundation name and count (foundation ids are shared).
+          this.projectsDrawerVisible.set(false);
+          this.activeProjectsRow.set(null);
         }
         this.lastOrgUid = orgUid;
         if (tab === 'expired' && !this.expiredData()) this.fetchExpired(orgUid);

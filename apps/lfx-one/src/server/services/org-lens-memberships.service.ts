@@ -209,7 +209,7 @@ export class OrgLensMembershipsService {
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:${paramSignature([foundationId])}`,
+      `memberships-projects:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchFoundationProjectRows(accountId, foundationId),
       OrgLensMembershipsService.isRawProjectRowArray
@@ -424,9 +424,4 @@ export class OrgLensMembershipsService {
     const d = new Date(dateValue);
     return d.toISOString().split('T')[0];
   }
-}
-
-/** Deterministic, key-safe sub-resource suffix — keeps the foundation id itself out of the cache key (base64url → only `[A-Za-z0-9_-]`). */
-function paramSignature(parts: readonly (string | number | boolean | null)[]): string {
-  return Buffer.from(JSON.stringify(parts), 'utf8').toString('base64url');
 }

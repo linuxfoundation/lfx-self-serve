@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, input, model, signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, model, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -26,6 +26,7 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
 export class MembershipProjectsDrawerComponent {
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly orgLens = inject(OrgLensNavigationService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -41,6 +42,30 @@ export class MembershipProjectsDrawerComponent {
   private readonly projectsData = this.initProjectsData();
 
   protected readonly filteredProjects = computed<OrgMembershipProject[]>(() => this.initFilteredProjects());
+
+  // PrimeNG moves the real panel to document.body, so it is not a child of this component's host —
+  // this is a template ref into our own #header ng-template, which PrimeNG embeds into that panel.
+  private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
+  private previouslyFocusedElement: HTMLElement | null = null;
+
+  // p-drawer never moves focus into the panel on open, nor restores it on close; it only traps Tab
+  // once focus is already inside. Capture the trigger before moving focus in, so (onHide) can hand
+  // it back. (onHide) fires for Escape and the close button, not for a programmatic
+  // `visible.set(false)` — on an org switch, or when a project link navigates away, the trigger is
+  // gone and restoring focus to it would mean nothing.
+  protected onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.titleRef()?.nativeElement.focus();
+  }
+
+  protected onDrawerHide(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.previouslyFocusedElement?.isConnected) {
+      this.previouslyFocusedElement.focus();
+    }
+    this.previouslyFocusedElement = null;
+  }
 
   protected projectLink(project: OrgMembershipProject): string[] {
     return this.orgLens.orgLensLink('projects', project.projectSlug || project.projectId);

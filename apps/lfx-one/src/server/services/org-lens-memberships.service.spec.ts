@@ -74,15 +74,14 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     expect(binds).toEqual(['acc-1', 'cncf']);
   });
 
-  it('scopes the cache entry per foundation without putting the foundation id in the key', async () => {
+  it('scopes the cache entry per foundation', async () => {
     execute.mockResolvedValue({ rows: [] });
     const service = new OrgLensMembershipsService();
 
     await service.getFoundationProjects('acc-1', 'cncf');
     await service.getFoundationProjects('acc-1', 'lf-edge');
 
-    expect(cacheKeys[0]).not.toBe(cacheKeys[1]);
-    expect(cacheKeys.every((key) => !key.includes('cncf') && !key.includes('lf-edge'))).toBe(true);
+    expect(cacheKeys).toEqual(['memberships-projects:cncf', 'memberships-projects:lf-edge']);
   });
 
   it('returns an empty envelope rather than failing when the org has no projects for the foundation', async () => {

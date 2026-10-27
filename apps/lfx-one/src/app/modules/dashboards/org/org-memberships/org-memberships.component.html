@@ -260,7 +260,11 @@
                           type="button"
                           class="text-sm font-medium text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none"
                           [attr.aria-label]="
-                            'View the ' + membership.orgProjects + ' projects your organization is involved in for ' + membership.foundationName
+                            'View the ' +
+                            membership.orgProjects +
+                            (membership.orgProjects === 1 ? ' project' : ' projects') +
+                            ' your organization is involved in for ' +
+                            membership.foundationName
                           "
                           [attr.data-testid]="'memberships-org-projects-' + membership.foundationId"
                           (click)="openProjectsDrawer(membership)">

@@ -5,15 +5,36 @@
   [(visible)]="visible"
   position="right"
   [modal]="true"
-  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
-  data-testid="membership-projects-drawer">
+  [ariaCloseLabel]="'Close panel'"
+  [pt]="{
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'membership-projects-drawer-title',
+      'data-testid': 'membership-projects-drawer',
+    },
+    pcCloseButton: { root: { 'data-testid': 'membership-projects-drawer-close' } },
+  }"
+  (onShow)="onDrawerShow()"
+  (onHide)="onDrawerHide()"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full">
   <ng-template #header>
     <div class="flex items-start gap-3 w-full">
       <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
         <i class="fa-light fa-diagram-project text-lg" aria-hidden="true"></i>
       </div>
       <div class="flex flex-col gap-0.5 min-w-0">
-        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="membership-projects-drawer-title">Org Projects</h2>
+        <!-- tabindex="-1": out of the Tab order, but focusable so onDrawerShow() can move focus
+             here on open. It is also what aria-labelledby points at, so the panel announces as a
+             named dialog the way a dialog title normally would. -->
+        <h2
+          #titleRef
+          id="membership-projects-drawer-title"
+          tabindex="-1"
+          class="text-base font-semibold text-gray-900 truncate"
+          data-testid="membership-projects-drawer-title">
+          Org Projects
+        </h2>
         <p class="text-sm text-gray-500 truncate" data-testid="membership-projects-drawer-subtitle">
           {{ foundationName() }} &middot; {{ count() | number }} {{ count() === 1 ? 'project' : 'projects' }}
         </p>
@@ -72,16 +93,16 @@
               <!-- Influence dot — same scale as the Overview foundations table -->
               @switch (project.influence) {
                 @case ('Leading') {
-                  <span class="inline-block w-2 h-2 rounded-full bg-emerald-700 flex-shrink-0" [attr.aria-label]="project.influence + ' influence'"></span>
+                  <span class="inline-block w-2 h-2 rounded-full bg-emerald-700 flex-shrink-0" aria-hidden="true"></span>
                 }
                 @case ('Contributing') {
-                  <span class="inline-block w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" [attr.aria-label]="project.influence + ' influence'"></span>
+                  <span class="inline-block w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true"></span>
                 }
                 @case ('Participating') {
-                  <span class="inline-block w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" [attr.aria-label]="project.influence + ' influence'"></span>
+                  <span class="inline-block w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" aria-hidden="true"></span>
                 }
                 @default {
-                  <span class="inline-block w-2 h-2 rounded-full bg-gray-400 flex-shrink-0" [attr.aria-label]="project.influence + ' influence'"></span>
+                  <span class="inline-block w-2 h-2 rounded-full bg-gray-400 flex-shrink-0" aria-hidden="true"></span>
                 }
               }
               <div class="flex flex-col gap-0.5 min-w-0 flex-1">
