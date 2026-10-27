@@ -260,7 +260,11 @@ export class UserService {
    * @param email - The email address to make primary
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(
+      take(1),
+      // The Identities tab and profile sidebar both read the current primary from this feed.
+      tap(() => this.refreshUserIdentities())
+    );
   }
 
   /**

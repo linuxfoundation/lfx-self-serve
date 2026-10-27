@@ -15,11 +15,14 @@ route, for both new sessions and follow-ups.
 
 The server-only `@lfx-one/shared/server` schemas and form renderer mirror `agents/member-360/src/{form,envelope}.ts`
 in `linuxfoundation/marketing-os-agents` at
-`45734bc6aad658545b1b60f1ceb6a57d0bdb6e2f` (`member-360-output/v1`). The BFF accepts envelopes only from successful
-`finalize_member_360` results paired with their tool call in Guild events, never from
-model prose, runtime output, tool inputs or another tool's results. It validates each candidate and recomputes SHA-256 over the **original**
-`JSON.stringify(tabs)` property order, checks the entitled project, and selects the
-highest valid version. Optional 2.0 additions at the top level, inside the existing
+`45734bc6aad658545b1b60f1ceb6a57d0bdb6e2f` (`member-360-output/v1`). The direct successful `finalize_member_360` result paired with its tool call stays first and unchanged.
+Since agent 2.1.1, the paired result may instead be a `member-360-finalize/v1` receipt `{ok, sha256, rows, partial}`, with `sha256` equal to the validated envelope's `content_sha256`.
+Without a direct valid envelope, the BFF accepts a root agent task's final `runtime_done` text or `agent_notification_message` carrier only when its `content_sha256` is in the successful receipt map.
+The candidate's `partial` status (`summary_markdown` starts with `Partial report.`) and ranking/evidence row counts must match that receipt.
+Both paths validate schema and size, recompute SHA-256 over the **original** `JSON.stringify(tabs)` property order, check the entitled project, and select the highest valid version.
+The hash binds tabs only; `summary_markdown` stays model prose and is redacted as before, alongside the tabs, before persistence.
+Unmatched or prose-only envelopes, tool inputs and another tool's results remain refused.
+Optional 2.0 additions at the top level, inside the existing
 `inputs` object (including 2.0's `inputs.research` provenance), and on typed tab rows
 are tolerated and stripped by validation; required
 1.0 fields, enums and numeric bounds remain mandatory. The selected sidecar is the

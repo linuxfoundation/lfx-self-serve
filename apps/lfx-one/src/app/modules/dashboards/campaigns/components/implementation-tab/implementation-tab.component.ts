@@ -165,6 +165,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -203,7 +204,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -807,6 +808,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditImageUploadError = signal('');
   /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
   protected readonly creativeAssetAccept = CREATIVE_ASSET_MIME_TYPES.join(',');
+  /**
+   * Bumped whenever this tab adds to the brief's creative library, so the slot grid re-reads the
+   * plan. The plan is derived from the stored assets, so an upload makes the last answer stale.
+   */
+  protected readonly creativeLibraryRevision = signal(0);
   /**
    * The file input's descriptions: hint and live status always, the refusal while there is one, so
    * returning to the input re-reads why the last file was refused. The input stays enabled during
@@ -3234,6 +3240,8 @@ export class ImplementationTabComponent implements OnInit {
         this.redditImageAssetName.set(fileName);
         this.redditImageAssetBriefId.set(briefId);
         this.redditImageUploadStatus.set('idle');
+        // The library this brief's slot plan is computed from just gained an asset.
+        this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
       },
       error: (err: unknown) => {

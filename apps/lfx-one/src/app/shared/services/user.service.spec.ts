@@ -35,6 +35,41 @@ describe('UserService', () => {
     service = TestBed.inject(UserService);
   });
 
+  it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
+    const response$ = new Subject<{ message: string }>();
+    const put = vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);
+    const refreshed = vi.fn();
+    const subscription = service.identitiesRefresh$.subscribe(refreshed);
+    service.user.set({ email: 'old-primary@example.org' } as User);
+    const result = vi.fn();
+
+    service.setPrimaryEmail('new+primary@example.org').subscribe(result);
+    expect(put).toHaveBeenCalledWith('/api/profile/emails/new%2Bprimary%40example.org/primary', {});
+    expect(refreshed).not.toHaveBeenCalled();
+
+    response$.next({ message: 'ok' });
+    expect(refreshed).toHaveBeenCalledTimes(1);
+    expect(result).toHaveBeenCalledWith({ message: 'ok' });
+    expect(service.user()?.email).toBe('old-primary@example.org');
+    subscription.unsubscribe();
+  });
+
+  it('does not refresh identities when a primary-email change fails', () => {
+    const response$ = new Subject<{ message: string }>();
+    vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);
+    const refreshed = vi.fn();
+    const subscription = service.identitiesRefresh$.subscribe(refreshed);
+    const onError = vi.fn();
+
+    service.setPrimaryEmail('new-primary@example.org').subscribe({ error: onError });
+    const error = new Error('primary change failed');
+    response$.error(error);
+
+    expect(onError).toHaveBeenCalledWith(error);
+    expect(refreshed).not.toHaveBeenCalled();
+    subscription.unsubscribe();
+  });
+
   it.each([
     [{ 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],
     [{ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],

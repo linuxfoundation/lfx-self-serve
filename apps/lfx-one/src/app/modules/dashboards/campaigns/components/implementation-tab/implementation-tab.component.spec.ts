@@ -8209,6 +8209,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     redditImageAssetId: () => string;
     redditImageUploadStatus: () => string;
     redditImageUploadError: () => string;
+    creativeLibraryRevision: () => number;
     canSubmit: () => boolean;
     submit(): void;
   }
@@ -8305,6 +8306,10 @@ describe('ImplementationTabComponent reddit image upload', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            // The slot grid mounts beside the upload control and reads the plan as soon as this
+            // suite's brief is saved. Every list upstream returns is non-nil, so the empty plan
+            // is spelled out rather than left undefined.
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
       ],
@@ -8339,6 +8344,18 @@ describe('ImplementationTabComponent reddit image upload', () => {
     const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement;
     expect(live.getAttribute('role')).toBe('status');
     expect(live.textContent).toContain('Uploaded: promo.png');
+  });
+
+  // The slot plan is derived from the stored library, so an upload makes the grid's last answer
+  // stale. The revision this bumps is what the grid reads as its reload token.
+  it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {
+    const f = (await mount(true)).fixture;
+    const before = at(f).creativeLibraryRevision();
+
+    choose(f, png());
+
+    expect(at(f).redditImageAssetId()).toBe(ASSET_ID);
+    expect(at(f).creativeLibraryRevision()).toBe(before + 1);
   });
 
   it('announces the upload while it is in flight', async () => {

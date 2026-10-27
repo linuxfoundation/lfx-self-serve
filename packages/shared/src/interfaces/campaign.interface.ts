@@ -252,6 +252,60 @@ export interface CreativeAssetPlan {
   unused: string[];
 }
 
+/**
+ * One row of the slot-coverage grid: a slot the plan filled, a slot it left short, or a
+ * cross-slot requirement that names no single slot.
+ *
+ * Assembled from a plan's `assignments` and `gaps` TOGETHER, because the two describe the same
+ * slot from opposite sides — a slot holding one of the two images it needs appears in both, and
+ * rendering them as separate rows would show an operator the same slot twice with contradictory
+ * answers.
+ */
+export interface CreativeSlotCoverageRow {
+  key: string;
+  label: string;
+  /** The slot's rule as a sentence, when the plan carried an assignment for it. */
+  requirement: string;
+  /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
+  filled: number;
+  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  need: number;
+  /** The plan's own words for why it is short. Empty when nothing is missing. */
+  reason: string;
+  status: 'filled' | 'short' | 'missing';
+  statusLabel: string;
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in.
+   */
+  countText: string;
+}
+
+/** The coverage rows for one platform, or for one channel within a platform. */
+export interface CreativeSlotCoverageGroup {
+  key: string;
+  /** The platform's display label, with its channel appended when the plan named one. */
+  label: string;
+  rows: CreativeSlotCoverageRow[];
+  /** Rows still short or missing — what an operator has to act on in this group. */
+  openCount: number;
+}
+
+/**
+ * The slot grid's own read of `get-asset-plan`.
+ *
+ * `idle` is NOT `ready` with an empty plan: before a brief is saved there is nothing to plan
+ * against, and an empty plan rendered as a result would read as "no gaps — this library can
+ * launch", which is the one thing it does not mean.
+ */
+export interface CreativeSlotCoverageState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  plan: CreativeAssetPlan | null;
+  message: string;
+}
+
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 

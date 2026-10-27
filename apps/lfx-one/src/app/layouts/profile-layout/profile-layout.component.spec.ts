@@ -4,8 +4,14 @@
 import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { OPEN_PROFILE_BANNER_LINK_CLICKED, PENDING_PROFILE_SAVE_KEY } from '@lfx-one/shared/constants';
-import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_CALLBACK_RETRY_MESSAGE,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  PENDING_PROFILE_SAVE_KEY,
+} from '@lfx-one/shared/constants';
+import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -442,6 +448,242 @@ describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)'
     await fixture.whenStable();
 
     expect(update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProfileLayoutComponent — primary email and identity notifications (#4123)', () => {
+  function makeIdentity(overrides: Partial<EnrichedIdentity> & Pick<EnrichedIdentity, 'id' | 'value'>): EnrichedIdentity {
+    return {
+      platform: 'email',
+      type: 'email',
+      verified: false,
+      source: 'cdp',
+      icon: 'fa-light fa-envelope',
+      createdAt: '',
+      updatedAt: '',
+      displayState: 'unverified',
+      inAuth0: false,
+      ...overrides,
+    };
+  }
+
+  async function setup(identities: EnrichedIdentity[], refresh$ = new Subject<void>()): Promise<ComponentFixture<ProfileLayoutComponent>> {
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: refresh$,
+      getCurrentUserProfile: vi.fn(() =>
+        of({ user: { username: 'dev-user', email: 'old-primary@example.org', first_name: 'Old' }, profile: { given_name: 'Old' } } as CombinedProfile)
+      ),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of(identities)),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('shows the identities primary instead of a stale profile email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+  });
+
+  it('falls back to the profile email when identities have no primary row', async () => {
+    const fixture = await setup([makeIdentity({ id: 'other-email', value: 'other@example.org' })]);
+
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+  });
+
+  it('refreshes the sidebar primary without losing optimistic profile edits', async () => {
+    const refresh$ = new Subject<void>();
+    const fixture = await setup([makeIdentity({ id: 'old-primary', value: 'old-primary@example.org', isPrimary: true })], refresh$);
+    fixture.componentInstance.onProfileSaved({ given_name: 'Saved' });
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+    const getIdentities = vi.mocked(TestBed.inject(UserService).getIdentities);
+    getIdentities.mockReturnValue(of([makeIdentity({ id: 'new-primary', value: 'new-primary@example.org', isPrimary: true })]));
+
+    refresh$.next();
+    await fixture.whenStable();
+
+    expect(getIdentities).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.emailInfo()).toBe('new-primary@example.org');
+    expect(fixture.componentInstance.profileData()?.firstName).toBe('Saved');
+  });
+
+  it('keeps the dot off for a lone unverified primary email', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true })]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(false);
+  });
+
+  it('still lights the dot for another unverified identity', async () => {
+    const fixture = await setup([
+      makeIdentity({ id: 'primary-email', value: 'dev@example.com', isPrimary: true }),
+      makeIdentity({ id: 'cdp-other', value: 'other@example.org' }),
+    ]);
+
+    expect(fixture.componentInstance.tabNotifications().get('identities')).toBe(true);
+  });
+});
+
+/**
+ * Guards #4253: the Flow C callback reports a replayed pending email verification as
+ * `email_status=already_connected|retry_required` next to `success=profile_token_obtained`. The
+ * layout owns that notice so it shows once on whichever /profile/* tab the return lands.
+ */
+describe('ProfileLayoutComponent — pending email outcome on Flow C return (#4253)', () => {
+  async function setup(
+    url: string,
+    queryParams: Record<string, string>,
+    platform = 'browser'
+  ): Promise<{ add: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn>; refreshUserIdentities: ReturnType<typeof vi.fn> }> {
+    const add = vi.fn();
+    const navigateByUrl = vi.fn();
+    const refreshUserIdentities = vi.fn();
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: {}, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+      refreshUserIdentities,
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: ActivatedRoute, useValue: { queryParams: of(queryParams) } },
+        { provide: Router, useValue: { url, navigateByUrl } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    return { add, navigateByUrl, refreshUserIdentities };
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('shows one already-connected notice, refreshes identities, and keeps the email-settings fragment', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      '/profile/settings?success=profile_token_obtained&email_status=already_connected#email-settings',
+      { success: 'profile_token_obtained', email_status: 'already_connected' }
+    );
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings#email-settings', { replaceUrl: true });
+  });
+
+  it('shows fixed retry guidance without claiming success or touching identity state', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained&email_status=retry_required', {
+      success: 'profile_token_obtained',
+      email_status: 'retry_required',
+    });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
+  });
+
+  it('infers no email outcome from an ordinary authorization return', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained', {
+      success: 'profile_token_obtained',
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
+  });
+
+  it.each(['linked', 'toString', ''])('ignores an unknown email_status value %j but still clears the query', async (status) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/identities?success=profile_token_obtained', {
+      success: 'profile_token_obtained',
+      email_status: status,
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/identities', { replaceUrl: true });
+  });
+
+  it('ignores an email_status that arrives without the authorization-success flag', async () => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?email_status=already_connected', {
+      email_status: 'already_connected',
+    });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('still replays a pending profile save alongside the email notice', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), avatarPending: true }));
+
+    const { add } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_connected', {
+      success: 'profile_token_obtained',
+      email_status: 'already_connected',
+    });
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: EMAIL_ALREADY_CONNECTED_SUMMARY }));
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
+
+  it.each(['already_connected', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
+    const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
+
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      `/profile/settings?success=profile_token_obtained&email_status=${status}#email-settings`,
+      {
+        success: 'profile_token_obtained',
+        email_status: status,
+      },
+      'server'
+    );
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBe(pendingSave);
   });
 });
 
