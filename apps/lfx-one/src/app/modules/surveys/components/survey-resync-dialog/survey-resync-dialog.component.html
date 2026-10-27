@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="survey-resync-dialog">
+  <p class="text-[12.5px] text-gray-500 -mt-1">
+    Send the survey to committee members who joined after it launched. Existing recipients are not emailed again and no one is removed.
+  </p>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-2" data-testid="survey-resync-dialog-loading">
+      @for (row of skeletonRows; track row) {
+        <p-skeleton width="100%" height="2.25rem"></p-skeleton>
+      }
+    </div>
+  } @else if (loadError()) {
+    <div class="flex flex-col items-center gap-3 py-8 text-center" role="alert" data-testid="survey-resync-dialog-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-[12.5px] text-gray-600">{{ loadError() }}</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-rotate-right"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="retry()"
+        data-testid="survey-resync-dialog-retry"></lfx-button>
+    </div>
+  } @else if (recipients().length === 0) {
+    <div data-testid="survey-resync-dialog-empty">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-check-double"
+        title="The recipient list is up to date."
+        subtitle="Every committee member already has this survey."></lfx-empty-state>
+    </div>
+  } @else {
+    <div class="border border-gray-200 rounded-lg max-h-[min(32rem,calc(90dvh-14rem))] overflow-auto" data-testid="survey-resync-dialog-table">
+      <table class="w-full border-collapse text-[12.5px]">
+        <thead>
+          <tr class="bg-gray-50 sticky top-0 z-10">
+            <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Name</th>
+            <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
+            <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (recipient of recipients(); track recipient.user_id) {
+            <tr class="border-t border-gray-100" [attr.data-testid]="'survey-resync-dialog-row-' + recipient.user_id">
+              <td class="py-3 px-4 font-semibold text-gray-900">{{ recipientName(recipient) }}</td>
+              <td class="py-3 px-2 text-gray-500">{{ recipient.email }}</td>
+              <td class="py-3 px-4 text-gray-500">{{ recipient.role || '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+<div class="flex items-center justify-end gap-2 mt-4">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    [outlined]="true"
+    size="small"
+    [disabled]="sending()"
+    (onClick)="cancel()"
+    data-testid="survey-resync-dialog-cancel"></lfx-button>
+  <lfx-button
+    [label]="recipients().length > 0 ? 'Send to ' + recipients().length : 'Send'"
+    icon="fa-light fa-paper-plane"
+    severity="info"
+    size="small"
+    [disabled]="loading() || recipients().length === 0 || sending()"
+    [loading]="sending()"
+    (onClick)="send()"
+    data-testid="survey-resync-dialog-send"></lfx-button>
+</div>

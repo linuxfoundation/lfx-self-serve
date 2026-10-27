@@ -9,6 +9,7 @@ import {
   buildSurveyResponsesCsvRows,
   getSurveyEmailStages,
   getSurveyEngagementRates,
+  getSurveyResyncScope,
   renderSurveyEmailForRecipient,
 } from './survey.utils';
 
@@ -156,5 +157,24 @@ describe('renderSurveyEmailForRecipient — send quarter', () => {
   it('blanks wizard variables the survey service has no data for, instead of leaking the token', () => {
     const email = renderSurveyEmailForRecipient({ ...survey, email_subject: 'From {{SenderTitle}} <{{SenderEmail}}> re {{SurveyTemplate}}' }, row({}));
     expect(email.subject).toBe('From  <> re ');
+  });
+});
+
+describe('getSurveyResyncScope', () => {
+  const withCommittees = (...projects: string[]) =>
+    ({ ...survey, committees: projects.map((p, i) => ({ committee_uid: `c-${i}`, project_uid: p })) }) as unknown as Survey;
+
+  it('resyncs the whole survey when every committee is in the project', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1'), 'p-1')).toEqual({});
+  });
+
+  it("scopes a multi-project survey to the project's one committee", () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2', 'p-3'), 'p-2')).toEqual({ committeeUid: 'c-1' });
+  });
+
+  it('offers no resync when the project has no committee, several among other projects, or no project is active', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2'), 'p-9')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1', 'p-2'), 'p-1')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1'), null)).toBeNull();
   });
 });
