@@ -3,7 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, linkedSignal, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -124,6 +124,14 @@ export class RedditKeywordsTableComponent {
    */
   private readonly windowChanges = signal(0);
   /**
+   * Counts project changes, for the same reason: returning to an earlier project is a new read, and the
+   * notes recorded there before the switch must not come back as if current.
+   */
+  private readonly projectChanges = linkedSignal<string, number>({
+    source: () => this.projectSlug(),
+    computation: (_slug, previous) => (previous === undefined ? 0 : previous.value + 1),
+  });
+  /**
    * The keyword (by `redditKeywordNoteKey`) whose campaign's revision is being read, by campaign UUID.
    * Read-independent, like the notes, so the row's spinner follows the keyword through a re-read.
    */
@@ -142,8 +150,8 @@ export class RedditKeywordsTableComponent {
    * the add was confirmed in (`negativeKeywordsScopesMatch`: a transient empty brief is not leaving).
    */
   private readonly scope$ = toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId() })));
-  /** Identifies the keyword read the rows come from: changes on Refresh, Retry and window change, and never repeats. */
-  private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.windowChanges()}`);
+  /** Identifies the keyword read the rows come from: changes on Refresh, Retry, window and project change, and never repeats. */
+  private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.windowChanges()}|${this.projectChanges()}`);
 
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
   /** The rows with their campaign label and action precomputed, so the template calls no method. */

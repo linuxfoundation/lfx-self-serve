@@ -825,6 +825,24 @@ describe('RedditKeywordsTableComponent', () => {
       expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
     });
 
+    // The same for a project round trip: the table stays mounted, and returning to the project is a new
+    // read, so a note recorded there before the switch must stay gone.
+    it('does not bring a "Not sent" note back when the project is switched away and back', () => {
+      getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
+
+      fixture.componentRef.setInput('projectSlug', 'cncf');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.detectChanges();
+
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+      expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).toBeNull();
+    });
+
     // The newer attempt that went nowhere is shown, beside the older write outcome it does not erase.
     it('shows a retry that was not sent beside the earlier unconfirmed outcome, and keeps the verify-first advice', () => {
       addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
