@@ -68,17 +68,14 @@ export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Gates Org Lens surfaces still restricted to internal audiences — now only the Company Logo Upload
- * control on the Org Profile edit page (LFXV2-3288). The person-detail-drawer company-email gate
- * (GH-1655) was retired once its real-data backend landed (#1705 → #1830 → #2402).
- * Remove each gate as its real-data backend lands; retire this flag once all are unguarded.
+ * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
+ * restricted to internal audiences while their real-data backends were built, and both gates are
+ * gone: Org Profile logo upload was ungated in #1887, and person-detail-drawer company emails in
+ * #4373 once #1705 → #1830 → #2402 had landed the data behind them.
  *
- * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview
- * but not the upload affordance.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
- * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
- * source of truth for whether an upload actually succeeds.
+ * Setting it in LaunchDarkly now changes nothing. The constant is kept only so the retirement is a
+ * deliberate step — deleting the key from LaunchDarkly as well as this line — rather than a silent
+ * drop. Do not add a new gate to it; a new surface should get its own flag with its own rollout.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 
