@@ -294,6 +294,10 @@ export class ProfileLayoutComponent {
     };
 
     this.combinedProfile = mergedProfile;
+    if (definedMetadata.given_name !== undefined || definedMetadata.family_name !== undefined) {
+      // The navbar reads UserService.user().name (a stale OIDC claim), not this layout's header data.
+      this.userService.applyDisplayName(mergedProfile.user.first_name, mergedProfile.user.last_name, true);
+    }
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
     // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
     this.pendingOptimisticMetadata = null;
