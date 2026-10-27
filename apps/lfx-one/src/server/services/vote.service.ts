@@ -502,15 +502,27 @@ export class VoteService {
    * held until the vote has ended, and comments are returned as text only, in text order. The vote
    * is loaded alongside the results so a failed lookup fails the request rather than leaking
    * un-held results.
+   *
+   * A caller without `vote#writer` (`options.canWrite === false`, #4330) only gets results for an
+   * ended vote they were invited to and not removed from — anything else is a 403 before upstream
+   * results are fetched — and always gets comments as text only, in text order.
    */
-  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
-    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+  public async getVoteResults(req: Request, voteUid: string, options: { canWrite: boolean }): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid, can_write: options.canWrite });
 
     const path = `/votes/${this.encodeVoteUid(voteUid)}/results`;
-    const [vote, results] = await Promise.all([
-      this.getVoteById(req, voteUid),
-      this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
-    ]);
+    let vote: Vote;
+    let results: VoteResultsResponse;
+    if (options.canWrite) {
+      [vote, results] = await Promise.all([
+        this.getVoteById(req, voteUid),
+        this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
+      ]);
+    } else {
+      vote = await this.getVoteById(req, voteUid);
+      await this.assertVoterCanReadResults(req, voteUid, vote);
+      results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET');
+    }
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
@@ -551,7 +563,9 @@ export class VoteService {
       // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
       const responses = commentResult.responses ?? [];
       commentResult.total_responses = responses.length;
-      if (pseudoAnonymous) {
+      // A non-writer gets the same text-only payload on a named vote too (#4330): only vote managers
+      // may see who wrote each comment, so the identity is stripped here rather than in the browser.
+      if (pseudoAnonymous || !options.canWrite) {
         // Text only: `vote_id` equals the vote_response uid other endpoints expose, and
         // `vote_creation_time` / `abstained` (or recency order) could re-link a comment to its author.
         commentResult.responses = sortCommentResponsesByText(responses.map((response) => ({ comment_text: response.comment_text }))).slice(
@@ -568,6 +582,7 @@ export class VoteService {
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
+      can_write: options.canWrite,
       num_poll_results: results?.poll_results?.length ?? 0,
       num_votes_cast: results?.num_votes_cast,
       results_held: false,
@@ -825,7 +840,7 @@ export class VoteService {
       });
     }
 
-    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid), this.getVoteSummaryRecipients(req, voteUid)]);
+    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
 
     const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
 
@@ -880,7 +895,7 @@ export class VoteService {
   // ============================================
 
   /**
-   * Fetches votes the current user has been invited to.
+   * Fetches votes the current user is still invited to; removed invitations never make a ballot actionable.
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<MyVotesResponse> {
@@ -891,18 +906,19 @@ export class VoteService {
         complete = false;
       },
     });
+    const eligibleResponses = responses.filter((response) => !response.voter_removed);
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
     // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
-    for (const r of responses) {
+    for (const r of eligibleResponses) {
       const id = getParentVoteId(r);
       if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(eligibleResponses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return { votes: [], complete };
@@ -951,10 +967,12 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
-    // the list surfaced this vote under) and requires a usable row id.
-    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
-      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+    // Apply the shared parent-key rule and require a usable row id. A re-invitation's current
+    // row wins over historical removed rows, regardless of query-service ordering.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined => {
+      const matches = rows.filter((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+      return matches.find((r) => !r.voter_removed) ?? matches[0];
+    };
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
@@ -964,11 +982,12 @@ export class VoteService {
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
     // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
     // The query service supports a single `filters_or` group (spent on identity), so the two
-    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
-    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
-    // non-match must still fall through to the legacy key.
-    if (!match) {
-      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    // scoped queries run sequentially. Fall through when no current match exists: an owned
+    // foreign-vote row or a historical removed invitation must not hide a current legacy row.
+    if (!match || match.voter_removed) {
+      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+      if (!legacyMatch?.voter_removed) match = legacyMatch ?? match;
+      else match ??= legacyMatch;
     }
 
     if (!match) return null;
@@ -1046,6 +1065,31 @@ export class VoteService {
       num_abstained: results.num_abstained,
       questions,
     };
+  }
+
+  /**
+   * Non-writer results gate (#4330): the vote has ended, and the caller holds a `vote_response` row
+   * for it that was not removed. Runs before upstream results are fetched, so a caller who fails it
+   * never reaches the data. Mirrors the browser's `canVoterFetchVoteResults`, which never asks for
+   * results outside these conditions, so a 403 here is only visible to direct API callers.
+   */
+  private async assertVoterCanReadResults(req: Request, voteUid: string, vote: Vote): Promise<void> {
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new MicroserviceError('Results are available after the vote closes.', 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
+
+    const mine = await this.getMyVoteResponse(req, voteUid);
+    if (!mine || mine.voter_removed) {
+      throw new MicroserviceError("You do not have access to this vote's results.", 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
   }
 
   /**

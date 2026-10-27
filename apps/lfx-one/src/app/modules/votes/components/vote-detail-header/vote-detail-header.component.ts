@@ -33,6 +33,11 @@ export class VoteDetailHeaderComponent {
   public readonly tabs = input.required<readonly VoteDetailTabOption[]>();
   /** Active vote awaiting the viewer's ballot — shows Cast vote. */
   public readonly canCastVote = input<boolean>(false);
+  /**
+   * Shows only the title, status and back navigation (#4330) until manager access or a successful,
+   * non-removed invitation lookup for this vote is verified, including loading and failed-lookup states.
+   */
+  public readonly limited = input<boolean>(false);
 
   // === Outputs ===
   public readonly tabChange = output<VoteDetailTab>();

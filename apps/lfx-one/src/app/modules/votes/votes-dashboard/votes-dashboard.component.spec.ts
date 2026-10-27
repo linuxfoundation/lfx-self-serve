@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { NO_ERRORS_SCHEMA, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { Component, input, model, NO_ERRORS_SCHEMA, output, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
@@ -20,8 +20,18 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
+import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
+
+// The real drawer fetches the vote when opened; these specs only assert what the dashboard hands it.
+@Component({ selector: 'lfx-vote-cast-drawer', standalone: true, template: '' })
+class StubVoteCastDrawerComponent {
+  public readonly voteId = input<string | null>(null);
+  public readonly listVote = input<Vote | null>(null);
+  public readonly visible = model<boolean>(false);
+  public readonly voteSubmitted = output<string>();
+}
 
 const NOW = Date.parse('2026-01-10T12:00:00Z');
 const vote = (uid: string, days: number, overrides: Partial<Vote> = {}): Vote => ({
@@ -117,9 +127,10 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: MailingListService, useValue: {} },
       ],
     });
-    // Keep the real dashboard, summary and table.
+    // Keep the real dashboard, summary and table; only the cast drawer is stubbed.
     TestBed.overrideComponent(VotesDashboardComponent, {
-      add: { schemas: [NO_ERRORS_SCHEMA] },
+      remove: { imports: [VoteCastDrawerComponent] },
+      add: { schemas: [NO_ERRORS_SCHEMA], imports: [StubVoteCastDrawerComponent] },
     });
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(VotesDashboardComponent);
@@ -1025,15 +1036,98 @@ describe('VotesDashboardComponent personal summary', () => {
 
   describe('opening a vote', () => {
     let navigate: MockInstance<Router['navigate']>;
+    const drawer = (): StubVoteCastDrawerComponent | null => fixture.debugElement.query(By.directive(StubVoteCastDrawerComponent))?.componentInstance ?? null;
 
     beforeEach(() => {
       navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     });
 
-    it("opens the vote page from a row, including a vote awaiting the viewer's ballot", () => {
+    it("opens the cast drawer in place for an active vote awaiting the viewer's ballot (#4330)", async () => {
       table.viewVote.emit('soon');
+      await settle();
 
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('soon');
+      expect(drawer()?.listVote()?.uid).toBe('soon');
+    });
+
+    it('opens the vote page for an active vote the viewer already voted on', async () => {
+      table.viewVote.emit('responded');
+      await settle();
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'responded']);
+      expect(drawer()?.visible()).toBe(false);
+    });
+
+    it('opens the vote page for an ended vote from a row, and its Results on the results tab', async () => {
+      table.viewVote.emit('ended');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'ended']);
+
+      table.viewResults.emit('ended');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'ended'], { queryParams: { tab: 'results' } });
+      await settle();
+      expect(drawer()?.visible()).toBe(false);
+    });
+
+    it('shows a successful ballot as voted even when the refreshed feed still awaits it', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      const callsBeforeSubmit = getMyVotes.mock.calls.length;
+      const neededBefore = cards()[1].value as number;
+
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBeforeSubmit + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(cards()[1].value).toBe(neededBefore - 1);
+      await selectSummary('needs-vote');
+      expect(rows()).not.toContain('soon');
+      await selectSummary('needs-vote');
+      element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
       expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon']);
+      expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
+    });
+
+    it('keeps accepted ballot state through a failed refresh and a stale retry', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      getMyVotes.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-load-error')).not.toBeNull();
+
+      element('votes-retry')!.querySelector<HTMLButtonElement>('button')!.click();
+      await settle();
+      expect(element('votes-load-error')).toBeNull();
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      table.viewVote.emit('later');
+      await settle();
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent?.trim()).toBe('Vote');
+
+      drawer()!.voteSubmitted.emit('later');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent).toContain('Review');
+    });
+
+    it("navigates in the Project lens even for a row awaiting the viewer's ballot", async () => {
+      await management();
+      table.viewVote.emit('first-page');
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'first-page']);
+      expect(drawer()).toBeNull();
     });
 
     it.each(['later', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {

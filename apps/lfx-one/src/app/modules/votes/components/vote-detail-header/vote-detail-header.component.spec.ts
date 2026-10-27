@@ -36,10 +36,11 @@ describe('VoteDetailHeaderComponent', () => {
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
   });
 
-  function render(inputs: { vote?: Vote; audience?: 'voter' | 'creator'; canCastVote?: boolean } = {}): void {
+  function render(inputs: { vote?: Vote; audience?: 'voter' | 'creator'; canCastVote?: boolean; limited?: boolean } = {}): void {
     fixture.componentRef.setInput('vote', inputs.vote ?? makeVote());
     fixture.componentRef.setInput('audience', inputs.audience ?? 'voter');
     fixture.componentRef.setInput('canCastVote', inputs.canCastVote ?? false);
+    fixture.componentRef.setInput('limited', inputs.limited ?? false);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
     fixture.detectChanges();
@@ -122,6 +123,18 @@ describe('VoteDetailHeaderComponent', () => {
 
       expect(emitted).toEqual(['reminder', 'cast', 'results', 'back']);
     });
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows only title, status and back navigation when limited on a %s vote (#4330)', (status) => {
+    render({ limited: true, vote: makeVote({ status, early_end_time: '2026-10-20T12:00:00Z' }) });
+
+    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+      expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
+    }
+    expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
+    expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
+    expect(exists('vote-detail-header-status')).toBe(true);
+    expect(exists('vote-detail-header-back')).toBe(true);
   });
 
   it('renders the tab strip and emits the clicked tab', () => {

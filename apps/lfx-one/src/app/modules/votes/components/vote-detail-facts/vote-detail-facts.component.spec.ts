@@ -171,7 +171,7 @@ describe('VoteDetailFactsComponent', () => {
     expect(rules()).toEqual(getVoteVisibilityRules('creator', false, false, false));
     expect(rules()).toContain("Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
     expect(rules()).not.toContain("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
-    expect(rules()).not.toContain('Invited voters now see the final totals and comments.');
+    expect(rules()).not.toContain('Invited voters now see the final totals and comments, without commenter names.');
     expect(rules().join(' ')).not.toContain('while the vote is open');
   });
 });

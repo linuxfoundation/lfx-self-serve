@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { PollType, VoteVoterStatus } from '../enums/poll.enum';
-import type { VoteDetailTab, VoteDetailTabOption, VoteParticipationStatusFilter, VoteVoterStatusFilter } from '../interfaces/poll.interface';
+import type {
+  VoteCommentAnonymityReason,
+  VoteDetailTab,
+  VoteDetailTabOption,
+  VoteParticipationStatusFilter,
+  VoteVoterStatusFilter,
+} from '../interfaces/poll.interface';
 
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
@@ -19,11 +25,18 @@ export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
 /** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
 export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 
+/** Notice above text-only comment results, keyed by why the comments carry no names (#4330). */
+export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, string> = {
+  pseudo_anonymous:
+    "Pseudo-anonymous vote. Comments are shown without names or dates, in alphabetical order. A comment's wording can still reveal who wrote it.",
+  voter_view: 'Comments are shown without names. Only vote managers can see who wrote each comment.',
+};
+
 /**
  * Aggregate bound on comment responses per prompt returned by the BFF results endpoint. The upstream
  * results contract has no pagination, so without a cap the payload grows with electorate size × prompt
- * count × response length (50 prompts × 5,000 code points × N voters). Named votes keep the most recent N;
- * pseudo-anonymous votes keep the first N in comment-text order. The pre-cap count is reported via
+ * count × response length (50 prompts × 5,000 code points × N voters). Named votes keep the most recent N for vote
+ * managers; pseudo-anonymous votes, and every non-manager read (#4330), keep the first N in comment-text order. The pre-cap count is reported via
  * `PollCommentResult.total_responses`. Well above any realistic committee electorate; true cursor pagination is an upstream contract follow-up.
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;

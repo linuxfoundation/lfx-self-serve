@@ -20,6 +20,7 @@ import {
   ServerRequestContext,
   StatCardItem,
   Vote,
+  VoteCommentAnonymityReason,
   VoteDetailState,
   VoteDetailTab,
   VoteDetailTabOption,
@@ -62,8 +63,8 @@ import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
- * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and where every
- * in-app vote link lands (#3915).
+ * Vote detail page (#3913). Route: /votes/:id — the shareable vote permalink, the reminder-email target, and the
+ * in-app vote destination (#3915), except active My Votes ballots still awaiting a response, which open on the list (#4330).
  *
  * The manager view follows write access on the vote (project writer, then committee writer — `resolveVoteCanManage`),
  * never the lens. Voters see only their own response, and totals and comments
@@ -80,6 +81,10 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
  *
  * On a pseudo-anonymous vote the BFF holds totals, the abstention count and comments until the vote ends (`results_held`,
  * #3916): the page shows a held panel in their place and keeps the participation numbers.
+ *
+ * Non-managers see comments as text only, on named votes too (#4330) — the BFF strips commenter identity for them.
+ * Until manager access or a successful, non-removed invitation lookup for this vote is verified (`showVoteDetails`),
+ * the page shows only the header basics and the loading or voter-state panel.
  */
 @Component({
   selector: 'lfx-vote-detail',
@@ -189,6 +194,16 @@ export class VoteDetailComponent {
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
   protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
+  /** A settled voter view for someone never invited or removed from the vote (#4330) — the page trims to the voter-state panel. */
+  protected readonly isOutsider: Signal<boolean> = computed(
+    () => !this.accessLoading() && this.audience() === 'voter' && (this.voterState() === 'not_participant' || this.voterState() === 'access_denied')
+  );
+  /** Non-basic details require verified manager access or a successful, non-removed invitation lookup (#4330). */
+  protected readonly showVoteDetails: Signal<boolean> = this.initShowVoteDetails();
+  /** Why comments render without names: the vote is pseudo-anonymous, or the viewer is not a manager (#4330). */
+  protected readonly commentAnonymityReason: Signal<VoteCommentAnonymityReason> = computed(() =>
+    this.isPseudoAnonymous() ? 'pseudo_anonymous' : 'voter_view'
+  );
   /** Results (and comments) render for a manager, or for a voter once the vote closed; every other voter gets a state panel. */
   protected readonly showsResults: Signal<boolean> = computed(
     () => this.audience() === 'creator' || (this.voterState() === 'closed' && !this.myResponseError())
@@ -485,6 +500,15 @@ export class VoteDetailComponent {
     });
   }
 
+  private initShowVoteDetails(): Signal<boolean> {
+    return computed(() => {
+      if (this.accessLoading() || this.isOutsider()) return false;
+      if (this.canManage() === true) return true;
+      const response = this.myResponse();
+      return !this.myResponseError() && !!response && response.vote_uid === this.vote()?.uid && !response.voter_removed;
+    });
+  }
+
   private initShowVotersTab(): Signal<boolean> {
     return computed(() => {
       const vote = this.vote();
@@ -494,9 +518,13 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it. */
+  /**
+   * Comments use detail prompts or the results fallback; the Voters tab only appears when `showVotersTab` allows it.
+   * An outsider or unverified voter gets Overview alone (#4330), so a `?tab=` deep link falls back to it.
+   */
   private initTabs(): Signal<readonly VoteDetailTabOption[]> {
     return computed(() => {
+      if (!this.showVoteDetails()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
       const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
       return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
