@@ -176,6 +176,11 @@ export class KeyContactsComponent {
       avatarUrl: group.avatarUrl,
       // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
       username: agreedUsername(group.assignments.map((a) => a.username)),
+      // This tab already holds the person's roles, so the drawer renders them straight away instead of
+      // re-deriving them from an identity lookup — and opens on the one tab guaranteed to have content,
+      // since a key contact often has no roster person behind them for the activity tabs.
+      keyContactAssignments: group.assignments,
+      defaultTab: 'key-contacts',
     });
   }
 

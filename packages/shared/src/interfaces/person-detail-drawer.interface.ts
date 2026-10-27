@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
 import type { OrgAllEmployeeCommitteeMembership } from './org-people.interface';
 
-/** The four content tabs of the shared person-detail drawer (LFXV2-2195). */
-export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance';
+/** The five content tabs of the shared person-detail drawer (LFXV2-2195). */
+export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance' | 'key-contacts';
 
 /** Opener context for the shared person-detail drawer — header fields plus optional identity/fetch overrides. */
 export interface PersonDrawerContext {
@@ -12,6 +13,12 @@ export interface PersonDrawerContext {
   personKey?: string;
   /** Pre-loaded Governance seats when there is no personKey to fetch on. */
   governanceSeats?: OrgAllEmployeeCommitteeMembership[];
+  /**
+   * Pre-loaded key contact assignments from an opener that already holds them (the Key Contacts tab groups
+   * them per person). Supplied seats render without waiting on — and instead of — the per-person fetch, the
+   * same way `governanceSeats` does.
+   */
+  keyContactAssignments?: OrgKeyContactAssignment[];
   name: string;
   title?: string | null;
   avatarUrl?: string | null;
@@ -41,4 +48,12 @@ export interface PersonDrawerCopiedAddress {
   context: PersonDrawerContext;
   orgUid: string | null | undefined;
   email: string;
+}
+
+/** One rendered row of the drawer's Key Contacts tab — role, its pill classes, and the foundation it is held for. */
+export interface PersonDrawerKeyContactRow {
+  contactUid: string;
+  role: string;
+  pillClass: string;
+  foundationLabel: string;
 }

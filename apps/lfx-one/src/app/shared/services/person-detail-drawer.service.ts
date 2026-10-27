@@ -7,7 +7,9 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import type {
   OrgAllEmployeeDetail,
   OrgDrawerDetailResult,
+  OrgKeyContactAssignment,
   OrgPersonCompanyEmailsResponse,
+  OrgPersonKeyContactsResponse,
   PersonDrawerContext,
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
@@ -15,6 +17,9 @@ import { AccountContextService } from '@services/account-context.service';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
 const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
+
+/** No identity to look up, or the opener already supplied the roles: either way the request is not made. */
+const NO_KEY_CONTACTS: OrgPersonKeyContactsResponse = { assignments: [], identified: false };
 
 /** The person's API base: keyed on the warehouse personKey when the opener has one, else on the LF username (resolved server-side). */
 function personPath(orgUid: string, context: PersonDrawerContext | null): string | null {
@@ -94,6 +99,27 @@ export class PersonDetailDrawerService {
     { initialValue: null }
   );
 
+  private readonly keyContactsResult = toSignal(
+    toObservable(this.detailRequest).pipe(
+      switchMap((request): Observable<OrgPersonKeyContactsResponse & { request: typeof request }> => {
+        const path = request.orgUid ? personPath(request.orgUid, request.context) : null;
+        // Nothing to look up, or the opener handed us the person's roles already — the Key Contacts tab does.
+        if (!path || request.context?.keyContactAssignments) {
+          return of({ request, ...NO_KEY_CONTACTS });
+        }
+        return this.http.get<OrgPersonKeyContactsResponse>(`${path}/key-contacts`).pipe(
+          map((response) => ({ request, ...response })),
+          // A failed roles read is its own state; it never turns into a detail error.
+          catchError((keyContactsError: unknown) => {
+            console.error('Failed to load key contact roles:', keyContactsError);
+            return of({ request, assignments: [], identified: false, error: true });
+          })
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
   // toObservable starts on the next effect flush and toSignal retains the last response until then;
   // match each whole request synchronously so nothing leaks to a newly opened person.
   private readonly currentDetail = computed(() => {
@@ -102,6 +128,11 @@ export class PersonDetailDrawerService {
   });
   private readonly currentEmails = computed(() => {
     const result = this.emailsResult();
+    return this._activeContext() && this.orgUid() && result?.request === this.detailRequest() ? result : null;
+  });
+
+  private readonly currentKeyContacts = computed(() => {
+    const result = this.keyContactsResult();
     return this._activeContext() && this.orgUid() && result?.request === this.detailRequest() ? result : null;
   });
 
@@ -124,6 +155,18 @@ export class PersonDetailDrawerService {
   public readonly companyEmailsResolved = computed(() => this.currentEmails()?.companyEmailsStatus === 'resolved');
   public readonly companyEmails = computed<string[]>(() => this.currentEmails()?.companyEmails ?? NO_COMPANY_EMAILS.companyEmails);
   public readonly primaryCompanyEmail = computed<string | null>(() => this.currentEmails()?.primaryEmail ?? null);
+
+  /** Supplied roles win over the fetch, the way `governanceSeats` does for Governance. */
+  public readonly keyContacts = computed<OrgKeyContactAssignment[]>(
+    () => this._activeContext()?.keyContactAssignments ?? this.currentKeyContacts()?.assignments ?? []
+  );
+  public readonly keyContactsLoading = computed(() => {
+    const { orgUid, context } = this.detailRequest();
+    return !!(orgUid && context && !context.keyContactAssignments && (context.personKey || context.username) && !this.currentKeyContacts());
+  });
+  public readonly keyContactsError = computed(() => !!(this.currentKeyContacts() as { error?: boolean } | null)?.error);
+  /** False when the lookup never worked out who this is — distinct from a verified empty list. */
+  public readonly keyContactsIdentified = computed(() => !!this._activeContext()?.keyContactAssignments || !!this.currentKeyContacts()?.identified);
 
   public open(context: PersonDrawerContext): void {
     this._activeTab.set(context.defaultTab ?? 'events');

@@ -49,6 +49,18 @@ export interface OrgKeyContactsResponse {
   stats: OrgKeyContactsStats;
 }
 
+/**
+ * Per-person GET response for `/api/orgs/:orgUid/lens/people/:personKey/key-contacts` and its
+ * `by-username` twin — the org-wide assignments narrowed to one person. No stats: the stat strip is an
+ * account-level figure that means nothing on a single person. An empty list is a verified "none on
+ * record"; a person the lookup could not identify at all is a 200 with `identified: false`, so the drawer
+ * never claims someone holds no roles when it never found out who they are.
+ */
+export interface OrgPersonKeyContactsResponse {
+  assignments: OrgKeyContactAssignment[];
+  identified: boolean;
+}
+
 // ============================================================
 // Client-only view types (NOT on the wire)
 // ============================================================

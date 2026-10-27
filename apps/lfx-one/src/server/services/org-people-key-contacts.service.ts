@@ -7,6 +7,7 @@ import type {
   OrgKeyContactAssignment,
   OrgKeyContactsResponse,
   OrgKeyContactsStats,
+  OrgPersonKeyContactsResponse,
   ProjectMembershipIndexedDoc,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
@@ -52,6 +53,19 @@ function isKeyContactsResponse(value: unknown): boolean {
   return isObject(value) && Array.isArray(v.assignments) && v.assignments.every(isKeyContactAssignment) && isKeyContactsStats(v.stats);
 }
 
+/**
+ * Does this assignment belong to the person the drawer is showing? The LF username is the stronger key, so it
+ * decides when both sides carry one; otherwise the assignment's own address must be one of the person's. Both
+ * comparisons are case- and whitespace-insensitive, matching how the warehouse address view is keyed.
+ */
+function assignmentBelongsToPerson(assignment: OrgKeyContactAssignment, username: string, emails: ReadonlySet<string>): boolean {
+  const assignmentUsername = assignment.username?.trim().toLowerCase() ?? '';
+  if (username && assignmentUsername) {
+    return assignmentUsername === username;
+  }
+  return emails.has(assignment.email.trim().toLowerCase());
+}
+
 /** Org Lens — People → Key Contacts tab. V1 is org-wide and read-only; membership-scoped reads + writes live in OrgLensKeyContactsService (spec 024). */
 export class OrgPeopleKeyContactsService {
   // Active membership statuses, case-insensitive — mirrors OrgMembershipResolverService so we don't silently drop 'purchased' or mixed-case 'active' memberships.
@@ -76,6 +90,31 @@ export class OrgPeopleKeyContactsService {
       () => this.computeKeyContacts(req, orgUid),
       isKeyContactsResponse
     );
+  }
+
+  /**
+   * The org-wide bundle narrowed to one person, for the person-detail drawer's Key Contacts tab. It reads
+   * through the same per-caller cache as the tab, so a drawer opened from the People page costs no extra
+   * upstream round trip. Identity is the caller's to resolve: an identity with neither a username nor an
+   * address yields `identified: false` rather than an empty list, so the drawer can tell "no roles" from
+   * "we never worked out who this is".
+   */
+  public async getKeyContactsForPerson(
+    req: Request,
+    orgUid: string,
+    identity: { username?: string | null; emails?: readonly string[] }
+  ): Promise<OrgPersonKeyContactsResponse> {
+    const username = identity.username?.trim().toLowerCase() ?? '';
+    const emails = new Set((identity.emails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean));
+    if (!username && emails.size === 0) {
+      return { assignments: [], identified: false };
+    }
+
+    const { assignments } = await this.getKeyContacts(req, orgUid);
+    return {
+      assignments: assignments.filter((assignment) => assignmentBelongsToPerson(assignment, username, emails)),
+      identified: true,
+    };
   }
 
   private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
