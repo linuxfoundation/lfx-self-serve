@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
 import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
@@ -64,5 +65,15 @@ describe('SurveyReminderDialogComponent', () => {
     component['send']();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Outcome unconfirmed' }));
+  });
+
+  it('refuses to send more recipients than the per-request cap', async () => {
+    const { component, sendSurveyReminders } = await mount();
+    component['selectedIds'].set(new Set(Array.from({ length: SURVEY_REMINDER_MAX_RECIPIENTS + 1 }, (_, i) => `r-${i}`)));
+
+    component['send']();
+
+    expect(component['overCap']()).toBe(true);
+    expect(sendSurveyReminders).not.toHaveBeenCalled();
   });
 });

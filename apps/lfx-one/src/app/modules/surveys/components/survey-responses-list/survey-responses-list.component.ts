@@ -55,6 +55,8 @@ export class SurveyResponsesListComponent {
   public readonly loading = input<boolean>(false);
   /** True when the rows could not all be loaded; the list is then incomplete. */
   public readonly loadError = input<boolean>(false);
+  /** Active project: reminders are offered only for its committees (the server refuses any other). */
+  public readonly projectUid = input<string | null>(null);
 
   // === Outputs ===
   /** Emitted after reminders were sent, so the parent can reload the rows. */
@@ -119,7 +121,14 @@ export class SurveyResponsesListComponent {
     const survey = this.survey();
     return !!survey && isSurveyOpenForFollowUp(survey);
   });
-  protected readonly nonRespondents: Signal<SurveyResponseItem[]> = computed(() => this.responses().filter((r) => !hasSurveyResponse(r)));
+  /** Committees of the active project on this survey. */
+  private readonly projectCommitteeUids: Signal<Set<string>> = computed(() => {
+    const projectUid = this.projectUid();
+    return new Set((this.survey()?.committees ?? []).filter((c) => !!projectUid && c.project_uid === projectUid).map((c) => c.committee_uid));
+  });
+  protected readonly nonRespondents: Signal<SurveyResponseItem[]> = computed(() =>
+    this.responses().filter((r) => !hasSurveyResponse(r) && this.projectCommitteeUids().has(r.committee_uid ?? ''))
+  );
   protected readonly isFiltered: Signal<boolean> = computed(
     () => this.searchTerm() !== '' || this.npsFilter() !== 'all' || this.commentFilter() !== 'all' || this.deliveryFilter() !== 'all'
   );
@@ -131,7 +140,7 @@ export class SurveyResponsesListComponent {
     this.rowActionMenuResponseId.set(item.id);
     const survey = this.survey();
     const items: MenuItem[] = [];
-    if (this.canRemind() && !hasSurveyResponse(item)) {
+    if (this.canRemind() && !hasSurveyResponse(item) && this.projectCommitteeUids().has(item.committee_uid ?? '')) {
       items.push({ label: 'Send reminder', icon: 'fa-light fa-paper-plane', command: () => this.openReminderDialog([item]) });
     }
     if (item.survey_link) {

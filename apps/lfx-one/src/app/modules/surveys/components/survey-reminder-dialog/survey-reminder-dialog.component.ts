@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
 import { SurveyReminderDialogData, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { SurveyService } from '@services/survey.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -34,6 +35,7 @@ export class SurveyReminderDialogComponent {
   // === Constants ===
   private readonly surveyUid: string = this.config.data!.survey.uid;
   protected readonly recipients: SurveyResponseItem[] = this.config.data!.recipients;
+  protected readonly maxRecipients = SURVEY_REMINDER_MAX_RECIPIENTS;
 
   // === Forms ===
   protected readonly checkboxForm = new FormGroup<Record<string, FormControl<boolean>>>(
@@ -47,6 +49,8 @@ export class SurveyReminderDialogComponent {
 
   // === Computed Signals ===
   protected readonly selectedCount = computed(() => this.selectedIds().size);
+  /** The server refuses larger requests; ask the manager to narrow the selection instead. */
+  protected readonly overCap = computed(() => this.selectedCount() > this.maxRecipients);
   protected readonly allSelected = computed(() => this.recipients.length > 0 && this.selectedCount() === this.recipients.length);
 
   public constructor() {
@@ -83,7 +87,7 @@ export class SurveyReminderDialogComponent {
 
   protected send(): void {
     const recipientIds = [...this.selectedIds()];
-    if (recipientIds.length === 0 || this.sending()) return;
+    if (recipientIds.length === 0 || this.overCap() || this.sending()) return;
 
     this.sending.set(true);
     this.surveyService
