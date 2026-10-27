@@ -240,8 +240,21 @@ export const VALKEY_CACHE = {
     // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
     // `v3` (lfx-self-serve#4163) is read per time range and for the unranged roster, and drops the
     // stats table; `v4` (lfx-self-serve#4164) is also read per project scope and carries three code counts
-    // per row. `all` is the widest range and has not been measured yet, so the `v2` cap carries over.
-    'org-lens-sf:v1:people-all:v4': 3 * 1_048_576,
+    // per row. Measured 2026-10-27 on the dev build (lf-dbt#3118) with a SQL size estimate of each
+    // columnar value (string lengths + quotes, numbers, foundation arrays, no column names), calibrated
+    // against the 2026-09-24 measurement above (the estimate gives 1.94 MB for that 2,050,250-byte
+    // value, so compact ≈ estimate × 1.06): largest `all`-range value 4.04 MiB estimated (Microsoft,
+    // all projects; 3.29 MiB LF only), ≈ 4.3 MiB compact; the default 12-month all-projects view peaks
+    // at 1.85 MiB estimated. 4.3 MiB × 1.25 rounds up to 6 MiB.
+    // `people-former:v3` stays at the 1 MiB default: its largest value on the same measurement is
+    // 0.62 MiB estimated (`all` range).
+    'org-lens-sf:v1:people-all:v4': 6 * 1_048_576,
+    // Measured 2026-10-27 on the dev build (lf-dbt#3118), same SQL size estimate and × 1.06
+    // calibration as `people-all:v4`: person × project rows with the person's identity repeated on
+    // each. Largest `all`-range value 6.85 MiB estimated (Google), ≈ 7.3 MiB compact; 12 accounts
+    // exceed 1 MiB there and 5 exceed 3 MiB, and 3 accounts exceed 1 MiB on the default 12-month
+    // all-projects view (largest 1.21 MiB estimated, Red Hat). 7.3 MiB × 1.25 rounds up to 10 MiB.
+    'org-lens-sf:v1:people-contributors:v4': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
@@ -277,7 +290,11 @@ export const VALKEY_CACHE = {
     // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
     // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
     // `v4` (lfx-self-serve#4163) keys the roster by time range (plus the unranged picker roster), `v5`
-    // (lfx-self-serve#4164) by project scope too, with three code counts per row; the `v3` cap carries over until the widest (`all`) range is measured.
-    'org-people-dir:v5': 3 * 1_048_576,
+    // (lfx-self-serve#4164) by project scope too, with three code counts per row. Measured 2026-10-27 on
+    // the dev build (lf-dbt#3118) with the same SQL size estimate and × 1.06 calibration as
+    // `people-all:v4` (this value holds the same stored rows plus the live-only rows): largest `all`-range
+    // value ≈ 4.1 MiB estimated (≈ 4.3 MiB compact), ≈ 1.9 MiB on the default 12-month all-projects
+    // view. 4.3 MiB × 1.25 rounds up to 6 MiB.
+    'org-people-dir:v5': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;
