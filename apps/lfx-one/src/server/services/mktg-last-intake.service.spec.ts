@@ -33,7 +33,9 @@ const req = {} as Request;
 const project = 'synthetic-project';
 const subject = 'auth0|synthetic-writer';
 const writerKey = (agentKey: string, writer = subject) =>
-  `document-last-intake/${project}/${agentKey}/${createHash('sha256').update(writer).digest('hex')}.json`;
+  agentKey === 'linkedin-post'
+    ? `document-last-intake/${project}/${agentKey}/${createHash('sha256').update(writer).digest('hex')}.json`
+    : `document-last-intake/${project}/${agentKey}.json`;
 const types = MKTG_DOCUMENT_TYPES.filter(
   (type) =>
     type.kind === 'living' &&
@@ -136,7 +138,28 @@ describe('MktgLastIntakeService', () => {
     expect(mocks.get.mock.calls.some((call) => call[2] === oldKey)).toBe(false);
   });
 
-  it('rejects a missing writer subject before reading any snapshot', async () => {
+  it('lets another project writer restore living-agent inputs from the unchanged shared project key', async () => {
+    const objects = new Map<string, { body: string }>();
+    mocks.put.mockImplementation(async (_req, _bucket, key: string, body: Buffer) => {
+      objects.set(key, { body: body.toString() });
+      return true;
+    });
+    mocks.get.mockImplementation(async (_req, _bucket, key: string) => objects.get(key) ?? null);
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, input());
+    const key = `document-last-intake/${project}/foundation-message.json`;
+    expect(mocks.put.mock.calls[0][2]).toBe(key);
+    mocks.author.mockClear();
+    mocks.author.mockReturnValue('auth0|synthetic-writer-b');
+    expect(await service.read(req, project, 'foundation-message')).toMatchObject({ answers: { project_name: 'Synthetic project' } });
+    expect(mocks.get).toHaveBeenLastCalledWith(req, 'marketing-os-artifacts', key);
+    expect(mocks.author).not.toHaveBeenCalled();
+    mocks.author.mockReturnValue(null);
+    expect(await service.read(req, project, 'foundation-message')).not.toBeNull();
+    expect(mocks.author).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing LinkedIn writer subject before reading any snapshot', async () => {
     mocks.author.mockReturnValue(null);
     await expect(new MktgLastIntakeService().read(req, project, 'linkedin-post')).rejects.toBeInstanceOf(AuthenticationError);
     expect(mocks.get).not.toHaveBeenCalled();
