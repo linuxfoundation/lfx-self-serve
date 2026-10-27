@@ -479,6 +479,7 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
       ),
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of(identities)),
+      applyDisplayName: vi.fn(),
     };
 
     TestBed.configureTestingModule({
@@ -701,6 +702,7 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     fixture: ComponentFixture<ProfileLayoutComponent>;
     user: WritableSignal<User | null>;
     getCurrentUserProfile: ReturnType<typeof vi.fn>;
+    applyDisplayName: ReturnType<typeof vi.fn>;
   }> {
     const user = signal<User | null>({ sub: 'auth0|u1', name: 'Ada Lovelace' } as unknown as User);
     const getCurrentUserProfile = vi.fn(() => of(PROFILE));
@@ -713,6 +715,7 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
       getCurrentUserProfile,
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of([])),
+      applyDisplayName: vi.fn((first: string, last: string) => user.update((current) => (current ? { ...current, name: `${first} ${last}`.trim() } : current))),
     };
 
     TestBed.configureTestingModule({
@@ -731,7 +734,7 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     const fixture = TestBed.createComponent(ProfileLayoutComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    return { fixture, user, getCurrentUserProfile };
+    return { fixture, user, getCurrentUserProfile, applyDisplayName: userServiceMock.applyDisplayName };
   }
 
   beforeEach(() => {
@@ -745,6 +748,14 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
 
     expect(user()?.name).toBe('Ada Byron');
+  });
+
+  it('marks the name as saved so the post-hydration fetch cannot overwrite it', async () => {
+    const { fixture, applyDisplayName } = await setup();
+
+    fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
+
+    expect(applyDisplayName).toHaveBeenCalledWith('Ada', 'Byron', true);
   });
 
   it('does not refetch the profile or lose the saved values after the name sync', async () => {
@@ -777,10 +788,11 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
   });
 
   it('leaves the shared user untouched while impersonating', async () => {
-    const { fixture, user } = await setup(true);
+    const { fixture, user, applyDisplayName } = await setup(true);
 
     fixture.componentInstance.onProfileSaved({ given_name: 'Ada', family_name: 'Byron' });
 
     expect(user()?.name).toBe('Ada Lovelace');
+    expect(applyDisplayName).not.toHaveBeenCalled();
   });
 });

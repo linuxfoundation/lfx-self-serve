@@ -5,7 +5,6 @@ import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STYLESHEET_ROUTE } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import express, { NextFunction, Request, Response } from 'express';
@@ -21,6 +20,7 @@ import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -91,7 +91,7 @@ import {
   buildImpersonationIdentityOverride,
   clearImpersonationSession,
   decodeJwtPayload,
-  getUsernameFromAuth,
+  isImpersonating,
   refreshExpiredSsrAccessToken,
 } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
@@ -498,37 +498,6 @@ for (const prefix of GW_EMBED_ROUTE_PREFIXES) {
   });
 }
 
-// The OIDC `name` claim only refreshes on the next login, so a saved name change would revert on
-// every reload. Overlay the stored (auth-service) name before render; bounded and fail-open so a
-// slow or unavailable NATS never delays or breaks SSR.
-const SSR_DISPLAY_NAME_TIMEOUT_MS = 750;
-let ssrNatsService: NatsService | null = null;
-
-async function resolveStoredDisplayName(req: Request): Promise<string | null> {
-  try {
-    const username = await getUsernameFromAuth(req);
-    if (!username) {
-      return null;
-    }
-    ssrNatsService ??= new NatsService();
-    const nats = ssrNatsService;
-    const codec = nats.getCodec();
-    const response = await nats.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: SSR_DISPLAY_NAME_TIMEOUT_MS });
-    const body = JSON.parse(codec.decode(response.data)) as { success?: boolean; data?: { given_name?: string; family_name?: string } };
-    if (!body?.success || !body.data) {
-      return null;
-    }
-    const name = [body.data.given_name, body.data.family_name]
-      .map((part) => part?.trim())
-      .filter(Boolean)
-      .join(' ');
-    return name || null;
-  } catch (error) {
-    logger.debug(req, 'ssr_display_name', 'Stored display name unavailable; using OIDC name', { err: error });
-    return null;
-  }
-}
-
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
   const auth: AuthContext = {
@@ -562,13 +531,15 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   if (auth.authenticated) {
-    const personaResult = await resolvePersonaForSsr(req, res);
-    // Skipped while impersonating: the effective identity there is overridden below.
-    if (auth.user && !req.appSession?.['impersonationToken']) {
-      const storedName = await resolveStoredDisplayName(req);
-      if (storedName) {
-        auth.user = { ...auth.user, name: storedName };
-      }
+    // The stored-name lookup is bounded and fail-open, and runs alongside persona resolution so a
+    // healthy NATS adds no serial round trip. Skipped while impersonating: that identity is
+    // overridden below.
+    const [personaResult, storedName] = await Promise.all([
+      resolvePersonaForSsr(req, res),
+      auth.user && !isImpersonating(req) ? resolveStoredDisplayName(req) : Promise.resolve(null),
+    ]);
+    if (auth.user && storedName) {
+      auth.user = { ...auth.user, name: storedName };
     }
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;

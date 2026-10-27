@@ -20,7 +20,7 @@ import {
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -294,10 +294,6 @@ export class ProfileLayoutComponent {
     };
 
     this.combinedProfile = mergedProfile;
-    if (definedMetadata.given_name !== undefined || definedMetadata.family_name !== undefined) {
-      // The navbar reads UserService.user().name (a stale OIDC claim), not this layout's header data.
-      this.userService.applyDisplayName(mergedProfile.user.first_name, mergedProfile.user.last_name, true);
-    }
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
     // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
     this.pendingOptimisticMetadata = null;
@@ -313,9 +309,10 @@ export class ProfileLayoutComponent {
 
     const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
     const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
-    const name = `${givenName} ${familyName}`.trim();
+    const name = buildDisplayName(givenName, familyName);
     if (name && name !== currentUser.name) {
-      this.userService.user.set({ ...currentUser, name });
+      // `saved` latches the name so the post-hydration profile fetch can't overwrite it with a stale body.
+      this.userService.applyDisplayName(givenName, familyName, true);
     }
   }
 

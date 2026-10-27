@@ -36,7 +36,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -193,7 +193,7 @@ export class UserService {
           // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
           // a saved name change reverts on reload. The profile body carries the stored name.
           if (!this.impersonating() && !this.profileNameSaved) {
-            this.applyDisplayName(profile.user.first_name, profile.user.last_name);
+            this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
           }
         });
     });
@@ -204,10 +204,7 @@ export class UserService {
    * claim, which is stale after a profile save until the next login. No-op when both parts are empty.
    */
   public applyDisplayName(firstName: string | null | undefined, lastName: string | null | undefined, saved = false): void {
-    const name = [firstName, lastName]
-      .map((part) => part?.trim())
-      .filter(Boolean)
-      .join(' ');
+    const name = buildDisplayName(firstName, lastName);
     const current = this.user();
     if (!name || !current) {
       return;
