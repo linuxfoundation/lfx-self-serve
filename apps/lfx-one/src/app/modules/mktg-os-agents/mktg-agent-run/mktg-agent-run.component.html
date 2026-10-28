@@ -30,6 +30,7 @@
       }
       <lfx-mktg-run-progress
         [style.display]="publicIdentityPending() ? 'none' : null"
+        [headless]="publicIdentityPending()"
         [project]="publicProject()"
         [agentKey]="publicAgentKey()"
         [documentId]="livingDocumentId"
@@ -62,7 +63,7 @@
 
       <!-- Body -->
       <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
-        @if (hasWaitingNotice() && phase() === 'form') {
+        @if (!publicReceiver() && hasWaitingNotice() && phase() === 'form') {
           <section class="m-6 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="mktg-run-waiting-notice">
             @if (hasWaitingNotice()) {
               <p class="text-sm font-medium text-gray-900">{{ waitingRunMessage() }}</p>
@@ -83,7 +84,7 @@
             }
           </section>
         }
-        @if (errorText()) {
+        @if (!publicReceiver() && errorText()) {
           <div class="w-full px-6 lg:px-10 pt-6">
             <lfx-message severity="error" [text]="errorText()" data-testid="mktg-agent-run-error" />
             @if (runFailed()) {
@@ -125,7 +126,7 @@
           }
         </ng-template>
 
-        @if (freshMode() && phase() === 'form' && !hasWaitingNotice()) {
+        @if (!publicReceiver() && freshMode() && phase() === 'form' && !hasWaitingNotice()) {
           <section
             class="m-6 flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5"
             aria-labelledby="run-sources-title"
@@ -220,7 +221,7 @@
           </section>
         }
 
-        @if (navigation()) {
+        @if (!publicReceiver() && navigation()) {
           <div class="px-6 py-4">
             <lfx-button
               label="Open asset"
@@ -232,7 +233,7 @@
         }
 
         <ng-container>
-          @switch (phase()) {
+          @switch (publicReceiver() ? null : phase()) {
             @case ('form') {
               <form
                 id="mktg-run-intake-form"
