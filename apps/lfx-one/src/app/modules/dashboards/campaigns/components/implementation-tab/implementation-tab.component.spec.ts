@@ -6141,6 +6141,19 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(true);
     });
 
+    /** The disabled add button carries the reason, as each box carries its own. */
+    it('points the add button at the duplicate line', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      typeProximity(c, SYDNEY_DRAFT);
+
+      expect(query('implementation-google-proximity-duplicate')?.id).toBe('google-proximity-duplicate');
+      expect(query('implementation-google-proximity-add')?.getAttribute('aria-describedby')).toBe('google-proximity-duplicate');
+
+      typeProximity(c, { radius: '30' });
+      expect(query('implementation-google-proximity-add')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
     it('names the picked unit ceiling in the over-radius line', () => {
       const c = seedChannel(fixture, { includeSearch: true });
       typeProximity(c, { ...SYDNEY_DRAFT, radius: '600', radiusUnit: 'MILES' });
@@ -6392,6 +6405,32 @@ describe('ImplementationTabComponent google location targets held by the capabil
     seedHeld(null, 'failed', 'brief-1', { includeDemandGen: true });
 
     expect(find('implementation-google-locations-capability-failed')?.textContent).toContain('1 postal-code target on this brief');
+  });
+
+  /** "Remove them" names only the postal codes on Demand Gen, so it must keep the channel-held radii. */
+  it('keeps radius targets held by the demand-gen channel when the operator removes the postal codes', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedHeld(null, 'failed', 'brief-1', { includeDemandGen: true });
+
+    (find('implementation-google-locations-capability-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googlePostalGeoTargets']()).toEqual([]);
+    expect(c['googleProximityTargets']()).toHaveLength(1);
+    expect(emitted?.googleProximityTargets).toHaveLength(1);
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The channel notice must not wait on the capability: the block leaves Demand Gen radii to it, so a
+   * muted notice would drop them with nothing on screen.
+   */
+  it.each([[null], [false]])('names held demand-gen radius targets while googleCreativeEnabled is %s', (capability) => {
+    const c = seedHeld(capability, 'failed', 'brief-1', { includeDemandGen: true });
+
+    expect(c['googleProximityWithheldOn']()).toBe('Demand Gen');
+    expect(find('implementation-google-proximity-withheld')).not.toBeNull();
   });
 
   it('says nothing when no postal code or radius is held', () => {

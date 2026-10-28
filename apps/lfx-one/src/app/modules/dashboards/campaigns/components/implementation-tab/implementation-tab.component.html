@@ -552,6 +552,7 @@
                     type="button"
                     (click)="onGoogleProximityAdd()"
                     [disabled]="googleProximityAddDisabled()"
+                    [attr.aria-describedby]="googleProximityDuplicate() ? 'google-proximity-duplicate' : null"
                     class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                     data-testid="implementation-google-proximity-add">
                     + Add radius
@@ -598,7 +599,7 @@
                 </p>
               }
               @if (googleProximityDuplicate()) {
-                <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-duplicate">
+                <p id="google-proximity-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-duplicate">
                   That radius target is already on the list.
                 </p>
               }

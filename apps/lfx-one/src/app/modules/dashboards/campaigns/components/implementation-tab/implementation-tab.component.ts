@@ -3043,7 +3043,12 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected removeHeldGoogleLocationTargets(): void {
     this.googlePostalGeoTargets.set([]);
-    this.googleProximityTargets.set([]);
+    // Radius targets only when the block COUNTED them. On Demand Gen they are held by the channel,
+    // not the capability, for a switch back — the banner does not name them, so it must not drop them.
+    const channel = this.resolveGoogleChannel();
+    if (channel !== null && (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) {
+      this.googleProximityTargets.set([]);
+    }
     this.emitDraft();
   }
 
@@ -4934,14 +4939,20 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The label of the channel a radius list is being WITHHELD on, or null when nothing is — the
-   * language twin, {@link initGoogleLanguagesWithheldOn}, on the same terms. The list is held for a
-   * switch back, not sent, and the template says so rather than letting the control vanish.
+   * The label of the channel a radius list is being WITHHELD on, or null when nothing is. The list is
+   * held for a switch back, not sent, and the template says so rather than letting the control vanish.
+   *
+   * Asks {@link resolveGoogleChannel}, NOT `googleBiddingChannel` — the callouts warning's rule and
+   * for its reason. This sentence is about the CHANNEL alone, and `googleBiddingChannel` is null
+   * whenever the create capability is not an explicit yes, which would mute it on Demand Gen exactly
+   * when {@link googleLocationsCapabilityBlock} leaves Demand Gen radii to it. Then a held radius list
+   * would be dropped with nothing on screen, while the request fell back to the event country.
    */
   private initGoogleProximityWithheldOn(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
-      if (!channel || this.googleProximityChannel() || this.googleProximityTargets().length === 0) return null;
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || this.googleProximityTargets().length === 0) return null;
+      if ((GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) return null;
       return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
     });
   }
