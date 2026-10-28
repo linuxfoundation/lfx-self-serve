@@ -171,6 +171,7 @@ describe('mktg-document-store utils', () => {
       const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
       expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator')).not.toHaveProperty('pendingQuestions');
       expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator', false)).not.toHaveProperty('pendingQuestions');
+      expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator', false, true)).not.toHaveProperty('pendingQuestions');
     });
     it.each(MKTG_DOCUMENT_TYPES.filter((type) => type.kind === 'run'))('never exposes one-off questions for $agentKey even to a writer', (type) => {
       expect(

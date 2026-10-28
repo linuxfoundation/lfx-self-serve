@@ -182,7 +182,13 @@ vi.mock('./object-store.service', () => ({
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
-import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
+import type {
+  MktgRunResultResponse,
+  MktgDocumentDetailResponse,
+  MktgDocumentRunSnapshot,
+  MktgDocumentRunProgress,
+  ObjectStorePutInput,
+} from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
 const writerRequest = (sub: string): Request => Object.assign({}, req, { oidc: { ...req.oidc, user: { sub } } });
@@ -511,6 +517,50 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.readClosedProgress(req, project, types[0].agentKey, 'living', '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
     delete stored().metadata['closed-at'];
     expect(await service.readClosedProgress(req, project, types[0].agentKey, 'living', hash(session))).not.toHaveProperty('closedAt');
+  });
+
+  it.each([
+    { name: 'Synthetic Closer', expected: 'Synthetic Closer' },
+    { name: null, expected: null },
+    { name: 'synthetic-closer@example.test', expected: null },
+    { name: 'synthetic-closer', expected: null },
+  ])('projects only a safe selected closure name ($name)', async ({ name, expected }) => {
+    await service.start(writerRequest('synthetic-original-creator'), project, types[0].agentKey, session);
+    const closer = writerRequest('synthetic-closer');
+    await service.assertSingleActiveRun(closer, project, types[0].agentKey, { discard: hash(session) });
+    expect(stored().metadata['closed-by']).toBe('synthetic-closer');
+    flows.author.mockResolvedValue({ name });
+    const result = await service.readClosedProgress(closer, project, types[0].agentKey, 'living', hash(session));
+    expect(result).toMatchObject({ state: 'discarded', closedBy: expected, closedAt: new Date().toISOString() });
+    expect(result).not.toHaveProperty('closedBySubject');
+    expect(JSON.stringify(result)).not.toContain('synthetic-closer');
+    expect(JSON.stringify(result)).not.toContain('synthetic-original-creator');
+    expect(await service.readProgress(closer, project)).toEqual({ runs: [] });
+    expect(flows.author).toHaveBeenCalledExactlyOnceWith(closer, 'synthetic-closer');
+  });
+
+  it.each([
+    { label: 'newer matching row', agentKey: types[0].agentKey, documentId: 'living', delta: 1, replaced: true },
+    { label: 'another type', agentKey: types[1].agentKey, documentId: 'living', delta: 1, replaced: false },
+    { label: 'another document', agentKey: types[0].agentKey, documentId: 'synthetic-other', delta: 1, replaced: false },
+    { label: 'older row', agentKey: types[0].agentKey, documentId: 'living', delta: -1, replaced: false },
+  ])('links a closed selection only to a known newer same-document run ($label)', async ({ agentKey, documentId, delta, replaced }) => {
+    await service.start(req, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    const known: MktgDocumentRunProgress = {
+      runId: 'f'.repeat(64),
+      project,
+      agentKey,
+      documentId,
+      startedAt: new Date(Date.now() + delta).toISOString(),
+      state: 'writing',
+    };
+    const result = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [known] }, false, undefined, hash(session));
+    expect(result?.runs[0]).toMatchObject({ runId: hash(session), state: 'discarded', closedBy: null });
+    if (replaced) expect(result?.runs[0]?.replacedBy).toBe(known.runId);
+    else expect(result?.runs[0]).not.toHaveProperty('replacedBy');
+    expect(result?.runs[1]).toEqual(known);
+    expect(flows.result).not.toHaveBeenCalled();
   });
 
   it('settles an active comment redraft before closing its discarded run', async () => {

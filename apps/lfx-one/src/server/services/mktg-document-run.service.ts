@@ -477,7 +477,12 @@ export class MktgDocumentRunService {
     if (selectedRunId) {
       try {
         const closed = await this.readClosedProgress(req, project, type.agentKey, documentId, selectedRunId);
-        if (closed) snapshot.runs = [closed, ...snapshot.runs.filter((run) => run.runId !== selectedRunId)];
+        if (closed) {
+          const replacement = snapshot.runs.find(
+            (run) => run.agentKey === type.agentKey && run.documentId === documentId && Date.parse(run.startedAt) > Date.parse(closed.startedAt)
+          );
+          snapshot.runs = [{ ...closed, ...(replacement && { replacedBy: replacement.runId }) }, ...snapshot.runs.filter((run) => run.runId !== selectedRunId)];
+        }
       } catch (err) {
         if (err instanceof ServiceValidationError || err instanceof AuthorizationError) throw err;
         if (!(err instanceof ResourceNotFoundError)) {
@@ -541,11 +546,12 @@ export class MktgDocumentRunService {
     };
   }
 
-  /** Selected-run details alone may expose a closed marker; never reconcile or resolve an author here. */
+  /** Selected-run details alone may expose a closed marker and its safe display-name attribution. */
   public async readClosedProgress(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'discarded' && stored.record.state !== 'superseded') return null;
-    return mktgRunProgress(stored.record, undefined, undefined, undefined, false, true);
+    const progress = mktgRunProgress(stored.record, undefined, undefined, undefined, false, true);
+    return progress ? { ...progress, closedBy: await this.displayName(req, stored.record.closedBySubject) } : null;
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
@@ -677,12 +683,16 @@ export class MktgDocumentRunService {
 
   /** Attribution is resolved only after writer authorization; an unavailable name never exposes a subject. */
   private async answeredConflict(req: Request, run: MktgStartedRunRecord, questionsId: string): Promise<ConflictError> {
-    const author = await this.authors.resolveAuthor(req, run.answeredBy);
-    const name = author?.name?.trim();
-    const answeredBy = name && !/[|@]/.test(name) && name !== run.answeredBy ? name : null;
+    const answeredBy = await this.displayName(req, run.answeredBy);
     return new ConflictError(answeredBy ? `Already answered by ${answeredBy}` : 'Already answered', MKTG_RUN_ANSWERED, {
       details: { runId: run.runId, questionsId, answeredBy, answeredAt: run.answeredAt ?? null },
     });
+  }
+
+  private async displayName(req: Request, subject?: string): Promise<string | null> {
+    if (!subject) return null;
+    const name = (await this.authors.resolveAuthor(req, subject))?.name?.trim();
+    return name && !/[|@]/.test(name) && name !== subject ? name : null;
   }
 
   /** Questions are project-writer data, never inferred from creator identity or a caller-provided capability. */
@@ -915,7 +925,7 @@ export class MktgDocumentRunService {
       body,
       {
         state,
-        ...((state === 'discarded' || state === 'superseded') && { 'closed-at': new Date().toISOString() }),
+        ...((state === 'discarded' || state === 'superseded') && { 'closed-at': new Date().toISOString(), 'closed-by': getEffectiveSub(req) ?? '' }),
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',
@@ -1128,6 +1138,7 @@ export class MktgDocumentRunService {
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
           state: state as MktgStoredDocumentRunState,
           closedAt: m['closed-at'],
+          closedBySubject: m['closed-by'] || undefined,
           startedAt,
           priorVersion,
           attemptId,

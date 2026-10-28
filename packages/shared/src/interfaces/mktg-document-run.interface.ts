@@ -113,6 +113,8 @@ export interface MktgDocumentRunProgress {
   state: Exclude<MktgStoredDocumentRunState, 'completed'>;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
+  closedBy?: string | null;
+  replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Present only for project writers while this run is waiting for answers. */
@@ -162,6 +164,8 @@ export interface MktgStartedRunRecord {
   state: MktgStoredDocumentRunState;
   /** Timestamp recorded when discarded or superseded; absent on legacy records. */
   closedAt?: string;
+  /** Private closure actor; only a resolved display name may reach selected details. */
+  closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
