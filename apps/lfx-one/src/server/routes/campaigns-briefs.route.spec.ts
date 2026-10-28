@@ -138,6 +138,9 @@ describe('GET /api/campaigns/briefs addressed by slug or uid', () => {
     for (const call of proxyRequest.mock.calls) {
       expect(call[4]).toMatchObject({ parent: `project:${PROJECT_SLUG}` });
     }
+    // Only the uid goes through the uid lookup; a slug is never resolved.
+    expect(getProjectSlugByUid).toHaveBeenCalledTimes(1);
+    expect(getProjectSlugByUid).toHaveBeenCalledWith(expect.anything(), PROJECT_UID);
   });
 
   it('admits an ED scoped to the project by slug and by uid alike', async () => {
@@ -160,6 +163,9 @@ describe('GET /api/campaigns/briefs addressed by slug or uid', () => {
     expect(bySlug.status).toBe(403);
     expect(byUid.status).toBe(403);
     expect(await byUid.json()).toMatchObject({ code: 'MARKETING_ACCESS_REQUIRED' });
+    // Refused for the same reason: the project's own grant was checked, for both identifiers.
+    expect(checkSingleAccess).toHaveBeenCalledTimes(2);
+    expect(checkSingleAccess).toHaveBeenNthCalledWith(2, expect.anything(), { resource: 'project', id: PROJECT_UID, access: 'campaign_manager' });
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
@@ -172,15 +178,8 @@ describe('GET /api/campaigns/briefs addressed by slug or uid', () => {
     expect(unknownUid.status).toBe(403);
     expect(unknownSlug.status).toBe(403);
     expect(await unknownUid.json()).toMatchObject({ code: 'MARKETING_ACCESS_REQUIRED' });
+    expect(getProjectSlugByUid).toHaveBeenCalledWith(expect.anything(), UNKNOWN_UID);
     expect(proxyRequest).not.toHaveBeenCalled();
-  });
-
-  it('does not resolve a slug through the uid lookup', async () => {
-    checkSingleAccess.mockResolvedValue(true);
-
-    await listBriefs(PROJECT_SLUG);
-
-    expect(getProjectSlugByUid).not.toHaveBeenCalled();
   });
 
   // A campaign_manager grant does not imply `viewer` on the project. The uid must resolve without
