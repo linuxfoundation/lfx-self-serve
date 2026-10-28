@@ -18,7 +18,7 @@ Make sure you have the correct project or foundation selected in the lens switch
 
 ## Can I download documents?
 
-Yes. Use the **Download** button on the row of an uploaded file. Documents added as links open in a new tab with **Open link**, and meeting recordings open with **Play recording**. There is no separate detail page for a document.
+Yes. Use the **Download** icon on the row of an uploaded file; hover over a row's icon to see its action. Documents added as links open in a new tab with **Open link**, and meeting recordings open with **Play recording**. There is no separate detail page for a document.
 
 ## Can I upload documents?
 

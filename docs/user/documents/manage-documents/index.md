@@ -25,7 +25,7 @@ Use the tabs above the list to filter by source:
 
 - **All** — every document
 - **Project** — files and links uploaded directly to the project
-- **Committees** — documents from project committees
+- **Groups** — documents from project committees (groups)
 - **Meetings** — meeting attachments, recordings, transcripts, and summaries
 - **Mailing Lists** — artifacts from the project's mailing lists
 
@@ -37,12 +37,15 @@ Select a folder name to open it. A breadcrumb appears above the list; select **D
 
 ## Open a document
 
-Each row has an action button on the right:
+Each row has an action icon on the right. Hover over it to see what it does:
 
 - **Download** — downloads an uploaded file
 - **Open link** — opens a link in a new tab
 - **Play recording** — opens a meeting recording
-- **Preview** — shows a meeting summary. The button is disabled when the summary isn't available.
+- **Open** — opens a meeting transcript
+- **Preview** — shows a meeting summary. The icon is disabled when the summary isn't available.
+
+You can also select a document's name to open, download, or preview it.
 
 ## Upload files, create folders, and add links
 
@@ -53,7 +56,7 @@ The **Upload Files**, **New Folder**, and **Add Link** buttons appear above the 
 1. Select **Upload Files**.
 2. Drag files into the upload area, or click it to choose files.
 3. Optionally edit the name of each file to change how it is displayed, or remove a file you added by mistake.
-4. Optionally choose a **Folder** to put the files in. Leave it as **No folder** to add them at the top level.
+4. Optionally choose a **Folder** to put the files in. Leave it as **No folder** to add them at the top level. The **Folder** field appears once the project has at least one folder.
 5. Optionally add a **Description**.
 6. Confirm the upload.
 
