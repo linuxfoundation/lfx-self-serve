@@ -724,6 +724,24 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('stays open while keyboard focus is inside it, and re-checks once focus leaves', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        const inside = panel.querySelector('.inside') as HTMLElement;
+        const outside = fixture.nativeElement.querySelector('.outside') as HTMLElement;
+        collapse.openPeek();
+        inside.focus();
+        vi.spyOn(inside, 'matches').mockImplementation((selector: string) => selector === ':focus-visible');
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        outside.focus();
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('closes on Escape', async () => {
         const { collapse } = await createPeekFixture();
         collapse.openPeek();
@@ -791,6 +809,18 @@ describe('NavbarComponent', () => {
       expect(fixture.nativeElement.classList).toContain('is-pinned');
     });
 
+    it('closes a hover peek on a navigation the viewer made', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(false);
+    });
+
     it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
       stubViewport(true);
       const events = new Subject<unknown>();
@@ -811,6 +841,26 @@ describe('NavbarComponent', () => {
       navigation.trigger = 'imperative';
       events.next(new NavigationEnd(3, '/votes', '/votes'));
       expect(collapse.peek()).toBe(false);
+    });
+
+    it('moves focus to the toggle when the rail appears without a morph and hides the focused control', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture(
+        [],
+        [],
+        {},
+        {
+          template: '<nav #panel><button type="button" data-flip="side">Toggle</button><a href="/meetings" class="link">Meetings</a></nav>',
+        }
+      );
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const link = fixture.nativeElement.querySelector('.link') as HTMLElement;
+      const toggle = fixture.nativeElement.querySelector('[data-flip="side"]') as HTMLElement;
+      link.focus();
+
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+      expect(document.activeElement).toBe(toggle);
     });
 
     it('never collapses the mobile drawer’s navbar', async () => {

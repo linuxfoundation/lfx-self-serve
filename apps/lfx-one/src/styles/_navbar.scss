@@ -1569,11 +1569,19 @@
   bottom: 58px !important;
   left: 16px !important;
   margin: 0 !important;
+  // Fixed panels can't be reached by scrolling the page, and the rail adds rows: cap to the viewport and scroll inside.
+  max-height: calc(100dvh - 66px);
+  overflow-y: auto;
   border: 1px solid theme('colors.gray.200');
   border-radius: 12px;
   box-shadow:
     0 10px 24px -8px theme('colors.gray.900 / 18%'),
     0 2px 6px -2px theme('colors.gray.900 / 8%');
+}
+
+// Under the impersonation banner the top 36px are covered: keep the capped menu clear of it. Stacked classes win.
+.lfxn-account-popover.lfxn-account-popover--banner-offset.p-popover {
+  max-height: calc(100dvh - 102px);
 }
 
 .lfxn-account-menu {
