@@ -47,6 +47,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, s
 import { VoteAbstainResultComponent } from '../vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentResultsComponent } from '../vote-comment-results/vote-comment-results.component';
 import { VoteOptionResultsComponent } from '../vote-option-results/vote-option-results.component';
+import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots.component';
 import { VoteSlideComponent } from '../vote-slide/vote-slide.component';
 import { VoteParticipationCardComponent } from '../vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-results/vote-ranked-question-results.component';
@@ -69,6 +70,7 @@ import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-resu
     VoteRankedQuestionResultsComponent,
     VoteCommentResultsComponent,
     VoteSlideComponent,
+    VoteSendBallotsComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -152,6 +154,11 @@ export class VoteResultsDrawerComponent {
   protected readonly canPresent: Signal<boolean> = computed(() => {
     const v = this.vote();
     return this.audience() === 'creator' && !!v && v.writer === true && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
+  });
+  /** "Send ballots now" is offered to writers while the vote is active; the BFF re-checks vote#writer. */
+  protected readonly canSendBallots: Signal<boolean> = computed(() => {
+    const v = this.vote();
+    return this.audience() === 'creator' && !!v && v.writer === true && v.status === PollStatus.ACTIVE;
   });
   protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
   protected readonly isBrowserRender = isPlatformBrowser(this.platformId);

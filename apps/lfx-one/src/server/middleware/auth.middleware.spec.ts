@@ -109,6 +109,30 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to the single-segment vote link page (/votes/:id)', async () => {
+    const req = buildReq({ path: '/votes/abc123' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it.each(['/votes/create', '/votes/create;source=link', '/votes/%63reate', '/votes/abc123/edit', '/votes/abc123/present', '/votes/%ZZ'])(
+    'keeps %s on required auth',
+    async (path) => {
+      const req = buildReq({ path });
+      const res = buildRes();
+      const next = vi.fn() as unknown as NextFunction;
+
+      await middleware(req, res, next);
+
+      expect(res.oidc.login).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('allows an anonymous GET to a public meeting join (/meetings/:id)', async () => {
     const req = buildReq({ path: '/meetings/abc123' });
     const res = buildRes();
