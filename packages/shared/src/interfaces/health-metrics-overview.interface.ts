@@ -193,6 +193,8 @@ export interface HealthMetricsOverviewExploreLink {
   /** The section to land on; none opens the page at the top. */
   fragment?: string;
   queryParams: Readonly<Record<string, string | null>>;
+  /** Leaves Health Metrics: `queryParams` replace the current ones instead of merging into them. */
+  replaceQueryParams?: boolean;
 }
 
 /** A card's empty state as shown: an icon tile, a title, then one sentence or a short list of reasons. */

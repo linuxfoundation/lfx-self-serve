@@ -15,7 +15,7 @@
     [routerLink]="link.commands"
     [fragment]="link.fragment"
     [queryParams]="link.queryParams"
-    queryParamsHandling="merge"
+    [queryParamsHandling]="link.replaceQueryParams ? '' : 'merge'"
     [class]="linkClass"
     [attr.data-testid]="testId()">
     @if (leadingIcon()) {

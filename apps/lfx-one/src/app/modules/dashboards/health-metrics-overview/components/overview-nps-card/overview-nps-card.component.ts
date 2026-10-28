@@ -11,6 +11,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewNpsView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -29,11 +30,11 @@ import type { HealthMetricsOverviewNpsView } from '@lfx-one/shared/interfaces';
 export class OverviewNpsCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly chrome = inject(HealthMetricsChromeService);
+  private readonly projectContext = inject(ProjectContextService);
 
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.nps;
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.nps;
-  protected readonly createSurveyLink = HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK;
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNps({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewNpsView | null>(() => {
@@ -42,4 +43,8 @@ export class OverviewNpsCardComponent {
   });
   // A survey can only count toward the current year, so only YTD offers to start one.
   protected readonly isYtd = computed(() => this.chrome.selectedRange() === 'YTD');
+  protected readonly createSurveyLink = computed(() => ({
+    ...HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK,
+    queryParams: { project: this.projectContext.selectedFoundation()?.slug ?? null },
+  }));
 }

@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -89,13 +89,15 @@ describe('OverviewNpsCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-empty-create-survey"]')).toBeNull();
   });
 
-  it('lists the reasons and offers to create a survey when no survey has closed this year', async () => {
+  it('lists the reasons and offers to create a survey, leaving the Health Metrics filters behind, when no survey has closed this year', async () => {
     await render({ periods: { ...NPS.periods, YTD: null } });
+    await TestBed.inject(Router).navigateByUrl('/?memTier=gold');
+    fixture.detectChanges();
 
     expect(text('overview-nps-empty-title')).toBe('No responses yet');
     expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-nps-empty-reasons"] li')).toHaveLength(3);
     const create = fixture.nativeElement.querySelector('[data-testid="overview-nps-empty-create-survey"]') as HTMLAnchorElement;
     expect(create.textContent?.trim()).toBe('Create Survey');
-    expect(create.getAttribute('href')).toBe('/foundation/surveys');
+    expect(create.getAttribute('href')).toBe('/foundation/surveys?project=acme');
   });
 });

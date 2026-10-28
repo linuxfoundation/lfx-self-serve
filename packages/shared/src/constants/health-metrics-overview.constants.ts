@@ -259,11 +259,15 @@ export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsOverview
   { icon: 'fa-light fa-graduation-cap', transform: 'translateY(22px) rotate(14deg)', iconSizePx: 20 },
 ];
 
-/** The NPS card's YTD empty-state action: the foundation's Surveys page, where a survey can be started. */
+/**
+ * The NPS card's YTD empty-state action: the foundation's Surveys page, where a survey can be started. The card
+ * adds the foundation; no Health Metrics filter carries over.
+ */
 export const HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK: HealthMetricsOverviewExploreLink = {
   label: 'Create Survey',
   commands: ['/foundation/surveys'],
   queryParams: {},
+  replaceQueryParams: true,
 };
 
 /** The "Explore …" links into each Level 2 section; each clears that section's filters on arrival. */
