@@ -33,6 +33,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectDocumentMetadata: vi.fn(),
     getProjectDocumentStream: vi.fn(),
     deleteProjectDocument: vi.fn(),
+    uploadProjectDocument: vi.fn(),
   },
 }));
 
@@ -1343,5 +1344,34 @@ describe('ProjectController.deleteProjectDocument uid/documentId validation', ()
     expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('ProjectController.uploadProjectDocument body type', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const controller = new ProjectController();
+    const req = {
+      params: { uid: PROJECT_UID },
+      body,
+      query: { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' },
+      headers: {},
+      path: `/api/projects/${PROJECT_UID}/documents`,
+    } as any;
+    const next = vi.fn();
+
+    await controller.uploadProjectDocument(req, { json: vi.fn(), status: vi.fn().mockReturnThis() } as any, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(projectSvc.uploadProjectDocument).not.toHaveBeenCalled();
   });
 });
