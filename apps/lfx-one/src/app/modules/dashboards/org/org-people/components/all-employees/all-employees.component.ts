@@ -582,6 +582,10 @@ export class AllEmployeesComponent {
         seatsCount: role.seatsCount,
         boardSeatsCount: role.boardSeatsCount,
         committeeSeatsCount: role.committeeSeatsCount,
+        // The live row is the one carrying key-contact roles; the surviving former row comes from the
+        // warehouse, which never has them. Without this a former employee who still holds a role reads
+        // as '—' and sorts as zero.
+        keyContactRoles: AllEmployeesComponent.keyContactRolesOf(role),
         accessBadge: role.accessBadge ?? accessBadge,
       });
     }

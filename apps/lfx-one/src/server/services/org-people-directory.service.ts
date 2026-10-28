@@ -375,6 +375,9 @@ export class OrgPeopleDirectoryService {
     }
 
     if (keyContacts.status === 'fulfilled') {
+      // Computed once, before the loop: every stored and seat row is already in by this point, and the
+      // key-contact branch only ever reads it.
+      const identityOwners = addLiveOnlyRows ? new Map<string, OrgAllEmployeeRowInternal>() : OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
         // Merged by email even when the document carries a username: the username is safe to carry as a
@@ -391,6 +394,18 @@ export class OrgPeopleDirectoryService {
           // this address, and resolving identity from an address is prohibited.
         } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
+        } else {
+          // No live-only row will be created here, so the address fold that normally carries the roles
+          // onto an identity-keyed stored employee never runs. Enrich that employee directly instead,
+          // under the same single-claimant rule the fold uses — otherwise a person whose stored row is
+          // keyed by LF identity loses their pills in every scope that only enriches stored rows.
+          const owner = identityOwners.get(email);
+          if (owner) {
+            this.addSource(owner, 'keyContact');
+            this.addEmail(owner, email);
+            this.fill(owner, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+            this.addKeyContactRoles(owner, emp.roles);
+          }
         }
       }
     } else {
@@ -454,9 +469,15 @@ export class OrgPeopleDirectoryService {
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
    */
-  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
-    // An address claimed by more than one identity has no correct owner, so it gets none: picking the
-    // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
+  /**
+   * Address -> the single identity row listing it.
+   *
+   * An address claimed by more than one identity has no correct owner, so it gets none: picking the
+   * first would attribute by upstream ordering, which is not a property worth depending on. Shared by
+   * the orphan fold and by the key-contact enrichment, so the two cannot disagree about who owns an
+   * address.
+   */
+  private static identityOwnersByEmail(byKey: Map<string, OrgAllEmployeeRowInternal>): Map<string, OrgAllEmployeeRowInternal> {
     const claims = new Map<string, OrgAllEmployeeRowInternal[]>();
     for (const [key, row] of byKey) {
       if (!key.startsWith('identity:')) continue;
@@ -468,6 +489,11 @@ export class OrgPeopleDirectoryService {
     for (const [email, owners] of claims) {
       if (owners.length === 1) ownerByEmail.set(email, owners[0]);
     }
+    return ownerByEmail;
+  }
+
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
+    const ownerByEmail = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
 
     for (const [key, orphan] of byKey) {
       if (!key.startsWith('email:')) continue;

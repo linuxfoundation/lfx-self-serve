@@ -341,17 +341,18 @@ export class OrgLensKeyContactsService {
    * - The contact must itself be active. A set status that is anything other than 'active' is dropped,
    *   not just 'inactive' — the tab reads it that way, so a 'Pending' contact would otherwise earn a pill
    *   here and appear nowhere on the tab. An absent status is treated as active, as the tab treats it.
-   * - The membership behind it must still be live. A document carries its membership under either key
-   *   depending on the index, and one with neither is dropped rather than trusted: an unattributable role
-   *   cannot be shown to be live, and showing a stale one is the worse failure.
+   * - The membership behind it must still be live, read from `membership_uid` and that key alone. The tab
+   *   joins on it and drops a document without it, so honouring `project_membership_uid` as a fallback
+   *   would earn a pill here for a document the tab omits — the very disagreement this scoping closes.
+   *   A document with no `membership_uid` is dropped rather than trusted: an unattributable role cannot
+   *   be shown to be live, and showing a stale one is the worse failure.
    *
    * This gates the ROLE only. The employee list keeps its own looser filter, because the reassign pickers
    * share that read and search the whole org.
    */
   private static holdsLiveRole(doc: KeyContactDoc, activeMembershipUids: ReadonlySet<string>): boolean {
     if (doc.status && doc.status.toLowerCase() !== 'active') return false;
-    const membershipUid = doc.project_membership_uid ?? doc.membership_uid;
-    return !!membershipUid && activeMembershipUids.has(membershipUid);
+    return !!doc.membership_uid && activeMembershipUids.has(doc.membership_uid);
   }
 
   // Resolves an active membership context or throws a not-found MicroserviceError.

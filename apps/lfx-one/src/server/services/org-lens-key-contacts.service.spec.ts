@@ -47,7 +47,7 @@ const req = {} as never;
 function contact(over: Partial<KeyContactDoc> = {}): KeyContactDoc {
   return {
     uid: 'kc-1',
-    project_membership_uid: 'm-active',
+    membership_uid: 'm-active',
     role: 'Billing Contact',
     status: 'Active',
     first_name: 'Devon',
@@ -138,20 +138,26 @@ describe('OrgLensKeyContactsService.getEmployees — roles are scoped to active 
   });
 
   it('drops a role whose membership is absent from the org entirely', async () => {
-    expect(await roles([contact({ project_membership_uid: 'm-unknown' })], [membership()])).toEqual([]);
+    expect(await roles([contact({ membership_uid: 'm-unknown' })], [membership()])).toEqual([]);
   });
 
   it('drops a role it cannot attribute to any membership, rather than trusting it', async () => {
-    expect(await roles([contact({ project_membership_uid: undefined, membership_uid: undefined })], [membership()])).toEqual([]);
+    expect(await roles([contact({ membership_uid: undefined })], [membership()])).toEqual([]);
   });
 
-  it('reads the membership from the legacy `membership_uid` key when that is the one the index carried', async () => {
+  it('reads the membership from `membership_uid`, the key the Key Contacts tab joins on', async () => {
     expect(await roles([contact({ project_membership_uid: undefined, membership_uid: 'm-active' })], [membership()])).toEqual(['Billing Contact']);
+  });
+
+  // The tab joins on membership_uid alone and drops a document without it. Honouring the newer key as a
+  // fallback would earn a pill here for a document the tab omits — the disagreement this scoping closes.
+  it('drops a role carrying only the newer project_membership_uid, which the tab would omit', async () => {
+    expect(await roles([contact({ project_membership_uid: 'm-active', membership_uid: undefined })], [membership()])).toEqual([]);
   });
 
   it('keeps only the live half when one person holds roles on both a live and a lapsed membership', async () => {
     const held = await roles(
-      [contact({ uid: 'kc-1', role: 'Billing Contact' }), contact({ uid: 'kc-2', role: 'Legal Contact', project_membership_uid: 'm-lapsed' })],
+      [contact({ uid: 'kc-1', role: 'Billing Contact' }), contact({ uid: 'kc-2', role: 'Legal Contact', membership_uid: 'm-lapsed' })],
       [membership(), membership({ uid: 'm-lapsed', status: 'Expired' })]
     );
     expect(held).toEqual(['Billing Contact']);
@@ -159,7 +165,7 @@ describe('OrgLensKeyContactsService.getEmployees — roles are scoped to active 
 
   it('dedupes a role the person holds on two separate live memberships', async () => {
     const held = await roles(
-      [contact({ uid: 'kc-1' }), contact({ uid: 'kc-2', project_membership_uid: 'm-other' })],
+      [contact({ uid: 'kc-1' }), contact({ uid: 'kc-2', membership_uid: 'm-other' })],
       [membership(), membership({ uid: 'm-other', project_slug: 'lf', status: 'Active' })]
     );
     expect(held).toEqual(['Billing Contact']);
@@ -171,7 +177,7 @@ describe('OrgLensKeyContactsService.getEmployees — roles are scoped to active 
   });
 
   it('still lists the person for the pickers when every one of their roles was dropped', async () => {
-    upstream([contact({ project_membership_uid: 'm-lapsed' })], [membership({ uid: 'm-lapsed', status: 'Expired' })]);
+    upstream([contact({ membership_uid: 'm-lapsed' })], [membership({ uid: 'm-lapsed', status: 'Expired' })]);
 
     const employees = await new OrgLensKeyContactsService().getEmployees(req, ORG);
 

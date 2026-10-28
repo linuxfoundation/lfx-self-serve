@@ -1059,6 +1059,32 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' }), accessUser()]);
   });
 
+  // A scope that only enriches stored rows creates no live-only row, so the address fold that normally
+  // carries roles onto an identity-keyed employee never runs. They have to be enriched in place.
+  it('still gives an identity-keyed stored employee their key-contact roles under non_lf', async () => {
+    getKeyContactEmployees.mockResolvedValue([{ ...keyContact, email: 'dclarke@lfx-partner.example', roles: ['Billing Contact', 'Technical Contact'] }]);
+
+    const result = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
+
+    const devon = result.rows.find((row) => row.lfUsername === 'dclarke');
+    expect(devon?.keyContactRoles).toEqual(['Billing Contact', 'Technical Contact']);
+    expect(devon?.sources).toContain('keyContact');
+  });
+
+  it('leaves an address two identities both claim unenriched, rather than guessing an owner', async () => {
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([
+        storedRow({ personKey: 'p-a', lfUsername: 'alpha', emails: ['shared@lfx-partner.example'] }),
+        storedRow({ personKey: 'p-b', lfUsername: 'beta', emails: ['shared@lfx-partner.example'] }),
+      ])
+    );
+    getKeyContactEmployees.mockResolvedValue([{ ...keyContact, email: 'shared@lfx-partner.example', roles: ['Legal Contact'] }]);
+
+    const result = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
+
+    expect(result.rows.every((row) => row.keyContactRoles.length === 0)).toBe(true);
+  });
+
   it('adds no seat and no live-only row under non_lf, still stamping the access badge on the stored row', async () => {
     const response = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
 

@@ -420,6 +420,35 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
     });
 
+    // Only a board/committee/access-created row rejoins, so the case is someone holding a seat AND a
+    // key-contact role. The live row carries the roles; the surviving former row comes from the
+    // warehouse, which never has them, so dropping them on the fold reads as '—' and sorts as zero.
+    it('keeps the live key-contact roles when a live row folds into a former employee', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace'),
+            row('live-grace', 'Grace Hopper', {
+              lfUsername: 'grace',
+              sources: ['committee', 'keyContact'],
+              seatsCount: 1,
+              committeeSeatsCount: 1,
+              keyContactRoles: ['Legal Contact'],
+            }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-9"]')?.textContent?.trim()).toBe('Legal Contact');
+    });
+
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
       await mount('browser');
       await answerCurrent();
