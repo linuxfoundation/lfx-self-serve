@@ -328,6 +328,11 @@
                         }
                       </div>
                     }
+                    @if (linkWarnings()[field.key]; as warning) {
+                      <span class="text-xs text-amber-700" role="status" aria-live="polite" [attr.data-testid]="'mktg-agent-run-link-warning-' + field.key">{{
+                        warning
+                      }}</span>
+                    }
                     @if (field.hint) {
                       <span class="text-xs text-gray-400">{{ field.hint }}</span>
                     }
@@ -382,7 +387,12 @@
 
                 <!-- Optional existing documents, last: a file is read to text by the BFF as it is added; a link goes to the agent as is. -->
                 @if (intake.documents) {
-                  <lfx-mktg-intake-documents id="mktg-run-documents" [config]="intake.documents" [(documents)]="documents" [(busy)]="documentsBusy" />
+                  <lfx-mktg-intake-documents
+                    id="mktg-run-documents"
+                    [config]="intake.documents"
+                    [earlierUrls]="linkUrls()"
+                    [(documents)]="documents"
+                    [(busy)]="documentsBusy" />
                 }
 
                 @for (group of trailingFieldGroups; track group.id) {

@@ -17,6 +17,7 @@ import {
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
+  MKTG_INTAKE_LINK_ADVICE,
   MKTG_KIT_FAMILIES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
@@ -104,6 +105,21 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
     if (source === 'file') expect(fixture.nativeElement.textContent).toContain('choose it again');
+  });
+  it('warns about a restored Drive URL without editing or disabling drafting', async () => {
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: 'url', content_url: 'https://drive.google.com/file/d/synthetic/view' }, documentCount: 0, logoCount: 0 })
+    );
+    const fixture = await fresh();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+    fixture.componentInstance['contentForm'].controls.url.setValue('https://project.example/article');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')).toBeNull();
+    fixture.componentInstance['contentForm'].controls.url.setValue('');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')).toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it.each(['', 'https://share.example/previous'])('keeps the restored share link %s when the URL source is edited', async (share) => {
     history.lastIntake.mockReturnValue(
@@ -594,6 +610,21 @@ describe('LinkedIn profile and post surface', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance['explicitProfileSave']()).toBe(false);
+  });
+  it('warns about the content Drive URL without disabling drafting', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
+    component['editing'].set(false);
+    component['source'].set('url');
+    component['contentForm'].controls.url.setValue('https://drive.google.com/drive/folders/synthetic');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+    expect(component['contentForm'].valid).toBe(true);
+    component['contentForm'].controls.url.setValue('https://project.example/article');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')).toBeNull();
   });
 
   it('composes one breadcrumb with the main kit family route and catalog name', async () => {
