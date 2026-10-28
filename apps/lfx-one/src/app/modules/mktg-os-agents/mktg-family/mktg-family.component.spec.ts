@@ -711,6 +711,8 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
     const root = harness.routeNativeElement;
     expect(root?.querySelector('[data-testid="mktg-family-action-loading"]')).not.toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-action-loading"] [data-variant="header"]')).not.toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-content-loading"] [data-variant="rows"]')).not.toBeNull();
     expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
     documents.set({ project: 'synthetic', groups: [] });
     families.set(knownFamilies);

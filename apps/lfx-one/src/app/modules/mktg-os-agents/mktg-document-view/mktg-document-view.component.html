@@ -9,7 +9,9 @@
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
         @if (loading() || !title()) {
-          <div class="h-6 w-56 animate-pulse rounded bg-gray-100" aria-hidden="true" data-testid="mktg-document-view-title-loading"></div>
+          <div class="h-6 w-56 overflow-hidden" data-testid="mktg-document-view-title-loading">
+            <lfx-mktg-skeleton variant="header" />
+          </div>
         } @else {
           <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
             {{ isAeoDocument() ? aeoHeaderTitle() : title() }}
@@ -26,7 +28,9 @@
       </div>
       <div class="grow"></div>
       @if (loading()) {
-        <div class="ml-auto h-6 w-40 animate-pulse rounded bg-gray-100" aria-hidden="true" data-testid="mktg-document-view-action-loading"></div>
+        <div class="ml-auto h-6 w-40 overflow-hidden" data-testid="mktg-document-view-action-loading">
+          <lfx-mktg-skeleton variant="header" />
+        </div>
       }
       @if (!loading() && hasAssetView() && proseView(); as current) {
         <div class="ml-auto flex flex-wrap items-center justify-end gap-4" data-testid="mktg-document-view-title-actions">

@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
@@ -174,6 +175,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     InputTextComponent,
     Member360ResultComponent,
     MktgRunActivityComponent,
+    MktgSkeletonComponent,
   ],
   providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',

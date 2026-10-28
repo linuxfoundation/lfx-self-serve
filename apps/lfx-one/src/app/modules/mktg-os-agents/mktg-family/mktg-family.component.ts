@@ -6,6 +6,7 @@ import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
 import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
 import {
@@ -39,6 +40,7 @@ import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-brea
     PageHeaderComponent,
     MktgRebuildComponent,
     MktgBreadcrumbComponent,
+    MktgSkeletonComponent,
   ],
   providers: [MktgKitService],
   templateUrl: './mktg-family.component.html',

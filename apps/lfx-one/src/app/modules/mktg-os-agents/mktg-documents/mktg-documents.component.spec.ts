@@ -438,6 +438,7 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValue(read);
     await render();
     expect(query('mktg-documents-started-loading')).not.toBeNull();
+    expect(query('mktg-documents-started-loading')?.querySelector('[data-variant="card"]')).not.toBeNull();
     expect(query('mktg-documents-started-runs')).toBeNull();
     read.next({ ...documentsResponse(), runs: [startedRun('questions')] });
     await fixture.whenStable();

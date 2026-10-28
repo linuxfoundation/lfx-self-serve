@@ -7,7 +7,9 @@
     <lfx-page-header data-testid="mktg-family-header" [title]="definition.name" titleTestId="mktg-family-title">
       <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>
       @if (live() && kit.loading() && !kit.documents()) {
-        <div pageHeaderActions class="h-10 w-48 animate-pulse rounded-lg bg-gray-100" aria-hidden="true" data-testid="mktg-family-action-loading"></div>
+        <div pageHeaderActions class="h-10 w-48 overflow-hidden" data-testid="mktg-family-action-loading">
+          <lfx-mktg-skeleton variant="header" />
+        </div>
       } @else if (live() && actions()?.header; as header) {
         <!-- One solid primary names the next step; the shared rule owns its destination. -->
         <div pageHeaderActions class="relative flex flex-col items-end gap-1" [attr.aria-busy]="kit.loading()" data-testid="mktg-family-actions">
@@ -61,7 +63,9 @@
     }
     <p role="status" class="sr-only" data-testid="mktg-family-loading" [textContent]="kit.loading() && kit.documents() ? 'Refreshing…' : ''"></p>
     @if (kit.loading() && !kit.documents()) {
-      <div class="h-64 animate-pulse rounded-lg border border-gray-200 bg-gray-100" aria-hidden="true" data-testid="mktg-family-content-loading"></div>
+      <div class="h-64 overflow-hidden rounded-lg border border-gray-200 bg-white p-3" data-testid="mktg-family-content-loading">
+        <lfx-mktg-skeleton variant="rows" [rows]="4" />
+      </div>
     }
     @if (kit.error()) {
       <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-family-error">

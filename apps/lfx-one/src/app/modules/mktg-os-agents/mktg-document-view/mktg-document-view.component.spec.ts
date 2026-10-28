@@ -379,6 +379,8 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/brand-kit/living');
     expect(query('mktg-document-view-title-loading')).not.toBeNull();
     expect(query('mktg-document-view-action-loading')).not.toBeNull();
+    expect(query('mktg-document-view-title-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
+    expect(query('mktg-document-view-action-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
     expect(query('mktg-document-view-title')).toBeNull();
     expect(query('mktg-document-view-run-again')).toBeNull();
     read.next({ ...revisionResponse(LATEST), sidecar: kitSidecar() });

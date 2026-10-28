@@ -25,7 +25,9 @@
     }
 
     @if (loading() && !documents()) {
-      <div class="h-28 animate-pulse rounded-xl border border-gray-200 bg-gray-100" aria-hidden="true" data-testid="mktg-documents-started-loading"></div>
+      <div class="h-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-4" data-testid="mktg-documents-started-loading">
+        <lfx-mktg-skeleton variant="card" [rows]="1" />
+      </div>
     } @else if (!listFailed() && startedRunsVisible()) {
       <section
         class="flex min-h-28 flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
@@ -124,9 +126,7 @@
       <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
       <section #documentPanel aria-label="Documents and revisions" class="flex min-w-0 scroll-mt-20 flex-col gap-5">
         @if (loading() && !documents()) {
-          <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
-            Loading documents…
-          </div>
+          <lfx-mktg-skeleton variant="card" class="rounded-xl border border-gray-200 bg-white p-6" data-testid="mktg-documents-loading" />
         } @else if (listFailed()) {
           <!-- The list read failed: the error above is the only answer; no empty state may claim nothing is stored. -->
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-list-failed">

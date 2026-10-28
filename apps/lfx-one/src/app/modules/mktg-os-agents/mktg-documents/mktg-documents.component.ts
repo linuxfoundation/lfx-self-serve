@@ -8,6 +8,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
@@ -75,6 +76,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
     MktgKitTabsComponent,
     MktgKitHeaderComponent,
     ButtonComponent,
+    MktgSkeletonComponent,
   ],
   templateUrl: './mktg-documents.component.html',
 })
