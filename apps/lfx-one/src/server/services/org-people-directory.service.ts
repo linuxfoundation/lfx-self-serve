@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_ORG_COMMIT_FILTERS, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, ORG_UNRANGED_ROSTER_FILTERS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -221,8 +221,9 @@ export class OrgPeopleDirectoryService {
    * the range and project scope change who is listed, so each (range, project scope) — and the unranged
    * roster — has its own namespace, holding every code count; the commit scope and metric pick the count
    * and the tiles are counted after the read. The commit filters do not apply to the unranged roster, so it
-   * is always computed and projected with the defaults: its one shared entry holds the full current roster
-   * the reassign pickers read, whatever filters an unranged caller sent.
+   * is always computed and projected with `ORG_UNRANGED_ROSTER_FILTERS`, every project and the default code
+   * count: its one shared entry holds the full current roster the reassign pickers read, whatever filters an
+   * unranged caller sent and whatever the page default scope is.
    *
    * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
    * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
@@ -243,7 +244,7 @@ export class OrgPeopleDirectoryService {
    * list the former ones as current for the whole TTL.
    */
   public async getLive(req: Request, accountId: string, range: OrgLensTimeRange | null, requestedFilters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    const filters = range ? requestedFilters : DEFAULT_ORG_COMMIT_FILTERS;
+    const filters = range ? requestedFilters : ORG_UNRANGED_ROSTER_FILTERS;
     const username = getEffectiveUsername(req) ?? '';
     const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and

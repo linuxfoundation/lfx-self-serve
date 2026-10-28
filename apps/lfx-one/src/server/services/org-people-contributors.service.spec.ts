@@ -44,7 +44,6 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
-import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
 import type { CompactOrgContributorRowsCache, ContributorPersonProjectRow, OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -52,7 +51,8 @@ import { OrgPeopleContributorsService } from './org-people-contributors.service'
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
-const FILTERS: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS;
+// Every project, the unscoped read; the scoped reads are named where a test needs them.
+const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
 
 let service: OrgPeopleContributorsService;
 

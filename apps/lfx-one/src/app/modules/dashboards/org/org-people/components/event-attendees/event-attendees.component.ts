@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
+  ORG_ALL_FOUNDATIONS_LABEL,
   ORG_EVENT_ATTENDEES_INITIAL_LIMIT,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
@@ -195,7 +196,10 @@ export class EventAttendeesComponent {
   }
 
   private initFoundationOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
   /** Only events the range counts (at least one registration passing the ended-in-range rule), in the BFF's order. */
