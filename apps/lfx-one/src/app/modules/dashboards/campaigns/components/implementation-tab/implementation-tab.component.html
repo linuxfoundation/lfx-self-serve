@@ -85,7 +85,7 @@
 </div>
 
 <!--
-  Google callouts, sitelinks and structured snippets withheld, announced. Top-level for the same reason as the three regions above:
+  Google ad extensions withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -97,6 +97,15 @@
 </div>
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
   {{ googleStructuredSnippetsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-call-extensions-withheld-live">
+  {{ googleCallExtensionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-promotions-withheld-live">
+  {{ googlePromotionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-prices-withheld-live">
+  {{ googlePricesWithheldWarning() }}
 </div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
@@ -501,6 +510,21 @@
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
+      @if (googleCallExtensionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-call-extensions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePromotionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-promotions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePricesWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-prices-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
 
       <!--
         Google Ads: callout extensions.
@@ -835,6 +859,457 @@
           } @else if (googleSnippetTooManyValues()) {
             <p id="google-snippet-too-many-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-many-values">
               Google takes at most {{ googleMaxSnippetValues }} values on a line — this one has {{ googleSnippetDistinctValueCount() }}.
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: call extensions.
+
+        Same gate and same reason as the three sections above — `validateAssetPlan` refuses every
+        extension list on a channel but Search. Typed, as the snippets are. Both boxes are required:
+        Google interprets a number against its country and has no default to pick.
+
+        One message line for the sub-form rather than one per refusal: the refusals come from the
+        shared judge the BFF also refuses by, already as sentences, so the line says exactly what the
+        create would be refused for.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-call-extensions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-call-country">
+            Google Call Extensions ({{ googleCallExtensions().length }}/{{ googleMaxCallExtensions }})
+          </label>
+          @if (googleCallExtensions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (call of googleCallExtensions(); track call.countryCode + call.phoneNumber; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <span class="break-words text-xs font-medium text-blue-700">{{ call.phoneNumber }} ({{ call.countryCode }})</span>
+                  <button
+                    type="button"
+                    (click)="removeGoogleCallExtension(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + call.phoneNumber"
+                    [attr.data-testid]="'implementation-google-call-extension-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-empty">
+              No call extensions added — this campaign is created without a phone number.
+            </span>
+          }
+          @if (!googleCallExtensionsFull()) {
+            <div class="flex flex-col gap-2">
+              <input
+                id="google-call-country"
+                type="text"
+                placeholder="Country code (e.g. US)"
+                [value]="googleCallExtensionDraft().countryCode"
+                (input)="onGoogleCallExtensionDraftInput('countryCode', $event)"
+                [attr.aria-invalid]="googleCallExtensionDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-call-country" />
+              <input
+                type="tel"
+                placeholder="Phone number"
+                aria-label="Call extension phone number"
+                [value]="googleCallExtensionDraft().phoneNumber"
+                (input)="onGoogleCallExtensionDraftInput('phoneNumber', $event)"
+                [attr.aria-invalid]="googleCallExtensionDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-call-number" />
+              <button
+                type="button"
+                (click)="onGoogleCallExtensionAdd()"
+                [disabled]="googleCallExtensionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-call-extension-add">
+                + Add call extension
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-full">
+              Maximum of {{ googleMaxCallExtensions }} call extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googleCallExtensionDraftError(); as error) {
+            <p id="google-call-extension-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-call-extension-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: promotion extensions.
+
+        Same gate. Google's two oneofs are each ONE select here rather than two boxes, so the form
+        cannot express what upstream refuses: exactly one discount (percentage or money), and at most
+        one condition (a coupon code or a minimum order). The currency box appears only while a money
+        field is in use, the one case upstream reads it.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-promotions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-promotion-target">
+            Google Promotions ({{ googlePromotions().length }}/{{ googleMaxPromotions }})
+          </label>
+          @if (googlePromotions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (promotion of googlePromotionRows(); track promotion.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ promotion.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ promotion.detail }}</span>
+                    <span class="break-all text-[10px] text-blue-700">{{ promotion.finalUrl }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePromotion(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + promotion.label"
+                    [attr.data-testid]="'implementation-google-promotion-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-empty">
+              No promotions added — this campaign is created without promotion extensions.
+            </span>
+          }
+          @if (!googlePromotionsFull()) {
+            <div class="flex flex-col gap-2">
+              <input
+                id="google-promotion-target"
+                type="text"
+                placeholder="What is on sale (e.g. Conference passes)"
+                [value]="googlePromotionDraft().promotionTarget"
+                (input)="onGooglePromotionDraftInput('promotionTarget', $event)"
+                [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-promotion-target" />
+              <div class="flex gap-2">
+                <select
+                  aria-label="Promotion discount kind"
+                  (change)="onGooglePromotionDraftInput('discountKind', $event)"
+                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-discount-kind">
+                  <option value="percent" [selected]="googlePromotionDraft().discountKind === 'percent'">Percent off</option>
+                  <option value="amount" [selected]="googlePromotionDraft().discountKind === 'amount'">Amount off</option>
+                </select>
+                <input
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="Discount"
+                  aria-label="Promotion discount"
+                  [value]="googlePromotionDraft().discount"
+                  (input)="onGooglePromotionDraftInput('discount', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-discount" />
+              </div>
+              <div class="flex gap-2">
+                <select
+                  aria-label="Promotion condition"
+                  (change)="onGooglePromotionDraftInput('eligibilityKind', $event)"
+                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-eligibility-kind">
+                  <option value="none" [selected]="googlePromotionDraft().eligibilityKind === 'none'">No condition</option>
+                  <option value="code" [selected]="googlePromotionDraft().eligibilityKind === 'code'">Promotion code</option>
+                  <option value="ordersOver" [selected]="googlePromotionDraft().eligibilityKind === 'ordersOver'">Orders over</option>
+                </select>
+                @if (googlePromotionDraft().eligibilityKind === 'code') {
+                  <input
+                    type="text"
+                    placeholder="Promotion code"
+                    aria-label="Promotion code"
+                    [value]="googlePromotionDraft().promotionCode"
+                    (input)="onGooglePromotionDraftInput('promotionCode', $event)"
+                    class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-code" />
+                } @else if (googlePromotionDraft().eligibilityKind === 'ordersOver') {
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="Minimum order amount"
+                    aria-label="Promotion minimum order amount"
+                    [value]="googlePromotionDraft().ordersOverAmount"
+                    (input)="onGooglePromotionDraftInput('ordersOverAmount', $event)"
+                    class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-orders-over" />
+                }
+              </div>
+              @if (googlePromotionNeedsCurrency()) {
+                <input
+                  type="text"
+                  placeholder="Currency (e.g. USD)"
+                  aria-label="Promotion currency code"
+                  [value]="googlePromotionDraft().currencyCode"
+                  (input)="onGooglePromotionDraftInput('currencyCode', $event)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-currency" />
+              }
+              <input
+                type="url"
+                placeholder="Destination URL"
+                aria-label="Promotion destination URL"
+                [value]="googlePromotionDraft().finalUrl"
+                (input)="onGooglePromotionDraftInput('finalUrl', $event)"
+                [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-promotion-url" />
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Occasion (optional, e.g. BLACK_FRIDAY)"
+                  aria-label="Promotion occasion"
+                  [value]="googlePromotionDraft().occasion"
+                  (input)="onGooglePromotionDraftInput('occasion', $event)"
+                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-occasion" />
+                <input
+                  type="text"
+                  placeholder="Language (optional, e.g. en)"
+                  aria-label="Promotion language code"
+                  [value]="googlePromotionDraft().languageCode"
+                  (input)="onGooglePromotionDraftInput('languageCode', $event)"
+                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-language" />
+              </div>
+              <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed. -->
+              <div class="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  aria-label="Promotion shows from"
+                  [value]="googlePromotionDraft().startDate"
+                  (input)="onGooglePromotionDraftInput('startDate', $event)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-start" />
+                <input
+                  type="date"
+                  aria-label="Promotion shows until"
+                  [value]="googlePromotionDraft().endDate"
+                  (input)="onGooglePromotionDraftInput('endDate', $event)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-end" />
+                <input
+                  type="date"
+                  aria-label="Promotion redeemable from"
+                  [value]="googlePromotionDraft().redemptionStartDate"
+                  (input)="onGooglePromotionDraftInput('redemptionStartDate', $event)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-redemption-start" />
+                <input
+                  type="date"
+                  aria-label="Promotion redeemable until"
+                  [value]="googlePromotionDraft().redemptionEndDate"
+                  (input)="onGooglePromotionDraftInput('redemptionEndDate', $event)"
+                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-promotion-redemption-end" />
+              </div>
+              <button
+                type="button"
+                (click)="onGooglePromotionAdd()"
+                [disabled]="googlePromotionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-promotion-add">
+                + Add promotion
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-full">
+              Maximum of {{ googleMaxPromotions }} promotions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePromotionDraftError(); as error) {
+            <p id="google-promotion-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-promotion-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: price extensions.
+
+        Same gate. A table of rows, so the sub-form holds Google's minimum of three rows from the
+        start and lets the operator grow it to eight; the remove-row control disappears at three and
+        the add-row control at eight, so no table the form can build is refused for its size. One
+        currency box for the table, copied onto each row's `currencyCode` on the wire.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-prices-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-price-type">
+            Google Price Extensions ({{ googlePrices().length }}/{{ googleMaxPrices }})
+          </label>
+          @if (googlePrices().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (price of googlePriceRows(); track price.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ price.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ price.detail }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePrice(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove price extension ' + (i + 1)"
+                    [attr.data-testid]="'implementation-google-price-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-empty">
+              No price extensions added — this campaign is created without them.
+            </span>
+          }
+          @if (!googlePricesFull()) {
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap gap-2">
+                <select
+                  id="google-price-type"
+                  (change)="onGooglePriceDraftInput('type', $event)"
+                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                  data-testid="implementation-google-price-type">
+                  @for (type of googlePriceTypes; track type) {
+                    <option [value]="type" [selected]="googlePriceDraft().type === type">{{ type }}</option>
+                  }
+                </select>
+                <select
+                  aria-label="Price qualifier"
+                  (change)="onGooglePriceDraftInput('priceQualifier', $event)"
+                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                  data-testid="implementation-google-price-qualifier">
+                  <option value="" [selected]="googlePriceDraft().priceQualifier === ''">No qualifier</option>
+                  @for (qualifier of googlePriceQualifiers; track qualifier) {
+                    <option [value]="qualifier" [selected]="googlePriceDraft().priceQualifier === qualifier">{{ qualifier }}</option>
+                  }
+                </select>
+                <input
+                  type="text"
+                  placeholder="Language (e.g. en)"
+                  aria-label="Price extension language code"
+                  [value]="googlePriceDraft().languageCode"
+                  (input)="onGooglePriceDraftInput('languageCode', $event)"
+                  class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-price-language" />
+                <input
+                  type="text"
+                  placeholder="Currency (e.g. USD)"
+                  aria-label="Price extension currency code"
+                  [value]="googlePriceDraft().currencyCode"
+                  (input)="onGooglePriceDraftInput('currencyCode', $event)"
+                  class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  data-testid="implementation-google-price-currency" />
+              </div>
+              <!--
+                Tracked by position: a row being typed has no identity yet — its header may be blank
+                or repeated, which is exactly what the guard is about to say — and every box binds
+                `[value]` from the draft, so a removal re-renders the right text into each row.
+              -->
+              @for (row of googlePriceDraft().offerings; track $index; let r = $index) {
+                <div class="flex flex-col gap-2 rounded-md border border-gray-100 p-2" [attr.data-testid]="'implementation-google-price-row-' + r">
+                  <div class="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Header"
+                      [attr.aria-label]="'Price row ' + (r + 1) + ' header'"
+                      [value]="row.header"
+                      (input)="onGooglePriceRowInput(r, 'header', $event)"
+                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                      [attr.data-testid]="'implementation-google-price-row-header-' + r" />
+                    <input
+                      type="text"
+                      inputmode="decimal"
+                      placeholder="Price"
+                      [attr.aria-label]="'Price row ' + (r + 1) + ' price'"
+                      [value]="row.amount"
+                      (input)="onGooglePriceRowInput(r, 'amount', $event)"
+                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="w-24 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                      [attr.data-testid]="'implementation-google-price-row-amount-' + r" />
+                    <select
+                      [attr.aria-label]="'Price row ' + (r + 1) + ' unit'"
+                      (change)="onGooglePriceRowInput(r, 'unit', $event)"
+                      class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                      [attr.data-testid]="'implementation-google-price-row-unit-' + r">
+                      <option value="" [selected]="row.unit === ''">No unit</option>
+                      @for (unit of googlePriceUnits; track unit) {
+                        <option [value]="unit" [selected]="row.unit === unit">{{ unit }}</option>
+                      }
+                    </select>
+                    @if (googlePriceDraft().offerings.length > googleMinPriceRows) {
+                      <button
+                        type="button"
+                        (click)="removeGooglePriceRow(r)"
+                        class="text-gray-500 hover:text-gray-700"
+                        [attr.aria-label]="'Remove price row ' + (r + 1)"
+                        [attr.data-testid]="'implementation-google-price-row-remove-' + r">
+                        <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                      </button>
+                    }
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    [attr.aria-label]="'Price row ' + (r + 1) + ' description'"
+                    [value]="row.description"
+                    (input)="onGooglePriceRowInput(r, 'description', $event)"
+                    [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    [attr.data-testid]="'implementation-google-price-row-description-' + r" />
+                  <input
+                    type="url"
+                    placeholder="Destination URL"
+                    [attr.aria-label]="'Price row ' + (r + 1) + ' destination URL'"
+                    [value]="row.finalUrl"
+                    (input)="onGooglePriceRowInput(r, 'finalUrl', $event)"
+                    [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    [attr.data-testid]="'implementation-google-price-row-url-' + r" />
+                </div>
+              }
+              <div class="flex gap-2">
+                @if (googlePriceDraft().offerings.length < googleMaxPriceRows) {
+                  <button
+                    type="button"
+                    (click)="addGooglePriceRow()"
+                    class="rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600"
+                    data-testid="implementation-google-price-row-add">
+                    + Add row
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="onGooglePriceAdd()"
+                  [disabled]="googlePriceAddDisabled()"
+                  class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                  data-testid="implementation-google-price-add">
+                  + Add price extension
+                </button>
+              </div>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-full">
+              Maximum of {{ googleMaxPrices }} price extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePriceDraftError(); as error) {
+            <p id="google-price-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-price-error">
+              {{ error }}
             </p>
           }
         </div>

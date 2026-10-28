@@ -10,11 +10,13 @@ import {
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_MAX_CALL_EXTENSIONS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_PRICE_OFFERINGS,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
@@ -22,6 +24,7 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MIN_PRICE_OFFERINGS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
@@ -7114,6 +7117,309 @@ describe('ImplementationTabComponent google structured snippets', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleStructuredSnippets']()).toHaveLength(1);
+  });
+});
+
+/**
+ * The call, promotion and price extensions. Each add is judged by `campaign-google-assets.utils`,
+ * which carries the branch-by-branch tests; these cover what the component adds around it — the
+ * normalisation it stores, the sub-forms, the Search gate and its two warnings, the payload's exact
+ * wire shape, and the draft round-trip.
+ */
+describe('ImplementationTabComponent google call, promotion and price extensions', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const URL = 'https://events.example.org/register';
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const type = (testId: string, value: string): void => {
+    const el = find(testId) as HTMLInputElement | HTMLSelectElement;
+    el.value = value;
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input'));
+    fixture.detectChanges();
+  };
+
+  function promotionDraft(c: Record<string, any>, overrides: Record<string, string> = {}): Record<string, string> {
+    return { ...c['emptyGooglePromotionDraft'](), promotionTarget: 'Conference passes', discount: '25', finalUrl: URL, ...overrides };
+  }
+
+  function priceDraft(c: Record<string, any>, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    const row = (header: string) => ({ header, description: 'Two days', amount: '499', unit: '', finalUrl: URL });
+    return {
+      ...c['emptyGooglePriceDraft'](),
+      type: 'EVENTS',
+      languageCode: 'en',
+      currencyCode: 'usd',
+      offerings: [row('Standard'), row('Student'), row('Virtual')],
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('stores a call extension trimmed and with its country upper-cased, as upstream normalises it', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallExtension']({ countryCode: ' us ', phoneNumber: ' +1 (415) 555-0100 ' })).toBe(true);
+
+    expect(c['googleCallExtensions']()).toEqual([{ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' }]);
+  });
+
+  it.each([
+    ['a vanity number', { countryCode: 'US', phoneNumber: '1-800-FLOWERS' }],
+    ['a three-letter country', { countryCode: 'USA', phoneNumber: '4155550100' }],
+    ['the same digits punctuated differently', { countryCode: 'us', phoneNumber: '14155550100' }],
+  ])('refuses %s and keeps the list as it was', (_label, draft) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' });
+
+    expect(c['addGoogleCallExtension'](draft)).toBe(false);
+    expect(c['googleCallExtensions']()).toHaveLength(1);
+  });
+
+  it('refuses a call extension past the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_CALL_EXTENSIONS; i++)
+      c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: `415 555 01${String(i).padStart(2, '0')}` });
+
+    expect(c['googleCallExtensionsFull']()).toBe(true);
+    expect(c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '415 555 0199' })).toBe(false);
+  });
+
+  it('names the refusal under the call sub-form while the entry is still editable, and keeps the text on a refused add', () => {
+    seedChannel(fixture, { includeSearch: true });
+    type('implementation-google-call-country', 'US');
+    type('implementation-google-call-number', '1-800-FLOWERS');
+
+    expect(find('implementation-google-call-extension-error')?.textContent).toContain('vanity');
+    expect((find('implementation-google-call-extension-add') as HTMLButtonElement).disabled).toBe(true);
+
+    type('implementation-google-call-number', '+1 415 555 0100');
+    expect(find('implementation-google-call-extension-error')).toBeNull();
+    (find('implementation-google-call-extension-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(find('implementation-google-call-extensions-section')?.textContent).toContain('+1 415 555 0100 (US)');
+    expect((find('implementation-google-call-number') as HTMLInputElement).value).toBe('');
+  });
+
+  it('stores only the discount and condition arms the promotion form selected, with no empty optional fields', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    // Text left in the minimum-order box is NOT sent once the condition is switched to a code, and
+    // a currency typed for a percentage discount is not sent either — upstream reads it only for money.
+    const draft = promotionDraft(c, { eligibilityKind: 'code', promotionCode: ' SPRING ', ordersOverAmount: '100', currencyCode: 'usd', languageCode: 'en' });
+    expect(c['addGooglePromotion'](draft)).toBe(true);
+
+    expect(c['googlePromotions']()).toEqual([
+      { promotionTarget: 'Conference passes', discountPercent: 25, promotionCode: 'SPRING', languageCode: 'en', finalUrl: URL },
+    ]);
+  });
+
+  it('carries the currency, upper-cased, when a money field uses it', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(
+      c['addGooglePromotion'](
+        promotionDraft(c, { discountKind: 'amount', discount: '50', eligibilityKind: 'ordersOver', ordersOverAmount: '200', currencyCode: 'eur' })
+      )
+    ).toBe(true);
+
+    expect(c['googlePromotions']()[0]).toEqual({
+      promotionTarget: 'Conference passes',
+      discountAmount: 50,
+      ordersOverAmount: 200,
+      currencyCode: 'EUR',
+      finalUrl: URL,
+    });
+  });
+
+  it.each([
+    ['a money discount with no currency', { discountKind: 'amount', discount: '50' }, 'no currency code'],
+    ['a percentage over 100', { discount: '150' }, 'at most 100'],
+    ['a discount that is not a number', { discount: 'ten' }, 'greater than 0'],
+    ['a serving window ending before it starts', { startDate: '2026-11-10', endDate: '2026-11-01' }, 'serving end date'],
+  ])('refuses %s, and names it under the sub-form', (_label, overrides, expected) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePromotionDraft'].set(promotionDraft(c, overrides));
+    fixture.detectChanges();
+
+    expect(c['addGooglePromotion'](c['googlePromotionDraft']())).toBe(false);
+    expect(find('implementation-google-promotion-error')?.textContent).toContain(expected);
+    expect(c['googlePromotionAddDisabled']()).toBe(true);
+  });
+
+  it('says nothing about a promotion until what is on sale, the discount and the destination are filled', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePromotionDraft'].set(promotionDraft(c, { finalUrl: '', discount: '150' }));
+    fixture.detectChanges();
+
+    expect(c['googlePromotionDraftError']()).toBeNull();
+    expect(c['googlePromotionAddDisabled']()).toBe(true);
+  });
+
+  it("stores a price table with the table's currency on every row, as the wire carries it", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGooglePrice'](priceDraft(c, { priceQualifier: 'FROM' }))).toBe(true);
+
+    expect(c['googlePrices']()).toEqual([
+      {
+        type: 'EVENTS',
+        priceQualifier: 'FROM',
+        languageCode: 'en',
+        offerings: ['Standard', 'Student', 'Virtual'].map((header) => ({ header, description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: URL })),
+      },
+    ]);
+  });
+
+  it('refuses a price table repeating a row header, and names the row', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const draft = priceDraft(c);
+    (draft['offerings'] as { header: string }[])[2].header = 'standard';
+    c['googlePriceDraft'].set(draft);
+    fixture.detectChanges();
+
+    expect(c['addGooglePrice'](draft)).toBe(false);
+    expect(find('implementation-google-price-error')?.textContent).toContain('Row 3 repeats the header');
+  });
+
+  it("keeps the price form between Google's three and eight rows", () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googlePriceDraft']().offerings).toHaveLength(GOOGLE_ADS_MIN_PRICE_OFFERINGS);
+    expect(find('implementation-google-price-row-remove-0')).toBeNull();
+
+    c['removeGooglePriceRow'](0);
+    expect(c['googlePriceDraft']().offerings).toHaveLength(GOOGLE_ADS_MIN_PRICE_OFFERINGS);
+
+    for (let i = 0; i < 10; i++) c['addGooglePriceRow']();
+    fixture.detectChanges();
+    expect(c['googlePriceDraft']().offerings).toHaveLength(GOOGLE_ADS_MAX_PRICE_OFFERINGS);
+    expect(find('implementation-google-price-row-add')).toBeNull();
+    expect(find('implementation-google-price-row-remove-0')).not.toBeNull();
+  });
+
+  it('builds a price table through the sub-form, row by row', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    type('implementation-google-price-type', 'SERVICES');
+    type('implementation-google-price-language', 'en');
+    type('implementation-google-price-currency', 'USD');
+    ['Standard', 'Student', 'Virtual'].forEach((header, r) => {
+      type(`implementation-google-price-row-header-${r}`, header);
+      type(`implementation-google-price-row-description-${r}`, 'Two days');
+      type(`implementation-google-price-row-amount-${r}`, '99');
+      type(`implementation-google-price-row-url-${r}`, URL);
+    });
+    type('implementation-google-price-row-unit-1', 'PER_DAY');
+
+    (find('implementation-google-price-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googlePrices']()).toHaveLength(1);
+    expect(c['googlePrices']()[0].type).toBe('SERVICES');
+    expect(c['googlePrices']()[0].offerings[1].unit).toBe('PER_DAY');
+    // Cleared on success, back to three empty rows.
+    expect(c['googlePriceDraft']().offerings.every((row: { header: string }) => row.header === '')).toBe(true);
+  });
+
+  function seedAll(c: Record<string, any>): void {
+    c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 415 555 0100' });
+    c['addGooglePromotion'](promotionDraft(c));
+    c['addGooglePrice'](priceDraft(c));
+  }
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the other three are. */
+  it('offers all three on Search and withholds them, with a notice each, on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    seedAll(c);
+    expect(Object.keys(c['googleAssetExtensionsPayload']())).toEqual(['callExtensions', 'promotions', 'prices']);
+    expect(find('implementation-google-prices-section')).not.toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleAssetExtensionsPayload']()).toEqual({});
+    expect(find('implementation-google-prices-section')).toBeNull();
+    expect(find('implementation-google-call-extensions-withheld')?.textContent).toContain(
+      'Demand Gen campaigns do not take call extensions, so the 1 you added'
+    );
+    expect(find('implementation-google-promotions-withheld')?.textContent).toContain('do not take promotions');
+    expect(find('implementation-google-prices-withheld')?.textContent).toContain('do not take price extensions');
+    expect(find('implementation-google-prices-withheld-live')?.textContent?.trim()).toBe(c['googlePricesWithheldWarning']());
+    expect(c['googlePrices']()).toHaveLength(1);
+  });
+
+  it('counts all three in the capability block when extensions cannot be sent', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    seedAll(c);
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleAssetExtensionsPayload']()).toEqual({});
+    expect(find('implementation-google-extensions-capability-unsupported')?.textContent).toContain('1 call extension, 1 promotion and 1 price extension');
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it("sends all three on a submitted Search create, in campaign-service's wire shape", async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    seedAll(c);
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['callExtensions']).toEqual([{ countryCode: 'US', phoneNumber: '+1 415 555 0100' }]);
+    expect(request['promotions']).toEqual([{ promotionTarget: 'Conference passes', discountPercent: 25, finalUrl: URL }]);
+    expect(request['prices']).toEqual([
+      {
+        type: 'EVENTS',
+        languageCode: 'en',
+        offerings: ['Standard', 'Student', 'Virtual'].map((header) => ({ header, description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: URL })),
+      },
+    ]);
+  });
+
+  it('round-trips all three through a draft, without sharing a price row with it', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    seedAll(c);
+
+    expect(emitted?.googleCallExtensions).toEqual(c['googleCallExtensions']());
+    expect(emitted?.googlePromotions).toEqual(c['googlePromotions']());
+    expect(emitted?.googlePrices).toEqual(c['googlePrices']());
+
+    const saved = emitted as CampaignImplementationDraft;
+    c['googleCallExtensions'].set([]);
+    c['googlePromotions'].set([]);
+    c['googlePrices'].set([]);
+    restoreGoogleDraft(fixture, c, {
+      googleCallExtensions: saved.googleCallExtensions,
+      googlePromotions: saved.googlePromotions,
+      googlePrices: saved.googlePrices,
+    });
+
+    expect(c['googleCallExtensions']()).toHaveLength(1);
+    expect(c['googlePromotions']()).toHaveLength(1);
+    c['googlePrices']()[0].offerings[0].header = 'Edited';
+    expect(saved.googlePrices?.[0].offerings[0].header).toBe('Standard');
+  });
+
+  it('leaves the lists alone when the draft carries none of the three keys', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    seedAll(c);
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleCallExtensions']()).toHaveLength(1);
+    expect(c['googlePromotions']()).toHaveLength(1);
+    expect(c['googlePrices']()).toHaveLength(1);
   });
 });
 
