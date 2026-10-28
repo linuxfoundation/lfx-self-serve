@@ -86,7 +86,7 @@ export class PersonDetailDrawerService {
           return of({ request, detail: null, error: false });
         }
         // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the past 365 days.
-        const range = request.context?.directoryView?.range;
+        const range = request.context?.range;
         return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params: range ? { range } : {} }).pipe(
           map((detail) => ({ request, detail, error: false })),
           catchError((err: unknown) => {

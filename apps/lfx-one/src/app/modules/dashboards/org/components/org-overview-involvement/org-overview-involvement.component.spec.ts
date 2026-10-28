@@ -14,12 +14,15 @@ import { OrgOverviewInvolvementComponent } from './org-overview-involvement.comp
 
 const ACCOUNT_ID = 'acc-1';
 
-async function buildMetrics(training: OrgTrainingEnrollmentsResponse): Promise<DashboardMetricCard[]> {
+async function buildMetrics(
+  training: OrgTrainingEnrollmentsResponse,
+  maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] }
+): Promise<DashboardMetricCard[]> {
   const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const analytics = {
     getFoundationCoverage: () => of({ accountId: ACCOUNT_ID, foundationCount: 1, foundations: [] }),
     getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 100, monthlyData: [10], monthlyLabels: ['Jan 2030'] }),
-    getMaintainersMonthly: () => of({ accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] }),
+    getMaintainersMonthly: () => of(maintainers),
     getEventAttendanceMonthly: () =>
       of({
         accountId: ACCOUNT_ID,
@@ -95,5 +98,20 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
     expect(card?.subtitle).not.toMatch(/employee/i);
     expect(card?.chartData?.labels).toEqual(['Jan 2030', 'Feb 2030']);
     expect(card?.chartData?.datasets[0]?.data).toEqual([12, 15]);
+  });
+
+  // lfx-self-serve#4482: during a rolling deploy an old server answers with the pre-roles shape.
+  it('shows a dash, without throwing, when the response predates maintainer roles', async () => {
+    const legacy = {
+      accountId: ACCOUNT_ID,
+      accountName: 'Acme Motors',
+      totalMaintainersYearly: 20,
+      totalProjectsYearly: 30,
+      monthlyData: [20],
+      monthlyLabels: ['Jan 2030'],
+    };
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] }, legacy);
+
+    expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('—');
   });
 });

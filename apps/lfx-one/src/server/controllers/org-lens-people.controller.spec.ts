@@ -11,6 +11,7 @@ const {
   getContributors,
   getCompanyEmails,
   getCompanyEmailsByUsername,
+  getEmployeeDetail,
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
   resolveUsernameByPersonKey,
@@ -22,6 +23,7 @@ const {
   getContributors: vi.fn(),
   getCompanyEmails: vi.fn(),
   getCompanyEmailsByUsername: vi.fn(),
+  getEmployeeDetail: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
   resolveUsernameByPersonKey: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('../services/org-lens-people.service', () => ({
     public getFormerEmployees = getFormerEmployees;
     public getCompanyEmails = getCompanyEmails;
     public getCompanyEmailsByUsername = getCompanyEmailsByUsername;
+    public getEmployeeDetail = getEmployeeDetail;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
     public resolveUsernameByPersonKey = resolveUsernameByPersonKey;
   },
@@ -388,5 +391,50 @@ describe('OrgLensPeopleController per-person key contacts', () => {
 
     expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { username: 'jdoe', emails: [], emailsStatus: 'failed' });
     expect(res.json).toHaveBeenCalledWith({ assignments: [], status: 'failed' });
+  });
+});
+
+describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
+  const controller = new OrgLensPeopleController();
+  const DETAIL = { personKey: 'person-one', boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, events: [], training: [] };
+
+  function detailReq(query: Record<string, string>): Request {
+    return { params: { orgUid: ORG_UID, personKey: 'person-one', username: 'jdoe' }, query, path: '/test' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getEmployeeDetail.mockResolvedValue(DETAIL);
+    getEmployeeDetailByUsername.mockResolvedValue(DETAIL);
+  });
+
+  it('forwards the range the Maintainer pills follow, for a person key and for a username', async () => {
+    await controller.getEmployeeDetail(detailReq({ range: '90d' }), buildRes(), vi.fn());
+    await controller.getEmployeeDetailByUsername(detailReq({ range: 'all' }), buildRes(), vi.fn());
+
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '90d');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all');
+  });
+
+  it('defaults to the past 365 days when the opener sends no range', async () => {
+    await controller.getEmployeeDetail(detailReq({}), buildRes(), vi.fn());
+    await controller.getEmployeeDetailByUsername(detailReq({}), buildRes(), vi.fn());
+
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d');
+  });
+
+  it('rejects an unknown range with a 400 before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(detailReq({ range: 'forever' }), buildRes(), next);
+    await controller.getEmployeeDetailByUsername(detailReq({ range: 'forever' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(2);
+    for (const [error] of next.mock.calls) {
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error).toMatchObject({ statusCode: 400 });
+    }
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
+    expect(getEmployeeDetailByUsername).not.toHaveBeenCalled();
   });
 });

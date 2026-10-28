@@ -39,7 +39,7 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
-import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
@@ -670,21 +670,26 @@ export class OrgLensPeopleService {
     return { committeeRows, codeRows, eventRows, trainingRows };
   }
 
-  /** Projects in which the person holds a maintainer role overlapping the range; cached per (person, range) like the activity rows. */
-  private fetchMaintainerProjectIds(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
+  /**
+   * Projects in which the person holds a maintainer role overlapping the range; cached per (person, range) like the
+   * activity rows. `null` (roles table missing) shows no pill and is never stored.
+   */
+  private async fetchMaintainerProjectIds(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
     if (!isFilterSafeIdentifier(personKey)) {
-      return this.runMaintainerProjectIdsFetch(accountId, personKey, range);
+      return (await this.runMaintainerProjectIdsFetch(accountId, personKey, range)) ?? [];
     }
-    return withOrgCache(
+    const projectIds = await withOrgCache(
       accountId,
       `people-detail-roles:v1:${personKey}:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runMaintainerProjectIdsFetch(accountId, personKey, range),
-      (value) => Array.isArray(value) && value.every((projectId) => typeof projectId === 'string')
+      (value) => Array.isArray(value) && value.every((projectId) => typeof projectId === 'string'),
+      (value) => value !== null
     );
+    return projectIds ?? [];
   }
 
-  private async runMaintainerProjectIdsFetch(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
+  private async runMaintainerProjectIdsFetch(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[] | null> {
     const overlap = orgMaintainerRoleOverlap(range);
     const query = `
       SELECT DISTINCT PROJECT_ID
@@ -692,8 +697,12 @@ export class OrgLensPeopleService {
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
         AND ${overlap.sql}
     `;
-    const result = await this.snowflakeService.execute<OrgPersonMaintainerRoleProjectRow>(query, [accountId, personKey, ...overlap.binds]);
-    return result.rows.map((row) => row.PROJECT_ID);
+    const rows = await readMaintainerRoles<OrgPersonMaintainerRoleProjectRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', query, [
+      accountId,
+      personKey,
+      ...overlap.binds,
+    ]);
+    return rows?.map((row) => row.PROJECT_ID) ?? null;
   }
 
   /**

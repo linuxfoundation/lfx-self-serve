@@ -271,6 +271,8 @@ export class ContributorsComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'code',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.timeRange(),
     });
   }
 

@@ -13,7 +13,7 @@ import {
 } from '@lfx-one/shared';
 import { ORG_OVERVIEW_MAINTAINER_ROLES_RANGE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 
-import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
@@ -100,12 +100,19 @@ export class OrgInvolvementService {
 
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
     // `maintainer-roles:v1`: maintainer roles replaced the people count (lfx-self-serve#4482), so a `maintainers` entry must not be read.
+    // Set by the fetcher, read by `storable`: a card read while a roles table is missing is served, never stored.
+    let rolesMissing = false;
     return withOrgCache(
       accountId,
       'maintainer-roles:v1',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchMaintainersMonthly(accountId),
-      OrgInvolvementService.hasAccountId
+      async () => {
+        const fetched = await this.fetchMaintainersMonthly(accountId);
+        rolesMissing = fetched.rolesMissing;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !rolesMissing
     );
   }
 
@@ -207,7 +214,7 @@ export class OrgInvolvementService {
    * as People -> Contributors, so the two default views agree (the monthly table stops at the last complete month).
    * The trend is the roles held in each month.
    */
-  private async fetchMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+  private async fetchMaintainersMonthly(accountId: string): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
     const headlineQuery = `
       SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
@@ -225,16 +232,22 @@ export class OrgInvolvementService {
       ORDER BY METRIC_MONTH ASC
     `;
 
+    // Each part degrades on its own: a missing table answers zero roles or an empty trend, never an error.
     const [headline, trend] = await Promise.all([
-      this.snowflakeService.execute<OrgMaintainerRolesCountRow>(headlineQuery, [accountId, ...overlap.binds]),
-      this.snowflakeService.execute<OrgMaintainerRolesMonthlyRow>(trendQuery, [accountId]),
+      readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', headlineQuery, [accountId, ...overlap.binds]),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_MONTHLY', trendQuery, [accountId]),
     ]);
+    const maintainerRoles = headline?.[0]?.MAINTAINER_ROLES ?? 0;
 
     return {
-      accountId,
-      maintainerRoles: headline.rows[0]?.MAINTAINER_ROLES ?? 0,
-      monthlyData: trend.rows.map((row) => row.ACTIVE_ROLES ?? 0),
-      monthlyLabels: trend.rows.map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      response: {
+        accountId,
+        maintainerRoles,
+        totalMaintainersYearly: maintainerRoles,
+        monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      },
+      rolesMissing: headline === null || trend === null,
     };
   }
 

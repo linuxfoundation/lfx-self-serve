@@ -427,6 +427,8 @@ export class AllEmployeesComponent {
       avatarColorClass: row.avatarColorClass,
       // Live-only rows come from this range and project scope's live directory; the address lookup reads that one first.
       directoryView: { range: this.selectedRange(), projectScope: this.selectedFilters().projectScope },
+      // The Code tab's Maintainer pills follow the page range.
+      range: this.selectedRange(),
       isFormer: row.isFormer === true,
     });
   }

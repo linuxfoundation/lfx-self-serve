@@ -57,6 +57,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   // `valkey.service`'s own key builders need these.
   const orgSelector = await import('../../../../../packages/shared/src/utils/org-selector.utils');
   return {
+    ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
     normalizeHealthScoreCategoryV2: insights.normalizeHealthScoreCategoryV2,
     ...compactCache,
     ...orgSelector,
@@ -609,12 +610,44 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
 
     expect(response.projects.map((project) => project.maintainers)).toEqual([
       [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }],
-      [{ id: 'm-2', name: 'm-2', avatarUrl: 'https://avatars.example.com/m-2.png' }],
+      [{ id: 'm-2', name: 'Unknown maintainer', avatarUrl: 'https://avatars.example.com/m-2.png' }],
     ]);
     const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
     expect(sql).toContain('r.INSIGHTS_PROJECT_SLUG IN (?, ?)');
     expect(sql).toContain('r.ROLE_START_DATE <= CURRENT_DATE() AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
     expect(binds).toEqual([ACCOUNT_ID, 'k8s', 'etcd', 730]);
+  });
+
+  it('matches avatars on the lowercased project-people slug and names an unnamed maintainer neutrally', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [{ INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: null, MAINTAINER_AVATAR_URL: null }] };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' })] };
+      return { rows: [] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.maintainers).toEqual([{ id: 'm-1', name: 'Unknown maintainer', avatarUrl: '' }]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('AND LOWER(pp.PROJECT_SLUG) = r.INSIGHTS_PROJECT_SLUG');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 730]);
+  });
+
+  it('serves the projects with empty maintainer lists, and stores nothing, when the roles table is missing', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow()] };
+      return { rows: [] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects.map((project) => project.maintainers)).toEqual([[]]);
+    expect(cacheValues.size).toBe(0);
   });
 
   it('no longer reads maintainers from the project people table', async () => {

@@ -10,15 +10,17 @@ export interface OrgMaintainerRoleOverlap {
   binds: number[];
 }
 
-/** A `JOIN` onto per-project maintainer role counts and the values its placeholders bind, in order. */
-export interface OrgMaintainerRolesJoin {
-  sql: string;
-  binds: (string | number)[];
-}
+/** The two maintainer roles tables; a read names the one it may find missing. */
+export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES' | 'ORG_MAINTAINER_ROLES_MONTHLY';
 
 /** A count of distinct maintainer roles. */
 export interface OrgMaintainerRolesCountRow {
   MAINTAINER_ROLES: number | null;
+}
+
+/** A count of distinct maintainer roles on one project. */
+export interface OrgProjectMaintainerRolesCountRow extends OrgMaintainerRolesCountRow {
+  PROJECT_ID: string;
 }
 
 /** One role of the account overlapping the Contributors range — the tile counts these, the badges map them. */

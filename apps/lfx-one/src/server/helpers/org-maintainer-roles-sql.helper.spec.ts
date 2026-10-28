@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+// The utils barrel pulls Angular into this plain-Node run; the real range helpers are what run here.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+}));
 import { orgMaintainerRoleOverlap } from './org-maintainer-roles-sql.helper';
 
 describe('orgMaintainerRoleOverlap', () => {

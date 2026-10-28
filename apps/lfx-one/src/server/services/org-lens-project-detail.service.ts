@@ -7,6 +7,7 @@ import {
   ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
   ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE,
   ORG_MAINTAINER_ROLES_LABEL,
+  ORG_UNKNOWN_MAINTAINER_NAME,
   ORG_PROJECT_MAINTAINER_ROLES_DEFINITION,
   PD_HEALTH_TAG,
   PD_ORG_LENS_TIME_RANGE,
@@ -39,7 +40,7 @@ import type {
 import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
@@ -163,6 +164,8 @@ interface RosterProvider {
   /** Optional extra predicate ANDed after the (account, slug) filter — never user input; its placeholders bind `whereBinds`. */
   where?: string;
   whereBinds?: (string | number)[];
+  /** The roster total's expression (default `COUNT(*)`), so it can count the same thing as the card it backs. */
+  countExpression?: string;
   /** Stable ORDER BY for deterministic pagination. */
   orderBy: string;
   /** Map one fetched row to its drawer cells. */
@@ -542,7 +545,7 @@ export class OrgLensProjectDetailService {
           { expectMissingObject: true }
         ),
         this.snowflakeService.execute<{ N: number }>(
-          `SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra}`,
+          `SELECT ${provider.countExpression ?? 'COUNT(*)'} AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra}`,
           binds,
           { expectMissingObject: true }
         ),
@@ -618,7 +621,7 @@ export class OrgLensProjectDetailService {
     const cards = cardRows[0] ?? null;
 
     const block: OrgLensInfluenceBlock = {
-      technical: this.buildTechnicalCards(cards, maintainerRoles, sparkData.index, sparkData.axis),
+      technical: this.buildTechnicalCards(cards, maintainerRoles ?? 0, sparkData.index, sparkData.axis),
       ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparkData.index, sparkData.axis),
       isNonLfProject: isNonLf,
       levels: {
@@ -629,7 +632,8 @@ export class OrgLensProjectDetailService {
       // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
-    if (key !== null) {
+    // A block read while the roles table is missing (its maintainers card at zero) is served, never stored.
+    if (key !== null && maintainerRoles !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return block;
@@ -1152,10 +1156,12 @@ export class OrgLensProjectDetailService {
     return result.rows;
   }
 
-  /** The account's maintainer roles on the project overlapping the toggle's range (lfx-self-serve#4482). */
-  private async fetchMaintainerRolesCount(orgUid: string, slug: string, range: OrgLensLeaderboardTimeRange): Promise<number> {
+  /** The account's maintainer roles on the project overlapping the toggle's range (lfx-self-serve#4482); `null` when the roles table is missing. */
+  private async fetchMaintainerRolesCount(orgUid: string, slug: string, range: OrgLensLeaderboardTimeRange): Promise<number | null> {
     const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
-    const result = await this.snowflakeService.execute<OrgMaintainerRolesCountRow>(
+    const rows = await readMaintainerRoles<OrgMaintainerRolesCountRow>(
+      this.snowflakeService,
+      'ORG_MAINTAINER_ROLES',
       `
         SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
         FROM ${this.maintainerRolesTable()}
@@ -1164,7 +1170,7 @@ export class OrgLensProjectDetailService {
       `,
       [orgUid, slug, ...overlap.binds]
     );
-    return this.num(result.rows[0]?.MAINTAINER_ROLES ?? 0);
+    return rows === null ? null : this.num(rows[0]?.MAINTAINER_ROLES ?? 0);
   }
 
   private async fetchSparklines(orgUid: string, slug: string): Promise<SparkRow[]> {
@@ -1564,19 +1570,31 @@ export class OrgLensProjectDetailService {
           }),
         };
       case 'maintainers': {
-        // One row per maintainer role (person × Insights project unit) overlapping the toggle's range, so the
-        // roster's total is the card's count.
+        // One row per maintainer role (person × Insights project unit) overlapping the toggle's range, totalled with the
+        // card's own distinct count. The avatar comes from the person's row on this project in ORG_LENS_PROJECT_PEOPLE,
+        // as on the Projects page; a missing roles table degrades to an empty roster like every other card's.
         const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
         return {
-          table: this.maintainerRolesTable(),
-          select: 'MAINTAINER_NAME, ROLE_START_DATE, ROLE_END_DATE',
+          table: `(
+            SELECT r.ACCOUNT_ID, r.INSIGHTS_PROJECT_SLUG, r.MEMBER_ID, r.SEGMENT_ID, r.MAINTAINER_NAME, r.ROLE_START_DATE, r.ROLE_END_DATE,
+                   pp.PERSON_AVATAR_URL
+            FROM ${this.maintainerRolesTable()} r
+            LEFT JOIN (
+              SELECT ACCOUNT_ID, LOWER(PROJECT_SLUG) AS PROJECT_SLUG, PARTICIPANT_ID, MAX(PARTICIPANT_AVATAR_URL) AS PERSON_AVATAR_URL
+              FROM ${this.projectPeopleTable()}
+              GROUP BY ACCOUNT_ID, LOWER(PROJECT_SLUG), PARTICIPANT_ID
+            ) pp
+              ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID
+          )`,
+          select: 'MAINTAINER_NAME, PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
           slugColumn: 'INSIGHTS_PROJECT_SLUG',
           where: overlap.sql,
           whereBinds: overlap.binds,
+          countExpression: 'COUNT(DISTINCT MEMBER_ID, SEGMENT_ID)',
           orderBy: 'ROLE_END_DATE DESC NULLS FIRST, ROLE_START_DATE DESC, MAINTAINER_NAME ASC, MEMBER_ID ASC, SEGMENT_ID ASC',
           map: (r) => ({
             cells: [
-              this.personCell(this.str(r['MAINTAINER_NAME']), null),
+              this.personCell(this.str(r['MAINTAINER_NAME']) ?? ORG_UNKNOWN_MAINTAINER_NAME, this.str(r['PERSON_AVATAR_URL'])),
               // The warehouse's unknown-start sentinel reads "Unknown", not "Jan 1, 2000".
               {
                 text:
@@ -2284,6 +2302,10 @@ export class OrgLensProjectDetailService {
 
   private maintainerRolesTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_MAINTAINER_ROLES`;
+  }
+
+  private projectPeopleTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_PEOPLE`;
   }
 
   private collaborationTable(): string {

@@ -14,6 +14,7 @@ const { execute, getLive, cacheValues } = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),

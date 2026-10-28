@@ -14,6 +14,7 @@ import {
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   ORG_PROJECTS_MAINTAINER_ROLES_RANGE,
+  ORG_UNKNOWN_MAINTAINER_NAME,
   ORG_LENS_PROJECT_PEOPLE_COLUMNS,
   ORG_LENS_PROJECT_ROW_COLUMNS,
   VALKEY_CACHE,
@@ -52,7 +53,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -72,6 +73,7 @@ export class OrgLensProjectsService {
     // than a field on the response because it must never reach the browser or the stored value —
     // it describes this one fetch, not the page.
     let noActivityDegraded = false;
+    let rolesMissing = false;
     return withOrgCompactCache(
       accountId,
       cacheKey,
@@ -79,6 +81,7 @@ export class OrgLensProjectsService {
       async () => {
         const fetched = await this.fetchProjects(accountId, orgName, slugs);
         noActivityDegraded = fetched.noActivityDegraded;
+        rolesMissing = fetched.rolesMissing;
         return fetched.response;
       },
       { encode: encodeProjectsResponse, decode: decodeProjectsResponse, accept: isCompactProjectsCache },
@@ -86,7 +89,8 @@ export class OrgLensProjectsService {
       // it once is the established fallback; storing it is not — and now that compaction brings
       // the largest orgs under the write cap for the first time, an unstored degraded response
       // would become an hour of wrong answers rather than a single one.
-      () => !noActivityDegraded
+      // Likewise a response read while the maintainer roles table is missing (its lists empty) is served, never stored.
+      () => !noActivityDegraded && !rolesMissing
     );
   }
 
@@ -408,7 +412,7 @@ export class OrgLensProjectsService {
     accountId: string,
     orgName: string,
     slugs: string[] | null
-  ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean }> {
+  ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean; rolesMissing: boolean }> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
@@ -432,9 +436,10 @@ export class OrgLensProjectsService {
         orgSlug: this.slugify(orgName) || accountId,
         orgName: orgName || 'Your organization',
         dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-        projects: [...projectRows.map((row) => this.mapProject(row, peopleRows, maintainerRows)), ...noActivityProjects],
+        projects: [...projectRows.map((row) => this.mapProject(row, peopleRows, maintainerRows ?? [])), ...noActivityProjects],
       },
       noActivityDegraded,
+      rolesMissing: maintainerRows === null,
     };
   }
 
@@ -549,9 +554,9 @@ export class OrgLensProjectsService {
    * One row per person holding a maintainer role on a listed project overlapping the past 2 years (the window of the
    * page's contributors), matched on the catalog's lowercased Insights slug. The page has no project type filter: its
    * projects are the catalog's, LF and non-LF alike. The avatar comes from the person's contributor/participant row
-   * when they have one.
+   * when they have one. `null` when the roles table is missing.
    */
-  private async fetchMaintainerRows(accountId: string, projectSlugs: string[]): Promise<OrgProjectMaintainerRoleRow[]> {
+  private fetchMaintainerRows(accountId: string, projectSlugs: string[]): Promise<OrgProjectMaintainerRoleRow[] | null> {
     const overlap = orgMaintainerRoleOverlap(ORG_PROJECTS_MAINTAINER_ROLES_RANGE, 'r');
     const sql = `
       SELECT
@@ -562,7 +567,7 @@ export class OrgLensProjectsService {
       FROM ${this.maintainerRolesTable()} r
       LEFT JOIN ${this.projectPeopleTable()} pp
         ON pp.ACCOUNT_ID = r.ACCOUNT_ID
-        AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG
+        AND LOWER(pp.PROJECT_SLUG) = r.INSIGHTS_PROJECT_SLUG
         AND pp.PARTICIPANT_ID = r.MEMBER_ID
       WHERE r.ACCOUNT_ID = ?
         AND r.INSIGHTS_PROJECT_SLUG IN (${projectSlugs.map(() => '?').join(', ')})
@@ -571,8 +576,7 @@ export class OrgLensProjectsService {
       ORDER BY r.INSIGHTS_PROJECT_SLUG ASC, MAINTAINER_NAME ASC, r.MEMBER_ID ASC
     `;
     const binds = [accountId, ...projectSlugs.map((slug) => slug.toLowerCase()), ...overlap.binds];
-    const result = await this.snowflakeService.execute<OrgProjectMaintainerRoleRow>(sql, binds);
-    return result.rows;
+    return readMaintainerRoles<OrgProjectMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', sql, binds);
   }
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[], maintainerRows: OrgProjectMaintainerRoleRow[]): OrgLensProject {
@@ -620,7 +624,7 @@ export class OrgLensProjectsService {
         .filter((maintainer) => maintainer.INSIGHTS_PROJECT_SLUG === slug)
         .map((maintainer) => ({
           id: maintainer.MEMBER_ID,
-          name: maintainer.MAINTAINER_NAME ?? maintainer.MEMBER_ID,
+          name: maintainer.MAINTAINER_NAME ?? ORG_UNKNOWN_MAINTAINER_NAME,
           avatarUrl: maintainer.MAINTAINER_AVATAR_URL ?? '',
         })),
       contributors: this.mapPeople(people, 'contributor'),

@@ -482,7 +482,7 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
   it('counts distinct (member, segment) roles with or without code, and everyone with code as a contributor', async () => {
     const { stats } = await service.getContributors(ACCOUNT, '365d', FILTERS);
 
-    expect(stats).toEqual({ maintainerRoles: 4, contributors: 2, projects: 2, foundations: 1 });
+    expect(stats).toEqual({ maintainerRoles: 4, maintainers: 4, contributors: 2, projects: 2, foundations: 1 });
   });
 
   it('badges a person holding any role and labels each project row by the role on that project', async () => {
@@ -497,6 +497,30 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
       ['person-one', 'project-two', 'Contributor'],
       ['person-two', 'project-one', 'Contributor'],
     ]);
+  });
+
+  it('lists contributors with no Maintainer roles, and stores none, when the roles table is missing', async () => {
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return { rows: CONTRIBUTOR_ROWS };
+    });
+
+    const { stats, contributors } = await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(stats).toMatchObject({ maintainerRoles: 0, contributors: 2 });
+    expect(contributors.every((row) => row.role === 'Contributor')).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v1:365d:all')!)).toBe(false);
+  });
+
+  it('still fails on any other error from the roles read', async () => {
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('ORG_MAINTAINER_ROLES')) throw new Error('Warehouse timeout');
+      return { rows: CONTRIBUTOR_ROWS };
+    });
+
+    await expect(service.getContributors(ACCOUNT, '365d', FILTERS)).rejects.toThrow('Warehouse timeout');
   });
 
   it('treats a stored roles entry with a missing key as a miss', async () => {

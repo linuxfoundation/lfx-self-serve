@@ -361,6 +361,33 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(text('org-people-contributors-empty')).toContain('No contributors found for this organization in LF projects.');
     expect(text('org-people-contributors-empty')).toContain('Choose LF and non-LF projects');
   });
+
+  // lfx-self-serve#4482: during a rolling deploy an old server answers without `maintainerRoles`.
+  it('shows a dash on the Maintainer roles tile when the response predates maintainer roles, and the count otherwise', async () => {
+    const response = contributorsResponse();
+    const legacyStats: Partial<OrgContributorsResponse['stats']> = { ...response.stats };
+    delete legacyStats.maintainerRoles;
+    getContributors = vi.fn(() => of({ ...response, stats: legacyStats as OrgContributorsResponse['stats'] }));
+    await mount();
+    expect(text('org-people-contributors-stat-maintainers')).toContain('—');
+
+    TestBed.resetTestingModule();
+    getContributors = vi.fn(() => of({ ...response, stats: { ...response.stats, maintainerRoles: 1234 } }));
+    await mount();
+    expect(text('org-people-contributors-stat-maintainers')).toContain('1,234');
+  });
+
+  it('opens the person drawer for the range the tab lists the person in', async () => {
+    await mount('/?range=90d');
+    const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+    (fixture.componentInstance as unknown as { onPersonClick(row: object, event: Event): void }).onPersonClick(
+      { personKey: 'p-1', displayName: 'Ada', title: null, initials: 'A', avatarColorClass: '' },
+      new Event('click')
+    );
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', range: '90d' }));
+  });
 });
 
 describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {

@@ -80,6 +80,8 @@ export interface OrgContributorProjectOption {
 export interface OrgContributorStatsBaseline {
   /** Distinct maintainer roles — (member, Insights project) pairs — of the account overlapping the window in the project scope, with or without code. */
   maintainerRoles: number;
+  /** @deprecated Same value as `maintainerRoles`, for browsers still on the pre-#4482 client during one release. */
+  maintainers?: number;
   /** Everyone in the response: people with code in the window, maintainers included. Equals `contributors[].length`. */
   contributors: number;
   /** Distinct `project_id` count over the projects array. */

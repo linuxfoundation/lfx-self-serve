@@ -127,11 +127,21 @@
                 <!-- LF maintainer roles only: a non-LF project shows a dash, not a misleading zero. -->
                 <span
                   class="flex flex-col items-end"
-                  [pTooltip]="maintainerRolesDefinition"
-                  tooltipPosition="top"
                   [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles'">
                   <span class="text-sm text-gray-900">{{ project.isLfProject ? (project.maintainers | number) : '—' }}</span>
-                  {{ maintainerRolesLabel }}
+                  <span class="inline-flex items-center gap-1">
+                    {{ maintainerRolesLabel }}
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      aria-label="How maintainer roles are counted"
+                      [pTooltip]="maintainerRolesDefinition"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles-info'">
+                      <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                  </span>
                 </span>
                 <span class="flex flex-col items-end">
                   <span class="text-sm text-gray-900">{{ project.contributors | number }}</span>

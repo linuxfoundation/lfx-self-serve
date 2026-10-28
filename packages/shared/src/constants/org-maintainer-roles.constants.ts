@@ -39,3 +39,6 @@ export const ORG_PROJECT_MAINTAINER_ROLES_DEFINITION =
 
 /** ROLE_START_DATE the warehouse stores when a role's start is unknown; shown as unknown, never as a date. */
 export const ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE = '2000-01-01';
+
+/** Display name for a maintainer the warehouse has no name for — never the crowd.dev member id. */
+export const ORG_UNKNOWN_MAINTAINER_NAME = 'Unknown maintainer';

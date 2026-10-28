@@ -692,4 +692,19 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')).not.toBeNull();
     expect(emailState('0')).toBeNull();
   });
+
+  it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({ name: 'First person', personKey: 'first-person', range: '90d' });
+    await render();
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '90d' } });
+    // The address read is keyed on the live directory, not on the pill range, so it is unchanged.
+    expect(optionsFor(`${BY_PERSON_KEY}/company-emails`)).toEqual({ params: undefined });
+
+    httpGet.mockClear();
+    drawer.open({ name: 'First person', username: 'first-person' });
+    await render();
+    expect(optionsFor(`${BY_USERNAME}/detail`)).toEqual({ params: {} });
+  });
 });

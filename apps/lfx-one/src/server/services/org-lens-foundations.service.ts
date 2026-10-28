@@ -15,7 +15,7 @@ import type {
   VotingStatusBadge,
 } from '@lfx-one/shared/interfaces';
 
-import { orgLfProjectMaintainerRolesJoin } from '../helpers/org-maintainer-roles-sql.helper';
+import { fetchLfProjectMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -65,8 +65,6 @@ interface RawRow {
   PROJECT_NAME: string | null;
   PROJECT_IS_LF_PROJECT: boolean | null;
   PROJECT_INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket | null;
-  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482); NULL when there are none. */
-  PROJECT_MAINTAINER_ROLES: number | null;
   PROJECT_CONTRIBUTORS_COUNT: number | null;
   PROJECT_COLLABORATORS_COUNT: number | null;
   PROJECT_COMMITS_COUNT: number | null;
@@ -92,12 +90,19 @@ export class OrgLensFoundationsService {
 
   public async getFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
     // `foundations:v2`: per-project maintainers are now LF maintainer roles over the past 365 days (lfx-self-serve#4482).
+    // Set by the fetcher, read by `storable`: a response without its roles (table missing) is served, never stored.
+    let rolesMissing = false;
     return withOrgCache(
       accountId,
       'foundations:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFoundationsAndProjects(accountId),
-      OrgLensFoundationsService.isFoundationsResponse
+      async () => {
+        const fetched = await this.fetchFoundationsAndProjects(accountId);
+        rolesMissing = fetched.rolesMissing;
+        return fetched.response;
+      },
+      OrgLensFoundationsService.isFoundationsResponse,
+      () => !rolesMissing
     );
   }
 
@@ -112,13 +117,12 @@ export class OrgLensFoundationsService {
     );
   }
 
-  private async fetchFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
+  private async fetchFoundationsAndProjects(accountId: string): Promise<{ response: OrgLensFoundationsAndProjectsResponse; rolesMissing: boolean }> {
     // Single LEFT JOIN against the two pre-aggregated rollups. ORDER BY is
     // CASE-guarded so `project_count_lf` only sorts non-member LF rows and
     // NEVER member rows (which sort by tier_rank then foundation_name).
     // Inner projects array is sorted by commits DESC. Maintainers per project
-    // are the account's LF maintainer roles, joined on the project id.
-    const roles = orgLfProjectMaintainerRolesJoin(accountId, 'p.PROJECT_ID');
+    // are the account's LF maintainer roles, read alongside and matched on the project id.
     const query = `
       SELECT
         f.ACCOUNT_ID,
@@ -155,7 +159,6 @@ export class OrgLensFoundationsService {
         p.PROJECT_NAME                                 AS PROJECT_NAME,
         p.IS_LF_PROJECT                                AS PROJECT_IS_LF_PROJECT,
         p.INFLUENCE_MAX_BUCKET                         AS PROJECT_INFLUENCE_MAX_BUCKET,
-        roles.MAINTAINER_ROLES                         AS PROJECT_MAINTAINER_ROLES,
         p.CONTRIBUTORS_COUNT                           AS PROJECT_CONTRIBUTORS_COUNT,
         p.COLLABORATORS_COUNT                          AS PROJECT_COLLABORATORS_COUNT,
         p.COMMITS_COUNT                                AS PROJECT_COMMITS_COUNT
@@ -163,7 +166,6 @@ export class OrgLensFoundationsService {
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL p
         ON p.ACCOUNT_ID = f.ACCOUNT_ID
         AND p.FOUNDATION_ID = f.FOUNDATION_ID
-      ${roles.sql}
       WHERE f.ACCOUNT_ID = ?
       ORDER BY
         CASE WHEN f.IS_OUTSIDE_LF THEN 2 WHEN f.IS_MEMBER THEN 0 ELSE 1 END,
@@ -173,16 +175,20 @@ export class OrgLensFoundationsService {
         p.COMMITS_COUNT DESC NULLS LAST
     `;
 
-    const result = await this.snowflakeService.execute<RawRow>(query, [...roles.binds, accountId]);
+    const [result, roles] = await Promise.all([
+      this.snowflakeService.execute<RawRow>(query, [accountId]),
+      fetchLfProjectMaintainerRoles(this.snowflakeService, accountId),
+    ]);
+    const rolesMissing = roles === null;
 
     if (result.rows.length === 0) {
-      return this.emptyResponse(accountId);
+      return { response: this.emptyResponse(accountId), rolesMissing };
     }
 
-    return this.shapeResponse(accountId, result.rows);
+    return { response: this.shapeResponse(accountId, result.rows, roles ?? new Map()), rolesMissing };
   }
 
-  private shapeResponse(accountId: string, rawRows: RawRow[]): OrgLensFoundationsAndProjectsResponse {
+  private shapeResponse(accountId: string, rawRows: RawRow[], maintainerRoles: ReadonlyMap<string, number>): OrgLensFoundationsAndProjectsResponse {
     const accountName = rawRows[0].ACCOUNT_NAME ?? 'Unknown Account';
 
     // Group rows by foundation_id; the first raw row per foundation_id
@@ -263,7 +269,7 @@ export class OrgLensFoundationsService {
           projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
           isLfProject: raw.PROJECT_IS_LF_PROJECT === true,
           influence: raw.PROJECT_INFLUENCE_MAX_BUCKET,
-          maintainers: raw.PROJECT_MAINTAINER_ROLES ?? 0,
+          maintainers: raw.PROJECT_IS_LF_PROJECT === true ? (maintainerRoles.get(raw.PROJECT_ID) ?? 0) : 0,
           contributors: raw.PROJECT_CONTRIBUTORS_COUNT ?? 0,
           collaborators: raw.PROJECT_COLLABORATORS_COUNT ?? 0,
           commits: raw.PROJECT_COMMITS_COUNT ?? 0,

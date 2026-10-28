@@ -29,7 +29,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -69,10 +69,12 @@ export class OrgPeopleContributorsService {
         `people-contributors-roles:v1:${timeRange}:${filters.projectScope}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope),
-        isMaintainerRoleRows
+        isMaintainerRoleRows,
+        // `null` (roles table missing) is served as no roles and never stored.
+        (value) => value !== null
       ),
     ]);
-    return buildResponse(accountId, timeRange, filters, rows, roles);
+    return buildResponse(accountId, timeRange, filters, rows, roles ?? []);
   }
 
   /**
@@ -116,12 +118,12 @@ export class OrgPeopleContributorsService {
     return result.rows;
   }
 
-  /** The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in it. */
-  private async fetchMaintainerRoles(
+  /** The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in it; `null` when the roles table is missing. */
+  private fetchMaintainerRoles(
     accountId: string,
     timeRange: OrgLensTimeRange,
     projectScope: OrgProjectScope
-  ): Promise<OrgContributorMaintainerRoleRow[]> {
+  ): Promise<OrgContributorMaintainerRoleRow[] | null> {
     const overlap = orgMaintainerRoleOverlap(timeRange);
     const query = `
       SELECT PERSON_KEY, MEMBER_ID, SEGMENT_ID, PROJECT_ID
@@ -130,8 +132,7 @@ export class OrgPeopleContributorsService {
         AND ${overlap.sql}
         ${orgProjectScopePredicate(projectScope, 'IS_LF_PROJECT')}
     `;
-    const result = await this.snowflakeService.execute<OrgContributorMaintainerRoleRow>(query, [accountId, ...overlap.binds]);
-    return result.rows;
+    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', query, [accountId, ...overlap.binds]);
   }
 }
 
@@ -265,8 +266,10 @@ function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonP
  * project) pairs overlapping the window, with or without code; Contributors are everyone with code in it.
  */
 function computeStats(roles: OrgContributorMaintainerRoleRow[], contributors: number, projects: number, foundations: number): OrgContributorStatsBaseline {
+  const maintainerRoles = new Set(roles.map((role) => tupleKey([role.MEMBER_ID, role.SEGMENT_ID]))).size;
   return {
-    maintainerRoles: new Set(roles.map((role) => tupleKey([role.MEMBER_ID, role.SEGMENT_ID]))).size,
+    maintainerRoles,
+    maintainers: maintainerRoles,
     contributors,
     projects,
     foundations,

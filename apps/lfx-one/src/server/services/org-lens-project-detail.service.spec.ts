@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 // Defaults to null so every suite here bypasses the cache; the cache-contract suite opts in.
-const { buildOrgCacheKey, getJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn() }));
+const { buildOrgCacheKey, getJson, setJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn(), setJson: vi.fn() }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -24,12 +24,13 @@ vi.mock('./snowflake.service', () => ({
 }));
 vi.mock('./valkey.service', () => ({
   buildOrgCacheKey,
-  valkeyService: { getJson, setJson: vi.fn() },
+  valkeyService: { getJson, setJson },
 }));
 // See org-lens-projects.service.spec.ts for why this delegates to the real classification utils instead of stubbing.
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
+    ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
     buildInsightsUrl: () => '',
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
@@ -586,9 +587,9 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     buildOrgCacheKey.mockReset();
     buildOrgCacheKey.mockReturnValue(null);
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('COUNT(DISTINCT MEMBER_ID, SEGMENT_ID)')) return { rows: [{ MAINTAINER_ROLES: 3 }] };
+      if (sql.includes('AS MAINTAINER_ROLES')) return { rows: [{ MAINTAINER_ROLES: 3 }] };
       if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
-      if (sql.includes('COUNT(*)')) return { rows: [{ N: 2 }] };
+      if (sql.includes(' AS N ')) return { rows: [{ N: 2 }] };
       if (sql.includes('MAINTAINER_NAME')) {
         return {
           rows: [
@@ -623,6 +624,23 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     expect(callsOn('ORG_LENS_PROJECT_DETAIL_CARDS')[0]?.[0]).not.toContain('TECH_MAINTAINERS_COUNT');
   });
 
+  it('shows the maintainers card at zero, and does not store the block, when the roles table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('influence-key');
+    getJson.mockResolvedValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return { rows: sql.includes('PROJECT_NAME') ? [heroRow] : [] };
+    });
+
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+
+    expect(block!.technical.find((entry) => entry.key === 'maintainers')?.caption).toMatchObject({ emphasis: 'no' });
+    // The hero row may still be cached; the influence block (the one carrying the cards) must not be.
+    expect(setJson).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ technical: expect.anything() }), expect.anything());
+  });
+
   it.each([
     ['1y', [ORG, SLUG, 365]],
     ['all', [ORG, SLUG]],
@@ -638,8 +656,11 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     expect(rosterCalls).toHaveLength(2);
     for (const [sql, bound] of rosterCalls) {
       expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+      expect(sql).toContain('ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID');
       expect(bound).toEqual(binds);
     }
+    // The roster total counts the same distinct roles as the card.
+    expect(rosterCalls.some(([sql]) => sql.includes('SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS N'))).toBe(true);
     expect(callsOn('ORG_LENS_PROJECT_DETAIL_MAINTAINERS')).toEqual([]);
   });
 });
