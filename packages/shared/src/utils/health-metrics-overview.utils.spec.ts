@@ -7,14 +7,16 @@ import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_TABS } from '../constants/heal
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
-import { HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
 import {
   buildHealthMetricsOverviewAddPastMeetingUrl,
   buildHealthMetricsOverviewBalanceView,
+  buildHealthMetricsOverviewBlankCopy,
   buildHealthMetricsOverviewBoardView,
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
+  buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewEventsView,
   buildHealthMetricsOverviewNpsView,
@@ -25,6 +27,7 @@ import {
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
   sortHealthMetricsOverviewBoardRows,
+  toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
 } from './health-metrics-overview.utils';
 
@@ -54,6 +57,56 @@ describe('toHealthMetricsOverviewRange', () => {
     expect(toHealthMetricsOverviewRange('YTD')).toBe('YTD');
     expect(toHealthMetricsOverviewRange('COMPLETED_YEAR_3')).toBe('COMPLETED_YEAR_3');
     expect(toHealthMetricsOverviewRange('COMPLETED_YEAR_4')).toBeNull();
+  });
+});
+
+describe('toHealthMetricsOverviewPastYear', () => {
+  it('names the calendar year a completed period stands for, and none for YTD', () => {
+    const thisYear = new Date().getFullYear();
+
+    expect(toHealthMetricsOverviewPastYear('YTD')).toBeNull();
+    expect(toHealthMetricsOverviewPastYear('COMPLETED_YEAR')).toBe(thisYear - 1);
+    expect(toHealthMetricsOverviewPastYear('COMPLETED_YEAR_3')).toBe(thisYear - 3);
+  });
+});
+
+describe('buildHealthMetricsOverviewEmptyCopy', () => {
+  it('uses the YTD words, or a past year with the year filled in, as a sentence or a list of reasons', () => {
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps, null)).toEqual({
+      icon: 'fa-light fa-clipboard-list',
+      title: 'No responses yet',
+      text: '',
+      reasons: ['The score comes from your latest member satisfaction survey', 'No survey has closed yet this year', 'Send a survey to hear how members feel'],
+    });
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps, 2024)).toMatchObject({
+      title: 'No survey in 2024',
+      text: 'No member satisfaction survey closed this year. Each survey counts toward the year it closes.',
+      reasons: [],
+    });
+  });
+
+  it('gives every card a YTD and a past-year title, the past one naming the year', () => {
+    for (const copy of Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY)) {
+      expect(copy.ytd.title).not.toContain('{Y}');
+      expect(buildHealthMetricsOverviewEmptyCopy(copy, 2023).title).toMatch(/ in 2023$/);
+      expect(Boolean(copy.ytd.text) !== copy.ytd.reasons.length > 0).toBe(true);
+      expect(Boolean(copy.past.text) !== copy.past.reasons.length > 0).toBe(true);
+    }
+  });
+});
+
+describe('buildHealthMetricsOverviewBlankCopy', () => {
+  it('words the blank Overview for YTD or for a past year', () => {
+    expect(buildHealthMetricsOverviewBlankCopy(null)).toMatchObject({ title: 'No health data yet' });
+    expect(buildHealthMetricsOverviewBlankCopy(2024)).toEqual({
+      title: 'No health data for 2024',
+      lead: 'Nothing was recorded for the foundation in 2024.',
+      reasons: [
+        'The foundation may not have launched yet',
+        'Its activity may have been recorded under a parent foundation',
+        'A later year may have data to compare',
+      ],
+    });
   });
 });
 

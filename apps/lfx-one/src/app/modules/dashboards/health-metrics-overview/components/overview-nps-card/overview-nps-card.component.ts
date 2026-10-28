@@ -4,6 +4,7 @@
 import { Component, computed, inject } from '@angular/core';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
+  HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_STROKES,
@@ -32,10 +33,13 @@ export class OverviewNpsCardComponent {
   protected readonly card = HEALTH_METRICS_OVERVIEW_CARDS.nps;
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.nps;
+  protected readonly createSurveyLink = HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK;
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNps({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewNpsView | null>(() => {
     const nps = this.read.data();
     return nps ? buildHealthMetricsOverviewNpsView(nps, this.chrome.selectedRange()) : null;
   });
+  // A survey can only count toward the current year, so only YTD offers to start one.
+  protected readonly isYtd = computed(() => this.chrome.selectedRange() === 'YTD');
 }

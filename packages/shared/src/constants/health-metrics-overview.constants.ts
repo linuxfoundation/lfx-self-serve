@@ -7,7 +7,13 @@ import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants'
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
-import type { HealthMetricsOverviewEmptyCopy, HealthMetricsOverviewExploreLink } from '../interfaces/health-metrics-overview.interface';
+import type {
+  HealthMetricsOverviewBlankCopy,
+  HealthMetricsOverviewBlankTile,
+  HealthMetricsOverviewEmptyCopy,
+  HealthMetricsOverviewEmptyStateCopy,
+  HealthMetricsOverviewExploreLink,
+} from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Period selector — the 4 most recent options from {@link buildHealthMetricsYearOptions} (3 completed years
@@ -80,76 +86,191 @@ export const HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS = {
     'Members who chose not to continue their membership in the selected time period but were active members in the last period.\n\n(Source: Salesforce)',
 } as const;
 
-/** The circle behind an empty state's icon, grey by default and green for good news. */
-const EMPTY_NEUTRAL = { circleClass: 'bg-gray-50', iconClass: 'text-gray-400' } as const;
-
-/** Each card's empty state. */
+/** Each card's empty state, for YTD and for a past year; the design writes it for an Executive Director. */
 export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
   orgs: {
-    ...EMPTY_NEUTRAL,
     icon: 'fa-light fa-building',
-    title: 'No participating organizations yet',
-    text: 'Members and non-members appear here once organizations join the foundation or take part in its activities.',
+    ytd: {
+      title: 'No organizations yet',
+      text: '',
+      reasons: [
+        'Members show once their membership is active',
+        'Non-members show once they join code, events, meetings or training',
+        'Missing members? Your Program Manager can check their records',
+      ],
+    },
+    past: {
+      title: 'No organizations in {Y}',
+      text: '',
+      reasons: [
+        'No members or participating organizations were recorded',
+        'The foundation may not have launched yet',
+        'Members may have been counted under a parent foundation',
+      ],
+    },
   },
   nps: {
-    ...EMPTY_NEUTRAL,
-    icon: 'fa-light fa-face-smile',
-    title: 'No survey results yet',
-    text: 'The score appears after the first member satisfaction survey closes.',
+    icon: 'fa-light fa-clipboard-list',
+    ytd: {
+      title: 'No responses yet',
+      text: '',
+      reasons: ['The score comes from your latest member satisfaction survey', 'No survey has closed yet this year', 'Send a survey to hear how members feel'],
+    },
+    past: {
+      title: 'No survey in {Y}',
+      text: 'No member satisfaction survey closed this year. Each survey counts toward the year it closes.',
+      reasons: [],
+    },
   },
   churn: {
-    ...EMPTY_NEUTRAL,
     icon: 'fa-light fa-arrow-trend-down',
-    title: 'No churn to report',
-    text: 'No memberships lapsed in this period, so there is nothing to compare by tier.',
+    ytd: {
+      title: 'No churn so far',
+      text: 'Every paid member due so far has renewed. Memberships ending December 31 count toward next year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No churn in {Y}',
+      text: '',
+      reasons: [
+        'Every paid member due for renewal renewed',
+        'The foundation may have had no paid tiers this year',
+        'Free and associate memberships aren’t counted',
+      ],
+    },
   },
   balance: {
-    circleClass: 'bg-emerald-50',
-    iconClass: 'text-emerald-700',
-    icon: 'fa-light fa-circle-check',
-    title: 'All invoices are paid',
-    text: 'No member has an invoice more than 60 days overdue.',
+    icon: 'fa-light fa-file-invoice-dollar',
+    ytd: {
+      title: 'All invoices paid',
+      text: 'No invoice is 60 or more days overdue and no member has said they won’t renew. Late invoices show here as soon as they come up.',
+      reasons: [],
+    },
+    past: {
+      title: 'Nothing overdue in {Y}',
+      text: 'Every member invoice was paid within 60 days, and no member said they wouldn’t renew.',
+      reasons: [],
+    },
   },
   events: {
-    ...EMPTY_NEUTRAL,
-    icon: 'fa-light fa-calendar',
-    title: 'No events in this period',
-    text: 'Registrations, sponsorship and speaking proposals show here once the foundation runs an event.',
+    icon: 'fa-light fa-ticket',
+    ytd: {
+      title: 'No events scheduled',
+      text: 'Registrations, sponsorship and proposals show once an event is on the calendar. Planning one? Your LF Events contact can set it up.',
+      reasons: [],
+    },
+    past: {
+      title: 'No events in {Y}',
+      text: 'The foundation didn’t hold its own event this year. Co-located or parent-foundation events are counted there instead.',
+      reasons: [],
+    },
   },
   training: {
-    ...EMPTY_NEUTRAL,
     icon: 'fa-light fa-graduation-cap',
-    title: 'No enrollments yet',
-    text: 'Enrollments and revenue from courses, exams and edX appear here once learners sign up.',
+    ytd: {
+      title: 'No enrollments so far',
+      text: '',
+      reasons: [
+        'Enrollments come from the foundation’s courses on LF Education',
+        'Courses may not be published yet',
+        'Your LF Education contact can help plan a course',
+      ],
+    },
+    past: {
+      title: 'No enrollments in {Y}',
+      text: '',
+      reasons: [
+        'No one enrolled in the foundation’s courses this year',
+        'Courses may not have been published yet',
+        'Courses may have been offered under another project',
+      ],
+    },
   },
   code: {
-    ...EMPTY_NEUTRAL,
-    icon: 'fa-light fa-code-branch',
-    title: 'No contribution data yet',
-    text: 'Connect the foundation’s repositories in LFX Insights to see contributors.',
+    icon: 'fa-light fa-code',
+    ytd: {
+      title: 'No contributions tracked',
+      text: 'Contributors come from the foundation’s repositories in LFX Insights. None are connected yet, or they had no activity this year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No contributions in {Y}',
+      text: 'No code activity was recorded this year. Repositories connected later need their history imported to show earlier years.',
+      reasons: [],
+    },
   },
   board: {
-    ...EMPTY_NEUTRAL,
-    icon: 'fa-light fa-users',
-    title: 'No board meetings recorded yet',
-    text: 'Attendance shows here once the governing board meets, or when you add a past meeting.',
+    icon: 'fa-light fa-users-rectangle',
+    ytd: {
+      title: 'No board meetings yet',
+      text: 'Attendance is tracked for board meetings scheduled in LFX, and none has been recorded this year. Met elsewhere? Add the meeting so attendance counts.',
+      reasons: [],
+    },
+    past: {
+      title: 'No board meetings in {Y}',
+      text: 'No governing board meeting was recorded this year. Meetings held outside LFX count once added as past meetings.',
+      reasons: [],
+    },
   },
-} as const satisfies Record<keyof typeof HEALTH_METRICS_OVERVIEW_CARDS, HealthMetricsOverviewEmptyCopy>;
+} as const satisfies Record<keyof typeof HEALTH_METRICS_OVERVIEW_CARDS, HealthMetricsOverviewEmptyStateCopy>;
 
 /** The balance card's empty state when no balance was measured, so the card claims nothing is paid. */
-export const HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY: HealthMetricsOverviewEmptyCopy = {
-  ...EMPTY_NEUTRAL,
-  icon: 'fa-light fa-file-invoice-dollar',
+const BALANCE_UNMEASURED = {
   title: 'No balance data yet',
   text: 'Overdue membership invoices appear here once the foundation’s billing data is available.',
+  reasons: [],
+} as const;
+
+export const HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY: HealthMetricsOverviewEmptyStateCopy = {
+  icon: 'fa-light fa-file-invoice-dollar',
+  ytd: BALANCE_UNMEASURED,
+  past: BALANCE_UNMEASURED,
 };
 
 /** A card's error state; the read failed, so nothing it would show can be trusted. */
 export const HEALTH_METRICS_OVERVIEW_ERROR_COPY: HealthMetricsOverviewEmptyCopy = {
-  ...EMPTY_NEUTRAL,
   icon: 'fa-light fa-triangle-exclamation',
   title: 'Unavailable right now',
   text: 'We could not load this card. Refresh the page to try again.',
+  reasons: [],
+};
+
+/** The single card shown in place of the Overview when every card is empty, for YTD and for a past year. */
+export const HEALTH_METRICS_OVERVIEW_BLANK_COPY = {
+  ytd: {
+    title: 'No health data yet',
+    lead: 'Health Metrics fills in as the foundation’s activity is recorded in LFX. Nothing has been recorded for it so far.',
+    reasons: [
+      'The foundation may be newly launched',
+      'Its memberships, events and meetings may not be linked to it yet',
+      'Your Program Manager can help connect its data',
+    ],
+  },
+  past: {
+    title: 'No health data for {Y}',
+    lead: 'Nothing was recorded for the foundation in {Y}.',
+    reasons: [
+      'The foundation may not have launched yet',
+      'Its activity may have been recorded under a parent foundation',
+      'A later year may have data to compare',
+    ],
+  },
+} as const satisfies Record<'ytd' | 'past', HealthMetricsOverviewBlankCopy>;
+
+/** The blank card's icons, left to right: the outer tiles sit lower and tilt outward; the pulse sits centred, a size up. */
+export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsOverviewBlankTile[] = [
+  { icon: 'fa-light fa-users', transform: 'translateY(22px) rotate(-14deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-ticket', transform: 'translateY(6px) rotate(-7deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-heart-pulse', transform: 'none', iconSizePx: 22 },
+  { icon: 'fa-light fa-buildings', transform: 'translateY(6px) rotate(7deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-graduation-cap', transform: 'translateY(22px) rotate(14deg)', iconSizePx: 20 },
+];
+
+/** Where the NPS card's empty state sends a writer to start a survey: the foundation's Surveys page. */
+export const HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK: HealthMetricsOverviewExploreLink = {
+  label: 'Create Survey',
+  commands: ['/foundation/surveys'],
+  queryParams: {},
 };
 
 /** The "Explore …" links into each Level 2 section; each clears that section's filters on arrival. */
