@@ -744,6 +744,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    oneOffDocument: true,
     tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
@@ -751,7 +752,11 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
     batchPreamble: [],
     fields: [],
     sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
-    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    endpoints: {
+      generate: '/api/mktg-agents/member-360/generate',
+      result: '/api/mktg-agents/member-360/result',
+      answers: '/api/mktg-agents/member-360/answers',
+    },
     persistsDocument: true,
     regenerateViaGenerate: true,
   },

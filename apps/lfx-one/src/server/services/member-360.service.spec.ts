@@ -25,6 +25,7 @@ import { logger } from './logger.service';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
+  sendFollowUp: vi.fn(),
   getRawEventPayloads: vi.fn(),
   getProjectById: vi.fn(),
   listDocuments: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('./guild.service', () => ({
   GuildService: class {
     createSession = mocks.createSession;
+    sendFollowUp = mocks.sendFollowUp;
     getRawEventPayloads = mocks.getRawEventPayloads;
   },
 }));
@@ -125,6 +127,67 @@ describe('Member 360 entitlement and generation', () => {
     });
   });
   afterEach(() => vi.useRealTimers());
+  const questionsText =
+    'MEMBER 360 — QUESTIONS (member-360-questions/v1)\n```json\n' +
+    JSON.stringify({
+      contract: 'member-360-questions/v1',
+      project: 'Sample Foundation',
+      questions: [
+        {
+          id: 'tracker-window',
+          question: 'Which window should this tracker cover?',
+          why: 'The date is missing.',
+          suggested_answer: 'Use the current window.',
+          basis: 'private-evidence-marker',
+        },
+      ],
+    }) +
+    '\n```';
+  const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: questionsText });
+  const questionsId = createHash('sha256').update(questionsText).digest('hex');
+  const answersBody = () => ({
+    project: 'sample-project',
+    sessionId: 'session-1',
+    ownerToken: 'validated-by-controller',
+    questionsId,
+    answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }],
+  });
+  it('projects parsed questions and their exact-text hash without exposing internal basis', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result).toMatchObject({
+      status: 'needs_input',
+      questionsId,
+      questions: [{ key: 'tracker-window', basis: [], suggestedAnswer: 'Use the current window.' }],
+    });
+    expect(Member360Service.toRunResult(result)).toMatchObject({ status: 'questions', questionsId, questions: result.questions });
+    expect(JSON.stringify(result)).not.toContain('private-evidence-marker');
+  });
+  it('sends byte-exact answers with the catalog mention on its own line', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    await new Member360Service().sendAnswers(req, answersBody());
+    expect(mocks.sendFollowUp).toHaveBeenCalledWith(req, 'session-1', {
+      handle: 'member-360',
+      message:
+        'MEMBER 360 — ANSWERS (member-360-answers/v1)\n--- A tracker-window (accepted) ---\nANSWER: follows\nUse the current window.\n--- END A tracker-window ---',
+    });
+    expect(logger.info).toHaveBeenCalledWith(req, 'member_360_answers', expect.any(String), { session_id: 'session-1', questions_id: questionsId, count: 1 });
+  });
+  it('rejects stale hashes and mismatched question ids before sending', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] })
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
+  it('rejects repeats once the next turn is queued, without replaying questions or old root completion', async () => {
+    const done = JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } });
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done, JSON.stringify({ type: 'mktg_session_turn_started' })]);
+    await expect(new Member360Service().sendAnswers(req, answersBody())).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+  });
   it.each(['schema', 'hash', 'project', 'raw', 'other-tool', 'unpaired', 'failed'])('never stores a rejected %s candidate', async (mode) => {
     const envelope = member360Fixture();
     if (mode === 'schema') Object.assign(envelope, { kind: 'invalid' });

@@ -76,12 +76,11 @@ Member activity also uses the stored-envelope contact/email redactor. Cached act
 the viewer identity at its read: an identity change hides it immediately, without re-reading the
 subject-independent Member document. A response begun for another viewer cannot re-expose its feed. Its title and breadcrumbs
 come from the registered type. No questions text or reasoning reaches this feed.
-Member's 2.0 `needs_input` maps to a questions pause, retains any creator-visible feed and
-the existing unsupported-answer notice, and offers Refresh to recheck the same run.
-It never invents an answer endpoint or redirects to an unusable form. Because this intake has no
-answers endpoint, the page cannot answer; the run is never failed by the clock. It fails only when
-Guild ends the session without a valid result (#4267): the stored record stays `questions`/pending
-past the two-hour ceiling and an authorized read keeps reconciling it, never surfacing question text. A classified
+Member's `needs_input` maps to `questions` with validated `member-360-questions/v1` items and a SHA-256 digest of the boundary-trimmed turn. Internal question `basis` is omitted from the creator response. Unlike the agent's strict schemas, the BFF intentionally strips unknown question extensions for forward compatibility.
+
+`POST /api/mktg-agents/member-360/answers` requires the creator/project-bound owner token, the questions digest and one bounded `{id,text,origin}` answer per question. It rereads the current turn, rejects stale answers after the next turn is queued, renders guarded `member-360-answers/v1` blocks and sends them on the same Guild session with the catalog mention on its own line. Tracking resumes to writing. A superseded questions turn cannot pause a resumed run again; Guild-ended sessions retain the existing failure precedence (#4267). Questions UI wiring is a separate layer; this BFF change does not select its page placement.
+
+Follow-ups: concurrent-submit idempotency keyed on `questionsId`, and self-healing a failed `resumeAfterQuestions` tracking write (today durable `questions` can remain until a ready/failed result). A classified
 failure keeps the short reason, collapsed Details and host-scoped Run again; the
 server-projected `failureReason` preserves that classification independently of prose on failed runs only.
 The `MktgRunFailureReason` union currently contains `Member360FailureReason`; the dedicated
