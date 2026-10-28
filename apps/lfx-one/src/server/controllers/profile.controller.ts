@@ -2836,7 +2836,6 @@ export class ProfileController {
             .catch((err: unknown) => {
               logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
                 platform: cdpPlatform,
-                value,
                 err,
               });
             })
@@ -2863,7 +2862,7 @@ export class ProfileController {
 
     this.applyPrimaryEmail(enriched, primaryEmail);
 
-    // A chain already running for this member on this pod covers these writes; report none queued.
+    // Skipped when this member already has a chain on this pod; the next GET re-queues anything still missing.
     const cdpWritesStarted = !!writeMemberId && cdpWrites.length > 0 && this.cdpService.runMemberIdentityWrites(req, writeMemberId, cdpWrites);
 
     return { enriched, cdpPostsQueued: cdpWritesStarted ? cdpPostsQueued : 0 };

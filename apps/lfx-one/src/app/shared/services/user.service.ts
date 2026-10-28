@@ -121,8 +121,8 @@ export class UserService {
   // Bumped on every complete removal, so a write submitted before it cannot outlive it.
   private readonly meetingRegistrationGenerations = new Map<string, number>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
-  // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
-  // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
+  // Shared identities refresh trigger — tab and shell re-subscribe to getIdentities() off this (one
+  // shared GET) so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
   private readonly userIdentitiesRefresh$ = new Subject<void>();
   public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
   // One shared identities GET for every consumer on the page: the endpoint reconciles into CDP, so
