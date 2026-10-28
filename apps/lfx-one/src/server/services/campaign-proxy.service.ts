@@ -56,6 +56,7 @@ import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
+import { GoogleAdsNotConfiguredError } from './google-ads-read-error';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
@@ -104,7 +105,7 @@ function getGadsClient(): GoogleAdsApi {
     const clientSecret = getEnv('GADS_CLIENT_SECRET');
     const developerToken = getEnv('GADS_DEVELOPER_TOKEN');
     if (!clientId || !clientSecret || !developerToken) {
-      throw new Error('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
+      throw new GoogleAdsNotConfiguredError('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
     }
     gadsClient = new GoogleAdsApi({
       client_id: clientId,
