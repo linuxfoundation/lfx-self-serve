@@ -154,6 +154,24 @@ describe('CreativeLibraryUploadComponent', () => {
     expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
   });
 
+  it('neither re-reads the quota nor tells the host when switching between briefs, back included', () => {
+    const changed = vi.fn();
+    fixture.componentInstance.libraryChanged.subscribe(changed);
+    setQueue([item('a', 'uploaded'), item('b', 'uploaded'), item('c', 'failed', '', 'b-2')]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    const reads = (service['listCreativeAssets'] as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    // To a brief with nothing stored (2 -> 0), then back (0 -> 2): the library never changed.
+    fixture.componentRef.setInput('briefId', 'b-2');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('briefId', BRIEF_ID);
+    fixture.detectChanges();
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    // Only the two brief changes themselves re-read; no growth-driven read on the way back.
+    expect(service['listCreativeAssets']).toHaveBeenCalledTimes(reads + 2);
+  });
+
   it('keeps the last quota and headroom warning on screen while a re-read is pending', async () => {
     const reads = new Subject<CreativeAssetLibrary>();
     let first = true;

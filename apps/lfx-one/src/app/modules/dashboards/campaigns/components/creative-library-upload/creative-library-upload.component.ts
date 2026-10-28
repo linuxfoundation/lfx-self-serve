@@ -64,13 +64,16 @@ export class CreativeLibraryUploadComponent {
    */
   private readonly storedCount = computed(() => this.items().filter((item) => item.status === 'uploaded' || item.status === 'present').length);
   /**
-   * The stored count each time it RISES. Clear list, or a switch to another brief, drops the count
-   * without changing the library, so neither re-reads the quota nor tells the host.
+   * The stored count each time it RISES within one brief. Clear list drops the count without
+   * changing the library, and a switch between briefs (either way) only swaps whose items are
+   * counted, so none of these re-reads the quota or tells the host.
    */
-  private readonly libraryGrowth$ = toObservable(this.storedCount).pipe(
+  private readonly libraryGrowth$ = toObservable(
+    computed(() => ({ briefId: this.briefId(), stored: this.storedCount() }), { equal: (a, b) => a.briefId === b.briefId && a.stored === b.stored })
+  ).pipe(
     pairwise(),
-    filter(([before, after]) => after > before),
-    map(([, after]) => after)
+    filter(([before, after]) => before.briefId === after.briefId && after.stored > before.stored),
+    map(([, after]) => after.stored)
   );
   private readonly libraryRevision = toSignal(this.libraryGrowth$.pipe(scan((count) => count + 1, 0)), { initialValue: 0 });
   protected readonly quota: Signal<CreativeAssetLibraryQuotaState> = this.initQuota();

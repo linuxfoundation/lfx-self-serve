@@ -3,6 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE,
@@ -128,7 +129,6 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import {
   catchError,
@@ -1287,17 +1287,18 @@ export class CampaignService {
     });
   }
 
-  /**
-   * Send one queued file and record its outcome. Re-sent on a transient failure (a 503 from the
-   * upload admission, a dropped connection), which is safe because identical bytes return the
-   * asset already stored rather than a second copy.
-   */
+  /** Queue a new attempt at the back; any older buffered attempt for the item becomes stale. */
   private queueCreativeAssetAttempt(itemId: string): void {
     const attempt = (this.creativeAssetQueueAttempts.get(itemId) ?? 0) + 1;
     this.creativeAssetQueueAttempts.set(itemId, attempt);
     this.creativeAssetQueueWork.next({ id: itemId, attempt });
   }
 
+  /**
+   * Send one queued file and record its outcome. Re-sent on a transient failure (a 503 from the
+   * upload admission, a dropped connection), which is safe because identical bytes return the
+   * asset already stored rather than a second copy.
+   */
   private sendQueuedCreativeAsset(itemId: string, attempt: number): Observable<unknown> {
     return defer(() => {
       const queued = this.creativeAssetQueue().find((item) => item.id === itemId);
@@ -1312,8 +1313,8 @@ export class CampaignService {
         // the admission for several seconds, and two quick re-sends would both land inside it.
         retry({
           count: CREATIVE_ASSET_QUEUE_RETRIES,
-          delay: (error: unknown, attempt: number) =>
-            isTransientHttpError(error) ? timer(CREATIVE_ASSET_QUEUE_RETRY_BASE_MS * 2 ** (attempt - 1)) : throwError(() => error),
+          delay: (error: unknown, retryCount: number) =>
+            isTransientHttpError(error) ? timer(CREATIVE_ASSET_QUEUE_RETRY_BASE_MS * 2 ** (retryCount - 1)) : throwError(() => error),
         }),
         map((result) => {
           this.creativeAssetQueueFiles.delete(itemId);

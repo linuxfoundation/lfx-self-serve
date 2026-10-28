@@ -4,7 +4,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting, TestRequest } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_QUOTA_MESSAGE, CREATIVE_ASSET_SUBFOLDER_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CREATIVE_ASSET_EMPTY_MESSAGE,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_QUOTA_MESSAGE,
+  CREATIVE_ASSET_SUBFOLDER_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { CreativeAssetQueueItem, CreativeAssetUploadResult } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -68,21 +73,24 @@ describe('CampaignService library upload queue', () => {
     expect(items().every((item) => item.briefId === BRIEF_ID && item.projectSlug === 'tlf')).toBe(true);
   });
 
-  it('refuses a wrong type, an oversized file and a subfolder file before sending, and lists each one', () => {
+  it('refuses a wrong type, an oversized, an empty and a subfolder file before sending, and lists each one', () => {
     const text = new File(['notes'], 'notes.txt', { type: 'text/plain' });
     const huge = png('huge.png', CREATIVE_ASSET_MAX_BYTES + 1, 'export/huge.png');
+    const empty = png('empty.png', 0, 'export/empty.png');
     const nested = png('nested.png', 16, 'export/old/nested.png');
     const top = png('top.png', 16, 'export/top.png');
 
-    service.enqueueCreativeAssetUploads([text, huge, nested, top], 'tlf', BRIEF_ID, { folder: true });
+    service.enqueueCreativeAssetUploads([text, huge, empty, nested, top], 'tlf', BRIEF_ID, { folder: true });
 
     expect(items().map((item) => [item.name, item.status, item.refusal])).toEqual([
       ['notes.txt', 'refused', 'type'],
       ['export/huge.png', 'refused', 'size'],
+      ['export/empty.png', 'refused', 'other'],
       ['export/old/nested.png', 'refused', 'subfolder'],
       ['export/top.png', 'uploading', null],
     ]);
-    expect(items()[2].message).toBe(CREATIVE_ASSET_SUBFOLDER_MESSAGE);
+    expect(items()[2].message).toBe(CREATIVE_ASSET_EMPTY_MESSAGE);
+    expect(items()[3].message).toBe(CREATIVE_ASSET_SUBFOLDER_MESSAGE);
     // Only the one top-level image ever reaches the wire.
     open()[0].flush(asset('a-1'));
     expect(open().length).toBe(0);

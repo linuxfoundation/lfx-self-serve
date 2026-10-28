@@ -518,6 +518,8 @@ export class ImplementationTabComponent implements OnInit {
       this.linkedInAssetUploadEnabled(),
       this.googleAssetUploadEnabled(),
       this.microsoftAssetUploadEnabled(),
+      // The tweet image: the BFF route admits the upload on `canCreateTwitter()` alone.
+      this.twitterCreateEnabled(),
     ];
     if (flags.some((enabled) => enabled === true)) return true;
     return flags.some((enabled) => enabled !== false) ? null : false;

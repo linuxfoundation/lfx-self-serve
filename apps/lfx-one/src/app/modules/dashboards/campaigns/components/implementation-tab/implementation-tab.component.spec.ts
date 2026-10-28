@@ -10332,7 +10332,24 @@ describe('ImplementationTabComponent reddit image upload', () => {
       f.componentRef.setInput(flag, false);
     }
     f.detectChanges();
+    // X's capability is still unanswered, so this is unknown rather than a no.
+    expect(upload().available()).toBeNull();
+
+    f.componentRef.setInput('twitterCreateEnabled', false);
+    f.detectChanges();
     expect(upload().available()).toBe(false);
+  });
+
+  // The BFF route admits a library upload on `canCreateTwitter()` alone (the tweet image).
+  it('offers the library upload when X creation is the only capability that says yes', async () => {
+    const f = (await mount(false)).fixture;
+    for (const flag of ['metaAssetUploadEnabled', 'linkedInAssetUploadEnabled', 'googleAssetUploadEnabled', 'microsoftAssetUploadEnabled']) {
+      f.componentRef.setInput(flag, false);
+    }
+    f.componentRef.setInput('twitterCreateEnabled', true);
+    f.detectChanges();
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload.available()).toBe(true);
   });
 
   it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {
