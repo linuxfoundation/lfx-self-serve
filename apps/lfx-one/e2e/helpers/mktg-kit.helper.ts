@@ -12,11 +12,12 @@ import {
   SELECTED_FOUNDATION_COOKIE_KEY,
 } from '../../../../packages/shared/src/constants';
 import { createHash } from 'node:crypto';
-import { findMktgRunIntake } from '../../../../packages/shared/src/utils/mktg-document-store.utils';
+import { mktgRunModeFor } from '../../../../packages/shared/src/utils/mktg-family-actions.utils';
 import type {
   FoundationMessageContent,
   MktgArtifactStoredResponse,
   MktgDocumentsResponse,
+  MktgLastIntake,
   MktgDocumentType,
   MktgRevisionResponse,
   MktgRevisionSummary,
@@ -169,6 +170,7 @@ export async function setupKit(
   options: {
     loaded?: boolean;
     listing?: MktgDocumentsResponse;
+    intakes?: Record<string, MktgLastIntake>;
     approvedFramework?: boolean;
     writer?: boolean;
     status?: number;
@@ -226,11 +228,14 @@ export async function setupKit(
     }
   );
   const intakePaths = new Set(
-    MKTG_DOCUMENT_TYPES.filter((type) => !!findMktgRunIntake(type.agentKey)).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
+    MKTG_DOCUMENT_TYPES.filter((type) => !!mktgRunModeFor(type.catalogAgentId ?? '')).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
   );
   await page.route(
     (url) => intakePaths.has(url.pathname),
-    (route) => (isProjectRead(route) ? kitJson(route, { intake: null }, writer ? 200 : 403) : rejectUnexpected(route))
+    (route) =>
+      isProjectRead(route)
+        ? kitJson(route, { intake: options.intakes?.[new URL(route.request().url()).pathname.split('/').at(-2) ?? ''] ?? null }, writer ? 200 : 403)
+        : rejectUnexpected(route)
   );
   await page.route(
     (url) => url.pathname === '/api/mktg-agents/foundation-message/stored',

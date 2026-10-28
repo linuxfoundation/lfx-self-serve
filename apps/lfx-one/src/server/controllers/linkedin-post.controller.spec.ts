@@ -17,6 +17,7 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
+  history: vi.fn(),
   ownedResult: vi.fn(),
   attribution: vi.fn(),
   track: vi.fn(),
@@ -39,6 +40,11 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public resumeAfterQuestions = mocks.resume;
+  },
+}));
+vi.mock('../services/mktg-last-intake.service', () => ({
+  MktgLastIntakeService: class {
+    public recordStartBestEffort = mocks.history;
   },
 }));
 vi.mock('../services/mktg-document-store.service', () => ({
@@ -68,7 +74,7 @@ vi.mock('../services/project.service', () => ({
     public getProjectById = mocks.project;
   },
 }));
-vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn() } }));
+vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn(), warning: vi.fn() } }));
 import { LinkedinPostController } from './linkedin-post.controller';
 import { logger } from '../services/logger.service';
 
@@ -93,6 +99,7 @@ describe('LinkedIn endpoint boundaries', () => {
     });
     mocks.ownedResult.mockReset().mockResolvedValue({ status: 'pending' });
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.history.mockReset().mockResolvedValue(undefined);
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
@@ -153,6 +160,38 @@ describe('LinkedIn endpoint boundaries', () => {
     await new LinkedinPostController().generate(req, res, next);
     expect(mocks.track).toHaveBeenCalledWith(req, 'linkedin-post', 'project-one', 'session-one', { sourceWords: 12 });
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ runId: 'a'.repeat(64) }));
+    expect(mocks.history).toHaveBeenCalledWith(req, {
+      project: 'project-one',
+      agentId: 'linkedin-post',
+      runId: 'a'.repeat(64),
+      answers: req.body.answers,
+      documentCount: 0,
+      logoCount: 0,
+    });
+    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
+    expect(vi.mocked(res.json).mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
+  });
+
+  it.each(['start', 'track'] as const)('records no last intake when %s fails', async (step) => {
+    mocks[step].mockRejectedValueOnce(new Error('Synthetic failure'));
+    const next = vi.fn();
+    await new LinkedinPostController().generate(
+      request({ project: 'project-one', answers: { content_source: 'text', content_text: 'Synthetic source' } }),
+      response(),
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(mocks.history).not.toHaveBeenCalled();
+  });
+  it('does not await the service-owned history projection after an accepted Generate', async () => {
+    const req = request({ project: 'project-one', answers: { content_source: 'file', content_file_base64: 'private-upload' } });
+    const next = vi.fn();
+    const res = response();
+    mocks.history.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    await new LinkedinPostController().generate(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledOnce();
+    expect(mocks.history.mock.calls[0][1].answers).toBe(req.body.answers);
   });
 
   it('checks writer entitlement and validates share-link edits before the metadata store', async () => {

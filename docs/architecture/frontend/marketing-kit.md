@@ -89,31 +89,42 @@ The Family page links the real asset view `documents/:agentKey/:documentId`, pre
 lens/project context. `resolveMktgFamilyActions` is the pure shared policy for Family header,
 row actions and Kit card row data. Availability requires an active, non-excluded catalog
 agent with a registered intake; unavailable rows read Coming soon and offer no Run action.
-Every available row, living or one-off, offers **Run X** when never run and **Run again**
-when a document exists. Copy comes from the asset's board `runName` or label; catalog
-identity controls routing. Required non-optional approved JSON dependencies disable the
-action with the same reason as the run page; optional dependencies do not block.
+`mktgFamilyRowAction(row, ctx)` is the **one place to flip** the row rule. Available,
+not-built rows offer a quiet **Run X** link in the same place; copy comes from `runName`
+or the asset label. Required non-optional approved JSON dependencies and missing write
+access disable that row action with its reason in plain inline text, not tooltip-only.
+Optional dependencies never block. Existing living and one-off assets have no row action:
+open the document, where Run again or Draft another remains the natural entry.
 
-The header priority is **Rebuild what is stale** (only Positioning has a rebuild panel),
-then **Run next agent** with **Next: X** for the first never-run available asset in family
-order, then **Run <lead asset>**. Unavailable leads retain a disabled action with pending
-copy. No header action renders while the kit read is pending or after a non-access error.
-A 403 resolves access, not document state: readers still see a disabled lead header with
-**You need write access to this project to run its agents**, but no private rows. The service
-tracks access denial separately from generic read errors. Loading status remains mounted.
-Accessible names include the next asset or the disabled reason; focusable tooltip notes
-announce the same reason on keyboard focus and hover. `lfxTooltipHostFocus` keeps focus
-activation on the wrapper rather than PrimeNG's disabled descendant component.
+One solid, never-disabled header names the next step: **Update <n> assets** (singular
+**Update <runName>**) for stale Positioning assets; otherwise the first available not-built
+asset gives **Review and approve the <document>** linking to its missing approval, or
+**Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
+(singular **Review the draft**) links to the first draft in family order. One-off families
+always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
+Fresh, fully approved living families need no primary. There is no caption/sub-line.
+No header renders while loading, after a failed read, without write access (including
+403), or for an unavailable agent. The service still distinguishes access denial from
+read failure; loading status remains mounted. Accessible names equal the primary label.
 
 All enabled header and row Run actions are real anchors. Native Cmd/Ctrl-click opens a new
 tab without navigating the original family. Replacement query params preserve the selected
 project and drop stale questions/generation/revision/run selectors. Living actions use
-`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 has
-no intake fields beyond the project, so its plain project-scoped route carries its complete
-input. LinkedIn uses its existing plain route in phase 1; last-input persistence and
-`mode=new` prefill are phase 2, pending the one-off landing integration before the parent
-merges. The mode policy lives in `MKTG_FAMILY_ONE_OFF_RUN_MODES`. Breadcrumbs and row headings
-are unchanged.
+`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
+null: its run page's window/compare/tracker inputs are not registered as a last-intake
+allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
+follow-up. Document Run again retains `mode=new` through the shared
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. LinkedIn's Document's
+**Draft another post** unconditionally chooses that fresh mode to restore previous source
+inputs; it never inherits entry intent from the current URL. The dedicated source form restores
+writer-gated last text/URL and share-link scalars before any run navigation, preserving
+explicit blanks; files require reattachment and oversized pasted text requires re-entry.
+The source form does not resume a run on load: the Document receiver owns accepted-run
+progress and cross-browser recovery. Immediately before accepted-start navigation pushes
+the Document, entry-only `mode=new` is consumed with a replacement URL update so Back
+does not restore fresh mode; Document completion/redraft navigations also explicitly clear mode. New generation still requires explicit Draft.
+Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
+scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and

@@ -26,6 +26,11 @@
     @if (loading()) {
       <p role="status" data-testid="mktg-linkedin-loading">Loading your profile…</p>
     } @else {
+      @if (writer()) {
+        <p role="status" class="text-sm text-gray-500" [class.sr-only]="!lastIntakeLoading() && !lastIntakeNote()" data-testid="mktg-linkedin-intake-note">
+          {{ lastIntakeLoading() ? 'Loading last run inputs…' : lastIntakeNote() }}
+        </p>
+      }
       @if (error()) {
         <div
           role="alert"
@@ -259,7 +264,7 @@
               type="button"
               (onClick)="onDraft()"
               [loading]="busy()"
-              [disabled]="busy() || acceptedRequest() !== null"
+              [disabled]="busy() || acceptedRequest() !== null || lastIntakeLoading() || lastIntakeDenied()"
               data-testid="mktg-linkedin-draft" />
             <p class="text-sm text-gray-500">About a minute. Each draft is stored under LinkedIn posts as its own run.</p>
           </div>

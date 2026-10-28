@@ -19,6 +19,7 @@ import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgLastIntakeService } from '../services/mktg-last-intake.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -30,6 +31,7 @@ export class LinkedinPostController {
   private readonly projects = new ProjectService();
   private readonly documents = new MktgDocumentStoreService();
   private readonly runs = new MktgDocumentRunService();
+  private readonly lastIntake = new MktgLastIntakeService();
 
   public async getProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_linkedin_profile';
@@ -107,6 +109,15 @@ export class LinkedinPostController {
       });
       logger.success(req, operation, start, {});
       res.set('Cache-Control', 'private, no-store').json({ ...result, runId, ownerToken: createSessionOwnerToken(user, result.sessionId) });
+      // Separate from private run tracking: never delay/fail an accepted Generate for history.
+      void this.lastIntake.recordStartBestEffort(req, {
+        project: project.uid,
+        agentId: LINKEDIN_POST_INTAKE.agentId,
+        runId,
+        answers,
+        documentCount: 0,
+        logoCount: 0,
+      });
     } catch (error) {
       next(error);
     }

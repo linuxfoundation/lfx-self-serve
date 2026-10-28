@@ -65,7 +65,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
     lead: 'HUB voices',
     leadSummary: 'LinkedIn Post agent',
     description: 'Posts in the project’s voice from a link or a note.',
-    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
+    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', runName: 'LinkedIn post', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
     agentIds: ['linkedin-post'],
     runOrder: '',
   },

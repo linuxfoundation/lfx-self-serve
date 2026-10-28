@@ -249,12 +249,15 @@ describe('MktgAgentRunService', () => {
     expect(serialized).not.toContain('private-question-marker');
   });
 
-  it('reads the private scalar history using the catalog agent key, never a POST', () => {
+  it.each([
+    ['foundation-setup', 'foundation-message'],
+    ['linkedin-post', 'linkedin-post'],
+  ])('reads %s scalar history using its catalog key, never a POST', (agentId, key) => {
     const get = vi.fn(() => of({ intake: null }));
     Object.assign(TestBed.inject(HttpClient), { get });
     const received = vi.fn();
-    service.lastIntake('synthetic-project', 'foundation-setup').subscribe(received);
-    expect(get).toHaveBeenCalledWith('/api/mktg-agents/intakes/foundation-message/last', { params: { project: 'synthetic-project' }, transferCache: false });
+    service.lastIntake('synthetic-project', agentId).subscribe(received);
+    expect(get).toHaveBeenCalledWith(`/api/mktg-agents/intakes/${key}/last`, { params: { project: 'synthetic-project' }, transferCache: false });
     expect(received).toHaveBeenCalledWith(null);
     expect(httpPost).not.toHaveBeenCalled();
   });

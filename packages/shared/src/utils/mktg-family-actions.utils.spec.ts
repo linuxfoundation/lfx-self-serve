@@ -8,7 +8,7 @@ import { MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.con
 import type { MktgFamilyActionContext } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 import { resolveMktgKit } from './mktg-kit.utils';
-import { isMktgFamilyAgentAvailable, resolveMktgFamilyActions } from './mktg-family-actions.utils';
+import { isMktgFamilyAgentAvailable, mktgFamilyRowAction, mktgRunModeFor, resolveMktgFamilyActions } from './mktg-family-actions.utils';
 
 const context: MktgFamilyActionContext = { loaded: true, canWrite: true, approvedFramework: false };
 function family(id = 'positioning-brand'): MktgKitFamilyView {
@@ -48,30 +48,33 @@ describe('One rule for every family action', () => {
     expect(result.rows['one-pager'].action).toBeNull();
     expect(resolveMktgFamilyActions(family(), { ...context, approvedFramework: true }).rows['boilerplates'].action?.blockedReason).toBe('');
   });
-  it('already-run living and one-off rows say Run again, with modes supported by their run pages', () => {
+  it('existing living and one-off rows have no action; document Run again retains its entry modes', () => {
     for (const [id, asset, mode] of [
       ['positioning-brand', 'messaging-framework', 'new'],
-      ['social-community', 'linkedin-post', null],
+      ['social-community', 'linkedin-post', 'new'],
       ['member-sponsor', 'member-360', null],
     ] as const) {
       const result = resolveMktgFamilyActions(built(family(id)), context);
-      expect(result.rows[asset].action).toMatchObject({ kind: 'run-again', label: 'Run again', mode });
+      expect(result.rows[asset].action).toBeNull();
+      const agentId = id === 'positioning-brand' ? 'foundation-setup' : asset;
+      expect(mktgRunModeFor(agentId)).toBe(mode);
     }
   });
-  it('never-run one-offs get row Run and Run next agent, not a living-only exception', () => {
+  it('one-off families always offer Create on a plain route, regardless of history', () => {
     for (const [id, asset, label] of [
-      ['social-community', 'linkedin-post', 'LinkedIn posts'],
+      ['social-community', 'linkedin-post', 'LinkedIn post'],
       ['member-sponsor', 'member-360', 'Member 360'],
     ]) {
       const result = resolveMktgFamilyActions(family(id), context);
-      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Run ${label}`, mode: null });
-      expect(result.header).toMatchObject({ kind: 'run-next', label: 'Run next agent', nextAssetLabel: label, blockedReason: '' });
+      expect(result.rows[asset].action).toMatchObject({ kind: 'run', label: `Run ${label}`, mode: id === 'social-community' ? 'new' : null });
+      expect(result.header).toMatchObject({ kind: 'create', label: `Create ${label}`, mode: null });
+      expect(resolveMktgFamilyActions(built(family(id)), context).header).toEqual(result.header);
     }
   });
   it('an unavailable agent has no row button and reads Coming soon, even with a registered run type', () => {
     const result = resolveMktgFamilyActions(family('website-web'), context);
     expect(result.rows['aeo-geo']).toMatchObject({ row: { state: 'coming-soon', badge: 'Coming soon' }, action: null });
-    expect(result.header).toMatchObject({ kind: 'run-lead', blockedReason: 'Coming soon' });
+    expect(result.header).toBeNull();
     expect(isMktgFamilyAgentAvailable('icp')).toBe(false);
     expect(isMktgFamilyAgentAvailable('not-registered')).toBe(false);
     const excluded = family();
@@ -83,48 +86,62 @@ describe('One rule for every family action', () => {
     delete MKTG_AGENT_INTAKES['foundation-setup'];
     try {
       expect(isMktgFamilyAgentAvailable('foundation-setup')).toBe(false);
-      expect(resolveMktgFamilyActions(built(family()), context).header?.blockedReason).toBe('Coming soon');
+      expect(mktgFamilyRowAction(family().rows[0], context).action).toBeNull();
     } finally {
       MKTG_AGENT_INTAKES['foundation-setup'] = intake;
     }
   });
-  it('Rebuild what is stale wins over next or lead only where the rebuild panel exists', () => {
+  it('Update stale assets wins only where the rebuild panel exists, with singular and plural copy', () => {
     const view = family();
     view.rows[1] = { ...view.rows[1], state: 'needs-rebuild' };
-    expect(resolveMktgFamilyActions(view, context).header).toMatchObject({ kind: 'rebuild', label: 'Rebuild what is stale' });
+    expect(resolveMktgFamilyActions(view, context).header).toMatchObject({ kind: 'rebuild', label: 'Update boilerplates' });
+    view.rows[0] = { ...view.rows[0], state: 'needs-rebuild' };
+    expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Update 2 assets');
     const other = family('social-community');
     other.rows[0] = { ...other.rows[0], state: 'needs-rebuild' };
-    expect(resolveMktgFamilyActions(other, context).header?.kind).toBe('run-next');
+    expect(resolveMktgFamilyActions(other, context).header?.kind).toBe('create');
   });
-  it('Run next agent follows family order and carries the same blocked reason as its row', () => {
+  it('a blocked next step links to its required document instead of disabling the header', () => {
     const view = family();
     view.rows[0] = built(view).rows[0];
     const result = resolveMktgFamilyActions(view, context);
     expect(result.header).toMatchObject({
-      kind: 'run-next',
-      agentId: 'boilerplates',
-      nextAssetLabel: 'Boilerplates',
-      blockedReason: result.rows['boilerplates'].action?.blockedReason,
+      kind: 'blocked',
+      agentId: null,
+      label: 'Review and approve the messaging framework',
+      link: { commands: ['../../documents', 'foundation-message', 'living'], queryParams: {} },
     });
   });
-  it('otherwise the lead header keeps Run X copy and Run again semantics', () => {
-    expect(resolveMktgFamilyActions(built(family()), { ...context, approvedFramework: true }).header).toMatchObject({
-      kind: 'run-lead',
-      label: 'Run messaging framework',
+  it('nothing to create means Review drafts in family order, otherwise no header', () => {
+    const view = built(family());
+    view.rows[0].state = 'draft';
+    expect(resolveMktgFamilyActions(view, context).header).toMatchObject({
+      kind: 'review',
+      label: 'Review the draft',
+      link: { commands: ['../../documents', 'foundation-message', 'living'] },
+    });
+    view.rows[1].state = 'draft';
+    expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Review 2 drafts');
+    view.rows.forEach((row) => (row.state = 'approved'));
+    expect(resolveMktgFamilyActions(view, context).header).toBeNull();
+    expect(resolveMktgFamilyActions(family('events'), context).header).toBeNull();
+  });
+  it('Create names the first not-built available asset and preserves living fresh mode', () => {
+    expect(resolveMktgFamilyActions(family(), context).header).toMatchObject({
+      kind: 'create',
+      label: 'Create messaging framework',
       agentId: 'foundation-setup',
       mode: 'new',
-      blockedReason: '',
     });
-    expect(resolveMktgFamilyActions(family('events'), context).header).toBeNull();
   });
   it.each([
     ['positioning-brand', 'Run messaging framework'],
     ['social-community', 'Run LinkedIn posts'],
     ['member-sponsor', 'Run Member 360'],
-  ])('reader headers keep board copy for %s even when the denied read has no rows', (id, label) => {
+  ])('reader headers are hidden for %s even when the denied read has no rows', (id) => {
     const view = { ...family(id), rows: [] };
     const result = resolveMktgFamilyActions(view, { ...context, canWrite: false });
-    expect(result.header).toMatchObject({ label, blockedReason: MKTG_FAMILY_WRITE_REQUIRED });
+    expect(result.header).toBeNull();
     expect(result.rows).toEqual({});
   });
   it('unavailable leads use declared pending copy, even without catalog membership', () => {
@@ -136,25 +153,22 @@ describe('One rule for every family action', () => {
       pendingAgentReason: 'Synthetic unavailable reason',
     };
     view.rows = [];
-    expect(resolveMktgFamilyActions(view, context).header).toMatchObject({
-      label: 'Run Synthetic pending product',
-      blockedReason: 'Synthetic unavailable reason',
-    });
+    expect(resolveMktgFamilyActions(view, context).header).toBeNull();
   });
   it('header is null until the kit read resolves, even with stale rows', () => {
     const view = family();
     view.rows[0] = { ...view.rows[0], state: 'needs-rebuild' };
     expect(resolveMktgFamilyActions(view, { ...context, loaded: false }).header).toBeNull();
   });
-  it('without write access header and available row actions have one consistent reason', () => {
+  it('without write access headers are hidden and not-built rows explain why inline', () => {
     for (const view of [family(), built(family()), family('social-community'), family('website-web')]) {
       const result = resolveMktgFamilyActions(view, { ...context, canWrite: false });
-      expect(result.header?.blockedReason).toBe(MKTG_FAMILY_WRITE_REQUIRED);
+      expect(result.header).toBeNull();
       for (const { action } of Object.values(result.rows)) if (action) expect(action.blockedReason).toBe(MKTG_FAMILY_WRITE_REQUIRED);
     }
     const view = family();
     view.rows[0] = { ...view.rows[0], state: 'needs-rebuild' };
-    expect(resolveMktgFamilyActions(view, { ...context, canWrite: false }).header?.blockedReason).toBe(MKTG_FAMILY_WRITE_REQUIRED);
+    expect(resolveMktgFamilyActions(view, { ...context, canWrite: false }).header).toBeNull();
   });
   it('required non-framework JSON sources use real approval, optional sources never block', () => {
     const intake = MKTG_AGENT_INTAKES['linkedin-post'];
@@ -166,12 +180,13 @@ describe('One rule for every family action', () => {
       ],
     };
     try {
-      expect(resolveMktgFamilyActions(family('social-community'), context).header?.blockedReason).toContain('Approve the brand kit first');
-      expect(resolveMktgFamilyActions(family('social-community'), { ...context, approvedSourceAgentIds: ['brand-kit'] }).header?.blockedReason).toBe('');
+      expect(resolveMktgFamilyActions(family('social-community'), context).header?.label).toBe('Review and approve the brand kit');
+      expect(resolveMktgFamilyActions(family('social-community'), { ...context, approvedSourceAgentIds: ['brand-kit'] }).header?.kind).toBe('create');
     } finally {
       MKTG_AGENT_INTAKES['linkedin-post'] = intake;
     }
-    const view = built(family());
+    const view = family();
+    view.rows[0] = built(view).rows[0];
     const doc = view.rows[0].document;
     if (!doc) throw new Error('Missing synthetic document');
     view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: 'approved', number: 1 } } };

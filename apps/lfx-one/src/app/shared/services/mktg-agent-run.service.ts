@@ -40,7 +40,7 @@ import {
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
-import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity } from '@lfx-one/shared/utils';
+import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity, mktgRunModeFor } from '@lfx-one/shared/utils';
 import {
   catchError,
   concat,
@@ -136,7 +136,7 @@ export class MktgAgentRunService {
 
   /** Writer-gated history read only; callers distinguish unavailable history from absence. */
   public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.catalogAgentId === agentId);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId && mktgRunModeFor(agentId));
     if (!type) return of(null);
     return this.http
       .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {

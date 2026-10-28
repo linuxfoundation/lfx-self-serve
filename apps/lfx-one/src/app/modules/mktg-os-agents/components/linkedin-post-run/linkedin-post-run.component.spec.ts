@@ -20,9 +20,10 @@ import {
   MKTG_KIT_FAMILIES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
-import { MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgLastIntake, MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -41,6 +42,7 @@ describe('LinkedIn profile and post surface', () => {
     setupForDocument: vi.fn(),
   };
   const projects = { getProject: vi.fn() };
+  const history = { lastIntake: vi.fn() };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -65,12 +67,14 @@ describe('LinkedIn profile and post surface', () => {
         { provide: UserService, useValue: { user: identity } },
       ],
     }).compileComponents();
+    history.lastIntake.mockReset().mockReturnValue(of(null));
   });
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     vi.restoreAllMocks();
   });
   async function render() {
+    vi.spyOn(TestBed.inject(MktgAgentRunService), 'lastIntake').mockImplementation(history.lastIntake);
     const fixture = TestBed.createComponent(LinkedinPostRunComponent);
     fixture.componentRef.setInput('intake', LINKEDIN_POST_INTAKE);
     fixture.detectChanges();
@@ -78,6 +82,111 @@ describe('LinkedIn profile and post surface', () => {
     fixture.detectChanges();
     return fixture;
   }
+  async function fresh() {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project&mode=new');
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    return render();
+  }
+  it.each([
+    { source: 'text', text: 'Synthetic previous text', url: '', share: '' },
+    { source: 'url', text: '', url: 'https://source.example/', share: 'https://share.example/' },
+    { source: 'file', text: '', url: '', share: '' },
+  ])('restores $source last inputs only in fresh mode, without polling or generating', async ({ source, text, url, share }) => {
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: source, content_text: text, content_url: url, share_link: share }, documentCount: 0, logoCount: 0 })
+    );
+    const fixture = await fresh();
+    expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
+    expect(fixture.componentInstance['source']()).toBe(source);
+    expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text, url, share_link: share });
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+    if (source === 'file') expect(fixture.nativeElement.textContent).toContain('choose it again');
+  });
+  it.each(['', 'https://share.example/previous'])('keeps the restored share link %s when the URL source is edited', async (share) => {
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: 'url', content_url: 'https://source.example/previous', share_link: share }, documentCount: 0, logoCount: 0 })
+    );
+    const fixture = await fresh();
+    const form = fixture.componentInstance['contentForm'];
+    expect(form.controls.share_link.dirty).toBe(true);
+    form.controls.url.setValue('https://source.example/edited');
+    expect(form.controls.share_link.value).toBe(share);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+  it('replaces fresh entry mode before pushing the accepted Document, without an in-page resume', async () => {
+    const session = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' };
+    api.startForDocument.mockReturnValue(of(session));
+    const fixture = await fresh();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate');
+    fixture.componentInstance['contentForm'].controls.text.setValue('New source');
+    await fixture.componentInstance['onDraft']();
+    await fixture.whenStable();
+    expect(navigate.mock.calls[0]).toEqual([[], expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true })]);
+    expect(navigate.mock.calls[1]?.[0]).toEqual(expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, session.documentId]));
+    expect(router.url).toContain('/documents/linkedin-post/');
+    expect(router.url).not.toContain('mode=');
+    expect(api.startForDocument).toHaveBeenCalledOnce();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
+  it('asks for pasted text again when the latest oversized snapshot omitted it', async () => {
+    history.lastIntake.mockReturnValue(of({ answers: { content_source: 'text', share_link: 'https://current.example/' }, documentCount: 0, logoCount: 0 }));
+    const fixture = await fresh();
+    expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text: '', share_link: 'https://current.example/' });
+    expect(fixture.nativeElement.textContent).toContain('paste it again');
+    await fixture.componentInstance['onDraft']();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+  it('does not request last inputs on a normal entry', async () => {
+    await render();
+    expect(history.lastIntake).not.toHaveBeenCalled();
+  });
+  it('does not request last inputs without writer access', async () => {
+    projects.getProject.mockReturnValue(of({ writer: false }));
+    await fresh();
+    expect(history.lastIntake).not.toHaveBeenCalled();
+  });
+  it.each([401, 403, 503])('distinguishes denied and unavailable history (%s)', async (status) => {
+    history.lastIntake.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    const fixture = await fresh();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-intake-note"]')?.textContent).toContain(
+      status === 503 ? 'Last run inputs could not be loaded' : 'You need write access'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(status !== 503);
+  });
+  it('keeps a user source choice made while last inputs are loading', async () => {
+    const pending = new Subject<MktgLastIntake | null>();
+    history.lastIntake.mockReturnValue(pending);
+    const fixture = await fresh();
+    fixture.componentInstance['onSource']('url');
+    pending.next({ answers: { content_source: 'text', content_text: 'older source' }, documentCount: 0, logoCount: 0 });
+    expect(fixture.componentInstance['source']()).toBe('url');
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('');
+  });
+  it('keeps user-entered text when a delayed history response arrives', async () => {
+    const pending = new Subject<MktgLastIntake | null>();
+    history.lastIntake.mockReturnValue(pending);
+    const fixture = await fresh();
+    fixture.componentInstance['contentForm'].controls.text.setValue('New source');
+    fixture.componentInstance['contentForm'].markAsDirty();
+    pending.next({ answers: { content_source: 'text', content_text: 'older source' }, documentCount: 0, logoCount: 0 });
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('New source');
+  });
+  it.each(['project', 'user'])('cancels stale source restoration when %s access changes', async (scope) => {
+    const pending = new Subject<MktgLastIntake | null>();
+    history.lastIntake.mockReturnValue(pending);
+    const fixture = await fresh();
+    projects.getProject.mockReturnValue(of({ writer: false }));
+    if (scope === 'project') context.set({ uid: 'other-project', slug: 'other-project', name: 'Synthetic other project' });
+    else identity.set({ sub: 'other-subject', name: 'Synthetic other author' });
+    await fixture.whenStable();
+    pending.next({ answers: { content_text: 'old-private-source' }, documentCount: 0, logoCount: 0 });
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('');
+    expect(history.lastIntake).toHaveBeenCalledTimes(1);
+  });
   async function savedIntake() {
     const fixture = await render();
     fixture.componentInstance['editing'].set(false);
@@ -160,6 +269,38 @@ describe('LinkedIn profile and post surface', () => {
       }),
     };
   }
+  it.each([true, false])('only implicitly recovers older same-project questions without fresh mode (fresh=%s)', async (freshMode) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save(intakePending());
+    const latest = vi.spyOn(attempts, 'latestPending');
+    const load = vi.spyOn(attempts, 'load');
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    history.lastIntake.mockReturnValue(
+      of({ answers: { content_source: 'text', content_text: 'Synthetic last input', share_link: '' }, documentCount: 0, logoCount: 0 })
+    );
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project' + (freshMode ? '&mode=new' : ''));
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]') !== null).toBe(freshMode);
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]') !== null).toBe(!freshMode);
+    expect(fixture.componentInstance['questions']()).toHaveLength(freshMode ? 0 : 1);
+    expect(fixture.componentInstance['pendingNotice']() !== null).toBe(!freshMode);
+    if (freshMode) {
+      expect(latest).not.toHaveBeenCalled();
+      expect(load).not.toHaveBeenCalled();
+      expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
+      expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text: 'Synthetic last input', share_link: '' });
+    } else {
+      expect(latest).toHaveBeenCalledWith('project-one', 'linkedin-post');
+      expect(load).toHaveBeenCalledWith('project-one', 'linkedin-post', intakePending().request.documentId);
+      expect(history.lastIntake).not.toHaveBeenCalled();
+    }
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
+
   async function questionsIntake() {
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending = intakePending();

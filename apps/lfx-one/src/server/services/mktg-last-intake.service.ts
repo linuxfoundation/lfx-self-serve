@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LINKEDIN_POST_INTAKE,
+  LINKEDIN_SHARE_LINK_ANSWER_KEY,
   MKTG_AGENTS,
   MKTG_AGENT_INTAKES,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -11,15 +13,17 @@ import {
   MKTG_LAST_INTAKE_SCHEMA,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
-import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeStart, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
+import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeInput, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
+import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { createHash } from 'node:crypto';
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { ObjectStoreService } from './object-store.service';
 
-/** One private scalar snapshot per project/living agent. No listing or session-record reads. */
+/** Shared project snapshots for living intakes; writer-scoped LinkedIn snapshots. No listing or session-record reads. */
 export class MktgLastIntakeService {
   private readonly store = new ObjectStoreService();
   private readonly runs = new MktgDocumentRunService();
@@ -28,9 +32,11 @@ export class MktgLastIntakeService {
   public async read(req: Request, rawProject: unknown, rawAgentKey: unknown): Promise<MktgLastIntake | null> {
     const { agentKey, intake } = this.registration(rawAgentKey);
     const project = await this.runs.resolveProject(req, rawProject);
+    const subject = agentKey === LINKEDIN_POST_INTAKE.agentId ? getEffectiveSub(req) : null;
+    if (agentKey === LINKEDIN_POST_INTAKE.agentId && !subject) throw new AuthenticationError('A signed-in writer subject is required.');
     logger.debug(req, 'mktg_last_intake_read', 'Reading scalar intake history', { project, agentKey });
     try {
-      const stored = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, agentKey));
+      const stored = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, agentKey, subject));
       if (!stored) return null;
       if (Buffer.byteLength(stored.body) > MKTG_LAST_INTAKE_MAX_BYTES) throw this.unavailable();
       // Parse errors can quote source text. Never log or return the original error.
@@ -61,10 +67,11 @@ export class MktgLastIntakeService {
    * Last PUT wins intentionally (not CAS and not chronological conflict resolution).
    * Failure must not turn an accepted session into a retryable Generate error.
    */
-  public async recordStartBestEffort(req: Request, input: MktgLastIntakeStart): Promise<void> {
+  public async recordStartBestEffort(req: Request, input: MktgLastIntakeInput): Promise<void> {
     try {
       const { agentKey, intake } = this.registration(MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === input.agentId)?.agentKey);
-      if (!getEffectiveSub(req)) throw new AuthenticationError('A signed-in writer subject is required.');
+      const subject = getEffectiveSub(req);
+      if (!subject) throw new AuthenticationError('A signed-in writer subject is required.');
       if (!MKTG_STARTED_RUN_ID_REGEX.test(input.runId) || !this.validCount(input.documentCount) || !this.validCount(input.logoCount)) {
         throw ServiceValidationError.forField('intake', 'Invalid accepted intake metadata.');
       }
@@ -78,12 +85,17 @@ export class MktgLastIntakeService {
         documentCount: intake.documents ? input.documentCount : 0,
         logoCount: intake.logoFiles ? input.logoCount : 0,
       };
-      const body = Buffer.from(JSON.stringify(record));
+      let body = Buffer.from(JSON.stringify(record));
+      if (body.length > MKTG_LAST_INTAKE_MAX_BYTES && intake.agentId === LINKEDIN_POST_INTAKE.agentId) {
+        // Replace older inputs with current metadata; never truncate or retain the prior run's text.
+        delete record.answers['content_text'];
+        body = Buffer.from(JSON.stringify(record));
+      }
       if (body.length > MKTG_LAST_INTAKE_MAX_BYTES) throw ServiceValidationError.forField('intake', 'Scalar intake history exceeds its storage limit.');
       await this.store.putContentAddressedObject(
         req,
         'marketing-os-artifacts',
-        this.key(input.project, agentKey),
+        this.key(input.project, agentKey, subject),
         body,
         'application/json; charset=utf-8',
         'private, no-store',
@@ -100,25 +112,38 @@ export class MktgLastIntakeService {
   }
 
   private registration(rawAgentKey: unknown): { agentKey: string; intake: MktgAgentIntake } {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === rawAgentKey && entry.kind === 'living');
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === rawAgentKey);
     const agent = MKTG_AGENTS.find((entry) => entry.id === type?.catalogAgentId && entry.status === 'active');
     const intake = agent && MKTG_AGENT_INTAKES[agent.id];
-    if (!type || !intake) throw ServiceValidationError.forField('agentKey', 'A registered active living agent is required.');
+    if (!type || !intake || (type.kind !== 'living' && !intake.lastIntakeFields?.length))
+      throw ServiceValidationError.forField('agentKey', 'A registered active agent with scalar history is required.');
     return { agentKey: type.agentKey, intake };
   }
 
   private scalarAnswers(intake: MktgAgentIntake, raw: unknown): Record<string, string> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
-    const source = raw as Record<string, unknown>;
+    let source = raw as Record<string, unknown>;
+    const linkedin = intake.agentId === LINKEDIN_POST_INTAKE.agentId;
+    if (linkedin) {
+      if (source['content_source'] !== 'text' && source['content_source'] !== 'url' && source['content_source'] !== 'file')
+        throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
+      const share = normalizeLinkedinShareAnswers({ [LINKEDIN_SHARE_LINK_ANSWER_KEY]: source[LINKEDIN_SHARE_LINK_ANSWER_KEY] });
+      if (!share) throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
+      source = { ...source, ...share };
+    }
     const dependencyKeys = new Set((intake.attachments ?? []).map((attachment) => attachment.answerKey));
     return Object.fromEntries(
-      intake.fields
-        .filter((field) => !dependencyKeys.has(field.key) && Object.hasOwn(source, field.key))
-        .map((field) => {
-          const value = source[field.key];
+      (intake.lastIntakeFields ?? intake.fields.map((field) => field.key))
+        .filter((key) => !dependencyKeys.has(key) && Object.hasOwn(source, key))
+        .filter(
+          (key) =>
+            !linkedin || ((key !== 'content_text' || source['content_source'] === 'text') && (key !== 'content_url' || source['content_source'] === 'url'))
+        )
+        .map((key) => {
+          const value = source[key];
           if (typeof value !== 'string') throw ServiceValidationError.forField('answers', 'Invalid scalar intake history.');
           // Keep submitted blanks, but never claim a newly registered/missing field came from this run.
-          return [field.key, value.trim()];
+          return [key, value.trim()];
         })
     );
   }
@@ -127,9 +152,13 @@ export class MktgLastIntakeService {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
   }
 
-  private key(project: string, agentKey: string): string {
+  private key(project: string, agentKey: string, subject: string | null): string {
     if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project)) throw ServiceValidationError.forField('project', 'A single-segment project uid is required.');
-    return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}.json`;
+    if (agentKey !== LINKEDIN_POST_INTAKE.agentId) return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}.json`;
+    if (!subject) throw new AuthenticationError('A signed-in writer subject is required.');
+    const writer = createHash('sha256').update(subject).digest('hex');
+    // Never fall back to LinkedIn's former project-wide key: its writer cannot be established.
+    return `${MKTG_LAST_INTAKE_PREFIX}/${project}/${agentKey}/${writer}.json`;
   }
 
   private unavailable(): MicroserviceError {

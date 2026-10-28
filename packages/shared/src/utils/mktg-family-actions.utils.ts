@@ -4,7 +4,7 @@
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
-import { MKTG_FAMILY_ONE_OFF_RUN_MODES, MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.constants';
+import { MKTG_FAMILY_ACTION_LABELS, MKTG_FAMILY_ONE_OFF_RUN_MODES, MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.constants';
 import {
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_KIT_FRAMEWORK_AGENT_ID,
@@ -12,8 +12,8 @@ import {
   MKTG_KIT_STATE_LABELS,
 } from '../constants/mktg-kit.constants';
 import { MKTG_RUN_NEW_MODE } from '../constants/mktg-last-intake.constants';
-import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyRunAction } from '../interfaces/mktg-family-actions.interface';
-import type { MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
+import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction } from '../interfaces/mktg-family-actions.interface';
+import type { MktgKitAssetRow, MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 
 /** Catalog availability is shared by canonical row states and action selection. */
 export function isMktgFamilyAgentAvailable(agentId: string): boolean {
@@ -22,6 +22,29 @@ export function isMktgFamilyAgentAvailable(agentId: string): boolean {
     !!MKTG_AGENT_INTAKES[agentId] &&
     MKTG_AGENTS.some((agent) => agent.id === agentId && agent.status === 'active')
   );
+}
+
+/** Shared entry mode for Family and document Run again; independent of document-only selectors. */
+export function mktgRunModeFor(agentId: string): 'new' | null {
+  if (MKTG_DOCUMENT_TYPES.some((type) => type.catalogAgentId === agentId && type.kind === 'living')) return MKTG_RUN_NEW_MODE;
+  return MKTG_FAMILY_ONE_OFF_RUN_MODES[agentId] ?? null;
+}
+
+/** The ONE place to flip row-action policy: existing assets use their document's Run again entry. */
+export function mktgFamilyRowAction(row: MktgKitAssetRow, ctx: MktgFamilyActionContext): MktgFamilyActions['rows'][string] {
+  const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
+  const agentId = type?.catalogAgentId;
+  if (!agentId || !isMktgFamilyAgentAvailable(agentId))
+    return { row: { ...row, state: 'coming-soon', badge: MKTG_KIT_STATE_LABELS['coming-soon'] }, action: null };
+  if (row.document) return { row, action: null };
+  const dependency = missingDependency(agentId, ctx);
+  const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
+  let blockedReason = dependency ? `Approve the ${dependency.documentName.toLowerCase()} first: ${agent?.name ?? agentId} builds on the approved one.` : '';
+  if (!ctx.canWrite) blockedReason = MKTG_FAMILY_WRITE_REQUIRED;
+  return {
+    row,
+    action: { kind: 'run', label: MKTG_FAMILY_ACTION_LABELS.run(row.asset.runName ?? row.asset.label), agentId, mode: mktgRunModeFor(agentId), blockedReason },
+  };
 }
 
 /** One policy for Family actions and Kit card data. Does not mutate the supplied view. */
@@ -35,68 +58,85 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
     if (type?.catalogAgentId && pointer && pointer.revisionId.trim() && Number.isSafeInteger(pointer.number) && pointer.number > 0)
       approved.add(type.catalogAgentId);
   }
-  const blockedReason = (agentId: string): string => {
-    if (!context.canWrite) return MKTG_FAMILY_WRITE_REQUIRED;
-    const attachment = MKTG_AGENT_INTAKES[agentId]?.attachments?.find(
-      (item) => item.format === 'json' && !item.optional && !approved.has(item.sourceAgentId ?? '')
-    );
-    const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
-    return attachment ? `Approve the ${attachment.documentName.toLowerCase()} first: ${agent?.name ?? agentId} builds on the approved one.` : '';
-  };
-  const modeFor = (agentId: string): 'new' | null => {
-    if (MKTG_DOCUMENT_TYPES.some((type) => type.catalogAgentId === agentId && type.kind === 'living')) return MKTG_RUN_NEW_MODE;
-    return MKTG_FAMILY_ONE_OFF_RUN_MODES[agentId] ?? null;
-  };
-  for (const row of view.rows) {
-    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
-    const agentId = type?.catalogAgentId;
-    if (!agentId || !isMktgFamilyAgentAvailable(agentId)) {
-      rows[row.asset.id] = { row: { ...row, state: 'coming-soon', badge: MKTG_KIT_STATE_LABELS['coming-soon'] }, action: null };
-      continue;
-    }
-    const action: MktgFamilyRunAction = {
-      kind: row.document ? 'run-again' : 'run',
-      label: row.document ? 'Run again' : `Run ${row.asset.runName ?? row.asset.label}`,
-      agentId,
-      mode: modeFor(agentId),
-      blockedReason: blockedReason(agentId),
-    };
-    rows[row.asset.id] = { row, action };
-  }
-  if (!context.loaded) return { header: null, rows };
-  if (view.family.id === MKTG_KIT_POSITIONING_FAMILY_ID && view.rows.some((row) => row.state === 'needs-rebuild')) {
+  const ctx = { ...context, approvedSourceAgentIds: [...approved] };
+  for (const row of view.rows) rows[row.asset.id] = mktgFamilyRowAction(row, ctx);
+  if (!context.loaded || !context.canWrite) return { header: null, rows };
+  const stale = Object.values(rows)
+    .map((entry) => entry.row)
+    .filter((row) => row.state === 'needs-rebuild');
+  if (view.family.id === MKTG_KIT_POSITIONING_FAMILY_ID && stale.length) {
     return {
       rows,
       header: {
         kind: 'rebuild',
-        label: 'Rebuild what is stale',
-        nextAssetLabel: '',
+        label: MKTG_FAMILY_ACTION_LABELS.rebuild(stale.map((row) => row.asset.runName ?? row.asset.label)),
         agentId: null,
         mode: null,
-        blockedReason: context.canWrite ? '' : MKTG_FAMILY_WRITE_REQUIRED,
+        link: null,
       },
     };
   }
-  const next = Object.values(rows).find(({ row, action }) => !row.document && action);
-  if (next?.action) return { rows, header: { ...next.action, kind: 'run-next', label: 'Run next agent', nextAssetLabel: next.row.asset.label } };
-  const agentId = view.family.agentIds[0];
-  if (!agentId) return { rows, header: null };
-  const available = isMktgFamilyAgentAvailable(agentId);
-  const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
-  const leadAsset = view.family.assets.find((asset) => MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === asset.agentKey && type.catalogAgentId === agentId));
-  const name = leadAsset?.runName ?? leadAsset?.label ?? view.family.pendingAgentName ?? agent?.name ?? agentId;
-  const unavailableName = view.family.pendingAgentName ?? name;
-  let leadBlocked = view.family.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon'];
-  if (available || !context.canWrite) leadBlocked = blockedReason(agentId);
-  return {
-    rows,
-    header: {
-      kind: 'run-lead',
-      label: `Run ${available ? name : unavailableName}`,
-      nextAssetLabel: '',
-      agentId,
-      mode: modeFor(agentId),
-      blockedReason: leadBlocked,
-    },
-  };
+  const documentLink = (row: MktgKitAssetRow | undefined): MktgFamilyHeaderAction['link'] =>
+    row?.document && row.asset.agentKey ? { commands: ['../../documents', row.asset.agentKey, row.document.documentId], queryParams: {} } : null;
+  const next = Object.values(rows).find(({ action }) => action);
+  if (next?.action) {
+    const dependency = missingDependency(next.action.agentId, ctx);
+    if (dependency) {
+      const source = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === dependency.sourceAgentId);
+      const link = documentLink(view.rows.find((row) => row.asset.agentKey === source?.agentKey));
+      // The framework's stable living route also works when this is another family.
+      const commands = source ? ['../../documents', source.agentKey, 'living'] : null;
+      if (!link && !commands) return { rows, header: null };
+      return {
+        rows,
+        header: {
+          kind: 'blocked',
+          label: MKTG_FAMILY_ACTION_LABELS.blocked(dependency.documentName),
+          agentId: null,
+          mode: null,
+          link: link ?? { commands: commands ?? [], queryParams: {} },
+        },
+      };
+    }
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === next.action?.agentId);
+    return {
+      rows,
+      header: {
+        kind: 'create',
+        label: MKTG_FAMILY_ACTION_LABELS.create(next.row.asset.runName ?? (type?.kind === 'run' ? next.row.asset.label : next.row.asset.label.toLowerCase())),
+        agentId: next.action.agentId,
+        mode: type?.kind === 'living' ? MKTG_RUN_NEW_MODE : null,
+        link: null,
+      },
+    };
+  }
+  const lead = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === view.family.agentIds[0]);
+  if (lead?.kind === 'run' && lead.catalogAgentId && isMktgFamilyAgentAvailable(lead.catalogAgentId))
+    return {
+      rows,
+      header: {
+        kind: 'create',
+        label: MKTG_FAMILY_ACTION_LABELS.create(
+          view.family.assets.find((asset) => asset.agentKey === lead.agentKey)?.runName ??
+            view.family.assets.find((asset) => asset.agentKey === lead.agentKey)?.label ??
+            lead.itemLabel
+        ),
+        agentId: lead.catalogAgentId,
+        mode: null,
+        link: null,
+      },
+    };
+  const drafts = Object.values(rows).filter(({ row }) => row.state === 'draft' && row.document);
+  const link = documentLink(drafts[0]?.row);
+  return { rows, header: link ? { kind: 'review', label: MKTG_FAMILY_ACTION_LABELS.review(drafts.length), agentId: null, mode: null, link } : null };
+}
+
+function missingDependency(agentId: string, ctx: MktgFamilyActionContext) {
+  return MKTG_AGENT_INTAKES[agentId]?.attachments?.find(
+    (item) =>
+      item.format === 'json' &&
+      !item.optional &&
+      !(item.sourceAgentId === MKTG_KIT_FRAMEWORK_AGENT_ID && ctx.approvedFramework) &&
+      !ctx.approvedSourceAgentIds?.includes(item.sourceAgentId ?? '')
+  );
 }
