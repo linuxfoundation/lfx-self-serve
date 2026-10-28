@@ -58,7 +58,7 @@ describe('PublicVoteLinkController', () => {
     next = vi.fn() as unknown as NextFunction;
   });
 
-  it('forwards the ballot request body unchanged and returns the upstream response as-is, uncached', async () => {
+  it('forwards only the token for the ballot read and returns the upstream response as-is, uncached', async () => {
     const ballot = { vote_uid: 'v-1', name: 'Synthetic vote' };
     getVoteLinkBallot.mockResolvedValue(ballot);
     const body = { vote_token: TOKEN };
@@ -67,7 +67,7 @@ describe('PublicVoteLinkController', () => {
 
     await controller.getLinkBallot(req, res as unknown as Response, next);
 
-    expect(getVoteLinkBallot).toHaveBeenCalledWith(req, body);
+    expect(getVoteLinkBallot).toHaveBeenCalledWith(req, { vote_token: TOKEN });
     expect(res.json).toHaveBeenCalledWith(ballot);
     expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(next).not.toHaveBeenCalled();
@@ -78,7 +78,7 @@ describe('PublicVoteLinkController', () => {
     ['PUT', 'updateLinkResponse'],
   ] as const)('forwards a %s response body unchanged and answers 204', async (method, handler) => {
     submitVoteLinkResponse.mockResolvedValue(undefined);
-    const body = { vote_token: TOKEN, abstain: false, user_vote_content: [{ question_id: 'q', answer: 'a' }] };
+    const body = { vote_token: TOKEN, abstain: false, user_vote_content: [{ question_id: 'q', choice_ids: ['c-a'] }] };
     const req = { body } as unknown as Request;
     const res = buildRes();
 
@@ -86,6 +86,67 @@ describe('PublicVoteLinkController', () => {
 
     expect(submitVoteLinkResponse).toHaveBeenCalledWith(req, method, body);
     expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('drops unexpected properties and forwards an allowlisted response body', async () => {
+    submitVoteLinkResponse.mockResolvedValue(undefined);
+    const body = {
+      vote_token: TOKEN,
+      abstain: false,
+      user_vote_content: [{ question_id: 'q', choice_ids: ['c-a'], injected: 'x' }],
+      comment_responses: [{ prompt_id: 'p', comment_text: ' hello ', injected: 'x' }],
+      vote_uid: 'ignored',
+      extra: true,
+    };
+    const req = { body } as unknown as Request;
+
+    await controller.submitLinkResponse(req, buildRes() as unknown as Response, next);
+
+    expect(submitVoteLinkResponse).toHaveBeenCalledWith(req, 'POST', {
+      vote_token: TOKEN,
+      abstain: false,
+      user_vote_content: [{ question_id: 'q', choice_ids: ['c-a'] }],
+      comment_responses: [{ prompt_id: 'p', comment_text: ' hello ' }],
+    });
+  });
+
+  it('omits user_vote_content when abstaining and comment_responses when not sent, so existing comments are kept', async () => {
+    submitVoteLinkResponse.mockResolvedValue(undefined);
+    const req = { body: { vote_token: TOKEN, abstain: true, user_vote_content: [{ question_id: 'q', choice_ids: ['c'] }] } } as unknown as Request;
+
+    await controller.updateLinkResponse(req, buildRes() as unknown as Response, next);
+
+    expect(submitVoteLinkResponse).toHaveBeenCalledWith(req, 'PUT', { vote_token: TOKEN, abstain: true });
+  });
+
+  it('forwards an empty comment_responses array so an update can clear comments', async () => {
+    submitVoteLinkResponse.mockResolvedValue(undefined);
+    const req = { body: { vote_token: TOKEN, abstain: true, comment_responses: [] } } as unknown as Request;
+
+    await controller.updateLinkResponse(req, buildRes() as unknown as Response, next);
+
+    expect(submitVoteLinkResponse).toHaveBeenCalledWith(req, 'PUT', { vote_token: TOKEN, abstain: true, comment_responses: [] });
+  });
+
+  it.each([
+    ['non-boolean abstain', { abstain: 'no' }],
+    ['missing abstain', {}],
+    ['missing answers when not abstaining', { abstain: false }],
+    ['empty answers', { abstain: false, user_vote_content: [] }],
+    ['a null answer', { abstain: false, user_vote_content: [null] }],
+    ['an answer without a question id', { abstain: false, user_vote_content: [{ choice_ids: ['c'] }] }],
+    ['an answer without choices', { abstain: false, user_vote_content: [{ question_id: 'q' }] }],
+    ['non-string choice ids', { abstain: false, user_vote_content: [{ question_id: 'q', choice_ids: [1] }] }],
+    ['a malformed ranked choice', { abstain: false, user_vote_content: [{ question_id: 'q', ranked_choices: [{ choice_id: 'c' }] }] }],
+    ['non-array comments', { abstain: true, comment_responses: 'x' }],
+    ['a blank comment', { abstain: true, comment_responses: [{ prompt_id: 'p', comment_text: '  ' }] }],
+    ['a comment without a prompt id', { abstain: true, comment_responses: [{ comment_text: 'hi' }] }],
+    ['an over-long comment', { abstain: true, comment_responses: [{ prompt_id: 'p', comment_text: 'x'.repeat(100_000) }] }],
+  ])('rejects %s with a 400 and forwards nothing', async (_label, rest) => {
+    await controller.submitLinkResponse({ body: { vote_token: TOKEN, ...rest } } as unknown as Request, buildRes() as unknown as Response, next);
+
+    expect(submitVoteLinkResponse).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
   });
 
   it('passes the upstream status and message through to the error handler', async () => {

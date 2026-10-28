@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
+import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { finalize } from 'rxjs';
@@ -59,13 +61,13 @@ export class VoteSendBallotsComponent {
           }
           this.confirm(count);
         },
-        error: () => this.failed(),
+        error: () => this.loadFailed(),
       });
   }
 
   private confirm(count: number): void {
     this.confirmationService.confirm({
-      message: `Email a personal ballot link to the ${count} ${count === 1 ? 'member' : 'members'} who haven't voted?`,
+      message: `Email a personal ballot link to the ${count} ${count === 1 ? "member who hasn't" : "members who haven't"} voted?`,
       header: 'Send ballots now',
       acceptLabel: 'Send',
       rejectLabel: 'Cancel',
@@ -92,16 +94,30 @@ export class VoteSendBallotsComponent {
             });
           }
         },
-        error: () => this.failed(),
+        error: (error: unknown) => this.sendFailed(error),
       });
   }
 
-  private failed(): void {
+  /** Reading the non-voter list sends nothing, so retrying is safe. */
+  private loadFailed(): void {
     this.messageService.add({
       severity: 'error',
       summary: 'Unable to send ballots',
-      detail: 'Something went wrong sending ballot links. Please try again.',
+      detail: "We couldn't load the members who haven't voted. Nothing was sent. Please try again.",
       life: 5000,
+    });
+  }
+
+  /** A timeout or 5xx can leave the emails already queued, so only a clear rejection invites an immediate retry. */
+  private sendFailed(error: unknown): void {
+    const rejected = error instanceof HttpErrorResponse && [400, 403, 409, 429].includes(error.status) && !isBffTransportFailure(error);
+    this.messageService.add({
+      severity: rejected ? 'error' : 'warn',
+      summary: rejected ? 'Unable to send ballots' : 'Ballot delivery unconfirmed',
+      detail: rejected
+        ? 'The ballots were not sent. Please try again.'
+        : "We couldn't confirm whether ballots were sent. Check with the members before retrying, since retrying may send duplicate emails.",
+      life: 8000,
     });
   }
 

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { VOTE_LINK_TOKEN_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { VoteLinkResponseRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { buildValidatedCommentResponses, buildValidatedVoteAnswers } from '../helpers/vote-response-validation.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -22,9 +24,9 @@ export class PublicVoteLinkController {
     const startTime = logger.startOperation(req, 'get_vote_link_ballot');
 
     try {
-      this.assertBody(req, 'get_vote_link_ballot');
+      const voteToken = this.readToken(req, 'get_vote_link_ballot');
 
-      const ballot = await this.voteService.getVoteLinkBallot(req, req.body);
+      const ballot = await this.voteService.getVoteLinkBallot(req, { vote_token: voteToken });
 
       logger.success(req, 'get_vote_link_ballot', startTime);
 
@@ -49,9 +51,9 @@ export class PublicVoteLinkController {
     const startTime = logger.startOperation(req, operation);
 
     try {
-      this.assertBody(req, operation);
+      const body = this.buildResponseBody(req, operation);
 
-      await this.voteService.submitVoteLinkResponse(req, method, req.body);
+      await this.voteService.submitVoteLinkResponse(req, method, body);
 
       logger.success(req, operation, startTime);
 
@@ -62,11 +64,35 @@ export class PublicVoteLinkController {
     }
   }
 
-  /** The body must be a JSON object with a bounded string `vote_token`; everything else is validated upstream. */
-  private assertBody(req: Request, operation: string): void {
+  /** The body must be a JSON object with a bounded string `vote_token`. */
+  private readToken(req: Request, operation: string): string {
     const token: unknown = req.body?.vote_token;
     if (typeof token !== 'string' || token.length === 0 || token.length > VOTE_LINK_TOKEN_MAX_LENGTH) {
       throw ServiceValidationError.forField('vote_token', 'vote_token is required', { ...VALIDATION_CONTEXT, operation });
     }
+    return token;
+  }
+
+  /**
+   * This public surface is anonymous, so the body is validated and rebuilt from allowlisted fields before it is forwarded:
+   * boolean `abstain`, well-formed answers when not abstaining, comment responses within the length limit, and no extra
+   * properties. The ballot itself is still identified only by the token.
+   */
+  private buildResponseBody(req: Request, operation: string): VoteLinkResponseRequest {
+    const context = { ...VALIDATION_CONTEXT, operation };
+    const voteToken = this.readToken(req, operation);
+    const { abstain, user_vote_content: answers, comment_responses: comments } = req.body as Record<string, unknown>;
+
+    if (typeof abstain !== 'boolean') {
+      throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', context);
+    }
+
+    return {
+      vote_token: voteToken,
+      abstain,
+      ...(abstain ? {} : { user_vote_content: buildValidatedVoteAnswers(answers, context) }),
+      // Omitting comment_responses keeps existing comments upstream; an empty array clears them.
+      ...(comments === undefined ? {} : { comment_responses: buildValidatedCommentResponses(comments, context) }),
+    };
   }
 }

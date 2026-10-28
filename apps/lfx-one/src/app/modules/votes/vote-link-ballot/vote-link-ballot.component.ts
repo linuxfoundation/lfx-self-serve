@@ -12,6 +12,7 @@ import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOK
 import { VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
 import { normalizePollStatus } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
 
 /**
@@ -33,6 +34,8 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
 
   /** In memory only; never persisted or logged. */
   private readonly token = signal<string | null>(null);
+  /** Emits when a new token replaces the current one, cancelling the previous token's requests. */
+  private readonly cancel$ = new Subject<void>();
 
   protected readonly state = signal<VoteLinkState>('loading');
   protected readonly ballot = signal<VoteLinkBallot | null>(null);
@@ -54,13 +57,15 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const token = this.consumeFragmentToken();
-    if (!token) {
-      this.state.set('invalid');
-      return;
-    }
-    this.token.set(token);
-    this.loadBallot(token);
+    this.startFromFragment();
+
+    // Opening another personalized link on this same route is a same-document fragment change, which reuses this
+    // component: pick the new token up, drop it from the address bar, and start over rather than keep the last one.
+    fromEvent(window, 'hashchange')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.hasFragmentToken()) this.startFromFragment();
+      });
   }
 
   public ngOnDestroy(): void {
@@ -90,7 +95,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private send(body: VoteLinkResponseRequest, update: boolean, mayRetry: boolean): void {
     this.voteService
       .submitLinkResponse(body, update)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.submitting.set(false);
@@ -120,7 +125,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private loadBallot(token: string): void {
     this.voteService
       .getLinkBallot(token)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (ballot) => {
           this.ballot.set(ballot);
@@ -163,6 +168,31 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private errorText(err: unknown): string {
     const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
     return typeof body?.error === 'string' ? body.error.toLowerCase() : '';
+  }
+
+  /** Consumes the fragment token and (re)starts the page for it, discarding any previous token, ballot and in-flight request. */
+  private startFromFragment(): void {
+    this.cancel$.next();
+    this.ballot.set(null);
+    this.editing.set(false);
+    this.updateMode.set(false);
+    this.submitting.set(false);
+    this.errorMessage.set(null);
+    this.abstainedLast.set(false);
+    this.token.set(null);
+
+    const token = this.consumeFragmentToken();
+    if (!token) {
+      this.state.set('invalid');
+      return;
+    }
+    this.state.set('loading');
+    this.token.set(token);
+    this.loadBallot(token);
+  }
+
+  private hasFragmentToken(): boolean {
+    return new URLSearchParams(window.location.hash.replace(/^#/, '')).has(VOTE_LINK_TOKEN_FRAGMENT_PARAM);
   }
 
   /**

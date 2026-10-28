@@ -6,9 +6,13 @@
   <form [formGroup]="form" class="flex flex-col gap-6">
     <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
     @for (question of questions(); track question.question_id) {
-      <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-link-question-' + question.question_id">
+      <div
+        class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3"
+        role="group"
+        [attr.aria-labelledby]="'vote-link-question-prompt-' + question.question_id"
+        [attr.data-testid]="'vote-link-question-' + question.question_id">
         <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-slate-900 break-words">{{ question.prompt }}</h3>
+          <h3 class="text-sm font-semibold text-slate-900 break-words" [id]="'vote-link-question-prompt-' + question.question_id">{{ question.prompt }}</h3>
           @if (isRankedPoll()) {
             <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
           } @else if (question.type === 'multiple_choice') {

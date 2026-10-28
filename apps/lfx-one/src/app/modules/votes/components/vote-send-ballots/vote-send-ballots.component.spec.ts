@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
@@ -72,7 +73,7 @@ describe('VoteSendBallotsComponent (#4363)', () => {
   it('uses the singular for one member', () => {
     getReminderRecipients.mockReturnValue(of(recipients(1)));
 
-    expect(clickAndCapture()?.message).toBe("Email a personal ballot link to the 1 member who haven't voted?");
+    expect(clickAndCapture()?.message).toBe("Email a personal ballot link to the 1 member who hasn't voted?");
   });
 
   it('does not send when the confirmation is cancelled', () => {
@@ -131,12 +132,44 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
   });
 
-  it('toasts on a failed send and leaves the action enabled with no success line', () => {
-    sendBallots.mockReturnValue(throwError(() => new Error('upstream down')));
+  it.each([
+    ['a timeout', new Error('timeout')],
+    ['a 503', new HttpErrorResponse({ status: 503 })],
+    ['a 500', new HttpErrorResponse({ status: 500 })],
+  ])('warns that delivery is unconfirmed, not "try again", after %s, since the batch may already be queued', (_label, error) => {
+    sendBallots.mockReturnValue(throwError(() => error));
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Ballot delivery unconfirmed' }));
+    expect(add.mock.calls[0][0].detail).toContain('duplicate emails');
+    expect(success()).toBeNull();
+    expect(button().disabled).toBe(false);
+  });
+
+  it.each([400, 403, 409, 429])('shows a plain error after a clear %s rejection', (status) => {
+    sendBallots.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     clickAndCapture()?.accept?.();
     fixture.detectChanges();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to send ballots' }));
+    expect(add.mock.calls[0][0].detail).not.toContain('duplicate');
+    expect(success()).toBeNull();
+    expect(button().disabled).toBe(false);
+  });
+
+  it('shows a plain error that nothing was sent when the voter list cannot be loaded', () => {
+    getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
+    button().click();
+
+    expect(add.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: expect.stringContaining('Nothing was sent') });
+  });
+
+  it('keeps the action enabled with no success line after a failed send', () => {
+    sendBallots.mockReturnValue(throwError(() => new Error('upstream down')));
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
     expect(success()).toBeNull();
     expect(button().disabled).toBe(false);
   });

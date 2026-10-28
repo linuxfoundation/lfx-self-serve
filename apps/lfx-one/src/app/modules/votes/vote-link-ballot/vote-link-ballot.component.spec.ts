@@ -232,6 +232,49 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-inline-error')?.textContent).toContain('choice is not valid');
   });
 
+  it('replaces the previous token, ballot and in-flight request when another link is opened on the same route', async () => {
+    const second = { ...BALLOT, name: 'Second synthetic vote', vote_uid: 'v-2' };
+    await open(of(BALLOT));
+    expect(testId('vote-link-title')?.textContent).toContain('Synthetic board vote');
+
+    getLinkBallot.mockReturnValue(of(second));
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+
+    expect(getLinkBallot).toHaveBeenLastCalledWith(`${TOKEN}-second`);
+    expect(window.location.hash).toBe('');
+    expect(testId('vote-link-title')?.textContent).toContain('Second synthetic vote');
+
+    submit();
+    expect(submitLinkResponse.mock.calls.at(-1)?.[0].vote_token).toBe(`${TOKEN}-second`);
+  });
+
+  it('cancels the previous token request when a new fragment token arrives', async () => {
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+    getLinkBallot.mockReturnValueOnce(new Observable<VoteLinkBallot>());
+    fixture = TestBed.createComponent(VoteLinkBallotComponent);
+    fixture.detectChanges();
+    expect(state()).toBe('loading');
+
+    getLinkBallot.mockReturnValueOnce(of(BALLOT));
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-b`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+
+    expect(state()).toBe('ready');
+  });
+
+  it('ignores a hash change that carries no token', async () => {
+    await open(of(BALLOT));
+    getLinkBallot.mockClear();
+    window.history.replaceState(null, '', `${PATH}#section`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+    expect(getLinkBallot).not.toHaveBeenCalled();
+    expect(state()).toBe('ready');
+  });
+
   it('sets a no-referrer meta tag while mounted', async () => {
     await open(of(BALLOT));
 

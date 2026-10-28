@@ -141,6 +141,15 @@ describe('VoteBallotFormComponent (#4363)', () => {
     }
   });
 
+  it('names each question group by its prompt so a screen reader announces it with the choices', async () => {
+    await render(baseBallot());
+
+    const group = byId('vote-link-question-q1') as HTMLElement;
+    expect(group.getAttribute('role')).toBe('group');
+    const labelledBy = group.getAttribute('aria-labelledby') as string;
+    expect(el().querySelector(`#${labelledBy}`)?.textContent).toContain('Who?');
+  });
+
   it('pins Submit in a sticky footer above the safe area', async () => {
     await render(baseBallot());
 
