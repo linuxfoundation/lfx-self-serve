@@ -32,12 +32,23 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
 import { BrandKitViewComponent } from '../../brand-kit-view/brand-kit-view.component';
+import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
+import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [TooltipModule, DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
+  imports: [
+    TooltipModule,
+    DatePipe,
+    ButtonComponent,
+    MessageComponent,
+    BrandKitViewComponent,
+    MktgFrameworkPrintComponent,
+    MktgBoilerplatesPrintComponent,
+    MktgFaqPrintComponent,
+  ],
   templateUrl: './mktg-family-export-actions.component.html',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })
@@ -83,9 +94,7 @@ export class MktgFamilyExportActionsComponent {
     if (this.busy()) return 'An export is already running';
     return this.approvalNote;
   });
-  protected readonly pdfDisabledReason = computed(() =>
-    this.canPrint() ? '' : this.exportDisabledReason() || 'Approve the messaging framework or the brand kit first: the PDF prints those'
-  );
+  protected readonly pdfDisabledReason = computed(() => (this.canPrint() ? '' : this.exportDisabledReason()));
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
 
@@ -132,6 +141,7 @@ export class MktgFamilyExportActionsComponent {
         next: (view) => {
           if (JSON.stringify(this.target()) !== JSON.stringify(target) || !this.writer()) return;
           this.printView.set(view);
+          if (view.brand.fontUrl) this.print.ensureFontStylesheet(view.brand.fontUrl);
           afterNextRender(
             () => {
               if (this.printView() !== view || !this.writer()) return;
@@ -162,9 +172,7 @@ export class MktgFamilyExportActionsComponent {
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(
-      () => this.canExport() && !!this.lookup()?.currentMembers.some((member) => member.agentKey === 'foundation-message' || member.agentKey === 'brand-kit')
-    );
+    return computed(() => this.canExport());
   }
 
   private initMemberVersions(): Signal<string> {

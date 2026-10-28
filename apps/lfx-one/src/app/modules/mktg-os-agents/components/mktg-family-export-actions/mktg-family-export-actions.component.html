@@ -109,14 +109,46 @@
     access.
   </p>
 </section>
-<!-- Only existing print renderings, in exporter order; never a second on-screen asset view. -->
+<!-- Print renderings in exporter order, with one family cover and contents. -->
 <div [class]="printOnlyClass" data-testid="family-export-print-document">
   @if (printView(); as document) {
+    <section
+      class="lfx-family-print-cover flex h-screen flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] font-[family-name:var(--mfp-font)] text-[color:var(--mfp-on-dark)] break-after-page [overflow-wrap:anywhere]"
+      [style.--mfp-font]="document.brand.fontStack"
+      [style.--mfp-dark]="document.brand.dark"
+      [style.--mfp-on-dark]="document.brand.onDark"
+      aria-label="Family cover"
+      data-testid="family-export-print-cover">
+      <p class="text-[9.5pt] uppercase tracking-[0.18em]">{{ document.projectName }}</p>
+      @if (document.brand.logoOnDark; as logo) {
+        <img class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" />
+      }
+      <div class="flex flex-1 flex-col justify-center gap-[14pt]">
+        <h1 class="text-[36pt] font-medium leading-[1.05]">Positioning &amp; brand kit</h1>
+        <p class="text-[11pt]">Approved current · {{ document.printedAt | date: 'd MMM y' }}</p>
+      </div>
+      <dl class="grid grid-cols-[28pt_1fr] gap-y-[6pt] text-[9.5pt]" data-testid="family-export-print-contents">
+        <dt>01</dt>
+        <dd>Messaging framework{{ document.framework ? '' : ' — no approved current' }}</dd>
+        <dt>02</dt>
+        <dd>Brand kit{{ document.kit ? '' : ' — no approved current' }}</dd>
+        <dt>03</dt>
+        <dd>Boilerplates{{ document.boilerplates ? '' : ' — no approved current' }}</dd>
+        <dt>04</dt>
+        <dd>FAQ{{ document.faq ? '' : ' — no approved current' }}</dd>
+      </dl>
+    </section>
     @if (document.framework; as framework) {
       <lfx-mktg-framework-print [view]="framework" />
     }
     @if (document.kit; as kit) {
       <lfx-brand-kit-view [view]="kit" />
+    }
+    @if (document.boilerplates; as boilerplates) {
+      <lfx-mktg-boilerplates-print [view]="boilerplates" />
+    }
+    @if (document.faq; as faq) {
+      <lfx-mktg-faq-print [view]="faq" />
     }
   }
 </div>

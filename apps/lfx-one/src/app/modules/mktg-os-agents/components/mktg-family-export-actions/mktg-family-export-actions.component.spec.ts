@@ -14,6 +14,18 @@ import { familyExportMember, familyExportRecord } from '@shared/testing/mktg-fam
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyExportActionsComponent } from './mktg-family-export-actions.component';
+import {
+  boilerplatesAssetOfRevision,
+  buildBoilerplatesPrintView,
+  buildBrandKitBookView,
+  buildFaqPrintView,
+  buildFoundationMessagePrintView,
+  faqAssetOfRevision,
+  mktgPrintBrand,
+} from '@lfx-one/shared/utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
+import faqEnvelope from '@lfx-one/shared/utils/__fixtures__/faq-envelope.json';
 
 describe('Family export slot', () => {
   const writer = signal(true);
@@ -26,7 +38,7 @@ describe('Family export slot', () => {
     stale: false,
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
-  const print = { print: vi.fn(), clear: vi.fn() };
+  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
@@ -35,7 +47,19 @@ describe('Family export slot', () => {
     api.last.mockReturnValue(of(lookup()));
     api.running.mockReturnValue(null);
     api.run.mockReturnValue(run);
-    api.printView.mockReturnValue(of({ framework: null, kit: null, fontFamily: null, weights: [400] }));
+    api.printView.mockReturnValue(
+      of({
+        framework: null,
+        kit: null,
+        boilerplates: null,
+        faq: null,
+        brand: mktgPrintBrand(null),
+        projectName: 'Synthetic project',
+        printedAt: '2026-10-28T00:00:00Z',
+        fontFamily: null,
+        weights: [400],
+      })
+    );
     print.print.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       imports: [MktgFamilyExportActionsComponent],
@@ -59,7 +83,7 @@ describe('Family export slot', () => {
   it('eagerly checks last export and starts create only when there is no earlier deck', async () => {
     const { fixture, root, button } = await setup();
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, false);
-    expect(root.textContent).toContain('Boilerplates and FAQ do not have print layouts yet');
+    expect(root.textContent).toContain('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
     button('slides')?.click();
     await fixture.whenStable();
     expect(api.run).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, 'create');
@@ -175,6 +199,54 @@ describe('Family export slot', () => {
     expect(print.print).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS, null, [400]);
     fixture.destroy();
     expect(print.clear).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+  });
+
+  it('composes all four print roots in exporter order with a family cover, contents and branded type', async () => {
+    const kit = brandKitTestRevision();
+    const brand = mktgPrintBrand(kit);
+    const boilerplates = boilerplatesAssetOfRevision(JSON.stringify(boilerplatesEnvelope.content), boilerplatesEnvelope);
+    const faq = faqAssetOfRevision(JSON.stringify(faqEnvelope.content), faqEnvelope);
+    if (!boilerplates || !faq) throw new Error('Invalid synthetic assets');
+    const framework = buildFoundationMessagePrintView(
+      {
+        mf: { vision: '', mission: '', positioning: '', tagline: 'Synthetic tagline', goals: [], crosscut: '', say: [], avoid: [], anchor: [], notes: '' },
+        icp: [],
+        mh: { umbrella: '', line: '', pillars: [], found: '', aud: [] },
+        nums: [],
+      },
+      'Synthetic project',
+      1,
+      kit
+    );
+    api.printView.mockReturnValue(
+      of({
+        framework,
+        kit: buildBrandKitBookView(kit, 1),
+        boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
+        faq: buildFaqPrintView(faq, brand),
+        brand,
+        projectName: 'Synthetic project',
+        printedAt: '2026-10-28T00:00:00Z',
+        fontFamily: brand.fontFamily,
+        weights: [400],
+      })
+    );
+    const { fixture, root, button } = await setup();
+    button('pdf')?.click();
+    await fixture.whenStable();
+    const document = root.querySelector('[data-testid="family-export-print-document"]');
+    expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
+      'section',
+      'lfx-mktg-framework-print',
+      'lfx-brand-kit-view',
+      'lfx-mktg-boilerplates-print',
+      'lfx-mktg-faq-print',
+    ]);
+    const cover = document?.querySelector('[data-testid="family-export-print-cover"]');
+    expect(cover?.textContent).toContain('Synthetic project');
+    expect(cover?.textContent).toContain('28 Oct 2026');
+    expect(cover?.querySelectorAll('dd')).toHaveLength(4);
+    expect(print.ensureFontStylesheet).toHaveBeenCalledWith(brand.fontUrl);
   });
 
   it('reports PDF preparation failure and never prints unapproved bytes', async () => {
