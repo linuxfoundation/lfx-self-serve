@@ -64,7 +64,7 @@ describe('OverviewNpsCardComponent', () => {
   it('reads the latest survey, the change and the response split', async () => {
     await render();
 
-    expect(text('overview-nps-subtitle')).toBe('Last survey: Q2 2026 · 5 of 24 responded (21%)');
+    expect(text('overview-nps-meta')).toBe('Latest NPS: Q2 2026 · Audience: Board · Responses: 5 of 24 (21%)');
     expect(text('overview-nps-score')).toBe('80');
     expect(text('overview-nps-delta')).toBe('Up12 pts vs Q4 2025');
     expect(cells('overview-nps-promoters')).toEqual(['Promoters scored 9–10', '4', '80%']);
@@ -72,7 +72,9 @@ describe('OverviewNpsCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-gauge"]').getAttribute('aria-label')).toBe(
       'Net Promoter Score 80 on a scale from -100 to 100'
     );
-    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-high"]').getAttribute('stroke-opacity')).toBe('1');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-high"]').getAttribute('stroke')).toBe('#00BC7D');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-low"]').getAttribute('stroke')).toBe('#FFDDDE');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-gauge"]').getAttribute('width')).toBe('112');
   });
 
   it('shows its empty state for a period with no survey sent', async () => {
@@ -82,6 +84,6 @@ describe('OverviewNpsCardComponent', () => {
     fixture.detectChanges();
 
     expect(text('overview-nps-empty')).toContain('No survey results yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-subtitle"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-meta"]')).toBeNull();
   });
 });
