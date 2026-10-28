@@ -10,6 +10,26 @@ test.describe('Marketing kit home content', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
+  test('a started run replaces the asset badge with quiet writing progress', async ({ page }) => {
+    const listing = kitDocuments(false);
+    listing.runs = [
+      {
+        agentKey: 'foundation-message',
+        project: listing.project,
+        documentId: 'living',
+        runId: 'synthetic-run',
+        state: 'writing',
+        startedAt: '2026-10-28T12:00:00Z',
+      },
+    ];
+    await setupKit(page, { listing });
+    await openKit(page);
+    const row = page.getByTestId('mktg-kit-asset-messaging-framework');
+    await expect(row.getByTestId('mktg-kit-run-status')).toContainText('Writing…');
+    await expect(row.getByTestId('mktg-kit-run-status-link')).toHaveAttribute('href', /documents\/foundation-message\/living\?project=.*&run=synthetic-run$/);
+    await expect(page.getByTestId('mktg-kit-next-step-action')).toContainText('Create messaging framework');
+    await page.screenshot({ path: test.info().outputPath('kit-writing.png'), fullPage: true });
+  });
   test('Not run yet filters include never-run one-offs but not coming-soon assets', async ({ page }) => {
     await setupKit(page);
     await openKit(page);
@@ -106,15 +126,33 @@ test.describe('Marketing kit home content', () => {
     await expect(page.getByTestId('mktg-kit-error')).toContainText('write access');
     await expect(page.getByTestId('mktg-kit-in-kit')).toHaveText('—');
   });
-  test('Requests and Access are honest routed placeholders', async ({ page }) => {
+  test('Requests and Access tabs are disabled Soon tabs', async ({ page }) => {
     await setupKit(page);
     await openKit(page);
+    await expect(page.getByTestId('mktg-kit-families')).toBeVisible();
+    const kitUrl = page.url();
+    for (const path of ['requests', 'access']) {
+      const tab = page.getByTestId(`mktg-kit-tab-${path}`);
+      await expect(tab).toHaveAttribute('aria-disabled', 'true');
+      await expect(tab).toHaveAttribute('title', 'Coming soon');
+      await expect(tab).not.toHaveAttribute('href');
+      await expect(tab.getByTestId('mktg-kit-tab-soon')).toHaveText('Soon');
+      await expect(tab.getByTestId('mktg-kit-tab-soon')).toBeVisible();
+      // Force permits a real pointer click on an aria-disabled element to prove it cannot navigate.
+      await tab.click({ force: true });
+      await expect(page).toHaveURL(kitUrl);
+      await expect(page.getByTestId('mktg-kit-tab-kit')).toHaveAttribute('aria-current', 'page');
+      await expect(page.getByTestId('mktg-kit-families')).toBeVisible();
+    }
+  });
+  test('Requests and Access deep links remain honest routed placeholders', async ({ page }) => {
+    await setupKit(page);
     for (const tab of ['requests', 'access']) {
-      await page.getByTestId(`mktg-kit-tab-${tab}`).click();
+      await openKit(page, `/${tab}`);
       await expect(page.getByTestId('mktg-kit-placeholder-empty')).toContainText('comes with its own item');
       await expect(page.getByTestId('mktg-kit-header')).toContainText('Marketing kit');
       await expect(page.getByTestId('mktg-kit-placeholder-title')).toHaveText('Synthetic Kit Project');
-      await expect(page.getByTestId(`mktg-kit-tab-${tab}`)).toHaveAttribute('aria-current', 'page');
+      await expect(page.getByTestId(`mktg-kit-tab-${tab}`)).toHaveAttribute('aria-disabled', 'true');
     }
   });
 });

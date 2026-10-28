@@ -1,10 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
+import { inject, Injectable, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE,
+  CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE,
+  CREATIVE_ASSET_EMPTY_MESSAGE,
+  CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_PRESENT_MESSAGE,
+  CREATIVE_ASSET_QUEUE_RETRIES,
+  CREATIVE_ASSET_QUEUE_RETRY_BASE_MS,
+  CREATIVE_ASSET_QUOTA_MESSAGE,
+  CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE,
+  CREATIVE_ASSET_SUBFOLDER_MESSAGE,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_UPLOADED_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  isCreativeAssetMimeType,
   JOB_LOST_MESSAGE,
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
@@ -62,6 +78,8 @@ import {
   CampaignStatusUpdateResult,
   CreativeAssetLibrary,
   CreativeAssetPlan,
+  CreativeAssetQueueItem,
+  CreativeAssetQueueRefusal,
   CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
@@ -110,9 +128,29 @@ import type {
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
-import { retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
-import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
+import {
+  catchError,
+  concatMap,
+  defer,
+  EMPTY,
+  exhaustMap,
+  finalize,
+  last,
+  map,
+  Observable,
+  of,
+  ReplaySubject,
+  retry,
+  share,
+  Subject,
+  take,
+  takeUntil,
+  takeWhile,
+  throwError,
+  timer,
+} from 'rxjs';
 
 import { SseService } from './sse.service';
 
@@ -125,6 +163,37 @@ export class CampaignService {
     { briefId: string; upload$: Observable<CreativeAssetUploadResult>; cancel: Subject<void> }
   >();
   private readonly sse = inject(SseService);
+
+  /** The library upload, every brief's files in one list: see `enqueueCreativeAssetUploads`. */
+  private readonly creativeAssetQueue = signal<CreativeAssetQueueItem[]>([]);
+  /** Each file still to send, or to re-send on Retry, by item id — dropped once its outcome is final. */
+  private readonly creativeAssetQueueFiles = new Map<string, File>();
+  private creativeAssetQueueSequence = 0;
+  /** Send attempts in order. `concatMap` is what makes the upload serial: one request at a time, ever. */
+  private readonly creativeAssetQueueWork = new Subject<{ id: string; attempt: number }>();
+  /**
+   * Each item's latest attempt. A Retry queues a NEW attempt at the back; an older one still
+   * buffered for the same item is stale and skipped, so a retried file never jumps the queue.
+   */
+  private readonly creativeAssetQueueAttempts = new Map<string, number>();
+  /**
+   * Aborts the request in flight. Fired only when the cancelled brief owns it: one file is in
+   * flight at a time, so another brief's cancel never reaches this. Waiting items are marked
+   * cancelled by the caller.
+   */
+  private readonly creativeAssetQueueAbort = new Subject<void>();
+
+  /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
+  public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
+
+  public constructor() {
+    this.creativeAssetQueueWork
+      .pipe(
+        concatMap((work) => this.sendQueuedCreativeAsset(work.id, work.attempt)),
+        takeUntilDestroyed()
+      )
+      .subscribe();
+  }
 
   public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
     const url = `/api/campaigns/brief/generate?project=${encodeURIComponent(projectSlug)}`;
@@ -341,15 +410,10 @@ export class CampaignService {
     // unsubscribing must not abort the upload or lose its answer. A remount resumes it by brief
     // (`resumeCreativeAssetUpload`) and gets the id, or the refusal, it would have seen. Only
     // `cancel` (a new pick, or Remove) aborts the request.
-    const upload$ = this.http
-      .post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
-        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
-        headers: { 'Content-Type': file.type },
-      })
-      .pipe(
-        takeUntil(cancel),
-        share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
-      );
+    const upload$ = this.postCreativeAsset(file, projectSlug, briefId).pipe(
+      takeUntil(cancel),
+      share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
+    );
     // Only each owner's latest upload is kept. The tab resumes the brief it is showing, so an older
     // one (an abandoned brief, a left page) has no one to resume it and would otherwise hold its
     // image, up to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
@@ -374,6 +438,83 @@ export class CampaignService {
   public cancelCreativeAssetUpload(owner: CreativeAssetUploadOwner): void {
     this.creativeAssetUploads.get(owner)?.cancel.next();
     this.creativeAssetUploads.delete(owner);
+  }
+
+  /**
+   * Add files to the brief's library upload, which sends them ONE AT A TIME in pick order.
+   *
+   * Serial because campaign-service's upload admission sheds concurrent uploads with a 503; a
+   * parallel run would fail most of a folder through no fault of its own. It is a separate path
+   * from the per-platform pickers' `uploadCreativeAsset` — it holds no owner slot, so a library
+   * upload never cancels or takes over a picker's upload, nor the other way round.
+   *
+   * Every file gets an item, including one refused before sending: a wrong type, over
+   * `CREATIVE_ASSET_MAX_BYTES`, empty, or — with `folder` — below the folder's top level (a folder
+   * pick lists every file under it, and only its top level is uploaded). Over-quota is NOT judged
+   * here: re-uploading bytes the brief already holds is idempotent and costs no quota upstream, so
+   * only campaign-service can say whether a file would exceed it.
+   *
+   * Each item carries its brief, so files picked for another brief wait their turn in the same
+   * serial lane and the first brief's outcomes stay listed for when the operator returns to it.
+   */
+  public enqueueCreativeAssetUploads(files: readonly File[], projectSlug: string, briefId: string, options: { folder?: boolean } = {}): void {
+    const added = files.map((file): CreativeAssetQueueItem => {
+      const id = `asset-${++this.creativeAssetQueueSequence}`;
+      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true);
+      if (!refused) {
+        this.creativeAssetQueueFiles.set(id, file);
+      }
+      return {
+        id,
+        briefId,
+        projectSlug,
+        name: options.folder === true && file.webkitRelativePath ? file.webkitRelativePath : file.name,
+        byteSize: file.size,
+        status: refused ? 'refused' : 'waiting',
+        refusal: refused?.refusal ?? null,
+        message: refused?.message ?? '',
+        assetId: '',
+      };
+    });
+    this.creativeAssetQueue.update((items) => [...items, ...added]);
+    added.filter((item) => item.status === 'waiting').forEach((item) => this.queueCreativeAssetAttempt(item.id));
+  }
+
+  /** Send a failed or cancelled file again, at the back of the queue. */
+  public retryCreativeAssetUpload(itemId: string): void {
+    const item = this.creativeAssetQueue().find((candidate) => candidate.id === itemId);
+    if (!item || (item.status !== 'failed' && item.status !== 'cancelled') || !this.creativeAssetQueueFiles.has(itemId)) {
+      return;
+    }
+    this.patchQueuedCreativeAsset(itemId, { status: 'waiting', refusal: null, message: '' });
+    this.queueCreativeAssetAttempt(itemId);
+  }
+
+  /** Stop a brief's library upload: its file in flight is aborted and every waiting one is marked cancelled, each still retryable. */
+  public cancelCreativeAssetUploads(briefId: string): void {
+    const items = this.creativeAssetQueue();
+    this.creativeAssetQueue.set(
+      items.map((item) =>
+        item.briefId === briefId && item.status === 'waiting' ? { ...item, status: 'cancelled', message: CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE } : item
+      )
+    );
+    if (items.some((item) => item.briefId === briefId && item.status === 'uploading')) {
+      this.creativeAssetQueueAbort.next();
+    }
+  }
+
+  /** Cancel anything of the brief's still running and forget its list. Other briefs' items are untouched. */
+  public clearCreativeAssetUploadQueue(briefId: string): void {
+    this.cancelCreativeAssetUploads(briefId);
+    const [cleared, kept] = this.creativeAssetQueue().reduce<[CreativeAssetQueueItem[], CreativeAssetQueueItem[]]>(
+      ([mine, others], item) => (item.briefId === briefId ? [[...mine, item], others] : [mine, [...others, item]]),
+      [[], []]
+    );
+    cleared.forEach((item) => {
+      this.creativeAssetQueueFiles.delete(item.id);
+      this.creativeAssetQueueAttempts.delete(item.id);
+    });
+    this.creativeAssetQueue.set(kept);
   }
 
   /**
@@ -1136,5 +1277,116 @@ export class CampaignService {
    */
   private monitorAccountSource(source: MonitorAccountSource | null): Record<string, string> {
     return source ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: source === 'connection' ? MONITOR_ACCOUNT_SOURCE_CONNECTION : MONITOR_ACCOUNT_SOURCE_LEGACY } : {};
+  }
+
+  /** The upload request both paths share: the file's raw bytes, typed with its own MIME type. */
+  private postCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
+    return this.http.post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+      headers: { 'Content-Type': file.type },
+    });
+  }
+
+  /** Queue a new attempt at the back; any older buffered attempt for the item becomes stale. */
+  private queueCreativeAssetAttempt(itemId: string): void {
+    const attempt = (this.creativeAssetQueueAttempts.get(itemId) ?? 0) + 1;
+    this.creativeAssetQueueAttempts.set(itemId, attempt);
+    this.creativeAssetQueueWork.next({ id: itemId, attempt });
+  }
+
+  /**
+   * Send one queued file and record its outcome. Re-sent on a transient failure (a 503 from the
+   * upload admission, a dropped connection), which is safe because identical bytes return the
+   * asset already stored rather than a second copy.
+   */
+  private sendQueuedCreativeAsset(itemId: string, attempt: number): Observable<unknown> {
+    return defer(() => {
+      const queued = this.creativeAssetQueue().find((item) => item.id === itemId);
+      const file = this.creativeAssetQueueFiles.get(itemId);
+      // Cancelled, cleared, already sent, or superseded by a Retry since this attempt was queued.
+      if (!file || queued?.status !== 'waiting' || this.creativeAssetQueueAttempts.get(itemId) !== attempt) {
+        return EMPTY;
+      }
+      this.patchQueuedCreativeAsset(itemId, { status: 'uploading' });
+      return this.postCreativeAsset(file, queued.projectSlug, queued.briefId).pipe(
+        // Backed off rather than retried at a fixed beat: a per-platform picker's upload can hold
+        // the admission for several seconds, and two quick re-sends would both land inside it.
+        retry({
+          count: CREATIVE_ASSET_QUEUE_RETRIES,
+          delay: (error: unknown, retryCount: number) =>
+            isTransientHttpError(error) ? timer(CREATIVE_ASSET_QUEUE_RETRY_BASE_MS * 2 ** (retryCount - 1)) : throwError(() => error),
+        }),
+        map((result) => {
+          this.creativeAssetQueueFiles.delete(itemId);
+          this.patchQueuedCreativeAsset(itemId, {
+            status: result.created ? 'uploaded' : 'present',
+            message: result.created ? CREATIVE_ASSET_UPLOADED_MESSAGE : CREATIVE_ASSET_PRESENT_MESSAGE,
+            assetId: result.id,
+          });
+        }),
+        catchError((error: unknown) => {
+          const outcome = this.queuedCreativeAssetFailure(error);
+          if (outcome.status === 'refused') {
+            console.warn('Creative library upload refused:', queued.name, error);
+            this.creativeAssetQueueFiles.delete(itemId);
+          } else {
+            console.error('Creative library upload failed:', queued.name, error);
+          }
+          this.patchQueuedCreativeAsset(itemId, outcome);
+          return EMPTY;
+        }),
+        takeUntil(this.creativeAssetQueueAbort),
+        finalize(() => {
+          if (this.creativeAssetQueue().find((item) => item.id === itemId)?.status === 'uploading') {
+            this.patchQueuedCreativeAsset(itemId, { status: 'cancelled', message: CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE });
+          }
+        })
+      );
+    });
+  }
+
+  /** Why a file can never be stored as it is, checked before it is sent; null when it may be sent. */
+  private refuseQueuedCreativeAsset(file: File, folder: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
+    // `webkitRelativePath` is `folder/name.png` at the top level of a picked folder. Defaulted because
+    // an engine without folder picks (and jsdom) leaves it undefined rather than empty.
+    if (folder && (file.webkitRelativePath ?? '').split('/').length > 2) {
+      return { refusal: 'subfolder', message: CREATIVE_ASSET_SUBFOLDER_MESSAGE };
+    }
+    if (!isCreativeAssetMimeType(file.type)) {
+      return { refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+    }
+    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
+      return { refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+    }
+    if (file.size === 0) {
+      return { refusal: 'other', message: CREATIVE_ASSET_EMPTY_MESSAGE };
+    }
+    return null;
+  }
+
+  /**
+   * A refused upload is one no retry can fix — over quota (409), the wrong type (415), too large
+   * (413) or otherwise invalid (400). Anything else, including an expired session or a network drop
+   * that outlasted the re-sends, is `failed` and keeps its file for Retry.
+   */
+  private queuedCreativeAssetFailure(error: unknown): Pick<CreativeAssetQueueItem, 'status' | 'refusal' | 'message'> {
+    const status = error instanceof HttpErrorResponse && !isTransientHttpError(error) ? error.status : 0;
+    if (status === 409) {
+      return { status: 'refused', refusal: 'quota', message: CREATIVE_ASSET_QUOTA_MESSAGE };
+    }
+    if (status === 415) {
+      return { status: 'refused', refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+    }
+    if (status === 413) {
+      return { status: 'refused', refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+    }
+    if (status === 400) {
+      return { status: 'refused', refusal: 'other', message: extractErrorMessage(error, CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE) };
+    }
+    return { status: 'failed', refusal: null, message: extractErrorMessage(error, CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE) };
+  }
+
+  private patchQueuedCreativeAsset(itemId: string, patch: Partial<CreativeAssetQueueItem>): void {
+    this.creativeAssetQueue.update((items) => items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)));
   }
 }

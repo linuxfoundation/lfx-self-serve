@@ -13,6 +13,30 @@ test.describe('Marketing family content', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
+  test('a started run uses the existing family header and row for writing progress', async ({ page }) => {
+    const listing = kitDocuments(false);
+    listing.runs = [
+      {
+        agentKey: 'foundation-message',
+        project: listing.project,
+        documentId: 'living',
+        runId: 'synthetic-run',
+        state: 'writing',
+        startedAt: '2026-10-28T12:00:00Z',
+      },
+    ];
+    await setupKit(page, { listing });
+    await openKit(page, '/families/positioning-brand');
+    await expect(page.getByTestId('mktg-family-run-status-row')).toContainText('Writing…');
+    await expect(page.getByTestId('mktg-family-run-status')).toContainText('Messaging framework · Writing…');
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create messaging framework');
+    await expect(page.getByTestId('mktg-family-run-status').getByRole('link', { name: 'Open', exact: true })).toHaveAttribute(
+      'href',
+      /documents\/foundation-message\/living\?project=.*&run=synthetic-run$/
+    );
+    await expect(page.getByTestId('mktg-family-run-messaging-framework')).toContainText('Create messaging framework');
+    await page.screenshot({ path: test.info().outputPath('family-writing.png'), fullPage: true });
+  });
   for (const loaded of [false, true]) {
     for (const mount of ['project', 'foundation'] as const) {
       test(`${mount}: only unbuilt living rows offer fresh intake (loaded=${loaded})`, async ({ page }) => {
@@ -91,7 +115,7 @@ test.describe('Marketing family content', () => {
     // Nothing is stale, so the header offers no rebuild.
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
-    await expect(page.getByTestId('mktg-family-exports')).toContainText("Exports use the family's approved current assets.");
+    await expect(page.getByTestId('mktg-family-exports')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
   });
   test('a blocked next step links to the document that needs approval', async ({ page }) => {
     const listing = kitDocuments(true);

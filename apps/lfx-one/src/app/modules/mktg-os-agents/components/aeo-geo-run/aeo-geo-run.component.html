@@ -79,6 +79,9 @@
                 dataTest="mktg-aeo-domain"
                 [invalid]="!!domainError()"
                 [describedBy]="domainError() ? 'mktg-aeo-domain-error' : 'mktg-aeo-domain-hint'" />
+              @if (linkWarnings()['domain']; as warning) {
+                <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-aeo-link-warning-domain">{{ warning }}</span>
+              }
               @if (domainError()) {
                 <p id="mktg-aeo-domain-error" class="text-sm text-red-600" role="alert">{{ domainError() }}</p>
               }
@@ -108,6 +111,11 @@
                   [dataTest]="'mktg-aeo-' + field.key"
                   [invalid]="!!pagesError()"
                   describedBy="mktg-aeo-pages-hint mktg-aeo-pages-error" />
+                @if (linkWarnings()[field.key]; as warning) {
+                  <span class="text-xs text-amber-700" role="status" aria-live="polite" [attr.data-testid]="'mktg-aeo-link-warning-' + field.key">{{
+                    warning
+                  }}</span>
+                }
               }
               @if (visiblePages() < 5) {
                 <lfx-button

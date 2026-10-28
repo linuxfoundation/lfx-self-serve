@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, model, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
@@ -17,6 +17,7 @@ import {
   MktgIntakeDocumentsConfig,
   MktgIntakeDocumentTag,
 } from '@lfx-one/shared/interfaces';
+import { mktgLinkWarnings } from '@lfx-one/shared/utils';
 import { sourceUrlValidator } from '@lfx-one/shared/validators';
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { combineLatest, finalize, Observable, Subject, takeUntil } from 'rxjs';
@@ -41,6 +42,7 @@ export class MktgIntakeDocumentsComponent {
 
   // === Inputs ===
   public readonly config = input.required<MktgIntakeDocumentsConfig>();
+  public readonly earlierUrls = input<string[]>([]);
 
   // === Forms ===
   protected readonly linkForm = new FormGroup({
@@ -65,6 +67,8 @@ export class MktgIntakeDocumentsComponent {
   private readonly cancelled$ = new Subject<void>();
 
   // === Computed ===
+  private readonly pendingUrl = toSignal(this.linkForm.controls.url.valueChanges, { initialValue: '' });
+  protected readonly linkWarnings = this.initLinkWarnings();
   protected readonly rows: Signal<MktgIntakeDocumentRow[]> = this.initRows();
   protected readonly atLimit = computed(() => this.documents().length + this.pending() >= this.config().maxDocuments);
   protected readonly acceptAttribute = computed(() => this.config().fileExtensions.join(','));
@@ -160,6 +164,22 @@ export class MktgIntakeDocumentsComponent {
   }
 
   // === Private initializers ===
+  private initLinkWarnings(): Signal<Record<string, string>> {
+    return computed(() =>
+      mktgLinkWarnings(
+        {
+          ...Object.fromEntries(
+            this.documents()
+              .filter((document) => document.kind === 'link')
+              .map((document) => [document.id, document.url ?? ''])
+          ),
+          pending: this.pendingUrl(),
+        },
+        this.earlierUrls()
+      )
+    );
+  }
+
   private initRows(): Signal<MktgIntakeDocumentRow[]> {
     return computed(() =>
       this.documents().map((document) => {

@@ -182,7 +182,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await setupDocuments(page);
     await openDocuments(page);
     await page.getByTestId('mktg-kit-tab-documents').click();
-    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
+    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(2);
     await expect(page.getByTestId('mktg-documents-all')).toContainText(DOCUMENT_TYPE.label);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
     if (!type) throw new Error('Synthetic navigation test requires a catalog run type');
