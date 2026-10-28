@@ -5,6 +5,25 @@ import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DOCUMENT_TYPE, DOCUMENT_VIEW_URL, documentFixture, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
 
+test('names the discarding writer and opens the exact replacement run', async ({ page }, info) => {
+  await suppressCookieBanner(page);
+  const newer = { ...startedDocumentRun('writing'), runId: 'c'.repeat(64) };
+  const closed = { ...startedDocumentRun('discarded'), closedAt: '2026-10-19T13:00:00Z', closedBy: 'Synthetic writer', replacedBy: newer.runId };
+  await setupDocuments(page, { empty: true, runs: [newer] });
+  await page.route(`**/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living?*`, (route) =>
+    route.fulfill({ json: { ...documentFixture(), current: null, revisions: [], runs: [closed, newer] } })
+  );
+  await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${closed.runId}`);
+  await expect(page.getByTestId('mktg-document-view-closed-message')).toContainText('This run was discarded by Synthetic writer at');
+  const link = page.getByTestId('mktg-document-view-newer-run');
+  await expect(link).toHaveText('Open the newer run');
+  await link.click();
+  await expect(page).toHaveURL(`${DOCUMENT_VIEW_URL}&run=${newer.runId}`);
+  await expect(page.getByTestId('mktg-document-view-closed-run')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('replacement-run.png'), fullPage: true });
+});
+
 for (const state of ['discarded', 'superseded'] as const) {
   test(`explains the ${state} run and opens the newer Started run list`, async ({ page }, info) => {
     await suppressCookieBanner(page);

@@ -48,6 +48,7 @@ import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.serv
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
+import { mktgActiveRunConflictHeading } from '@lfx-one/shared/utils/mktg-run-active.utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -229,6 +230,7 @@ describe('MktgAgentRunComponent', () => {
             resume: vi.fn(() => NEVER),
             activeRunConflict: MktgAgentRunService.prototype.activeRunConflict,
             canRetryActiveConflict: vi.fn(() => true),
+            recheckActiveConflict: vi.fn(() => NEVER),
           },
         },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
@@ -915,9 +917,10 @@ describe('MktgAgentRunComponent', () => {
     });
 
     const activeConflict = (): MktgActiveRunConflict => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
       const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
       if (!type) throw new Error('Missing synthetic asset');
-      return {
+      const conflict: MktgActiveRunConflict = {
         code: MKTG_RUN_ACTIVE,
         message: 'A run is in progress.',
         activeRunId: 'b'.repeat(64),
@@ -928,6 +931,10 @@ describe('MktgAgentRunComponent', () => {
         startedByViewer: false,
         startedAt: '2026-10-19T12:00:00.000Z',
       };
+      vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict).mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: conflict }))
+      );
+      return conflict;
     };
 
     it('confirms Sources-first discard, opens progress on Keep it, and does not ask twice before one explicit Create', async () => {
@@ -1042,6 +1049,45 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
+    it.each(['fresh-conflict', 'started'] as const)('rechecks the catalog guard on focus and handles %s without another submit', async (outcome) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const conflict = activeConflict();
+      const recheck = vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict);
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      await fixture.whenStable();
+      const dialog = discardPrompt();
+      const fresh = { ...conflict, activeRunId: 'c'.repeat(64), startedByViewer: true, startedAt: '2026-10-19T13:00:00Z' };
+      if (outcome === 'started') recheck.mockReturnValue(of({ type: 'submitted' }));
+      else recheck.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: fresh })));
+      const notice = vi.spyOn(TestBed.inject(MessageService), 'add');
+      const close = vi.spyOn(confirmationService, 'close');
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(recheck).toHaveBeenCalledTimes(2);
+      expect(recheck.mock.calls[0][0]).toBe(generate.mock.calls[0][0]);
+      expect(recheck.mock.calls[1][0]).toBe(generate.mock.calls[0][0]);
+      expect(generate).toHaveBeenCalledOnce();
+      if (outcome === 'started') {
+        expect(close).toHaveBeenCalledOnce();
+        expect(notice).toHaveBeenCalledWith(expect.objectContaining({ detail: 'The earlier run has finished — yours started.' }));
+        expect(component['phase']()).toBe('running');
+      } else {
+        expect(discardPrompt()).toBe(dialog);
+        expect(dialog?.header).toBe('Your Messaging framework run is in progress');
+        expect(dialog?.message).toContain('19 Oct 2026');
+        expect(close).not.toHaveBeenCalled();
+        dialog?.reject?.(ConfirmEventType.REJECT);
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ queryParams: expect.objectContaining({ run: fresh.activeRunId }) })
+        );
+      }
+    });
+
     it('does not automatically loop when the server rejects an already-discarding retry', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of(history));
@@ -1052,7 +1098,7 @@ describe('MktgAgentRunComponent', () => {
       discardPrompt()?.accept?.();
       await fixture.whenStable();
       expect(generate).toHaveBeenCalledTimes(2);
-      expect(confirmationService.confirm).toHaveBeenCalledTimes(2);
+      expect(discardPrompt()?.acceptLabel).toBe('Discard and start over');
     });
 
     it('consumes visit-only receiver conflict metadata, never serializes it, and uses the one-off title variant', async () => {
@@ -1071,7 +1117,7 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
       const oneOff = MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run');
       if (!oneOff) throw new Error('Missing synthetic one-off type');
-      expect(component['activeConflictHeading']({ ...conflict, agentKey: oneOff.agentKey })).toBe(
+      expect(mktgActiveRunConflictHeading({ ...conflict, agentKey: oneOff.agentKey })).toBe(
         `Your ${mktgSentenceCaseLabel(oneOff.itemLabel)} run is in progress`
       );
     });

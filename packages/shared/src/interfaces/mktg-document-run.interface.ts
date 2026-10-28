@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
@@ -20,6 +21,26 @@ export interface MktgActiveRunConflict {
   agentKey: MktgDocumentAgentKey;
   documentId: string;
 }
+
+/** Same-visit guard callbacks; no new transport fields or persisted request bytes. */
+export interface MktgActiveRunGuardOptions<T> {
+  conflict: MktgActiveRunConflict;
+  current: () => boolean;
+  recheck: () => Observable<T>;
+  classify: (error: unknown) => MktgActiveRunConflict | null;
+  onValue: (value: T) => void;
+  onDiscard: (conflict: MktgActiveRunConflict) => void;
+  onOpen: (conflict: MktgActiveRunConflict) => void;
+  onError: (error: unknown) => void;
+}
+
+/** Internal observer events for the shared guard recheck; never an API payload. */
+export type MktgActiveRunRecheckEvent<T> =
+  | { type: 'checking' }
+  | { type: 'conflict'; conflict: MktgActiveRunConflict }
+  | { type: 'accepted' }
+  | { type: 'value'; value: T }
+  | { type: 'error'; error: unknown };
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
 export type MktgRunFailureReason = Member360FailureReason;
@@ -113,7 +134,9 @@ export interface MktgDocumentRunProgress {
   state: Exclude<MktgStoredDocumentRunState, 'completed'>;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
+  /** Resolved display name only; absent or null when the closure actor is unknown. */
   closedBy?: string | null;
+  /** Opaque replacement run id for this document; absent on legacy closed records. */
   replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];

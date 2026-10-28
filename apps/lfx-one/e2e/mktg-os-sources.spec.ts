@@ -21,7 +21,7 @@ test.describe('Marketing OS new run Sources', () => {
       const activeRunId = 'b'.repeat(64);
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
         bodies.push(route.request().postDataJSON());
-        if (bodies.length === 1)
+        if (!bodies.at(-1)?.['discard'])
           return route.fulfill({
             status: 409,
             json: {
@@ -55,9 +55,10 @@ test.describe('Marketing OS new run Sources', () => {
       if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
       else {
         await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
-        expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+        expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       }
-      expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
+      expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
       await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
     });
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
