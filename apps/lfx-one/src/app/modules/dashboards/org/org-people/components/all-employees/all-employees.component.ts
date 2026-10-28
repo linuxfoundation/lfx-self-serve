@@ -41,6 +41,7 @@ import {
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
   ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
+  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
   ORG_CODE_MEASURE_DEFINITION,
@@ -214,6 +215,8 @@ export class AllEmployeesComponent {
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
   protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
+  // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; say so.
+  protected readonly codeStatNote = computed(() => (this.selectedEmployment() === 'current' ? ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE : null));
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))

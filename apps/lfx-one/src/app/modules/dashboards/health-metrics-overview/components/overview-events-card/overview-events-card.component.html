@@ -150,7 +150,7 @@
               <div class="flex @[700px]:justify-end" role="cell">
                 <button
                   type="button"
-                  class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-full border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                   [attr.aria-label]="'Show the registration trend for ' + row.name"
                   [attr.data-testid]="'overview-events-row-' + row.eventId + '-trend'"
                   (click)="openTrend(row)">
@@ -165,7 +165,7 @@
           <div class="flex justify-center pt-[12px]">
             <button
               type="button"
-              class="inline-flex h-[30px] items-center gap-[6px] rounded-full border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              class="inline-flex h-[30px] items-center gap-[6px] rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
               data-testid="overview-events-view-all"
               (click)="showAll.set(true)">
               View all ({{ view.rows.length }})<i class="fa-light fa-angle-down text-[12px]" aria-hidden="true"></i>
