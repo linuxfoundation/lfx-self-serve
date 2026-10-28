@@ -5,17 +5,30 @@ import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_C
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
+  ContributorCountColumn,
+  OrgCommitFilters,
   OrgContributorFoundationOption,
   OrgContributorProjectOption,
   OrgContributorProjectRow,
   OrgContributorRow,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgContributorTimeRange,
+  OrgLensTimeRange,
+  OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  orgLensTimeRangeDays,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
@@ -27,29 +40,41 @@ export class OrgPeopleContributorsService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Aggregates contributors-daily to (account, person, project) for the window, rolled up to person-grain with argmax-most-active-project. */
-  public async getContributors(accountId: string, timeRange: OrgContributorTimeRange): Promise<OrgContributorsResponse> {
+  /**
+   * Aggregates contributors-daily to (account, person, project) for the window and project scope, rolled up to
+   * person-grain with argmax-most-active-project. `commits` follows the commit scope; `codeActivities` is always
+   * sent so the tab can switch metric; the most-active project follows the metric.
+   */
+  public async getContributors(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    // `people-contributors:v2:{timeRange}`: the stored value is now the compact projection below
-    // (GH-1906) — a project/foundation dictionary plus columnar person-grain rows — where it used
-    // to be the bare row array, so a `people-contributors:{timeRange}` entry must miss.
+    // `people-contributors:v4:{timeRange}:{projectScope}` (lfx-self-serve#4164): the read is scoped by project and
+    // carries authored and merged commits; a scoped read sums the per-scope commit credit, so a `v3` entry (summed
+    // from the all-projects credit) must miss. The commit scope and metric only pick counts after the read, so they
+    // share the entry.
     const rows = await withOrgCompactCache(
       accountId,
-      `people-contributors:v2:${timeRange}`,
+      `people-contributors:v4:${timeRange}:${filters.projectScope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchPersonProjectRows(accountId, timeRange),
+      () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope),
       { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
     );
-    return buildResponse(accountId, timeRange, rows);
+    return buildResponse(accountId, timeRange, filters, rows);
   }
 
-  /** Single SQL pass; cutoff inlined as Snowflake `DATEADD(...)` for plan-time folding, only `account_id` is bound. dbt model gates retired projects + bots. */
-  private async fetchPersonProjectRows(accountId: string, timeRange: OrgContributorTimeRange): Promise<ContributorPersonProjectRow[]> {
+  /**
+   * Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots.
+   * A commit can be authored on an LF and a non-LF project (a mirror). `daily_commits` credits it once across all
+   * projects, so a scoped read sums `daily_scope_commits`, which credits it once within the row's own scope: the
+   * per-scope count then matches the Code page's distinct commits for that scope.
+   */
+  private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
     const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
     const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
+    const [commitsColumn, mergedCommitsColumn] =
+      projectScope === 'all' ? ['daily_commits', 'daily_merged_commits'] : ['daily_scope_commits', 'daily_scope_merged_commits'];
 
     const query = `
       SELECT
@@ -65,7 +90,8 @@ export class OrgPeopleContributorsService {
         MAX(foundation_id) AS foundation_id,
         MAX(foundation_name) AS foundation_name,
         MAX(foundation_slug) AS foundation_slug,
-        SUM(daily_commits) AS commits,
+        SUM(${commitsColumn}) AS commits,
+        SUM(${mergedCommitsColumn}) AS merged_commits,
         SUM(daily_code_activities) AS code_activities,
         MAX(activity_date) AS last_active_date,
         BOOLOR_AGG(is_declared_maintainer_for_project) AS is_declared_maintainer_for_project,
@@ -73,6 +99,7 @@ export class OrgPeopleContributorsService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ?
         ${datePredicate}
+        ${orgProjectScopePredicate(projectScope)}
       GROUP BY person_key, project_id
     `;
 
@@ -81,22 +108,18 @@ export class OrgPeopleContributorsService {
   }
 }
 
-/** Snowflake date-cutoff SQL fragment (inline, not bound) so the planner can fold it; null for 'all' (dbt caps at 3yr rolling). */
-function timeRangeCutoffSnowflake(timeRange: OrgContributorTimeRange): string | null {
-  switch (timeRange) {
-    case '30d':
-      return 'DATEADD(day, -30, CURRENT_DATE())';
-    case '90d':
-      return 'DATEADD(day, -90, CURRENT_DATE())';
-    case '12mo':
-      return 'DATEADD(month, -12, CURRENT_DATE())';
-    case 'all':
-      return null;
-  }
+/** Snowflake date-cutoff SQL fragment (inline, not bound — the day count comes from the allow-listed range) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
+function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
+  return timeRange === 'all' ? null : `DATEADD(day, -${orgLensTimeRangeDays(timeRange)}, CURRENT_DATE())`;
 }
 
-/** Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active), stats, foundationOptions[], projectOptions[]. */
-function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
+/**
+ * Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active by the
+ * metric), stats, foundationOptions[], projectOptions[]. `commits` is the commit scope's column (authored or merged).
+ */
+function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
+  const commitsColumn: ContributorCountColumn = filters.commitScope === 'merged' ? 'MERGED_COMMITS' : 'COMMITS';
+  const mostActiveColumn: ContributorCountColumn = filters.metric === 'code' ? 'CODE_ACTIVITIES' : commitsColumn;
   const projects: OrgContributorProjectRow[] = [];
   const personMap = new Map<string, OrgContributorRow>();
   const personMostActive = new Map<string, ContributorPersonProjectRow>();
@@ -115,7 +138,8 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
       foundationName: row.FOUNDATION_NAME,
       foundationSlug: row.FOUNDATION_SLUG,
       role: row.IS_DECLARED_MAINTAINER_FOR_PROJECT === true ? 'Maintainer' : 'Contributor',
-      commits: row.COMMITS ?? 0,
+      commits: row[commitsColumn] ?? 0,
+      codeActivities: row.CODE_ACTIVITIES ?? 0,
       lastActiveTs: toIsoDate(row.LAST_ACTIVE_DATE),
     };
     projects.push(projectRow);
@@ -135,7 +159,8 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
     }
 
     const existing = personMap.get(row.PERSON_KEY);
-    const commits = row.COMMITS ?? 0;
+    const commits = row[commitsColumn] ?? 0;
+    const codeActivities = row.CODE_ACTIVITIES ?? 0;
     const lastActiveTs = projectRow.lastActiveTs;
     if (!existing) {
       personMap.set(row.PERSON_KEY, {
@@ -147,6 +172,7 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
         cdpMemberId: row.CDP_MEMBER_ID,
         role: row.IS_DECLARED_MAINTAINER_FOR_ORG === true ? 'Maintainer' : 'Contributor',
         commits,
+        codeActivities,
         lastActiveTs,
         projectsCount: 1,
         mostActiveProjectName: row.PROJECT_NAME ?? row.PROJECT_ID,
@@ -155,6 +181,7 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
       personMostActive.set(row.PERSON_KEY, row);
     } else {
       existing.commits += commits;
+      existing.codeActivities += codeActivities;
       existing.projectsCount += 1;
       if (lastActiveTs && (!existing.lastActiveTs || lastActiveTs > existing.lastActiveTs)) {
         existing.lastActiveTs = lastActiveTs;
@@ -164,7 +191,7 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
         existing.role = 'Maintainer';
       }
       const currentMost = personMostActive.get(row.PERSON_KEY);
-      if (currentMost && compareMostActive(row, currentMost) < 0) {
+      if (currentMost && compareMostActive(row, currentMost, mostActiveColumn) < 0) {
         personMostActive.set(row.PERSON_KEY, row);
         existing.mostActiveProjectName = row.PROJECT_NAME ?? row.PROJECT_ID;
         existing.mostActiveProjectFoundationName = row.FOUNDATION_NAME;
@@ -189,10 +216,10 @@ function buildResponse(accountId: string, timeRange: OrgContributorTimeRange, ra
   };
 }
 
-/** Most-active tiebreak (Item 4): commits → last_active_date NULLS LAST → name (PROJECT_ID when null) → PROJECT_ID. Returns <0 when `a` beats `b`. */
-function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonProjectRow): number {
-  const commitsDelta = (b.COMMITS ?? 0) - (a.COMMITS ?? 0);
-  if (commitsDelta !== 0) return commitsDelta;
+/** Most-active tiebreak (Item 4): the count column → last_active_date NULLS LAST → name (PROJECT_ID when null) → PROJECT_ID. Returns <0 when `a` beats `b`. */
+function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonProjectRow, column: ContributorCountColumn): number {
+  const countDelta = (b[column] ?? 0) - (a[column] ?? 0);
+  if (countDelta !== 0) return countDelta;
   const ta = toIsoDate(a.LAST_ACTIVE_DATE) ?? '';
   const tb = toIsoDate(b.LAST_ACTIVE_DATE) ?? '';
   if (ta !== tb) return ta > tb ? -1 : 1;

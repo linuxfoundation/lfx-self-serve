@@ -43,6 +43,7 @@ import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -882,6 +883,15 @@ export const routes: Routes = [
     title: 'LFX Documentation',
     loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
     loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
+  },
+  // Chrome-less presenter (#4140): top-level sibling of the MainLayout root so it renders full-viewport with no navbar/sidebar.
+  // A child of votes.routes.ts would inherit the shell. Gated on vote#writer; must precede the in-shell `**` catch-all.
+  {
+    path: 'votes/:id/present',
+    title: 'Present Vote',
+    canActivate: [authGuard, votePresenterGuard],
+    data: { preload: false },
+    loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
   {
     path: 'meetings/not-found',

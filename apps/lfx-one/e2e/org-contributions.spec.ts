@@ -35,11 +35,12 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
       projectName: 'Kubernetes',
       foundationId: 'fdn-cncf',
       foundationName: 'CNCF',
-      totalCommits: 1240,
+      commits: 1240,
       lastActivityDate: '2026-05-13',
       isMaintainer: true,
     },
   ],
+  totalCommits: 1240,
   events: [],
   training: [],
 };
@@ -51,7 +52,7 @@ const MOCK_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
 
 const BASE_RESPONSE: OrgContributionsResponse = {
   accountId: MOCK_ACCOUNT_ID,
-  dateRange: '12mo',
+  dateRange: '365d',
   kpis: { projectsWithActivity: 2, repositories: 2, commits: 1780 },
   repositories: [
     {

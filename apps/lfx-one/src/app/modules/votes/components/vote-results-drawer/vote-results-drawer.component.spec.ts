@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import { MyVoteResponse, PollCommentResponse, PollQuestionResult, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,8 +22,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function makeVote(status: PollStatus, uid = 'vote-1'): Vote {
-  return { uid, name: 'Charter ratification', description: '<p>Approve the revised charter.</p>', project_uid: 'project-1', status } as Vote;
+function makeVote(status: PollStatus, uid = 'vote-1', writer?: boolean): Vote {
+  return { uid, writer, name: 'Charter ratification', description: '<p>Approve the revised charter.</p>', project_uid: 'project-1', status } as Vote;
 }
 
 async function setupDrawer(vote: Vote, myResponse: Observable<MyVoteResponse | null> = of(null), audience: 'voter' | 'creator' = 'voter') {
@@ -33,7 +34,7 @@ async function setupDrawer(vote: Vote, myResponse: Observable<MyVoteResponse | n
   };
   await TestBed.configureTestingModule({
     imports: [VoteResultsDrawerComponent],
-    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
   }).compileComponents();
   fixture = TestBed.createComponent(VoteResultsDrawerComponent);
   fixture.componentRef.setInput('voteId', vote.uid);
@@ -132,7 +133,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -163,7 +164,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -197,7 +198,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -230,7 +231,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
 
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     const httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
@@ -271,7 +272,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -304,7 +305,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -341,7 +342,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', voteA.uid);
@@ -377,7 +378,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', voteA.uid);
@@ -476,7 +477,7 @@ async function setupResultsDrawer(
   };
   await TestBed.configureTestingModule({
     imports: [VoteResultsDrawerComponent],
-    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
   }).compileComponents();
   fixture = TestBed.createComponent(VoteResultsDrawerComponent);
   fixture.componentRef.setInput('voteId', vote.uid);
@@ -824,5 +825,113 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
 
       expect(byTestId('vote-results-comments')).toBeNull();
     });
+  });
+});
+
+/**
+ * #4148: mobile layout. jsdom has no layout engine, so these pin the class contract: a full-height
+ * sheet below sm, option name and counts stacked vertically, wrapping text, and 44px controls.
+ */
+describe('VoteResultsDrawerComponent — mobile layout (#4148)', () => {
+  it('uses a full-height sheet below sm and keeps the existing width chain', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    const root = document.querySelector('.vote-results-drawer') as HTMLElement;
+    expect(root.className).toContain('max-sm:h-dvh');
+    expect(root.className).toContain('w-full');
+    expect(root.className).toContain('xl:w-[45%]');
+  });
+
+  it('stacks the option name above its votes and percentage on phones (live and final)', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+    const live = byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement;
+    expect(live.className).toContain('flex-col');
+    expect(live.className).toContain('sm:flex-row');
+    fixture.destroy();
+    document.body.innerHTML = '';
+    TestBed.resetTestingModule();
+
+    await setupResultsDrawer(makeResultsVote({ status: PollStatus.ENDED }), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+    const final = byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement;
+    expect(final.className).toContain('flex-col');
+    expect(final.className).toContain('sm:flex-row');
+  });
+
+  it('wraps long option text instead of truncating it', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    expect((byTestId('vote-results-option-c1')?.firstElementChild as HTMLElement).className).toContain('break-words');
+    expect(byTestId('vote-results-drawer-title')?.className).toContain('break-words');
+    expect(byTestId('vote-results-drawer-title')?.className).not.toContain('truncate');
+  });
+
+  it('stacks the participation stats in a two-column grid on phones', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    const stats = byTestId('vote-results-participation')?.firstElementChild as HTMLElement;
+    expect(stats.className).toContain('grid-cols-2');
+    expect(stats.className).toContain('sm:flex');
+  });
+
+  it('gives the close button a 44px touch target', async () => {
+    await setupResultsDrawer(makeResultsVote(), makeResults({ poll_results: [makeGenericQuestion('q1', [['c1', 3, 60]])] }));
+
+    expect(byTestId('vote-results-drawer-close')?.className).toContain('min-h-[44px]');
+    expect(byTestId('vote-results-drawer-close')?.className).toContain('min-w-[44px]');
+  });
+});
+
+describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => {
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('offers Present and Copy slide to a decorated writer on a %s vote', async (status) => {
+    const service = await setupDrawer(makeVote(status, 'vote-1', true), of(null), 'creator');
+    expect(service.getVote).toHaveBeenCalledWith('vote-1', expect.objectContaining({ includeWriter: true }));
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+  });
+
+  it('sits Present and Copy slide on the meta row and opens the presenter in a new tab', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'creator');
+    const row = document.querySelector('[data-testid="vote-results-drawer-meta-row"]');
+    expect(row?.querySelector('[data-testid="vote-results-drawer-present"]')).toBeTruthy();
+    expect(row?.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    document.querySelector<HTMLElement>('[data-testid="vote-results-drawer-present"] button')?.click();
+    expect(open).toHaveBeenCalledWith('/votes/vote-1/present', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('reports the slide export through the app toast, not inline text', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'creator');
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+    document.querySelector<HTMLElement>('[data-testid="vote-results-drawer-copy-slide"] button')?.click();
+    await vi.waitFor(() =>
+      expect(add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: expect.stringMatching(/^(Slide copied|Slide downloaded|Couldn't create the slide image)$/) })
+      )
+    );
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide-status"]')).toBeNull();
+  });
+
+  it.each([undefined, false])('hides both from a creator-audience viewer who is not a writer (writer: %s)', async (writer) => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', writer), of(null), 'creator');
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeNull();
+  });
+
+  it('hides both from a voter', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE), of(null), 'voter');
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeNull();
+  });
+
+  it('hides Present for a draft vote', async () => {
+    await setupDrawer(makeVote(PollStatus.DISABLED, 'vote-1', true), of(null), 'creator');
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
   });
 });

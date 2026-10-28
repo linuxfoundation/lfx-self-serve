@@ -105,8 +105,6 @@ export interface CompactOrgAllEmployeesRawCache {
   accountId: string | null;
   /** Roster rows, columnar and without `ACCOUNT_ID`. */
   rowsRaw: ColumnarTable;
-  /** The single-row `ORG_PEOPLE_ALL_STATS` aggregate, columnar for shape uniformity. */
-  statsRaw: ColumnarTable;
   /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pairs, columnar. */
   foundationRaw: ColumnarTable;
 }

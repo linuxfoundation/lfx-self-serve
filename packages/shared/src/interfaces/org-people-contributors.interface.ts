@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+
 /** Role badge — declared-maintainer rule (Item 4 lock); Maintainer > Contributor at the org level on the parent row, per-project on the expansion. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
-
-/** Time-window slice the BFF aggregates over — drives a refetch per change (A1 architecture lock per Item 2). */
-export type OrgContributorTimeRange = '30d' | '90d' | '12mo' | 'all';
 
 /** Sortable columns on the Contributors main table. */
 export type OrgContributorSortColumn = 'name' | 'role' | 'commits' | 'lastActive' | 'mostActiveProject';
@@ -29,13 +28,15 @@ export interface OrgContributorRow {
   cdpMemberId: string;
   /** Item 4 R4.2 badge — the per-person derivative of `is_declared_maintainer_for_org`. Maintainer if true, Contributor otherwise. */
   role: OrgContributorRole;
-  /** SUM of `daily_commits` over the window — main-branch merged commits only. Expected to be 0 on ~39% of rows (review/PR-only contributors). */
+  /** Authored commits over the window (distinct SHAs, any branch; merged to the main branch only under `commitScope=merged`). Zero for review/PR-only contributors. */
   commits: number;
+  /** Code-contribution activities over the window (commits, PRs, reviews, comments) — the count shown under `metric=code`. */
+  codeActivities: number;
   /** ISO date `YYYY-MM-DD`. `MAX(activity_date)` over the person's code-contribution activity in the window. */
   lastActiveTs: string | null;
   /** Distinct project count in the window. Drives the expanded sub-table header (`Projects Involved (N)`). */
   projectsCount: number;
-  /** Argmax(commits) project name — tiebreak by `last_active DESC NULLS LAST`, then `project_name ASC`. NULL only if the person has zero rows in the window. */
+  /** Argmax project by the selected metric — tiebreak by `last_active DESC NULLS LAST`, then `project_name ASC`. NULL only if the person has zero rows in the window. */
   mostActiveProjectName: string | null;
   /** Foundation name of the argmax project — drives the column's subtext. NULL when the project is outside the foundation spine. */
   mostActiveProjectFoundationName: string | null;
@@ -53,8 +54,10 @@ export interface OrgContributorProjectRow {
   foundationSlug: string | null;
   /** Per-project derivative of `is_declared_maintainer_for_project`. A person with the Maintainer badge on the parent row can (and often does) show Contributor pills on most of their project sub-rows (Item 5 Simon-Deziel pattern). */
   role: OrgContributorRole;
-  /** Per-project `SUM(daily_commits)` over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
+  /** Per-project authored commits over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
   commits: number;
+  /** Per-project code-contribution activities over the window; sums to the parent row's `codeActivities`. */
+  codeActivities: number;
   /** Per-project `MAX(activity_date)` over the window. Drives the "Last Active" column in the expanded sub-table. */
   lastActiveTs: string | null;
 }
@@ -65,7 +68,7 @@ export interface OrgContributorFoundationOption {
   foundationName: string;
 }
 
-/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations at 12mo). */
+/** Project dropdown option — the projects represented in the org's Contributors rows for the selected range and project scope. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations over 365 days). */
 export interface OrgContributorProjectOption {
   projectId: string;
   projectName: string;
@@ -89,7 +92,7 @@ export interface OrgContributorStatsBaseline {
 export interface OrgContributorsResponse {
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
-  timeRange: OrgContributorTimeRange;
+  timeRange: OrgLensTimeRange;
   contributors: OrgContributorRow[];
   projects: OrgContributorProjectRow[];
   foundationOptions: OrgContributorFoundationOption[];
@@ -107,7 +110,8 @@ export interface OrgContributorRowVm {
   initials: string;
   avatarColorClass: string;
   role: OrgContributorRole;
-  commits: number;
+  /** The count for the selected metric — `commits` or `codeActivities` of the wire row. */
+  count: number;
   lastActiveTs: string | null;
   /** Pre-formatted `MMM dd, yyyy` of `lastActiveTs`, or em-dash when missing. */
   lastActiveLabel: string;
@@ -122,16 +126,11 @@ export interface OrgContributorExpandedRowVm {
   projectName: string;
   foundationName: string | null;
   role: OrgContributorRole;
-  commits: number;
+  /** The count for the selected metric. */
+  count: number;
   lastActiveTs: string | null;
   /** Pre-formatted `MMM dd, yyyy` of `lastActiveTs`, or em-dash. */
   lastActiveLabel: string;
-}
-
-/** Time-window dropdown option — label rendered as-is in `<lfx-select>`. */
-export interface OrgContributorTimeRangeOption {
-  label: string;
-  value: OrgContributorTimeRange;
 }
 
 // Server-internal Snowflake row shape (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
@@ -150,9 +149,15 @@ export interface ContributorPersonProjectRow {
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
   FOUNDATION_SLUG: string | null;
+  /** Authored commits, any branch. */
   COMMITS: number | null;
+  /** Authored commits merged to the main branch. */
+  MERGED_COMMITS: number | null;
   CODE_ACTIVITIES: number | null;
   LAST_ACTIVE_DATE: Date | string | null;
   IS_DECLARED_MAINTAINER_FOR_PROJECT: boolean | null;
   IS_DECLARED_MAINTAINER_FOR_ORG: boolean | null;
 }
+
+/** The count columns of {@link ContributorPersonProjectRow} the commit filters pick between. */
+export type ContributorCountColumn = 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES';

@@ -10,7 +10,7 @@ import {
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
@@ -48,6 +48,27 @@ describe('VoteService', () => {
     });
 
     service = TestBed.inject(VoteService);
+  });
+
+  it('serves an uncached vote read per subscription, never touching the detail cache', () => {
+    http.get.mockImplementation(() => of({ uid: 'v1' }));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    service.getVoteDetail('v1').subscribe();
+    service.getVoteDetail('v1').subscribe();
+    expect(http.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels an uncached vote read when its subscriber leaves', () => {
+    const teardown = vi.fn();
+    http.get.mockImplementation(() => defer(() => new Subject<Vote>().pipe(finalize(teardown))));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe().unsubscribe();
+
+    expect(teardown).toHaveBeenCalledTimes(1);
   });
 
   it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  AI_MODEL,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -53,6 +52,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { AiProxyError, aiErrorDetail, aiErrorSummary } from '../helpers/ai-error.helper';
+import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -467,13 +467,13 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      ...getAiSamplingParams(),
     }),
     signal,
   });
@@ -502,13 +502,13 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      ...getAiSamplingParams(),
       stream: true,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
@@ -1023,7 +1023,15 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
       continue;
     }
 
-    const blockEnd = tag === 'svg' ? svgBlockEnd(scan, openEnd) : rawTextBlockEnd(scan, tag, openEnd);
+    let blockEnd: number;
+    let closeStart = -1;
+    if (tag === 'svg') {
+      blockEnd = svgBlockEnd(scan, openEnd);
+    } else {
+      const close = rawTextBlockEnd(scan, tag, openEnd);
+      blockEnd = close === -1 ? -1 : close.blockEnd;
+      closeStart = close === -1 ? -1 : close.closeStart;
+    }
 
     if (blockEnd === -1) {
       // Unclosed -- genuinely, or because its close lies past `MAX_SCAN_CHARS`. Either way what
@@ -1034,9 +1042,13 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
 
     // JSON-LD is preserved, and only from a real `<script>` block: a commented one never reaches
     // this line. This is where the extraction gets `startDate`, `endDate` and `location` on pages
-    // that publish them as schema.org data rather than as prose.
+    // that publish them as schema.org data rather than as prose. The body is sliced up to
+    // `closeStart` -- the closing tag's own position, already computed by `rawTextBlockEnd` --
+    // rather than stripped out with a trailing regex: an unanchored `[^>]*>$` over an attacker-sized
+    // body is quadratic, since every non-matching `</script`-like token inside it is a fresh
+    // backtracking candidate (GH-549).
     if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && isJsonLdTag(scan, lt, openEnd)) {
-      const body = scan.slice(openEnd + 1, blockEnd).replace(/<\/script[^>]*>$/i, '');
+      const body = scan.slice(openEnd + 1, closeStart);
       jsonLd += (jsonLd === '' ? '' : ' ') + body;
       ldBlocks++;
     }
@@ -1049,12 +1061,19 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
 }
 
 /**
- * The end of a `<script>` or `<style>` element, or -1 if it does not close within the scan.
+ * Where a `<script>` or `<style>` element's closing tag starts (`closeStart`) and ends
+ * (`blockEnd`, one past its `>`), or -1 if it does not close within the scan.
  *
  * Raw text: the first correctly-formed close wins, and a `<` inside the body is not a tag. The
  * `(?=[\s>])` boundary is what stops `</scriptx>` -- a different tag name -- from closing it.
+ *
+ * `closeStart` is exposed, not just `blockEnd`, so a caller that needs the element's body (e.g. a
+ * JSON-LD `<script>`) can slice up to it directly instead of stripping the closing tag back out
+ * with a regex -- a trailing-anchored `[^>]*>$` strip over an attacker-sized body is quadratic,
+ * since every non-matching `</tag`-like token inside the body is a fresh backtracking candidate
+ * (GH-549).
  */
-function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
+function rawTextBlockEnd(scan: string, tag: string, openEnd: number): { blockEnd: number; closeStart: number } | -1 {
   const closeRe = new RegExp(`</${tag}(?=[\\s>])`, 'gi');
   closeRe.lastIndex = openEnd;
   const close = closeRe.exec(scan);
@@ -1062,7 +1081,7 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
     return -1;
   }
   const closeEnd = startTagEnd(scan, close.index);
-  return closeEnd === -1 ? -1 : closeEnd + 1;
+  return closeEnd === -1 ? -1 : { blockEnd: closeEnd + 1, closeStart: close.index };
 }
 
 /**
@@ -1207,11 +1226,11 @@ function advanceInert(html: string, from: number, at: number): number {
       }
       continue;
     }
-    const end = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
-    if (end === -1) {
+    const close = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
+    if (close === -1) {
       return -1;
     }
-    cursor = end;
+    cursor = close.blockEnd;
     if (cursor > at) {
       return cursor;
     }

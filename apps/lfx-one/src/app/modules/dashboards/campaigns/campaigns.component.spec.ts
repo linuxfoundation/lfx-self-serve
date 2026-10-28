@@ -1944,7 +1944,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -1980,7 +1988,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2027,7 +2043,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2059,7 +2083,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2069,6 +2101,132 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
         expect(c.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * The Microsoft flight-date capability rides on the same read, asserted the same way: every
+       * other capability set the opposite way, so a component that read the wrong key would fail.
+       */
+      it('loads the microsoft schedule capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: true,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: true,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+        };
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingEnabled()).toBe(false);
+        // Per caller, read from the same answer: a root caller's yes reaches the Implement tab.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBe(true);
+      });
+
+      /** The LinkedIn upload capability, read from its own key on the same terms as the one above. */
+      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: true,
+            microsoftAssetUploadEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBeNull();
+      });
+
+      /** The Microsoft upload capability, read from its own key on the same terms as the one above. */
+      it('loads the microsoft upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: true,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBeNull();
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
@@ -2089,8 +2247,17 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // Unknown too, which the tab treats as off: no Microsoft dates, and the warning stays.
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Unknown, so the tab hides the audience section and blocks a draft that holds segments.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
         expect(c.briefCampaignsCapabilityRead()).toBe('failed');
@@ -2142,7 +2309,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2188,7 +2363,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2205,7 +2388,15 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2238,7 +2429,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2272,7 +2471,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2301,7 +2508,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2343,7 +2558,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2386,7 +2609,15 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2429,7 +2660,15 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2456,7 +2695,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2485,7 +2732,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2504,7 +2759,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2532,7 +2795,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2545,6 +2816,9 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect((c as unknown as { briefCampaignsMicrosoftScheduleEnabled(): boolean | null }).briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Per caller AND per foundation: a root answer for one foundation must not carry to the next.
+        expect((c as unknown as { briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null }).briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
@@ -2569,7 +2843,15 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2603,7 +2885,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2637,7 +2927,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2674,7 +2972,15 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2742,7 +3048,15 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -11096,7 +11410,13 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+  const capability = (
+    biddingEnabled: boolean,
+    microsoftScheduleEnabled = false,
+    googleAudienceSegmentsEnabled = false,
+    googleGeoSearchEnabled = false,
+    metaInstagramDsaEnabled = false
+  ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11107,7 +11427,15 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       biddingEnabled,
+      microsoftScheduleEnabled,
+      metaInstagramDsaEnabled,
+      googleAudienceSegmentsEnabled,
+      googleGeoSearchEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11178,6 +11506,57 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     selectFoundation('tlf');
     await settle();
+  });
+
+  /**
+   * The Microsoft flight-date capability travels the same path into the tab: the real page reads
+   * it, binds it to `microsoftScheduleEnabled`, and the tab swaps its warning for the applied note.
+   */
+  it.each([
+    [true, 'implementation-microsoft-flight', 'implementation-microsoft-no-flight'],
+    [false, 'implementation-microsoft-no-flight', 'implementation-microsoft-flight'],
+  ])('hands a microsoft schedule capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, enabled));
+    const withMicrosoft = { ...brief, selectedPlatforms: ['microsoft-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withMicrosoft);
+    await settle();
+
+    expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
+  it.each([[true], [false]])('hands a meta instagram/dsa capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, enabled));
+
+    page().onProceedToImplementation(brief as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['metaInstagramDsaEnabled']()).toBe(enabled);
+    expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
+  });
+
+  /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
+  it.each([[true], [false]])('hands a google audience segments capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, enabled));
+
+    page().onProceedToImplementation({ ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
+  });
+
+  /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */
+  it.each([[true], [false]])('hands a google geo search capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+
+    expect(tab()['googleGeoSearchEnabled']()).toBe(enabled);
   });
 
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {

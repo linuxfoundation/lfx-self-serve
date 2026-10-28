@@ -13,7 +13,7 @@ import {
   VOTE_TITLE_MAX_LENGTH,
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
+import { VOTES_STATS_WINDOW_DAYS, VOTE_PRESENTER_TITLE_MAX_CHARS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
@@ -751,4 +751,32 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
  */
 export function votePermalinkPath(voteUid: string): string {
   return `/votes/${encodeURIComponent(voteUid)}`;
+}
+
+/**
+ * Builds the relative path to a vote's chrome-less presenter view (`VotePresenterComponent`, `/votes/:id/present`).
+ * @param voteUid - The vote uid
+ * @returns The relative presenter path, e.g. `/votes/abc123/present`
+ */
+export function votePresenterPath(voteUid: string): string {
+  return `${votePermalinkPath(voteUid)}/present`;
+}
+
+/**
+ * Truncates a vote title for the presenter view and the copy-slide PNG (#4142, #4145).
+ * @description Cuts at the last whole word within the cap and appends an ellipsis; a single word longer than the cap is hard-cut
+ * (never splitting a surrogate pair) so the result still fits. Titles within the cap are returned untouched.
+ * @param title - Full vote title
+ * @param max - Character cap, defaults to VOTE_PRESENTER_TITLE_MAX_CHARS
+ */
+export function truncateVoteTitle(title: string, max: number = VOTE_PRESENTER_TITLE_MAX_CHARS): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= max) {
+    return trimmed;
+  }
+
+  const head = truncateToUtf16Units(trimmed, max - 1);
+  const lastSpace = head.lastIndexOf(' ');
+  const wordSafe = lastSpace > 0 && trimmed.charAt(head.length) !== ' ' ? head.slice(0, lastSpace) : head;
+  return `${wordSafe.trimEnd()}…`;
 }

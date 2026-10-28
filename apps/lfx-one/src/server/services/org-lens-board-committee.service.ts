@@ -21,6 +21,7 @@ import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSa
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
+import { allOrgPeopleDirectoryNamespaces } from '../helpers/org-people-directory-cache.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { coalescePerUserOrgFetch, evictPerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
@@ -196,11 +197,16 @@ export class OrgLensBoardCommitteeService {
    */
   public async invalidateCallerSeatCaches(req: Request, orgUid: string): Promise<void> {
     const username = getEffectiveUsername(req) ?? '';
+    // The directory is cached per (time range, project scope) and for the unranged roster. Every one of them is
+    // evicted rather than working out which ones list seats (`non_lf` reads none), so none can outlive a reassign.
+    const directoryNamespaces = allOrgPeopleDirectoryNamespaces();
     evictPerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid);
-    evictPerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid);
+    for (const namespace of directoryNamespaces) {
+      evictPerUserOrgFetch(namespace, username, orgUid);
+    }
     await Promise.all([
       invalidatePerUserCache(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid),
-      invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid),
+      ...directoryNamespaces.map((namespace) => invalidatePerUserCache(namespace, username, orgUid)),
     ]);
   }
 

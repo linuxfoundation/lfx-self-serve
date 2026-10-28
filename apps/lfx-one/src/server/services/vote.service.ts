@@ -345,8 +345,8 @@ export class VoteService {
    * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
    * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
    */
-  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
-    const { includeProject = false } = options;
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean; includeWriter?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false, includeWriter = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
@@ -371,11 +371,19 @@ export class VoteService {
       }
     }
 
+    // Additive `writer` flag (vote#writer) so the presenter guard and entry points share one source of truth.
+    // Opt-in: server-internal callers (reminders, voters, summary) skip the extra FGA lookup. The lookup is strict: an
+    // access-check outage propagates (the presenter guard shows its error path) instead of reading as `writer: false`,
+    // which would send an authorized chair to Access Denied.
+    const result = includeWriter
+      ? { ...vote, writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'vote', id: vote.uid, access: 'writer' }) }
+      : vote;
+
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {
       vote_uid: voteUid,
     });
 
-    return vote;
+    return result;
   }
 
   /**

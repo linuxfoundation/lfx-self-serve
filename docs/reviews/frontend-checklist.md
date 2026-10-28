@@ -318,7 +318,7 @@ In changed `.html` files, look for raw form elements that must use LFX wrappers:
 | `<textarea`                       | `lfx-textarea`                                    |
 | `<div` with `animate-pulse` class | `<p-skeleton>` from PrimeNG                       |
 
-Exceptions: elements inside comments, or `<input type="hidden">`. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
+Exceptions: elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
 
 ### 14.2 Dead code (CRITICAL for unused providers/imports/unbound outputs; DISCUSS for unused methods)
 

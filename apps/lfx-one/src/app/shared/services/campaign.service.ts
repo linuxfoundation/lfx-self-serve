@@ -26,7 +26,7 @@ import {
   AudiencePreviewCountRequest,
   AudienceQaResult,
   AudienceQaRunRequest,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -60,9 +60,14 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  CreativeAssetLibrary,
   CreativeAssetPlan,
+  CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
+  GoogleAdsAccountOption,
+  GoogleAdsGeoTargetSearchOptions,
+  GoogleAdsGeoTargetSearchResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -104,6 +109,7 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
@@ -111,8 +117,11 @@ import { SseService } from './sse.service';
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
-  /** The latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
-  private creativeAssetUpload: { briefId: string; upload$: Observable<CreativeAssetUploadResult>; cancel: Subject<void> } | null = null;
+  /** Each owner's latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
+  private readonly creativeAssetUploads = new Map<
+    CreativeAssetUploadOwner,
+    { briefId: string; upload$: Observable<CreativeAssetUploadResult>; cancel: Subject<void> }
+  >();
   private readonly sse = inject(SseService);
 
   public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
@@ -313,16 +322,18 @@ export class CampaignService {
   }
 
   /**
-   * Upload an image for a saved brief and get back the creative-asset id a Reddit create names as
-   * `imageAssetId`. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn,
+   * Google or Microsoft create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
    * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
    * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
    * `createCampaign`, because they are path segments upstream.
    */
-  public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
-    // A new upload replaces any other outright, and aborts it: two concurrent uploads compete for
-    // campaign-service's upload budget, which sheds with a 503, so a discarded one could fail the pick.
-    this.cancelCreativeAssetUpload();
+  public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string, owner: CreativeAssetUploadOwner): Observable<CreativeAssetUploadResult> {
+    // A new upload replaces the same owner's previous one outright, and aborts it: two concurrent
+    // uploads compete for campaign-service's upload budget, which sheds with a 503, so a discarded
+    // one could fail the pick. Another owner's upload is left running — it is a different image the
+    // operator still wants — and a 503 from that overlap reads as "try again in a moment".
+    this.cancelCreativeAssetUpload(owner);
     const cancel = new Subject<void>();
     // Shared and replayed, never reset: the Implementation tab is destroyed on a tab switch, and
     // unsubscribing must not abort the upload or lose its answer. A remount resumes it by brief
@@ -337,29 +348,49 @@ export class CampaignService {
         takeUntil(cancel),
         share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
       );
-    // Only the latest upload is kept. The tab resumes the brief it is showing, so an older one (an
-    // abandoned brief, a left page) has no one to resume it and would otherwise hold its image, up
-    // to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
-    this.creativeAssetUpload = { briefId, upload$, cancel };
+    // Only each owner's latest upload is kept. The tab resumes the brief it is showing, so an older
+    // one (an abandoned brief, a left page) has no one to resume it and would otherwise hold its
+    // image, up to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
+    this.creativeAssetUploads.set(owner, { briefId, upload$, cancel });
     return upload$;
   }
 
-  /** The brief's latest upload, in flight or answered but not yet taken up, or null. */
-  public resumeCreativeAssetUpload(briefId: string): Observable<CreativeAssetUploadResult> | null {
-    return this.creativeAssetUpload?.briefId === briefId ? this.creativeAssetUpload.upload$ : null;
+  /** The owner's latest upload for the brief, in flight or answered but not yet taken up, or null. */
+  public resumeCreativeAssetUpload(owner: CreativeAssetUploadOwner, briefId: string): Observable<CreativeAssetUploadResult> | null {
+    const upload = this.creativeAssetUploads.get(owner);
+    return upload?.briefId === briefId ? upload.upload$ : null;
   }
 
-  /** Drop `upload$` once its answer is taken up, if it is still the latest. The request has finished. */
-  public forgetCreativeAssetUpload(upload$: Observable<CreativeAssetUploadResult>): void {
-    if (this.creativeAssetUpload?.upload$ === upload$) {
-      this.creativeAssetUpload = null;
+  /** Drop `upload$` once its answer is taken up, if it is still its owner's latest. The request has finished. */
+  public forgetCreativeAssetUpload(owner: CreativeAssetUploadOwner, upload$: Observable<CreativeAssetUploadResult>): void {
+    if (this.creativeAssetUploads.get(owner)?.upload$ === upload$) {
+      this.creativeAssetUploads.delete(owner);
     }
   }
 
-  /** Abort the latest upload and drop it: replaced by a new pick, or removed. */
-  public cancelCreativeAssetUpload(): void {
-    this.creativeAssetUpload?.cancel.next();
-    this.creativeAssetUpload = null;
+  /** Abort the owner's latest upload and drop it: replaced by a new pick, or removed. */
+  public cancelCreativeAssetUpload(owner: CreativeAssetUploadOwner): void {
+    this.creativeAssetUploads.get(owner)?.cancel.next();
+    this.creativeAssetUploads.delete(owner);
+  }
+
+  /**
+   * The brief's stored creative assets, each with the pixel dimensions recorded at upload (absent
+   * for an asset stored before they were), plus the library's quota.
+   *
+   * Logged and rethrown, never defaulted, for the plan's reason below: an empty library is an
+   * answer ("nothing stored"), and a failed read rendered as one would tell the Google image slots
+   * that a held image had been deleted.
+   */
+  public listCreativeAssets(projectSlug: string, briefId: string): Observable<CreativeAssetLibrary> {
+    return this.http
+      .get<CreativeAssetLibrary>('/api/campaigns/brief/creative-assets', { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) })
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to load the creative asset library:', error);
+          return throwError(() => error);
+        })
+      );
   }
 
   /**
@@ -474,6 +505,35 @@ export class CampaignService {
 
   public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
     return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Google Ads accounts the project's connection can reach, from campaign-service's account
+   * discovery. 404 while the server's monitor cutover flag is off, and a 403 for a non-root caller:
+   * with no connection of its own, the project is answered from the LF's shared account.
+   */
+  public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
+    return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search Google's geo target table for the Implement tab's location picker (campaign-service #411).
+   * 404 while the server's geo-search flag is off. `targetTypes` repeats on the query string; an
+   * omitted option is left off rather than sent empty, so upstream's own default applies.
+   */
+  public searchGoogleAdsGeoTargets(
+    projectSlug: string,
+    query: string,
+    options: GoogleAdsGeoTargetSearchOptions = {}
+  ): Observable<GoogleAdsGeoTargetSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text: Angular's default codec leaves `+`
+    // unescaped and Express reads it back as a space, so `St. Kitts + Nevis` would search for
+    // something else.
+    let params = strictHttpParams().set('project', projectSlug).set('q', query);
+    if (options.countryCode) params = params.set('countryCode', options.countryCode);
+    for (const targetType of options.targetTypes ?? []) params = params.append('targetTypes', targetType);
+    if (options.limit !== undefined) params = params.set('limit', String(options.limit));
+    return this.http.get<GoogleAdsGeoTargetSearchResult>('/api/campaigns/google/geo-targets', { params });
   }
 
   public getMetaMonitorData(
@@ -789,10 +849,12 @@ export class CampaignService {
    * and event-specific. Nothing here is pre-applied — the operator chooses, because a wrongly
    * auto-applied exclusion silently shrinks a send.
    *
-   * Both `brandShort` and `eventName` are optional: the portfolio-wide lists are found by fixed
-   * name, so the answer is already useful before discovery has identified the event.
+   * Every filter is optional: the portfolio-wide lists are found by fixed name, so the answer is
+   * already useful before discovery has identified the event. `registrantsEvent` (the edition, with
+   * its year) adds the current-registrants row. `standardList` is the project's standing standard
+   * suppression list, present only once it exists.
    */
-  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = ''): Observable<AudienceSuppressionList[]> {
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionListsResult> {
     let params = new HttpParams().set('project', projectSlug);
     if (brandShort !== '') {
       params = params.set('brandShort', brandShort);
@@ -800,7 +862,10 @@ export class CampaignService {
     if (eventName !== '') {
       params = params.set('eventName', eventName);
     }
-    return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
+    if (registrantsEvent !== '') {
+      params = params.set('registrantsEvent', registrantsEvent);
+    }
+    return this.http.get<AudienceSuppressionListsResult>('/api/campaigns/audience-builder/suppression-lists', { params });
   }
 
   /**

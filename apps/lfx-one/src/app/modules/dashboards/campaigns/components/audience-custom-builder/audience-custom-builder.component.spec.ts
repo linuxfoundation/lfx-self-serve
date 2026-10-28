@@ -277,6 +277,34 @@ describe('AudienceCustomBuilderComponent', () => {
     expect(service.create).toHaveBeenCalledWith('tlf', expect.objectContaining({ name: 'My own name' }));
   });
 
+  it('caps the list name at 200 characters and holds Create past it', () => {
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+
+    expect(el<HTMLInputElement>('audience-custom-builder-name').getAttribute('maxlength')).toBe('200');
+    type('audience-custom-builder-name', 'n'.repeat(201));
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-name-too-long"]')).not.toBeNull();
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled).toBe(true);
+
+    type('audience-custom-builder-name', 'n'.repeat(200));
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled).toBe(false);
+  });
+
+  it('clears the over-long name state on Start over, which empties the field silently', () => {
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    type('audience-custom-builder-name', 'n'.repeat(201));
+    expect(host().querySelector('[data-testid="audience-custom-builder-name-too-long"]'), 'fixture precondition').not.toBeNull();
+
+    click('audience-custom-builder-reset');
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-name-too-long"]'), 'a stale name held Create on an empty field').toBeNull();
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled).toBe(false);
+  });
+
   it('previews a draft with open questions but will not create it', () => {
     service.interpret.mockReturnValue(of(interpretation));
     interpretSeoul();
