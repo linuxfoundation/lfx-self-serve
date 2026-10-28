@@ -301,16 +301,16 @@ describe('MktgAgentsController', () => {
   });
 
   describe('public run answers POST', () => {
-    const request = (extra: Record<string, unknown> = {}) =>
-      ({
-        ...buildIcpReq(`/api/mktg-agents/runs/${publicRunId}/answers`, {
-          project: 'synthetic-project',
-          questionsId: 'c'.repeat(64),
-          answers: [{ key: 'voice', text: ' Synthetic answer ', origin: 'requester' }],
-          ...extra,
-        }),
-        params: { runId: publicRunId },
-      }) as Request;
+    const request = (extra: Record<string, unknown> = {}): Request => {
+      const req = buildIcpReq(`/api/mktg-agents/runs/${publicRunId}/answers`, {
+        project: 'synthetic-project',
+        questionsId: 'c'.repeat(64),
+        answers: [{ key: 'voice', text: ' Synthetic answer ', origin: 'requester' }],
+        ...extra,
+      });
+      req.params = { runId: publicRunId };
+      return req;
+    };
     beforeEach(() => {
       authMocks.getEffectiveSub.mockReturnValue('auth0|user-1');
       runMocks.questionsForAnswers.mockReset().mockResolvedValue({
