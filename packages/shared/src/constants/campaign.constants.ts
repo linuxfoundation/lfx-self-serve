@@ -2965,6 +2965,22 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
+/** A library upload's refusal when campaign-service answers 409: the brief's count or byte quota is spent. */
+export const CREATIVE_ASSET_QUOTA_MESSAGE = "This brief's image library is full. Delete an image it no longer needs, then try again.";
+
+/** A library upload's refusal for a file a folder pick found below the folder's top level. */
+export const CREATIVE_ASSET_SUBFOLDER_MESSAGE = 'In a subfolder. Only images at the top level of the folder are uploaded.';
+
+/** A library upload's answer for identical bytes the brief already holds — nothing new is stored. */
+export const CREATIVE_ASSET_PRESENT_MESSAGE = 'Already in the library. Nothing new was stored.';
+
+/**
+ * How many more times a library upload re-sends a file after a transient failure (a 503 from
+ * campaign-service's upload admission, a dropped connection) before reporting it as failed.
+ * Safe to re-send because an upload is idempotent: identical bytes return the stored asset.
+ */
+export const CREATIVE_ASSET_QUEUE_RETRIES = 2;
+
 /**
  * The largest image LinkedIn takes as a dark post's article thumbnail, in bytes. campaign-service
  * refuses anything larger at dispatch (`linkedin.MaxImageBytes`, the decimal reading of the single

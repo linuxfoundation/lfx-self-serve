@@ -226,6 +226,55 @@ export interface CreativeAssetLibrary {
   bytesLimit: number;
 }
 
+/**
+ * Where one file of a library upload stands.
+ *
+ * Every file an operator picks ends in exactly one of the four outcomes — `uploaded`, `present`
+ * (identical bytes were already stored, so nothing was added), `refused` (the file can never be
+ * stored as it is) or `failed` (it might be on another try) — or in `cancelled`. None is ever
+ * dropped from the list: a file that was skipped without saying so is the one an operator later
+ * hunts for in six ad managers.
+ */
+export type CreativeAssetQueueItemStatus = 'waiting' | 'uploading' | 'uploaded' | 'present' | 'refused' | 'failed' | 'cancelled';
+
+/** Why a file was refused. `quota` is campaign-service's 409; the rest are checked before sending. */
+export type CreativeAssetQueueRefusal = 'type' | 'size' | 'quota' | 'subfolder' | 'other';
+
+/** One file of a library upload, as `CampaignService` reports it. */
+export interface CreativeAssetQueueItem {
+  /** Unique within the queue — two files can share a name when picked from different folders. */
+  id: string;
+  name: string;
+  byteSize: number;
+  status: CreativeAssetQueueItemStatus;
+  /** Set only on `refused`. */
+  refusal: CreativeAssetQueueRefusal | null;
+  /** The outcome as a sentence for the operator; empty while waiting or uploading. */
+  message: string;
+  /** The stored asset's id on `uploaded` and `present`; empty otherwise. */
+  assetId: string;
+}
+
+/**
+ * A brief's library upload: every file picked for it, in pick order, uploaded one at a time.
+ *
+ * Serial on purpose: campaign-service's upload admission sheds concurrent uploads with a 503, so a
+ * parallel run would fail most of a folder for no reason of its own.
+ */
+export interface CreativeAssetUploadQueueState {
+  /** The brief the files are being stored against; empty when nothing was ever queued. */
+  briefId: string;
+  items: CreativeAssetQueueItem[];
+  /** True from the first waiting file until the last one settles. */
+  running: boolean;
+}
+
+/** The library upload's read of the brief's quota. `error` keeps no library: a guessed headroom would mislead. */
+export interface CreativeAssetLibraryQuotaState {
+  status: 'loading' | 'ready' | 'error';
+  library: CreativeAssetLibrary | null;
+}
+
 /** One platform image slot and the stored assets that fill it, best fit first. */
 export interface CreativeSlotAssignment {
   slotKey: string;

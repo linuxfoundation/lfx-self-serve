@@ -3433,10 +3433,16 @@
       <!--
         Which stored images cover each platform's image slots. Only rendered once the brief is
         saved: campaign-service plans against a stored brief, and an unsaved one has no library to
-        plan against. The revision token re-reads the plan after an upload in the section above.
+        plan against. The revision token re-reads the plan after an upload in the section above,
+        or in the library upload that sits on top of the grid it feeds.
       -->
       @if (briefPersistence().briefId) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+        <div class="flex flex-col gap-5 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-library-upload
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [available]="libraryUploadAvailable()"
+            (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"

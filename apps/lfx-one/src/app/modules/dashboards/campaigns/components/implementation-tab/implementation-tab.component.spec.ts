@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { EnvironmentProviders, Provider } from '@angular/core';
+import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -64,7 +64,28 @@ import { AutoComplete } from 'primeng/autocomplete';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
+
+/**
+ * The library upload reads the service's queue and the library quota as soon as a brief is saved.
+ * Every suite below mocks `CampaignService` for the tab's own calls only, so the child is stubbed
+ * for the whole file; its own behaviour is covered by its spec.
+ */
+@Component({ selector: 'lfx-creative-library-upload', template: '' })
+class CreativeLibraryUploadStubComponent {
+  public readonly projectSlug = input('');
+  public readonly briefId = input('');
+  public readonly available = input(false);
+  public readonly libraryChanged = output<number>();
+}
+
+beforeEach(() => {
+  TestBed.overrideComponent(ImplementationTabComponent, {
+    remove: { imports: [CreativeLibraryUploadComponent] },
+    add: { imports: [CreativeLibraryUploadStubComponent] },
+  });
+});
 
 /**
  * The submit gate, which is the only place the brief-save race is observable.
@@ -10190,6 +10211,20 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
   // The slot plan is derived from the stored library, so an upload makes the grid's last answer
   // stale. The revision this bumps is what the grid reads as its reload token.
+  // The library upload sits on top of the slot grid it feeds; each image it stores makes the
+  // grid's answer, and the Google slots' library, stale.
+  it('mounts the library upload for the saved brief and re-reads the library each time it stores an image', async () => {
+    const f = (await mount(true)).fixture;
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload.briefId()).toBe(BRIEF_ID);
+    expect(upload.available()).toBe(true);
+    const before = at(f).creativeLibraryRevision();
+
+    upload.libraryChanged.emit(1);
+
+    expect(at(f).creativeLibraryRevision()).toBe(before + 1);
+  });
+
   it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {
     const f = (await mount(true)).fixture;
     const before = at(f).creativeLibraryRevision();
