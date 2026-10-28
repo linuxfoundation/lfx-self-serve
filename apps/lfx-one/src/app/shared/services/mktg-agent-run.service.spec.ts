@@ -30,7 +30,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
-import { concatMap, NEVER, of, throwError, TimeoutError, timer } from 'rxjs';
+import { ProjectContextService } from '@services/project-context.service';
+import { concatMap, NEVER, of, Subject, throwError, TimeoutError, timer } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -63,6 +64,7 @@ describe('MktgAgentRunService', () => {
 
   let service: MktgAgentRunService;
   let userSignal: WritableSignal<User | null>;
+  let projectUid: WritableSignal<string>;
   let httpPost: ReturnType<typeof vi.fn>;
   /** Result-endpoint responses, consumed one per poll (last one repeats). An HttpErrorResponse entry makes that poll attempt error. */
   let resultResponses: (MktgRunResultResponse | HttpErrorResponse)[];
@@ -124,6 +126,7 @@ describe('MktgAgentRunService', () => {
     resultDelayMs = 0;
     chatError = null;
     userSignal = signal<User | null>({ sub: USER_SUB } as User);
+    projectUid = signal('proj-1');
     httpPost = vi.fn((url: string) => {
       if (url === CHAT_INTAKE.endpoints.generate) {
         return of({ sessionId: 'sess-1', ownerToken: 'token-1' });
@@ -144,6 +147,7 @@ describe('MktgAgentRunService', () => {
         // against) or other verb fails loudly instead of silently passing.
         { provide: HttpClient, useValue: { post: httpPost } },
         { provide: UserService, useValue: { user: userSignal } },
+        { provide: ProjectContextService, useValue: { activeContextUid: projectUid } },
       ],
     });
     service = TestBed.inject(MktgAgentRunService);
@@ -268,6 +272,61 @@ describe('MktgAgentRunService', () => {
     const error = vi.fn();
     service.lastIntake('synthetic-project', 'brand-kit').subscribe({ error });
     expect(error).toHaveBeenCalledWith(failure);
+  });
+
+  it('keeps the Generate ACK subscribed after its page leaves, tracks the attempt and does not poll without a page', () => {
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const page = service.generate(generateRequest()).subscribe();
+    expect(attempts.load('proj-1', 'brand-kit')?.state).toBe('draft');
+    page.unsubscribe();
+    expect(ack.observed).toBe(true);
+    ack.next({ sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof', runId: 'b'.repeat(64) });
+    expect(attempts.load('proj-1', 'brand-kit')).toMatchObject({ state: 'writing', attempt: { runId: 'b'.repeat(64) } });
+    expect(service.acknowledgementVersion()).toBe(1);
+    expect(ack.observed).toBe(false); // The held leg drops at its first ACK.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs * 2);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(1);
+    expect(httpPost.mock.calls.some(([url]) => url === CHAT_INTAKE.endpoints.result)).toBe(false);
+  });
+
+  it('records a failed ACK even after the page unsubscribes', () => {
+    const ack = new Subject<never>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate(generateRequest()).subscribe({ error: vi.fn() });
+    page.unsubscribe();
+    ack.error(new HttpErrorResponse({ status: 503 }));
+    expect(TestBed.inject(MktgRunAttemptService).load('proj-1', 'brand-kit')?.state).toBe('failed');
+    expect(ack.observed).toBe(false);
+    expect(service.acknowledgementVersion()).toBe(0);
+  });
+
+  it.each(['subject', 'project'] as const)('drops a held ACK on %s change without recording it in the new scope', (change) => {
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate(generateRequest()).subscribe();
+    page.unsubscribe();
+    TestBed.tick();
+    if (change === 'subject') userSignal.set({ sub: 'synthetic-other-subject' } as User);
+    else projectUid.set('synthetic-other-project');
+    TestBed.tick();
+    expect(ack.observed).toBe(false);
+    ack.next({ sessionId: 'synthetic-late-session', ownerToken: 'synthetic-late-proof', runId: 'c'.repeat(64) });
+    expect(service.acknowledgementVersion()).toBe(0);
+    expect(TestBed.inject(MktgRunAttemptService).load(projectUid(), 'brand-kit')?.attempt).toBeUndefined();
+  });
+
+  it('does not cancel a new-project POST because the scope observable still replays the prior project', () => {
+    TestBed.tick();
+    projectUid.set('synthetic-next-project'); // Generate may happen before toObservable's effect flushes.
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate({ ...generateRequest(), projectUid: projectUid() }).subscribe();
+    expect(ack.observed).toBe(true);
+    page.unsubscribe();
+    ack.next({ sessionId: 'synthetic-new-project', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) });
+    expect(TestBed.inject(MktgRunAttemptService).load(projectUid(), 'brand-kit')).toMatchObject({ state: 'writing', attempt: { runId: 'c'.repeat(64) } });
   });
 
   it('starts a new session without changing previous history before any result arrives', () => {

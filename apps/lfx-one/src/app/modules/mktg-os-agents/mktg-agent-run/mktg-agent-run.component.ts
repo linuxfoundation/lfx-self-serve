@@ -3,7 +3,7 @@
 
 import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -36,6 +36,7 @@ import {
   MktgRunSourceField,
   MktgAttachmentChip,
   MktgDependencyDocument,
+  MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgPendingGeneration,
@@ -59,7 +60,7 @@ import { mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgS
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -205,7 +206,9 @@ export class MktgAgentRunComponent {
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
   protected readonly waitingQuestions = signal(false);
+  protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
   protected readonly startedOverWaiting = signal(false);
+  protected readonly hasAcknowledgement = signal(false);
   private readonly hasVersion = signal(false);
   protected readonly sourcesEditing = signal(false);
   protected readonly sourcesLoading = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
@@ -310,8 +313,16 @@ export class MktgAgentRunComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
+  protected readonly hasWaitingNotice = computed(() => this.waitingQuestions() || !!this.waitingRun());
+  protected readonly waitingRunMessage = computed(() =>
+    this.waitingQuestions() || this.waitingRun()?.state === 'questions'
+      ? 'This run is waiting for your answers.'
+      : `This ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} is being written.`
+  );
+  protected readonly waitingRunLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.assetType?.agentKey ?? '', MKTG_LIVING_DOCUMENT_ID]);
+  protected readonly waitingRunParams = computed(() => ({ project: this.projectSlug() ?? '', run: this.waitingRun()?.runId ?? '' }));
   protected readonly showIntakeForm = computed(
-    () => !this.waitingQuestions() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
+    () => !this.hasWaitingNotice() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
   );
   protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${mktgSentenceCaseLabel(this.assetName)}`));
   protected readonly submitReason = computed(() => {
@@ -337,7 +348,7 @@ export class MktgAgentRunComponent {
   protected readonly submitDisabled = computed(
     () =>
       !this.intakeValid() ||
-      this.waitingQuestions() ||
+      this.hasWaitingNotice() ||
       this.phase() === 'running' ||
       !!this.navigation() ||
       this.documentsBusy() ||
@@ -527,6 +538,11 @@ export class MktgAgentRunComponent {
     // Browser-only so SSR output stays stable; the first emission lands
     // post-hydration.
     if (isPlatformBrowser(this.platformId)) {
+      effect(() => {
+        this.runService.acknowledgementVersion();
+        const project = this.projectContext.activeContextUid();
+        if (project && this.freshMode() && this.phase() === 'form' && !this.startedOverWaiting()) this.readWaitingDraft(project);
+      });
       combineLatest([this.activeContext$, this.effectiveUser$, this.freshMode$])
         .pipe(
           distinctUntilChanged(
@@ -708,6 +724,7 @@ export class MktgAgentRunComponent {
 
   protected onStartOverWaiting(): void {
     this.waitingQuestions.set(false);
+    this.waitingRun.set(null);
     this.startedOverWaiting.set(true); // Do not clear, reserve or overwrite the waiting attempt.
   }
 
@@ -764,6 +781,7 @@ export class MktgAgentRunComponent {
     this.lastAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.errorText.set('');
     this.answersSending.set(true);
+    this.hasAcknowledgement.set(false);
     this.writingStretch.set(true);
     this.activityStartedAt.set(Date.now());
     this.phase.set('running');
@@ -814,6 +832,17 @@ export class MktgAgentRunComponent {
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
   private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
     return this.documentStore.listDocuments(project).pipe(
+      tap((documents) => {
+        if (!fresh || documents.progressUnavailable || this.startedOverWaiting() || this.runAttempts.load(project, this.agent?.id ?? '')) return;
+        const run = documents.runs?.find(
+          (entry) =>
+            entry.project === project &&
+            entry.agentKey === this.assetType?.agentKey &&
+            entry.documentId === MKTG_LIVING_DOCUMENT_ID &&
+            (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
+        );
+        if (run) this.waitingRun.set(run);
+      }),
       map((documents) =>
         documents.groups.some((group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0))
       ),
@@ -826,6 +855,15 @@ export class MktgAgentRunComponent {
         );
       })
     );
+  }
+
+  /** Browser proof is a fast path only; the summary read supplies the any-browser equivalent. */
+  private readWaitingDraft(project: string): void {
+    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
+    if (!draft) return;
+    if (draft.state === 'questions' && draft.pendingQuestions) this.waitingQuestions.set(true);
+    else if (draft.attempt?.runId && (draft.state === 'writing' || draft.state === 'questions'))
+      this.waitingRun.set({ runId: draft.attempt.runId, state: draft.state });
   }
 
   private intakeSourcesHint(): string {
@@ -1274,7 +1312,9 @@ export class MktgAgentRunComponent {
     this.consumedFreshSubject = null;
     this.freshMode.set(fresh);
     this.waitingQuestions.set(false);
+    this.waitingRun.set(null);
     this.startedOverWaiting.set(false);
+    this.hasAcknowledgement.set(false);
     this.hasVersion.set(false);
     this.generationSub?.unsubscribe();
     this.generationSub = null;
@@ -1320,7 +1360,7 @@ export class MktgAgentRunComponent {
     this.priorLogoCount.set(0);
     if (!context) return;
     if (fresh) {
-      this.waitingQuestions.set(!!this.runAttempts.load(context.uid, this.agent.id)?.pendingQuestions);
+      this.readWaitingDraft(context.uid);
       return; // Offer recovery without consuming a token or starting/resuming a run.
     }
 
@@ -1370,6 +1410,7 @@ export class MktgAgentRunComponent {
   private resumeAcceptedAttempt(pending: MktgPendingGeneration, projectUid: string): void {
     this.activeRequest = pending.request;
     this.restoreInputs(pending.request, 'returned');
+    this.hasAcknowledgement.set(true);
     this.phase.set('running');
     this.recheckingAttempt.set(true);
     this.writingStretch.set(!!pending.answered);
@@ -1512,6 +1553,7 @@ export class MktgAgentRunComponent {
     this.activityStartedAt.set(Date.now());
     this.writingStretch.set(false);
     this.lastAnswers.set({});
+    this.hasAcknowledgement.set(false);
     this.phase.set('running');
 
     // Re-resolve dependencies at submit time (server-persisted preferred,
@@ -1582,6 +1624,7 @@ export class MktgAgentRunComponent {
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string, stayOnRunPage = false): void {
     if (progress.type === 'submitted') {
+      this.hasAcknowledgement.set(true);
       this.consumeFreshEntry(projectUid);
       if (stayOnRunPage && this.route.snapshot.queryParamMap.get('questions')) {
         void this.router.navigate([], { relativeTo: this.route, queryParams: { questions: null }, queryParamsHandling: 'merge', replaceUrl: true });
