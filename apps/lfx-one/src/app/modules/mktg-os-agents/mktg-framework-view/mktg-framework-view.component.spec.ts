@@ -15,7 +15,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
 
@@ -134,8 +134,8 @@ const ASSET: MktgFrameworkAsset = {
 describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
-  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; ensureFontStylesheet: ReturnType<typeof vi.fn> };
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let printer: { print: Mock; clear: Mock; ensureFontStylesheet: Mock };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
