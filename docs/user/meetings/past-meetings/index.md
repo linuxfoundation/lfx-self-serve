@@ -14,11 +14,13 @@ Once a meeting has run, it moves from the **Upcoming** tab to the **Past** tab a
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev) and open **Meetings**.
 2. Select the **Past** tab. It shows your meeting history, including meetings organized by other people.
-3. Select **See Meeting Details** on a meeting's card to open its details page.
+3. Select **See Meeting Details** on a meeting's card. If you organize the meeting, this opens its details page. Otherwise it opens the meeting's join page, where you find the attendance totals, **Meeting Materials**, and **Meeting Tools**. See [Join a Meeting](../join-meeting/).
 
 On the card, **Recording**, **Transcripts**, and **AI Summary** tags show what exists for the meeting, and an **Attended** label shows if you were there. Select **Back** on the details page to return to the list.
 
 ## The meeting details page
+
+Organizers open this page from the **Past** tab. Everyone else is taken to the meeting's join page instead.
 
 The top of the page shows the meeting's title with an **Ended** tag, and tags for **Private** or **Restricted** access, the meeting type, a recurring pattern, and the date and time. **Recording**, **Transcripts**, and **AI Summary** tags show which of those exist for this meeting.
 
@@ -66,7 +68,7 @@ The recording, transcript, and AI summary exist only if the organizer turned the
 
 ### Who can see them
 
-You need to be **signed in** and able to open the meeting. Two things then decide who can use the recording, transcript, and AI summary.
+For **Meeting Hosts Only** and **Meeting Guests**, you need to be **signed in** and able to open the meeting. Two things decide who can use the recording, transcript, and AI summary.
 
 **Who can open the meeting.**
 
@@ -77,7 +79,7 @@ You need to be **signed in** and able to open the meeting. Two things then decid
 
 - **Meeting Hosts Only**: only organizers and Meeting Hosts.
 - **Meeting Guests** (the default): organizers, Meeting Hosts, and guests.
-- **Public**: publicly accessible. Think twice before choosing this for a Private or Restricted meeting, because it makes the recording, transcript, and summary available to people outside the meeting.
+- **Public**: publicly accessible, so the sign-in and meeting-access rules above don't apply to it. Think twice before choosing this for a Private or Restricted meeting, because it makes the recording, transcript, and summary available to people outside the meeting.
 
 So a public meeting's recording isn't open to every signed-in user when its setting is **Meeting Hosts Only**.
 

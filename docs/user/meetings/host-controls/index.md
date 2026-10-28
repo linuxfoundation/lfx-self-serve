@@ -73,9 +73,10 @@ You become the host of the meeting and can use the host controls.
 Organizers can give a guest the access to run the meeting by marking them as a **Meeting Host** when they invite them:
 
 1. Open the meeting's editor from **Create Meeting**, or from **Edit** on the meeting card.
-2. Go to the **Invite guests** section and select **Add guest**.
-3. Enter the guest's details and select **Meeting Host**.
-4. Save the meeting.
+2. Go to the **Invite guests** section and select **Add manually**.
+3. In the dialog, enter the guest's details and select **Meeting Host**.
+4. Select **Add guest** in the dialog. Until you do, the guest isn't on the invited list.
+5. Save the meeting.
 
 A guest marked as a host shows a **Host** label in the guest list. For the rest of the guest list, see [Manage Participants](../manage-participants/).
 

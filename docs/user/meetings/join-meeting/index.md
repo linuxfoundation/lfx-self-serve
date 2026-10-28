@@ -28,7 +28,7 @@ If you see an error about your email address, such as that you aren't on the gue
 
 ### If you're not signed in
 
-You don't need an LFX account to join a Private meeting. Open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Organization**, then select **Join Meeting**.
+You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Organization**, then select **Join Meeting**.
 
 A **Restricted** meeting is different. There's no form to get past it: you need to **sign in**, and your account has to match someone on the meeting's guest list. If it doesn't, ask the organizer to add you, then sign in again.
 
@@ -43,7 +43,7 @@ What the page shows depends on the meeting's access settings and on who you are:
 
 The organizer's name and contact link are only shown to signed-in visitors, even on a public meeting.
 
-If the organizer turned on **Show attendees to guests**, invited people can open **Show Members** to see who else is invited. Without it, they see how many people are invited but not who.
+If the organizer turned on **Show attendees to guests**, invited people can open **Show Members** to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
 
 ## Register for a meeting
 
@@ -88,7 +88,7 @@ Once the meeting has ended, the page says "This meeting has ended" and can show 
 - **AI Summary** opens the summary, with an **Approved** or **Pending Review** badge. If there's no summary, it shows "AI Summary Not Available."
 - **View Transcript** opens the transcript. If there's none, it shows "Transcript Unavailable."
 
-You need to be signed in and have access to the meeting. The organizer's **Who can access recordings & summaries** setting also decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. See [Past Meetings](../past-meetings/) for who can see them and how recordings, summaries, and attendance work.
+The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. For the first two, you need to be signed in and have access to the meeting. See [Past Meetings](../past-meetings/) for who can see them and how recordings, summaries, and attendance work.
 
 ## Meeting not found
 

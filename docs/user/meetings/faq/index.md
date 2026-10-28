@@ -25,7 +25,8 @@ An **organizer** manages the meeting: they can edit, cancel, or delete it, manag
 It depends on the meeting's access settings.
 
 - **Public meetings** have a join page anyone can open. You need to sign in to see materials and recordings.
-- **Private meetings** can be joined without an account. Open the link the organizer shared, because it includes the meeting's password.
+- **Public meetings** can be joined without an account.
+- **Private meetings** can be joined without an account too. Open the link the organizer shared, because it includes the meeting's password.
 - **Restricted meetings** need you to sign in, and your account has to match someone on the guest list.
 
 The organizer's name and contact link on the join page are only shown to signed-in visitors. See [Join a Meeting](../join-meeting/).
@@ -68,7 +69,7 @@ Yes, if you're registered for an upcoming meeting. Select **Remove Myself** on t
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 
-On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. You need to be signed in and able to open the meeting. The organizer's **Who can access recordings & summaries** setting also decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. See [Past Meetings](../past-meetings/) for who can see them.
+On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. For the first two, you need to be signed in and able to open the meeting. See [Past Meetings](../past-meetings/) for who can see them.
 
 ## Why can't I see the AI summary?
 
@@ -84,7 +85,7 @@ Organizers see the key on the meeting's card (**Host Key** button) and on its jo
 
 ## Where can I see who attended a past meeting?
 
-Open the **Past** tab in Meetings and select **See Meeting Details** on the meeting. The details page shows the attendance rate and a **Participants** table. Organizers, and people who were invited or attended, see who was there. Anyone else sees the totals only. See [Past Meetings](../past-meetings/).
+Open the **Past** tab in Meetings and select **See Meeting Details** on the meeting. Organizers get a details page with the attendance rate and a **Participants** table. Everyone else is taken to the meeting's join page. Organizers, and people who were invited or attended, see who was there. Anyone else sees the totals only. See [Past Meetings](../past-meetings/).
 
 ## Why don't I see Reconcile Attendance?
 

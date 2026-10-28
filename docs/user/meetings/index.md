@@ -28,7 +28,7 @@ The Meetings section lets you schedule, manage, and join meetings for your Linux
 ## Who can do what
 
 - **Everyone who is signed in** can see the meetings they're invited to and their projects' meetings. Contributors have view-only access.
-- **Organizers** create and manage meetings. You're an organizer if you have a **maintainer**, **board-member**, or **executive-director** persona, or if you've been granted **Meeting Coordinator** access for a project. Organizers manage a meeting's guests and materials, and can reconcile attendance after it runs. An organizer is always a host too.
+- **Organizers** create and manage meetings. You're an organizer of a particular meeting when you have organizer access to it, for example because you created it. The **maintainer**, **board-member**, and **executive-director** personas, and **Meeting Coordinator** access, let you create and manage meetings for a project. Organizers manage a meeting's guests and materials, and can reconcile attendance after it runs. An organizer is always a host too.
 - **Meeting Hosts** are guests an organizer marked as a host. They can see the host key and run the meeting in Zoom, but they can't edit the meeting.
 
 ## Who can see and join a meeting
